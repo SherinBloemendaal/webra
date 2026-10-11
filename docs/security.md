@@ -380,9 +380,8 @@ data, admins only), roles (admin powers), and the right to play online.
   logs or a Referer). Only verified addresses get reset links, a reset link
   only works while the account's email is still the one it was sent to, and
   an unverified address claims nothing (another account may use and verify
-  it; unverified addresses expire after 7 days and can only be entered while
-  email works), so typing someone else's address neither squats it nor lets
-  its owner take the account over. "Forgot password" answers the same
+  it; see "Required email and verification" below), so typing someone else's
+  address neither squats it nor lets its owner take the account over. "Forgot password" answers the same
   whether or not an address exists and is limited per IP and per address.
   Sensitive changes (password, email, passkeys, Discord, export, deletion)
   need an explicit re-authentication from the last 10 minutes (password,
@@ -478,7 +477,8 @@ affected);
 usernames in non-Latin scripts can still resemble each other within one
 script; moderators see usernames and masked emails of every account; the
 first admin needs shell access to wrangler. Email verification is off while
-the email binding is missing (Workers Free plan).
+the email binding or its sender is missing (Workers Free plan; see
+"Required email and verification").
 
 ## Accounts review (2026-10-09)
 
@@ -493,7 +493,7 @@ exploit:
 | F3 | Medium | A password change with the current password, and a sign-in that rehashed, derived two keys in one request, more than the Free plan's 10 ms of CPU. | One derivation per request: password changes need a re-authentication instead, hashes are upgraded when the password is set; the default is 40,000 iterations (measured), with the ceiling documented. |
 | F4 | Medium-Low | Every rate limit check wrote to D1, even for refused requests, and a failed sign-in wrote three rows: a flood could use up the D1 Free daily write quota and take the site down. | Burst limits through the Workers Rate Limiting binding; D1 counters are read before written (refusals cost no write); session use writes about one row per 15 minutes; a WAF rule is documented. |
 | F5 | Low | IP hashes were unsalted by default (reversible by hashing the IPv4 space). | HMAC under the required secret `IP_HASH_SALT`; production refuses to store hashes without it. |
-| F6 | Low | Unverified addresses could get reset links and could be squatted while email was unavailable. | Reset links go to verified addresses only; addresses are only entered while they can be confirmed; unverified ones claim nothing and expire after 7 days. |
+| F6 | Low | Unverified addresses could get reset links and could be squatted while email was unavailable. | Reset links go to verified addresses only; unverified ones claim nothing. (Then addresses were only entered while they could be confirmed and expired after 7 days; since addresses are required, see "Required email and verification".) |
 | F7 | Low | The "keep one sign-in method" check was not atomic. | Conditional UPDATE and DELETE statements checked by their change count. |
 | F8 | Low | Discord usernames were not passed through the text rules. | Normalized with the lobby text rules, with a fallback. |
 
@@ -945,6 +945,76 @@ description below (`privacySections`, tools/sentry-config.mjs).
   IP Addresses" and 90 days of retention; recommended: the default data
   scrubbers.
   `apps/website/privacy.html` says all of this to players.
+
+## Required email and verification (2026-10-11)
+
+Every new account gives an email address (password, passkey and Discord
+signup; Discord's own address counts when Discord reports it verified).
+Verification mail goes through Cloudflare Email Service (the `send_email`
+binding, added by the deploy only when the sender `EMAIL_FROM` is set,
+docs/deploy.md); without it addresses are kept unverified and nothing is
+sent. `apps/server/test/accounts-email.test.mjs` and
+`apps/server/test/e2e/email.mjs` cover what follows.
+
+- **Squatting and takeover.** An unverified address claims nothing (only a
+  verified one is unique, signs in or gets reset links), so typing someone
+  else's address blocks nobody; the first account to follow its link keeps
+  it and any later verification answers `409`.
+- **Enumeration.** No answer says whether an address has an account: signup
+  never refuses an address, an address change or resend is answered the same
+  way, `pendingEmail` shows the requested address either way, and the mail
+  (the link, or a notice without a link to an address another account
+  verified) is prepared after the answer (`waitUntil`), so neither the
+  answer nor its timing depends on it. "Forgot password" was already
+  generic. Discord signup still says `email_taken` for a Discord-verified
+  address, which only the owner of that inbox can trigger. The per-address
+  mail limit is the one remaining signal: it shows that someone asked for
+  mail to an address recently, not that it has an account.
+- **Tokens.** 32 random bytes (base64url), stored as SHA-256 only, looked up
+  by that hash and compared again in constant time, single use (deleted on
+  the first attempt), 24 hours, bound to the account and the exact address
+  (a link for an address the account no longer has does nothing), and every
+  new link replaces the account's older verification and change links.
+  They travel in the URL fragment of a link to the account page of the site
+  the request came to (the Worker answers only its own hosts; there is no
+  redirect parameter, so no open redirect). The verify endpoint is burst
+  limited per IP like the reset endpoint.
+- **Mail bombing and cost.** Each address gets at most 3 mails an hour and 6
+  a day, whoever asks (signups, changes and resends together; admin resends
+  excepted, 10 a day per account); resends are limited per account (3 an
+  hour, 10 a day) and per network (10 an hour per IPv4 address or IPv6 /64),
+  changes per account and network, signups per IP. The limits are D1
+  counters keyed with HMAC under `IP_HASH_SALT`. Email Service's own daily
+  quota (3,000 a month included on the Paid plan) is a backstop: when it
+  refuses, the error code is logged (never the address) and the request is
+  unaffected.
+- **Content.** Plain text plus simple HTML, no images or tracking, one link.
+  Text players choose is limited to the username (letters and digits, 24
+  characters) in the verification link mail and escaped in HTML; the in-use
+  notice carries nothing the requester typed. The sender is fixed by the
+  owner (`EMAIL_FROM`), and the binding may send only from it
+  (`allowed_sender_addresses`). SPF, DKIM and DMARC records come from
+  onboarding the sending domain (docs/deploy.md).
+- **Unconfirmed signups.** A `pending_email` account cannot play or upload.
+  If its address is not confirmed within 7 days (while sending works) it is
+  deleted and its address cleared, so an address typed by someone else does
+  not stay stored. Unverified addresses on other accounts (created while
+  sending was unavailable or verification was switched off) stay until the
+  owner changes them; they are only ever sent the links their account asks
+  for. Existing accounts never move to `pending_email` and accounts without
+  an address keep working.
+- **Admins** see the verification state, can resend a link and can mark an
+  address verified (both audited); a mark that would take another account's
+  verified address is refused.
+- **Development outbox.** `WEBRA_DEV_MAIL` routes mail to memory only with
+  `WEBRA_DEV_ROUTES`, plain HTTP and a local host (like the promote route);
+  neither variable is ever configured for deploys.
+
+**Accepted:** an attacker who knows a victim's address can spend that
+address's mail budget for an hour (the victim's own account then gets no new
+link until the next hour; earlier links stay valid); a verification link
+opened while signed in to another account verifies the account it was made
+for.
 
 ## Inherent to lockstep
 

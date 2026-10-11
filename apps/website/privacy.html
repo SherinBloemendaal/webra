@@ -94,8 +94,9 @@
         <p>When you sign up, WebRA stores:</p>
         <ul>
           <li>
-            your username, display name, avatar color, email address (optional unless email confirmation is required; an
-            address you have not confirmed is removed after 7 days), role, account state and flags;
+            your username, display name, avatar color, email address (required for new accounts; it is never shown to
+            other players, and an address you have not confirmed is never used for anything but the confirmation emails
+            you ask for), when it was set, role, account state and flags;
           </li>
           <li>
             how you sign in: a salted password hash (never the password), your passkeys' public keys and names, and your
@@ -130,7 +131,11 @@
           <li>Sign-in sessions: until you sign out, at most 30 days, or 14 days without use.</li>
           <li>Email links: 1 hour (password reset) or 24 hours (confirmation), and they work once.</li>
           <li>IP history: 90 days after an address was last seen.</li>
-          <li>Unconfirmed email addresses: 7 days.</li>
+          <li>
+            Accounts waiting for their email confirmation: deleted 7 days after the address was set if it is still not
+            confirmed (the address is removed at once, the rest after 30 days as for any deleted account). Other
+            unconfirmed addresses stay on their account until you change them or delete the account.
+          </li>
           <li>Failed sign-in counters: one day.</li>
           <li>Maps shared in online lobbies (not published): 30 days after a game last used them.</li>
           <li>Records of saved online games: 90 days (at most 20 per account).</li>
@@ -154,8 +159,12 @@
 
         <h2>Email</h2>
         <p>
-          When email is enabled, confirmation and password reset emails are sent through Cloudflare Email Sending from
-          noreply@webra.sherin.dev. WebRA sends no newsletters or marketing.
+          When email is enabled, WebRA sends only account emails: the link to confirm your address (when you sign up,
+          change it or ask for a new one), a note to an address that already belongs to an account when someone tries
+          to use it again, and password reset links. They are sent through Cloudflare Email Sending from a no-reply
+          address of the site, are plain text with a simple HTML version, and contain no images or tracking. Cloudflare
+          processes the address and the message to deliver it. WebRA sends no newsletters or marketing. While email is
+          not enabled, your address is stored unconfirmed and nothing is sent.
         </p>
 
         <h2 id="error-reports">Error reports</h2>

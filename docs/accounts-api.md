@@ -96,7 +96,7 @@ body. Errors always look like this:
 | `id` | string | 32 hex characters, random, never changes |
 | `username` | string | 3 to 24 characters after normalization: NFC, whitespace runs collapsed to one space, trimmed, no control, bidi or invisible formatting characters. Letters, combining marks, digits, space, `_`, `-`, `.`; starts with a letter or digit; no `@`; letters from one script family only (no Latin mixed with Cyrillic or Greek). Unique case-insensitively and after compatibility folding (NFKC, lower case); a set of reserved names (`admin`, `moderator`, `system`, `webra`, `server`, ...) is refused. Shown in lobbies. Users may change it once every 30 days; admins any time. |
 | `displayName` | string | 1 to 32 characters, same text rules as lobby names. Not unique. Defaults to the username. |
-| `email` | string or null | At most 254 characters, ASCII only (internationalized domains in punycode), one `@`, a domain with a dot. Stored as entered with the domain lower cased; unique case-insensitively. Optional at signup only while email verification is not in effect (section 3). |
+| `email` | string or null | At most 254 characters, ASCII only (internationalized domains in punycode), one `@`, a domain with a dot. Stored as entered with the domain lower cased; a verified address is unique case-insensitively. Required at signup (every signup path, 4.2 and 4.6); accounts created before it was required may have none (`null`). |
 | `emailVerified` | boolean | Proven by a link sent to it, or by Discord reporting it verified |
 | `avatarColor` | string | `#rrggbb`, lower case hex. Random at signup. |
 | `role` | string | `user`, `moderator` or `admin` |
@@ -122,12 +122,23 @@ derives more than one key (10 ms of CPU per request on the Free plan), so
 hashes are upgraded to the current count and pepper when the password is
 next set (change or reset), never at sign-in.
 
-**Email addresses** claim nothing until verified: only a verified address is
-unique, used for sign-in by email and sent reset links. An address can only
-be added (signup, change) while email sending works, and unverified
-addresses are removed 7 days after they were set. A second account may sign
-up with an unverified address; the first one to verify it keeps it (the
-other's verification answers `409 conflict`).
+**Email addresses** are required for new accounts and claim nothing until
+verified: only a verified address is unique, used for sign-in by email and
+sent reset links. A second account may sign up with an address another
+account typed (or even verified); the first one to verify it keeps it (a
+later verification answers `409 conflict`). No answer tells whether an
+address belongs to an account: a signup, change or resend with an address
+another account verified is answered as usual, and the address gets a
+notice without a link instead of the verification link (section 4.3).
+
+While email sending is unavailable (no binding or no `EMAIL_FROM`, docs/deploy.md)
+or `login.email` is off, signup still takes the address and keeps it
+unverified; there is no verification step and the account page says that
+verification email is not available yet. An unverified address stays on its
+account until the owner changes it or the account is deleted (it is no
+longer cleared after 7 days); signups that wait in `pending_email` expire
+instead (2.2). Accounts from before addresses were required keep working
+without one and may add one (5.4); they are never asked to.
 
 ### 2.2 Account states
 
@@ -138,7 +149,7 @@ lifted.
 
 | Status | Sign in | Account pages | Online play, uploads, relay | How it ends |
 |--------|---------|---------------|------------------------------|-------------|
-| `pending_email` | yes | yes | no (`account_inactive`) | Following the verification link; then `pending_approval` when approval is required, else `active`. An admin can set the status. |
+| `pending_email` | yes | yes | no (`account_inactive`) | Following the verification link (or an admin marking the address verified, 8.6); then `pending_approval` when approval is required, else `active`. An admin can set the status or approve. Expires (`deleted`, address cleared) when not confirmed within 7 days of the address being set, see below. |
 | `pending_approval` | yes | yes | no (`account_inactive`) | A moderator or admin approves (`active`) or rejects (`deleted`) |
 | `active` | yes | yes | yes (the relay also needs the flag) | |
 | `banned` | no (`banned` after correct credentials) | no | no | The ban expires or is lifted. A ban signs the account out everywhere and drops it from running games. |
@@ -146,8 +157,19 @@ lifted.
 
 At signup: `pending_email` when email verification is in effect (section 3)
 and the email is not verified yet, else `pending_approval` when approval is
-required, else `active`. Turning approval or verification on later does not
-change existing accounts.
+required, else `active`. Turning approval or verification on later (or email
+sending becoming available) does not change existing accounts: an existing
+account never moves to `pending_email` by itself.
+
+**Unconfirmed signups expire.** The daily job (10.) deletes accounts that are
+still `pending_email`, were never approved, and whose address was set more
+than 7 days ago, like a self-deletion (sessions and links removed, purged 30
+days later), and clears their address (it may belong to someone else). It
+writes a system `user.expire` audit entry. Changing the address restarts the
+7 days. It runs only while email sending is available (otherwise nobody
+could have confirmed). An admin can restore such an account within the 30
+days; it comes back without an address and its 7 days start again when one
+is added.
 
 ### 2.3 Roles and permissions
 
@@ -282,7 +304,8 @@ No authentication. What clients need to draw sign-in and signup forms.
 ```
 
 `login.*` here are the **effective** values: the setting is on and the
-service behind it is configured (`email` needs `env.EMAIL`, `discord` needs
+service behind it is configured (`email` needs the binding `env.EMAIL` and a
+valid sender address in the variable `EMAIL_FROM`, `discord` needs
 `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`). `services` tells whether the
 binding or credentials exist at all. `emailVerificationRequired` is the
 effective value of `registration.emailVerification` (false while email is
@@ -322,16 +345,22 @@ null.
 
 - `acceptPrivacy` must be `true` (the form links `/privacy.html`).
 - `displayName` optional (defaults to the username).
-- `email`: required when email verification is in effect, else optional.
+- `email`: required (`400 invalid`, `field: email` when missing or
+  malformed), also with a passkey (checked before the passkey challenge is
+  used). It is stored unverified and claims nothing.
 - Exactly one of `password` (needs `login.password`) or `passkey` (needs
   `login.passkey`; the challenge comes from 4.4 `signup-options` with the same
   username). Discord signup is 4.6.
 - `201 { user }` and a session cookie, also for pending accounts (they can
-  verify their email, add login methods and see their status). When email
-  verification is in effect, the verification email is sent.
+  verify their email, add login methods and see their status). While email
+  sending is available (`login.email`), the verification mail goes out
+  after the answer (so neither the answer nor its timing depends on it):
+  the link, or, when another account verified the address, a notice without
+  a link (4.3). Without email sending nothing is mailed and the address
+  waits unverified.
 - Errors: `registration_closed`, `method_disabled`, `invalid` (with `field`),
-  `conflict` (`field`: `username` or `email`), `ip_banned`, `rate_limited`
-  (10 signups per hour per IP).
+  `conflict` (`field: username`; never for the email), `ip_banned`,
+  `rate_limited` (10 signups per hour per IP).
 
 ### 4.3 Password sign-in
 
@@ -382,9 +411,27 @@ password is still changed). Limit: 20 token redemptions per 15 minutes per
 IP.
 
 `POST /api/auth/email/verify` `{ "token": "..." }`: confirms a verification
-or email change link (no session needed). `200 { user: UserSelf | null }`
-(`user` only when the request also carries a session of that account).
-Bad, used or expired tokens: `401 bad_credentials`.
+or email change link (no session needed: the link proves the inbox, and it
+only ever verifies the account it was made for). `200 { user: UserSelf |
+null }` (`user` only when the request also carries a session of that
+account). Bad, tampered, used, superseded or expired tokens, and a
+verification link for an address the account no longer has: `401
+bad_credentials`. When another account verified the address meanwhile:
+`409 conflict`. Verifying moves a `pending_email` account on (2.2).
+
+**Address mail.** A verification link is bound to the account and the exact
+address it was sent to. Each new link (signup, resend, change, admin resend)
+replaces the account's earlier verification and change links. When another
+account already verified the address, the address gets a notice that it
+already has an account (no link, nothing the requester typed) instead, the
+link record is still stored (so `pendingEmail` and every answer look the
+same), and the mail is prepared after the answer. Each address receives at
+most 3 such mails per hour and 6 per day, whoever asks (over that nothing
+is sent, the answer is unchanged, and the earlier link stays valid).
+Messages are plain text plus simple HTML with the site name, the link to the
+account page of the site the request came to, its expiry and a note to
+ignore it if unexpected; no images, no tracking. They are sent from
+`EMAIL_FROM`.
 
 **Links in emails** point at the account page and carry the token in the URL
 fragment (never sent to any server, never in a `Referer`):
@@ -521,7 +568,7 @@ with PKCE (S256) and `state`, scopes `identify email`, redirect URI
 `POST /api/auth/discord/start`
 
 ```json
-{ "mode": "login" | "signup" | "link" | "reauth", "returnTo": "/account/", "acceptPrivacy": true }
+{ "mode": "login" | "signup" | "link" | "reauth", "returnTo": "/account/", "acceptPrivacy": true, "email": "tanya@example.com" }
 ```
 
 - `login`: sign in with a linked Discord account.
@@ -529,9 +576,15 @@ with PKCE (S256) and `state`, scopes `identify email`, redirect URI
   account (registration must be open; `acceptPrivacy: true` required). The
   username is taken from the Discord username (passed through the lobby text
   rules, `Discord user` when it does not fit; a number is
-  appended when it is taken or invalid; changeable later). A Discord email
-  that Discord reports verified is stored as verified; when that email
-  already belongs to another account, the signup fails with `email_taken`.
+  appended when it is taken or invalid; changeable later). Every new
+  account gets an address: the Discord email when Discord reports it
+  verified (stored as verified; when it already belongs to another account,
+  the signup fails with `email_taken`, which only the owner of that Discord
+  inbox can see), else the optional `email` of this request (checked here,
+  `400 invalid` with `field: email`; it travels with the OAuth state and is
+  stored unverified with a verification link mailed as in 4.2). With
+  neither the callback answers `email_required` and creates nothing.
+- `email` is accepted with `signup` only.
 - `link` (signed in, recent re-authentication): link Discord to this account.
 - `reauth` (signed in, Discord linked): counts as a re-authentication.
 - `returnTo`: a same-origin path starting with `/` (not `//`), at most 200
@@ -548,7 +601,8 @@ the OAuth cookie), exchanges the code with the PKCE verifier, reads
 fragment: `#discord=ok` or `#discord=error&code=<code>`, codes:
 `denied` (the user cancelled), `invalid_state`, `no_account` (login with an
 unlinked Discord account), `already_linked` (that Discord account belongs to
-another WebRA account), `email_taken`, `registration_closed`,
+another WebRA account), `email_taken`, `email_required` (signup: no
+verified Discord email and none typed), `registration_closed`,
 `method_disabled`, `banned`, `ip_banned`, `account_inactive` (a deleted
 account), `rate_limited` (signup limit), `unavailable` (Discord unreachable
 or misconfigured). On success a
@@ -619,15 +673,27 @@ changes per hour per account.
 ### 5.4 Email
 
 - `POST /api/account/email` `{ "email": "..." }` (recent re-authentication):
-  sends a change link to the new address and returns `202 { user }`
-  (`pendingEmail` set; the address changes when the link is followed).
-  Without email sending: `503 unavailable` (addresses are never set
-  unverified). 5 per day per account. An address another account verified:
-  `409 conflict`.
+  - the account has a **verified** address: a change link goes to the new
+    address and the answer is `202 { user }` (`pendingEmail` set; the
+    address changes when the link is followed). Without email sending:
+    `503 unavailable` (a confirmed address is never swapped for one nobody
+    can confirm).
+  - the account has **no address or an unverified one**: the new address
+    replaces it at once, unverified (`200 { user }`; `email_set_at` restarts,
+    see 2.2), and a verification link goes to it while email sending is
+    available. Works without email sending too.
+  - the same address again: `200 { user }`, nothing changes.
+  An address another account verified is answered the same way (it gets the
+  notice of 4.3 instead of a link). Limits: 5 per day per account, 20 per day
+  per network.
 - `POST /api/account/email/resend` `{}`: sends the verification link again
-  for the current unverified email. 3 per hour per account. `202 {}`.
-- `DELETE /api/account/email` (recent re-authentication): removes the email;
-  refused (`409 conflict`) while email verification is in effect.
+  for the current unverified address (`409 conflict` without one). `202 {}`,
+  the mail goes out after the answer. Limits: 3 per hour and 10 per day per
+  account, 10 per hour per network (an IPv4 address or IPv6 /64), plus the
+  per-address mail limit of 4.3. Without email sending `503 unavailable`,
+  with `login.email` off `403 method_disabled`.
+- `DELETE /api/account/email`: always `409 conflict`. An address is required;
+  change it instead, or delete the account.
 
 ### 5.5 Passkeys
 
@@ -967,7 +1033,7 @@ change writes an audit log entry (8.9). Users in responses are `AdminUser`:
 
 ```json
 {
-  "id", "username", "displayName", "email", "emailVerified", "avatarColor",
+  "id", "username", "displayName", "email", "emailVerified", "emailSetAt", "avatarColor",
   "role", "status", "storedStatus", "flags", "createdAt", "lastSeenAt",
   "approvedAt", "approvedBy", "deletedAt",
   "methods": { "password": true, "discord": { "id": "1234", "username": "tanya" } | null, "passkeys": 1 },
@@ -999,12 +1065,17 @@ is left out.
   "ips": [{ "ip": "203.0.113.7", "firstSeen", "lastSeen", "count" }],
   "bans": [{ "id", "reason", "createdAt", "createdBy", "expiresAt", "revokedAt", "revokedBy" }],
   "settings": { "version", "updatedAt", "settings" },
-  "relay": RelayBudgets
+  "relay": RelayBudgets,
+  "emailLink": { "purpose": "verify" | "change", "email", "sentAt", "expiresAt" } | null,
+  "emailSending": true
 }
 ```
 
 Moderators get `user`, `bans` and `passkeys` count only (`sessions`, `ips`,
-`settings`, `relay` are left out). `relay` is described in 8.10.
+`settings`, `relay`, `emailLink`, `emailSending` are left out). `relay` is
+described in 8.10. `emailLink` is the account's open verification or change
+link (8.6); `emailSending` whether links can be sent now (`login.email`).
+`emailSetAt` (AdminUser) is when the current address was set.
 
 `PATCH /api/admin/users/:id` (admin)
 `{ "username"?, "displayName"?, "email"?, "emailVerified"?, "avatarColor"?, "status"?, "role"?, "flags"? }`
@@ -1057,7 +1128,28 @@ on plain users).
   `{ "purged": true }`.
   Soft-deleted accounts are purged automatically after 30 days.
 
-### 8.6 Password reset link
+### 8.6 Email verification and password reset link
+
+For an account with an unverified address (not deleted; `409 conflict`
+otherwise), admins can:
+
+- `POST /api/admin/users/:id/email/resend` `{}` -> `202 { "sent": true, "emailLink" }`:
+  mails a new verification link now, as in 4.3 (an address another account
+  verified gets the notice instead), not subject to the per-address mail
+  limit; 10 per day per account. `503 unavailable` without email sending,
+  `403 method_disabled` with `login.email` off. Audit `user.email_resend`
+  (`after: { email, sent }`).
+- `POST /api/admin/users/:id/email/verify` `{}` -> `200 { user: AdminUser }`:
+  marks the address verified (the admin vouches for it, for example when
+  mail cannot be sent): it claims the address, a `pending_email` account
+  moves on as after its link (2.2), open verification and change links are
+  removed. `409 conflict` (`field: email`) when another account verified the
+  address. Audit `user.email_verify` (`before`/`after`: email, emailVerified,
+  status). Works without email sending.
+
+Moderators can do neither (`403 forbidden`); they can approve a
+`pending_email` account (8.2).
+
 
 `POST /api/admin/users/:id/password-reset` `{ "send": false }` (admin) ->
 `201 { "url": "https://webra.sherin.dev/account/#reset=...", "expiresAt", "sent": false }`.
@@ -1093,11 +1185,12 @@ Expired IP bans are deleted 90 days after they end.
   `400 invalid`.
 - `GET /api/admin/audit?actor=&target=&action=&since=&until=&page=&limit=`
   (admin) -> `{ "entries": [{ "id", "at", "actor": { "id", "username" } | null, "action", "target": { "type", "id", "label" }, "before", "after", "reason" }], "total", "page", "limit" }`.
-  `actor` null is the system (scheduled purges). Actions: `user.update`,
+  `actor` null is the system (scheduled purges and expiries). Actions: `user.update`,
   `user.approve`, `user.reject`, `user.ban`, `user.unban`, `user.logout`,
   `user.session_revoke`, `user.password_reset_link`, `user.delete`,
   `user.restore`, `user.purge`, `user.settings_update`,
-  `user.relay_quota_reset`, `ipban.create`,
+  `user.relay_quota_reset`, `user.expire` (system: an unconfirmed signup
+  expired, 2.2), `user.email_verify`, `user.email_resend`, `ipban.create`,
   `ipban.update`, `ipban.delete`, `site.update`. Entries are kept 365 days.
 - `GET /api/admin/stats` (moderator) ->
 
@@ -1169,8 +1262,10 @@ write.
 | Re-authentication | 10 failures per 15 minutes per account |
 | Forgot password | 5 per hour per IP, 3 per hour per email address |
 | Token redemption (verify, reset) | burst per IP (20 per 15 minutes) |
-| Verification resend | 3 per hour per account |
-| Email change | 5 per day per account |
+| Verification resend | 3 per hour and 10 per day per account; 10 per hour per network (IPv4 address, IPv6 /64) |
+| Email change | 5 per day per account; 20 per day per network |
+| Address mail (links and in-use notices, whoever asks) | 3 per hour and 6 per day per address (over it nothing is sent, the answer is unchanged) |
+| Admin verification resend | 10 per day per account |
 | Discord start | burst per IP (20 per 15 minutes) |
 | Profile changes | 30 per hour per account |
 | Settings document writes | 120 per hour per account |
@@ -1192,3 +1287,10 @@ write.
   `1` and the request is plain HTTP to `localhost`, `127.0.0.1` or `[::1]`.
   The variable is never in `wrangler.jsonc` (a test checks that), and tests
   prove the route is unreachable otherwise.
+- With `--var WEBRA_DEV_MAIL:1` as well (same conditions, and no real
+  `EMAIL` binding), account mail goes to an in-memory outbox instead of
+  Email Service (email sending then counts as available), and
+  `GET /api/dev/mail?to=<address>` (CSRF header) returns
+  `{ "messages": [{ "from", "to", "subject", "text", "html", "at" }] }` for
+  the end-to-end email test (`apps/server/test/e2e/email.mjs`, docs/deploy.md).
+  Without it `wrangler dev` has no email: signup keeps addresses unverified.
