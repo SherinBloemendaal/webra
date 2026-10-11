@@ -4,19 +4,29 @@
 // (engine/src/minimap.rs, `radar_state`). Online it shows the terrain, ore and gems,
 // shroud and fog, every blip the engine reports (`minimap_blips`: own and
 // allied actors, visible enemies, remembered enemy structures, nothing near an
-// enemy radar jammer) in team colours, and the camera rectangle. Left click or
-// drag moves the camera, right click orders the selected units to that spot.
-// Without radar it shows a dark panel; jammed or without power it shows
-// static, and it opens and closes with a short animation like Red Alert.
+// enemy radar jammer) in team colours, and the camera rectangle. Without
+// radar it shows a dark panel; jammed or without power it shows static, and
+// it opens and closes with a short animation like Red Alert.
+//
+// Clicks (OpenRA RadarWidget): a click is the click on that spot of the
+// battlefield (js/input.js radarClick), so with units selected it gives the
+// order the battlefield would (move, attack, attack move, Shift waypoints,
+// force move or fire, a support power or sidebar mode on that spot), and the
+// cursor shows that order. Left is the action button, as on the battlefield;
+// the right button gives the units' orders too. A click that is no order there
+// moves the camera, and dragging keeps moving it. Touch: with units selected
+// (or a mode on) a tap gives the order and a drag moves the camera; with
+// nothing selected a touch moves the camera at once, as before.
 //
 // Cost: one pixel per cell on a small canvas scaled up by CSS. The picture is
 // rebuilt a few times per second (one pass over the cells plus one per blip);
 // every frame only the camera rectangle moves.
 
-import { askOf } from './sim/methods.js';
 import { RadarPings } from './radarpings.js';
 
 const CELL_PX = 24;
+/** CSS px a finger may move on the radar and still tap (js/gestures.js uses the same). */
+export const TAP_SLOP = 10;
 /** Radar picture refresh interval (ms): units move at 4 Hz on the radar. */
 export const REFRESH_MS = 250;
 /** Opening and closing animation (ms). */
@@ -225,9 +235,12 @@ export class Minimap {
    * @param {string} [o.biome] the map's biome (terrain colours)
    * @param {import('./radarpings.js').RadarPings} [o.pings] radar pings drawn over the picture
    * @param {(online: boolean) => void} [o.onRadar] the radar came online or went offline (OpenRA RadarUp / RadarDown)
+   * @param {{ radarTap(w: {x: number, y: number}): Promise<boolean>, radarMayOrder(): boolean }} [o.touch]
+   *   touch controls (js/touch.js) for finger taps: their action bar's Add and Force apply
    */
-  constructor(parent, { game, fog, player, input, colors, biome = 'temperate', pings = null, onRadar = null }) {
+  constructor(parent, { game, fog, player, input, colors, biome = 'temperate', pings = null, onRadar = null, touch = null }) {
     this.pings = pings;
+    this.touch = touch;
     this.onRadar = onRadar;
     this.pingsDrawn = false;
     this.game = game;
@@ -244,7 +257,10 @@ export class Minimap {
     this.since = -Infinity;
     this.lastRefresh = -Infinity;
     this.lastStatic = -Infinity;
-    this.dragging = null; // pointer id while dragging the camera
+    // The pointer pressed on the radar: { id, w, x, y, touch, panning } (see onPointerDown).
+    this.press = null;
+    this.hover = null; // world point (cell centre) under the mouse, for the cursor
+    this.cursor = '';
     this.camKey = '';
     this.revealKey = '';
     this.build(parent);
@@ -280,11 +296,11 @@ export class Minimap {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
-    const end = (e) => {
-      if (this.dragging === e.pointerId) this.dragging = null;
-    };
-    this.canvas.addEventListener('pointerup', end);
-    this.canvas.addEventListener('pointercancel', end);
+    this.canvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
+    this.canvas.addEventListener('pointercancel', (e) => {
+      if (this.press?.id === e.pointerId) this.press = null;
+    });
+    this.canvas.addEventListener('pointerleave', () => (this.hover = null));
 
     this.fit();
     if (typeof ResizeObserver === 'function') {
@@ -320,37 +336,91 @@ export class Minimap {
     return minimapToWorld(e.clientX, e.clientY, this.canvas.getBoundingClientRect(), this.mapW, this.mapH);
   }
 
+  /** The world point of a pointer event on the radar, snapped to its cell's centre (OpenRA's cursor asks per cell). */
+  cellAt(e) {
+    const w = this.worldAt(e);
+    const snap = (v, max) => (Math.min(max - 1, Math.max(0, Math.floor(v / CELL_PX))) + 0.5) * CELL_PX;
+    return { x: snap(w.x, this.mapW), y: snap(w.y, this.mapH) };
+  }
+
+  /**
+   * A button or finger went down. Mouse: the click goes to the battlefield's
+   * order generator at once (left: the action button; right: unit orders);
+   * when it is no order there, the camera moves there and follows a drag.
+   * Touch: see onPointerUp.
+   */
   onPointerDown(e) {
     if (!this.usable()) return;
     e.preventDefault();
-    const w = this.worldAt(e);
-    if (e.button === 2) {
-      this.order(w);
+    // One pointer at a time; a second finger or button changes nothing.
+    if (this.press) return;
+    const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+    if (!touch && e.button !== 0 && e.button !== 2) return;
+    const press = { id: e.pointerId, w: this.worldAt(e), x: e.clientX, y: e.clientY, touch, panning: false };
+    this.press = press;
+    this.canvas.setPointerCapture?.(e.pointerId);
+    if (touch) {
+      // Nothing to order: a touch moves the camera at once, as on phones before.
+      if (!(this.touch?.radarMayOrder() ?? this.input.radarMayOrder())) this.pan(press);
       return;
     }
-    if (e.button !== 0) return;
-    this.dragging = e.pointerId;
-    this.canvas.setPointerCapture?.(e.pointerId);
-    this.input.centerOn(w.x, w.y);
+    const mods = { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
+    this.input
+      .radarClick(press.w, mods, e.button)
+      .catch((err) => {
+        console.warn('radar order:', err);
+        return false;
+      })
+      .then((ordered) => {
+        if (!ordered) this.pan(press);
+      });
+  }
+
+  /** Move the camera to the press's spot; it follows the pointer from then on while it is down. */
+  pan(press) {
+    press.panning = true;
+    if (this.usable()) this.input.centerOn(press.w.x, press.w.y);
   }
 
   onPointerMove(e) {
-    if (this.dragging !== e.pointerId || !this.usable()) return;
-    const w = this.worldAt(e);
-    this.input.centerOn(w.x, w.y);
+    if (e.pointerType === 'mouse') this.hover = this.cellAt(e);
+    const press = this.press;
+    if (!press || press.id !== e.pointerId || !this.usable()) return;
+    press.w = this.worldAt(e);
+    // A finger that moves is a drag: it moves the camera instead of giving an order.
+    if (press.touch && !press.panning && Math.hypot(e.clientX - press.x, e.clientY - press.y) > TAP_SLOP) press.panning = true;
+    if (press.panning) this.input.centerOn(press.w.x, press.w.y);
   }
 
-  /** Right click: the selected own units act on that spot (move, or attack what is there). */
-  order(w) {
-    const units = this.input.selectedOwnUnits();
-    if (!units.length) return;
-    const ids = Uint32Array.from(units);
-    this.game.order_smart(this.player, ids, w.x, w.y);
-    // The flash shows what the order does (move or attack), once the simulation answered.
-    askOf(this.game)
-      .cursor_action(this.player, ids, w.x, w.y)
-      .then((action) => this.input.flashOrder?.(w, action))
-      .catch(() => {});
+  /**
+   * A button or finger came up. A touch tap (no drag) with units selected or
+   * a mode on gives the order a tap on that spot of the battlefield would
+   * (js/touch.js radarTap: Add and Force of the action bar apply); when it is
+   * no order there the camera moves there.
+   */
+  onPointerUp(e) {
+    const press = this.press;
+    if (!press || press.id !== e.pointerId) return;
+    this.press = null;
+    if (!press.touch || press.panning || !this.usable()) return;
+    const tap = this.touch ? this.touch.radarTap(press.w) : this.input.radarClick(press.w, {}, 0);
+    tap
+      .catch((err) => {
+        console.warn('radar order:', err);
+        return false;
+      })
+      .then((ordered) => {
+        if (!ordered) this.pan(press);
+      });
+  }
+
+  /** The radar's cursor under the mouse (OpenRA RadarWidget.GetCursor), per frame while it hovers. */
+  updateCursor() {
+    const cursor = this.hover && this.usable() && !this.press ? this.input.radarCursor(this.hover, this.input.heldMods()) : '';
+    if (cursor !== this.cursor) {
+      this.cursor = cursor;
+      this.canvas.style.cursor = cursor;
+    }
   }
 
   // ---- Per frame -----------------------------------------------------------------
@@ -382,6 +452,7 @@ export class Minimap {
     }
     if (reveal > 0) this.drawCamera();
     this.drawPings(pingTime, reveal > 0);
+    this.updateCursor();
   }
 
   /**
@@ -432,7 +503,7 @@ export class Minimap {
       const reveal = revealAt(this.online, this.since, now);
       this.online = online;
       this.since = now - (online ? reveal : 1 - reveal) * TRANSITION_MS;
-      if (!online) this.dragging = null;
+      if (!online) this.press = null;
       this.onRadar?.(online);
     }
     this.state = state;

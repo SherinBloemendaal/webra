@@ -626,3 +626,51 @@ fn kills_from_attack_ground_and_return_fire_credit_the_shooter() {
     run(&mut w, 150);
     assert!(w.actors[shooter].hp < max_hp(&w, shooter), "shot back at the attacker");
 }
+
+// ---- Blocked move cursor ---------------------------------------------------------------
+
+/// The flat world with a lake (columns 40..50, rows 10..30) behind a beach (column 39).
+fn lake_world() -> World {
+    let mut w = flat_world();
+    for cy in 10..30 {
+        for cx in 39..50 {
+            let ci = w.map.idx(cx, cy);
+            w.map.terrain[ci] = if cx == 39 { crate::map::Terrain::Beach } else { crate::map::Terrain::Water };
+        }
+    }
+    w.reset_passability();
+    w
+}
+
+#[test]
+fn the_move_cursor_is_blocked_on_terrain_none_of_the_units_can_enter() {
+    use crate::world::SmartAction;
+    let mut w = lake_world();
+    let tank = unit(&mut w, "2TNK", 0, 20, 20);
+    let boat = unit(&mut w, "PT", 0, 44, 20);
+    let lst = unit(&mut w, "LST", 0, 44, 24);
+    let heli = unit(&mut w, "HELI", 0, 20, 24);
+    let (water, beach, land) = ((cell_center(45), cell_center(20)), (cell_center(39), cell_center(20)), (cell_center(25), cell_center(20)));
+    // OpenRA MoveOrderTargeter: BlockedCursor where the locomotor cannot go.
+    assert_eq!(w.smart_action(0, &[tank], water.0, water.1), SmartAction::MoveBlocked);
+    assert_eq!(w.smart_action(0, &[tank], beach.0, beach.1), SmartAction::Move, "tanks drive onto beaches");
+    assert_eq!(w.smart_action(0, &[boat], land.0, land.1), SmartAction::MoveBlocked);
+    assert_eq!(w.smart_action(0, &[boat], beach.0, beach.1), SmartAction::MoveBlocked, "gunboats stay off beaches");
+    assert_eq!(w.smart_action(0, &[lst], beach.0, beach.1), SmartAction::Move, "landing craft run up on beaches");
+    assert_eq!(w.smart_action(0, &[heli], water.0, water.1), SmartAction::Move, "aircraft go anywhere");
+    assert_eq!(w.smart_action(0, &[tank, boat], water.0, water.1), SmartAction::Move, "one unit that can go there is enough");
+    // Unexplored cells show the move cursor (OpenRA MoveIntoShroud).
+    let ci = w.map.idx(45, 20);
+    w.players[0].explored[ci] = 0;
+    assert_eq!(w.smart_action(0, &[tank], water.0, water.1), SmartAction::Move);
+}
+
+#[test]
+fn a_blocked_move_is_still_a_move_order() {
+    let mut w = lake_world();
+    let tank = unit(&mut w, "2TNK", 0, 20, 20);
+    let ids = refs(&w, &[tank]);
+    w.queue_order(Order::Smart { player: 0, ids, x: cell_center(45), y: cell_center(20) });
+    run(&mut w, 1);
+    assert_eq!(w.actors[tank].activity, Activity::Move, "the tank heads for the nearest reachable spot");
+}

@@ -156,6 +156,8 @@ export const CURSORS = {
   place: cursor(PLACE, 16, 16, 'crosshair'),
   ...scrollCursors(),
   move: cursor(chevrons('#5fe36a'), 16, 16, 'pointer'),
+  // A move onto terrain none of the units can enter (OpenRA "move-blocked"; still a move).
+  moveBlocked: cursor(chevrons('#8a8a7a') + BAR, 16, 16, 'not-allowed'),
   attack: cursor(reticle('#ff4a3a'), 16, 16, 'crosshair'),
   attackMove: cursor(
     reticle('#ffa030', `<path d="M22 26 L30 26 M26.5 22.5 L30 26 L26.5 29.5" fill="none" stroke="${OUTLINE}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 26 L30 26 M26.5 22.5 L30 26 L26.5 29.5" fill="none" stroke="#ffa030" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`),
@@ -311,6 +313,7 @@ export const CURSOR_NAMES = {
     }),
   ),
   move: 'move',
+  moveBlocked: 'move-blocked',
   attack: 'attack',
   attackMove: 'attackmove',
   harvest: 'harvest',
@@ -349,6 +352,12 @@ export const COMMAND_CURSOR_NAMES = { attackGround: 'attack', guard: 'guard', wa
 
 /** Cursor tables whose values setCursorArt replaces: [table, kind -> OpenRA name, built-in values]. */
 const TABLES = [];
+/**
+ * Per cursor table, the radar's own art of its kinds: OpenRA's RadarWidget
+ * shows "<name>-minimap" where the cursors have one (Red Alert's smaller
+ * cursors: move, attack, enter, ...), else the cursor itself.
+ */
+const MINIMAP = new Map();
 
 /**
  * Let setCursorArt replace the cursors of `table` (kind -> CSS value) by
@@ -370,13 +379,33 @@ let animated = [];
  */
 export function setCursorArt(art) {
   animated = [];
+  MINIMAP.clear();
   for (const [table, names, builtIn] of TABLES) {
+    const radar = {};
     for (const kind of Object.keys(builtIn)) {
       const c = art?.get(names[kind]);
       table[kind] = c?.frames.length ? c.frames[0] : builtIn[kind];
       if (c && c.frames.length > 1) animated.push([table, kind, c.frames, c.fps]);
+      // The radar variant only goes with the cursor it belongs to (both from the same art).
+      const m = c?.frames.length ? art.get(`${names[kind]}-minimap`) : null;
+      if (!m?.frames.length) continue;
+      radar[kind] = m.frames[0];
+      if (m.frames.length > 1) animated.push([radar, kind, m.frames, m.fps]);
     }
+    MINIMAP.set(table, radar);
   }
+}
+
+/**
+ * The radar's variant of cursor `value` (a CSS value from any cursor table):
+ * OpenRA RadarWidget.GetCursor shows "<name>-minimap" when the cursors have
+ * it. WebRA's own cursors have no radar variants, so they stay as they are.
+ */
+export function minimapCursor(value) {
+  for (const [table, radar] of MINIMAP) {
+    for (const kind of Object.keys(radar)) if (table[kind] === value) return radar[kind];
+  }
+  return value;
 }
 
 /** Step animated cursors to `timeMs` (OpenRA's cursors animate); returns whether any changed. */
@@ -401,12 +430,12 @@ function live(target, keys) {
 }
 
 /**
- * Cursor for a smart action code from Game.cursor_action (0 none ... 17
- * capture from outside, ACTION below). The mechanic fixes with OpenRA's
+ * Cursor for a smart action code from Game.cursor_action (0 none ... 18
+ * blocked move, ACTION below). The mechanic fixes with OpenRA's
  * "repair" cursor (its Armament Cursor), the repair mode's kind; reusable
  * engineers capture with "ability" (Captures@REUSABLE EnterCursor).
  */
-export const ACTION_CURSORS = live(new Array(18), [
+export const ACTION_CURSORS = live(new Array(19), [
   'select',
   'move',
   'attack',
@@ -425,6 +454,7 @@ export const ACTION_CURSORS = live(new Array(18), [
   'enterBlocked',
   'goldwrenchBlocked',
   'ability',
+  'moveBlocked',
 ]);
 
 /** Smart action codes, matching SmartAction in engine/src/world.rs. */
@@ -447,6 +477,7 @@ export const ACTION = {
   ENTER_BLOCKED: 15,
   REPAIR_BLOCKED: 16,
   CAPTURE_OUTSIDE: 17,
+  MOVE_BLOCKED: 18,
 };
 
 /** Targeting cursor per support power kind (OpenRA trait name). */

@@ -19,7 +19,7 @@
 // one frame old there; what a click or key does asks fresh answers
 // (`this.ask`, promises) and acts when they arrive.
 
-import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, scrollCursor } from './cursors.js';
+import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, minimapCursor, scrollCursor } from './cursors.js';
 
 /** Smart orders that act on own actors (instead of selecting them). */
 const TARGETS_OWN = new Set([
@@ -536,28 +536,41 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
+    if (this.pressAction(w, e, p)) return;
+    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
+  }
+
+  /**
+   * The action button (left) went down at world point `w` with the modifiers
+   * of `e`: the order generator in force takes it (support power, sidebar
+   * mode, placement, ability targeting, armed command bar mode, minefield,
+   * attack move). False when none did: the release then selects or gives the
+   * smart order (finishClick). `at`: the view position, where a support
+   * power's direction drag starts (null from the radar).
+   */
+  pressAction(w, e, at) {
     if (this.power) {
       // Target picked; mouse up fires it (a drag sets the direction).
-      this.powerDrag = { x: w.x, y: w.y, sx: p.x, sy: p.y };
-      return;
+      this.powerDrag = { x: w.x, y: w.y, sx: at?.x ?? 0, sy: at?.y ?? 0 };
+      return true;
     }
     if (this.mode) {
       this.modeClick(w);
-      return;
+      return true;
     }
     if (this.placing) {
       const { cx, cy } = this.placementCell(w.x, w.y);
       this.placeAt(this.placing, cx, cy);
-      return;
+      return true;
     }
     if (this.targeting) {
       this.targetClick(w);
-      return;
+      return true;
     }
-    if (this.hooks.commandMouseDown?.(w, e)) return;
+    if (this.hooks.commandMouseDown?.(w, e)) return true;
     if ((e.ctrlKey || e.metaKey) && this.selectedMinelayers().length) {
       this.mineDrag = { sx: w.x, sy: w.y, ex: w.x, ey: w.y, units: this.selectedMinelayers() };
-      return;
+      return true;
     }
     if (this.attackMove) {
       const units = this.selectedOwnUnits();
@@ -568,9 +581,48 @@ export class Input {
         this.flashOrder(w, ACTION.ATTACK);
       }
       if (!e.shiftKey) this.attackMove = false;
-      return;
+      return true;
     }
-    this.drag = { sx: p.x, sy: p.y, ex: p.x, ey: p.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
+    return false;
+  }
+
+  /**
+   * Whether a radar click may give an order: own units or a rally building
+   * selected, or an order generator in force. Touch screens wait for the
+   * tap there (js/touch.js radarTap); otherwise a touch pans at once.
+   */
+  radarMayOrder() {
+    if (this.suspended || this.spectator || this.placing) return false;
+    return !!(this.power || this.mode || this.targeting || this.attackMove || this.selectedOwnUnits().length || this.selectedRallyBuilding() !== null);
+  }
+
+  /**
+   * A click on the radar at world point `w` (js/minimap.js). OpenRA's
+   * RadarWidget hands the world a mouse down and up at that spot, so the
+   * order generator in force acts there as a click on the battlefield would:
+   * support powers, sidebar modes, ability targeting, the command bar's modes
+   * and modifiers (force move, force attack, guard, Shift waypoints),
+   * minefields, attack move, the smart order (move, attack, harvest, enter...)
+   * and rally points. `mods`: { shift, ctrl, alt }. `button` 0 is the action
+   * button (left, as on the battlefield); 2, the right button (the radar's
+   * order button before, and OpenRA's in its modern mouse style), gives only
+   * the selected units' orders. Selecting, deploying and placing structures
+   * stay on the battlefield (OpenRA places where the mouse is, not at the
+   * radar spot); spectators and replays give no orders. Resolves with true
+   * when the click was an order; false leaves it to the radar, which moves
+   * the camera there.
+   */
+  async radarClick(w, mods = {}, button = 0) {
+    if (this.suspended || this.spectator || this.placing) return false;
+    if ((this.power || this.mode || this.targeting) && button !== 0) return false;
+    const e = { shiftKey: !!mods.shift, ctrlKey: !!mods.ctrl, metaKey: false, altKey: !!mods.alt };
+    if (this.pressAction(w, e, null)) {
+      // A down and an up at one spot: a support power without a direction, a one-cell minefield.
+      if (this.powerDrag) this.firePower(null);
+      if (this.mineDrag) this.layMines();
+      return true;
+    }
+    return this.finishClick(w, { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey }, { radar: true });
   }
 
   /** Place structure `id` with its top-left cell at (cx, cy) when every footprint cell is free. */
@@ -618,20 +670,14 @@ export class Input {
       return;
     }
     if (e.button === 0 && this.mineDrag) {
-      const m = this.mineDrag;
-      this.mineDrag = null;
-      this.game.order_lay_mines(this.player, Uint32Array.from(m.units), m.sx, m.sy, m.ex, m.ey);
-      this.flashOrder({ x: m.ex, y: m.ey }, ACTION.HARVEST);
+      this.layMines();
       return;
     }
     if (e.button === 0 && this.power && this.powerDrag) {
       const p = this.local(e);
       const t = this.powerDrag;
-      const w = this.toWorld(p.x, p.y);
       const dragged = Math.abs(p.x - t.sx) + Math.abs(p.y - t.sy) >= 12;
-      this.game.activate_power(this.player, this.power.key, t.x, t.y, dragged ? w.x : undefined, dragged ? w.y : undefined);
-      this.flashOrder(t, ACTION.ATTACK);
-      this.cancelPower();
+      this.firePower(dragged ? this.toWorld(p.x, p.y) : null);
       return;
     }
     if (e.button !== 0 || !this.drag) return;
@@ -646,11 +692,31 @@ export class Input {
     this.boxSelect(a, b, d.shift);
   }
 
-  /** A left click (no drag) at world point `b` with the drag's modifiers `d`. */
-  async finishClick(b, d) {
+  /** Lay the minefield of the Minelayers' drag (`mineDrag`). */
+  layMines() {
+    const m = this.mineDrag;
+    this.mineDrag = null;
+    this.game.order_lay_mines(this.player, Uint32Array.from(m.units), m.sx, m.sy, m.ex, m.ey);
+    this.flashOrder({ x: m.ex, y: m.ey }, ACTION.HARVEST);
+  }
+
+  /** Fire the targeted support power at the picked spot, toward world point `dir` when dragged. */
+  firePower(dir) {
+    const t = this.powerDrag;
+    this.game.activate_power(this.player, this.power.key, t.x, t.y, dir ? dir.x : undefined, dir ? dir.y : undefined);
+    this.flashOrder(t, ACTION.ATTACK);
+    this.cancelPower();
+  }
+
+  /**
+   * A left click (no drag) at world point `b` with the drag's modifiers `d`.
+   * From the radar (`radar`) only orders count: what would select or deploy
+   * does nothing. Resolves with true when it gave an order.
+   */
+  async finishClick(b, d, { radar = false } = {}) {
     const now = performance.now();
     // Force move / force attack / queued orders (Alt, Ctrl, Shift + click).
-    if (await this.hooks.commandClick?.(b, d)) return;
+    if (await this.hooks.commandClick?.(b, d)) return true;
     const intent = d.shift ? { kind: 'select' } : await this.clickIntentNow(b);
     if (intent.kind === 'order') {
       // The reply depends on what the order does (capture, C4, heal...).
@@ -659,16 +725,21 @@ export class Input {
       this.flashOrder(b, intent.action);
       // A plain move: the attack-move tip may apply (js/hints.js).
       if (intent.action === ACTION.MOVE) this.hooks.onPlainMove?.(intent.units, b);
-    } else if (intent.kind === 'deploy') {
-      this.game.deploy(this.player, Uint32Array.from([intent.id]));
-    } else if (intent.kind === 'blocked') {
-      // Nothing to do: the deploy cursor already shows why.
-    } else if (intent.kind === 'rally') {
+      return true;
+    }
+    if (intent.kind === 'rally') {
       this.game.set_rally(this.player, this.selection[0], b.x, b.y);
       this.flashOrder(b, ACTION.MOVE);
-    } else {
-      await this.clickSelect(b, d.shift, d.ctrl, now);
+      return true;
     }
+    if (radar) return false;
+    if (intent.kind === 'deploy') {
+      this.game.deploy(this.player, Uint32Array.from([intent.id]));
+      return true;
+    }
+    // Blocked deploy: nothing to do, the deploy cursor already shows why.
+    if (intent.kind !== 'blocked') await this.clickSelect(b, d.shift, d.ctrl, now);
+    return false;
   }
 
   /** Box selection from world point `a` to `b` (Shift: added to the selection). */
@@ -1061,46 +1132,71 @@ export class Input {
   }
 
   updateCursor() {
-    let cursor = CURSORS.select;
-    if (this.edgeScroll) {
-      // Like Red Alert: at the screen edge the scroll arrow wins over every mode.
-      cursor = scrollCursor(this.edgeScroll.dx, this.edgeScroll.dy, this.edgeScroll.blocked);
-    } else if (this.mode) {
-      // Sidebar modes: their cursor where they can act, the blocked one elsewhere.
-      const [ok, blocked] = MODE_CURSORS[this.mode];
-      cursor = this.mouse.inside && this.modeTarget(this.toWorld(this.mouse.x, this.mouse.y)) ? ok : blocked;
-    } else if (this.targeting && this.mouse.inside) {
-      const w = this.toWorld(this.mouse.x, this.mouse.y);
-      const t = this.targeting;
-      if (t.kind === 'teleport') cursor = this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y) ? CURSORS.teleport : CURSORS.blocked;
-      else cursor = POWER_CURSORS[t.power] ?? CURSORS.select;
-    } else if (this.mineDrag || ((this.keys.has('Control') || this.keys.has('Meta')) && this.mouse.inside && !this.drag && this.selectedMinelayers().length)) {
-      cursor = CURSORS.mine;
-    } else if (this.power) cursor = CURSORS.attack;
-    else if (this.placing) {
-      // The footprint preview shows the cells; the cursor shows the spot.
-      if (this.mouse.inside) cursor = this.placementValid() ? CURSORS.place : CURSORS.blocked;
-    } else if (this.attackMove) cursor = CURSORS.attackMove;
-    else if (this.mouse.inside && !this.drag && !this.pan) {
-      const command = this.commandBarCursor();
-      const intent = command ? { kind: 'command' } : this.clickIntent(this.toWorld(this.mouse.x, this.mouse.y));
-      if (command) cursor = command;
-      else if (intent.kind === 'order') cursor = ACTION_CURSORS[intent.action] ?? CURSORS.select;
-      else if (intent.kind === 'rally') cursor = CURSORS.rally;
-      else if (intent.kind === 'deploy') cursor = CURSORS.deploy;
-      else if (intent.kind === 'blocked') cursor = CURSORS.blocked;
-    }
+    // Like Red Alert: at the screen edge the scroll arrow wins over every mode.
+    const cursor = this.edgeScroll
+      ? scrollCursor(this.edgeScroll.dx, this.edgeScroll.dy, this.edgeScroll.blocked)
+      : this.cursorAt(this.mouse.inside ? this.toWorld(this.mouse.x, this.mouse.y) : null, this.heldMods(), { busy: !!(this.drag || this.pan) });
     if (this.cursor !== cursor) {
       this.cursor = cursor;
       this.canvas.style.cursor = cursor;
     }
   }
 
-  /** Command bar cursor (armed mode or held Ctrl / Alt / Shift), or null. */
-  commandBarCursor() {
+  /** The held modifier keys: { ctrl, alt, shift } (Cmd counts as Ctrl). */
+  heldMods() {
     const k = this.keys;
-    const mods = { ctrl: k.has('Control') || k.has('Meta'), alt: k.has('Alt'), shift: k.has('Shift') };
-    return this.hooks.commandCursor?.(this.toWorld(this.mouse.x, this.mouse.y), mods) ?? null;
+    return { ctrl: k.has('Control') || k.has('Meta'), alt: k.has('Alt'), shift: k.has('Shift') };
+  }
+
+  /**
+   * The cursor over world point `w` (null: the mouse is off the battlefield)
+   * with modifiers `mods`: what the order generator in force would do there
+   * (OpenRA IOrderGenerator.GetCursor). `busy`: a box selection or pan is
+   * under way. `radar`: the radar asks (radarCursor), where only orders show
+   * their cursor, since a click there that is no order moves the camera.
+   */
+  cursorAt(w, mods, { busy = false, radar = false } = {}) {
+    if (this.mode) {
+      // Sidebar modes: their cursor where they can act, the blocked one elsewhere.
+      const [ok, blocked] = MODE_CURSORS[this.mode];
+      return w && this.modeTarget(w) ? ok : blocked;
+    }
+    if (this.targeting && w) {
+      const t = this.targeting;
+      if (t.kind === 'teleport') return this.game.teleport_valid(this.player, Uint32Array.from(t.ids), w.x, w.y) ? CURSORS.teleport : CURSORS.blocked;
+      return POWER_CURSORS[t.power] ?? CURSORS.select;
+    }
+    if (this.mineDrag || (mods.ctrl && w && !busy && this.selectedMinelayers().length)) return CURSORS.mine;
+    if (this.power) return CURSORS.attack;
+    if (this.placing) {
+      // The footprint preview shows the cells; the cursor shows the spot.
+      if (!w || radar) return CURSORS.select;
+      return this.placementValid() ? CURSORS.place : CURSORS.blocked;
+    }
+    if (this.attackMove) return CURSORS.attackMove;
+    if (!w || busy) return CURSORS.select;
+    // Command bar: an armed mode or held Ctrl / Alt / Shift.
+    const command = this.hooks.commandCursor?.(w, mods) ?? null;
+    if (command) return command;
+    const intent = this.clickIntent(w);
+    if (intent.kind === 'order') return ACTION_CURSORS[intent.action] ?? CURSORS.select;
+    if (intent.kind === 'rally') return CURSORS.rally;
+    if (radar) return CURSORS.select;
+    if (intent.kind === 'deploy') return CURSORS.deploy;
+    if (intent.kind === 'blocked') return CURSORS.blocked;
+    return CURSORS.select;
+  }
+
+  /**
+   * The cursor over the radar at world point `w` with modifiers `mods`
+   * (OpenRA RadarWidget.GetCursor): the cursor a left click there would get
+   * on the battlefield, in its radar variant ("move-minimap" ...) when the
+   * installed cursors have one; the plain arrow where a click moves the
+   * camera (no order there, spectators, placing a structure).
+   */
+  radarCursor(w, mods) {
+    const cursor = this.suspended || this.spectator ? CURSORS.select : this.cursorAt(w, mods, { radar: true });
+    return minimapCursor(cursor);
   }
 
   /** Short marker where an order was given, like the original's flashing target. */
