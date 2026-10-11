@@ -14,7 +14,8 @@ test('every cursor is a valid SVG data URL with a hotspot and fallback', () => {
 });
 
 test('smart actions map to cursors', () => {
-  assert.equal(ACTION_CURSORS.length, 18);
+  assert.equal(ACTION_CURSORS.length, 19);
+  assert.equal(ACTION_CURSORS[ACTION.MOVE_BLOCKED], CURSORS.moveBlocked, 'OpenRA move-blocked');
   assert.equal(ACTION_CURSORS[ACTION.DEMOLISH], CURSORS.c4);
   assert.equal(ACTION_CURSORS[ACTION.HEAL], CURSORS.heal);
   assert.equal(ACTION_CURSORS[ACTION.INSTANT_REPAIR], CURSORS.goldwrench);

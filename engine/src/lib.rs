@@ -1056,7 +1056,8 @@ impl Game {
     /// 5 repair, 6 load (enter a transport), 7 deliver cash, 8 capture, 9
     /// infiltrate, 10 C4, 11 engineer repair, 12 heal, 13 mechanic repair, 14
     /// disguise, 15 blocked enter, 16 blocked engineer repair, 17 capture from
-    /// outside (reusable engineers) (world.rs SmartAction).
+    /// outside (reusable engineers), 18 blocked move (terrain none of them can
+    /// enter; still a move) (world.rs SmartAction).
     pub fn cursor_action(&self, player: u8, ids: Vec<u32>, x: f32, y: f32) -> u8 {
         let units: Vec<usize> = ids
             .iter()

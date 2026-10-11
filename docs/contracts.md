@@ -1413,7 +1413,9 @@ Right clicks (`Game.cursor_action`, world.rs `SmartAction`): 8 capture, 9
 infiltrate, 10 C4, 11 engineer repair (structures and bridge huts), 12 heal,
 13 mechanic repair, 14 disguise, 15 blocked enter, 16 blocked engineer
 repair (undamaged), 17 capture from outside (reusable engineers, the lobby
-option `reusableEngineers`: OpenRA's Captures@REUSABLE). They go through the
+option `reusableEngineers`: OpenRA's Captures@REUSABLE), 18 blocked move
+(explored terrain none of the units' locomotors can enter, OpenRA
+MoveOrderTargeter `move-blocked`; the order is still a move). They go through the
 `Smart` order: no new order kinds. A forced attack of Tanya on a structure
 plants C4. `Game.actor_json` adds `disguise` (`{type, owner}` or null; only
 the owner and allies should be shown the spy behind it), `beingCaptured`,
@@ -1548,6 +1550,20 @@ enemy radar jammer (`jams_radar`, OpenRA `ProximityExternalCondition@JAMMER`,
 while visible and not cloaked, enemy structures also as remembered ghosts,
 and nothing hostile within range of an enemy jammer. Terrain and fog come
 from `terrain_ptr` and `fog_ptr`.
+
+Radar input is client side and adds no order kinds (OpenRA RadarWidget): a
+click on the radar is a click on that world spot (`Input.radarClick`), so
+it goes through the same order generators as the battlefield (support
+powers, sidebar modes, ability targeting, the command bar, minefields,
+attack move, `order_smart`, rally points) and the same `ui` game handle
+(unit replies, target lines; spectators' handles drop orders). Left is the
+action button; the right button gives unit orders only. Clicks that are no
+order there (nothing selected, an own unit, deploy, placement, spectators)
+move the camera. The radar cursor is `Input.radarCursor` (the battlefield's
+cursor for that cell, in the original cursors' `-minimap` variant when
+installed). Touch: a tap with units selected or a mode on gives the order
+(`TouchControls.radarTap`, with Add and Force); a drag, or any touch with
+nothing to order, moves the camera.
 
 Command bar (engine/src/commands.rs, apps/game/js/commandbar.js): orders
 `{"o": "attack_ground", player, ids, x, y}` (force-fire on the ground until

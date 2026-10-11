@@ -10,6 +10,8 @@
 //   Long press              with units selected: force attack the actor under the finger,
 //                           or attack-move to the ground; otherwise cancel the mode or
 //                           clear the selection (the right click)
+//   Radar tap               with units selected or a mode on: the order for that spot
+//                           (radarTap); otherwise, and for a drag, move the camera (js/minimap.js)
 //
 // The touch action bar holds the modifier substitutes: Add (Shift: add to the
 // selection, keep a mode active, queue five in the sidebar), Attack move,
@@ -51,6 +53,8 @@ export function touchControls() {
     ['Long press', 'Force attack the unit or building (units selected), attack-move to the ground, or cancel'],
     ['Add', 'Shift: add to the selection, keep the mode, queue 5 in the sidebar'],
     ['A-Move / Force', 'Attack move / force attack the next tap'],
+    ['Tap the radar', 'Units selected: give the order there (Add queues, Force force attacks); otherwise move the camera'],
+    ['Drag on the radar', 'Move the camera'],
     ['Long press a sidebar card', 'Cancel one'],
     ['Placing a building', 'Tap or drag to move it, then Place (or Cancel)'],
     ['Menu, Build / Map', 'Game menu; show or hide the build sidebar on phones'],
@@ -184,17 +188,45 @@ export class TouchControls {
   }
 
   /** Force attack whatever is under client point (x, y). Resolves with true when an order was given. */
-  async forceAttack(x, y) {
+  forceAttack(x, y) {
+    const p = this.local(x, y);
+    return this.forceAttackAt(this.input.toWorld(p.x, p.y));
+  }
+
+  /** Force attack whatever is at world point `w`. Resolves with true when an order was given. */
+  async forceAttackAt(w) {
     const i = this.input;
     const units = i.selectedOwnUnits();
     if (!units.length) return false;
-    const p = this.local(x, y);
-    const w = i.toWorld(p.x, p.y);
     const hit = await i.ask.pick(i.player, w.x, w.y);
     if (hit === NONE || units.includes(hit)) return false;
     i.game.order_attack(i.player, Uint32Array.from(units), hit);
     i.flashOrder(w, ACTION.ATTACK);
     return true;
+  }
+
+  /**
+   * A tap on the radar at world point `w` (js/minimap.js): the order a tap on
+   * that spot of the battlefield would give (js/input.js radarClick), with
+   * the action bar's substitutes: Add queues it (Shift), Force force attacks
+   * what is there. Resolves with true when it was an order; false lets the
+   * radar move the camera there instead.
+   */
+  async radarTap(w) {
+    if (this.force) {
+      const ordered = await this.forceAttackAt(w);
+      if (ordered && !this.queue) this.force = false;
+      this.update();
+      return ordered;
+    }
+    const ordered = await this.input.radarClick(w, { shift: this.queue }, 0);
+    this.update();
+    return ordered;
+  }
+
+  /** Whether a radar tap may give an order (else it moves the camera at once): units selected or a mode on. */
+  radarMayOrder() {
+    return this.force || this.input.radarMayOrder();
   }
 
   // ---- Gestures ------------------------------------------------------------------

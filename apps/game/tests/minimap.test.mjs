@@ -241,14 +241,19 @@ function widget(state) {
     map_height: () => 64,
     radar_state: () => state.radar,
     minimap_blips: () => new Int32Array(0),
-    cursor_action: () => 1,
-    order_smart: (p, ids, x, y) => calls.push(['order', p, Array.from(ids), x, y]),
   };
+  // Orders are the battlefield's (js/input.js radarClick; tests/minimap-orders.test.mjs runs the real one).
   const input = {
     suspended: false,
     centerOn: (x, y) => calls.push(['center', x, y]),
-    selectedOwnUnits: () => state.units,
-    flashOrder: (w, action) => calls.push(['flash', action]),
+    radarClick: async (w, mods, button) => {
+      if (!state.units.length) return false;
+      calls.push(['order', button, w.x, w.y]);
+      return true;
+    },
+    radarMayOrder: () => state.units.length > 0,
+    radarCursor: () => 'move',
+    heldMods: () => ({ ctrl: false, alt: false, shift: false }),
     viewRect: () => ({ x0: 0, y0: 0, x1: 24 * 16, y1: 24 * 16 }),
   };
   const parent = fakeElement('aside');
@@ -256,7 +261,8 @@ function widget(state) {
   return { mm, calls, parent, input };
 }
 
-const pointer = (button, x, y) => ({ button, clientX: x, clientY: y, pointerId: 1, preventDefault() {} });
+const pointer = (button, x, y) => ({ button, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', preventDefault() {} });
+const settle = () => new Promise((r) => setImmediate(r));
 
 test('widget: offline radar ignores clicks; online it moves the camera and orders units', async () => {
   const state = { radar: RADAR.NONE, units: [7, 8] };
@@ -274,8 +280,20 @@ test('widget: offline radar ignores clicks; online it moves the camera and order
   mm.frame(1000 + TRANSITION_MS + REFRESH_MS);
   assert.ok(!mm.root.classList.contains('static') && !mm.root.classList.contains('off'));
   assert.equal(mm.camera.style.getPropertyValue('--cam-w'), '25.00%');
-  // Left click and drag: the camera follows.
+  // Units selected: the click is an order (right or left button), the camera stays.
+  mm.canvas.listeners.pointerdown(pointer(2, 128, 0));
+  await settle();
+  mm.canvas.listeners.pointerup(pointer(2, 128, 0));
+  assert.deepEqual(calls, [['order', 2, 64 * 24, 0]]);
+  // The cursor over the radar is the battlefield's for that spot.
+  mm.canvas.listeners.pointermove(pointer(0, 10, 10));
+  mm.frame(1000 + TRANSITION_MS + REFRESH_MS + 16);
+  assert.equal(mm.canvas.style.cursor, 'move');
+  // Nothing selected: left click and drag move the camera, which follows.
+  state.units = [];
+  calls.length = 0;
   mm.canvas.listeners.pointerdown(pointer(0, 64, 64));
+  await settle();
   mm.canvas.listeners.pointermove(pointer(0, 32, 96));
   mm.canvas.listeners.pointerup(pointer(0, 32, 96));
   mm.canvas.listeners.pointermove(pointer(0, 0, 0));
@@ -283,22 +301,9 @@ test('widget: offline radar ignores clicks; online it moves the camera and order
     ['center', 32 * 24, 32 * 24],
     ['center', 16 * 24, 48 * 24],
   ]);
-  // Right click: a smart order for the selected own units.
-  calls.length = 0;
-  mm.canvas.listeners.pointerdown(pointer(2, 128, 0));
-  // The order goes out at once; the flash shows the answer to what it does.
-  assert.deepEqual(calls, [['order', 0, [7, 8], 64 * 24, 0]]);
-  await new Promise((r) => setImmediate(r));
-  assert.deepEqual(calls, [
-    ['order', 0, [7, 8], 64 * 24, 0],
-    ['flash', 1],
-  ]);
-  state.units = [];
-  calls.length = 0;
-  mm.canvas.listeners.pointerdown(pointer(2, 10, 10));
-  assert.equal(calls.length, 0, 'nothing selected: no order');
 
   // Jammed: static and a label, no input.
+  calls.length = 0;
   state.radar = RADAR.JAMMED;
   mm.frame(10000);
   assert.equal(mm.label.textContent, 'Radar jammed');

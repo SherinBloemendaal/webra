@@ -919,6 +919,9 @@ pub enum SmartAction {
     RepairBlocked = 16,
     /// Reusable engineer captures from outside (Captures@REUSABLE EnterCursor `ability`).
     CaptureOutside = 17,
+    /// A move to explored terrain none of the units can drive on (OpenRA
+    /// Mobile MoveOrderTargeter BlockedCursor `move-blocked`); still a move order.
+    MoveBlocked = 18,
 }
 
 #[derive(Clone)]
@@ -2240,7 +2243,25 @@ impl World {
         if any_harv && self.map.has_resource(ci) && self.players[player as usize].explored[ci] != 0 {
             return SmartAction::Harvest;
         }
+        // OpenRA MoveOrderTargeter: the blocked cursor over explored terrain the
+        // locomotor cannot enter (unexplored cells show the move cursor, MoveIntoShroud).
+        // With a mixed selection the move cursor wins while any unit can go there.
+        if self.players[player as usize].explored[ci] != 0 && !units.iter().any(|&i| self.terrain_open_for(i, ci)) {
+            return SmartAction::MoveBlocked;
+        }
         SmartAction::Move
+    }
+
+    /// Whether unit `i`'s locomotor can drive on cell `ci`'s terrain, ignoring
+    /// actors (OpenRA Locomotor.MovementCostForCell): the terrain half of `pass_of`.
+    pub fn terrain_open_for(&self, i: usize, ci: usize) -> bool {
+        let t = self.map.terrain[ci];
+        match self.domain_of(i) {
+            crate::rules::Domain::Air => true,
+            crate::rules::Domain::Water if self.lands(i) => t.landing_passable(),
+            crate::rules::Domain::Water => t.ship_passable(),
+            _ => t.passable(),
+        }
     }
 
     fn order_smart(&mut self, player: u8, units: &[usize], x: i32, y: i32) {
@@ -2251,7 +2272,7 @@ impl World {
         let units = &rest[..];
         match self.smart_action(player, units, x, y) {
             SmartAction::None => {}
-            SmartAction::Move => self.order_move(units, x, y, false),
+            SmartAction::Move | SmartAction::MoveBlocked => self.order_move(units, x, y, false),
             SmartAction::Attack => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let (fighters, others): (Vec<usize>, Vec<usize>) =

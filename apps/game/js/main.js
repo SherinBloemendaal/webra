@@ -1170,6 +1170,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         pings,
         // OpenRA IngameRadarDisplayLogic: RadarUp and RadarDown for the player (spectators have no radar of their own).
         onRadar: viewer ? null : (online) => audio?.radar(online),
+        // Finger taps on the radar go through the touch controls (Add, Force; js/touch.js), made below.
+        touch: {
+          radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {}, 0)),
+          radarMayOrder: () => (touch ? touch.radarMayOrder() : input.radarMayOrder()),
+        },
       });
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
