@@ -294,6 +294,11 @@ SPECIAL_ART = {
     'fx.0': ['smoke_m', ['start', 'loop'], 'index'],
     'fx.1': ['litning', 'bright', 'index'],
     'fx.2': ['litning', 'dim', 'index'],
+    # The anti-air missile of the SAM site, the rocket soldier's Redeye and
+    # the missile sub (Nike, RedEye, SubMissileAA: Image MISSILE, 32
+    # facings); every other missile is a DRAGON rocket ('missile' above).
+    # engine/render.json `missiles` names the weapons drawn with it.
+    'fx.3': ['missile', 'idle', 'loop'],
     # Leftovers (engine/src/husks.rs LEFTOVER_*): the fire on husks and
     # scorch marks (OpenRA Husk WithIdleOverlay@Burns: fire 1), crater smoke
     # (SmudgeLayer SmokeType: smoke_m, played once), the PRIMARY tag
@@ -1164,6 +1169,9 @@ def render_data(rules):
     the turret it sits on) and its damage smoke (WithDamageOverlay)."""
     explosions = []
     weapons = {}
+    # Missiles drawn with OpenRA's MISSILE image (the fx.3 special) instead
+    # of the DRAGON rocket every other missile flies as.
+    missiles = []
     for w in rules['weapons']:
         tree = None
         for name, t in parse.weapons.items():
@@ -1171,6 +1179,9 @@ def render_data(rules):
                 tree = t
         if tree is None:
             raise SystemExit(f"render.json: weapon {w['name']} is not in data/source/weapons")
+        proj = tree.get('Projectile')
+        if w['projectile'] == 'missile' and proj and proj[1].get('Image', [''])[0].lower() == 'missile':
+            missiles.append(w['name'])
         effects = []
         for k, (v, ch) in tree.items():
             if not k.startswith('Warhead') or v != 'CreateEffect':
@@ -1249,7 +1260,7 @@ def render_data(rules):
             entry['docking'] = True
         if entry:
             actors[a['id']] = entry
-    return {'explosions': explosions, 'weapons': weapons, 'actors': actors}
+    return {'explosions': explosions, 'weapons': weapons, 'missiles': missiles, 'actors': actors}
 
 
 def cursor_tables():

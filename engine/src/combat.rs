@@ -72,12 +72,30 @@ impl World {
 
     // ---- Target acquisition ------------------------------------------------
 
-    /// Closest visible enemy that one of this actor's weapons can hit within
-    /// range. Units are preferred over structures and walls are ignored, like
-    /// OpenRA's auto-target priorities: below AttackAnything (Defend and
-    /// ReturnFire, also while attack-moving) only defences count among the
-    /// structures (AutoTargetPriority@DEFAULT has Defense but not Structure).
-    pub(crate) fn scan_for_target(&self, i: usize) -> Option<usize> {
+    /// Whether the auto-target scans of actor `i` may pick targets it has to
+    /// move to reach (OpenRA AutoTarget.AllowMove: a mobile actor under
+    /// AttackAnything). Otherwise only targets a weapon reaches from where
+    /// it stands count.
+    pub(crate) fn scan_allows_move(&self, i: usize) -> bool {
+        self.actors[i].kind != Kind::Building && self.actors[i].stance == Stance::AttackAnything
+    }
+
+    /// `scan_for_target` the way the actor's stance allows (`scan_allows_move`).
+    pub(crate) fn auto_scan(&self, i: usize) -> Option<usize> {
+        self.scan_for_target(i, self.scan_allows_move(i))
+    }
+
+    /// Closest visible enemy that one of this actor's weapons can hit, within
+    /// the reach of its longest weapon (OpenRA AutoTarget.ChooseTarget with
+    /// AttackBase.GetMaximumRange: anti-air weapons count, so AA defences
+    /// and rocket soldiers see aircraft at their full range). Without
+    /// `allow_move` a weapon that can hit the target must reach it from here
+    /// (its range, outside its minimum range). Units are preferred over
+    /// structures and walls are ignored, like OpenRA's auto-target
+    /// priorities: below AttackAnything (Defend and ReturnFire, also while
+    /// attack-moving) only defences count among the structures
+    /// (AutoTargetPriority@DEFAULT has Defense but not Structure).
+    pub(crate) fn scan_for_target(&self, i: usize, allow_move: bool) -> Option<usize> {
         // Medics and mechanics look for friends to treat (infantry_combat.rs).
         if self.heals(i) {
             return self.scan_for_heal_target(i);
@@ -86,6 +104,15 @@ impl World {
         let info = &self.rules.actors[a.ty as usize];
         let any_structure = a.stance == Stance::AttackAnything || !self.has_stance(i);
         let range = info.max_range(&self.rules);
+        // OpenRA's armament filter: a weapon valid against the target, and
+        // (scans that may not move) one that reaches it from here.
+        let usable = |class: u32, d_sq: i64| {
+            if allow_move {
+                info.can_attack_class(&self.rules, class)
+            } else {
+                info.reaches_class(&self.rules, class, d_sq)
+            }
+        };
         if range == 0 {
             return None;
         }
@@ -112,13 +139,15 @@ impl World {
                         || self.never_auto_targeted(u)
                         // A disguised spy looks friendly (OpenRA AppearsHostileTo; infantry.rs).
                         || !self.appears_hostile(u, i)
-                        || !info.can_attack_class(&self.rules, self.target_class(u))
                         || !self.targetable(u, a.owner)
                     {
                         continue;
                     }
                     let d = dist_sq(a.x, a.y, t.px, t.py);
-                    if d <= range_sq && best_unit.is_none_or(|(bd, bi)| d < bd || (d == bd && u < bi)) {
+                    if d > range_sq || !usable(self.target_class(u), d) {
+                        continue;
+                    }
+                    if best_unit.is_none_or(|(bd, bi)| d < bd || (d == bd && u < bi)) {
                         best_unit = Some((d, u));
                     }
                 }
@@ -136,12 +165,14 @@ impl World {
                         // An allied engineer is taking it over (CaptureManager.PreventsAutoTarget).
                         && !self.capture_protected(b, a.owner)
                         && (any_structure || tinfo.defense)
-                        && info.can_attack_class(&self.rules, self.target_class(b))
                         // A mission condition can switch Targetable off (mission/conditions.rs).
                         && !(self.mission.is_some() && self.mission_untargetable(b))
                     {
                         let d = self.target_distance(b, a.x, a.y);
-                        if d <= range && best_building.is_none_or(|(bd, bi)| d < bd || (d == bd && b < bi)) {
+                        if d <= range
+                            && usable(self.target_class(b), d as i64 * d as i64)
+                            && best_building.is_none_or(|(bd, bi)| d < bd || (d == bd && b < bi))
+                        {
                             best_building = Some((d, b));
                         }
                     }
@@ -229,7 +260,7 @@ impl World {
         if !self.scan_due(i) {
             return false;
         }
-        if let Some(t) = self.scan_for_target(i) {
+        if let Some(t) = self.auto_scan(i) {
             self.engage(i, t, false);
             return true;
         }
@@ -259,7 +290,7 @@ impl World {
         if !self.scan_due(i) {
             return false;
         }
-        if let Some(t) = self.scan_for_target(i) {
+        if let Some(t) = self.auto_scan(i) {
             self.engage(i, t, hold);
             return true;
         }
@@ -295,7 +326,7 @@ impl World {
             }
         }
         if self.actors[i].stance > Stance::ReturnFire {
-            if let Some(better) = self.scan_for_target(i) {
+            if let Some(better) = self.auto_scan(i) {
                 return Some(better);
             }
         }
@@ -494,14 +525,13 @@ impl World {
             self.actors[i].opportunity = NONE;
             return;
         }
-        let range = info.max_range(&self.rules);
-        let (x, y, owner) = (self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+        let owner = self.actors[i].owner;
         let keep = self.resolve(self.actors[i].opportunity).filter(|&t| {
             t != i
                 && self.actors[t].in_world()
                 && self.are_enemies(owner, self.actors[t].owner)
                 && self.targetable(t, owner)
-                && self.target_distance(t, x, y) <= range
+                && self.in_reach(i, t)
         });
         let t = match keep {
             Some(t) => Some(t),
@@ -510,12 +540,22 @@ impl World {
                 if !self.scan_due(i) {
                     return;
                 }
-                self.scan_for_target(i)
+                self.scan_for_target(i, false)
             }
         };
         let Some(t) = t else { return };
         self.actors[i].opportunity = self.make_ref(t);
         self.aim_and_fire(i, t);
+    }
+
+    /// Whether a weapon of actor `i` that can hit actor `t` reaches it from
+    /// where `i` stands: within range and outside minimum range (OpenRA
+    /// Armament.IsValidAgainst plus its range checks). A SAM site keeps an
+    /// aircraft only while its Nike reaches it, a rocket soldier a plane
+    /// while its Redeye does.
+    pub(crate) fn in_reach(&self, i: usize, t: usize) -> bool {
+        let d = self.target_distance(t, self.actors[i].x, self.actors[i].y) as i64;
+        self.rules.actors[self.actors[i].ty as usize].reaches_class(&self.rules, self.target_class(t), d * d)
     }
 
     // ---- Structures -----------------------------------------------------------
@@ -525,9 +565,7 @@ impl World {
         if !self.has_weapons(i) || self.is_powered_down(i) {
             return;
         }
-        let info = &self.rules.actors[self.actors[i].ty as usize];
-        let range = info.max_range(&self.rules);
-        let keep = self.live_target(i).filter(|&t| self.target_distance(t, self.actors[i].x, self.actors[i].y) <= range);
+        let keep = self.live_target(i).filter(|&t| self.in_reach(i, t));
         let t = match keep {
             Some(t) => t,
             None => {
@@ -665,13 +703,16 @@ impl World {
             FireTarget::Ground(x, y) => (x, y),
         };
         let wi = &self.rules.weapons[w];
+        let (mut ox, mut oy) = (0, 0);
         if wi.inaccuracy > 0 {
             // OpenRA scales inaccuracy with the distance relative to max range.
             let d = dist(sx, sy, tx, ty);
             let r = (wi.inaccuracy as i64 * d as i64 / wi.range.max(1) as i64) as i32;
             if r > 0 {
-                tx += self.rng.range(-r, r + 1);
-                ty += self.rng.range(-r, r + 1);
+                ox = self.rng.range(-r, r + 1);
+                oy = self.rng.range(-r, r + 1);
+                tx += ox;
+                ty += oy;
             }
         }
         match wi.projectile {
@@ -692,7 +733,24 @@ impl World {
                     FireTarget::Actor(t) => self.make_ref(t),
                     FireTarget::Ground(..) => NONE,
                 };
-                self.projectiles.push(Projectile { x: sx, y: sy, tx, ty, weapon: w as u16, owner, target, facing, shot });
+                // A shot at an aircraft flies up to it: bullets to where it
+                // was, missiles after it (`tick_projectiles`).
+                let alt = self.fire_target_altitude(ft);
+                self.projectiles.push(Projectile {
+                    x: sx,
+                    y: sy,
+                    tx,
+                    ty,
+                    weapon: w as u16,
+                    owner,
+                    target,
+                    facing,
+                    shot,
+                    alt,
+                    ox,
+                    oy,
+                    travel: 0,
+                });
             }
             // GravityBomb: falls from the shooter's altitude where it was released (plane.rs).
             ProjKind::Bomb => {
@@ -736,32 +794,48 @@ impl World {
         while k < self.projectiles.len() {
             let p = &self.projectiles[k];
             let wi = &self.rules.weapons[p.weapon as usize];
-            // Missiles home on a live target; bullets fly to the aimed point.
-            let (mut tx, mut ty) = (p.tx, p.ty);
-            if wi.projectile == ProjKind::Missile {
+            // Missiles home on a live target (up to an aircraft's altitude, off
+            // by their inaccuracy); bullets fly to the aimed point. A missile
+            // whose target is gone flies on to where it last saw it.
+            let (mut tx, mut ty, mut alt) = (p.tx, p.ty, p.alt);
+            let missile = wi.projectile == ProjKind::Missile;
+            if missile {
                 if let Some(t) = self.resolve(p.target) {
                     let (ax, ay) = self.aim_point(t, p.x, p.y);
-                    tx = ax;
-                    ty = ay;
+                    tx = ax + p.ox;
+                    ty = ay + p.oy;
+                    alt = self.actors[t].altitude;
                 }
             }
             let d = dist(p.x, p.y, tx, ty);
             let speed = wi.speed.max(1);
+            let (w, owner, shot) = (p.weapon as usize, p.owner, p.shot);
             if d <= speed {
-                let (w, owner, shot) = (p.weapon as usize, p.owner, p.shot);
-                // A shot at an aircraft bursts in the air (no smudges below, smudges.rs).
-                let alt = self.resolve(p.target).map_or(0, |t| self.actors[t].altitude);
+                // A shot at an aircraft bursts in the air (it hits only what
+                // flies there, and leaves no smudges below, smudges.rs).
                 self.projectiles.swap_remove(k);
                 self.land_shot(w, tx, ty, alt, owner, shot, false);
                 continue;
             }
+            let range_limit = wi.range_limit;
             let p = &mut self.projectiles[k];
             p.x += ((tx - p.x) as i64 * speed as i64 / d as i64) as i32;
             p.y += ((ty - p.y) as i64 * speed as i64 / d as i64) as i32;
             p.tx = tx;
             p.ty = ty;
+            p.alt = alt;
+            p.travel += speed;
             if let Some(f) = facing_of(tx - p.x, ty - p.y) {
                 p.facing = f;
+            }
+            // Out of fuel: a missile that flew its RangeLimit without
+            // catching its target explodes where it is (OpenRA Missile
+            // ExplodeWhenEmpty), so a plane can outrun a slower missile.
+            if missile && range_limit > 0 && p.travel > range_limit {
+                let (x, y) = (p.x, p.y);
+                self.projectiles.swap_remove(k);
+                self.land_shot(w, x, y, alt, owner, shot, false);
+                continue;
             }
             k += 1;
         }
@@ -866,7 +940,7 @@ impl World {
                     let u = u as usize;
                     // Warhead.ValidRelationships (the Heal and Repair warheads only touch friends).
                     if self.actors[u].alive && wh.affects_class(self.target_class(u)) && self.warhead_relates(wh, owner, u) {
-                        let d = self.hit_distance(u, x, y);
+                        let d = self.burst_distance(u, x, y, altitude);
                         if d <= radius {
                             hits.push((u, d));
                         }
@@ -877,7 +951,7 @@ impl World {
                     let b = b as usize;
                     seen_buildings.push(b);
                     if self.actors[b].alive && wh.affects_class(self.target_class(b)) && self.warhead_relates(wh, owner, b) {
-                        let d = self.hit_distance(b, x, y);
+                        let d = self.burst_distance(b, x, y, altitude);
                         if d <= radius {
                             hits.push((b, d));
                         }
@@ -886,7 +960,7 @@ impl World {
                 // Mines (abilities.rs) are GroundActor targets too, and husks (husks.rs).
                 if let Some(m) = self.mine_at(ci) {
                     if wh.affects(Kind::Mine) {
-                        let d = self.hit_distance(m, x, y);
+                        let d = self.burst_distance(m, x, y, altitude);
                         if d <= radius {
                             hits.push((m, d));
                         }
@@ -894,7 +968,7 @@ impl World {
                 }
                 if let Some(h) = self.husk_at(ci) {
                     if wh.affects(Kind::Husk) {
-                        let d = self.hit_distance(h, x, y);
+                        let d = self.burst_distance(h, x, y, altitude);
                         if d <= radius {
                             hits.push((h, d));
                         }
@@ -905,7 +979,7 @@ impl World {
         // Bridges lie over cells without claiming them (bridges.rs).
         for b in self.bridges_near(cx, cy, r_cells) {
             if self.actors[b].alive && wh.affects_class(self.target_class(b)) {
-                let d = self.hit_distance(b, x, y);
+                let d = self.burst_distance(b, x, y, altitude);
                 if d <= radius {
                     hits.push((b, d));
                 }
@@ -932,6 +1006,21 @@ impl World {
                 w.damage_from(u, dmg, shot.source, types);
             }
         });
+    }
+
+    /// Distance from a burst at (x, y) and height `altitude` to the hit
+    /// shape of actor `u`, the height difference included (OpenRA
+    /// SpreadDamage measures HitShape.DistanceFromEdge from the 3D impact
+    /// position): a shot that bursts up at an aircraft misses what stands
+    /// below it, and a burst on the ground (a crash, a jammed or spent
+    /// missile) misses the aircraft overhead unless its spread reaches up.
+    pub(crate) fn burst_distance(&self, u: usize, x: i32, y: i32, altitude: i32) -> i32 {
+        let d = self.hit_distance(u, x, y) as i64;
+        let dz = (self.actors[u].altitude - altitude) as i64;
+        if dz == 0 {
+            return d as i32;
+        }
+        crate::math::isqrt(d * d + dz * dz) as i32
     }
 
     /// Damage without a shooter to credit and without damage types (tests).

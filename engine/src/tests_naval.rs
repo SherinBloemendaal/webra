@@ -151,7 +151,7 @@ fn submarines_hide_until_they_fire() {
     assert!(!w.is_visible_to(ss, 1), "invisible to the enemy");
     assert!(w.is_visible_to(ss, 0), "its owner still sees it");
     assert_eq!(w.target_class(ss), TARGET_UNDERWATER | TARGET_SUBMARINE);
-    assert_eq!(w.scan_for_target(ca), None, "the cruiser finds nothing to shoot");
+    assert_eq!(w.auto_scan(ca), None, "the cruiser finds nothing to shoot");
     w.kill(ca);
     // An unarmed transport in torpedo range: the sub surfaces to attack it.
     let lst = unit(&mut w, "LST", 1, 35, 21);
@@ -361,7 +361,7 @@ fn passengers_are_protected_and_die_with_the_transport() {
     // An enemy rifleman next to the APC targets the APC, never the passenger.
     let foe = unit(&mut w, "E1", 1, 12, 10);
     run(&mut w, 2);
-    assert_eq!(w.scan_for_target(foe), Some(apc));
+    assert_eq!(w.auto_scan(foe), Some(apc));
     // A big blast on the APC hurts it but not the soldier inside.
     let (x, y) = (w.actors[apc].x, w.actors[apc].y);
     let hp = (w.actors[apc].hp, w.actors[man].hp);

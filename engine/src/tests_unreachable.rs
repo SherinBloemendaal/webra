@@ -1171,7 +1171,7 @@ fn a_bot_without_reachable_ore_keeps_its_trucks_waiting() {
 
 /// A generated map of the naval styles has every base joined by land
 /// (mapgen connects the big regions), so a game between two bots on it
-/// still ends.
+/// still ends (lakes seed 13 takes 62 minutes, so the limit is 75).
 #[test]
 fn bot_games_on_naval_map_styles_end() {
     let games: Vec<(&str, u64)> = vec![("islands", 11), ("rivers", 12), ("lakes", 13)];
@@ -1184,7 +1184,7 @@ fn bot_games_on_naval_map_styles_end() {
                     let players =
                         [PlayerSetup::new("allies", Some(AiDifficulty::Normal)), PlayerSetup::new("soviet", Some(AiDifficulty::Normal))];
                     let mut w = World::with_options(seed, 80, &players, options);
-                    for _ in 0..25 * 60 * 60 {
+                    for _ in 0..25 * 60 * 75 {
                         w.step();
                         if w.winner.is_some() {
                             break;

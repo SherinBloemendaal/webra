@@ -188,7 +188,8 @@ export function nextStance(cmd) {
  * `c`: { mode: null | 'forceMove' | 'forceAttack' | 'guard', queue (sticky
  * queue mode), shift, ctrl, alt, hit (actor id or NONE), hitOwner (or null),
  * player, allied(owner): bool, selected(id): bool, canAttackGround: bool,
- * canGuard: bool }.
+ * canAttackHit: bool (a selected unit can hit the actor under the click as
+ * it is now: an aircraft in the air needs anti-air), canGuard: bool }.
  * Returns null (not a command click: normal selection and smart orders) or
  * { kind: 'attack', target } | { kind: 'attackGround' } | { kind: 'move' } |
  * { kind: 'waypoint', attackMove } | { kind: 'guard', target } | { kind: 'ignore' }.
@@ -201,7 +202,9 @@ export function commandClick(c) {
     return hitActor && c.canGuard ? { kind: 'guard', target: c.hit } : { kind: 'ignore' };
   }
   if (forceAttack) {
-    if (hitActor && !c.selected(c.hit)) return { kind: 'attack', target: c.hit };
+    // OpenRA AttackOrderTargeter: the actor when a weapon of the selection
+    // can hit it, else (CanTargetLocation) the ground under it.
+    if (hitActor && !c.selected(c.hit) && c.canAttackHit) return { kind: 'attack', target: c.hit };
     return c.canAttackGround ? { kind: 'attackGround' } : { kind: 'ignore' };
   }
   if (forceMove) return { kind: 'move' };
@@ -467,8 +470,9 @@ export class CommandBar {
     const ids = Uint32Array.from(units);
     const hit = this.game.pick(this.player, w.x, w.y);
     const canAttackGround = units.length > 0 && this.game.can_attack_ground(this.player, ids, w.x, w.y);
+    const canAttackHit = hit !== NONE && units.length > 0 && this.game.can_attack_actor(this.player, ids, hit);
     const canGuard = hit !== NONE && units.length > 0 && this.game.can_guard(this.player, ids, hit);
-    return this.contextOf(w, mods, units, ids, hit, canAttackGround, canGuard);
+    return this.contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, undefined, canAttackHit);
   }
 
   /** What a click does: fresh answers from the game. */
@@ -483,10 +487,11 @@ export class CommandBar {
       units.length > 0 ? ask.can_attack_ground(this.player, ids, w.x, w.y) : false,
     ]);
     const canGuard = hit !== NONE && units.length > 0 && (await ask.can_guard(this.player, ids, hit));
-    return this.contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, armed);
+    const canAttackHit = hit !== NONE && units.length > 0 && (await ask.can_attack_actor(this.player, ids, hit));
+    return this.contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, armed, canAttackHit);
   }
 
-  contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, armed = { mode: this.mode, queue: this.queue }) {
+  contextOf(w, mods, units, ids, hit, canAttackGround, canGuard, armed = { mode: this.mode, queue: this.queue }, canAttackHit = false) {
     const info = hit === NONE ? null : actorInfo(this.game, hit);
     return {
       units,
@@ -503,6 +508,7 @@ export class CommandBar {
         allied: (owner) => owner === this.player || this.game.are_allies(this.player, owner),
         selected: (id) => this.input.selection.includes(id),
         canAttackGround,
+        canAttackHit,
         canGuard,
       },
     };

@@ -435,6 +435,10 @@ impl World {
                     // Torpedoes are drawn pointing east like missiles.
                     (Some(n), crate::rules::Projectile::Missile) => (ids.naval_base + n as f32, true),
                     (Some(n), _) => (ids.naval_base + n as f32, false),
+                    // Anti-air missiles (SAM, Redeye) have their own picture.
+                    (None, crate::rules::Projectile::Missile) if self.rules.render.sam_missile.get(pr.weapon as usize) == Some(&true) => {
+                        (ids.fx_base + crate::fx::FX_SAM_MISSILE, true)
+                    }
                     (None, crate::rules::Projectile::Missile) => (ids.missile, true),
                     _ if wi.arc => (ids.shell, false),
                     _ => (ids.bullet, false),

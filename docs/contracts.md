@@ -1376,6 +1376,28 @@ Close to OpenRA, and the same for every player whatever its slot:
   enemies in range under Defend or AttackAnything without leaving the move:
   the turret aims, the hull drives on. Infantry, artillery, V2 and the APC
   (`AttackFrontal`) hold their fire on a plain move.
+- **Scan range and weapon reach.** Scans look as far as the actor's longest
+  weapon reaches, anti-air weapons included (OpenRA
+  `AttackBase.GetMaximumRange`): AA guns and SAM sites (air-only weapons)
+  and the rocket soldier's Redeye (7.5 cells, its Dragon 5) see aircraft at
+  their full range. A target counts when a weapon can hit its target class
+  as it is now (`ValidTargets`: a flying aircraft only for anti-air, a
+  landed one for ground weapons); scans that may not move (structures,
+  Defend and ReturnFire, opportunity fire) also need such a weapon to reach
+  it from where the actor stands (range, outside minimum range), while
+  mobile actors under AttackAnything and on attack-move take what they see
+  in scan range and close in (OpenRA `AutoTarget.AllowMove`).
+- **Shots in the air.** A shot at an aircraft bursts at its height, and
+  warheads measure their spread in 3D (OpenRA SpreadDamage from the impact
+  position): an anti-air burst hits only what flies there, a burst on the
+  ground (a crash, a jammed missile) misses aircraft overhead unless its
+  spread reaches up (the Atom Bomb's does). Homing missiles keep their
+  inaccuracy offset from the target and fly at most their `RangeLimit`
+  (else the weapon's range, `range_limit` in rules.json): out of fuel they
+  burst where they are (OpenRA Missile ExplodeWhenEmpty), so a plane can
+  outrun a missile. Projectiles fly flat, so OpenRA's `Arm` delay (no
+  burst before a few ticks of flight) is left out: it counts 3D flight
+  time the engine does not model, and would turn close shots into duds.
 - **Lost targets.** An attack whose target goes out of sight (or cloaks)
   keeps the target and heads for where it was last seen (`Actor.target_seen`,
   OpenRA's last visible target); seen again, it is attacked again; within
@@ -1747,11 +1769,15 @@ move, at most 16 per unit; any other unit order clears the queue) and
 `{"o": "set_stance", player, ids, stance}` with stance `hold_fire`,
 `return_fire`, `defend` or `attack_anything` (OpenRA AutoTarget stances; rules
 `stance: [initial, initialAI]`, null for actors without AutoTarget). Force-fire
-on an actor is `attack`, which may target own and allied actors. Wasm:
+on an actor is `attack`, which may target own and allied actors; only units
+with a weapon that can hit the actor as it is now take it (an aircraft in the
+air needs an anti-air weapon), and without one the click fires on the ground
+under it (OpenRA AttackOrderTargeter). Wasm:
 `order_attack_ground`, `order_guard`, `order_scatter`, `order_waypoint`,
 `set_stance` (false for an unknown name), `command_state(player, ids)` (JSON
 `{ units, armed, attackGround, guard, scatter, queued, stances: { name: count } }`),
-`can_guard`, `can_attack_ground`, `are_allies`, `move_hint(player, ids, x, y)`
+`can_guard`, `can_attack_ground`, `can_attack_actor(player, ids, target)`,
+`are_allies`, `move_hint(player, ids, x, y)`
 (true when a plain move of the armed units among `ids` to (x, y) passes within
 6 cells of a visible enemy unit or armed structure: the client then shows its
 one-time attack-move tip, `game.attackMoveTipSeen` in the settings document)
@@ -2314,7 +2340,10 @@ capacity of its owner, mode 3), kind 2 the original damage smoke
 same either way.
 
 Sprite slots after the specials: the effects module (`fx_base`: 0 damage
-smoke, 1 and 2 the original Tesla zap's bright and dim frames), one muzzle
+smoke, 1 and 2 the original Tesla zap's bright and dim frames, 3 the
+anti-air missile of the weapons in render.json `missiles`: Nike, RedEye and
+SubMissileAA fly OpenRA's MISSILE image, every other missile the DRAGON
+rocket of the `missile` special), one muzzle
 flash per actor type (`muzzle_base + t`) and one explosion per name of
 `engine/render.json` (`explosion_base + k`). Specials 5 and 6 (`at_mine`,
 `ap_mine`) are reserved: mines are drawn as their actors, and a texture
@@ -2324,7 +2353,8 @@ pack's sprites of those names replace the mine actors' bodies.
 OpenRA's rules and weapons) holds what the engine's effects need
 (`engine/src/fx.rs`, presentation only, never in the state hash): the
 CreateEffect warheads of every weapon (explosion names, where they show:
-ground, open water, ship, air; delay), the muzzle flashes of every actor
+ground, open water, ship, air; delay), the missiles drawn as anti-air
+missiles (`missiles`), the muzzle flashes of every actor
 (Armament MuzzleSequence, LocalOffset, turret), its damage smoke
 (WithDamageOverlay) and its working animations. Impacts and deaths show
 their weapon's explosions (one per valid warhead, picked out of its list by
@@ -2380,7 +2410,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the

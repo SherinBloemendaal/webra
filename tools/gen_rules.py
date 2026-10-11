@@ -325,6 +325,15 @@ def cluster_info(name, v, weapon_index):
             'random_count': len(random_cells) if count < 0 else count}
 
 
+def missile_range_limit(w, proj):
+    """OpenRA Missile: RangeLimit, else the weapon's Range. Out of fuel it
+    explodes there (ExplodeWhenEmpty, default true); with ExplodeWhenEmpty
+    false OpenRA lets it fall without homing, which the engine's flat
+    projectiles approximate by the same burst where the fuel ran out."""
+    limit = wdist(proj.get('RangeLimit'))
+    return limit if limit > 0 else wdist(w.get('Range'))
+
+
 def weapon_info(name, weapons, weapon_index):
     w = weapons[name]
     proj = w.get('Projectile', {})
@@ -403,6 +412,9 @@ def weapon_info(name, weapons, weapon_index):
         'projectile': projectile,
         'speed': speed,
         'inaccuracy': wdist(proj.get('Inaccuracy')) if isinstance(proj, dict) else 0,
+        # Missile RangeLimit (default: the weapon's Range): it explodes once it
+        # has flown that far (combat.rs tick_projectiles). 0: no limit.
+        'range_limit': missile_range_limit(w, proj) if projectile == 'missile' else 0,
         'arc': isinstance(proj, dict) and bool(proj.get('LaunchAngle')),
         'valid': target_mask(w.get('ValidTargets', 'Ground, Water')),
         'invalid': target_mask(w.get('InvalidTargets', '')),

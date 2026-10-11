@@ -195,7 +195,7 @@ fn ground_weapons_hit_landed_planes_only() {
     assert_eq!(w.target_kind(p), Kind::Aircraft);
     assert!(!tank_info.can_attack(&w.rules, w.target_kind(p)));
     w.rebuild_hash();
-    assert_ne!(w.scan_for_target(tank), Some(p), "the tank ignores the plane overhead");
+    assert_ne!(w.auto_scan(tank), Some(p), "the tank ignores the plane overhead");
 }
 
 #[test]

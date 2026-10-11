@@ -111,6 +111,7 @@ function fakeGame(actors) {
     },
     has_minelayer: () => false,
     can_attack_ground: () => true,
+    can_attack_actor: () => true,
     can_guard: () => false,
     sell_value: (_p, id) => (actors[id]?.building && actors[id].owner === 0 ? 100 : 0),
     cursor_action: (_p, _ids, x, y) => {

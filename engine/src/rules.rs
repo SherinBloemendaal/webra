@@ -691,6 +691,8 @@ struct RawWeapon {
     projectile: String,
     speed: i32,
     inaccuracy: i32,
+    #[serde(default)]
+    range_limit: i32,
     arc: bool,
     valid: u32,
     invalid: u32,
@@ -1056,10 +1058,28 @@ pub struct ActorInfo {
 }
 
 impl ActorInfo {
-    /// Longest range among weapons that can hit surface targets (ground, ships, submarines).
+    /// Longest range among all weapons (OpenRA AttackBase.GetMaximumRange):
+    /// how far auto-target scans look. Anti-air weapons count too, so an
+    /// AA gun or SAM site (air-only weapons) and a rocket soldier's Redeye
+    /// (longer than its Dragon) spot aircraft at their full reach.
     pub fn max_range(&self, rules: &Rules) -> i32 {
-        const SURFACE: u32 = TARGET_INFANTRY | TARGET_VEHICLE | TARGET_STRUCTURE | TARGET_WATER | TARGET_UNDERWATER | TARGET_SUBMARINE;
-        self.weapons.iter().filter(|&&w| rules.weapons[w].valid & SURFACE != 0).map(|&w| rules.weapons[w].range).max().unwrap_or(0)
+        self.weapons.iter().map(|&w| rules.weapons[w].range).max().unwrap_or(0)
+    }
+
+    /// Longest range among the weapons that can hit target classes `class`
+    /// (OpenRA AttackBase.GetMaximumRangeVersusTarget); 0 when none can.
+    pub fn range_against(&self, rules: &Rules, class: u32) -> i32 {
+        self.weapons.iter().map(|&w| &rules.weapons[w]).filter(|w| w.can_target_class(class)).map(|w| w.range).max().unwrap_or(0)
+    }
+
+    /// Whether a weapon that can hit target classes `class` reaches a target
+    /// at squared distance `d_sq`: within its range and outside its minimum
+    /// range (OpenRA AutoTarget's armament filter for scans that may not move).
+    pub fn reaches_class(&self, rules: &Rules, class: u32, d_sq: i64) -> bool {
+        self.weapons.iter().map(|&w| &rules.weapons[w]).any(|w| {
+            let (r, m) = (w.range as i64, w.min_range as i64);
+            w.can_target_class(class) && d_sq <= r * r && d_sq >= m * m
+        })
     }
 
     /// Whether any weapon can attack an actor of `kind`.
@@ -1159,6 +1179,9 @@ pub struct WeaponInfo {
     pub projectile: Projectile,
     pub speed: i32,
     pub inaccuracy: i32,
+    /// Missiles: how far one flies before it runs out of fuel and explodes
+    /// (OpenRA Missile RangeLimit, else the weapon's Range); 0: no limit.
+    pub range_limit: i32,
     pub arc: bool,
     pub valid: u32,
     pub invalid: u32,
@@ -1303,6 +1326,7 @@ impl Rules {
             within(&n("burst"), w.burst, 1, 100)?;
             within(&n("speed"), w.speed, 0, 64 * CELLS)?;
             within(&n("inaccuracy"), w.inaccuracy, 0, 64 * CELLS)?;
+            within(&n("range_limit"), w.range_limit, 0, 64 * CELLS)?;
             if w.burst_delays.is_empty() || w.burst_delays.len() > 100 || w.burst_delays.iter().any(|&d| !(0..=TIMER).contains(&d)) {
                 return Err(n("burst_delays must be 1 to 100 values between 0 and 100000"));
             }
@@ -2094,6 +2118,7 @@ impl Rules {
                 },
                 speed: w.speed,
                 inaccuracy: w.inaccuracy,
+                range_limit: w.range_limit,
                 arc: w.arc,
                 valid: w.valid,
                 invalid: w.invalid,

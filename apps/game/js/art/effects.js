@@ -150,4 +150,16 @@ export const EFFECT_SPECIALS = [
   // 1, 2: the original Tesla zap frames (bright, dim); WebRA's zap is the tesla_bolt special
   null,
   null,
+  // 3: anti-air missile (SAM site, Redeye, missile sub), nose east: a long
+  // white body with a red nose, four fins and a bright exhaust
+  [10, 4, (ctx, P) => {
+    poly(ctx, P.c('rgba(255,180,90,0.75)'), [0, 2, 2.4, 1, 2.4, 3]);
+    circle(ctx, P.c('#fff2c0'), 2.2, 2, 0.7);
+    poly(ctx, P.c('#f4f4ee'), [2.4, 1.3, 8.2, 1.3, 8.2, 2.7, 2.4, 2.7]);
+    poly(ctx, P.c('#c8302a'), [8.2, 1.3, 10, 2, 8.2, 2.7]);
+    poly(ctx, P.c('#8a8f96'), [2.4, 0.2, 4, 1.3, 2.4, 1.3]);
+    poly(ctx, P.c('#8a8f96'), [2.4, 3.8, 4, 2.7, 2.4, 2.7]);
+    poly(ctx, P.c('#8a8f96'), [6, 0.8, 7, 1.3, 6, 1.3]);
+    poly(ctx, P.c('#8a8f96'), [6, 3.2, 7, 2.7, 6, 2.7]);
+  }],
 ];

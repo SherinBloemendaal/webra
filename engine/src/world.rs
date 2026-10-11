@@ -405,6 +405,15 @@ pub struct Projectile {
     pub facing: i32,
     /// Who fired it, and with what firepower (veterancy.rs).
     pub shot: crate::veterancy::Shot,
+    /// Height it bursts at: the target's altitude (an aircraft in the air,
+    /// else 0), followed by homing missiles (combat.rs `tick_projectiles`).
+    pub alt: i32,
+    /// A homing missile's inaccuracy: the offset from its target it flies
+    /// to (OpenRA Missile `offset`).
+    pub ox: i32,
+    pub oy: i32,
+    /// Distance flown so far (OpenRA Missile `distanceCovered`, against its RangeLimit).
+    pub travel: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2218,7 +2227,10 @@ impl World {
             // Only what the owner sees gives the attack a place to head for.
             let owner = self.actors[i].owner;
             let seen = self.is_visible_to(target, owner).then(|| (self.actors[target].x, self.actors[target].y));
-            if self.rules.actors[self.actors[i].ty as usize].weapons.is_empty() || i == target || !self.actors[i].in_world() {
+            // Only units with a weapon that can hit it (OpenRA issues the
+            // attack to those its order targeter accepts): a tank ordered
+            // onto a flying aircraft carries on with what it was doing.
+            if !self.can_attack_actor(i, target) || !self.actors[i].in_world() {
                 continue;
             }
             self.release_dock(i);
@@ -2308,7 +2320,6 @@ impl World {
         }
         let (cx, cy) = self.cell_of(x, y);
         let ci = self.map.idx(cx, cy);
-        let any_weapon = units.iter().any(|&i| !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty());
         let any_harv = units.iter().any(|&i| self.is_harvester(i));
         if let Some(t) = self.actor_at(player, x, y) {
             // Capture, infiltrate, C4, disguise, heal (infantry.rs).
@@ -2327,22 +2338,29 @@ impl World {
                 return SmartAction::Move;
             }
             if self.are_enemies(player, ta.owner) {
-                return if any_weapon { SmartAction::Attack } else { SmartAction::Move };
-            }
-            if ta.owner != player {
-                return SmartAction::Move; // allied or neutral: just move there
-            }
-            if units.iter().any(|&u| self.can_enter(u, t)) {
-                return SmartAction::Load;
-            }
-            if ta.kind == Kind::Building {
-                let b = self.rules.actors[ta.ty as usize].building.as_ref().unwrap();
-                if b.refinery.is_some() && any_harv {
-                    return SmartAction::Dock;
+                // OpenRA AttackOrderTargeter: the attack cursor only when a
+                // weapon of the selection can hit it as it is now (a tank
+                // over a flying aircraft, an AA gun over a tank: no); the
+                // rest of the selection moves there (`order_smart`), and
+                // without such a weapon the move cursor shows (below).
+                if units.iter().any(|&i| self.can_attack_class_now(i, t)) {
+                    return SmartAction::Attack;
                 }
-                // Vehicles repair on a service depot pad, ships near a naval yard (Repairable(Near).RepairActors).
-                if b.repairs.is_some() && units.iter().any(|&u| self.repairs_at(u, t)) {
-                    return SmartAction::Repair;
+            } else if ta.owner != player {
+                return SmartAction::Move; // allied or neutral: just move there
+            } else {
+                if units.iter().any(|&u| self.can_enter(u, t)) {
+                    return SmartAction::Load;
+                }
+                if ta.kind == Kind::Building {
+                    let b = self.rules.actors[ta.ty as usize].building.as_ref().unwrap();
+                    if b.refinery.is_some() && any_harv {
+                        return SmartAction::Dock;
+                    }
+                    // Vehicles repair on a service depot pad, ships near a naval yard (Repairable(Near).RepairActors).
+                    if b.repairs.is_some() && units.iter().any(|&u| self.repairs_at(u, t)) {
+                        return SmartAction::Repair;
+                    }
                 }
             }
         }
@@ -2381,8 +2399,8 @@ impl World {
             SmartAction::Move | SmartAction::MoveBlocked => self.order_move(units, x, y, false),
             SmartAction::Attack => {
                 let t = self.actor_at(player, x, y).unwrap();
-                let (fighters, others): (Vec<usize>, Vec<usize>) =
-                    units.iter().partition(|&&i| !self.rules.actors[self.actors[i].ty as usize].weapons.is_empty());
+                // Units with a weapon that can hit it attack, the others move there.
+                let (fighters, others): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.can_attack_class_now(i, t));
                 self.order_attack(&fighters, t, true);
                 self.order_move(&others, x, y, false);
             }

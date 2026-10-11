@@ -30,7 +30,8 @@ impl World {
             // Chasing a target that is out of range.
             Activity::Attack if a.goal != NONE && a.chase_cell != NONE => {
                 let t = self.resolve(a.target)?;
-                let range = self.rules.actors[a.ty as usize].weapons.iter().map(|&w| self.rules.weapons[w].range).max()?;
+                // The reach of the weapons that can hit it (an AA gun's range against aircraft).
+                let range = self.rules.actors[a.ty as usize].range_against(&self.rules, self.target_class(t));
                 if self.hit_distance(t, a.x, a.y) <= range {
                     return None;
                 }
