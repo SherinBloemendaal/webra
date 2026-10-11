@@ -37,8 +37,10 @@
   "triggers": { "crons": ["17 3 * * *"] },
   // Discord OAuth client id (public). The secret DISCORD_CLIENT_SECRET is a
   // Worker secret set by the owner; without both, Discord sign-in is
-  // unavailable. Email sending (send_email) needs the Workers Paid plan and is
-  // added later, see docs/deploy.md.
+  // unavailable. Account email (the send_email binding EMAIL and the variable
+  // EMAIL_FROM) needs the Workers Paid plan, so it is not here: the deploy adds
+  // both when the repository variable EMAIL_FROM is set (tools/email-config.mjs,
+  // docs/deploy.md), and wrangler dev runs without email.
   // Error reports (src/telemetry.js, docs/security.md "Error reports"): off
   // here and so under wrangler dev; the deploy workflow sets the SENTRY_*
   // variables with `--var` from tools/sentry-config.mjs (the DSN is a

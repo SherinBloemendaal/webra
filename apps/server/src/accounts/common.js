@@ -13,10 +13,14 @@ export async function pendingEmailOf(db, userId, now = Date.now()) {
   return row?.email ?? null;
 }
 
-/** UserSelf for a user id (reloaded so every change is reflected). */
-export async function selfView(ctx, userId) {
+/**
+ * UserSelf for a user id (reloaded so every change is reflected).
+ * `pendingEmail` overrides the stored one (its token is written after the
+ * answer, src/accounts/verification.js).
+ */
+export async function selfView(ctx, userId, { pendingEmail } = {}) {
   const row = await userById(ctx.db, userId, ctx.now);
-  return selfUser(row, await ctx.eff(), await pendingEmailOf(ctx.db, userId, ctx.now));
+  return selfUser(row, await ctx.eff(), pendingEmail ?? (await pendingEmailOf(ctx.db, userId, ctx.now)));
 }
 
 /** Start a session for the account and answer `{ user }`. */

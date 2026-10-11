@@ -9,10 +9,14 @@ import { auditStatement, AUDIT_RETENTION_MS } from './audit.js';
 import { purgeStatements } from './routes-admin.js';
 import { IP_RETENTION_MS, SESSION_IDLE_MS } from './sessions.js';
 import { DELETED_RETENTION_MS } from './users.js';
+import { services } from './site.js';
 
 export const PRESENCE_RETENTION_MS = 24 * 60 * 60 * 1000;
-/** Unverified email addresses are removed after this long. */
-export const UNVERIFIED_EMAIL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Signups waiting for their email (`pending_email`, never approved) expire
+ * when the address was not confirmed this long after it was set.
+ */
+export const UNCONFIRMED_SIGNUP_MS = 7 * 24 * 60 * 60 * 1000;
 export const EXPIRED_IP_BAN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const PURGE_BATCH = 100;
 
@@ -33,19 +37,18 @@ export async function runRetention(env, now = Date.now()) {
       'UPDATE users SET login_failures = 0, login_failed_at = NULL, login_delay_until = NULL WHERE login_failed_at IS NOT NULL AND login_failed_at < ?1',
       now - 24 * 60 * 60 * 1000,
     ),
-    // Unverified addresses expire: they never claimed the address, and now they are gone.
-    unverifiedEmails: await run(
-      'UPDATE users SET email = NULL, email_set_at = NULL WHERE email IS NOT NULL AND email_verified = 0 AND (email_set_at IS NULL OR email_set_at < ?1)',
-      now - UNVERIFIED_EMAIL_MS,
-    ),
+    // Unverified addresses stay on their accounts (every new account has one; they claim nothing),
+    // but signups that never confirmed theirs expire below.
     // Maps shared with an online session only (unlisted): kept while sessions use them.
     sharedMaps: await run('DELETE FROM maps WHERE listed = 0 AND COALESCE(used_at, created_at) < ?1', now - UNLISTED_RETENTION_MS),
     // Saved online games: their records go after 90 days (the files stay with the players).
     onlineSaves: await run('DELETE FROM online_saves WHERE created_at < ?1', now - ONLINE_SAVE_RETENTION_MS),
     // Old hashes of upgraded maps (map versions) go with the map they point to.
     mapAliases: await run('DELETE FROM map_aliases WHERE hash NOT IN (SELECT hash FROM maps)'),
+    expiredSignups: 0,
     purged: 0,
   };
+  out.expiredSignups = await expireUnconfirmedSignups(env, now);
   // Maps stored before a format version change: upgraded in batches (reads upgrade them too).
   out.mapUpgrades = await upgradeStaleMaps(db, { now, limit: DAILY_UPGRADE_BATCH });
   const { results } = await db
@@ -62,6 +65,45 @@ export async function runRetention(env, now = Date.now()) {
   await pruneQuotas(db, now);
   await pruneSessions(db, now);
   return out;
+}
+
+/**
+ * Signups still `pending_email` UNCONFIRMED_SIGNUP_MS after their address was
+ * set (and never approved) are deleted like a self-deletion: the address is
+ * cleared (it may not be theirs), sessions and links go, and the account is
+ * purged with the other deleted accounts 30 days later (an admin can
+ * restore it until then; restored, it has no address, so it waits until
+ * one is added and then has 7 days again). Only while email can be sent:
+ * without it nobody could have confirmed. Returns how many expired.
+ */
+export async function expireUnconfirmedSignups(env, now = Date.now()) {
+  if (!services(env).email) return 0;
+  const db = env.DB;
+  const { results } = await db
+    .prepare(
+      `SELECT id, username FROM users WHERE status = 'pending_email' AND approved_at IS NULL
+         AND email IS NOT NULL AND COALESCE(email_set_at, created_at) < ?1 LIMIT ?2`,
+    )
+    .bind(now - UNCONFIRMED_SIGNUP_MS, PURGE_BATCH)
+    .all();
+  for (const { id, username } of results) {
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE users SET status = 'deleted', status_before_delete = status, deleted_at = ?2, email = NULL, email_key = NULL, email_set_at = NULL
+           WHERE id = ?1 AND status = 'pending_email'`,
+        )
+        .bind(id, now),
+      db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(id),
+      db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(id),
+      auditStatement(
+        db,
+        { actor: null, action: 'user.expire', targetType: 'user', targetId: id, targetLabel: username, before: { status: 'pending_email' }, after: { status: 'deleted' }, reason: 'Email address not confirmed within 7 days' },
+        now,
+      ),
+    ]);
+  }
+  return results.length;
 }
 
 /**

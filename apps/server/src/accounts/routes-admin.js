@@ -30,6 +30,8 @@ import { listSessions, sessionView } from './sessions.js';
 import { getSettingsDoc, ifMatchVersion, putSettingsDoc, readSettingsBody, settingsResponse } from './settings-doc.js';
 import { effective, loadSite, publicSite, saveSite } from './site.js';
 import { adminUser, banOf, uniqueViolation, userById, userSelect } from './users.js';
+import { statusAfterVerification } from './common.js';
+import { sendAddressMail } from './verification.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const notFound = (what = 'user') => new HttpError(404, 'not_found', `No such ${what}.`);
@@ -161,7 +163,68 @@ async function userDetail(ctx, { id }) {
     bans,
     settings: await getSettingsDoc(ctx.db, row.id),
     relay: await relayQuotas(ctx.db, ctx.salt(), row.id, ctx.now),
+    emailLink: await pendingAddressLink(ctx, row.id),
+    emailSending: (await ctx.eff()).login.email,
   });
+}
+
+/** The account's unused verification or change link (purpose, address, dates), or null. */
+async function pendingAddressLink(ctx, userId) {
+  const t = await ctx.db
+    .prepare("SELECT purpose, email, created_at, expires_at FROM email_tokens WHERE user_id = ?1 AND purpose IN ('verify', 'change') AND expires_at > ?2 ORDER BY created_at DESC LIMIT 1")
+    .bind(userId, ctx.now)
+    .first();
+  return t ? { purpose: t.purpose, email: t.email, sentAt: t.created_at, expiresAt: t.expires_at } : null;
+}
+
+/** An account whose address an admin can act on: not deleted, an address that is not verified yet. */
+function assertUnverifiedAddress(row) {
+  if (row.status === 'deleted') throw new HttpError(409, 'conflict', 'Restore the account first.');
+  if (!row.email) throw new HttpError(409, 'conflict', 'This account has no email address.');
+  if (row.email_verified === 1) throw new HttpError(409, 'conflict', 'This email address is already verified.');
+}
+
+/**
+ * Mark the account's address verified (the admin vouches for it): it claims
+ * its key, a `pending_email` account moves on as after its link, open links
+ * go. 409 when another account verified the address.
+ */
+async function markEmailVerified(ctx, { id }) {
+  await ctx.body([]);
+  const actor = await ctx.requireRole('admin');
+  const row = await target(ctx, id);
+  assertUnverifiedAddress(row);
+  const status = statusAfterVerification(row, await ctx.eff());
+  try {
+    await ctx.db.batch([
+      ctx.db.prepare('UPDATE users SET email_key = ?2, email_verified = 1, status = ?3 WHERE id = ?1').bind(row.id, emailKey(row.email), status),
+      ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose IN ('verify', 'change')").bind(row.id),
+      auditStatement(
+        ctx.db,
+        { actor, action: 'user.email_verify', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { email: row.email, emailVerified: false, status: row.status }, after: { email: row.email, emailVerified: true, status } },
+        ctx.now,
+      ),
+    ]);
+  } catch (err) {
+    if (uniqueViolation(err) === 'email') throw new HttpError(409, 'conflict', 'Another account verified this email address.', {}, { field: 'email' });
+    throw err;
+  }
+  return json({ user: adminUser(await target(ctx, row.id)) });
+}
+
+/** Mail the account's unverified address a new verification link now (not capped per address). */
+async function resendEmailLink(ctx, { id }) {
+  await ctx.body([]);
+  const actor = await ctx.requireRole('admin');
+  const row = await target(ctx, id);
+  assertUnverifiedAddress(row);
+  const eff = await ctx.eff();
+  if (!eff.services.email) throw new HttpError(503, 'unavailable', 'Email is not available on this server.');
+  if (!eff.login.email) throw new HttpError(403, 'method_disabled', 'Email links are switched off.');
+  await ctx.limit('admin-email-resend', row.id, 10, 24 * 60 * 60 * 1000, 'This account was sent several links today already.');
+  const sent = await sendAddressMail(ctx, { userId: row.id, username: row.username, email: row.email, purpose: 'verify', capped: false });
+  await audit(ctx.db, { actor, action: 'user.email_resend', targetType: 'user', targetId: row.id, targetLabel: row.username, after: { email: row.email, sent } }, ctx.now);
+  return json({ sent, emailLink: await pendingAddressLink(ctx, row.id) }, 202);
 }
 
 async function patchUser(ctx, { id }) {
@@ -394,7 +457,7 @@ async function resetLink(ctx, { id }) {
   }
   const { token, expiresAt } = await createEmailToken(ctx.db, row.id, 'reset', null, TOKEN_TTL_MS.adminReset, ctx.now);
   const url = accountLink(ctx.origin, 'reset', token);
-  const sent = body.send === true ? await sendEmail(ctx.env, row.email, resetMessage(row.username, url, 24)) : false;
+  const sent = body.send === true ? await sendEmail(ctx.env, row.email, resetMessage(row.username, url, 24, { origin: ctx.origin })) : false;
   await audit(ctx.db, { actor, action: 'user.password_reset_link', targetType: 'user', targetId: row.id, targetLabel: row.username, after: { displayed: true, sent, expiresAt } }, ctx.now);
   return json({ url, expiresAt, sent }, 201);
 }
@@ -619,6 +682,8 @@ export function registerAdminRoutes(router) {
     .add('POST', '/api/admin/users/:id/restore', restore)
     .add('POST', '/api/admin/users/:id/purge', purge)
     .add('POST', '/api/admin/users/:id/password-reset', resetLink)
+    .add('POST', '/api/admin/users/:id/email/verify', markEmailVerified)
+    .add('POST', '/api/admin/users/:id/email/resend', resendEmailLink)
     .add('DELETE', '/api/admin/users/:id/relay-quota', resetRelayQuota)
     .add('GET', '/api/admin/users/:id/settings', getUserSettings, read)
     .add('PUT', '/api/admin/users/:id/settings', putUserSettings)

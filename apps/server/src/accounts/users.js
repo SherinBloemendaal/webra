@@ -129,6 +129,7 @@ export function adminUser(row, { moderator = false } = {}) {
     displayName: row.display_name,
     email: moderator ? maskEmail(row.email) : row.email,
     emailVerified: row.email_verified === 1,
+    emailSetAt: row.email_set_at ?? null,
     avatarColor: row.avatar_color,
     role: row.role,
     status: effectiveStatus(row),

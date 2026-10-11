@@ -10,6 +10,7 @@ import { findIpBan } from './bans.js';
 import { effective, loadSite } from './site.js';
 import { hasRecentReauth, loadSession, signOutCookies } from './sessions.js';
 import { banOf, effectiveStatus } from './users.js';
+import { logError } from '../telemetry.js';
 
 /** A JSON object (not an array or null). */
 export function isPlainObjectValue(v) {
@@ -190,6 +191,19 @@ export class RequestContext {
 
   async clearFailures(purpose, subject) {
     await clearQuota(this.db, this.salt(), purpose, subject);
+  }
+
+  /**
+   * Finish `work` after the response (exec.waitUntil), so the answer and its
+   * timing do not depend on it. Failures are logged, never answered.
+   * Returns the settled promise.
+   */
+  background(label, work) {
+    const p = Promise.resolve()
+      .then(work)
+      .catch((err) => logError(label, err));
+    if (typeof this.exec?.waitUntil === 'function') this.exec.waitUntil(p);
+    return p;
   }
 
   respond(response) {

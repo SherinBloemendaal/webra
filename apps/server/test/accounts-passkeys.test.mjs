@@ -17,7 +17,7 @@ async function passkeySignup(env, username, alg = 'ES256', { ip } = {}) {
   assert.equal(o.status, 200, JSON.stringify(o.body));
   const auth = await Authenticator.create(alg);
   const credential = await auth.register(o.body.publicKey, ORIGIN);
-  const email = env.EMAIL ? `${username.toLowerCase()}@example.com` : null;
+  const email = `${username.toLowerCase()}@example.com`;
   const r = await b.post('/api/auth/signup', { username, email, passkey: { challengeId: o.body.challengeId, credential }, acceptPrivacy: true });
   return { b, auth, r, options: o.body };
 }
@@ -157,17 +157,24 @@ test('signature counter regression is refused and flagged', async () => {
 test('registration refusals: wrong origin, wrong rp id, username mismatch, duplicate credential', async () => {
   const env = makeEnv({ email: false });
   const b = new Browser(env);
-  const tryReg = async (username, mutate, regUsername = username) => {
+  const tryReg = async (username, mutate, regUsername = username, email = 'alpha@example.com') => {
     const o = await b.post('/api/auth/passkey/signup-options', { username });
     const auth = await Authenticator.create('ES256');
     const credential = await auth.register(o.body.publicKey, mutate.origin ?? ORIGIN, mutate);
-    return b.post('/api/auth/signup', { username: regUsername, email: null, passkey: { challengeId: o.body.challengeId, credential }, acceptPrivacy: true });
+    return b.post('/api/auth/signup', { username: regUsername, email, passkey: { challengeId: o.body.challengeId, credential }, acceptPrivacy: true });
   };
-  // email optional only without verification: this env has no email binding.
-  assert.equal((await tryReg('Alpha1', { origin: 'https://evil.example' })).status, 400);
-  assert.equal((await tryReg('Alpha2', { rpId: 'evil.example' })).status, 400);
-  assert.equal((await tryReg('Alpha3', { type: 'webauthn.get' })).status, 400);
-  assert.equal((await tryReg('Alpha4', {}, 'Somebody Else')).status, 400, 'the challenge belongs to the username');
+  const refused = async (r, field, message) => {
+    assert.equal(r.status, 400, message);
+    assert.equal(r.body.error.field, field, message);
+  };
+  await refused(await tryReg('Alpha1', { origin: 'https://evil.example' }), 'credential');
+  await refused(await tryReg('Alpha2', { rpId: 'evil.example' }), 'credential');
+  await refused(await tryReg('Alpha3', { type: 'webauthn.get' }), 'credential');
+  await refused(await tryReg('Alpha4', {}, 'Somebody Else'), 'passkey', 'the challenge belongs to the username');
+  // The email is required with a passkey too (checked before the challenge is used).
+  await refused(await tryReg('Alpha6', {}, 'Alpha6', null), 'email');
+  await refused(await tryReg('Alpha6', {}, 'Alpha6', 'not an address'), 'email');
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM users WHERE username = 'Alpha6'")[0].n, 0);
   const ok = await tryReg('Alpha5', {});
   assert.equal(ok.status, 201, JSON.stringify(ok.body));
   const taken = await b.post('/api/auth/passkey/signup-options', { username: 'alpha5' });

@@ -76,13 +76,15 @@ test('signup with Discord: verified email stored as verified, username from Disc
   assert.equal((await b.post('/api/auth/discord/start', { mode: 'signup' })).status, 400, 'privacy acceptance needed');
   const login = await flow(b, mock, { mode: 'login' });
   assert.equal(login.fragment, 'discord=error&code=no_account', 'login never creates accounts');
-  const r = await flow(b, mock, { mode: 'signup', acceptPrivacy: true, returnTo: '/play/?lobby=1' });
+  // A typed address is only the fallback: Discord's verified one wins, and no link is mailed.
+  const r = await flow(b, mock, { mode: 'signup', acceptPrivacy: true, returnTo: '/play/?lobby=1', email: 'typed@example.com' });
   assert.equal(r.fragment, 'discord=ok');
   assert.equal(r.path, '/play/');
   const me = (await b.get('/api/auth/me')).body.user;
   assert.equal(me.username, 'nelly');
   assert.equal(me.email, 'nelly@example.com');
   assert.equal(me.emailVerified, true);
+  assert.equal(env.EMAIL.sent.length, 0);
   assert.equal(me.status, 'pending_approval', 'verified by Discord: straight to approval');
   assert.deepEqual(me.methods.discord.username, 'nelly');
   assert.ok(mock.calls.some((c) => c.url.endsWith('/token/revoke')), 'the access token is revoked');
@@ -96,18 +98,33 @@ test('signup with Discord: verified email stored as verified, username from Disc
   assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM users')[0].n, 1);
 });
 
-test('unverified Discord email is not used; taken usernames get a number; taken emails refuse', async () => {
+test('unverified Discord email is not used: the typed address is required and confirmed by link; taken usernames get a number; taken emails refuse', async () => {
   const env = makeEnv({ email: true, discord: true });
   const holder = await signup(env, 'nelly', { email: 'someone@example.com' });
   // Only a verified address is taken.
   await holder.post('/api/auth/email/verify', { token: env.EMAIL.token('someone@example.com', 'verify') });
   const mock = mockDiscord({ ...PROFILE, verified: false });
   const b = new Browser(env, { ip: '203.0.113.80' });
-  assert.equal((await flow(b, mock, { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok');
+  // No verified Discord address and none typed: no account.
+  assert.equal((await flow(b, mock, { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=error&code=email_required');
+  assert.equal(b.signedIn, false);
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM users')[0].n, 1);
+  // A typed address is checked at the start and used, unverified, with a link to confirm it.
+  const bad = await b.post('/api/auth/discord/start', { mode: 'signup', acceptPrivacy: true, email: 'nope' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error.field, 'email');
+  const notSignup = await b.post('/api/auth/discord/start', { mode: 'login', email: 'nelly2@example.com' });
+  assert.equal(notSignup.status, 400);
+  assert.equal(notSignup.body.error.field, 'email');
+  assert.equal((await flow(b, mock, { mode: 'signup', acceptPrivacy: true, email: 'Nelly2@Example.com' })).fragment, 'discord=ok');
   const me = (await b.get('/api/auth/me')).body.user;
   assert.match(me.username, /^nelly\d+$/);
-  assert.equal(me.email, null);
+  assert.equal(me.email, 'Nelly2@example.com', 'the typed address, not the unverified Discord one');
+  assert.equal(me.emailVerified, false);
   assert.equal(me.status, 'pending_email', 'verification is in effect and no verified email exists yet');
+  const v = await b.post('/api/auth/email/verify', { token: env.EMAIL.token('Nelly2@example.com', 'verify') });
+  assert.equal(v.status, 200);
+  assert.equal(v.body.user.status, 'pending_approval');
   const other = mockDiscord({ id: '42', username: 'otto', email: 'someone@example.com', verified: true });
   const c = new Browser(env, { ip: '203.0.113.81' });
   assert.equal((await flow(c, other, { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=error&code=email_taken');

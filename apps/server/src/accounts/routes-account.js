@@ -33,7 +33,9 @@ import { listSessions, revokeAllSessions, sessionView, signOutCookies } from './
 import { getSettingsDoc, ifMatchVersion, putSettingsDoc, readSettingsBody, settingsResponse } from './settings-doc.js';
 import { hasPassword, uniqueViolation, USERNAME_CHANGE_MS, userById } from './users.js';
 import { evictFromGames } from './bans.js';
-import { DAY, emailTaken, HOUR, requirePasskeys, sendVerification, verifyPasskeyRegistration } from './routes-auth.js';
+import { HOUR, requirePasskeys, verifyPasskeyRegistration } from './routes-auth.js';
+import { MAIL_LIMITS, queueAddressMail } from './verification.js';
+import { networkOf } from './ip.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const lastMethod = () => new HttpError(409, 'conflict', 'Keep at least one way to sign in.');
@@ -130,46 +132,56 @@ async function removePassword(ctx) {
   return json({ user: await selfView(ctx, user.id) });
 }
 
+/**
+ * Add or change the address (recent re-authentication). A verified address
+ * stays until the new one is confirmed through its link (`pendingEmail`);
+ * no address or an unverified one is replaced at once (unverified addresses
+ * claim nothing) and a link is sent when email works. Whether another
+ * account verified the new address is never answered (src/accounts/verification.js).
+ */
 async function changeEmail(ctx) {
   const body = await ctx.body(['email']);
   const user = await ctx.requireUser();
   await ctx.requireReauth();
   const email = check(() => validEmail(body.email));
-  // Addresses are only taken through a confirmation link: none while email cannot be sent.
-  if (!(await ctx.eff()).login.email) throw new HttpError(503, 'unavailable', 'Email addresses can be changed once this server can confirm them.');
-  await ctx.limit('email-change', user.id, 5, DAY);
-  if (await emailTaken(ctx.db, email, user.id)) throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
-  if (user.email_key === emailKey(email)) return json({ user: await selfView(ctx, user.id) }, 202);
-  if (!(await sendVerification(ctx, user.id, user.username, email, 'change'))) {
-    await ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = 'change'").bind(user.id).run();
-    throw new HttpError(503, 'unavailable', 'The email could not be sent. Try again later.');
+  const eff = await ctx.eff();
+  if (user.email === email || (user.email_verified === 1 && user.email_key === emailKey(email))) return json({ user: await selfView(ctx, user.id) });
+  if (user.email_verified === 1 && !eff.login.email) {
+    throw new HttpError(503, 'unavailable', 'A confirmed address can be changed once this server sends verification email.');
   }
-  return json({ user: await selfView(ctx, user.id) }, 202);
+  await ctx.limit('email-change', user.id, ...MAIL_LIMITS.changeAccount);
+  await ctx.limit('email-change-net', networkOf(ctx.ip), ...MAIL_LIMITS.changeNetwork);
+  if (user.email_verified === 1) {
+    queueAddressMail(ctx, { userId: user.id, username: user.username, email, purpose: 'change' });
+    return json({ user: await selfView(ctx, user.id, { pendingEmail: email }) }, 202);
+  }
+  await ctx.db.batch([
+    ctx.db.prepare('UPDATE users SET email = ?2, email_key = NULL, email_verified = 0, email_set_at = ?3 WHERE id = ?1').bind(user.id, email, ctx.now),
+    ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose IN ('verify', 'change')").bind(user.id),
+  ]);
+  if (eff.login.email) queueAddressMail(ctx, { userId: user.id, username: user.username, email, purpose: 'verify' });
+  return json({ user: await selfView(ctx, user.id) });
 }
 
+/** Send the link for the account's unverified address again (limited per account and per network). */
 async function resendVerification(ctx) {
   await ctx.body([]);
   const user = await ctx.requireUser();
   const eff = await ctx.eff();
-  if (!eff.services.email) throw new HttpError(503, 'unavailable', 'Email is not available on this server.');
+  if (!eff.services.email) throw new HttpError(503, 'unavailable', 'Verification email is not available on this server yet.');
   if (!eff.login.email) throw new HttpError(403, 'method_disabled', 'Email links are switched off.');
   if (!user.email || user.email_verified === 1) throw new HttpError(409, 'conflict', 'There is no unverified email address to confirm.');
-  await ctx.limit('verify-resend', user.id, 3, HOUR);
-  if (!(await sendVerification(ctx, user.id, user.username, user.email, 'verify'))) {
-    throw new HttpError(503, 'unavailable', 'The email could not be sent. Try again later.');
-  }
+  await ctx.limit('verify-resend', user.id, ...MAIL_LIMITS.resendAccount, 'You asked for several links already. Try again later.');
+  await ctx.limit('verify-resend-day', user.id, ...MAIL_LIMITS.resendAccountDay, 'You asked for several links already. Try again tomorrow.');
+  await ctx.limit('verify-resend-net', networkOf(ctx.ip), ...MAIL_LIMITS.resendNetwork, 'Too many links were asked for from your network. Try again later.');
+  queueAddressMail(ctx, { userId: user.id, username: user.username, email: user.email, purpose: 'verify' });
   return json({}, 202);
 }
 
+/** Addresses are required: an account changes its address but never removes it (docs/accounts-api.md 5.4). */
 async function removeEmail(ctx) {
-  const user = await ctx.requireUser();
-  await ctx.requireReauth();
-  if ((await ctx.eff()).emailVerificationRequired) throw new HttpError(409, 'conflict', 'An email address is required on this server.');
-  await ctx.db.batch([
-    ctx.db.prepare('UPDATE users SET email = NULL, email_key = NULL, email_verified = 0 WHERE id = ?1').bind(user.id),
-    ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose IN ('verify', 'change')").bind(user.id),
-  ]);
-  return json({ user: await selfView(ctx, user.id) });
+  await ctx.requireUser();
+  throw new HttpError(409, 'conflict', 'An email address is required. Change it instead, or delete the account.');
 }
 
 // ---- Passkeys ---------------------------------------------------------------------------

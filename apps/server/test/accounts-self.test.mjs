@@ -49,46 +49,56 @@ test('password change: needs a fresh re-authentication (no current password fiel
   assert.equal((await new Browser(env).post('/api/auth/login', { login: 'changer', password: 'an entirely new one' })).status, 200);
 });
 
-test('email change with verification links; resend; removal rules', async () => {
+test('email change: a verified address stays until the new one is confirmed, an unverified one is replaced at once, none is removed', async () => {
   const env = makeEnv();
   const b = await signup(env, 'Mailer');
   await b.post('/api/auth/email/verify', { token: env.EMAIL.token('mailer@example.com', 'verify') });
-  const taken = await signup(env, 'Holder');
+  const holder = await signup(env, 'Holder');
   assert.equal((await b.post('/api/account/email', { email: 'new.mailer@example.com' })).body.error.code, 'reauth_required');
   await b.post('/api/auth/reauth', { password: PASSWORD });
   // Holder's address is unverified: it claims nothing, a change link may go out for it.
-  assert.equal((await b.post('/api/account/email', { email: 'holder@example.com' })).status, 202);
+  const h = await b.post('/api/account/email', { email: 'holder@example.com' });
+  assert.equal(h.status, 202);
+  assert.equal(h.body.user.pendingEmail, 'holder@example.com');
+  // Another account's verified address: the same answer (no way to learn that it has an account); the address gets a notice.
   const verifiedOther = await signup(env, 'Verified');
   await verifiedOther.post('/api/auth/email/verify', { token: env.EMAIL.token('verified@example.com', 'verify') });
+  const before = env.EMAIL.sent.length;
   const c = await b.post('/api/account/email', { email: 'verified@example.com' });
-  assert.equal(c.status, 409, 'a verified address of another account is taken');
+  assert.equal(c.status, 202);
+  assert.equal(c.body.user.pendingEmail, 'verified@example.com');
+  assert.equal((await b.get('/api/account')).body.user.pendingEmail, 'verified@example.com', 'also after a reload');
+  const notice = env.EMAIL.sent.slice(before);
+  assert.equal(notice.length, 1);
+  assert.match(notice[0].subject, /already has an account/);
+  assert.doesNotMatch(notice[0].text, /#verify=/);
   const r = await b.post('/api/account/email', { email: 'new.mailer@example.com' });
   assert.equal(r.status, 202);
   assert.equal(r.body.user.email, 'mailer@example.com', 'unchanged until confirmed');
   assert.equal(r.body.user.pendingEmail, 'new.mailer@example.com');
+  assert.match(env.EMAIL.sent.at(-1).subject, /new email address/);
   const token = env.EMAIL.token('new.mailer@example.com', 'verify');
   const v = await b.post('/api/auth/email/verify', { token });
   assert.equal(v.status, 200);
   assert.equal(v.body.user.email, 'new.mailer@example.com');
   assert.equal(v.body.user.emailVerified, true);
   assert.equal(v.body.user.pendingEmail, null);
-  // Resend: only for an unverified address, 3 per hour.
-  assert.equal((await b.post('/api/account/email/resend', {})).status, 409);
-  const statuses = [];
-  for (let i = 0; i < 4; i++) statuses.push((await taken.post('/api/account/email/resend', {})).status);
-  assert.deepEqual(statuses, [202, 202, 202, 429]);
-  // Sending failures are reported.
-  env.EMAIL.fail = true;
-  clock.advance(60 * 60 * 1000);
-  assert.equal((await taken.post('/api/account/email/resend', {})).status, 503);
-  env.EMAIL.fail = false;
-  // Verification in effect: the email cannot be removed.
-  assert.equal((await b.post('/api/auth/reauth', { password: PASSWORD })).status, 200);
-  assert.equal((await b.del('/api/account/email')).status, 409);
-  await setSite(env, { registration: { emailVerification: false } });
+  // The same address again: nothing to do.
+  assert.equal((await b.post('/api/account/email', { email: 'new.mailer@example.com' })).status, 200);
+  // An unverified address is replaced at once, with a new link; the old link stops working.
+  const oldLink = env.EMAIL.token('holder@example.com', 'verify');
+  await holder.post('/api/auth/reauth', { password: PASSWORD });
+  const fixed = await holder.post('/api/account/email', { email: 'holder.fixed@example.com' });
+  assert.equal(fixed.status, 200);
+  assert.equal(fixed.body.user.email, 'holder.fixed@example.com');
+  assert.equal(fixed.body.user.emailVerified, false);
+  assert.equal(fixed.body.user.pendingEmail, null);
+  assert.ok(env.EMAIL.token('holder.fixed@example.com', 'verify'));
+  assert.equal((await holder.post('/api/auth/email/verify', { token: oldLink })).status, 401);
+  // Addresses are required: removal is refused.
   const removed = await b.del('/api/account/email');
-  assert.equal(removed.status, 200);
-  assert.equal(removed.body.user.email, null);
+  assert.equal(removed.status, 409);
+  assert.equal((await b.get('/api/account')).body.user.email, 'new.mailer@example.com');
 });
 
 test('sessions: list, label, revoke one, revoke the others', async () => {
@@ -225,7 +235,7 @@ test('account deletion: confirm, soft delete, sign-in refused, username reserved
   assert.equal(row.deleted_at, clock.now);
   const login = await new Browser(env).post('/api/auth/login', { login: 'leaver', password: PASSWORD });
   assert.equal(login.status, 401);
-  const again = await new Browser(env, { ip: '198.51.100.88' }).post('/api/auth/signup', { username: 'Leaver', password: PASSWORD, acceptPrivacy: true });
+  const again = await new Browser(env, { ip: '198.51.100.88' }).post('/api/auth/signup', { username: 'Leaver', email: 'leaver@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(again.status, 409, 'the username stays reserved until the purge');
 });
 

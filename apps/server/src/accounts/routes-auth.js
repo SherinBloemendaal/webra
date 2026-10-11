@@ -13,7 +13,8 @@ import { HttpError, json } from '../http.js';
 import { randomToken, sha256Hex } from '../crypto.js';
 import { bannedError, check, invalid } from './context.js';
 import { rotate, selfView, signIn, statusAfterVerification } from './common.js';
-import { accountLink, consumeEmailToken, createEmailToken, resetMessage, sendEmail, TOKEN_TTL_MS, verifyMessage } from './email.js';
+import { accountLink, consumeEmailToken, createEmailToken, resetMessage, sendEmail, TOKEN_TTL_MS } from './email.js';
+import { queueAddressMail } from './verification.js';
 import { dummyVerify, hashAccountPassword, verifyAccountPassword } from './password.js';
 import {
   consumeChallenge,
@@ -170,18 +171,15 @@ async function signup(ctx) {
   if (body.acceptPrivacy !== true) throw invalid('acceptPrivacy', 'Please accept the privacy notice.');
   const username = check(() => validUsername(body.username));
   const displayName = body.displayName === undefined || body.displayName === null || body.displayName === '' ? username : check(() => validDisplayName(body.displayName));
-  let email = null;
-  if (body.email !== undefined && body.email !== null && body.email !== '') email = check(() => validEmail(body.email));
-  if (!email && eff.emailVerificationRequired) throw invalid('email', 'An email address is required.');
-  // Addresses are only taken when they can be confirmed (no unverified claims while email is off).
-  if (email && !eff.login.email) throw invalid('email', 'Email addresses can be added once this server can confirm them. Leave it empty for now.');
+  // Every new account gives an address (docs/accounts-api.md 4.2). It claims nothing until it is verified.
+  if (body.email === undefined || body.email === null || body.email === '') throw invalid('email', 'Enter your email address.');
+  const email = check(() => validEmail(body.email));
   const hasPassword = body.password !== undefined && body.password !== null;
   const hasPasskey = body.passkey !== undefined && body.passkey !== null;
   if (hasPassword === hasPasskey) throw invalid('password', 'Choose a password or a passkey.');
 
   // Counted once the request is well formed, before any expensive work or lookups.
   await ctx.limit('signup', ctx.ip, ...LIMITS.signup, 'Too many signups from your network. Try again later.');
-  if (email && (await emailTaken(ctx.db, email))) throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
   let password = null;
   let registration = null;
   let userHandle;
@@ -208,24 +206,12 @@ async function signup(ctx) {
   } catch (err) {
     const which = uniqueViolation(err);
     if (which === 'username') throw new HttpError(409, 'conflict', 'This username is taken.', {}, { field: 'username' });
-    if (which === 'email') throw new HttpError(409, 'conflict', 'This email address is already used by another account.', {}, { field: 'email' });
     if (duplicatePasskey(err)) throw passkeyConflict();
     throw err;
   }
-  if (email && eff.login.email) await sendVerification(ctx, id, username, email, 'verify');
+  // The link (or, when another account verified the address, a notice) goes out after the answer.
+  if (eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
   return signIn(ctx, id, 201);
-}
-
-/** Whether a verified address belongs to an account (unverified ones claim nothing). */
-export async function emailTaken(db, email, exceptUserId = null) {
-  const row = await db.prepare('SELECT id FROM users WHERE email_key = ?1').bind(emailKey(email)).first();
-  return row !== null && row.id !== exceptUserId;
-}
-
-/** Create and mail a verification (or change) link. Returns whether it was sent. */
-export async function sendVerification(ctx, userId, username, email, purpose) {
-  const { token } = await createEmailToken(ctx.db, userId, purpose, email, TOKEN_TTL_MS[purpose], ctx.now);
-  return sendEmail(ctx.env, email, verifyMessage(username, accountLink(ctx.origin, 'verify', token), purpose === 'change'));
 }
 
 async function login(ctx) {
@@ -296,7 +282,7 @@ async function forgot(ctx) {
   // Only verified addresses get reset links (an address someone merely typed proves nothing).
   if (row && row.status !== 'deleted' && row.email_verified === 1) {
     const { token } = await createEmailToken(ctx.db, row.id, 'reset', row.email, TOKEN_TTL_MS.reset, ctx.now);
-    await sendEmail(ctx.env, row.email, resetMessage(row.username, accountLink(ctx.origin, 'reset', token), 1));
+    await sendEmail(ctx.env, row.email, resetMessage(row.username, accountLink(ctx.origin, 'reset', token), 1, { origin: ctx.origin }));
   }
   return json({}, 202);
 }
