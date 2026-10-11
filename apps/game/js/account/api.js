@@ -127,7 +127,10 @@ export class AccountApi {
   passkeyOptions = (purpose) => this.post('/api/auth/passkey/options', purpose ? { purpose } : {});
   passkeyLogin = (challengeId, credential) => this.post('/api/auth/passkey/login', { challengeId, credential });
   reauth = (proof) => this.post('/api/auth/reauth', proof);
-  /** @param {{ mode: 'login' | 'signup' | 'link' | 'reauth', returnTo?: string, acceptPrivacy?: boolean }} input */
+  /**
+   * `email` (signup only): the address to use when Discord reports no verified one.
+   * @param {{ mode: 'login' | 'signup' | 'link' | 'reauth', returnTo?: string, acceptPrivacy?: boolean, email?: string }} input
+   */
   discordStart = (input) => this.post('/api/auth/discord/start', input);
 
   // ---- Self service (5) -------------------------------------------------------------------
@@ -137,7 +140,6 @@ export class AccountApi {
   removePassword = () => this.del('/api/account/password');
   changeEmail = (email) => this.post('/api/account/email', { email });
   resendVerification = () => this.post('/api/account/email/resend');
-  removeEmail = () => this.del('/api/account/email');
   passkeys = () => this.get('/api/account/passkeys');
   newPasskeyOptions = () => this.post('/api/account/passkeys/options');
   addPasskey = (challengeId, name, credential) => this.post('/api/account/passkeys', { challengeId, name, credential });
@@ -182,6 +184,10 @@ export class AccountApi {
   restoreUser = (id) => this.post(`/api/admin/users/${enc(id)}/restore`);
   purgeUser = (id, confirm) => this.post(`/api/admin/users/${enc(id)}/purge`, { confirm });
   resetLink = (id, send = false) => this.post(`/api/admin/users/${enc(id)}/password-reset`, { send });
+  /** Mark the account's unverified address verified: { user }. */
+  verifyUserEmail = (id) => this.post(`/api/admin/users/${enc(id)}/email/verify`);
+  /** Mail the account's unverified address a new link: { sent, emailLink }. */
+  resendUserEmail = (id) => this.post(`/api/admin/users/${enc(id)}/email/resend`);
   async userSettings(id) {
     const { body, etag } = await this.send('GET', `/api/admin/users/${enc(id)}/settings`);
     return { ...body, version: body.version ?? versionOfEtag(etag) ?? 0 };

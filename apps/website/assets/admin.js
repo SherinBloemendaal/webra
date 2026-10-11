@@ -349,6 +349,8 @@ export async function mountAdmin(root, deps = {}) {
       return;
     }
     const u = d.user;
+    // Whether verification links can be sent now (admins' detail only).
+    const mailing = d.emailSending === true;
     title.textContent = u.username;
     const status = statusLine();
     const reload = () => fillUser(id, body, title);
@@ -361,7 +363,7 @@ export async function mountAdmin(root, deps = {}) {
         { class: 'detail-facts' },
         ...[
           ['Display name', u.displayName],
-          ['Email', u.email ? `${u.email}${u.emailVerified ? ' (verified)' : ' (not verified)'}` : 'none'],
+          ['Email', emailFact(u, d.emailLink, mailing)],
           ['Created', formatDateTime(u.createdAt)],
           ['Last seen', formatDateTime(u.lastSeenAt)],
           ['Approved', u.approvedAt ? `${formatDateTime(u.approvedAt)}` : 'no'],
@@ -406,6 +408,13 @@ export async function mountAdmin(root, deps = {}) {
       }
     }
     if (can.sessions) act('Sign out everywhere', async () => (await api.logoutUser(u.id), 'Every session is signed out.'), { confirm: `Sign ${u.username} out on every device?` });
+    if (can.edit && u.email && !u.emailVerified && u.status !== 'deleted') {
+      if (mailing) act('Send verification link', async () => {
+        const r = await api.resendUserEmail(u.id);
+        return r.sent ? `A verification email went to ${u.email}.` : 'The email could not be sent. Try again later.';
+      });
+      act('Mark email verified', async () => (await api.verifyUserEmail(u.id), `${u.email} is marked verified.`), { confirm: `Mark ${u.email} as verified for ${u.username}? Only do this when you know the address is theirs.` });
+    }
     if (can.resetLink) {
       const b = el('button', { type: 'button', class: 'btn btn-small', text: 'Password reset link' });
       b.addEventListener('click', () => resetLinkDialog(u));
@@ -486,6 +495,18 @@ export async function mountAdmin(root, deps = {}) {
     if (can.relayQuota && d.relay) parts.push(relayBlock(u, d.relay, status, reload));
     if (can.settings) parts.push(settingsEditor(u));
     body.replaceChildren(...present(parts));
+  }
+
+  /** The email line of the user drawer: the address, whether it is verified, and an open link (admins see it). */
+  function emailFact(u, link, mailing) {
+    if (!u.email && !link) return 'none';
+    const parts = [];
+    if (u.email) parts.push(`${u.email} (${u.emailVerified ? 'verified' : 'not verified'}${u.emailSetAt ? `, set ${formatDateTime(u.emailSetAt)}` : ''})`);
+    if (link) {
+      const what = link.purpose === 'change' ? `change to ${link.email} waiting` : 'verification link';
+      parts.push(`${what}: sent ${formatDateTime(link.sentAt)}, valid until ${formatDateTime(link.expiresAt)}`);
+    } else if (u.email && !u.emailVerified) parts.push(mailing ? 'no open link' : 'verification email is not available yet');
+    return parts.join('; ');
   }
 
   /** The one-click relay budgets (package and music) of the account and its recent networks, with a reset. */

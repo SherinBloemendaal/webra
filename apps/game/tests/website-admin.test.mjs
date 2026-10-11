@@ -370,6 +370,45 @@ test('dashboard: the drawer shows the relay budgets and resets them after a conf
   assert.doesNotMatch(textOf(after), /in use/);
 });
 
+test('dashboard: the drawer shows the email verification state, sends a new link and marks the address verified', async () => {
+  const server = new MockAccountServer();
+  server.services.email = true;
+  const { admin, users } = seed(server);
+  server.signIn(admin);
+  const target = users[5];
+  target.status = 'pending_email';
+  target.emailLink = { purpose: 'verify', email: target.email, sentAt: server.now - 3600e3, expiresAt: server.now + 20 * 3600e3 };
+  const { root } = await dashboard(server, `#user=${target.id}`);
+  await settle(20);
+  const drawer = () => root.querySelector('.drawer');
+  assert.match(textOf(drawer()), /p5@example\.com \(not verified, set .*\); verification link: sent .*, valid until/);
+  click(byText(drawer(), 'button', /Send verification link/));
+  await settle(30);
+  assert.equal(server.audit[0].action, 'user.email_resend');
+  assert.ok(target.emailLink.sentAt > server.now - 3600e3, 'a new link');
+  click(byText(drawer(), 'button', /Mark email verified/));
+  await settle(5);
+  const dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
+  assert.match(textOf(dialog), /Only do this when you know the address is theirs/);
+  click(byText(dialog, 'button', /Mark email verified/));
+  await settle(30);
+  assert.equal(target.emailVerified, true);
+  assert.equal(target.status, 'pending_approval');
+  assert.equal(server.audit[0].action, 'user.email_verify');
+  assert.match(textOf(drawer()), /p5@example\.com \(verified/);
+  assert.equal(byText(drawer(), 'button', /Mark email verified|Send verification link/), undefined, 'nothing left to do');
+  // Without email sending: no resend, and the drawer says so.
+  server.services.email = false;
+  const other = users[6];
+  root.remove();
+  const again = await dashboard(server, `#user=${other.id}`);
+  await settle(20);
+  const d2 = again.root.querySelector('.drawer');
+  assert.match(textOf(d2), /verification email is not available yet/);
+  assert.equal(byText(d2, 'button', /Send verification link/), undefined);
+  assert.ok(byText(d2, 'button', /Mark email verified/));
+});
+
 test('dashboard: IP bans, site settings with unavailable services, and the audit log', async () => {
   const server = new MockAccountServer();
   const { admin } = seed(server);
