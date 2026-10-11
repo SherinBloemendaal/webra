@@ -273,8 +273,9 @@ export class AudioSystem {
    * @param {object} o.rules parsed Game.rules_json()
    * @param {number} o.player local player, or NO_PLAYER (spectators and replays: nothing is their own)
    * @param {number} o.worldUnitsPerCell Game.world_units_per_cell()
+   * @param {number} [o.tickMs] milliseconds per simulation tick at the game's speed
    */
-  attachGame({ game, rules, player, worldUnitsPerCell, allied }) {
+  attachGame({ game, rules, player, worldUnitsPerCell, allied, tickMs = 40 }) {
     this.game = game;
     game.set_audio_events(true);
     const sideIndex = rules.players?.[player]?.side ?? 0;
@@ -296,6 +297,7 @@ export class AudioSystem {
       },
       sink: this,
       now,
+      tickMs,
       allied,
     });
     this.inGame = true;
@@ -361,6 +363,21 @@ export class AudioSystem {
 
   playerState(state) {
     this.director?.onPlayerState(state);
+  }
+
+  /** A mission silenced (true) or allowed again (false) the low power line (js/campaign/view.js, mission_state `lowPowerQuiet`). */
+  lowPowerQuiet(quiet) {
+    this.director?.setLowPowerQuiet(quiet);
+  }
+
+  /**
+   * The game paused or went on (single player pause, the game menu, a hidden
+   * tab, the end of game dialogs): announcer lines of the simulation wait
+   * meanwhile (js/audio/announcer.js). Music and interface sounds go on, as
+   * in OpenRA.
+   */
+  setPaused(paused) {
+    this.announcer.setPaused(!!paused);
   }
 
   /** @param {number[]} ids @param {{ byPlayer?: boolean }} [info] whether the player made this selection */
@@ -523,7 +540,14 @@ export class AudioSystem {
     this.speech.speak(text, { role: 'unit', volume: busGain(p, 'voices') }).then(() => this.playSynth('radio_close', 'voices'));
   }
 
-  announce(key) {
+  /**
+   * An announcer line, shown as text and spoken. `world`: the simulation's
+   * line (an engine event, the player state, a mission script), which waits
+   * while the game is paused.
+   * @param {string} key
+   * @param {{ world?: boolean }} [o]
+   */
+  announce(key, { world = false } = {}) {
     for (const fn of this.announceListeners) {
       try {
         fn(key);
@@ -531,7 +555,7 @@ export class AudioSystem {
         console.warn('announce listener failed:', err);
       }
     }
-    if (this.prefs.get().enabled && EVA[key] && !EVA[key].textOnly) this.announcer.push(key);
+    if (this.prefs.get().enabled && EVA[key] && !EVA[key].textOnly) this.announcer.push(key, { world });
   }
 
   playSynth(id, bus, gain = 1) {

@@ -12,6 +12,11 @@
 //
 // Only pings the viewer may see count (OpenRA: allies of the render player);
 // the last of them is the last event. No DOM: js/minimap.js draws them.
+//
+// Times: pings shrink, turn and expire on the simulation clock
+// (js/simclock.js), as OpenRA's RadarPings ticks with the world, so they
+// stand still while the game is paused. The damage ping interval counts the
+// page clock, as DamageNotifier's Game.RunTime does.
 
 import { EV, STRIDE } from './audio/director.js';
 import { POWER_KINDS } from './audio/catalog.js';
@@ -65,8 +70,11 @@ export class RadarPings {
     return this.lastPosition;
   }
 
-  /** Read a frame's engine events (flat, STRIDE per event) at time `now` (ms). */
-  onEvents(events, now) {
+  /**
+   * Read a frame's engine events (flat, STRIDE per event) at simulation time
+   * `now` (ms); `wall` is the page clock (ms) of the damage ping interval.
+   */
+  onEvents(events, now, wall = now) {
     if (!events) return;
     for (let i = 0; i + STRIDE <= events.length; i += STRIDE) {
       const kind = events[i];
@@ -78,8 +86,8 @@ export class RadarPings {
       if (!this.visible(owner)) continue;
       if (kind === EV.BUILDING_DAMAGED || kind === EV.UNIT_DAMAGED) {
         const next = kind === EV.BUILDING_DAMAGED ? this.nextStructure : this.nextUnit;
-        if (now < (next.get(owner) ?? -Infinity)) continue;
-        next.set(owner, now + (kind === EV.BUILDING_DAMAGED ? STRUCTURE_INTERVAL_MS : UNIT_INTERVAL_MS));
+        if (wall < (next.get(owner) ?? -Infinity)) continue;
+        next.set(owner, wall + (kind === EV.BUILDING_DAMAGED ? STRUCTURE_INTERVAL_MS : UNIT_INTERVAL_MS));
         this.add(x, y, RED, PING_TICKS, now);
       } else if (kind === EV.BEACON_PLACED) {
         this.add(x, y, this.color(owner), Math.max(1, b), now);

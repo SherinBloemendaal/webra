@@ -355,8 +355,12 @@ export class Minimap {
 
   // ---- Per frame -----------------------------------------------------------------
 
-  /** Call once per animation frame, after the battlefield is drawn (calls into wasm). */
-  frame(now) {
+  /**
+   * Call once per animation frame, after the battlefield is drawn (calls into
+   * wasm). `now`: the page clock (ms) of the radar's own animations;
+   * `pingTime`: the simulation clock (ms, js/simclock.js) the radar pings run on.
+   */
+  frame(now, pingTime = now) {
     if (now - this.lastRefresh >= REFRESH_MS) {
       this.lastRefresh = now;
       this.refresh(now);
@@ -377,7 +381,7 @@ export class Minimap {
       this.staticCtx.putImageData(this.staticImage, 0, 0);
     }
     if (reveal > 0) this.drawCamera();
-    this.drawPings(now, reveal > 0);
+    this.drawPings(pingTime, reveal > 0);
   }
 
   /**
