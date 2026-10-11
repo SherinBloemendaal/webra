@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/SherinBloemendaal/webra/compare/v0.10.0...v0.11.0) (2026-10-11)
+
+
+### Features
+
+* **game:** magnify map previews with a map lens ([f1372c4](https://github.com/SherinBloemendaal/webra/commit/f1372c4cd584bbe8fe380a1a0d006882df573ff7))
+
 ## [0.10.0](https://github.com/SherinBloemendaal/webra/compare/v0.9.0...v0.10.0) (2026-10-11)
 
 
