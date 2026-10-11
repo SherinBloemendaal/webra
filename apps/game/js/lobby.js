@@ -543,7 +543,12 @@ export class Lobby {
   applyTestSetup(setup) {
     const me = this.state.players.find((p) => p.type === 'human');
     const players = setup.players.slice(0, this.spawnLimit()).map((p) => ({ ...p, name: p.type === 'human' ? me?.name : DEFAULT_NAME, color: p.type === 'human' ? me?.color : undefined }));
-    this.state.players = sanitizeState({ ...this.state, players }, this.colors.length).players;
+    // The movement model the editor picked, unless the map locks its own.
+    const movement = optionLockedBy(this.state, this.mapFile?.info.setup ?? null, 'movement') ? this.state.movement : (setup.movement ?? this.state.movement);
+    const clean = sanitizeState({ ...this.state, players, movement }, this.colors.length);
+    this.state.players = clean.players;
+    this.state.movement = clean.movement;
+    this.renderAll();
     this.renderSlots();
     if (setup.autostart) queueMicrotask(() => this.start());
   }

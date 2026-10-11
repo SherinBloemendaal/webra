@@ -22,8 +22,9 @@ const players = [
 ];
 
 test('the setup is read only for editor test play, and only in a sane shape', () => {
-  const ok = JSON.stringify({ players, camera: [120.5, 300], autostart: true });
+  const ok = JSON.stringify({ players, movement: 'webra', camera: [120.5, 300], autostart: true });
   const s = loadTestSetup(params('editorTest=1'), storage(ok));
+  assert.equal(s.movement, 'webra');
   assert.deepEqual(s.camera, [120.5, 300]);
   assert.equal(s.autostart, true);
   assert.equal(s.players.length, 3);
@@ -34,6 +35,7 @@ test('the setup is read only for editor test play, and only in a sane shape', ()
   const odd = loadTestSetup(params('editorTest=1'), storage(JSON.stringify({ players: [...players, 'x'], camera: ['a', 1], autostart: 'yes', extra: 1 })));
   assert.equal(odd.camera, null);
   assert.equal(odd.autostart, false);
+  assert.equal(odd.movement, null, 'no movement model: the lobby keeps its own');
   assert.deepEqual(odd.players[3], {});
   assert.equal(loadTestSetup(params('editorTest=1'), { getItem: () => { throw new Error('blocked'); } }), null, 'blocked storage: the lobby opens as usual');
 });
@@ -94,6 +96,27 @@ test('a setup with more slots than the map has starts, or with bad values, is cu
     for (const p of lobby.state.players) assert.ok(p.faction !== 'moon' && (p.team ?? 0) <= 4);
     await Promise.resolve();
     assert.equal(started.length, 0, 'the lobby waits without autostart');
+  } finally {
+    delete globalThis.requestAnimationFrame;
+    uninstallDom();
+  }
+});
+
+test('test play plays the movement model the editor picked, unless the map locks its own', async () => {
+  const { lobby, started } = await mountLobby();
+  try {
+    lobby.offerMapText(mapJson(), 'editor', { players: players.slice(0, 2), movement: 'webra', camera: null, autostart: true });
+    await Promise.resolve();
+    assert.equal(started[0].movement, 'webra');
+    lobby.offerMapText(mapJson(), 'editor', { players: players.slice(0, 2), movement: 'sideways', camera: null, autostart: true });
+    await Promise.resolve();
+    assert.equal(started[1].movement, 'openra', 'an unknown model: the default');
+    const locked = JSON.parse(mapJson());
+    locked.options = { movement: 'openra' };
+    locked.lockedOptions = ['movement'];
+    lobby.offerMapText(JSON.stringify(locked), 'editor', { players: players.slice(0, 2), movement: 'webra', camera: null, autostart: true });
+    await Promise.resolve();
+    assert.equal(started.at(-1).movement, 'openra', 'the map locks OpenRA movement');
   } finally {
     delete globalThis.requestAnimationFrame;
     uninstallDom();

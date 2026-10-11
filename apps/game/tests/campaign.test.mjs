@@ -342,4 +342,19 @@ test('co-op missions: the catalog matches the mission files, and both players co
     a.free();
     b.free();
   }
+  // The lobby's movement model reaches the engine (left out: `webra`, as games before it).
+  const m = COOP_MISSIONS[0];
+  const mission = { id: m.id, hash: m.hash, options: { difficulty: m.options.difficulty.default } };
+  assert.equal(JSON.parse(coopStart(mission, 9, 0, 'openra')).movement, 'openra');
+  assert.equal('movement' in JSON.parse(coopStart(mission, 9, 0)), false);
+  const run = (movement) => {
+    const g = Game.from_mission(missionText(m.id), coopStart(mission, 9, 0, movement));
+    g.set_lockstep(true);
+    for (let t = 0; t < 100; t++) g.tick();
+    const h = g.state_hash();
+    g.free();
+    return h;
+  };
+  assert.equal(run(undefined), run('webra'));
+  assert.notEqual(run('openra'), run('webra'));
 });

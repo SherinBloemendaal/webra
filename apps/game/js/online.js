@@ -61,6 +61,7 @@ import {
   TEAM_MAX,
   TECH_LEVELS,
   TIME_LIMITS,
+  MOVEMENT_MODELS,
   HANDICAPS,
   MAP_STYLES,
   BIOMES,
@@ -124,6 +125,7 @@ const LABELS = {
   biome: { random: 'Random', temperate: 'Temperate', snow: 'Snow', desert: 'Desert' },
   weather: { full: 'On', cosmetic: 'Cosmetic only', off: 'Off' },
   techBuildings: { none: 'None', standard: 'Standard', extra: 'Extra', oilonly: 'Oil only', oilrush: 'Oil rush' },
+  movement: { openra: 'OpenRA', webra: 'WebRA' },
 };
 // Option rows: key (also the help text key in js/help.js), label, choices.
 // The World group holds the climate of the battlefield.
@@ -139,6 +141,7 @@ const SELECT_OPTIONS = [
   ['techLevel', 'Tech level', TECH_LEVELS.map((v) => [v, LABELS.techLevel[v]])],
   ['gameSpeed', 'Game speed', GAME_SPEEDS.map((v) => [v, LABELS.gameSpeed[v]])],
   ['timeLimit', 'Time limit', TIME_LIMITS.map((v) => [v, v === 0 ? 'No limit' : `${v} minutes`])],
+  ['movement', 'Movement', MOVEMENT_MODELS.map((v) => [v, LABELS.movement[v]])],
 ];
 const TOGGLES = [
   ['crates', 'Crates'],
@@ -1353,13 +1356,14 @@ export class OnlineUI {
     this.optionRows.techBuildings.hidden = !!this.state.map;
     this.cheatsWarning.hidden = !o.cheats;
     this.modePicker.render(o, { editable: host });
-    // A co-op mission brings its own world and rules: only the game speed applies.
+    // A co-op mission brings its own world and rules: only the game speed and the movement model apply.
     const mission = !!this.state.mission;
     this.modePicker.root.hidden = mission;
     this.optionWorld.hidden = mission;
     this.optionToggles.hidden = mission;
     if (mission) this.cheatsWarning.hidden = true;
-    for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && key !== 'gameSpeed';
+    // The game speed and how units move apply to a co-op mission too.
+    for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && key !== 'gameSpeed' && key !== 'movement';
   }
 
   renderMap() {
