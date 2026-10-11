@@ -246,6 +246,8 @@ settings.
 | `IP_HASH_SALT` | secret, **required** | At least 16 random characters; HMAC key for every stored address hash (sessions, rate limits). Without it the Worker answers `503 misconfigured` to anything that would store one (only plain HTTP to localhost uses a fixed development key) |
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | variables in `wrangler.jsonc` (empty DSN: off), set by the deploy | Error reports of the Worker (see Error reports) |
 | `EMAIL_FROM` | repository variable, passed by the deploy (absent locally) | Sender of account mail; set, the deploy also adds the `send_email` binding `EMAIL` (see Email). Unset: no email |
+| `SITE_ORIGIN` | variable in `wrangler.jsonc` | Where links in account mail point (`https://webra.sherin.dev`); `wrangler dev` links to its own local address |
+| `EMAIL_DAILY_LIMIT` | variable in `wrangler.jsonc` | Most account mails per UTC day, whoever asks (default 300, 1 to 100,000); over it nothing is sent until the next day and the admin overview warns |
 | `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
 
 Secrets are set by the owner, never committed:
@@ -371,6 +373,13 @@ To enable it (owner, in this order):
    Existing accounts keep their status; accounts with an unverified address
    can confirm it from their account page, accounts without an address keep
    working and can add one.
+
+The daily ceiling `EMAIL_DAILY_LIMIT` (300 in `wrangler.jsonc`) keeps a
+flood of requests from running up the bill: the admin overview shows the
+day's count and warns once it is reached; raise it in `wrangler.jsonc` when
+real use needs more. The Worker serves only `webra.sherin.dev`
+(`workers_dev` and `preview_urls` are off), and mail links always point at
+`SITE_ORIGIN`.
 
 To switch email off again, delete the repository variable and deploy.
 Delivery problems show in the dashboard (Email Sending logs) and as

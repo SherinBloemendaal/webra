@@ -161,15 +161,25 @@ required, else `active`. Turning approval or verification on later (or email
 sending becoming available) does not change existing accounts: an existing
 account never moves to `pending_email` by itself.
 
-**Unconfirmed signups expire.** The daily job (10.) deletes accounts that are
-still `pending_email`, were never approved, and whose address was set more
-than 7 days ago, like a self-deletion (sessions and links removed, purged 30
-days later), and clears their address (it may belong to someone else). It
-writes a system `user.expire` audit entry. Changing the address restarts the
-7 days. It runs only while email sending is available (otherwise nobody
-could have confirmed). An admin can restore such an account within the 30
-days; it comes back without an address and its 7 days start again when one
-is added.
+**Unconfirmed signups expire.** The daily job deletes accounts that have
+waited in `pending_email` since their signup (the first status change of an
+account ends this for good, so an account that was ever verified, approved,
+active, restored, or set to `pending_email` by an admin never expires), that
+are plain users (never staff), were never approved, and whose address was set
+more than 7 days ago. They are deleted like a self-deletion (sessions and
+links removed, purged 30 days later), their address is cleared (it may
+belong to someone else), and a system `user.expire` audit entry is written.
+Changing the address restarts the 7 days. It runs only while verification
+links can actually be sent (email sending configured and `login.email` on).
+An admin can restore such an account within the 30 days; it comes back
+without an address.
+
+**Deleted accounts claim nothing but their username.** A soft-deleted account
+(self-deletion, admin deletion, rejection, expiry) gives up its address
+(`email_key` cleared; the address and whether it was verified stay for a
+restore) and its Discord account (the id is kept aside, not linked). Both are
+free for a new signup at once. A restore claims them again only when nobody
+else did meanwhile (8.5).
 
 ### 2.3 Roles and permissions
 
@@ -293,6 +303,7 @@ No authentication. What clients need to draw sign-in and signup forms.
     "passkey": true
   },
   "services": { "email": false, "discord": false },
+  "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false },
   "onlineRequiresAccount": true,
   "gameRequiresAccount": true,
   "contentRelay": true,
@@ -360,7 +371,8 @@ null.
   waits unverified.
 - Errors: `registration_closed`, `method_disabled`, `invalid` (with `field`),
   `conflict` (`field: username`; never for the email), `ip_banned`,
-  `rate_limited` (10 signups per hour per IP).
+  `rate_limited` (10 signups per hour per network: an IPv4 address or an
+  IPv6 /64, together with Discord signups).
 
 ### 4.3 Password sign-in
 
@@ -397,11 +409,11 @@ null.
 (also without a session).
 
 `POST /api/auth/password/forgot` `{ "email": "..." }`: always `202 {}` when
-the request is well formed (whether or not an account has that email), and
-sends a reset link if an account has that address **verified** (never to an
+the request is well formed (whether or not an account has that email; the
+lookup and the mail happen after the answer), and sends a reset link if an account has that address **verified** (never to an
 unverified one). Needs email to be
 available and `login.email` on (`503 unavailable` / `method_disabled`
-otherwise). Limits: 5 per hour per IP, 3 per hour per address.
+otherwise). Limits: 5 per hour per IP, 3 per hour per mailbox (4.3).
 
 `POST /api/auth/password/reset` `{ "token": "...", "password": "..." }`:
 sets the password, marks the email verified (the link proved it), revokes
@@ -425,13 +437,22 @@ replaces the account's earlier verification and change links. When another
 account already verified the address, the address gets a notice that it
 already has an account (no link, nothing the requester typed) instead, the
 link record is still stored (so `pendingEmail` and every answer look the
-same), and the mail is prepared after the answer. Each address receives at
-most 3 such mails per hour and 6 per day, whoever asks (over that nothing
-is sent, the answer is unchanged, and the earlier link stays valid).
+same), and the mail is prepared after the answer. Each mailbox receives at
+most 3 such mails per hour and 6 per day, whoever asks; a mailbox is the
+address in lower case without a `+suffix`, and for Gmail (`gmail.com`,
+`googlemail.com`, counted as one) without dots, so variants of one inbox
+share the limit (uniqueness still uses the plain address, 2.1). All account
+mail together is limited to `EMAIL_DAILY_LIMIT` messages per UTC day
+(default 300). Over a limit nothing is sent and the answer is unchanged; a
+verification link is then not made (the earlier one stays valid), a change
+link is recorded anyway (it is what `pendingEmail` shows). The admin stats
+show the day's count and whether the ceiling is reached (8.9).
 Messages are plain text plus simple HTML with the site name, the link to the
-account page of the site the request came to, its expiry and a note to
-ignore it if unexpected; no images, no tracking. They are sent from
-`EMAIL_FROM`.
+account page, its expiry and a note to ignore it if unexpected; no images,
+no tracking. Links always point at the configured site origin (the variable
+`SITE_ORIGIN`, `https://webra.sherin.dev`), whatever host the request
+reached; only plain HTTP to a local development host links to itself. They
+are sent from `EMAIL_FROM`.
 
 **Links in emails** point at the account page and carry the token in the URL
 fragment (never sent to any server, never in a `Referer`):
@@ -604,7 +625,7 @@ unlinked Discord account), `already_linked` (that Discord account belongs to
 another WebRA account), `email_taken`, `email_required` (signup: no
 verified Discord email and none typed), `registration_closed`,
 `method_disabled`, `banned`, `ip_banned`, `account_inactive` (a deleted
-account), `rate_limited` (signup limit), `unavailable` (Discord unreachable
+account), `rate_limited` (the signup limit of 4.2, per network), `unavailable` (Discord unreachable
 or misconfigured). On success a
 session cookie is set for `login` and `signup`; `link` and `reauth` rotate
 the existing one. A Discord email that Discord reports verified counts as a
@@ -1117,8 +1138,15 @@ on plain users).
 
 - `DELETE /api/admin/users/:id` (admin) -> `200 { user }`: soft delete
   (status `deleted`, sessions revoked, dropped from games). Never self.
-- `POST /api/admin/users/:id/restore` `{}` (admin) -> `200 { user }`: back to
-  the status it had (`active` when unknown).
+- `DELETE /api/admin/users/:id` and rejection give up the address and the
+  Discord account like any soft deletion (2.2).
+- `POST /api/admin/users/:id/restore` `{}` (admin) -> `200 { user, dropped }`:
+  back to the status it had (`active` when unknown). Its verified address and
+  its Discord account come back when still free; otherwise `dropped` names
+  what did not: `emailVerified` (another account verified the address: it
+  stays on the account, unverified) and `discord` (linked to another account
+  now; `409 conflict` with `field: discord` instead when the account has no
+  password or passkey to sign in with). The audit entry records `dropped`.
 - `POST /api/admin/users/:id/purge` `{ "confirm": "<username>" }` (admin,
   only for `deleted` accounts) -> `204`: removes the account and everything
   stored about it now (maps it only shared with online sessions and the
@@ -1133,10 +1161,11 @@ on plain users).
 For an account with an unverified address (not deleted; `409 conflict`
 otherwise), admins can:
 
-- `POST /api/admin/users/:id/email/resend` `{}` -> `202 { "sent": true, "emailLink" }`:
-  mails a new verification link now, as in 4.3 (an address another account
-  verified gets the notice instead), not subject to the per-address mail
-  limit; 10 per day per account. `503 unavailable` without email sending,
+- `POST /api/admin/users/:id/email/resend` `{}` -> `202 { "sent": true, "notice": false, "emailLink" }`:
+  mails a new verification link now, as in 4.3, not subject to the
+  per-mailbox limit (the daily ceiling applies; `sent: false` then); 10 per
+  day per account. `notice: true` when the address belongs to another
+  verified account and got the in-use notice instead of a link. `503 unavailable` without email sending,
   `403 method_disabled` with `login.email` off. Audit `user.email_resend`
   (`after: { email, sent }`).
 - `POST /api/admin/users/:id/email/verify` `{}` -> `200 { user: AdminUser }`:
@@ -1201,7 +1230,8 @@ Expired IP bans are deleted 90 days after they end.
   "games": { "lobbies": 0, "running": 0 },
   "maps": { "total": 0 },
   "bans": { "accounts": 0, "ips": 0 },
-  "services": { "email": false, "discord": false }
+  "services": { "email": false, "discord": false },
+  "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false }
 }
 ```
 
@@ -1256,15 +1286,16 @@ write.
 
 | What | Limit |
 |------|-------|
-| Signup (all methods) | 10 per hour per IP |
+| Signup (all methods) | 10 per hour per network (IPv4 address, IPv6 /64) |
 | Password sign-in | burst per IP (30 per 15 minutes); 10 failures per 15 minutes per account and IP; 100 failures per day per IP; escalating account delay (4.3) |
 | Passkey sign-in and options | burst per IP (30 per 15 minutes) |
 | Re-authentication | 10 failures per 15 minutes per account |
-| Forgot password | 5 per hour per IP, 3 per hour per email address |
+| Forgot password | 5 per hour per IP, 3 per hour per mailbox |
 | Token redemption (verify, reset) | burst per IP (20 per 15 minutes) |
 | Verification resend | 3 per hour and 10 per day per account; 10 per hour per network (IPv4 address, IPv6 /64) |
 | Email change | 5 per day per account; 20 per day per network |
-| Address mail (links and in-use notices, whoever asks) | 3 per hour and 6 per day per address (over it nothing is sent, the answer is unchanged) |
+| Address mail (links and in-use notices, whoever asks) | 3 per hour and 6 per day per mailbox (4.3; over it nothing is sent, the answer is unchanged) |
+| All account mail (links, notices, resets, admin mail) | `EMAIL_DAILY_LIMIT` per UTC day (default 300; over it nothing is sent until the next day, answers are unchanged, the admin stats show it) |
 | Admin verification resend | 10 per day per account |
 | Discord start | burst per IP (20 per 15 minutes) |
 | Profile changes | 30 per hour per account |

@@ -975,19 +975,27 @@ sent. `apps/server/test/accounts-email.test.mjs` and
   the first attempt), 24 hours, bound to the account and the exact address
   (a link for an address the account no longer has does nothing), and every
   new link replaces the account's older verification and change links.
-  They travel in the URL fragment of a link to the account page of the site
-  the request came to (the Worker answers only its own hosts; there is no
-  redirect parameter, so no open redirect). The verify endpoint is burst
+  They travel in the URL fragment of a link to the account page of the
+  configured site origin (there is no redirect parameter, so no open
+  redirect). The verify endpoint is burst
   limited per IP like the reset endpoint.
-- **Mail bombing and cost.** Each address gets at most 3 mails an hour and 6
+- **Mail bombing and cost.** Each mailbox gets at most 3 mails an hour and 6
   a day, whoever asks (signups, changes and resends together; admin resends
-  excepted, 10 a day per account); resends are limited per account (3 an
-  hour, 10 a day) and per network (10 an hour per IPv4 address or IPv6 /64),
-  changes per account and network, signups per IP. The limits are D1
-  counters keyed with HMAC under `IP_HASH_SALT`. Email Service's own daily
-  quota (3,000 a month included on the Paid plan) is a backstop: when it
-  refuses, the error code is logged (never the address) and the request is
-  unaffected.
+  excepted, 10 a day per account). A mailbox is the address in lower case
+  without its `+suffix`, and for Gmail (gmail.com and googlemail.com, one
+  provider) without dots, so `victim+1@gmail.com` and `v.ictim@googlemail.com`
+  share the victim's budget (this key is only for limits; uniqueness keeps
+  the plain address). Resends are limited per account (3 an hour, 10 a day)
+  and per network (10 an hour per IPv4 address or IPv6 /64), changes per
+  account and network, signups (password, passkey and Discord together) per
+  network, so rotating addresses inside one IPv6 /64 does not help. All
+  account mail together stops at `EMAIL_DAILY_LIMIT` per UTC day (default
+  300): after that nothing is sent until the next day, requesters get the
+  same answers as always (the check runs after the answer), and the admin
+  dashboard shows the count and a warning. The limits are D1 counters keyed
+  with HMAC under `IP_HASH_SALT`. Email Service's own daily quota is a
+  further backstop: when it refuses, the error code is logged (never the
+  address) and the request is unaffected.
 - **Content.** Plain text plus simple HTML, no images or tracking, one link.
   Text players choose is limited to the username (letters and digits, 24
   characters) in the verification link mail and escaped in HTML; the in-use
@@ -996,16 +1004,32 @@ sent. `apps/server/test/accounts-email.test.mjs` and
   (`allowed_sender_addresses`). SPF, DKIM and DMARC records come from
   onboarding the sending domain (docs/deploy.md).
 - **Unconfirmed signups.** A `pending_email` account cannot play or upload.
-  If its address is not confirmed within 7 days (while sending works) it is
-  deleted and its address cleared, so an address typed by someone else does
-  not stay stored. Unverified addresses on other accounts (created while
+  If a plain user's signup has waited in `pending_email` since it was made
+  and its address is not confirmed within 7 days (while links can be sent:
+  email configured and `login.email` on), it is deleted and its address
+  cleared, so an address typed by someone else does not stay stored. Staff,
+  and any account that ever left `pending_email` (verified, approved,
+  restored, or set back to it by an admin), never expire, so an admin action
+  can never schedule an old account for deletion.
+- **Deleted accounts** keep their username for 30 days but claim neither
+  their address nor their Discord account, so a self-deleted, rejected,
+  deleted or expired account never locks its owner (or the address's owner)
+  out of a new signup; a restore claims them again only when nobody else did
+  meanwhile and reports what it had to drop.
+- **Races.** Verifying writes only while the account still has the address,
+  verified state and status the link was checked against, so a link
+  followed while the address changes cannot bring the old address back.
+- **Link hosts.** Links point at the configured `SITE_ORIGIN`, never at the
+  host a request reached; the Worker has no workers.dev address and no
+  preview URLs (`workers_dev` and `preview_urls` off). Unverified addresses on other accounts (created while
   sending was unavailable or verification was switched off) stay until the
   owner changes them; they are only ever sent the links their account asks
   for. Existing accounts never move to `pending_email` and accounts without
   an address keep working.
-- **Admins** see the verification state, can resend a link and can mark an
-  address verified (both audited); a mark that would take another account's
-  verified address is refused.
+- **Admins** see the verification state, can resend a link (and are told
+  when the in-use notice went out instead) and can mark an address verified
+  (both audited); a mark that would take another account's verified address
+  is refused.
 - **Development outbox.** `WEBRA_DEV_MAIL` routes mail to memory only with
   `WEBRA_DEV_ROUTES`, plain HTTP and a local host (like the promote route);
   neither variable is ever configured for deploys.
