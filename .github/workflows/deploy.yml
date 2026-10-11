@@ -129,7 +129,8 @@ jobs:
         run: |
           vars=$(node ../../tools/sentry-config.mjs worker-vars)
           email=$(node ../../tools/email-config.mjs wrangler-args)
-          npx --no-install wrangler deploy $vars $email
+          read -r -a email_args <<< "$email"
+          npx --no-install wrangler deploy $vars "${email_args[@]}"
 
       - name: Mark the Sentry release deployed
         env:

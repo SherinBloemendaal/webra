@@ -54,6 +54,9 @@ test('the deploy workflow passes the arguments and ignores the generated file', 
   const workflow = readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
   assert.match(workflow, /EMAIL_FROM: \$\{\{ vars\.EMAIL_FROM \}\}/);
   assert.match(workflow, /node \.\.\/\.\.\/tools\/email-config\.mjs wrangler-args/);
+  // The arguments go to wrangler as separate, quoted words.
+  assert.match(workflow, /read -r -a email_args <<< "\$email"/);
+  assert.match(workflow, /wrangler deploy \$vars "\$\{email_args\[@\]\}"/);
   const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
   assert.ok(ignore.split('\n').includes(`apps/server/${DEPLOY_CONFIG}`));
 });
