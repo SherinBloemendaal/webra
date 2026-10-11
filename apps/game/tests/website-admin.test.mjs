@@ -386,6 +386,7 @@ test('dashboard: the drawer shows the email verification state, sends a new link
   await settle(30);
   assert.equal(server.audit[0].action, 'user.email_resend');
   assert.ok(target.emailLink.sentAt > server.now - 3600e3, 'a new link');
+  assert.match(textOf(drawer()), /A verification email went to p5@example\.com/, 'the result stays on the reloaded drawer');
   click(byText(drawer(), 'button', /Mark email verified/));
   await settle(5);
   const dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
@@ -397,6 +398,17 @@ test('dashboard: the drawer shows the email verification state, sends a new link
   assert.equal(server.audit[0].action, 'user.email_verify');
   assert.match(textOf(drawer()), /p5@example\.com \(verified/);
   assert.equal(byText(drawer(), 'button', /Mark email verified|Send verification link/), undefined, 'nothing left to do');
+  // Another account verified the address: the admin is told that the notice went out, not a link.
+  const twin = users[7];
+  twin.email = 'p5@example.com';
+  twin.status = 'pending_email';
+  const t2 = await dashboard(server, `#user=${twin.id}`);
+  await settle(20);
+  click(byText(t2.root.querySelector('.drawer'), 'button', /Send verification link/));
+  await settle(30);
+  assert.match(textOf(t2.root.querySelector('.drawer')), /already belongs to another verified account: it got a notice/);
+  assert.equal(server.audit[0].after.notice, true);
+  t2.root.remove();
   // Without email sending: no resend, and the drawer says so.
   server.services.email = false;
   const other = users[6];
@@ -407,6 +419,20 @@ test('dashboard: the drawer shows the email verification state, sends a new link
   assert.match(textOf(d2), /verification email is not available yet/);
   assert.equal(byText(d2, 'button', /Send verification link/), undefined);
   assert.ok(byText(d2, 'button', /Mark email verified/));
+});
+
+test('dashboard: the overview shows the daily email budget and warns when it is used up', async () => {
+  const server = new MockAccountServer();
+  const { admin } = seed(server);
+  server.signIn(admin);
+  server.mailBudget = { sentToday: 12, dailyLimit: 300, limitReached: false };
+  const a = await dashboard(server);
+  assert.match(textOf(a.root), /Account email today: 12 of 300/);
+  assert.equal(a.root.querySelector('[role="alert"]'), null);
+  a.root.remove();
+  server.mailBudget = { sentToday: 300, dailyLimit: 300, limitReached: true };
+  const b = await dashboard(server);
+  assert.match(textOf(b.root.querySelector('[role="alert"]')), /Daily email limit reached.*300 of 300.*EMAIL_DAILY_LIMIT/);
 });
 
 test('dashboard: IP bans, site settings with unavailable services, and the audit log', async () => {

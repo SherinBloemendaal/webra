@@ -33,6 +33,8 @@ export class MockAccountServer {
       motd: '',
     };
     this.services = { email: false, discord: false };
+    /** The admin stats' daily outbound mail budget. */
+    this.mailBudget = { sentToday: 0, dailyLimit: 300, limitReached: false };
     this.fetch = this.fetch.bind(this);
   }
 
@@ -370,6 +372,7 @@ export class MockAccountServer {
           maps: { total: 7 },
           bans: { accounts: all.filter((x) => x.ban).length, ips: this.ipBans.length },
           services: { ...this.services },
+          email: { ...this.mailBudget },
         });
       }
       if (key === 'GET /api/admin/users') {
@@ -397,8 +400,9 @@ export class MockAccountServer {
         if (em[2] === 'resend') {
           if (!sitePublic.login.email) return fail(503, 'unavailable', 'Email is not available on this server.');
           target.emailLink = { purpose: 'verify', email: target.email, sentAt: this.now, expiresAt: this.now + 864e5 };
-          this.log(me, 'user.email_resend', { type: 'user', id: target.id, label: target.username }, null, { email: target.email, sent: true });
-          return reply(202, { sent: true, emailLink: target.emailLink });
+          const notice = [...this.users.values()].some((x) => x.id !== target.id && x.emailVerified && x.email?.toLowerCase() === target.email.toLowerCase());
+          this.log(me, 'user.email_resend', { type: 'user', id: target.id, label: target.username }, null, { email: target.email, sent: true, notice });
+          return reply(202, { sent: true, notice, emailLink: target.emailLink });
         }
         const before = { email: target.email, emailVerified: false, status: target.status };
         target.emailVerified = true;
