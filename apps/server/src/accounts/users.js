@@ -142,7 +142,12 @@ export function adminUser(row, { moderator = false } = {}) {
     deletedAt: row.deleted_at,
     methods: {
       password: hasPassword(row),
-      discord: row.discord_id ? (moderator ? { username: row.discord_username } : { id: row.discord_id, username: row.discord_username }) : null,
+      // A deleted account's Discord id is kept aside (deleted_discord_id) until a restore or the purge.
+      discord: (row.discord_id ?? row.deleted_discord_id)
+        ? moderator
+          ? { username: row.discord_username }
+          : { id: row.discord_id ?? row.deleted_discord_id, username: row.discord_username }
+        : null,
       passkeys: Number(row.passkey_count ?? 0),
     },
     ban: banOf(row),
@@ -166,8 +171,8 @@ export function insertUser(db, fields, now = Date.now()) {
     .prepare(
       `INSERT INTO users (id, username, username_key, display_name, email, email_key, email_verified, avatar_color, role, status,
          flags, password_hash, password_salt, password_iterations, password_peppered, password_changed_at, user_handle,
-         discord_id, discord_username, discord_linked_at, created_at, last_seen_at, email_set_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'user', ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20)`,
+         discord_id, discord_username, discord_linked_at, created_at, last_seen_at, email_set_at, unconfirmed_signup)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'user', ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20, ?21)`,
     )
     .bind(
       id,
@@ -191,8 +196,31 @@ export function insertUser(db, fields, now = Date.now()) {
       fields.discord ? now : null,
       now,
       fields.email ? now : null,
+      // A signup that starts waiting for its email may expire (cron.js); the flag ends with the first status change.
+      fields.status === 'pending_email' ? 1 : 0,
     );
   return { id, statement };
+}
+
+/**
+ * Soft deletion (self-deletion, admin deletion, rejection, expiry): the
+ * account keeps its username for 30 days, but claims neither its address
+ * (`email_key` cleared; the address and its verified flag stay for a
+ * restore, which checks them again) nor its Discord account (the id moves to
+ * `deleted_discord_id`). `clearEmail` also drops the address (an expired
+ * signup's address may belong to someone else). `onlyStatus` deletes only
+ * while the stored status is still that one. The caller removes sessions
+ * and links.
+ */
+export function softDeleteStatement(db, userId, now, { clearEmail = false, onlyStatus = null } = {}) {
+  const email = clearEmail ? ', email = NULL, email_verified = 0, email_set_at = NULL' : '';
+  return db
+    .prepare(
+      `UPDATE users SET status = 'deleted', status_before_delete = status, deleted_at = ?2, email_key = NULL,
+         deleted_discord_id = discord_id, discord_id = NULL${email}
+       WHERE id = ?1 AND status != 'deleted' AND (?3 IS NULL OR status = ?3)`,
+    )
+    .bind(userId, now, onlyStatus);
 }
 
 /** Which unique column a D1 constraint error is about, or null. */

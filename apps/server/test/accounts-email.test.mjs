@@ -7,7 +7,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Browser, Clock, makeEnv, ORIGIN, PASSWORD, promote, scheduled, setSite, signup } from './accounts-harness.mjs';
-import { addressInUseMessage, verifyMessage } from '../src/accounts/email.js';
+import { addressInUseMessage, dailyMailLimit, linkOrigin, siteOrigin, verifyMessage } from '../src/accounts/email.js';
+import { mailboxKey } from '../src/accounts/verification.js';
+import { emailKey } from '@webra/protocol';
+import { readFileSync } from 'node:fs';
 import { emailSender, services } from '../src/accounts/site.js';
 import { withDevMail } from '../src/accounts/dev.js';
 
@@ -234,7 +237,7 @@ test('daily job: unconfirmed signups expire after 7 days; unverified addresses o
   clock.advance(31 * DAY);
   await scheduled(env, clock.now);
   assert.equal(count(env, 'SELECT COUNT(*) AS n FROM users WHERE id = ?', fixer.user.id), 0, 'purged');
-  assert.equal(row(late.user.id).status, 'pending_email', 'restored without an address: its 7 days start when it adds one');
+  assert.equal(row(late.user.id).status, 'pending_email', 'restored (it left pending_email once, so it never expires again)');
 
   // Without email sending nobody could have confirmed: nothing expires.
   const off = makeEnv();
@@ -400,4 +403,189 @@ test('development outbox: only with both variables over plain HTTP on a local ho
   assert.equal((await b.get('/api/dev/mail?to=dev.mail@example.com', { csrf: false })).status, 403, 'a CSRF-protected read');
   env.WEBRA_DEV_MAIL = '0';
   assert.equal((await b.get('/api/dev/mail?to=dev.mail@example.com')).status, 404);
+});
+
+// ---- Security review of the email work (2026-10-11) -------------------------------------------------
+
+test('review 1: the per-mailbox mail limit sees through +suffixes and Gmail dots; uniqueness does not', async () => {
+  assert.equal(mailboxKey('Victim+promo@Example.com'), 'victim@example.com');
+  assert.equal(mailboxKey('v.i.c.t.i.m+1@gmail.com'), 'victim@gmail.com');
+  assert.equal(mailboxKey('V.ictim@GoogleMail.com'), 'victim@gmail.com');
+  assert.equal(mailboxKey('first.last@example.org'), 'first.last@example.org', 'dots matter elsewhere');
+  assert.equal(mailboxKey('+tag@example.com'), '+tag@example.com', 'a local part that is only a tag stays');
+  assert.notEqual(emailKey('victim+1@gmail.com'), emailKey('victim@gmail.com'), 'uniqueness keeps its own key');
+  const env = makeEnv();
+  const variants = ['victim@gmail.com', 'victim+1@gmail.com', 'v.ictim@gmail.com', 'vic.tim+x@googlemail.com', 'VICTIM+2@Gmail.com'];
+  for (const [i, email] of variants.entries()) {
+    const r = await new Browser(env, { ip: `198.51.100.${150 + i}` }).post('/api/auth/signup', { username: `Bomb ${i}`, email, password: PASSWORD, acceptPrivacy: true });
+    assert.equal(r.status, 201);
+  }
+  assert.equal(env.EMAIL.sent.filter((m) => mailboxKey(m.to) === 'victim@gmail.com').length, 3, 'one mailbox, 3 an hour');
+  // The variants are separate addresses for accounts: each can be verified by its own account.
+  assert.equal(env.DB.rows("SELECT COUNT(DISTINCT email) AS n FROM users WHERE email LIKE '%mail.com'")[0].n, 5);
+});
+
+test('review 1: the signup limit counts per network: rotating addresses inside one IPv6 /64 does not help', async () => {
+  const env = makeEnv({ email: false });
+  const statuses = [];
+  for (let i = 0; i < 11; i++) {
+    const r = await new Browser(env, { ip: `2001:db8:a:b::${(i + 1).toString(16)}` }).post('/api/auth/signup', { username: `Rotator ${i}`, email: `r${i}@example.com`, password: PASSWORD, acceptPrivacy: true });
+    statuses.push(r.status);
+  }
+  assert.deepEqual(statuses, [...new Array(10).fill(201), 429]);
+  const elsewhere = await new Browser(env, { ip: '2001:db8:a:c::1' }).post('/api/auth/signup', { username: 'Elsewhere', email: 'e@example.com', password: PASSWORD, acceptPrivacy: true });
+  assert.equal(elsewhere.status, 201, 'another /64');
+});
+
+test('review 1: a daily outbound ceiling stops all account mail, tells requesters nothing, and shows on the admin stats', async () => {
+  assert.equal(dailyMailLimit({}), 300);
+  assert.equal(dailyMailLimit({ EMAIL_DAILY_LIMIT: '50' }), 50);
+  for (const bad of ['0', '-1', 'x', '1e3', '100001']) assert.equal(dailyMailLimit({ EMAIL_DAILY_LIMIT: bad }), 300, bad);
+  const env = makeEnv({ vars: { EMAIL_DAILY_LIMIT: '3' } });
+  const admin = await adminOf(env); // mail 1
+  const a = await signup(env, 'Ceiling A', { ip: '198.51.100.160' }); // mail 2
+  await a.post('/api/auth/email/verify', { token: env.EMAIL.token('ceiling.a@example.com', 'verify') });
+  const b = await signup(env, 'Ceiling B', { ip: '198.51.100.161' }); // mail 3
+  assert.equal(env.EMAIL.sent.length, 3);
+  const c = await new Browser(env, { ip: '198.51.100.162' }).post('/api/auth/signup', { username: 'Ceiling C', email: 'ceiling.c@example.com', password: PASSWORD, acceptPrivacy: true });
+  assert.equal(c.status, 201);
+  assert.deepEqual(Object.keys(c.body.user).sort(), Object.keys(b.user).sort());
+  assert.equal(c.body.user.status, b.user.status, 'the same answer as before the ceiling');
+  assert.equal(env.EMAIL.sent.length, 3, 'nothing more goes out');
+  assert.equal((await b.post('/api/account/email/resend', {})).status, 202);
+  assert.equal((await new Browser(env).post('/api/auth/password/forgot', { email: 'ceiling.a@example.com' })).status, 202);
+  // A change still shows as pending (the change link is recorded) although its mail is held back.
+  await a.post('/api/auth/reauth', { password: PASSWORD });
+  assert.equal((await a.post('/api/account/email', { email: 'ceiling.a2@example.com' })).status, 202);
+  assert.equal((await a.get('/api/account')).body.user.pendingEmail, 'ceiling.a2@example.com');
+  assert.equal(env.EMAIL.sent.length, 3);
+  const stats = await admin.get('/api/admin/stats');
+  assert.deepEqual(stats.body.email, { sentToday: 3, dailyLimit: 3, limitReached: true });
+  // Admin actions are told the mail did not go out.
+  const resend = await admin.post(`/api/admin/users/${b.user.id}/email/resend`, {});
+  assert.equal(resend.body.sent, false);
+  // The next UTC day: mail flows again.
+  clock.advance(DAY);
+  assert.equal((await b.post('/api/account/email/resend', {})).status, 202);
+  assert.equal(env.EMAIL.sent.length, 4);
+});
+
+test('review 2: deleted accounts do not hold their address: re-signup and verification after self-deletion and deletion', async () => {
+  const env = makeEnv();
+  const admin = await adminOf(env);
+  for (const how of ['self', 'admin']) {
+    const addr = `again.${how}@example.com`;
+    const first = await signup(env, `First ${how}`, { email: addr, ip: '198.51.100.170' });
+    await first.post('/api/auth/email/verify', { token: env.EMAIL.token(addr, 'verify') });
+    if (how === 'self') {
+      await first.post('/api/auth/reauth', { password: PASSWORD });
+      assert.equal((await first.del('/api/account', { confirm: `First ${how}` })).status, 204);
+    } else assert.equal((await admin.del(`/api/admin/users/${first.user.id}`)).status, 200);
+    assert.equal(env.DB.rows('SELECT email_key FROM users WHERE id = ?', first.user.id)[0].email_key, null);
+    const second = await signup(env, `Second ${how}`, { email: addr, ip: '198.51.100.171' });
+    const mail = env.EMAIL.sent.at(-1);
+    assert.doesNotMatch(mail.subject, /already has an account/, how);
+    const v = await second.post('/api/auth/email/verify', { token: env.EMAIL.token(addr, 'verify') });
+    assert.equal(v.status, 200, how);
+    // Restoring the first account: the address comes back unverified.
+    const r = await admin.post(`/api/admin/users/${first.user.id}/restore`, {});
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.dropped, ['emailVerified']);
+    assert.equal(r.body.user.emailVerified, false);
+  }
+});
+
+test('review 3: expiry only when links can be sent, only plain users, never after an admin sets pending_email', async () => {
+  const env = makeEnv();
+  const admin = await adminOf(env);
+  const off = await signup(env, 'Links Off', { ip: '198.51.100.180' });
+  const staff = await signup(env, 'Staff Pending', { ip: '198.51.100.181' });
+  env.DB.sqlite.prepare("UPDATE users SET role = 'moderator' WHERE id = ?").run(staff.user.id);
+  // An old account that was active for a long time; an admin asks it to confirm its address.
+  await setSite(env, { registration: { emailVerification: false, approvalRequired: false } });
+  const old = await signup(env, 'Old Timer', { ip: '198.51.100.182' });
+  await setSite(env, { registration: { emailVerification: true, approvalRequired: true } });
+  // A signup that confirmed its address once (pending_email, then pending_approval).
+  const once = await signup(env, 'Confirmed Once', { ip: '198.51.100.183' });
+  const flag = (id) => env.DB.rows('SELECT unconfirmed_signup AS f FROM users WHERE id = ?', id)[0].f;
+  assert.equal(flag(once.user.id), 1);
+  await once.post('/api/auth/email/verify', { token: env.EMAIL.token('confirmed.once@example.com', 'verify') });
+  assert.equal(flag(once.user.id), 0, 'the first status change ends it for good');
+  clock.advance(30 * DAY);
+  assert.equal((await admin.post('/api/auth/login', { login: 'root admin', password: PASSWORD })).status, 200);
+  assert.equal((await admin.patch(`/api/admin/users/${old.user.id}`, { status: 'pending_email' })).status, 200);
+  assert.equal((await admin.patch(`/api/admin/users/${once.user.id}`, { status: 'pending_email' })).status, 200);
+  assert.equal(flag(once.user.id), 0);
+  // Email links switched off by the site setting: nothing expires (nobody could get a link).
+  await setSite(env, { login: { email: false } });
+  await scheduled(env, clock.now);
+  const status = (id) => env.DB.rows('SELECT status FROM users WHERE id = ?', id)[0].status;
+  assert.equal(status(off.user.id), 'pending_email');
+  await setSite(env, { login: { email: true } });
+  clock.advance(DAY);
+  await scheduled(env, clock.now);
+  assert.equal(status(off.user.id), 'deleted', 'links work again: the unconfirmed signup expires');
+  assert.equal(status(staff.user.id), 'pending_email', 'staff never expire');
+  assert.equal(status(old.user.id), 'pending_email', 'an account an admin set to pending_email never expires');
+  assert.equal(status(once.user.id), 'pending_email', 'an account that left pending_email once never expires');
+  clock.advance(30 * DAY);
+  await scheduled(env, clock.now);
+  assert.equal(status(old.user.id), 'pending_email');
+});
+
+test('review 4: a verification racing an address change does not overwrite the new address', async () => {
+  const env = makeEnv();
+  const b = await signup(env, 'Racer', { ip: '198.51.100.190' });
+  const token = env.EMAIL.token('racer@example.com', 'verify');
+  // The address changes between the verification reading the account and writing it.
+  const prepare = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => {
+    if (sql.includes('UPDATE users SET email = ?2, email_key = ?3, email_verified = 1')) {
+      env.DB.sqlite.prepare("UPDATE users SET email = 'racer.new@example.com', email_set_at = ? WHERE id = ?").run(clock.now, b.user.id);
+    }
+    return prepare(sql);
+  };
+  const v = await b.post('/api/auth/email/verify', { token });
+  env.DB.prepare = prepare;
+  assert.equal(v.status, 401);
+  assert.deepEqual(env.DB.rows('SELECT email, email_key, email_verified FROM users WHERE id = ?', b.user.id)[0], { email: 'racer.new@example.com', email_key: null, email_verified: 0 });
+  // A verification link presented after the account's address was verified another way (a change link is needed then).
+  const c = await signup(env, 'Racer Two', { ip: '198.51.100.191' });
+  const t2 = env.EMAIL.token('racer.two@example.com', 'verify');
+  env.DB.sqlite.prepare('UPDATE users SET email_verified = 1, email_key = lower(email) WHERE id = ?').run(c.user.id);
+  assert.equal((await c.post('/api/auth/email/verify', { token: t2 })).status, 401);
+});
+
+test('review 5: links in mail point at the configured site origin, whatever host the request reached', async () => {
+  assert.equal(siteOrigin({}), 'https://webra.sherin.dev');
+  assert.equal(siteOrigin({ SITE_ORIGIN: 'https://play.example.org' }), 'https://play.example.org');
+  for (const bad of ['http://webra.sherin.dev', 'https://webra.sherin.dev/', 'https://x.example/path', 'webra.sherin.dev', '']) assert.equal(siteOrigin({ SITE_ORIGIN: bad }), 'https://webra.sherin.dev', bad);
+  assert.equal(linkOrigin(new Request('http://localhost:8799/api/x'), {}), 'http://localhost:8799', 'wrangler dev links to itself');
+  assert.equal(linkOrigin(new Request('https://webra.example.workers.dev/api/x'), {}), 'https://webra.sherin.dev');
+  const env = makeEnv();
+  const other = new Browser(env, { origin: 'https://webra.someone.workers.dev', ip: '198.51.100.195' });
+  assert.equal((await other.post('/api/auth/signup', { username: 'Elsewhere', email: 'elsewhere@example.com', password: PASSWORD, acceptPrivacy: true })).status, 201);
+  const mail = env.EMAIL.sent.at(-1);
+  assert.ok(mail.text.includes('https://webra.sherin.dev/account/#verify='));
+  assert.equal(mail.text.includes('workers.dev') || mail.html.includes('workers.dev'), false);
+  const config = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, ''));
+  assert.equal(config.workers_dev, false);
+  assert.equal(config.preview_urls, false);
+  assert.equal(config.vars.SITE_ORIGIN, 'https://webra.sherin.dev');
+  assert.equal(dailyMailLimit(config.vars), 300);
+});
+
+test('review 6: an admin resend says when the in-use notice went out instead of a link', async () => {
+  const env = makeEnv();
+  const admin = await adminOf(env);
+  const owner = await signup(env, 'Holder One', { email: 'held@example.com', ip: '198.51.100.196' });
+  await owner.post('/api/auth/email/verify', { token: env.EMAIL.token('held@example.com', 'verify') });
+  const twin = await signup(env, 'Holder Two', { email: 'held@example.com', ip: '198.51.100.197' });
+  const r = await admin.post(`/api/admin/users/${twin.user.id}/email/resend`, {});
+  assert.deepEqual([r.body.sent, r.body.notice], [true, true]);
+  const own = await signup(env, 'Holder Three', { email: 'own@example.com', ip: '198.51.100.198' });
+  const r2 = await admin.post(`/api/admin/users/${own.user.id}/email/resend`, {});
+  assert.deepEqual([r2.body.sent, r2.body.notice], [true, false]);
+  const entry = env.DB.rows("SELECT after_json FROM audit_log WHERE action = 'user.email_resend' AND target_id = ?", twin.user.id)[0];
+  assert.equal(JSON.parse(entry.after_json).notice, true);
 });

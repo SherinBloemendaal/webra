@@ -10,6 +10,7 @@
 import { fromHex, randomToken, sha256Hex, timingSafeEqual } from '../crypto.js';
 import { emailSender, services } from './site.js';
 import { logError } from '../telemetry.js';
+import { isLocalDevRequest } from '../ipkey.js';
 
 export const SITE_NAME = 'WebRA';
 export const ACCOUNT_PAGE = '/account/';
@@ -58,7 +59,34 @@ export async function consumeEmailToken(db, token, purposes, now = Date.now()) {
   return row;
 }
 
-/** A link to the account page of `origin` (the site the request came to) with the token in the fragment. */
+/** The site's origin when the variable SITE_ORIGIN is unset (wrangler.jsonc sets it). */
+export const DEFAULT_SITE_ORIGIN = 'https://webra.sherin.dev';
+const DAY = 24 * 60 * 60 * 1000;
+
+/** The configured site origin: SITE_ORIGIN when it is a plain https origin, else the default. */
+export function siteOrigin(env) {
+  const v = typeof env?.SITE_ORIGIN === 'string' ? env.SITE_ORIGIN.trim() : '';
+  try {
+    const u = new URL(v);
+    if (u.protocol === 'https:' && u.origin === v) return v;
+  } catch {
+    // not an origin: the default
+  }
+  return DEFAULT_SITE_ORIGIN;
+}
+
+/**
+ * The origin links in mail point at: the configured site origin, whatever
+ * host the request reached (a workers.dev or preview host, a forged Host),
+ * except plain HTTP to a local development host (wrangler dev), which links
+ * to itself.
+ */
+export function linkOrigin(request, env) {
+  if (isLocalDevRequest(request)) return new URL(request.url).origin;
+  return siteOrigin(env);
+}
+
+/** A link to the account page of `origin` (from linkOrigin) with the token in the fragment. */
 export function accountLink(origin, kind, token) {
   return `${origin}${ACCOUNT_PAGE}#${kind}=${token}`;
 }
@@ -121,15 +149,47 @@ export function resetMessage(username, url, hours, { origin }) {
   };
 }
 
+/** Outbound mail per UTC day when EMAIL_DAILY_LIMIT is unset (the Paid plan includes 3,000 a month). */
+export const DEFAULT_DAILY_MAIL_LIMIT = 300;
+
+/** The daily outbound ceiling: EMAIL_DAILY_LIMIT (1 to 100,000), else the default. */
+export function dailyMailLimit(env) {
+  const raw = typeof env?.EMAIL_DAILY_LIMIT === 'string' ? env.EMAIL_DAILY_LIMIT.trim() : String(env?.EMAIL_DAILY_LIMIT ?? '');
+  const n = /^[0-9]{1,6}$/.test(raw) ? Number(raw) : NaN;
+  return n >= 1 && n <= 100000 ? n : DEFAULT_DAILY_MAIL_LIMIT;
+}
+
+/** Mail sent today (UTC) and the ceiling, for the admin stats. */
+export async function mailBudget(ctx) {
+  const limit = dailyMailLimit(ctx.env);
+  const sentToday = await ctx.peekQuota('mail-global', 'all', DAY);
+  return { sentToday, dailyLimit: limit, limitReached: sentToday >= limit };
+}
+
+/**
+ * Take one unit of the daily outbound ceiling (every message counts, links,
+ * notices and resets alike). False when the ceiling is reached: then nothing
+ * is sent until the next UTC day, the requester's answer stays the same, and
+ * the admin dashboard shows it.
+ */
+export async function takeMailBudget(ctx) {
+  if (await ctx.limitSoft('mail-global', 'all', dailyMailLimit(ctx.env), DAY)) return true;
+  console.warn('email daily limit reached: not sending');
+  return false;
+}
+
 /**
  * Send one message from EMAIL_FROM. Returns true when the binding accepted
- * it, false when email is unavailable or sending failed. Failures are logged
- * with Email Service's error code only (E_RATE_LIMIT_EXCEEDED,
+ * it, false when email is unavailable, the daily ceiling is reached (unless
+ * the caller already took its unit: `budgeted`), or sending failed. Failures
+ * are logged with Email Service's error code only (E_RATE_LIMIT_EXCEEDED,
  * E_DAILY_LIMIT_EXCEEDED, E_SENDER_NOT_VERIFIED, ...), never the address
  * or the message.
  */
-export async function sendEmail(env, to, message) {
+export async function sendEmail(ctx, to, message, { budgeted = false } = {}) {
+  const env = ctx.env;
   if (!services(env).email) return false;
+  if (!budgeted && !(await takeMailBudget(ctx))) return false;
   try {
     await env.EMAIL.send({ from: emailSender(env), to, subject: message.subject, html: message.html, text: message.text });
     return true;

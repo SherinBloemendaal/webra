@@ -6,6 +6,7 @@ import { cookieHeader, cookieName, HttpError, isReturnPath, json, parseCookies }
 import { randomInt, randomToken, sha256Hex } from '../crypto.js';
 import { check, invalid } from './context.js';
 import { queueAddressMail } from './verification.js';
+import { networkOf } from './ip.js';
 import { rotate, statusAfterVerification } from './common.js';
 import { authorizeUrl, DiscordError, fetchDiscordUser, OAUTH_COOKIE, OAUTH_TTL_MS, pkceChallenge } from './discord.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByDiscord, userByEmail, userByUsername, userById } from './users.js';
@@ -191,7 +192,7 @@ async function callback(ctx) {
     // Every new account has an address: Discord's verified one, else the one typed on the signup form.
     const email = verifiedEmail ?? row.email;
     if (!email) return back('email_required');
-    if (!(await ctx.limitSoft('signup', ctx.ip, ...LIMITS.signup))) return back('rate_limited');
+    if (!(await ctx.limitSoft('signup', networkOf(ctx.ip), ...LIMITS.signup))) return back('rate_limited');
     // Discord proved this address, so only its owner learns that it has an account.
     if (verifiedEmail && (await userByEmail(ctx.db, verifiedEmail, ctx.now))) return back('email_taken');
     const username = await freeUsername(ctx.db, discord.username, ctx.now);

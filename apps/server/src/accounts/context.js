@@ -11,6 +11,7 @@ import { effective, loadSite } from './site.js';
 import { hasRecentReauth, loadSession, signOutCookies } from './sessions.js';
 import { banOf, effectiveStatus } from './users.js';
 import { logError } from '../telemetry.js';
+import { linkOrigin } from './email.js';
 
 /** A JSON object (not an array or null). */
 export function isPlainObjectValue(v) {
@@ -175,6 +176,16 @@ export class RequestContext {
       return;
     }
     await this.limit(`${purpose}-ip`, this.ip, ...fallback, 'Too many requests from your network. Try again later.');
+  }
+
+  /** Units counted so far in the current window of a D1 limit (a read only). */
+  async peekQuota(purpose, subject, windowMs) {
+    return peekQuota(this.db, this.salt(), purpose, subject, windowMs, this.now);
+  }
+
+  /** The origin for links in mail (src/accounts/email.js linkOrigin). */
+  get linkOrigin() {
+    return linkOrigin(this.request, this.env);
   }
 
   /** 429 `locked` when `purpose` already has `limit` failures for `subject` (a read only). */

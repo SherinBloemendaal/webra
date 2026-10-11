@@ -31,7 +31,7 @@ import {
 } from './passkeys.js';
 import { listSessions, revokeAllSessions, sessionView, signOutCookies } from './sessions.js';
 import { getSettingsDoc, ifMatchVersion, putSettingsDoc, readSettingsBody, settingsResponse } from './settings-doc.js';
-import { hasPassword, uniqueViolation, USERNAME_CHANGE_MS, userById } from './users.js';
+import { hasPassword, softDeleteStatement, uniqueViolation, USERNAME_CHANGE_MS, userById } from './users.js';
 import { evictFromGames } from './bans.js';
 import { HOUR, requirePasskeys, verifyPasskeyRegistration } from './routes-auth.js';
 import { MAIL_LIMITS, queueAddressMail } from './verification.js';
@@ -404,7 +404,7 @@ async function deleteAccount(ctx) {
     if (others.n === 0) throw new HttpError(409, 'conflict', 'You are the last admin. Make someone else an admin first.');
   }
   await ctx.db.batch([
-    ctx.db.prepare("UPDATE users SET status = 'deleted', status_before_delete = status, deleted_at = ?2 WHERE id = ?1").bind(user.id, ctx.now),
+    softDeleteStatement(ctx.db, user.id, ctx.now),
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(user.id),
     ctx.db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(user.id),
   ]);

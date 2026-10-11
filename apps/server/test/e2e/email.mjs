@@ -12,8 +12,9 @@
 // signup needs an address; the link from the mail confirms it once; a
 // tampered link does nothing; an address another account verified gets a
 // notice instead of a link while the answer stays the same; resend limits;
-// replacing an unverified address; the admin actions (resend, mark verified)
-// and their audit entries.
+// replacing an unverified address; the admin actions (resend, mark verified,
+// the in-use notice reported) and their audit entries; a deleted account
+// releasing its address and a restore that finds it taken.
 import assert from 'node:assert/strict';
 
 const BASE = process.argv[2] || 'http://localhost:8798';
@@ -142,5 +143,24 @@ const auditLog = await api(`/api/admin/audit?target=${c.id}`, {}, ADMIN);
 assert.deepEqual(auditLog.body.entries.map((e) => e.action).sort(), ['user.email_resend', 'user.email_verify']);
 assert.equal((await post(`/api/admin/users/${c.id}/email/verify`, {}, B)).status, 403, 'admins only');
 step('admin: verification state, resend and mark verified, audited');
+
+// ---- Admin resend to a taken address; deletion releases the address; restore re-checks ----------------
+const D = `Twin${RUN}`;
+const d = await signup(D, aMail);
+const twinResend = await post(`/api/admin/users/${d.id}/email/resend`, {}, ADMIN);
+assert.deepEqual([twinResend.body.sent, twinResend.body.notice], [true, true], 'the admin is told the notice went out');
+assert.equal((await api(`/api/admin/users/${c.id}`, { method: 'DELETE' }, ADMIN)).status, 200);
+const E = `Again${RUN}`;
+await signup(E, cMail);
+const eMail = (await outbox(cMail)).at(-1);
+assert.doesNotMatch(eMail.subject, /already has an account/, 'a deleted account does not hold its address');
+const eVerified = await post('/api/auth/email/verify', { token: linkOf(eMail) }, E);
+assert.equal(eVerified.status, 200);
+assert.equal(eVerified.body.user.emailVerified, true);
+const restored = await post(`/api/admin/users/${c.id}/restore`, {}, ADMIN);
+assert.equal(restored.status, 200);
+assert.deepEqual(restored.body.dropped, ['emailVerified']);
+assert.equal(restored.body.user.emailVerified, false);
+step('admin resend reports the in-use notice; deletion releases the address; restore drops what was taken');
 
 console.log('email end-to-end test passed');

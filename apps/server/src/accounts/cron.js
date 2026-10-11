@@ -8,8 +8,8 @@ import { pruneQuotas } from '../quota.js';
 import { auditStatement, AUDIT_RETENTION_MS } from './audit.js';
 import { purgeStatements } from './routes-admin.js';
 import { IP_RETENTION_MS, SESSION_IDLE_MS } from './sessions.js';
-import { DELETED_RETENTION_MS } from './users.js';
-import { services } from './site.js';
+import { DELETED_RETENTION_MS, softDeleteStatement } from './users.js';
+import { effective, loadSite } from './site.js';
 
 export const PRESENCE_RETENTION_MS = 24 * 60 * 60 * 1000;
 /**
@@ -68,32 +68,30 @@ export async function runRetention(env, now = Date.now()) {
 }
 
 /**
- * Signups still `pending_email` UNCONFIRMED_SIGNUP_MS after their address was
- * set (and never approved) are deleted like a self-deletion: the address is
- * cleared (it may not be theirs), sessions and links go, and the account is
- * purged with the other deleted accounts 30 days later (an admin can
- * restore it until then; restored, it has no address, so it waits until
- * one is added and then has 7 days again). Only while email can be sent:
- * without it nobody could have confirmed. Returns how many expired.
+ * Signups that have waited in `pending_email` since they were created
+ * (`unconfirmed_signup`, which the first status change ends for good: an
+ * account that was ever verified, approved, active, or set to
+ * `pending_email` by an admin never expires) and whose address was set more
+ * than UNCONFIRMED_SIGNUP_MS ago are deleted like a self-deletion: the
+ * address is cleared (it may not be theirs), sessions and links go, and the
+ * account is purged with the other deleted accounts 30 days later (an admin
+ * can restore it until then). Plain users only. Only while verification
+ * links can actually be sent (email sending configured and `login.email`
+ * on): otherwise nobody could have confirmed. Returns how many expired.
  */
 export async function expireUnconfirmedSignups(env, now = Date.now()) {
-  if (!services(env).email) return 0;
   const db = env.DB;
+  if (!effective((await loadSite(db)).settings, env).login.email) return 0;
   const { results } = await db
     .prepare(
-      `SELECT id, username FROM users WHERE status = 'pending_email' AND approved_at IS NULL
+      `SELECT id, username FROM users WHERE status = 'pending_email' AND unconfirmed_signup = 1 AND role = 'user' AND approved_at IS NULL
          AND email IS NOT NULL AND COALESCE(email_set_at, created_at) < ?1 LIMIT ?2`,
     )
     .bind(now - UNCONFIRMED_SIGNUP_MS, PURGE_BATCH)
     .all();
   for (const { id, username } of results) {
     await db.batch([
-      db
-        .prepare(
-          `UPDATE users SET status = 'deleted', status_before_delete = status, deleted_at = ?2, email = NULL, email_key = NULL, email_set_at = NULL
-           WHERE id = ?1 AND status = 'pending_email'`,
-        )
-        .bind(id, now),
+      softDeleteStatement(db, id, now, { clearEmail: true, onlyStatus: 'pending_email' }),
       db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(id),
       db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(id),
       auditStatement(

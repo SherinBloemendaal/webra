@@ -2,7 +2,7 @@
 // (docs/accounts-api.md section 4.6). Tests never reach discord.com.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Browser, Clock, makeEnv, ORIGIN, PASSWORD, promote, setSite, signup } from './accounts-harness.mjs';
+import { Browser, Clock, makeEnv, ORIGIN, PASSWORD, promote, scheduled, setSite, signup } from './accounts-harness.mjs';
 import { discordApi } from '../src/accounts/discord.js';
 import { sha256Bytes, toBase64Url } from '../src/crypto.js';
 
@@ -195,4 +195,97 @@ test('link, reauth and unlink; already linked; bans; Discord as the last method'
   const c = new Browser(env, { ip: '203.0.113.99' });
   assert.equal((await flow(c, mock, { mode: 'login' })).fragment, 'discord=error&code=banned');
   assert.equal(c.signedIn, false);
+});
+
+// ---- Email review (2026-10-11): deleted accounts give up their Discord account; signup limits per network ----
+
+/** A signed-in admin. */
+async function adminIn(env) {
+  const a = await signup(env, 'Root Admin', { ip: '198.51.100.1' });
+  promote(env, a.user.id, 'admin');
+  assert.equal((await a.post('/api/auth/login', { login: 'root admin', password: PASSWORD })).status, 200);
+  return a;
+}
+
+test('review 2: an expired, self-deleted, rejected or deleted Discord signup does not lock its Discord account out', async () => {
+  const env = makeEnv({ email: true, discord: true });
+  const unverified = { id: '9001', username: 'expiry', email: 'expiry@example.com', verified: false };
+  // Expired: a Discord signup with a typed address that never confirmed it.
+  const a = new Browser(env, { ip: '203.0.113.110' });
+  assert.equal((await flow(a, mockDiscord(unverified), { mode: 'signup', acceptPrivacy: true, email: 'expiry@example.com' })).fragment, 'discord=ok');
+  clock.advance(8 * 24 * 60 * 60 * 1000);
+  await scheduled(env, clock.now);
+  assert.equal(env.DB.rows("SELECT status, discord_id, deleted_discord_id FROM users WHERE username = 'expiry'")[0].status, 'deleted');
+  assert.deepEqual(env.DB.rows("SELECT discord_id, deleted_discord_id FROM users WHERE username = 'expiry'")[0], { discord_id: null, deleted_discord_id: '9001' });
+  const again = new Browser(env, { ip: '203.0.113.111' });
+  assert.equal((await flow(again, mockDiscord(unverified), { mode: 'signup', acceptPrivacy: true, email: 'expiry@example.com' })).fragment, 'discord=ok', 'not account_inactive');
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM users WHERE discord_id = '9001' AND status != 'deleted'")[0].n, 1);
+
+  // Self-deleted: the Discord account and the verified address come free at once.
+  const verifiedProfile = { id: '9002', username: 'leaver', email: 'leaver@example.com', verified: true };
+  const b = new Browser(env, { ip: '203.0.113.112' });
+  assert.equal((await flow(b, mockDiscord(verifiedProfile), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok');
+  assert.equal((await flow(b, mockDiscord(verifiedProfile), { mode: 'reauth', returnTo: '/account/' })).fragment, 'discord=ok');
+  const me = (await b.get('/api/account')).body.user;
+  assert.equal((await b.del('/api/account', { confirm: me.username })).status, 204);
+  const c = new Browser(env, { ip: '203.0.113.113' });
+  assert.equal((await flow(c, mockDiscord(verifiedProfile), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok', 'neither email_taken nor account_inactive');
+  assert.equal((await c.get('/api/auth/me')).body.user.emailVerified, true);
+
+  // Rejected and admin-deleted.
+  const admin = await adminIn(env);
+  for (const [i, how] of [['9003', 'reject'], ['9004', 'delete']]) {
+    const p = { id: i, username: `gone${i}`, email: `gone${i}@example.com`, verified: true };
+    const d = new Browser(env, { ip: `203.0.113.${120 + Number(i) - 9000}` });
+    assert.equal((await flow(d, mockDiscord(p), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok');
+    const id = (await d.get('/api/auth/me')).body.user.id;
+    const r = how === 'reject' ? await admin.post(`/api/admin/users/${id}/reject`, {}) : await admin.del(`/api/admin/users/${id}`);
+    assert.equal(r.status, 200, how);
+    const e = new Browser(env, { ip: `203.0.113.${130 + Number(i) - 9000}` });
+    assert.equal((await flow(e, mockDiscord(p), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok', how);
+    // Restoring the old account now: its Discord account is linked elsewhere and it has no other way to sign in.
+    const restore = await admin.post(`/api/admin/users/${id}/restore`, {});
+    assert.equal(restore.status, 409, how);
+    assert.equal(restore.body.error.field, 'discord');
+  }
+});
+
+test('review 2: restore gives back the Discord account and the verified address when still free, drops them when taken', async () => {
+  const env = makeEnv({ email: true, discord: true });
+  const admin = await adminIn(env);
+  const profile = { id: '9100', username: 'twice', email: 'twice@example.com', verified: true };
+  const a = new Browser(env, { ip: '203.0.113.140' });
+  assert.equal((await flow(a, mockDiscord(profile), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok');
+  const id = (await a.get('/api/auth/me')).body.user.id;
+  // A password too, so the account can come back without Discord.
+  env.DB.sqlite.prepare("UPDATE users SET password_hash = 'aa', password_salt = 'bb', password_iterations = 10000 WHERE id = ?").run(id);
+  assert.equal((await admin.del(`/api/admin/users/${id}`)).status, 200);
+  // Free again: everything comes back.
+  const back = await admin.post(`/api/admin/users/${id}/restore`, {});
+  assert.equal(back.status, 200);
+  assert.deepEqual(back.body.dropped, []);
+  assert.equal(back.body.user.emailVerified, true);
+  assert.equal(back.body.user.methods.discord.id, '9100');
+  assert.equal(env.DB.rows('SELECT email_key FROM users WHERE id = ?', id)[0].email_key, 'twice@example.com');
+  // Deleted again, and meanwhile a new account takes both.
+  assert.equal((await admin.del(`/api/admin/users/${id}`)).status, 200);
+  const b = new Browser(env, { ip: '203.0.113.141' });
+  assert.equal((await flow(b, mockDiscord(profile), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok');
+  const restored = await admin.post(`/api/admin/users/${id}/restore`, {});
+  assert.equal(restored.status, 200);
+  assert.deepEqual(restored.body.dropped.sort(), ['discord', 'emailVerified']);
+  assert.equal(restored.body.user.emailVerified, false, 'the address stays, unverified: it claims nothing');
+  assert.equal(restored.body.user.methods.discord, null);
+  const audit = env.DB.rows("SELECT after_json FROM audit_log WHERE action = 'user.restore' AND target_id = ? ORDER BY id DESC LIMIT 1", id)[0];
+  assert.deepEqual(JSON.parse(audit.after_json).dropped.sort(), ['discord', 'emailVerified']);
+});
+
+test('review 1: the Discord signup limit counts per network (an IPv6 /64), not per address', async () => {
+  const env = makeEnv({ email: false, discord: true });
+  for (let i = 0; i < 10; i++) await signup(env, `Net Signup ${i}`, { ip: `2001:db8:7:8::${i + 1}` });
+  const b = new Browser(env, { ip: '2001:db8:7:8::ffff' });
+  const p = { id: '9200', username: 'rotator', email: 'rotator@example.com', verified: true };
+  assert.equal((await flow(b, mockDiscord(p), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=error&code=rate_limited');
+  const other = new Browser(env, { ip: '2001:db8:7:9::1' });
+  assert.equal((await flow(other, mockDiscord(p), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=ok', 'another /64');
 });
