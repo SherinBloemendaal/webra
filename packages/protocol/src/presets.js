@@ -20,6 +20,7 @@ import {
   TECH_LEVELS,
   TIME_LIMITS,
   WEATHER_MODES,
+  MOVEMENT_MODELS,
 } from './constants.js';
 import { bool, fail, isPlainObject, object, oneOf, ProtocolError, text } from './check.js';
 
@@ -34,6 +35,7 @@ export const PRESET_KEYS = Object.freeze([
   'techLevel',
   'gameSpeed',
   'timeLimit',
+  'movement',
   ...BOOLEAN_OPTIONS,
 ]);
 
@@ -52,6 +54,8 @@ export const ADDED_PRESET_KEYS = Object.freeze([
   'allyBuildRadius',
   'reusableEngineers',
   'techBuildings',
+  // The movement model (engine/src/movement): modes saved before it take OpenRA's.
+  'movement',
 ]);
 
 /** Most saved modes per account. */
@@ -141,6 +145,7 @@ export function validatePresetOptions(raw, what = 'options') {
     techLevel: oneOf(v.techLevel, TECH_LEVELS, `${what}.techLevel`),
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
     timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
+    movement: oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`),
   };
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;

@@ -167,6 +167,15 @@ export const BOOLEAN_OPTIONS = [
   'reusableEngineers',
 ];
 
+/**
+ * How units move among each other (engine/src/movement): `openra`, OpenRA's
+ * cell occupancy (units hold their cells, wait for and nudge each other,
+ * never push), or `webra`, WebRA's soft crowd separation. Games, saves and
+ * replays without the option are played with `webra`, the model they were
+ * made with.
+ */
+export const MOVEMENT_MODELS = ['openra', 'webra'];
+
 /** Time limits in minutes, 0 for none (OpenRA TimeLimitManager TimeLimitOptions). */
 export const TIME_LIMITS = [0, 10, 20, 30, 40, 60, 90];
 /** Handicaps in percent: less firepower and armour, slower production (OpenRA: 0 to 95 in steps of 5). */
@@ -218,6 +227,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
   separateTeamSpawns: true,
   allyBuildRadius: true,
   timeLimit: 0,
+  movement: 'openra',
 });
 
 /** Slot types in an online lobby. */

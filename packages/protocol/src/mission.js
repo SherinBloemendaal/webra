@@ -6,7 +6,7 @@
 // name the file by id and SHA-256 instead of carrying it; the loader fetches
 // it and refuses a file whose hash differs (the mission changed).
 
-import { GAME_SPEEDS, SEED_MAX, SHA256_RE } from './constants.js';
+import { GAME_SPEEDS, MOVEMENT_MODELS, SEED_MAX, SHA256_RE } from './constants.js';
 import { fail, int, isPlainObject, matches, object, oneOf } from './check.js';
 import { COOP_MISSIONS } from './coop-missions.js';
 
@@ -43,9 +43,13 @@ export const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** Mission lobby option keys and values (OpenRA ScriptLobbyDropdown ids and values). */
 export const MISSION_OPTION_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
 export const MISSION_OPTIONS_MAX = 8;
-export const MISSION_OPTION_KEYS = ['seed', 'gameSpeed', 'options'];
+export const MISSION_OPTION_KEYS = ['seed', 'gameSpeed', 'options', 'movement'];
 
-/** `{ seed, gameSpeed, options: { key: value } }`, validated; returns a fresh object. */
+/**
+ * `{ seed, gameSpeed, options: { key: value }, movement? }`, validated;
+ * returns a fresh object. `movement` (MOVEMENT_MODELS) is left out by
+ * mission saves and replays from before it: they play with `webra`.
+ */
 export function validateMissionOptions(v, what = 'options') {
   object(v, MISSION_OPTION_KEYS, what);
   const opts = v.options;
@@ -57,11 +61,13 @@ export function validateMissionOptions(v, what = 'options') {
     matches(k, MISSION_OPTION_RE, `${what}.options key`);
     options[k] = matches(opts[k], MISSION_OPTION_RE, `${what}.options.${k}`);
   }
-  return {
+  const out = {
     seed: int(v.seed, 0, SEED_MAX, `${what}.seed`),
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
     options,
   };
+  if (v.movement !== undefined) out.movement = oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`);
+  return out;
 }
 
 /** `{ id, hash }` of a mission file, validated; returns a fresh object. */
