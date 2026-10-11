@@ -1,0 +1,45 @@
+/* The map lens (js/maplens/lens.js): a round magnifier over map previews
+   that shows the real map under the pointer. Placed through the custom
+   properties the script sets with CSSOM (CSP: no inline styles); sized in
+   --ui-px like the chrome around it, never wider than half a phone screen.
+   No transitions: it shows and hides at once (reduced motion needs nothing). */
+
+.map-lens {
+  --map-lens-x: 0px;
+  --map-lens-y: 0px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 190;
+  width: min(calc(176 * var(--ui-px)), 48vw);
+  aspect-ratio: 1;
+  border: 2px solid var(--ui-accent);
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  box-shadow:
+    0 0 0 1px var(--ui-edge),
+    0 0 0 4px var(--ui-accent-glow),
+    var(--ui-shadow);
+  font-family: var(--ui-font-display);
+  pointer-events: none;
+  transform: translate(var(--map-lens-x), var(--map-lens-y));
+}
+
+.map-lens[hidden] {
+  display: none;
+}
+
+.map-lens-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* A preview with a lens: a long press shows the lens, not the browser's
+   callout or a text selection. Taps and scrolling stay as they are. */
+.map-lens-target {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

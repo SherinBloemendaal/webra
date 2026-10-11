@@ -400,6 +400,7 @@ export class OnlineUI {
    *   account?: { session: import('./account/session.js').AccountSession, signIn: (reason: string) => Promise<object | null> },
    *   sounds?: { chatLine(): void, lobby(event: 'joined' | 'left' | 'option'): void },
    *   mapVersions?: object,  the map format version registry (tests; the protocol's by default)
+   *   lens?: () => import('./maplens/lens.js').MapLens,  a magnifier over the map preview (js/maplens)
    * }} ctx  account: signed-in players play under their username (protocol 5);
    *   sounds: OpenRA's chat and lobby sounds (js/audio/index.js)
    */
@@ -417,6 +418,8 @@ export class OnlineUI {
     /** Co-op mission previews by id (RGBA rows), and the index entries (briefing, option labels). */
     this.missionPreviews = new Map();
     this.missionEntries = new Map();
+    /** The magnifier over the map preview (js/maplens), or null. */
+    this.lens = ctx.lens?.() ?? null;
     /** The local map library (js/maplibrary.js) and its list for the host's map picker. */
     this.library = ctx.library ?? mapLibrary();
     this.libraryMaps = [];
@@ -1385,7 +1388,13 @@ export class OnlineUI {
       caption.append(el('span', 'online-badge', st.map.shared ? 'CUSTOM' : 'COMMUNITY'));
       if (st.map.modded) caption.append(el('span', 'online-badge online-badge-modded', 'MODDED'));
       const json = this.installed.get(st.map.hash);
-      if (json) this.drawPreview(canvas, () => this.ctx.Game.map_file_preview(json), JSON.parse(json).width);
+      if (json) {
+        this.drawPreview(canvas, () => this.ctx.Game.map_file_preview(json), JSON.parse(json).width);
+        this.lens?.setSource(`map:${st.map.hash}`, (art) => art.fromMap(json), { width: st.map.width, height: st.map.height });
+      } else {
+        // Not installed: no preview, nothing to magnify.
+        this.lens?.clearSource();
+      }
     } else {
       const o = st.options;
       // What a random style or biome comes out as for this seed (every peer computes the same).
@@ -1393,9 +1402,13 @@ export class OnlineUI {
       const look = G.resolved_style ? `, ${LABELS.mapStyle[G.resolved_style(o.seed, o.mapStyle)]}, ${LABELS.biome[G.resolved_biome(o.seed, o.biome)]}` : '';
       caption.textContent = `Generated, ${LABELS.mapSize[o.mapSize]} ${o.mapSize} x ${o.mapSize}${look}, seed ${o.seed}`;
       this.drawPreview(canvas, () => G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
+      const gen = { seed: o.seed, size: o.mapSize, players, style: o.mapStyle, biome: o.biome, tech: o.techBuildings ?? 'standard' };
+      this.lens?.setSource(`gen:${gen.seed}/${gen.size}/${gen.players}/${gen.style}/${gen.biome}/${gen.tech}`, (art) => art.fromGenerated(gen), { width: gen.size, height: gen.size });
     }
     canvas.setAttribute('aria-label', `Map preview: ${caption.textContent}`);
     box.append(canvas, caption);
+    // On the page first: a lens showing under the mouse stays over the new preview.
+    this.lens?.attach(canvas);
     if (st.map) box.append(el('p', 'online-muted online-map-details', `By ${st.map.author}, ${st.map.width} x ${st.map.height} cells, ${formatBytes(st.map.bytes)}`));
     if (st.mission) box.append(this.renderMission());
     const offer = this.renderMapOffer();
@@ -1505,15 +1518,17 @@ export class OnlineUI {
     const cached = this.missionPreviews.get(mission.hash);
     if (cached) {
       this.drawPreview(canvas, () => cached.rgba, cached.width);
+      this.lens?.setSource(`mission:${mission.hash}`, (art) => art.fromMission(cached.text), { width: cached.width, height: cached.rgba.length / 4 / cached.width });
       return;
     }
+    this.lens?.clearSource();
     if (!this.ctx.missionText || this.missionPreviews.has(`loading:${mission.hash}`)) return;
     this.missionPreviews.set(`loading:${mission.hash}`, true);
     this.ctx
       .missionText(mission.id, mission.hash)
       .then((textValue) => {
         const width = JSON.parse(textValue).map.width;
-        this.missionPreviews.set(mission.hash, { rgba: this.ctx.Game.mission_preview(textValue), width });
+        this.missionPreviews.set(mission.hash, { rgba: this.ctx.Game.mission_preview(textValue), width, text: textValue });
         if (this.state?.mission?.hash === mission.hash) this.renderMap();
       })
       .catch((err) => console.warn('Mission preview failed:', err));

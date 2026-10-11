@@ -37,6 +37,9 @@ import { PALETTE_GROUPS } from './js/palette.js';
 import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, isModded, mapFileName, mapFileText, parseMap, validateMap } from './js/mapformat.js';
 import { applyFix, openMapFile } from './js/upgrade.js';
 import { mapThumbnail } from '../js/protocol.js';
+import { LensArt } from '../js/maplens/source.js';
+import { MapLens } from '../js/maplens/lens.js';
+import { resolveGameScale, screenOf } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
 
@@ -115,6 +118,8 @@ let minimap;
 let renderer;
 let art;
 let preview;
+/** The magnifier over the Map tab's thumbnail (js/maplens): the map in the game's art. */
+let thumbLens = null;
 let keys;
 let engineResult = null;
 let jsResult = null;
@@ -156,6 +161,10 @@ async function boot() {
     TEAM_COLORS[PREVIEW_NEUTRAL] = NEUTRAL_COLOR.slice();
     animClock.watchReducedMotion();
     preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
+    thumbLens = new MapLens({
+      art: new LensArt({ Game, memory: () => wasm.memory, content: art.content }),
+      gameScale: () => resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: window.devicePixelRatio || 1 }),
+    });
     await start();
   } catch (err) {
     fail(err);
@@ -525,10 +534,17 @@ function fixOpened(p, fix) {
 function renderThumbnail() {
   const canvas = $('#map-thumb');
   if (!canvas) return;
-  const { width, height, rgba } = mapThumbnail(doc.toMap());
+  const map = doc.toMap();
+  const { width, height, rgba } = mapThumbnail(map);
   canvas.width = width;
   canvas.height = height;
   canvas.getContext('2d').putImageData(new ImageData(rgba, width, height), 0, 0);
+  // Its magnifier shows the map as a game draws it (read on the first hover after a change).
+  if (thumbLens) {
+    if (thumbLens.image !== canvas) thumbLens.attach(canvas);
+    const json = JSON.stringify(map);
+    thumbLens.setSource(json, (lensArt) => lensArt.fromMap(json), { width, height });
+  }
 }
 
 function renderFairness() {
@@ -884,7 +900,7 @@ function buildMapPane() {
     el('p', { id: 'map-stats', class: 'hint' }),
     el('h2', {}, 'Thumbnail'),
     el('canvas', { id: 'map-thumb', class: 'map-thumb', width: '1', height: '1', role: 'img', 'aria-label': 'The thumbnail the map list shows' }),
-    el('p', { class: 'hint' }, 'Drawn from the map itself (terrain, ore, actors, spawns in their slot colours), never from installed art: what the community map list shows.'),
+    el('p', { class: 'hint' }, 'Drawn from the map itself (terrain, ore, actors, spawns in their slot colours), never from installed art: what the community map list shows. Point at it for a closer look in the game\'s art.'),
     el('p', { class: 'hint' }, 'Player slots and the game options the lobby starts with are in the Setup tab. Custom maps carry no scripts.'),
   );
 }

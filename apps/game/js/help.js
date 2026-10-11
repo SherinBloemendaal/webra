@@ -19,12 +19,13 @@ export const HELP = Object.freeze({
     'A game mode sets the world and the rules below in one go (not the seed, the map size or the players). Only the host picks it; changing any option switches to Custom. Everyone sees the options it set.',
 
   // ---- Battlefield ---------------------------------------------------------------
-  mapSource: 'Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map.',
+  mapSource:
+    "Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold).",
   mapSize: 'Width and height of a generated map in cells: Small 64, Medium 96, Large 128, Huge 160. Five or more players need at least Medium.',
   mapFile:
     'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first. Maps made for an older WebRA are upgraded automatically; save them in the map editor to keep the upgrade.',
   onlineMap:
-    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it.',
+    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold).',
   seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',
 
   // ---- World -----------------------------------------------------------------------
@@ -81,7 +82,7 @@ export const HELP = Object.freeze({
 
   // ---- Campaign (js/campaign/menu.js) ------------------------------------------------------
   campaign:
-    "OpenRA's Red Alert missions with their maps, rules and scripts: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions. In the campaigns a chapter opens once you win a mission of the chapter before it (any of its variants); the other missions are open from the start. Your progress is kept with your settings and follows your account. The original movies are not part of WebRA: a card stands in for each.",
+    "OpenRA's Red Alert missions with their maps, rules and scripts: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions. In the campaigns a chapter opens once you win a mission of the chapter before it (any of its variants); the other missions are open from the start. Your progress is kept with your settings and follows your account. The original movies are not part of WebRA: a card stands in for each. Point at the mission's map for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold).",
   'mission.difficulty':
     "How hard the mission's script makes it, as the mission sets it: more or stronger enemies, fewer reinforcements, less time or less money. Some missions have a fourth level, Real tough guy.",
 

@@ -80,6 +80,8 @@ import { EndGameDialog, EndGameFlow } from './endgame.js';
 import { StatsScreen } from './stats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
 import { CampaignMenu } from './campaign/menu.js';
+import { LensArt } from './maplens/source.js';
+import { MapLens } from './maplens/lens.js';
 import { connectRegistry, setTags } from './telemetry/index.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
@@ -126,6 +128,8 @@ let account = null;
 const playAccess = new PlayAccess({ onLost: playAccessLost });
 /** The page's UI scale (js/scale.js): follows the setting and the screen, previewed by the game menu. */
 let uiScale = null;
+/** The map lens's art (js/maplens): the game's art for the magnifiers over map previews, or null without the engine. */
+let lensArt = null;
 
 async function boot() {
   // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
@@ -142,6 +146,7 @@ async function boot() {
   setupAudio();
   setupAccount();
   setupContent();
+  if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content });
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   const lobby = new Lobby($('menu'), {
     colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
@@ -163,6 +168,7 @@ async function boot() {
           fileName,
         }),
     },
+    lens: newMapLens,
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
     onCampaign: () => campaign?.open(),
@@ -189,6 +195,15 @@ async function boot() {
   else offerLinkedMap(lobby);
   // Once per new version: what changed since this browser last played.
   releaseNotes.showWhatsNewOnce();
+}
+
+/**
+ * A magnifier for a map preview (js/maplens/lens.js), zoomed like the game
+ * at the player's game scale; undefined without the engine.
+ */
+function newMapLens() {
+  if (!lensArt) return undefined;
+  return new MapLens({ art: lensArt, gameScale: () => resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: window.devicePixelRatio || 1 }) });
 }
 
 /** Compile the engine (kept for the simulation worker) and instantiate it for the lobby. */
@@ -481,6 +496,7 @@ function setupOnline(lobby, gpuError) {
       const { mountOnline } = await playAccess.load(() => import('./online.js'));
       ui = mountOnline(root, {
         Game,
+        lens: newMapLens,
         version: version(),
         createGame: createOnlineGame,
         colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
@@ -604,6 +620,7 @@ function setupCampaign(lobby, gpuError) {
   if (!root || !wasm) return;
   campaign = new CampaignMenu(root, {
     index: missionIndex,
+    lens: newMapLens,
     missionText: (entry) => missionFile(entry.id, entry.sha256),
     preview: (text) => {
       const { map } = JSON.parse(text);
@@ -957,6 +974,8 @@ function recorderOf({ host, info }) {
 // `mission` (`{ entry, options }`: its index entry, or null when the index no
 // longer lists it, and its options) marks a campaign mission (js/campaign).
 function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null }) {
+  // The map lenses' art and tiles are not needed while a game runs.
+  lensArt?.release();
   const game = host.game;
   $('menu').hidden = true;
   $('records-entry').hidden = true;

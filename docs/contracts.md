@@ -209,6 +209,38 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   null, autostart }`) and opens `/play/?editorTest=1`; the lobby checks the
   slots like stored settings, the camera starts at `camera` (world pixels) and
   `autostart` starts the game at once.
+- Map lens (`apps/game/js/maplens`, presentation only): a round magnifier
+  over a map preview that shows the real map under the pointer as a game on
+  it starts, fog free like the preview: terrain with ore, gems, cliffs and
+  water, bridges, buildings, units and trees, and the start positions. The
+  map is read on the first hover through `Game.editor_preview(mapJson)` (map
+  files, and generated maps through `Game.generated_map_with` with the
+  lobby's seed, size, player count, style, biome and tech buildings) or
+  `Game.from_mission(text, '{"seed":1}')` (missions: their actors after
+  `WorldLoaded`, in the mission's colours), copied out (`terrain_ptr`,
+  `build_render` for the spectator view 255) and the engine game is freed.
+  It is drawn with the game's art (`js/gameart.js` `buildGameAtlas`, the
+  biome's terrain tiles, installed original graphics or texture packs when
+  chosen, else WebRA's) by `js/maplens/raster.js`, a 2D canvas port of
+  `shaders/terrain.wgsl` and the frame choice of `shaders/sprite.wgsl` with
+  the render clock at 0 and clear weather, so it needs no WebGPU context.
+  The map is cut into tiles of 8 x 8 cells at 24 pixels per cell, drawn a
+  few rows per animation frame within a 6 ms budget (the preview's pixels
+  stand in until a tile is ready) and kept in an LRU cache of 48 tiles per
+  lens; at most two sprite atlases are kept, and all of it is let go when a
+  game starts (`LensArt.release`). The lens starts at the game's
+  zoom (`baseZoom` of the player's game scale); the mouse wheel zooms it
+  between the game's zoom limits only while it shows after the pointer
+  moved over the preview, and scrolls the page again at a limit. On touch,
+  press and hold (350 ms) shows it above the finger. It is `aria-hidden`,
+  never focused, placed through CSSOM custom properties (CSP) and sized in
+  `--ui-px` (`css/maplens.css`). Previews with a lens: the skirmish lobby,
+  the online lobby (generated maps, installed shared and community maps,
+  co-op missions), the campaign screen and the map editor's thumbnail. None
+  where only the server's PNG exists (the website's map list, the editor's
+  community map list): that would mean downloading every map and the
+  engine and art into those pages; and none on an Install/Decline question,
+  which shows no preview until the map is installed.
 
 ### Map versions (`formatVersion`, `gameVersion`)
 
