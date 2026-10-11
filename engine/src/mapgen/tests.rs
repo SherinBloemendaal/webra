@@ -55,6 +55,7 @@ fn every_style_is_fair_and_connected() {
                     for i in 0..m.cells() {
                         assert!(!m.has_resource(i) || m.terrain[i].holds_ore(), "{what}: ore or gems on {:?}", m.terrain[i]);
                     }
+                    assert_eq!(super::validate(&m, style), Ok(()), "{what}");
                     let stats = measure(&m);
                     if style.naval() {
                         for (k, b) in stats.bases.iter().enumerate() {
@@ -124,17 +125,60 @@ fn seeds_make_varied_maps() {
     }
 }
 
-/// Rivers cross the map, so ground routes over them use fords that ships
-/// can still pass.
+/// Rivers cross the map, so ground routes over them use fords; to ships a
+/// ford is land (OpenRA's ford templates are Rough and Road), so no base
+/// needs one to reach the shared sea: with every ford counted as land each
+/// base still has its naval yard site and its route to the hub.
 #[test]
-fn rivers_have_fords_that_ships_can_pass() {
+fn rivers_have_fords_and_no_sea_route_needs_one() {
+    assert!(Terrain::Ford.passable() && !Terrain::Ford.ship_passable() && !Terrain::Ford.landing_passable());
+    assert!(!Terrain::Ford.buildable() && !Terrain::Ford.holds_ore());
     let mut fords = 0;
     for seed in 0..8 {
-        let m = Map::generate_styled(96, 96, seed, 12, 2, MapStyle::Rivers);
-        fords += measure(&m).fords;
-        assert!(Terrain::Ford.passable() && Terrain::Ford.ship_passable() && !Terrain::Ford.buildable() && !Terrain::Ford.holds_ore());
+        for players in [2, 4, 6] {
+            let size = if players <= 4 { 96 } else { 128 };
+            let m = Map::generate_styled(size, size, seed, 12, players, MapStyle::Rivers);
+            let stats = measure(&m);
+            fords += stats.fords;
+            for (k, b) in stats.bases.iter().enumerate() {
+                assert!(b.naval_yard_site && b.naval_steps.is_some(), "seed {seed}, {players} players: base {k} {b:?}");
+            }
+        }
     }
     assert!(fords > 0, "rivers without fords");
+}
+
+/// Every generator preset over many seeds: the map passes the generator's
+/// validation (`mapgen::validate`: bases joined by ground, no large land cut
+/// off, and in the naval styles a naval yard site on the shared sea for
+/// every base, over open water only), and the first layout already does
+/// almost always: sea routes are kept free of roads and fords, channels
+/// stay off the map border and land enclosed by sea routes is flooded, so
+/// the retry with another layout is a rare fallback.
+#[test]
+fn every_preset_passes_validation_almost_always_at_the_first_layout() {
+    let (mut total, mut retried) = (0, Vec::new());
+    for style in MapStyle::CONCRETE {
+        for players in 2..=8 {
+            for &size in sizes(players) {
+                for seed in 0..12u64 {
+                    total += 1;
+                    let first = if players == 2 {
+                        Map::generate_two_once(size, size, seed, 12, style)
+                    } else {
+                        Map::generate_pockets_once(size, size, seed, 12, players, style)
+                    };
+                    let what = format!("{style:?}, {players} players, size {size}, seed {seed}");
+                    if let Err(e) = super::validate(&first, style) {
+                        retried.push(format!("{what}: {e}"));
+                    }
+                    let m = Map::generate_styled(size, size, seed, 12, players, style);
+                    assert_eq!(super::validate(&m, style), Ok(()), "{what}");
+                }
+            }
+        }
+    }
+    assert!(100 * retried.len() <= total, "{} of {total} first layouts failed:\n{}", retried.len(), retried.join("\n"));
 }
 
 /// The pockets of 3 to 8 players are the same picture for ground units, and

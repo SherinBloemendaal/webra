@@ -2,7 +2,7 @@
 //! locomotor goes only where OpenRA's world.yaml TerrainSpeeds let it (no
 //! entry or 0: impassable), on hand-made maps, map files and generated maps
 //! of every style. Fords are WebRA's own (generated maps): ground units wade
-//! through at rough speed and ships sail over them.
+//! through at rough speed; for ships they are land.
 
 use std::collections::BTreeMap;
 
@@ -70,16 +70,12 @@ fn every_locomotor_follows_openras_terrain_speeds() {
     let mut checked = 0;
     for l in w.rules.locomotors.iter().filter(|l| l.domain != Domain::Air) {
         let table = speeds.get(&l.name).unwrap_or_else(|| panic!("{} is not an OpenRA locomotor", l.name));
-        for t in all_terrains() {
-            if t == Terrain::Ford {
-                continue;
-            }
+        for t in all_terrains().into_iter().filter(|&t| t != Terrain::Ford) {
             let openra = table.get(t.name()).copied().unwrap_or(0);
             assert_eq!(engine_open(l, t), openra > 0, "{} on {}: OpenRA speed {openra}", l.name, t.name());
             if openra > 0 {
                 let m = Map::filled(1, 1, t);
-                let ship = l.domain == Domain::Water;
-                assert_eq!(l.speeds[m.speed_class_for(0, ship)], openra, "{} speed on {}", l.name, t.name());
+                assert_eq!(l.speeds[m.speed_class(0)], openra, "{} speed on {}", l.name, t.name());
             }
             checked += 1;
         }
@@ -98,13 +94,11 @@ fn every_locomotor_follows_openras_terrain_speeds() {
                 assert_eq!(openra, 0, "{} on {res}", l.name);
             }
         }
-        // Fords (WebRA's generated river crossings): ground at rough speed, ships at water speed.
+        // Fords (WebRA's generated river crossings): ground at rough speed;
+        // land for ships and landing craft (OpenRA's ford templates are Rough and Road).
         let ford = Map::filled(1, 1, Terrain::Ford);
-        match l.domain {
-            Domain::Ground => assert_eq!(l.speeds[ford.speed_class_for(0, false)], table["Rough"], "{} on a ford", l.name),
-            _ => assert_eq!(l.speeds[ford.speed_class_for(0, true)], table["Water"], "{} on a ford", l.name),
-        }
-        assert!(engine_open(l, Terrain::Ford));
+        assert_eq!(l.speeds[ford.speed_class(0)], table.get("Rough").copied().unwrap_or(0), "{} on a ford", l.name);
+        assert_eq!(engine_open(l, Terrain::Ford), l.domain == Domain::Ground, "{} on a ford", l.name);
     }
     assert!(checked >= 8 * 10, "every locomotor and terrain type");
 }
@@ -127,7 +121,7 @@ fn units_off_their_ground(w: &World) -> Vec<String> {
         }
         let ci = w.cell_index(a.x, a.y);
         let t = w.map.terrain[ci];
-        if !engine_open(l, t) || l.speeds[w.map.speed_class_for(ci, l.domain == Domain::Water)] == 0 {
+        if !engine_open(l, t) || l.speeds[w.map.speed_class(ci)] == 0 {
             let id = &w.rules.actors[a.ty as usize].id;
             out.push(format!("tick {}: {id} ({}) on {} at {:?}, {:?}", w.tick, l.name, t.name(), w.cell_of(a.x, a.y), a.activity));
         }

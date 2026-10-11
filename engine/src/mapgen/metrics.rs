@@ -11,7 +11,7 @@ pub const REACH: i32 = 14;
 pub struct BaseStats {
     /// Ground steps (4-connected, fords included) from this yard to the nearest other yard.
     pub rush: Option<u32>,
-    /// Cells of the water network (the largest body of water) within `REACH` cells of the yard.
+    /// Cells of the water network (the shared sea around the hub) within `REACH` cells of the yard.
     pub harbour_cells: u32,
     /// A 3x3 block of open water on the network within `REACH` cells: a naval yard fits.
     pub naval_yard_site: bool,
@@ -84,7 +84,12 @@ pub fn measure(m: &Map) -> MapStats {
             s.ore += 1;
         }
     }
-    let network = super::main_network(m).unwrap_or_else(|| vec![false; m.cells()]);
+    // The shared sea: the water ships reach from the hub the generator grows
+    // the network from (mapgen::hub; the largest body of water when the hub
+    // is dry). Fords are land to ships.
+    let centres: Vec<(i32, i32)> = m.spawns.iter().map(|&(x, y)| (x + 1, y + 2)).collect();
+    let ((hx, hy), _) = super::hub(m.width, m.height, &centres);
+    let network = super::network_from(m, (hx, hy)).unwrap_or_else(|| vec![false; m.cells()]);
     let yards: Vec<usize> = m.spawns.iter().map(|&(x, y)| m.idx(x + 1, y + 1)).collect();
     // Network cells near each base.
     let mut harbours: Vec<Vec<usize>> = Vec::new();
@@ -117,9 +122,6 @@ pub fn measure(m: &Map) -> MapStats {
         harbours.push(harbour);
         s.bases.push(b);
     }
-    // The hub the generator grows the network from (mapgen::hub).
-    let centres: Vec<(i32, i32)> = m.spawns.iter().map(|&(x, y)| (x + 1, y + 2)).collect();
-    let ((hx, hy), _) = super::hub(m.width, m.height, &centres);
     let hubs: Vec<usize> = [m.idx(hx - 1, hy), m.idx(hx, hy)].into_iter().filter(|&i| network[i]).collect();
     if !hubs.is_empty() {
         let water = bfs(m, &hubs, |j| m.terrain[j].ship_passable());

@@ -75,7 +75,7 @@ const MATERIAL_HINTS = {
   [TERRAIN.ROCK]: 'Rock and cliffs: nobody passes.',
   [TERRAIN.WATER]: 'Water: ships only. Shores get their tiles from the land around them.',
   [TERRAIN.TREE]: 'Trees: each cell becomes a tree in the game.',
-  [TERRAIN.FORD]: 'Ford: shallow water units can cross, ships too.',
+  [TERRAIN.FORD]: 'Ford: a river crossing for ground units; land to ships.',
   [TERRAIN.ROAD]: 'Road: faster, structures may stand on it. Pieces join up by themselves.',
   [TERRAIN.BEACH]: 'Beach: sand by the water; landing craft run up on it.',
   [TERRAIN.RIVER]: 'River: water that bridges can span.',

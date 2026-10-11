@@ -229,8 +229,6 @@ pub struct Bridge {
     pub huts: [Option<usize>; 2],
     /// OpenRA Bridge.Hut: this span's own hut (None for none, or for two).
     pub hut: Option<usize>,
-    /// Units on it were killed when it fell (until it is repaired).
-    pub killed_units: bool,
 }
 
 /// A bridge hut (OpenRA LegacyBridgeHut).
@@ -268,7 +266,6 @@ impl BridgeLayer {
     pub(crate) fn mix(&self, mix: &mut impl FnMut(i64)) {
         for b in &self.bridges {
             mix(b.look.code() as i64);
-            mix(b.killed_units as i64);
         }
         for h in &self.huts {
             mix(h.repairing as i64);
@@ -404,7 +401,6 @@ impl World {
                 neighbours: [None, None],
                 huts: [None, None],
                 hut: None,
-                killed_units: look.is_some_and(|l| l != BridgeLook::Healthy && l != BridgeLook::Damaged),
             });
             if look.is_none() {
                 // Ground that matches no state (placed in the editor): the healthy template.
@@ -536,10 +532,13 @@ impl World {
         }
         self.neutral.bridges.bridges[b].look = look;
         self.apply_bridge_terrain(b);
-        if self.segment_dead(b) && !self.neutral.bridges.bridges[b].killed_units {
-            self.neutral.bridges.bridges[b].killed_units = true;
-            self.kill_units_on_bridge(b);
-        }
+        // Whatever stands where the new look leaves no room for it dies: on a
+        // fallen span, under a repaired one. OpenRA kills only when a span
+        // falls (killedUnits) or a dead one is repaired, so a boat in the
+        // water gap a fallen neighbour leaves in a long bridge (BR3
+        // destroyed_north) would sit on the deck once that neighbour is
+        // repaired; here it sinks, and ships are never on land.
+        self.kill_units_on_bridge(b);
     }
 
     /// The span's template terrain for its look; passability follows.
@@ -578,10 +577,12 @@ impl World {
                 if !cells.contains(&ci) {
                     return false;
                 }
+                // OpenRA CanExistInCell: the terrain must be open to its
+                // locomotor (a landed helicopter needs ground to stand on).
                 let t = self.map.terrain[ci];
                 match self.domain_of(i) {
-                    crate::rules::Domain::Water => !t.ship_passable(),
-                    _ => !t.passable(),
+                    crate::rules::Domain::Air => !t.passable(),
+                    _ => !self.terrain_open_to(a.ty as usize, t),
                 }
             })
             .collect();
@@ -717,14 +718,9 @@ impl World {
     fn repair_span(&mut self, b: usize, direction: Option<usize>, hut: usize, by: u8) {
         let initial = self.span_state(b);
         let Some(i) = self.resolve(self.neutral.bridges.bridges[b].actor) else { return };
-        let dead = self.actors[i].hp <= 0;
         self.actors[i].hp = self.rules.actors[self.actors[i].ty as usize].hp;
+        // Health.Resurrect: the repaired span kills what it lands on (update_bridge).
         self.bridge_health_changed(b);
-        if dead {
-            // Health.Resurrect: the repaired span kills what it lands on.
-            self.neutral.bridges.bridges[b].killed_units = false;
-            self.kill_units_on_bridge(b);
-        }
         let br = &self.neutral.bridges.bridges[b];
         let done = match direction {
             None => br.neighbours[0].is_none() && br.neighbours[1].is_none(),

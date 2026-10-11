@@ -93,15 +93,18 @@ fn classic_index_facing(a: u32, facings: u32) -> u32 {
     return 0u;
 }
 
-// OpenRA GetInterpolatedFacingRotation, as clockwise radians for the sprite.
+// OpenRA GetInterpolatedFacingRotation, as clockwise radians for the sprite:
+// the rest after the nearest frame, rounded to the nearest interpolated step
+// (OpenRA truncates it; js/content/sequences.js interpolatedRotation says why).
 fn interpolated_rotation(a: u32, facings: u32, interpolated: u32) -> f32 {
     let step = 1024u / facings;
     let half = step / 2u;
     let diff = i32(((a + half) & 1023u) % step) - i32(half);
-    let wrapped = u32((diff + 1024) % 1024);
-    let istep = 1024u / interpolated;
-    let r = ((wrapped / istep) * istep) & 1023u;
-    let signed = select(i32(r), i32(r) - 1024, r >= 512u);
+    let istep = i32(1024u / interpolated);
+    // floor((diff + istep / 2) / istep) * istep, kept non-negative for the division.
+    let r = ((diff + istep / 2 + 1024) / istep) * istep - 1024;
+    let wrapped = u32((r + 1024) % 1024);
+    let signed = select(i32(wrapped), i32(wrapped) - 1024, wrapped >= 512u);
     return -f32(signed) * (TURN / 1024.0);
 }
 

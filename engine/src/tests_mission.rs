@@ -536,6 +536,48 @@ fn script_positions_never_overflow() {
     assert_eq!(error_of(&w), None);
 }
 
+/// Actor.Create and Reinforcements.Reinforce with a ship on a shore cell:
+/// it appears on the nearest water (World::open_cell_for), never on land.
+#[test]
+fn script_created_ships_appear_on_water() {
+    use crate::map::Terrain;
+    // A clear cell on the coast of the first campaign map that has one.
+    let shore_of = |w: &World| {
+        let m = &w.map;
+        (0..m.cells()).map(|i| (i as i32 % m.width, i as i32 / m.width)).find(|&(x, y)| {
+            m.terrain[m.idx(x, y)] == Terrain::Clear
+                && w.building_at[m.idx(x, y)] == crate::world::NONE
+                && [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .any(|&(dx, dy)| m.contains(x + dx, y + dy) && m.terrain[m.idx(x + dx, y + dy)] == Terrain::Water)
+        })
+    };
+    let (mut w, shore) = mission_ids()
+        .iter()
+        .find_map(|id| {
+            let w = start(id, None);
+            let s = shore_of(&w)?;
+            Some((w, s))
+        })
+        .expect("a mission with a coast");
+    let (ox, oy) = w.mission().unwrap().cell_out(shore.0, shore.1);
+    lua_in(&mut w, &format!("Actor.Create('pt', true, {{ Owner = Player.GetPlayer('Greece'), Location = CPos.New({ox}, {oy}) }})"));
+    lua_in(&mut w, &format!("Reinforcements.Reinforce(Player.GetPlayer('Greece'), {{ 'dd' }}, {{ CPos.New({ox}, {oy}) }})"));
+    for _ in 0..5 {
+        w.step();
+    }
+    assert_eq!(error_of(&w), None);
+    for id in ["PT", "DD"] {
+        let t = w.rules.actor_index(id).unwrap() as u16;
+        let ships: Vec<usize> = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].ty == t).collect();
+        assert!(!ships.is_empty(), "{id} created");
+        for i in ships {
+            let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
+            assert_eq!(w.map.terrain[ci], Terrain::Water, "{id} on water, not at {shore:?}");
+        }
+    }
+}
+
 /// Players a mission hands to OpenRA's bot play the campaign bot, configured
 /// by the mission's own bot modules (soviet-05's GoodGuy builds with its
 /// BaseBuilderBotModule@campaign limits once the script grants ai-active).

@@ -569,7 +569,7 @@ impl World {
         if domain == Domain::Air {
             return true;
         }
-        if self.pass_for(domain).blocked[ci] || self.building_at[ci] != NONE || self.husk_at(ci).is_some() {
+        if self.pass_of_type(ty).blocked[ci] || self.building_at[ci] != NONE || self.husk_at(ci).is_some() {
             return false;
         }
         let here: Vec<usize> = self.units_in_cell(ci).iter().map(|&u| u as usize).filter(|&u| self.actors[u].alive).collect();
@@ -588,7 +588,7 @@ impl World {
         if domain == Domain::Air {
             return true;
         }
-        let pass = self.pass_for(domain);
+        let pass = self.pass_of_type(ty);
         pass.component[self.map.idx(x, y)] == pass.component[self.map.idx(from.0, from.1)]
     }
 

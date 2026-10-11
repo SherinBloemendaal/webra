@@ -271,19 +271,20 @@ impl World {
                             Some(self.place_husk(t, owner, cx * CELL + HALF_CELL, cy * CELL + HALF_CELL, facing, 0))
                         }
                     }
-                    _ => {
-                        if !self.map.contains(cx, cy) {
-                            None
-                        } else {
+                    _ => match self.map_unit_cell(t, cx, cy) {
+                        None => None,
+                        Some((x, y)) => {
                             let (ox, oy) = match (info.kind, a.subcell) {
-                                (Kind::Infantry, Some(s)) => SUBCELL_OFFSETS.get(s as usize).copied().unwrap_or((0, 0)),
+                                (Kind::Infantry, Some(s)) if (x, y) == (cx, cy) => {
+                                    SUBCELL_OFFSETS.get(s as usize).copied().unwrap_or((0, 0))
+                                }
                                 _ => (0, 0),
                             };
-                            let u = self.spawn_unit(t as u16, owner, cx * CELL + HALF_CELL + ox, cy * CELL + HALF_CELL + oy, facing);
+                            let u = self.spawn_unit(t as u16, owner, x * CELL + HALF_CELL + ox, y * CELL + HALF_CELL + oy, facing);
                             self.place_map_aircraft(u);
                             Some(u)
                         }
-                    }
+                    },
                 };
                 match i {
                     Some(i) => {

@@ -1181,6 +1181,8 @@ test('the engine reports fire, impact and death events to the client', () => {
     allyBuildRadius: true,
     timeLimit: 0,
     reusableEngineers: false,
+    // Open land: the rush AIs meet within the two minutes whatever water a seed would bring.
+    mapStyle: 'land',
   };
   const game = Game.from_options(JSON.stringify(opts));
   const quiet = Game.from_options(JSON.stringify(opts));

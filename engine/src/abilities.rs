@@ -1240,9 +1240,54 @@ impl World {
             }
             if self.tick >= t {
                 self.actors[i].ab.chrono_return = None;
-                self.teleport(i, x, y, false);
+                match self.chrono_return_spot(i, x, y) {
+                    Some((rx, ry)) => self.teleport(i, rx, ry, false),
+                    // Teleport killOnFailure: nowhere to go back to.
+                    None => self.kill(i),
+                }
             }
         }
+    }
+
+    /// Where a chronoshifted unit returns to (OpenRA Teleport.ChooseBestDestinationCell
+    /// without a maximum distance): its origin (x, y) while it can still
+    /// stand there, else the centre of the nearest explored cell its
+    /// locomotor may enter (a naval yard went up where the ship was, a
+    /// bridge came back over it), None when there is none.
+    pub(crate) fn chrono_return_spot(&self, i: usize, x: i32, y: i32) -> Option<(i32, i32)> {
+        if self.domain_of(i) == Domain::Air {
+            return Some((x, y));
+        }
+        let (cx, cy) = self.cell_of(x, y);
+        if !self.pass_of(i).blocked[self.map.idx(cx, cy)] {
+            return Some((x, y));
+        }
+        let explored = &self.players[self.actors[i].owner as usize].explored;
+        let pass = self.pass_of(i);
+        let range = self.map.width.max(self.map.height);
+        for r in 1..=range {
+            let mut best: Option<(i32, usize)> = None;
+            for ty in cy - r..=cy + r {
+                for tx in cx - r..=cx + r {
+                    if ((tx - cx).abs() != r && (ty - cy).abs() != r) || !self.map.contains(tx, ty) {
+                        continue;
+                    }
+                    let ci = self.map.idx(tx, ty);
+                    if pass.blocked[ci] || explored[ci] == 0 {
+                        continue;
+                    }
+                    let key = ((tx - cx).pow(2) + (ty - cy).pow(2), ci);
+                    if best.is_none_or(|b| key < b) {
+                        best = Some(key);
+                    }
+                }
+            }
+            if let Some((_, ci)) = best {
+                let w = self.map.width;
+                return Some((cell_center(ci as i32 % w), cell_center(ci as i32 / w)));
+            }
+        }
+        None
     }
 
     /// Iron Curtain (GrantExternalConditionPower invulnerability): actors in

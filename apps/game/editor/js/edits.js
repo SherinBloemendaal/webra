@@ -1,7 +1,7 @@
 // Editing operations on a MapDoc, with symmetry. No DOM; every function works
 // inside the caller's open transaction (doc.begin / doc.commit).
 
-import { LIMITS, TERRAIN, catalogEntry, decodeBase64, encodeBase64, footprintOf, holdsResource, isBuildable, isPassable } from './mapformat.js';
+import { LIMITS, TERRAIN, canOccupy, catalogEntry, decodeBase64, encodeBase64, footprintOf, groundFor, holdsResource } from './mapformat.js';
 import { validateActorState } from '../../js/protocol.js';
 import { SPAWN_H, SPAWN_W, applyTransform, mirroredOwner, symmetricPositions, transformCell, transformFacing, transformsFor } from './symmetry.js';
 
@@ -179,11 +179,10 @@ export function placementProblem(doc, catalog, type, x, y, ignore = null) {
     const t = doc.terrain[i];
     // A bridge brings its own terrain (stampBridge) and takes no cell.
     if (c === 3) continue;
+    if (!canOccupy(info, c, t)) return groundFor(info) === TERRAIN.WATER ? 'needs water' : info.kind === 'building' && c === 1 ? 'needs clear ground' : 'needs passable ground';
     if (info.kind === 'building' && c === 1) {
-      if (!isBuildable(t)) return 'needs clear ground';
       if (occupied.has(i) || units.has(i)) return 'overlaps another actor';
     } else {
-      if (!isPassable(t)) return 'needs passable ground';
       if (occupied.has(i) || (info.kind !== 'building' && units.has(i))) return 'overlaps another actor';
     }
   }

@@ -707,6 +707,32 @@ fn long_bridges_link_their_spans_and_a_fallen_shore_piece_takes_its_neighbour_al
     }
 }
 
+/// A fallen span of a long bridge leaves open water (BR3 destroyed_north):
+/// boats sail into the gap, and the repaired span sinks the one under it
+/// (OpenRA Bridge.Repair: Resurrect, KillUnitsOnBridge where the actor
+/// cannot exist), while a Transport waiting next to it lives on.
+#[test]
+fn a_repaired_bridge_sinks_the_boat_under_it() {
+    let mut w = long_bridge_world();
+    let br1 = find(&w, "BR1")[0];
+    let span = find(&w, "BR3")[0];
+    w.damage(br1, w.actors[br1].hp);
+    assert_eq!(w.bridge_look(span), Some(BridgeLook::DestroyedNorth));
+    let b = w.bridge_of(span).unwrap();
+    let gap: Vec<usize> = w.neutral.bridges.bridges[b].cells.iter().map(|c| c.2).filter(|&c| w.map.terrain[c] == Terrain::Water).collect();
+    assert!(!gap.is_empty(), "open water where the span was");
+    let (gx, gy) = (gap[0] as i32 % w.map.width, gap[0] as i32 / w.map.width);
+    let pt = unit(&mut w, "PT", 1, gx, gy);
+    assert!(!w.pass_water.blocked[gap[0]], "boats may enter the gap");
+    let lst = unit(&mut w, "LST", 1, 20, 20);
+    let hut = find(&w, "BRIDGEHUT").into_iter().find(|&h| w.can_repair_bridge_at_hut(h)).expect("a hut to repair from");
+    assert!(w.repair_bridge_at_hut(hut, 0));
+    run(&mut w, 60);
+    assert_eq!(w.bridge_look(span), Some(BridgeLook::Healthy));
+    assert!(!w.actors[pt].alive, "the gunboat under the span sank");
+    assert!(w.actors[lst].alive, "the Transport out in the open water did not");
+}
+
 // ---- Ore mines --------------------------------------------------------------------------
 
 #[test]

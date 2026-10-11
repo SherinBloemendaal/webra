@@ -63,6 +63,29 @@ export const holdsResource = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROUGH |
 /** Cells structures can stand on (engine/src/map.rs Terrain::buildable: OpenRA's Clear and Road). */
 export const isBuildable = (t) => t === TERRAIN.CLEAR || t === TERRAIN.ROAD;
 
+/**
+ * Whether catalog actor `info` (engine rules_json) may have footprint cell
+ * kind `c` on terrain `t`: naval yards (`onWater`) only on water, other
+ * structures on clear ground and roads (passable cells on passable ground),
+ * ground units and ships where their locomotor goes (`terrain`: ships on
+ * water, the transport also on beaches), the rest on passable ground.
+ */
+export function canOccupy(info, c, t) {
+  if (info?.kind === 'building') {
+    if (info.onWater) return t === TERRAIN.WATER;
+    return c === 1 ? isBuildable(t) : isPassable(t);
+  }
+  if (Array.isArray(info?.terrain)) return info.terrain.includes(t);
+  return isPassable(t);
+}
+
+/** The terrain that makes a footprint cell of `info` valid ("Clear the ground under it"): water for ships and naval yards. */
+export function groundFor(info) {
+  if (info?.kind === 'building') return info.onWater ? TERRAIN.WATER : TERRAIN.CLEAR;
+  if (Array.isArray(info?.terrain) && !info.terrain.includes(TERRAIN.CLEAR)) return TERRAIN.WATER;
+  return TERRAIN.CLEAR;
+}
+
 // ---- Base64 -------------------------------------------------------------------
 
 /** Standard base64 (RFC 4648, with padding) of a byte array. */
@@ -459,7 +482,7 @@ export function validateMap(map, opts = {}) {
           const t = layers.terrain[(a.y + dy) * w + a.x + dx];
           // Bridges lie over their template's cells, whatever they are (engine bridges.rs).
           if (c === 3) return false;
-          return info.kind === 'building' && c === 1 ? !isBuildable(t) : !isPassable(t);
+          return !canOccupy(info, c, t);
         });
         if (bad) warn(`${label} at ${a.x},${a.y} stands on terrain it cannot occupy.`, a.x, a.y);
       }

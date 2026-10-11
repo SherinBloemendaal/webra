@@ -12,8 +12,9 @@ pub enum Terrain {
     Rock = 2,
     Water = 3,
     Tree = 4,
-    /// Shallow water: ground units wade through at rough speed and ships
-    /// sail over it, so a river crossing never cuts the water network.
+    /// A river crossing on generated maps: ground units wade through at
+    /// rough speed. Land for ships (OpenRA's ford templates are Rough and
+    /// Road): the generator never puts one on a sea route (mapgen).
     Ford = 5,
     /// OpenRA terrain types of the Red Alert tilesets (world.yaml locomotors):
     /// roads and bridges are faster than clear ground, beaches are sand that
@@ -89,9 +90,9 @@ impl Terrain {
     pub fn buildable(self) -> bool {
         matches!(self, Terrain::Clear | Terrain::Road)
     }
-    /// Open to ships: water and fords.
+    /// Open to ships (OpenRA locomotor `naval`: Water).
     pub fn ship_passable(self) -> bool {
-        matches!(self, Terrain::Water | Terrain::Ford)
+        self == Terrain::Water
     }
     /// Open to landing craft (OpenRA locomotor `lcraft`: Water and Beach):
     /// what ships sail on, and beaches they run up on to unload.
@@ -116,6 +117,13 @@ pub enum Resource {
     Ore,
     Gems,
 }
+
+/// Layouts the generator tries per map before it keeps the last one (`Map::validated`).
+const GENERATE_ATTEMPTS: u32 = 8;
+
+/// Two-player harbour bays start this many cells from the map edge: the
+/// land behind them joins the land on both sides of the bay's channel.
+const BAY_EDGE: i32 = 3;
 
 /// Index into a locomotor's speed table (see `TERRAIN_TYPES` in gen_rules.py).
 pub const SPEED_CLEAR: usize = 0;
@@ -216,16 +224,6 @@ impl Map {
         biome == crate::weather::Biome::Snow && self.terrain[i] == Terrain::Rough
     }
 
-    /// Speed table index of a cell for a locomotor: ships sail over fords at
-    /// water speed, everything else uses [`Map::speed_class`].
-    pub fn speed_class_for(&self, i: usize, ship: bool) -> usize {
-        if ship && self.terrain[i].ship_passable() {
-            SPEED_WATER
-        } else {
-            self.speed_class(i)
-        }
-    }
-
     /// Generate a two-player map, mirrored left to right, with both bases at
     /// the same height. Red Alert buildings are not symmetric: production
     /// exits, refinery docks and bibs all face south. On a point symmetric
@@ -253,8 +251,29 @@ impl Map {
         Map::generate_pockets(width, height, seed, ore_max, players, style)
     }
 
-    fn generate_two(width: i32, height: i32, seed: u64, ore_max: u8, style: MapStyle) -> Map {
+    /// The first layout of `attempt` (seeds derived from `seed`, the first
+    /// is `seed` itself) that passes `mapgen::validate`: bases joined by
+    /// ground, no large land cut off, and in the naval styles a harbour on
+    /// the shared sea for every base. The style is picked from `seed` once,
+    /// so every attempt has the same style. After `GENERATE_ATTEMPTS` the
+    /// last layout is kept (the map tests check that this never happens).
+    fn validated(seed: u64, style: MapStyle, attempt: impl Fn(u64, MapStyle) -> Map) -> Map {
         let style = style.resolve(seed);
+        let mut m = attempt(seed, style);
+        for k in 1..GENERATE_ATTEMPTS {
+            if crate::mapgen::validate(&m, style).is_ok() {
+                break;
+            }
+            m = attempt(seed ^ (k as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15), style);
+        }
+        m
+    }
+
+    fn generate_two(width: i32, height: i32, seed: u64, ore_max: u8, style: MapStyle) -> Map {
+        Map::validated(seed, style, |seed, style| Map::generate_two_once(width, height, seed, ore_max, style))
+    }
+
+    pub(crate) fn generate_two_once(width: i32, height: i32, seed: u64, ore_max: u8, style: MapStyle) -> Map {
         let mut rng = Rng::new(seed);
         let n = (width * height) as usize;
         let mut m = Map::filled(width, height, Terrain::Clear);
@@ -268,15 +287,25 @@ impl Map {
         };
         let sx = 8;
         let (bx, by) = (sx + 1, sy + 2);
-        // The base clearing, and with water a harbour bay along the map edge behind it.
+        // The base clearing, and with water a harbour bay behind it, a few
+        // cells off the map edge: land runs round behind the bay, and the
+        // bay's channel to the sea leaves the clearing along the bay's
+        // columns (`lane`) and never digs along the map border (`edge`), so
+        // it never cuts the land in two.
         let mut zone = vec![false; n];
         let mut bay = vec![false; n];
+        let mut lane = vec![false; n];
+        let mut edge = vec![false; n];
         for y in 0..height {
             for x in 0..width {
                 let mx = x.min(width - 1 - x);
+                let my = y.min(height - 1 - y);
                 let i = m.idx(x, y);
                 zone[i] = (mx - bx) * (mx - bx) + (y - by) * (y - by) <= 11 * 11;
-                bay[i] = style.naval() && mx <= 3 && (by - 7..=by + 7).contains(&y);
+                let columns = (BAY_EDGE..BAY_EDGE + 3).contains(&mx);
+                bay[i] = style.naval() && columns && (by - 7..=by + 7).contains(&y);
+                lane[i] = columns;
+                edge[i] = mx < BAY_EDGE || my < 2;
             }
         }
         m.scatter(&mut rng, if style == MapStyle::Land { 1 } else { 0 });
@@ -315,16 +344,19 @@ impl Map {
             // Dig the bay through to the water network (mirrored).
             let near = crate::mapgen::grow(width, height, &zone, 2);
             let harbour: Vec<usize> = (0..n).filter(|&i| bay[i] && (i as i32 % width) < width / 2).collect();
-            let blocked: Vec<bool> = (0..n).map(|i| zone[i] && !bay[i]).collect();
+            let blocked: Vec<bool> = (0..n).map(|i| (zone[i] && !lane[i]) || edge[i]).collect();
             if let Some(network) = crate::mapgen::network_from(&m, water.hub) {
                 if let Some((_, path)) = crate::mapgen::plan_channel(&m, &harbour, &network, &blocked, &near, 1) {
                     crate::mapgen::dig_channel(&mut m, &path, &blocked);
                 }
             }
         }
+        // Roads never cross the bay or a base's route to the sea.
+        let sea = if style.naval() { crate::mapgen::sea_routes(&m, water.hub, false, &bay) } else { vec![false; n] };
+        let keep: Vec<bool> = (0..n).map(|i| bay[i] || sea[i]).collect();
         let (a, b) = (m.spawns[0], m.spawns[1]);
-        crate::mapgen::connect_ground(&mut m, a, b, &bay, false);
-        crate::mapgen::connect_land_regions(&mut m, a, &bay, false);
+        crate::mapgen::connect_ground(&mut m, a, b, &keep, false);
+        crate::mapgen::connect_land_regions(&mut m, a, &keep, false);
         m
     }
 
@@ -355,7 +387,10 @@ impl Map {
     /// puts mirror images against each other. The AI makes up for the rest:
     /// its rally point and defences face the enemy, not a map side.
     pub fn generate_pockets(width: i32, height: i32, seed: u64, ore_max: u8, players: usize, style: MapStyle) -> Map {
-        let style = style.resolve(seed);
+        Map::validated(seed, style, |seed, style| Map::generate_pockets_once(width, height, seed, ore_max, players, style))
+    }
+
+    pub(crate) fn generate_pockets_once(width: i32, height: i32, seed: u64, ore_max: u8, players: usize, style: MapStyle) -> Map {
         let n = (width * height) as usize;
         let mut m = Map::filled(width, height, Terrain::Clear);
         let mut rng = Rng::new(seed ^ 0x5eed_0000_0000_0004);
@@ -471,6 +506,20 @@ impl Map {
         }
         if style.naval() {
             m.connect_moats(&centres, r, &zone, water.hub, flip_y);
+            // Roads never cross a base's route to the sea, from its own moat.
+            let mut moats = vec![false; n];
+            for &(cx, cy) in &centres {
+                for dy in (-r - 3..=-r - 1).chain(r + 3..=r + 5) {
+                    for dx in -half..=half {
+                        if m.contains(cx + dx, cy + dy) {
+                            let i = m.idx(cx + dx, cy + dy);
+                            moats[i] = true;
+                        }
+                    }
+                }
+            }
+            let sea = crate::mapgen::sea_routes(&m, water.hub, flip_y, &moats);
+            keep.iter_mut().zip(sea).for_each(|(k, s)| *k |= s);
         }
         let spawns = m.spawns.clone();
         for &s in &spawns[1..] {
@@ -586,6 +635,11 @@ impl Map {
         let half = r - 2;
         let (w, h) = (self.width, self.height);
         let near = crate::mapgen::grow(w, h, zone, 2);
+        // Channels never dig along the map border: land runs round their ends.
+        let border = |i: usize| {
+            let (x, y) = ((i as i32) % w, (i as i32) / w);
+            x.min(w - 1 - x) < 2 || y.min(h - 1 - y) < 2
+        };
         // Channels run to the hub itself, nearly straight (water costs half
         // of digging), so every harbour is about as far from the centre as
         // its base is: the hub sits where the bases are evenly far.
@@ -626,7 +680,7 @@ impl Map {
                 .filter_map(|north| {
                     let cells = moat(self, cx, cy, north);
                     // The own moat may be left; every other base cell is closed.
-                    let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !cells.contains(&i)).collect();
+                    let blocked: Vec<bool> = (0..self.cells()).map(|i| (zone[i] && !cells.contains(&i)) || border(i)).collect();
                     let away = north != (cy > hub.1);
                     crate::mapgen::plan_channel(self, &cells, &target, &blocked, &near, 3).map(|(cost, path)| (cost, away, path, north))
                 })
@@ -653,7 +707,7 @@ impl Map {
         }
         for (cx, cy, north, path) in digs {
             let open = moat(self, cx, cy, north);
-            let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !open.contains(&i)).collect();
+            let blocked: Vec<bool> = (0..self.cells()).map(|i| (zone[i] && !open.contains(&i)) || border(i)).collect();
             crate::mapgen::dig_channel(self, &path, &blocked);
             for i in moat(self, cx, cy, !north) {
                 let (x, y) = ((i as i32) % w, (i as i32) / w);
@@ -674,7 +728,7 @@ impl Map {
             if open.iter().any(|&i| network[i]) {
                 continue;
             }
-            let blocked: Vec<bool> = (0..self.cells()).map(|i| zone[i] && !open.contains(&i)).collect();
+            let blocked: Vec<bool> = (0..self.cells()).map(|i| (zone[i] && !open.contains(&i)) || border(i)).collect();
             if let Some((_, path)) = crate::mapgen::plan_channel(self, &open, &network, &blocked, &near, 3) {
                 crate::mapgen::dig_channel(self, &path, &blocked);
             }

@@ -519,8 +519,7 @@ impl World {
         let Some(desired) = facing_of(wx - x, wy - y) else { return };
         let ci = self.cell_index(x, y);
         let loco = &self.rules.locomotors[unit.locomotor];
-        let ship = loco.domain == crate::rules::Domain::Water;
-        let speed_pct = loco.speeds[self.map.speed_class_for(ci, ship)];
+        let speed_pct = loco.speeds[self.map.speed_class(ci)];
         // Rank speed bonus and prone infantry (veterancy.rs), panicking
         // civilians (neutral.rs), then weather (weather.rs).
         // Dogs stand still while they eat or reload and run while hunting (dog.rs).
@@ -669,7 +668,12 @@ impl World {
     /// flow fields and connectivity labels use (`flowfield::step`), so units
     /// never slip into a pocket their fields cannot lead them out of. A unit
     /// on a blocked cell (a structure went up around it) may leave any way.
-    fn may_enter(&self, i: usize, a: (i32, i32), b: (i32, i32)) -> bool {
+    ///
+    /// Every position change of a moving unit goes through it (`try_move`:
+    /// driving, crowd pushes, coasting on ice), so a push or nudge can never
+    /// put a ship on land or a tank in the sea. Other movement models call
+    /// it for the same guarantee.
+    pub(crate) fn may_enter(&self, i: usize, a: (i32, i32), b: (i32, i32)) -> bool {
         let pass = self.pass_of(i);
         // Walls the unit crushes are open to it, as in its flow field (neutral.rs).
         let blocked = |ci: usize| pass.blocked[ci] && !(pass.crush[ci] != 0 && self.crushes_wall_at(i, ci));

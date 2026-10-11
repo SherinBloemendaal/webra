@@ -52,11 +52,15 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
 }
 ```
 
-- Terrain: a ford (5) is shallow water. Ground units cross it at rough
-  speed (the locomotor's `Rough` entry) and ships sail over it at water speed,
-  so a ground route over a river never cuts the water network. Structures
-  never stand on a ford (naval yards need open water), and fords hold no ore
-  or gems. Generated maps put fords where ground routes cross water. A ford
+- Terrain: a ford (5) is a river crossing. Ground units cross it at rough
+  speed (the locomotor's `Rough` entry); to ships and the Transport it is
+  land, like OpenRA's ford templates (Rough and Road cells), so no ship ever
+  sails over one. Structures never stand on a ford (naval yards need open
+  water), and fords hold no ore or gems. Generated maps put fords where
+  ground routes cross water, never on a base's route to the shared sea.
+  Maps made before fords closed to ships keep their fords and need no
+  migration (the file format is unchanged): water that only a ford joined
+  is two bodies of water now. A ford
   is drawn as a crossing (WebRA's shallow ford tiles; with the original
   graphics rough ground with beach tiles, like Red Alert's ford templates),
   never as open water, since ground units walk on it.
@@ -69,7 +73,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   stop ground units and ships alike. The engine owns bridge cells: a
   bridge actor writes its template's terrain over them when it is placed,
   damaged, destroyed or repaired, so a destroyed span turns into river or
-  water under it (`engine/src/bridges.rs`).
+  water under it (`engine/src/bridges.rs`). Whatever cannot stand on a
+  span's new terrain dies: a tank on a fallen span, a boat in the water gap
+  of a long bridge when the span is repaired (OpenRA kills only when a span
+  falls or a dead one is repaired).
 - The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
   to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
   (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
@@ -97,8 +104,16 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   colour over the actor, for everyone who sees the spot) are `CashTick` (44)
   events that js/battlefx.js draws like the crate and bounty texts, from
   GivesCashOnCapture, CashTrickler, InfiltrateForCash and DeliversCash. Landing craft (the Transport, locomotor
-  `lcraft`) use their own passability (`World::pass_landing`: water, fords
-  and beaches), so they run up on beach cells to unload and other ships do not.
+  `lcraft`) use their own passability (`World::pass_landing`: water and
+  beaches), so they run up on beach cells to unload and other ships do not.
+  No ship is ever on a cell its locomotor cannot enter (OpenRA `naval`:
+  Water; `lcraft`: Water and Beach; `World::terrain_open_to`): every move
+  and crowd push goes through `World::may_enter`, a map actor drawn on
+  terrain it cannot use appears on the nearest cell it can (within 7 cells,
+  else it is left out; OpenRA leaves it stuck where it is), and the map
+  editor places ships and naval yards only on water (`rules_json` actors:
+  `terrain`, the terrain codes a ground unit or ship may stand on, and
+  `onWater` for structures).
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -597,8 +612,10 @@ base. All water of a map is one network (apart from decorative ponds).
 Generated 2-player maps are mirrored left to right with both bases at the
 same height, so mirror matches are fair: Red Alert structures face south
 (exits, refinery docks), which favours one side on a point symmetric map.
-On the water styles each base has a harbour bay along the map edge behind
-it, dug through to the network. Generated maps for 3 to 8 players are
+On the water styles each base has a harbour bay behind it, three cells off
+the map edge, dug through to the network (its channel leaves along the
+bay's columns and never along the map border, so land runs round behind
+the bay). Generated maps for 3 to 8 players are
 mirrored left to right too, and every base gets the same surroundings,
 shifted and never rotated (a clearing with its ore fields south of the yard,
 walls of three rows north and south, open sides): 3 and 4 players in two
@@ -615,7 +632,19 @@ dug through to it, nearly straight, and the other one becomes rock, so every
 base has exactly one harbour on the network and every harbour is about as far
 from the hub as its base is; a base below the middle gets the mirror image of
 its partner's channel and moat, a base on the middle row its own channel
-mirrored too. Ground routes that would be cut by water get fords. Last, every
+mirrored too. Channels never dig along the two cells of the map border.
+Ground routes that would be cut by water get fords, except on a base's sea
+route: per base the 3x3 naval yard site in its own bay or moat that ships
+reach from the hub soonest and the shortest water route from there to the
+hub, a cell wider either side and mirrored like the map
+(`mapgen::sea_routes`), which roads never cross; a large land region only a
+sea route could join is flooded instead. A finished map is checked
+(`mapgen::validate`: every base joined by ground, no land region of 60 cells
+or more cut off, and on the water styles every base with a naval yard site
+ships reach from the hub over open water); one that fails is made again
+from a seed derived from the map seed (up to 8 layouts, the style stays
+the one of the map seed), which the generator tests keep under 1 % of
+first layouts. Last, every
 base of a 3 to 8 player map gets as many ore cells within 14 cells of its yard
 (`mapgen::metrics::REACH`) as the richest one: ore grows next to existing
 fields on open ground that only that base (and its mirror image) is near and
@@ -680,7 +709,7 @@ Waves that do not fill up go after 90 s without growth or 120 s without a
 wave (after the eighth minute) and set the next wave to their size; an enemy
 without structures is hunted by the whole army; ground waves never aim at
 ships. Generated maps join every land region of 60 cells or more to the bases
-by fords, and the land the bases reach holds at least 4.5 % (two players) or
+by fords (or flood it, see above), and the land the bases reach holds at least 4.5 % (two players) or
 6 % ore and gems, a third more on the water styles.
 Submarines alone do not keep a player in the game (OpenRA `^Submarine`
 has no `MustBeDestroyed`), nor do walls and mines.
@@ -1505,7 +1534,11 @@ engine leaves it out when there is none, and `null` counts as left out), wasm
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
 ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):
 `ChronoshiftPower` takes the destination as (x, y) and the source area as
-(x2, y2) (both required), `GrantExternalConditionPower` (Iron Curtain) and
+(x2, y2) (both required; units whose target cell they cannot enter, ships
+over land, stay); when the Duration runs out a unit goes back to its origin,
+or to the nearest explored cell it can enter if the origin closed meanwhile
+(a naval yard went up there), and dies when there is none (OpenRA Teleport
+killOnFailure), `GrantExternalConditionPower` (Iron Curtain) and
 `NukePower` take the target as (x, y), `GpsPower` launches by itself when
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
@@ -2083,7 +2116,10 @@ then nothing (deaths). The facing comes from the instance angle:
 counter-clockwise), then OpenRA's `IndexFacing` or, for classic 32-facing
 sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
 + k` and the sprite is not rotated (interpolated facings turn it by
-OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
+OpenRA's `GetInterpolatedFacingRotation`, with the rest rounded to the
+nearest interpolated step where OpenRA truncates it: a heading a unit short
+of a frame showed that frame turned a whole step, and WebRA's ships hold
+their course a unit or two off, so submarines looked skewed sailing straight). Slots without a pose table work
 as before. `Globals.art.x` tells the terrain shader that the atlas holds
 tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
 levels), gem overlay tiles at 240 (bit 4, 4 x 4) and rotating water colours
