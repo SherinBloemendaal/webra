@@ -311,8 +311,13 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
                 entry = dict(locos.get(name, {'_crushes': []}))
                 if 'Crushes' in node:
                     entry['_crushes'] = [x.strip() for x in node['Crushes'].split(',') if x.strip()]
+                if 'SharesCell' in node:
+                    entry['_shares_cell'] = str(node['SharesCell']).lower() == 'true'
+                if 'WaitAverage' in node:
+                    entry['_wait_average'] = int(node['WaitAverage'])
                 if 'TerrainSpeeds' in node:
-                    entry = {'_crushes': entry['_crushes'], **{tt: int(sp) for tt, sp in speeds.items()}}
+                    kept = {k: v for k, v in entry.items() if k.startswith('_')}
+                    entry = {**kept, **{tt: int(sp) for tt, sp in speeds.items()}}
                 locos[name] = entry
         return locos
 

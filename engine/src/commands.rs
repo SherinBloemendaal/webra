@@ -363,6 +363,12 @@ impl World {
             if self.is_plane(i) || (self.actors[i].kind == Kind::Aircraft && self.actors[i].heli.landed) {
                 continue;
             }
+            // OpenRA model: Scatter is a Nudge of the unit itself (movement/cellmove.rs).
+            if self.cell_moves() && self.occupies_cells(i) {
+                self.release_dock(i);
+                self.cell_scatter(i);
+                continue;
+            }
             let cells = self.scatter_cells(i);
             if cells.is_empty() {
                 continue;

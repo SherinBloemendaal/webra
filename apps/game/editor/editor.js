@@ -1481,7 +1481,10 @@ async function testPlay() {
   const text = canonicalJson(map);
   try {
     sessionStorage.setItem(TEST_MAP_KEY, text);
-    sessionStorage.setItem(TEST_SETUP_KEY, JSON.stringify({ players: setup.players, camera: setup.camera ? [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2] : null, autostart: setup.autostart }));
+    sessionStorage.setItem(
+      TEST_SETUP_KEY,
+      JSON.stringify({ players: setup.players, movement: setup.movement, camera: setup.camera ? [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2] : null, autostart: setup.autostart }),
+    );
   } catch {
     toast('Cannot hand the map to the game: browser storage is blocked.', true);
     return;

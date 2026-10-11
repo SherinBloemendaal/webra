@@ -21,6 +21,7 @@ import {
   TECH_LEVELS,
   TIME_LIMITS,
   WEATHER_MODES,
+  MOVEMENT_MODELS,
 } from './constants.js';
 import { excerpt, fail, int, isPlainObject, object, oneOf } from './check.js';
 
@@ -36,6 +37,7 @@ export const MAP_OPTION_VALUES = Object.freeze({
   techLevel: TECH_LEVELS,
   gameSpeed: GAME_SPEEDS,
   timeLimit: TIME_LIMITS,
+  movement: MOVEMENT_MODELS,
   ...Object.fromEntries(BOOLEAN_OPTIONS.map((k) => [k, [true, false]])),
 });
 /** Keys of MAP_OPTION_VALUES, in the order the lobby lists them. */

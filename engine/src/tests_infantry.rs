@@ -179,6 +179,12 @@ fn engineer_repairs_an_own_structure_and_walls_and_allies_follow_the_rules() {
 fn thief_steals_half_the_victims_money_from_a_refinery() {
     let mut w = flat_world();
     let proc_ = building(&mut w, "PROC", 1, 30, 30);
+    // Its free ore truck (no ore here) would park in the thief's way.
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.is_harvester(i) {
+            w.remove(i);
+        }
+    }
     w.players[1].cash = 4000;
     w.players[0].cash = 0;
     let thf = unit(&mut w, "THF", 0, 31, 37);

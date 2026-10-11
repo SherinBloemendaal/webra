@@ -139,7 +139,9 @@ impl World {
         };
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let (tx, ty) = (self.actors[t].x, self.actors[t].y);
-        let in_reach = dist(x, y, tx, ty) <= self.boarding_reach(i, t);
+        // OpenRA model: next to the transport's cell (Mobile.CanEnterTargetNow).
+        let beside = self.cell_moves() && self.occupies_cells(i) && self.at_step_end(i) && self.next_to(i, t);
+        let in_reach = dist(x, y, tx, ty) <= self.boarding_reach(i, t) || beside;
         if in_reach && self.actors[t].altitude == 0 {
             self.load_passenger(t, i);
             return;

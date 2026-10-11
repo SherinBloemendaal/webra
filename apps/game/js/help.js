@@ -57,6 +57,8 @@ export const HELP = Object.freeze({
   bounty: 'Destroying an enemy unit or structure pays 10 percent of its value to the player who did it.',
   timeLimit:
     'The game ends after this many minutes of game time; the announcer counts the last minutes down. Then the side with the most experience (kills, repairs for allies) wins; players without a team count as one side, of which only the best player wins.',
+  movement:
+    'How units make room for each other. OpenRA (as in OpenRA): every unit holds its own cell (up to five soldiers share one), never pushes; a unit whose way is blocked asks an idle friend to step aside, waits for it, then drives around, and a group moved to one spot stops around it. Vehicles at a Service Depot and ore trucks at a refinery dock one at a time while the others wait next to it. WebRA: units drive freely and nudge each other softly out of the way; once they arrive they stay put, and queues at the depot and refinery wait their turn.',
   oreRegrowth:
     'Ore mines grow a bale of ore every 3 s in their field and gem mines a bale of gems, so harvested fields grow back. Off: the mines stay dormant and harvested fields are gone for good.',
   reusableEngineers:

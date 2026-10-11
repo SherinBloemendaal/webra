@@ -378,8 +378,8 @@ refused (protocol and engine alike); leave it out for its default.
   locked to an AI or closed), and the playable slots are not all locked to
   the same team (`mapSlotsProblem`, the engine's `validate_setup`).
 - `options`: lobby options the map starts with, from `weather`,
-  `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`
-  and the boolean options (section 3), with their section 3 values; not
+  `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`,
+  `movement` and the boolean options (section 3), with their section 3 values; not
   the generator options (seed, size, style, biome, tech buildings).
   `lockedOptions`: options the lobbies keep at the map's value (each one
   the map sets, once).
@@ -501,7 +501,7 @@ human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?}],
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
-weather, techBuildings, map`.
+weather, techBuildings, movement, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -533,7 +533,14 @@ option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
 orders work (section 5). `reusableEngineers` is OpenRA's "Reusable
 Engineers" (default off): engineers capture from next to a structure after
 375 ticks instead of going in after 200, and stay (`Captures@REUSABLE`).
-Game modes saved before it existed get it off. `team` 0 means no team (free for all);
+Game modes saved before it existed get it off. `movement` is how units
+move among each other ("Movement" in the lobbies, section 5 "Movement
+models"): `openra` (the default: OpenRA's cell occupancy, waiting and
+nudging) or `webra` (WebRA's soft crowd separation). It is part of the
+game's state (`state_hash`). The protocol accepts it left out, and the
+engine then plays `webra`: lobby states, saves and replays from before the
+option were made with WebRA's model and replay with it. Game modes include
+it; a mode saved before it existed takes `openra`. `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
@@ -1220,6 +1227,94 @@ amount shown, owner = killer), 39 TimeLimitExpired (owner = `ALL_PLAYERS`),
 my`) and 42 Flash (a = ticks, b = 1 nuke); they are presentation only (`apps/game/js/battlefx.js`, the audio director), and the
 Reduce motion setting turns the shake off and the flash down.
 
+### Movement models (`engine/src/movement`)
+
+The lobby option `movement` (section 3) picks how ground units and ships
+move among each other; aircraft fly over both. Both models follow the flow
+fields (`engine/src/flowfield.rs`) for the way to a goal, and both keep one
+invariant: no unit is ever moved, pushed or nudged onto a cell its
+locomotor cannot enter (water for land units, land for ships), and a
+diagonal step never cuts a blocked corner.
+
+**`openra` (default): OpenRA's Mobile, Locomotor and Move activity**
+(`movement/cellmove.rs`, `occupancy.rs`, `search.rs`).
+
+- A unit holds the cell it stands on; while it steps to the next cell it
+  holds both until it is half way, then only the new one (OpenRA
+  MoveFirstHalf, MoveSecondHalf, Mobile.OccupiedCells). It drives from cell
+  point to cell point and never pushes or is pushed.
+- Infantry share cells (Locomotor `SharesCell`): five sub-cells, the centre
+  first (OpenRA DefaultSubCell). Vehicles and ships hold the whole cell.
+- Who may enter a cell is OpenRA's Locomotor.CanMoveFreelyInto with
+  BlockedByActor `All`, `Stationary`, `Immovable` and `None`: allies that
+  can be asked to move do not count under `Immovable`, moving units not
+  under `Stationary`, and an enemy soldier a tracked vehicle may crush
+  never blocks it.
+- A move first searches a route around every unit, then around standing
+  ones, then around those that cannot be asked to move, else it follows the
+  flow field (Move.PathSearchOrder). Route searches are A* with the flow
+  field's remaining path length as the estimate and OpenRA's 125 % weight
+  (the straight distance for cells farther from the goal than the unit, so
+  that a route never depends on how far other units extended a partial
+  field); one search expands at most 4096 cells (then it counts as no
+  route).
+- When the next cell is taken (Move.PopPath): within `near` cells of the
+  destination the move gives up unless a free cell next to the blocker is
+  as close (player and AI move orders: 8 cells, OpenRA's `Move` order; a
+  rally point 1); an enemy or a unit that cannot move ends the move; else
+  the unit tells the blockers (idle allies step aside to a random free
+  neighbouring cell, OpenRA Nudge; busy ones are marked as blocking), waits
+  up to the locomotor's `WaitAverage` (40 ticks), and then searches a way
+  around every unit. Without one it backs out of the way if others wait for
+  it, else the move ends. A move that ended short is over for move orders;
+  other activities (repairs, docking, attacks) try again after 20 to 30
+  ticks (OpenRA MoveCooldownHelper). As in OpenRA, a unit kept waiting
+  behind units that do not move gives up once its destination is taken,
+  so a long column may leave a straggler.
+- Half way into a cell a moving unit already looks at the cell after it
+  (MoveFirstHalf.OnComplete): a route that a new structure cut is searched
+  again while it drives on.
+- Tracked vehicles crush enemy infantry on the cell they enter; soldiers
+  about to be run over jump to a free neighbouring cell three times in four
+  (Crushable.WarnProbability 75).
+- Scatter is a nudge of the unit itself (OpenRA Mobile `Scatter`).
+- The service depot's pad cells may be crossed but not stayed on
+  (footprint `+`, OccupiedPassableTransitOnly): an idle unit on one moves
+  off. Vehicles sent for repair drive onto the pad; the one on it holds
+  the cell and the others wait next to it and try again (OpenRA Resupply).
+  Ore trucks dock the same way; an empty truck that finds no ore leaves the
+  dock for a cell near four cells below it (Harvester.UnblockCell), and a
+  refinery's free truck belongs to that refinery.
+- A unit that other code placed (unloaded, teleported, landed from a leap,
+  produced on a crowded exit) takes the cell it stands on; when it may not
+  share it, it steps off once idle.
+- Differences from OpenRA: no arcs between cells; a vehicle turns while it
+  drives when the next cell is at most 45 degrees off its heading and on
+  the spot for sharper turns (OpenRA turns on the spot to the exact heading
+  when it starts and arcs on the way); on snow vehicles keep their slow
+  acceleration but never slide off their cells. For mirror fairness there
+  is no lane bias in route searches and equally good cells are taken
+  nearest the goal, then the map centre; the left sub-cells sit at -256
+  like the right ones at 256 (OpenRA -299) and a unit takes the free
+  sub-cell nearest to it (OpenRA: the first in index order); a cell left in
+  a tick is free from the next tick on, and units that want the same free
+  cell in a tick get it by a rank drawn from the game seed and the tick
+  (OpenRA: whoever acts first).
+
+**`webra`: WebRA's soft crowd separation, damped** (`movement/soft.rs`).
+Overlapping units of a domain push each other apart at the end of every
+tick, at most 96 world units a tick, and a moving crusher runs over enemy
+soldiers it overlaps. Two standing units only make room when they overlap
+by more than 16 world units, by half of it a tick and not at all below 8,
+so a crowd that arrived comes to rest and then does not move. A unit
+driving through a standing crowd on its way elsewhere pushes it aside; a
+unit within 4 cells (of path) of its destination stops against standing
+friends instead and arrives there, while one farther out pushes, so a big
+group funnels through a gap. Units waiting for a repair pad or a refinery
+dock stop within 3 cells of it; the next in line reserves
+the pad or dock before it drives on, so they come one at a time, and units
+holding a pad, a dock or an ore cell are never pushed.
+
 ### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
 
 Close to OpenRA, and the same for every player whatever its slot:
@@ -1350,29 +1445,38 @@ engine's rules:
 **Measurements** (`examples/bot_matrix.rs -- 16 90`, 16 seeds per pairing,
 1v1 on generated 80 maps of random style with the standard tech buildings,
 each bot on both spawns, Normal difficulty, 90 minutes at most; wins of the
-first bot listed, then of the second, and game lengths in minutes):
+first bot listed, then of the second, and game lengths in minutes), with the
+OpenRA movement model (the default) and with the WebRA model
+(`AI_MOVEMENT=webra`):
 
-| Pairing | Wins | Unfinished | Mean | Median | Longest |
-|---|---|---|---|---|---|
-| Rush vs Rush | 7-9 | 0 | 14.9 | 14.1 | 26.2 |
-| Rush vs Normal | 11-5 | 0 | 17.6 | 18.6 | 25.1 |
-| Rush vs Turtle | 11-5 | 0 | 24.4 | 21.0 | 66.0 |
-| Rush vs Naval | 16-0 | 0 | 8.5 | 8.0 | 19.0 |
-| Normal vs Normal | 10-6 | 0 | 22.7 | 18.1 | 65.6 |
-| Normal vs Turtle | 12-4 | 0 | 29.3 | 27.8 | 54.6 |
-| Normal vs Naval | 13-3 | 0 | 12.8 | 12.0 | 23.3 |
-| Turtle vs Turtle | 4-11 | 1 (seed 8, lakes) | 39.7 | 38.7 | 78.2 |
-| Turtle vs Naval | 3-13 | 0 | 24.4 | 24.1 | 66.1 |
-| Naval vs Naval | 8-8 | 0 | 10.9 | 10.7 | 18.5 |
+| Pairing | OpenRA: wins | unfinished | mean | median | longest | WebRA: wins | unfinished | mean | median | longest |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Rush vs Rush | 11-5 | 0 | 17.9 | 16.0 | 45.3 | 7-9 | 0 | 14.0 | 12.9 | 31.3 |
+| Rush vs Normal | 7-9 | 0 | 20.0 | 18.1 | 48.8 | 7-9 | 0 | 17.3 | 18.7 | 32.5 |
+| Rush vs Turtle | 15-1 | 0 | 22.5 | 21.7 | 41.7 | 12-4 | 0 | 21.2 | 18.6 | 60.8 |
+| Rush vs Naval | 16-0 | 0 | 11.3 | 7.8 | 65.0 | 15-1 | 0 | 9.2 | 9.2 | 17.8 |
+| Normal vs Normal | 8-8 | 0 | 24.9 | 24.0 | 52.2 | 9-7 | 0 | 19.3 | 20.0 | 33.1 |
+| Normal vs Turtle | 7-9 | 0 | 34.2 | 33.8 | 66.9 | 8-8 | 0 | 36.3 | 31.0 | 70.7 |
+| Normal vs Naval | 15-0 | 1 (seed 6, rivers) | 13.0 | 12.7 | 22.5 | 15-1 | 0 | 14.0 | 12.7 | 24.1 |
+| Turtle vs Turtle | 8-8 | 0 | 48.5 | 49.0 | 83.9 | 7-9 | 0 | 50.1 | 51.1 | 82.3 |
+| Turtle vs Naval | 12-4 | 0 | 36.8 | 29.1 | 88.5 | 8-8 | 0 | 36.4 | 35.1 | 78.7 |
+| Naval vs Naval | 8-8 | 0 | 14.1 | 12.1 | 30.0 | 8-8 | 0 | 13.0 | 13.8 | 18.9 |
 
-Two Turtle AIs can outlast an hour and a half on water maps: Turtle AI forms
+Land games last a few minutes longer with OpenRA movement: an attack wave
+drives one unit per cell (five soldiers) and a squad that regroups waits for
+its stragglers to come through the crowd instead of shoving it aside, so
+waves arrive more strung out and a defence holds a little longer.
+
+A Turtle AI can make a game outlast an hour and a half: Turtle AI forms
 an attack force at most every 100000 ticks (MinimumAttackForceDelay, about
 67 minutes, the first at a random time) and the stalemate breaker only
 sends its units once they stop growing. Difficulty (Normal AI against
 Normal AI, same setup): Easy against Normal 5-11, Normal against Hard 7-9,
-Easy against Hard 3-13. Four player free for alls on 96 maps (the engine's
-whole-game tests) end after 20 to 66 minutes, 2v2s after 9 to 49;
-`ai_vs_ai -- 3` ends after 14:44.
+Easy against Hard 3-13 (difficulty and the free for alls below were
+measured before the movement models, with what is now the WebRA model).
+Four player free for alls on 96 maps (the engine's whole-game tests) end
+after 20 to 66 minutes, 2v2s after 9 to 49. `ai_vs_ai -- 3` (an hour at
+most) ends after 20:08 with the OpenRA model and 16:03 with the WebRA model.
 
 ### Skirmish AI target choice (`engine/src/ai.rs`)
 
@@ -1858,7 +1962,9 @@ A mission replay or save (`mode: "mission"`) has no `map` (null) and names
 its mission file instead: `mission.id` (`[a-z0-9][a-z0-9-]{0,63}`, the file
 `apps/game/missions/<id>.json`) and `mission.hash` (SHA-256 of the file's
 text). Its `options` are the mission's start options, `{ seed, gameSpeed,
-options }` with at most 8 mission options (`options.difficulty`: `easy`,
+options, movement }` (`movement` as in section 3: missions started now play
+`openra`; left out by saves and replays from before it, which play `webra`)
+with at most 8 mission options (`options.difficulty`: `easy`,
 ...; keys and values `[a-z0-9][a-z0-9_-]{0,31}`, case-insensitive), not
 the game options of section 3. The person playing is player 0, so `player`
 is 0 and every frame carries player 0's orders only. The loader fetches the
@@ -2413,14 +2519,15 @@ server share.
   message, validated against `COOP_MISSIONS`: a file of another version is
   refused). The first slots become the mission's playable players, people
   only (OpenRA `AllowBots: False`); later slots close; faction, colour and
-  team are the mission's. Only the game speed of the lobby options applies.
+  team are the mission's. Only the game speed and the movement model of the
+  lobby options apply.
   The game starts when every place holds a ready person. Choosing a map or
   a generated map goes back to a skirmish.
 - **Start.** `start.mission` names the mission; every client loads its own
   copy of the mission file from its own server, checks the hash and starts
   `Game.from_mission` with `humans` (the playable players, engine players 0
-  and 1) and `localPlayer` (its own seat). No client ever sends a script or a
-  mission file to another.
+  and 1), `localPlayer` (its own seat) and the lobby's `movement`. No client
+  ever sends a script or a mission file to another.
 - **Lockstep.** The scripts run on every client. `IsLocalPlayer` is true for
   each client's own player only, and the scripts use it for presentation
   (their objective messages, timer colours, the camera), so the interpreter

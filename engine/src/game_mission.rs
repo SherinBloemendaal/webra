@@ -15,9 +15,11 @@ use wasm_bindgen::prelude::*;
 impl Game {
     /// A game of a mission file (`apps/game/missions/<id>.json`) with
     /// `{ seed, options: { difficulty: "hard" }, humans?: ["Allies1",
-    /// "Allies2"], localPlayer?: 0 }`: `humans` names the mission's playable
-    /// players people take, in engine order (default: its first playable
-    /// player alone), `localPlayer` this screen's (presentation only). The
+    /// "Allies2"], localPlayer?: 0, movement?: "openra" }`: `humans` names
+    /// the mission's playable players people take, in engine order
+    /// (default: its first playable player alone), `localPlayer` this
+    /// screen's (presentation only), `movement` the movement model
+    /// (movement/; absent: `webra`, as games saved before the option). The
     /// scripts are loaded and `WorldLoaded` has run.
     pub fn from_mission(mission_json: &str, options_json: &str) -> Result<Game, JsError> {
         let data = MissionData::parse(mission_json).map_err(|e| JsError::new(&e))?;
@@ -41,6 +43,15 @@ impl Game {
                 .collect::<Result<_, _>>()?;
         }
         chosen.local_player = o.get("localPlayer").and_then(|v| v.as_u64()).unwrap_or(0).min(255) as u8;
+        // Absent in saves and replays from before the option: they played
+        // with WebRA's soft crowd separation and replay with it.
+        chosen.movement = match o.get("movement") {
+            None => crate::movement::MovementModel::WebRA,
+            Some(v) => v
+                .as_str()
+                .and_then(crate::movement::MovementModel::from_name)
+                .ok_or_else(|| JsError::new("movement must be openra or webra"))?,
+        };
         let world = World::from_mission(data, seed, &chosen).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(world))
     }

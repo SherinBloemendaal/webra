@@ -305,6 +305,9 @@ fn the_service_depot_announces_the_start_and_the_end_of_a_repair() {
 #[test]
 fn minelayers_rearm_with_a_sound_per_mine() {
     let mut w = flat_world(["allies", "soviet"]);
+    // Parked on the pad: only WebRA's movement model lets an idle unit stand
+    // on the depot's pad (OpenRA's moves it off, movement/cellmove.rs).
+    w.options.movement = crate::movement::MovementModel::WebRA;
     let fix = w.spawn_building(ty(&w, "FIX"), 0, 30, 30).unwrap();
     w.refresh_tokens();
     // Parked on the depot's pad, it reloads one mine per ReloadDelay.
@@ -338,17 +341,26 @@ fn crushed_infantry_makes_the_crush_sound_at_the_crusher() {
     let (x0, y) = (cell_center(20), cell_center(30));
     let tank = w.spawn_unit(ty(&w, "1TNK"), 0, x0, y, 256);
     let rifle = w.spawn_unit(ty(&w, "E1"), 1, x0 + 3 * CELL, y, 768);
+    // Rock all around the soldier but on the tank's side: it cannot jump
+    // aside (OpenRA Crushable.WarnCrush, movement/cellmove.rs).
+    for (dx, dy) in [(2, -1), (3, -1), (4, -1), (2, 1), (3, 1), (4, 1), (4, 0)] {
+        let i = w.map.idx(20 + dx, 30 + dy);
+        w.pass.set_blocked(i, true);
+    }
+    w.pass.refresh(&w.map);
     w.actors[tank].reload = [1_000_000; crate::world::MAX_WEAPONS];
     w.actors[rifle].reload = [1_000_000; crate::world::MAX_WEAPONS];
     w.sound.set_enabled(true);
     let r = w.make_ref(tank);
-    w.queue_order(Order::Move { player: 0, ids: vec![r], x: x0 + 6 * CELL, y, attack_move: false });
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: x0 + 3 * CELL, y, attack_move: false });
     let mut crushed = Vec::new();
     for _ in 0..25 * 6 {
         w.step();
         let ev = events(&mut w);
         for e in of_kind(&ev, K::Crushed) {
-            assert_eq!((e[2], e[3]), (w.actors[tank].x, w.actors[tank].y), "at the crusher");
+            // Where the tank was when it crushed: it may drive on in the same tick.
+            let speed = w.rules.actors[w.actors[tank].ty as usize].unit.as_ref().unwrap().speed;
+            assert!(crate::math::dist(e[2], e[3], w.actors[tank].x, w.actors[tank].y) <= speed, "at the crusher");
             crushed.push(e);
         }
     }

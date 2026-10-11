@@ -491,7 +491,12 @@ impl World {
     /// Progress bookkeeping toward a cell, measured along the path; true
     /// when the unit has made no progress for too long or cannot reach the
     /// cell at all.
+    ///
+    /// In the OpenRA model: the move toward the cell stopped short.
     pub(crate) fn stuck_toward(&mut self, i: usize, ci: u32) -> bool {
+        if self.cell_moves() && self.occupies_cells(i) {
+            return !self.on_cell(i, ci) && self.move_settled(i, ci);
+        }
         let d = match self.path_remaining(i, ci) {
             Some(d) => d,
             // On a blocked cell: no progress until the unit has stepped off.
@@ -607,12 +612,6 @@ impl World {
         best.map(|(_, j)| j)
     }
 
-    fn pad_cell(&self, b: usize) -> u32 {
-        let a = &self.actors[b];
-        let info = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-        self.map.idx(a.cx + info.width / 2, a.cy + info.height / 2) as u32
-    }
-
     fn go_rearm(&mut self, i: usize) {
         let Some(b) = self.rearm_building(i) else {
             // Nowhere to reload: keep the remaining minefield for a later order.
@@ -623,7 +622,7 @@ impl World {
         let field = std::mem::take(&mut self.actors[i].ab.minefield);
         self.start_task(i, Task::Rearm);
         let r = self.make_ref(b);
-        let pad = self.pad_cell(b);
+        let pad = self.repair_pad_cell(b);
         let a = &mut self.actors[i];
         a.ab.minefield = field;
         a.ab.target = r;
@@ -651,7 +650,7 @@ impl World {
             }
             return;
         }
-        let pad = self.pad_cell(b);
+        let pad = self.repair_pad_cell(b);
         if self.on_cell(i, pad) {
             return; // rearm_on_pad reloads
         }

@@ -449,6 +449,7 @@ fn coop_missions_agree_between_their_players() {
                 options: [("difficulty".to_string(), "normal".to_string())].into(),
                 humans: vec!["Allies1".into(), "Allies2".into()],
                 local_player: local,
+                ..Default::default()
             };
             World::from_mission(load(id), 11, &opts).unwrap_or_else(|e| panic!("{id}: {e}"))
         };

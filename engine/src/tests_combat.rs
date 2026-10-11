@@ -198,8 +198,10 @@ fn mirrored_fight(seed: u64, pre_steps: u32) -> (usize, usize) {
         armies[1].push(w.spawn_unit(t, 1, cell_center(33 - da), cell_center(30 + db * 2), 768));
     }
     run(&mut w, 1 + pre_steps);
+    // Mirrored destinations too: column 34 and its mirror image 19 (columns
+    // 20 + da and 33 - da mirror about 26.5).
     w.order_move(&armies[0], cell_center(34), cell_center(30), true);
-    w.order_move(&armies[1], cell_center(20), cell_center(30), true);
+    w.order_move(&armies[1], cell_center(19), cell_center(30), true);
     let alive = |w: &World, a: &[usize]| a.iter().filter(|&&i| w.actors[i].alive).count();
     for _ in 0..25 * 120 {
         w.step();

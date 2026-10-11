@@ -731,6 +731,15 @@ struct RawLocomotor {
     domain: String,
     speeds: Vec<i32>,
     crushes: Vec<String>,
+    #[serde(default)]
+    shares_cell: bool,
+    #[serde(default = "default_wait_average")]
+    wait_average: i32,
+}
+
+/// OpenRA LocomotorInfo.WaitAverage default.
+fn default_wait_average() -> i32 {
+    40
 }
 
 /// Where a unit moves: on land (ground flow fields), on water (naval flow fields) or in the air.
@@ -920,6 +929,10 @@ pub struct BuildingInfo {
     /// Cells that can be hit: the solid cells, or the whole pad for
     /// buildings without solid cells (the service depot).
     pub hit_cells: Vec<(i32, i32)>,
+    /// Footprint cells units may cross but not stop on (OpenRA footprint
+    /// `+`, OccupiedPassableTransitOnly: the service depot's pad), as
+    /// offsets from the top-left cell (movement/cellmove.rs).
+    pub transit_cells: Vec<(i32, i32)>,
     /// Placed on water (naval yards) instead of clear ground.
     pub on_water: bool,
     pub requires_base_provider: bool,
@@ -1187,6 +1200,12 @@ pub struct Locomotor {
     pub crushes_infantry: bool,
     /// Every crush class of OpenRA `Crushes` (walls: `wall`, `heavywall`).
     pub crushes: Vec<String>,
+    /// OpenRA `SharesCell`: up to five units (infantry) share a cell, one
+    /// per sub-cell (movement/occupancy.rs).
+    pub shares_cell: bool,
+    /// OpenRA `WaitAverage`: ticks a move blocked by another unit waits for
+    /// it to leave before it looks for another way (movement/cellmove.rs).
+    pub wait_average: i32,
 }
 
 #[derive(Clone)]
@@ -1900,8 +1919,12 @@ impl Rules {
                         return Err(n("building.footprint must have `height` rows of `width` cells"));
                     }
                     let mut footprint = Vec::new();
+                    let mut transit_cells = Vec::new();
                     for (y, row) in b.footprint.iter().enumerate() {
                         for (x, c) in row.chars().enumerate() {
+                            if c == '+' {
+                                transit_cells.push((x as i32, y as i32));
+                            }
                             let cell = match c {
                                 '_' => FootCell::Empty,
                                 'x' | 'X' => FootCell::Occupied,
@@ -1943,6 +1966,7 @@ impl Rules {
                         height: b.height,
                         footprint,
                         hit_cells,
+                        transit_cells,
                         on_water: b.terrain.iter().any(|t| t == "Water"),
                         requires_base_provider: b.requires_base_provider,
                         power: b.power,
@@ -2113,6 +2137,8 @@ impl Rules {
                 },
                 name: l.name,
                 speeds: l.speeds,
+                shares_cell: l.shares_cell,
+                wait_average: l.wait_average.clamp(0, 1000),
             })
             .collect();
         let mut rules = Rules {

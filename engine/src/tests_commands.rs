@@ -45,10 +45,11 @@ fn unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
     w.spawn_unit(t, owner, cell_center(cx), cell_center(cy), 0)
 }
 
-/// Unit that never fires.
+/// Unit that never fires (nor moves to fire: it holds its fire).
 fn passive(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
     let u = unit(w, id, owner, cx, cy);
     w.actors[u].reload = [1_000_000; MAX_WEAPONS];
+    w.actors[u].stance = Stance::HoldFire;
     u
 }
 

@@ -183,7 +183,7 @@ export class SimCore {
       case 'online': {
         const json = JSON.stringify(spec.options);
         // A co-op mission (`mission`: its file's text, id, hash and options): every client is its own local player.
-        if (spec.mission) this.game = G.from_mission(spec.mission.text, coopStart(spec.mission, spec.options.seed, spec.player ?? 0));
+        if (spec.mission) this.game = G.from_mission(spec.mission.text, coopStart(spec.mission, spec.options.seed, spec.player ?? 0, spec.options.movement));
         else this.game = spec.map ? G.from_map(spec.map, json) : G.from_options(json);
         try {
           this.recorder = spec.recorder ? new Recorder(spec.recorder) : null;

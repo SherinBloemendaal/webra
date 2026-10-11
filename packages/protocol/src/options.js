@@ -27,6 +27,7 @@ import {
   TIME_LIMITS,
   WEATHER_MODES,
   HANDICAPS,
+  MOVEMENT_MODELS,
 } from './constants.js';
 import { bool, fail, int, isPlainObject, object, oneOf, text } from './check.js';
 
@@ -42,10 +43,15 @@ export const LOBBY_OPTION_KEYS = [
   'techLevel',
   'gameSpeed',
   'timeLimit',
+  'movement',
   ...BOOLEAN_OPTIONS,
 ];
 
-/** Strictly validate host-editable lobby options. Every key is required. */
+/**
+ * Strictly validate host-editable lobby options. Every key is required,
+ * except `movement`: games saved or recorded before it existed lack it and
+ * play with `webra` (the engine's default for an absent key).
+ */
 export function validateLobbyOptions(v, what = 'options') {
   object(v, LOBBY_OPTION_KEYS, what);
   const out = {
@@ -61,6 +67,7 @@ export function validateLobbyOptions(v, what = 'options') {
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
     timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
   };
+  if (v.movement !== undefined) out.movement = oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`);
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;
 }

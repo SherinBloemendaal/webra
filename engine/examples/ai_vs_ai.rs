@@ -1,9 +1,12 @@
-//! Headless AI vs AI match.
+//! Headless AI vs AI match, an hour of game time at most (two Normal AIs
+//! on a generated 80 map take 25 minutes on average, see docs/contracts.md).
 //! Usage: cargo run -p webra-sim --release --example ai_vs_ai -- [seed] [faction0] [faction1]
 //! Environment: AI_STYLE (random, land, rivers, lakes, islands), AI_BIOME
-//! (random, temperate, snow, desert), AI_WEATHER (full, cosmetic, off);
-//! defaults random, temperate, full (the engine defaults).
+//! (random, temperate, snow, desert), AI_WEATHER (full, cosmetic, off),
+//! AI_MOVEMENT (openra, webra); defaults random, temperate, full, openra
+//! (the engine defaults).
 use webra_sim::mapgen::MapStyle;
+use webra_sim::movement::MovementModel;
 use webra_sim::rules::Kind;
 use webra_sim::weather::{Biome, WeatherMode};
 use webra_sim::world::{AiDifficulty, GameOptions, PlayerSetup, World};
@@ -18,12 +21,13 @@ fn main() {
         map_style: MapStyle::from_name(&var("AI_STYLE", "random")).expect("AI_STYLE"),
         biome: if biome == "random" { None } else { Some(Biome::from_name(&biome).expect("AI_BIOME")) },
         weather: WeatherMode::from_name(&var("AI_WEATHER", "full")).expect("AI_WEATHER"),
+        movement: MovementModel::from_name(&var("AI_MOVEMENT", "openra")).expect("AI_MOVEMENT"),
         ..GameOptions::default()
     };
     let players = [PlayerSetup::new(&f0, Some(AiDifficulty::Normal)), PlayerSetup::new(&f1, Some(AiDifficulty::Normal))];
     let mut w = World::with_options(seed, 80, &players, options);
     let t0 = std::time::Instant::now();
-    for t in 0..(25 * 60 * 20) {
+    for t in 0..(25 * 60 * 60) {
         w.step();
         if t % 1500 == 0 {
             for p in 0..2u8 {

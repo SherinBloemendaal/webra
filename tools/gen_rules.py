@@ -187,6 +187,8 @@ def load_ftl():
 
 
 AIR_LOCOMOTOR = 'air'
+# OpenRA LocomotorInfo.WaitAverage default: ticks a blocked move waits.
+LOCOMOTOR_WAIT_AVERAGE = 40
 
 
 def parse_locomotors():
@@ -206,6 +208,14 @@ def parse_locomotors():
         m = re.match(r'^\t\tCrushes: (.+)', line)
         if cur and m:
             locos[cur]['_crushes'] = [x.strip() for x in m.group(1).split(',')]
+            in_speeds = False
+            continue
+        # Cell sharing (infantry: five sub-cells) and the ticks a blocked
+        # move waits for its blocker (movement/cellmove.rs).
+        m = re.match(r'^\t\t(SharesCell|WaitAverage): (\S+)', line)
+        if cur and m:
+            key = '_shares_cell' if m.group(1) == 'SharesCell' else '_wait_average'
+            locos[cur][key] = m.group(2).lower() == 'true' if key == '_shares_cell' else int(m.group(2))
             in_speeds = False
             continue
         if cur and re.match(r'^\t\tTerrainSpeeds:', line):
@@ -268,13 +278,15 @@ def target_types(t):
 def locomotor_info(name, locos):
     """Speeds per terrain class and the movement domain (ground, water or air)."""
     if name == AIR_LOCOMOTOR:
-        return {'name': name, 'domain': 'air', 'speeds': [100] * len(TERRAIN_TYPES), 'crushes': []}
+        return {'name': name, 'domain': 'air', 'speeds': [100] * len(TERRAIN_TYPES), 'crushes': [],
+                'shares_cell': False, 'wait_average': LOCOMOTOR_WAIT_AVERAGE}
     l = locos[name]
     speeds = [l.get(tt, 0) for tt in TERRAIN_TYPES]
     on_land = any(speeds[:3])
     on_water = speeds[3] > 0
     domain = 'water' if on_water and not on_land else 'ground'
-    return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes']}
+    return {'name': name, 'domain': domain, 'speeds': speeds, 'crushes': l['_crushes'],
+            'shares_cell': l.get('_shares_cell', False), 'wait_average': l.get('_wait_average', LOCOMOTOR_WAIT_AVERAGE)}
 
 
 # Warheads that change no health (combat.rs `land_shot`, smudges.rs): smudges
