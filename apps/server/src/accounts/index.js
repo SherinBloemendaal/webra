@@ -6,7 +6,7 @@ import { RequestContext } from './context.js';
 import { registerAccountRoutes } from './routes-account.js';
 import { registerAdminRoutes } from './routes-admin.js';
 import { registerAuthRoutes } from './routes-auth.js';
-import { registerDevRoutes } from './dev.js';
+import { registerDevRoutes, withDevMail } from './dev.js';
 import { registerDiscordRoutes } from './routes-discord.js';
 import { Router } from './router.js';
 
@@ -43,5 +43,5 @@ export async function handleAccountApi(ctx) {
 }
 
 export function newContext(request, env, exec, now) {
-  return new RequestContext(request, env, exec, now);
+  return new RequestContext(request, withDevMail(request, env), exec, now);
 }

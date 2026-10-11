@@ -193,12 +193,12 @@ test('F5: stored address hashes are keyed; production refuses to run without the
   assert.notEqual(stored, await sha256Hex('198.51.100.77'));
   for (const { key } of env.DB.rows('SELECT key FROM rate_limits')) assert.ok(!key.includes('198.51.100.77'));
   const bare = makeEnv({ email: false, vars: { IP_HASH_SALT: undefined } });
-  const r = await new Browser(bare).post('/api/auth/signup', { username: 'No Salt', password: PASSWORD, acceptPrivacy: true });
+  const r = await new Browser(bare).post('/api/auth/signup', { username: 'No Salt', email: 'nosalt@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(r.status, 503);
   assert.equal(r.body.error.code, 'misconfigured');
   assert.equal(bare.DB.rows('SELECT COUNT(*) AS n FROM users')[0].n, 0);
   // Local development (plain HTTP to localhost) uses a fixed development salt.
-  const local = await new Browser(bare, { origin: 'http://localhost:8799' }).post('/api/auth/signup', { username: 'Local Dev', password: PASSWORD, acceptPrivacy: true });
+  const local = await new Browser(bare, { origin: 'http://localhost:8799' }).post('/api/auth/signup', { username: 'Local Dev', email: 'localdev@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(local.status, 201);
   assert.ok(DEV_IP_SALT.length >= 16);
 });
@@ -211,10 +211,12 @@ test('F6: the reviewer repro (r5): no squatting, no reset to unverified addresse
   promote(env, squatter.user.id);
   await squatter.post('/api/auth/reauth', { password: PASSWORD });
   const r = await squatter.post('/api/account/email', { email: 'ceo@bigcorp.example' });
-  assert.equal(r.status, 503, 'no addresses without confirmation');
-  const typo = await new Browser(env).post('/api/auth/signup', { username: 'Typo Guy', email: 'not.mine@example.com', password: PASSWORD, acceptPrivacy: true });
-  assert.equal(typo.status, 400);
-  assert.equal(typo.body.error.field, 'email');
+  assert.equal(r.status, 503, 'a confirmed address is not swapped for one nobody can confirm');
+  // Without email sending a new account still gives an address; it stays unverified and claims nothing.
+  const typo = await new Browser(env).post('/api/auth/signup', { username: 'Typo Guy', email: 'ceo@bigcorp.example', password: PASSWORD, acceptPrivacy: true });
+  assert.equal(typo.status, 201);
+  assert.equal(typo.body.user.emailVerified, false);
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM users WHERE email_key = 'ceo@bigcorp.example'")[0].n, 0);
   // With email working: an unverified address does not block the real owner and gets no reset link.
   const env2 = makeEnv({ email: true });
   await setSite(env2, { registration: { emailVerification: false } });
@@ -225,11 +227,21 @@ test('F6: the reviewer repro (r5): no squatting, no reset to unverified addresse
   const sent = env2.EMAIL.sent.length;
   assert.equal((await new Browser(env2).post('/api/auth/password/forgot', { email: 'ceo@bigcorp.example' })).status, 202);
   assert.equal(env2.EMAIL.sent.length, sent, 'no reset link to an unverified address');
-  // Unverified addresses expire after 7 days (the daily job).
+  // The address the owner confirms is theirs; the claimer's link then conflicts.
+  const ownerToken = env2.EMAIL.sent.filter((m) => m.to === 'ceo@bigcorp.example').map((m) => /#verify=([A-Za-z0-9_-]{43})/.exec(m.text)?.[1]);
+  assert.equal(ownerToken.length, 2, 'one link per account');
+  assert.equal((await new Browser(env2).post('/api/auth/email/verify', { token: ownerToken[1] })).status, 200);
+  assert.equal((await new Browser(env2).post('/api/auth/email/verify', { token: ownerToken[0] })).status, 409);
+  // Unverified addresses are no longer cleared by the daily job (every account keeps its address; it claims nothing).
   const { scheduled } = await import('./accounts-harness.mjs');
   clock.advance(8 * 24 * 60 * 60 * 1000);
   await scheduled(env2, clock.now);
-  assert.equal(env2.DB.rows('SELECT COUNT(*) AS n FROM users WHERE email IS NOT NULL')[0].n, 0);
+  assert.deepEqual(env2.DB.rows('SELECT email, email_key, email_verified, status FROM users WHERE id = ?', claimer.user.id)[0], {
+    email: 'ceo@bigcorp.example',
+    email_key: null,
+    email_verified: 0,
+    status: 'pending_approval',
+  });
 });
 
 // ---- F7: last sign-in method --------------------------------------------------------------------------

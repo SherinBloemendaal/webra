@@ -11,14 +11,33 @@ import {
   ACCOUNT_PASSWORD_MIN,
   USERNAME_MAX,
   USERNAME_MIN,
+  validEmail,
 } from '@webra/protocol';
 import { rpIdFor } from './webauthn.js';
 
-/** Which configured services exist (independent of the settings). */
+/**
+ * The sender address of account mail: the variable EMAIL_FROM (set by the
+ * deploy workflow, docs/deploy.md), or null when it is unset or not an
+ * address.
+ */
+export function emailSender(env) {
+  const v = env?.EMAIL_FROM;
+  if (typeof v !== 'string' || v.trim() === '') return null;
+  try {
+    return validEmail(v);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which configured services exist (independent of the settings). Email
+ * needs both the Email Sending binding EMAIL and a sender address.
+ */
 export function services(env) {
   const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
   return {
-    email: Boolean(env?.EMAIL) && typeof env.EMAIL.send === 'function',
+    email: Boolean(env?.EMAIL) && typeof env.EMAIL.send === 'function' && emailSender(env) !== null,
     discord: nonEmpty(env?.DISCORD_CLIENT_ID) && nonEmpty(env?.DISCORD_CLIENT_SECRET),
   };
 }

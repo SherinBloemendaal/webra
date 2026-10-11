@@ -5,7 +5,8 @@
 // (--local-upstream keeps the request host `localhost`; without it wrangler
 // dev presents requests as the production host, and the test-only route,
 // local cookies and the passkey rp id `localhost` are not available.)
-// Exercises accounts (signup pending approval, an admin made through the
+// Exercises accounts (signup with a required, unverified email address while
+// email sending is unavailable, pending approval, an admin made through the
 // test-only /api/dev/promote route that exists only under `wrangler dev`,
 // approval through the admin API, sign-in), the HTTP API, a
 // password-protected lobby with two signed-in humans, an AI and a spectator,
@@ -52,9 +53,12 @@ async function api(path, init = {}, who = null) {
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
 
+/** An address for `name` (every new account gives one; without email sending it stays unverified). */
+const emailFor = (name) => `${name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@example.com`;
+
 /** Sign up `name` (pending approval with the default site settings). */
 async function signupAccount(name) {
-  const r = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ username: name, password: PASSWORD, acceptPrivacy: true }) }, name);
+  const r = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ username: name, email: emailFor(name), password: PASSWORD, acceptPrivacy: true }) }, name);
   assert.equal(r.status, 201, JSON.stringify(r.body));
   return r.body.user;
 }
@@ -678,10 +682,18 @@ async function main() {
   const GUEST = `Guest${RUN}`;
   const WATCHER = `Watcher${RUN}`;
   const accounts = {};
+  // Every new account gives an email address; without email sending it is kept unverified, no verification step.
+  const noEmail = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ username: `NoMail${RUN}`, password: PASSWORD, acceptPrivacy: true }) });
+  assert.equal(noEmail.status, 400);
+  assert.equal(noEmail.body.error.field, 'email');
   for (const name of [ADMIN, HOST, GUEST, WATCHER]) {
     accounts[name] = await signupAccount(name);
     assert.equal(accounts[name].status, 'pending_approval');
+    assert.equal(accounts[name].email, emailFor(name));
+    assert.equal(accounts[name].emailVerified, false);
   }
+  const resend = await api('/api/account/email/resend', { method: 'POST', body: '{}' }, HOST);
+  assert.equal(resend.status, 503, 'no verification email under plain wrangler dev');
   // Pending accounts cannot play.
   const pendingCreate = await api('/api/sessions', { method: 'POST', body: JSON.stringify({ name: 'Nope', public: false, maxPlayers: 2, version: VERSION }) }, HOST);
   assert.equal(pendingCreate.status, 403);

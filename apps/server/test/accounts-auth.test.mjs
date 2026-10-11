@@ -87,7 +87,9 @@ test('signup validation, uniqueness and closed registration', async () => {
   await bad({ username: 'Good', password: 'short' }, 'password');
   await bad({ username: 'Good', password: '1234567890' }, 'password');
   await bad({ username: 'Good', password: 'goodgoodgood', email: 'goodgoodgood' }, 'email');
-  await bad({ username: 'Good', email: null }, 'email', 400); // verification in effect: email required
+  await bad({ username: 'Good', email: null }, 'email'); // every new account gives an address
+  await bad({ username: 'Good', email: undefined }, 'email');
+  await bad({ username: 'Good', email: '' }, 'email');
   await bad({ username: 'Good', acceptPrivacy: false }, 'acceptPrivacy');
   await bad({ username: 'Good', password: undefined }, 'password');
   await bad({ username: 'Good', admin: true }, 'admin');
@@ -103,9 +105,17 @@ test('signup validation, uniqueness and closed registration', async () => {
   const dupName = await c.post('/api/auth/signup', { username: 'ＧＯＯＤ', email: 'h@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(dupName.status, 409, 'usernames are unique after folding');
   assert.equal(dupName.body.error.field, 'username');
+  // A verified address does not refuse a signup either (that would tell anyone which addresses have accounts):
+  // the account keeps it unverified, and the address gets a notice without a link instead.
+  const before = env.EMAIL.sent.length;
   const dupMail = await c.post('/api/auth/signup', { username: 'Other', email: 'G@EXAMPLE.com', password: PASSWORD, acceptPrivacy: true });
-  assert.equal(dupMail.status, 409);
-  assert.equal(dupMail.body.error.field, 'email');
+  assert.equal(dupMail.status, 201, JSON.stringify(dupMail.body));
+  assert.equal(dupMail.body.user.emailVerified, false);
+  const notice = env.EMAIL.sent.slice(before);
+  assert.equal(notice.length, 1);
+  assert.equal(notice[0].to, 'G@example.com');
+  assert.match(notice[0].subject, /already has an account/);
+  assert.doesNotMatch(notice[0].text + notice[0].html, /#verify=|Other/, 'no link and nothing the requester chose');
   await setSite(env, { registration: { open: false } });
   const closed = await c.post('/api/auth/signup', { username: 'Late', email: 'l@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(closed.status, 403);
@@ -115,14 +125,27 @@ test('signup validation, uniqueness and closed registration', async () => {
   assert.equal(off.body.error.code, 'method_disabled');
 });
 
-test('without email: no verification, email optional, open beta makes accounts active', async () => {
+test('without email sending: the address is still required, kept unverified, no verification step; open beta makes accounts active', async () => {
   const env = makeEnv({ email: false });
   await setSite(env, { registration: { approvalRequired: false } });
   const b = new Browser(env);
-  const r = await b.post('/api/auth/signup', { username: 'Volkov', password: PASSWORD, acceptPrivacy: true });
+  const none = await b.post('/api/auth/signup', { username: 'Volkov', password: PASSWORD, acceptPrivacy: true });
+  assert.equal(none.status, 400);
+  assert.equal(none.body.error.field, 'email');
+  const r = await b.post('/api/auth/signup', { username: 'Volkov', email: 'volkov@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.equal(r.body.user.status, 'active');
-  assert.equal(r.body.user.email, null);
+  assert.equal(r.body.user.email, 'volkov@example.com');
+  assert.equal(r.body.user.emailVerified, false);
+  assert.equal(env.DB.rows('SELECT email_key FROM users')[0].email_key, null, 'an unverified address claims nothing');
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM email_tokens')[0].n, 0, 'no link without sending');
+  // The same address on another account: no conflict either.
+  const other = await new Browser(env, { ip: '203.0.113.50' }).post('/api/auth/signup', { username: 'Volkova', email: 'volkov@example.com', password: PASSWORD, acceptPrivacy: true });
+  assert.equal(other.status, 201);
+  // Resending needs email sending.
+  const resend = await b.post('/api/account/email/resend', {});
+  assert.equal(resend.status, 503);
+  assert.equal(resend.body.error.code, 'unavailable');
   assert.equal(r.body.user.canPlayOnline, true);
   assert.equal(r.body.user.canUseContentRelay, false, 'the relay needs the flag');
   const f = await b.post('/api/auth/password/forgot', { email: 'x@example.com' });
@@ -264,7 +287,7 @@ test('signup limit per IP', async () => {
   const env = makeEnv({ email: false });
   let last;
   for (let i = 0; i < 11; i++) {
-    last = await new Browser(env, { ip: '192.0.2.5' }).post('/api/auth/signup', { username: `Player${i}`, password: PASSWORD, acceptPrivacy: true });
+    last = await new Browser(env, { ip: '192.0.2.5' }).post('/api/auth/signup', { username: `Player${i}`, email: `player${i}@example.com`, password: PASSWORD, acceptPrivacy: true });
   }
   assert.equal(last.status, 429);
 });
@@ -297,7 +320,7 @@ test('sessions: idle and absolute expiry, logout, unknown cookies are cleared', 
 test('plain HTTP (local development) uses a cookie without __Host- and Secure', async () => {
   const env = makeEnv({ email: false });
   const b = new Browser(env, { origin: 'http://localhost:8787' });
-  const r = await b.post('/api/auth/signup', { username: 'Local', password: PASSWORD, acceptPrivacy: true });
+  const r = await b.post('/api/auth/signup', { username: 'Local', email: 'local@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(r.status, 201);
   const cookie = r.res.headers.getSetCookie()[0];
   assert.match(cookie, /^webra_session=/);
@@ -305,7 +328,7 @@ test('plain HTTP (local development) uses a cookie without __Host- and Secure', 
   assert.equal((await b.get('/api/auth/me')).body.user.username, 'Local');
   // Plain HTTP to any other host still gets Secure __Host- cookies (browsers drop them: fails closed).
   const insecure = new Browser(env, { origin: 'http://webra.sherin.dev', ip: '198.51.100.250' });
-  const r2 = await insecure.post('/api/auth/signup', { username: 'Plaintext', password: PASSWORD, acceptPrivacy: true });
+  const r2 = await insecure.post('/api/auth/signup', { username: 'Plaintext', email: 'plain@example.com', password: PASSWORD, acceptPrivacy: true });
   const c2 = r2.res.headers.getSetCookie()[0];
   assert.match(c2, /^__Host-webra_session=/);
   assert.ok(c2.includes('Secure'));
@@ -381,7 +404,7 @@ test('IP bans block sign-in, signup and every authenticated request', async () =
   assert.equal((await b.get('/api/account')).body.error.code, 'ip_banned');
   const c = new Browser(env, { ip: '203.0.113.201' });
   assert.equal((await c.post('/api/auth/login', { login: 'kane', password: PASSWORD })).body.error.code, 'ip_banned');
-  assert.equal((await c.post('/api/auth/signup', { username: 'Seth', password: PASSWORD, acceptPrivacy: true })).body.error.code, 'ip_banned');
+  assert.equal((await c.post('/api/auth/signup', { username: 'Seth', email: 'seth@example.com', password: PASSWORD, acceptPrivacy: true })).body.error.code, 'ip_banned');
   // Outside the range all is well.
   assert.equal((await new Browser(env, { ip: '203.0.114.1' }).post('/api/auth/login', { login: 'kane', password: PASSWORD })).status, 200);
 });

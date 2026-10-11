@@ -305,7 +305,7 @@ test('site settings: versioned edits, validation, audit, effect on signup', asyn
   for (const bad of [{ registration: { open: 'yes' } }, { login: { sms: true } }, { theme: 'dark' }, { motd: 'x'.repeat(501) }, { motd: 'a‮b' }]) {
     assert.equal((await admin.patch('/api/admin/site', bad, { headers: { 'If-Match': '"v1"' } })).status, 400, JSON.stringify(bad).slice(0, 60));
   }
-  const signupTry = await new Browser(env, { ip: '203.0.113.30' }).post('/api/auth/signup', { username: 'Blocked', password: PASSWORD, acceptPrivacy: true });
+  const signupTry = await new Browser(env, { ip: '203.0.113.30' }).post('/api/auth/signup', { username: 'Blocked', email: 'blocked@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(signupTry.body.error.code, 'registration_closed');
   const entry = (await admin.get('/api/admin/audit?action=site.update')).body.entries[0];
   assert.equal(entry.before.registration.open, true);

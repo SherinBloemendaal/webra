@@ -4,3 +4,4 @@ node_modules/
 .wrangler/
 dist/
 .DS_Store
+apps/server/wrangler.deploy.jsonc

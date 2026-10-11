@@ -33,6 +33,8 @@ export class MockAccountServer {
       motd: '',
     };
     this.services = { email: false, discord: false };
+    /** The admin stats' daily outbound mail budget. */
+    this.mailBudget = { sentToday: 0, dailyLimit: 300, limitReached: false };
     this.fetch = this.fetch.bind(this);
   }
 
@@ -57,7 +59,10 @@ export class MockAccountServer {
       displayName: fields.displayName ?? fields.username,
       email: fields.email ?? null,
       emailVerified: !!fields.emailVerified,
+      emailSetAt: fields.email ? this.now : null,
       pendingEmail: null,
+      /** The open verification link: { purpose, email, sentAt, expiresAt } or null. */
+      emailLink: null,
       avatarColor: '#c8402a',
       role: fields.role ?? 'user',
       status: fields.status ?? 'active',
@@ -143,6 +148,7 @@ export class MockAccountServer {
       displayName: u.displayName,
       email: u.email,
       emailVerified: u.emailVerified,
+      emailSetAt: u.emailSetAt,
       avatarColor: u.avatarColor,
       role: u.role,
       status: this.effectiveStatus(u),
@@ -216,9 +222,12 @@ export class MockAccountServer {
       if (body.acceptPrivacy !== true) return fail(400, 'invalid', 'Accept the privacy notice.', { field: 'acceptPrivacy' });
       if (typeof body.username !== 'string' || body.username.length < 3) return fail(400, 'invalid', 'Username must be 3 to 24 characters.', { field: 'username' });
       if ([...this.users.values()].some((x) => x.username.toLowerCase() === body.username.toLowerCase())) return fail(409, 'conflict', 'That username is taken.', { field: 'username' });
+      // Every new account gives an address (the server's protocol check is stricter).
+      if (typeof body.email !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) return fail(400, 'invalid', 'Enter your email address.', { field: 'email' });
       if (body.password !== undefined && (typeof body.password !== 'string' || body.password.length < 10)) return fail(400, 'invalid', 'Password must be at least 10 characters.', { field: 'password' });
       const status = sitePublic.registration.emailVerificationRequired ? 'pending_email' : this.site.registration.approvalRequired ? 'pending_approval' : 'active';
-      const user = this.addUser({ username: body.username, displayName: body.displayName, email: body.email ?? null, password: body.password ?? null, status });
+      const user = this.addUser({ username: body.username, displayName: body.displayName, email: body.email, password: body.password ?? null, status });
+      if (sitePublic.login.email) user.emailLink = { purpose: 'verify', email: body.email, sentAt: this.now, expiresAt: this.now + 864e5 };
       this.signIn(user);
       return reply(201, { user: this.self(user) });
     }
@@ -264,6 +273,7 @@ export class MockAccountServer {
     }
     if (key === 'POST /api/auth/discord/start') {
       if (!sitePublic.login.discord) return fail(503, 'unavailable', 'Discord is not configured.');
+      if (body.email !== undefined && body.mode !== 'signup') return fail(400, 'invalid', 'An email address is only sent when signing up.', { field: 'email' });
       return reply(200, { url: 'https://discord.com/oauth2/authorize?state=x' });
     }
 
@@ -287,9 +297,23 @@ export class MockAccountServer {
       }
       if (key === 'POST /api/account/email') {
         if (!reauthed) return needReauth();
+        // A verified address stays until the new one is confirmed; none or an unverified one is replaced at once.
+        if (me.emailVerified) {
+          if (!sitePublic.login.email) return fail(503, 'unavailable', 'A confirmed address can be changed once this server sends verification email.');
+          me.pendingEmail = body.email;
+          return reply(202, { user: this.self(me) });
+        }
         me.email = body.email;
         me.emailVerified = false;
-        return reply(202, { user: this.self(me) });
+        me.emailSetAt = this.now;
+        return reply(200, { user: this.self(me) });
+      }
+      if (key === 'DELETE /api/account/email') return fail(409, 'conflict', 'An email address is required. Change it instead, or delete the account.');
+      if (key === 'POST /api/account/email/resend') {
+        if (!this.services.email) return fail(503, 'unavailable', 'Verification email is not available on this server yet.');
+        if (!me.email || me.emailVerified) return fail(409, 'conflict', 'There is no unverified email address to confirm.');
+        this.resends = (this.resends ?? 0) + 1;
+        return reply(202, {});
       }
       if (key === 'GET /api/account/sessions') {
         const list = [...this.sessions.values()].filter((s) => s.userId === me.id).map((s) => ({ id: s.id, current: s.id === cur.session.id, deviceLabel: s.deviceLabel, userAgent: s.userAgent, createdAt: s.createdAt, lastUsedAt: s.lastUsedAt, expiresAt: s.expiresAt }));
@@ -348,6 +372,7 @@ export class MockAccountServer {
           maps: { total: 7 },
           bans: { accounts: all.filter((x) => x.ban).length, ips: this.ipBans.length },
           services: { ...this.services },
+          email: { ...this.mailBudget },
         });
       }
       if (key === 'GET /api/admin/users') {
@@ -365,6 +390,27 @@ export class MockAccountServer {
         const limit = Number(q.get('limit') ?? 25);
         return reply(200, { users: list.slice((page - 1) * limit, page * limit).map((x) => this.adminUser(x, me)), total: list.length, page, limit });
       }
+      const em = /^\/api\/admin\/users\/([0-9a-f]+)\/email\/(verify|resend)$/.exec(path);
+      if (em && method === 'POST') {
+        if (!admin) return adminOnly();
+        const target = this.users.get(em[1]);
+        if (!target) return fail(404, 'not_found', 'No such user.');
+        if (!target.email) return fail(409, 'conflict', 'This account has no email address.');
+        if (target.emailVerified) return fail(409, 'conflict', 'This email address is already verified.');
+        if (em[2] === 'resend') {
+          if (!sitePublic.login.email) return fail(503, 'unavailable', 'Email is not available on this server.');
+          target.emailLink = { purpose: 'verify', email: target.email, sentAt: this.now, expiresAt: this.now + 864e5 };
+          const notice = [...this.users.values()].some((x) => x.id !== target.id && x.emailVerified && x.email?.toLowerCase() === target.email.toLowerCase());
+          this.log(me, 'user.email_resend', { type: 'user', id: target.id, label: target.username }, null, { email: target.email, sent: true, notice });
+          return reply(202, { sent: true, notice, emailLink: target.emailLink });
+        }
+        const before = { email: target.email, emailVerified: false, status: target.status };
+        target.emailVerified = true;
+        target.emailLink = null;
+        if (target.status === 'pending_email') target.status = this.site.registration.approvalRequired ? 'pending_approval' : 'active';
+        this.log(me, 'user.email_verify', { type: 'user', id: target.id, label: target.username }, before, { email: target.email, emailVerified: true, status: target.status });
+        return reply(200, { user: this.adminUser(target, me) });
+      }
       const m = /^\/api\/admin\/users\/([0-9a-f]+)(?:\/([a-z-]+))?(?:\/([0-9a-f]+))?$/.exec(path);
       if (m) {
         const target = this.users.get(m[1]);
@@ -378,6 +424,8 @@ export class MockAccountServer {
             out.ips = target.ips;
             out.settings = this.settingsDocs.get(target.id) ?? { version: 0, updatedAt: 0, settings: {} };
             out.relay = this.relayOf(target.id);
+            out.emailLink = target.emailLink;
+            out.emailSending = sitePublic.login.email;
           }
           return reply(200, out);
         }

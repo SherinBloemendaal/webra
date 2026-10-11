@@ -11,6 +11,10 @@
   // (@sentry/cloudflare, src/telemetry.js): it keeps each request's scope.
   "compatibility_flags": ["nodejs_als"],
   "routes": [{ "pattern": "webra.sherin.dev", "custom_domain": true }],
+  // Only the custom domain serves the Worker: no workers.dev address and no
+  // preview URLs (links in account mail point at SITE_ORIGIN in any case).
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "directory": "../../dist",
     "binding": "ASSETS",
@@ -37,13 +41,20 @@
   "triggers": { "crons": ["17 3 * * *"] },
   // Discord OAuth client id (public). The secret DISCORD_CLIENT_SECRET is a
   // Worker secret set by the owner; without both, Discord sign-in is
-  // unavailable. Email sending (send_email) needs the Workers Paid plan and is
-  // added later, see docs/deploy.md.
+  // unavailable. Account email (the send_email binding EMAIL and the variable
+  // EMAIL_FROM) needs the Workers Paid plan, so it is not here: the deploy adds
+  // both when the repository variable EMAIL_FROM is set (tools/email-config.mjs,
+  // docs/deploy.md), and wrangler dev runs without email.
   // Error reports (src/telemetry.js, docs/security.md "Error reports"): off
   // here and so under wrangler dev; the deploy workflow sets the SENTRY_*
   // variables with `--var` from tools/sentry-config.mjs (the DSN is a
   // public client key, not a secret).
+  // SITE_ORIGIN: where links in account mail point (src/accounts/email.js;
+  // wrangler dev links to its own local address instead). EMAIL_DAILY_LIMIT:
+  // the most account mails sent per UTC day, whoever asks (docs/deploy.md).
   "vars": {
+    "SITE_ORIGIN": "https://webra.sherin.dev",
+    "EMAIL_DAILY_LIMIT": "300",
     "DISCORD_CLIENT_ID": "",
     "SENTRY_DSN": "",
     "SENTRY_ENVIRONMENT": "dev",
