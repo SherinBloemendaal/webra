@@ -70,8 +70,11 @@ export function fixedControls(mac = isMac()) {
   return [
     ['Esc', 'Cancel placement, targeting, a sidebar mode or attack move; otherwise open this menu. With the mouse captured, the first Esc releases it'],
     ['Left click', 'Select, or give the order shown by the cursor'],
-    ['Left drag', 'Box select'],
-    ['Shift + click / drag', 'Add to or remove from the selection'],
+    // OpenRA WorldInteractionControllerWidget: Shift + click toggles, Shift + drag adds; Ctrl or Alt raise the units that allow it.
+    ['Left drag', 'Box select (combat units first)'],
+    ['Shift + click', 'Add to or remove from the selection'],
+    ['Shift + drag', 'Add to the selection'],
+    ['Ctrl / Alt + drag', 'Box select with every unit / only support units and harvesters'],
     // OpenRA double click: the clicked actor's selection class on screen, added to the selection (Q and W are the hotkeys).
     ['Double click', 'Add all of that type on screen to the selection'],
     ['Right click', 'Cancel the current mode, or clear the selection'],

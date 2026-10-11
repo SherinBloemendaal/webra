@@ -649,7 +649,7 @@ export class Input {
       this.finishClick(b, d);
       return;
     }
-    this.boxSelect(a, b, d.shift);
+    this.boxSelect(a, b, d);
   }
 
   /** A left click (no drag) at world point `b` with the drag's modifiers `d`. */
@@ -673,14 +673,27 @@ export class Input {
       this.game.set_rally(this.player, this.selection[0], b.x, b.y);
       this.flashOrder(b, ACTION.MOVE);
     } else {
-      await this.clickSelect(b, d.shift, now);
+      await this.clickSelect(b, d.shift, now, d);
     }
   }
 
-  /** Box selection from world point `a` to `b` (Shift: added to the selection). */
-  async boxSelect(a, b, shift) {
-    const ids = Array.from(await this.ask.select_box(this.player, a.x, a.y, b.x, b.y));
-    this.setSelection(shift ? this.selection.concat(ids) : ids);
+  /**
+   * The player a box or click selects for (engine: their actors first,
+   * other players' ranked lower), or 255 for a spectator watching everyone.
+   */
+  selectionViewer() {
+    return this.viewOwner() ?? 255;
+  }
+
+  /**
+   * OpenRA box selection (WorldInteractionControllerWidget): the visible
+   * actors in the box of the highest selection priority (engine/src/selection.rs);
+   * Ctrl or Alt held (`mods`) raise the actors that allow it. Shift adds them
+   * to the selection, otherwise they replace it.
+   */
+  async boxSelect(a, b, mods = {}) {
+    const ids = Array.from(await this.ask.select_box(this.selectionViewer(), a.x, a.y, b.x, b.y, !!mods.ctrl, !!mods.alt));
+    this.setSelection(mods.shift ? this.selection.concat(ids) : ids);
   }
 
   /** Whole map rectangle in world px, for map-wide selection. */
@@ -688,27 +701,24 @@ export class Input {
     return { x0: 0, y0: 0, x1: this.mapPx.w, y1: this.mapPx.h };
   }
 
-  /** Select what is at world point `w` (`now`: when it was clicked, for double clicks). */
-  async clickSelect(w, shift, now = performance.now()) {
-    const id = await this.ask.pick(this.player, w.x, w.y);
+  /**
+   * OpenRA's click selection: the actor at world point `w` of the highest
+   * selection priority less its distance (engine/src/selection.rs; Ctrl or
+   * Alt in `mods` raise the actors that allow it) replaces the selection, or
+   * nothing clears it; with Shift it is added or, when selected, taken out
+   * (and a click on nothing changes nothing). `now`: when it was clicked, for
+   * double clicks.
+   */
+  async clickSelect(w, shift, now = performance.now(), mods = {}) {
+    const id = await this.ask.select_at(this.selectionViewer(), w.x, w.y, !!mods.ctrl, !!mods.alt);
     if (id !== NONE && id === this.lastClick.id && now - this.lastClick.time < DOUBLE_CLICK_MS) {
       this.lastClick = { time: 0, id: NONE };
       await this.selectSameClass(id);
       return;
     }
     this.lastClick = { time: now, id };
-    if (id === NONE) {
-      if (!shift) this.setSelection([]);
-      return;
-    }
-    const info = this.info(id);
-    const own = info && info.owner === this.player;
-    if (shift && own && !info.building) {
-      const has = this.selection.includes(id);
-      this.setSelection(has ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
-    } else {
-      this.setSelection([id]);
-    }
+    if (!shift) this.setSelection(id === NONE ? [] : [id]);
+    else if (id !== NONE) this.setSelection(this.selection.includes(id) ? this.selection.filter((s) => s !== id) : this.selection.concat([id]));
   }
 
   /**

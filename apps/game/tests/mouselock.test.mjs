@@ -648,12 +648,13 @@ async function withInput(p) {
     map_width: () => 200,
     map_height: () => 200,
     pick: () => NONE,
+    select_at: () => NONE,
     actor_json: () => 'null',
     set_selection: (ids) => (selection = Array.from(ids)),
     selection: () => Uint32Array.from(selection),
     deploy_state: () => 0,
     cursor_action: () => 0,
-    select_box: (_p, ...rect) => (boxes.push(rect), Uint32Array.from([5])),
+    select_box: (_p, ...rect) => (boxes.push(rect.slice(0, 4)), Uint32Array.from([5])),
   };
   const settings = createSettings(null);
   const input = new Input(p.view, game, { actors: [] }, 0, { onSelectionChanged() {} }, { hotkeys: new HotkeyRegistry(settings), settings });

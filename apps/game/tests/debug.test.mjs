@@ -47,7 +47,13 @@ const state = (game, p = 0) => JSON.parse(game.player_json(p));
 const ticks = (game, n) => {
   for (let i = 0; i < n; i++) game.tick();
 };
-const unitsOf = (game, p) => Array.from(game.select_box(p, -1e9, -1e9, 1e9, 1e9));
+// What a box over the whole map selects for `p` (engine/src/selection.rs), its units only:
+// with no unit on the map the box would take its structures.
+const unitsOf = (game, p) =>
+  Array.from(game.select_box(p, -1e9, -1e9, 1e9, 1e9)).filter((id) => {
+    const a = JSON.parse(game.actor_json(id));
+    return a.owner === p && !a.building;
+  });
 
 /** Every cheat the menu can send, issued for `player`. */
 function cheatAll(game, player, killIds) {

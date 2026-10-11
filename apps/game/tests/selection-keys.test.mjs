@@ -37,6 +37,7 @@ function fakeGame(world = WORLD) {
     map_height: () => 64,
     player_count: () => 2,
     pick: (_p, x, y) => entries().find(([, a]) => Math.hypot(a.x - x, a.y - y) < 12)?.[0] ?? NONE,
+    select_at: (_p, x, y) => entries().find(([, a]) => Math.hypot(a.x - x, a.y - y) < 12)?.[0] ?? NONE,
     actor_json: (id) => (world[id] ? JSON.stringify({ id, type: world[id].type, owner: world[id].owner, building: world[id].type === 'POWR', carrier: NONE }) : 'null'),
     set_selection: (ids) => (selection = Array.from(ids)),
     selection: () => Uint32Array.from(selection),
@@ -180,4 +181,48 @@ test('double click: the clicked actor and the others of its class on screen join
   await input.clickSelect({ x: 120, y: 160 }, false, 12000);
   await input.clickSelect({ x: 120, y: 160 }, false, 12100);
   assert.deepEqual(input.selection, [7]);
+});
+
+test('a box selects what the engine ranks highest; Shift adds; modifiers and the viewer go along', async () => {
+  const game = fakeGame();
+  const boxes = [];
+  game.select_box = (viewer, x0, y0, x1, y1, ctrl, alt) => {
+    boxes.push([viewer, ctrl, alt]);
+    return Uint32Array.from(x1 < 170 ? [1, 2] : [3]);
+  };
+  const { input } = await makeInput({ game });
+  input.setSelection([4]);
+  await input.boxSelect({ x: 90, y: 90 }, { x: 150, y: 110 });
+  assert.deepEqual(input.selection, [1, 2], 'replaces the selection');
+  await input.boxSelect({ x: 190, y: 110 }, { x: 210, y: 130 }, { shift: true });
+  assert.deepEqual(input.selection, [1, 2, 3], 'Shift adds (OpenRA: a box never takes actors out)');
+  await input.boxSelect({ x: 190, y: 110 }, { x: 210, y: 130 }, { ctrl: true });
+  await input.boxSelect({ x: 190, y: 110 }, { x: 210, y: 130 }, { alt: true });
+  assert.deepEqual(boxes, [[0, false, false], [0, false, false], [0, true, false], [0, false, true]]);
+  // A spectator watching everyone has no viewer (255): every player alike.
+  const spec = await makeInput({ spectator: true, game });
+  spec.input.watchAll = true;
+  await spec.input.boxSelect({ x: 0, y: 0 }, { x: 10, y: 10 });
+  assert.equal(boxes.at(-1)[0], 255);
+});
+
+test("a click selects the engine's pick; Shift toggles it in or out, any owner's; nothing clears", async () => {
+  const game = fakeGame();
+  const clicks = [];
+  const pickAt = game.select_at;
+  game.select_at = (viewer, x, y, ctrl, alt) => (clicks.push([viewer, ctrl, alt]), pickAt(viewer, x, y));
+  const { input } = await makeInput({ game });
+  await input.clickSelect({ x: 200, y: 120 }, false, 1000);
+  assert.deepEqual(input.selection, [3]);
+  await input.clickSelect({ x: 120, y: 160 }, true, 2000);
+  assert.deepEqual(input.selection, [3, 7], "Shift adds, an enemy's too (OpenRA Combine)");
+  await input.clickSelect({ x: 200, y: 120 }, true, 3000);
+  assert.deepEqual(input.selection, [7], 'Shift on a selected one takes it out');
+  await input.clickSelect({ x: 600, y: 600 }, true, 4000);
+  assert.deepEqual(input.selection, [7], 'Shift on nothing changes nothing');
+  await input.clickSelect({ x: 600, y: 600 }, false, 5000);
+  assert.deepEqual(input.selection, [], 'a click on nothing clears');
+  await input.clickSelect({ x: 300, y: 300 }, false, 6000, { alt: true });
+  assert.deepEqual(clicks.at(-1), [0, false, true], 'Alt goes along');
+  assert.deepEqual(input.selection, [6]);
 });

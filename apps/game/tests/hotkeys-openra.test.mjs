@@ -84,6 +84,7 @@ function fakeGame(over = {}) {
     map_width: () => 64,
     map_height: () => 64,
     pick: () => NONE,
+    select_at: () => NONE,
     actor_json: (id) => JSON.stringify({ id, type: 'e1', owner: 0, building: false, carrier: NONE }),
     set_selection: (ids) => (selection = Array.from(ids)),
     selection: () => Uint32Array.from(selection),

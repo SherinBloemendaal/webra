@@ -27,6 +27,18 @@ fn cells(cx0: i32, cy0: i32, cx1: i32, cy1: i32) -> Rect {
     Rect::new(cx0 * CELL, cy0 * CELL, (cx1 + 1) * CELL - 1, (cy1 + 1) * CELL - 1)
 }
 
+/// A cell far from player 0's start (and its sight).
+fn far_cell(w: &World) -> (i32, i32) {
+    let (sx, sy) = w.players[0].start;
+    (if sx < w.map.width / 2 { w.map.width - 4 } else { 3 }, if sy < w.map.height / 2 { w.map.height - 4 } else { 3 })
+}
+
+/// A box of `r` world units around actor `i`.
+fn around(w: &World, i: usize, r: i32) -> Rect {
+    let a = &w.actors[i];
+    Rect::new(a.x - r, a.y - r, a.x + r, a.y + r)
+}
+
 fn sorted(mut v: Vec<usize>) -> Vec<usize> {
     v.sort_unstable();
     v
@@ -144,4 +156,72 @@ fn select_by_class_matches_the_selection_classes_of_own_actors() {
     w.kill(vet);
     let classes = w.selection_classes(&[0], &[e1]);
     assert_eq!(sorted(w.selectable_actors(&[0], view, Some(&classes))), vec![e1]);
+}
+
+#[test]
+fn a_box_takes_the_highest_priority_for_the_viewer() {
+    let (mut w, cx, cy) = world();
+    let e1 = unit(&mut w, "E1", 0, cx, cy);
+    let tank = unit(&mut w, "1TNK", 0, cx + 1, cy);
+    let harv = unit(&mut w, "HARV", 0, cx + 2, cy);
+    let enemy = unit(&mut w, "3TNK", 1, cx + 3, cy);
+    let powr = w.spawn_building(ty(&w, "POWR"), 0, cx + 6, cy).expect("the power plant fits");
+    let (fx, fy) = far_cell(&w);
+    let hidden = unit(&mut w, "3TNK", 1, fx, fy);
+    // Vision: our units see the enemy tank next to them, not the one far away.
+    for _ in 0..50 {
+        if w.is_visible_to(enemy, 0) {
+            break;
+        }
+        w.step();
+    }
+    assert!(w.is_visible_to(enemy, 0) && !w.is_visible_to(hidden, 0));
+    let none = Mods::default();
+    let all = cells(cx - 1, cy - 1, cx + 8, cy + 2);
+    assert_eq!(sorted(w.select_in_box(Some(0), all, none)), sorted(vec![e1, tank]), "own combat units");
+    assert_eq!(
+        sorted(w.select_in_box(Some(0), all, Mods { ctrl: true, alt: false })),
+        sorted(vec![e1, tank, harv]),
+        "Ctrl: every own unit that allows it"
+    );
+    assert_eq!(w.select_in_box(Some(0), all, Mods { ctrl: false, alt: true }), vec![harv], "Alt: the harvester");
+    // Other players' actors rank lower (OpenRA PriorityRange): an own structure beats an enemy tank...
+    let right = Rect::new(w.actors[enemy].x - 100, (cy - 1) * CELL, (cx + 9) * CELL, (cy + 3) * CELL);
+    assert_eq!(w.select_in_box(Some(0), right, none), vec![powr]);
+    // ...and an enemy tank alone in the box is selected.
+    assert_eq!(w.select_in_box(Some(0), around(&w, enemy, 100), none), vec![enemy]);
+    assert_eq!(w.relative_selection_priority(enemy, w.selectable(enemy).unwrap(), none, Some(0)), 10 - 90);
+    // One under the fog is not.
+    assert!(w.select_in_box(Some(0), around(&w, hidden, 100), none).is_empty());
+    // A spectator watching everyone ranks every player alike and sees through the fog.
+    assert_eq!(sorted(w.select_in_box(None, all, none)), sorted(vec![e1, tank, enemy]));
+    assert_eq!(w.select_in_box(None, around(&w, hidden, 100), none), vec![hidden]);
+    assert_eq!((w.selection_viewer(1), w.selection_viewer(255)), (Some(1), None));
+}
+
+#[test]
+fn a_click_takes_the_highest_priority_less_the_distance() {
+    let (mut w, cx, cy) = world();
+    let powr = w.spawn_building(ty(&w, "POWR"), 0, cx, cy).expect("the power plant fits");
+    let (px, py) = (w.actors[powr].x, w.actors[powr].y);
+    // A rifleman on the plant's corner: a click on him picks him, one on the plant's middle the plant.
+    let e1 = unit(&mut w, "E1", 0, cx, cy);
+    let (ex, ey) = (w.actors[e1].x, w.actors[e1].y);
+    let none = Mods::default();
+    assert_eq!(w.select_at_point(Some(0), ex, ey - 256, none), Some(e1));
+    assert_eq!(w.select_at_point(Some(0), px + 600, py + 600, none), Some(powr), "outside the rifleman's bounds");
+    assert_eq!(w.select_at_point(Some(0), px - 40 * CELL, py, none), None, "nothing there");
+    // A tank and a harvester on one spot: the tank, or with Alt the harvester.
+    let tank = unit(&mut w, "1TNK", 0, cx + 6, cy);
+    let harv = unit(&mut w, "HARV", 0, cx + 6, cy);
+    let (tx, ty_) = (w.actors[tank].x, w.actors[tank].y);
+    assert_eq!(w.select_at_point(Some(0), tx, ty_, none), Some(tank));
+    assert_eq!(w.select_at_point(Some(0), tx, ty_, Mods { ctrl: false, alt: true }), Some(harv));
+    // An enemy under the fog cannot be clicked; a spectator watching everyone can.
+    let (fx, fy) = far_cell(&w);
+    let hidden = unit(&mut w, "3TNK", 1, fx, fy);
+    w.step();
+    let (hx, hy) = (w.actors[hidden].x, w.actors[hidden].y);
+    assert_eq!(w.select_at_point(Some(0), hx, hy, none), None);
+    assert_eq!(w.select_at_point(None, hx, hy, none), Some(hidden));
 }

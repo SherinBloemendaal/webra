@@ -294,9 +294,10 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 
 | Input | Action |
 |-------|--------|
-| Left click | Select. With your units selected: give the order (move, attack, harvest, dock or repair); left click one of your own units to select it instead |
-| Drag box | Select units. If the box contains combat units, only those are selected (ore trucks stay out of army drags) |
-| Shift + click / drag | Add to (or remove from) the selection |
+| Left click | Select (where actors overlap, the one of the highest selection priority, the nearest on a tie, like OpenRA). With your units selected: give the order (move, attack, harvest, dock or repair); left click one of your own units to select it instead |
+| Drag box | Select what is in the box with OpenRA's selection priority: your combat units, else your support units (MCV, minelayers, engineers), else harvesters, then defences, then other structures; other players' actors only when none of yours is in the box. Ctrl + drag takes every unit that allows it (harvesters and MCVs with the army), Alt + drag only the support units and harvesters |
+| Shift + click | Add the actor to the selection, or take it out when it is selected |
+| Shift + drag | Add what the box selects to the selection |
 | Double click | Add all of that type on screen to the selection (OpenRA's selection class: the veteran rifleman counts as a rifleman, structures too). For the whole map, press W (select by type) twice |
 | Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
 | Factory selected + left click on the ground | Set its rally point (while the factory is selected, a line in your colour runs from its exit to the flag, like OpenRA) |

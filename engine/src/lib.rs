@@ -930,35 +930,24 @@ impl Game {
         self.world.actor_at(player, to_wu(x), to_wu(y)).map_or(NONE, |i| self.world.make_ref(i))
     }
 
-    /// Own units inside a world-pixel rectangle. When the box holds at least one
-    /// armed unit, unarmed ones (harvesters) are left out, so dragging over an
-    /// army never drags the economy along.
-    pub fn select_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
-        let units = self.units_in_box(player, x0, y0, x1, y1);
+    /// OpenRA box selection (selection.rs `select_in_box`): the visible
+    /// selectable actors whose bounds touch the world-pixel rectangle, those
+    /// of the highest selection priority for `player` (own combat units before
+    /// support units, harvesters, structures and other players' actors;
+    /// `ctrl`, `alt`: the modifiers held, which raise the actors that allow
+    /// them). A `player` past the players is a spectator watching everyone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn select_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32, ctrl: bool, alt: bool) -> Vec<u32> {
         let w = &self.world;
-        let armed = |i: &usize| !w.rules.actors[w.actors[*i].ty as usize].weapons.is_empty();
-        let picked: Vec<usize> = if units.iter().any(armed) { units.into_iter().filter(armed).collect() } else { units };
-        picked.into_iter().map(|i| w.make_ref(i)).collect()
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.select_in_box(w.selection_viewer(player), area, selection::Mods { ctrl, alt }).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
-    fn units_in_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<usize> {
-        let (ax, bx) = (to_wu(x0.min(x1)), to_wu(x0.max(x1)));
-        let (ay, by) = (to_wu(y0.min(y1)), to_wu(y0.max(y1)));
+    /// OpenRA's click selection (selection.rs `select_at_point`): the actor a
+    /// click at the world-pixel point selects, or 0xFFFFFFFF.
+    pub fn select_at(&self, player: u8, x: f32, y: f32, ctrl: bool, alt: bool) -> u32 {
         let w = &self.world;
-        (0..w.actors.len())
-            .filter(|&i| {
-                let a = &w.actors[i];
-                a.alive
-                    && a.owner == player
-                    && a.is_unit()
-                    && a.in_world()
-                    && !w.is_support_aircraft(i) // spy plane and Badgers are not selectable
-                    && a.x >= ax
-                    && a.x <= bx
-                    && a.y >= ay
-                    && a.y <= by
-            })
-            .collect()
+        w.select_at_point(w.selection_viewer(player), to_wu(x), to_wu(y), selection::Mods { ctrl, alt }).map_or(NONE, |i| w.make_ref(i))
     }
 
     /// OpenRA SelectAllUnits (selection.rs): the selectable actors of

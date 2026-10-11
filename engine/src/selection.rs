@@ -4,10 +4,14 @@
 //! `SelectionInfo`) of the players the viewer may select for: the local
 //! player, the player a spectator watches, or every player when a spectator
 //! watches the whole map (`GetPlayersToIncludeInSelection`; the client passes
-//! them as `owners`). Local UI queries, like the selection itself: nothing
-//! here changes the world or the state hash.
+//! them as `owners`). Box selection and a click (`WorldInteractionControllerWidget`,
+//! `SelectActorsInBoxWithDeadzone`) take every visible selectable actor and
+//! rank other players' lower by how they stand to the viewer
+//! (`SelectableExts.SelectionPriority`). Local UI queries, like the selection
+//! itself: nothing here changes the world or the state hash.
 
 use crate::math::CELL;
+use crate::render::PX_PER_CELL;
 use crate::rules::{SelectionInfo, SELECT_ALT, SELECT_CTRL};
 use crate::world::World;
 
@@ -50,7 +54,92 @@ pub fn selection_priority(info: &SelectionInfo, mods: Mods) -> i64 {
     }
 }
 
+/// OpenRA `SelectableExts.PriorityRange`: how far an ally's (once), a neutral's
+/// (twice) and an enemy's (three times) actors rank below the viewer's own.
+pub const PRIORITY_RANGE: i64 = 30;
+
+impl Rect {
+    fn contains(&self, x: i32, y: i32) -> bool {
+        (self.x0..=self.x1).contains(&x) && (self.y0..=self.y1).contains(&y)
+    }
+
+    fn center(&self) -> (i32, i32) {
+        ((self.x0 + self.x1) / 2, (self.y0 + self.y1) / 2)
+    }
+}
+
 impl World {
+    /// The viewer of a box or click: a player, or none (a spectator watching
+    /// the whole map, OpenRA without a render player) for numbers past the players.
+    pub fn selection_viewer(&self, player: u8) -> Option<u8> {
+        ((player as usize) < self.players.len()).then_some(player)
+    }
+
+    /// Whether the viewer may pick actor `i` with a box or click (OpenRA: an
+    /// ally's, or one the fog does not hide; cloaked enemies are hidden).
+    fn pickable(&self, i: usize, viewer: Option<u8>) -> bool {
+        let Some(v) = viewer else { return true };
+        self.are_allies(v, self.actors[i].owner) || (self.is_visible_to(i, v) && !self.is_cloaked_from(i, v))
+    }
+
+    /// OpenRA `Actor.SelectionPriority`: the priority (with `mods`), lowered by
+    /// PRIORITY_RANGE once for an ally's actor, twice for a neutral's and
+    /// three times for an enemy's (none without a viewer).
+    pub fn relative_selection_priority(&self, i: usize, info: &SelectionInfo, mods: Mods, viewer: Option<u8>) -> i64 {
+        let base = selection_priority(info, mods);
+        let owner = self.actors[i].owner;
+        let Some(v) = viewer.filter(|&v| v != owner) else { return base };
+        let steps = if self.are_allies(v, owner) {
+            1
+        } else if self.players.get(owner as usize).is_some_and(|p| p.neutral) {
+            2
+        } else {
+            3
+        };
+        base.saturating_sub(steps * PRIORITY_RANGE)
+    }
+
+    /// OpenRA box selection (`SelectActorsInBoxWithDeadzone` with a box): the
+    /// visible selectable actors whose bounds touch `area`, those of the
+    /// highest priority for the viewer (own units before allied, neutral and
+    /// enemy ones; combat units before support units, harvesters and
+    /// structures; `mods` raise the actors that allow it).
+    pub fn select_in_box(&self, viewer: Option<u8>, area: Rect, mods: Mods) -> Vec<usize> {
+        let found: Vec<(usize, i64)> = (0..self.actors.len())
+            .filter_map(|i| {
+                let info = self.selectable(i)?;
+                (self.pickable(i, viewer) && area.overlaps(&self.selection_bounds(i, info)))
+                    .then(|| (i, self.relative_selection_priority(i, info, mods, viewer)))
+            })
+            .collect();
+        let Some(best) = found.iter().map(|&(_, p)| p).max() else { return Vec::new() };
+        found.into_iter().filter(|&(_, p)| p == best).map(|(i, _)| i).collect()
+    }
+
+    /// OpenRA `SelectHighestPriorityActorAtPoint`: of the visible selectable
+    /// actors whose bounds hold the point, the one with the highest priority
+    /// less its distance in pixels from the point to its bounds' centre
+    /// (`CalculateActorSelectionPriority`; the actor type's priority, not
+    /// lowered for other players). The first in actor order on a tie.
+    pub fn select_at_point(&self, viewer: Option<u8>, x: i32, y: i32, mods: Mods) -> Option<usize> {
+        let mut best: Option<(i64, usize)> = None;
+        for i in 0..self.actors.len() {
+            let Some(info) = self.selectable(i) else { continue };
+            let bounds = self.selection_bounds(i, info);
+            if !bounds.contains(x, y) || !self.pickable(i, viewer) {
+                continue;
+            }
+            let (cx, cy) = bounds.center();
+            let to_px = |wu: i32| f64::from(wu) * f64::from(PX_PER_CELL) / f64::from(CELL);
+            let dist = to_px(cx - x).hypot(to_px(cy - y)) as i64;
+            let score = selection_priority(info, mods).saturating_sub(dist);
+            if best.is_none_or(|(b, _)| score > b) {
+                best = Some((score, i));
+            }
+        }
+        best.map(|(_, i)| i)
+    }
+
     /// The `Selectable` of actor `i`, when it can be selected now: alive, on
     /// the map (not inside a transport) and not a support power's aircraft.
     pub fn selectable(&self, i: usize) -> Option<&SelectionInfo> {
