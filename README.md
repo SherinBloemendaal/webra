@@ -297,8 +297,7 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Left click | Select. With your units selected: give the order (move, attack, harvest, dock or repair); left click one of your own units to select it instead |
 | Drag box | Select units. If the box contains combat units, only those are selected (ore trucks stay out of army drags) |
 | Shift + click / drag | Add to (or remove from) the selection |
-| Double click | Select all units of that type on screen |
-| Ctrl + double click | Select all units of that type on the map |
+| Double click | Add all of that type on screen to the selection (OpenRA's selection class: the veteran rifleman counts as a rifleman, structures too). For the whole map, press W (select by type) twice |
 | Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
 | Factory selected + left click on the ground | Set its rally point (while the factory is selected, a line in your colour runs from its exit to the flag, like OpenRA) |
 | Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
@@ -319,8 +318,8 @@ Game commands (OpenRA defaults):
 | H | Next Construction Yard (or MCV): select it and centre the camera |
 | Space | Jump to the last radar event (base or units under attack, a beacon, a superweapon) |
 | Home | Centre on the selection |
-| Q | Select all combat units on screen; again (nothing new on screen): on the whole map |
-| W | Add the units of the selected types on screen; again: on the whole map |
+| Q | **Select all**: your actors on screen of the highest selection priority (OpenRA's: combat units, else support units such as the MCV, then harvesters, then defences, then other structures); pressed again (nothing more on screen): the same across the whole map. Says "Selected N units across screen/map." with a click |
+| W | **Select by type**: add your actors of the selected types on screen (OpenRA's selection classes); pressed again: across the whole map. With nothing selected it says "Nothing selected." |
 | N | Next harvester |
 | Pause | Pause and resume (single player; replays: play and pause) |
 | , (comma) | Cycle the health bars: selected only, damaged, all |

@@ -64,6 +64,7 @@ mod repair;
 pub mod rng;
 pub mod rules;
 pub mod rules_options;
+pub mod selection;
 mod sell;
 pub mod smudges;
 pub mod sound_events;
@@ -135,6 +136,8 @@ mod tests_repair;
 mod tests_replay;
 #[cfg(test)]
 mod tests_security;
+#[cfg(test)]
+mod tests_selection;
 #[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
@@ -958,15 +961,32 @@ impl Game {
             .collect()
     }
 
-    /// All own units of the same type as `id` inside the view rectangle (double click).
-    pub fn select_same_type(&self, player: u8, id: u32, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
-        let Some(t) = self.world.resolve(id) else { return Vec::new() };
-        let ty = self.world.actors[t].ty;
-        self.units_in_box(player, x0, y0, x1, y1)
-            .into_iter()
-            .filter(|&i| self.world.actors[i].ty == ty)
-            .map(|i| self.world.make_ref(i))
-            .collect()
+    /// OpenRA SelectAllUnits (selection.rs): the selectable actors of
+    /// `owners` (the players the viewer selects for) whose bounds touch the
+    /// world-pixel rectangle, those of the highest selection priority (combat
+    /// units before support units, harvesters and structures; `ctrl`, `alt`:
+    /// the modifiers held). The whole map's rectangle selects across the map.
+    #[allow(clippy::too_many_arguments)]
+    pub fn select_all(&self, owners: Vec<u8>, x0: f32, y0: f32, x1: f32, y1: f32, ctrl: bool, alt: bool) -> Vec<u32> {
+        let w = &self.world;
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        let found = w.selectable_actors(&owners, Some(area), None);
+        w.highest_selection_priority(found, selection::Mods { ctrl, alt }).into_iter().map(|i| w.make_ref(i)).collect()
+    }
+
+    /// OpenRA SelectUnitsByType and double click (selection.rs): the
+    /// selectable actors of `owners` whose bounds touch the world-pixel
+    /// rectangle and whose selection class is one of those of `ids` (the
+    /// selection, or the clicked actor) that `owners` own.
+    pub fn select_by_class(&self, owners: Vec<u8>, ids: Vec<u32>, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+        let w = &self.world;
+        let picked: Vec<usize> = ids.iter().filter_map(|&r| w.resolve(r)).collect();
+        let classes = w.selection_classes(&owners, &picked);
+        if classes.is_empty() {
+            return Vec::new();
+        }
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.selectable_actors(&owners, Some(area), Some(&classes)).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
     /// Centre (world pixels, `[x, y]`) of the given actors that `player` owns

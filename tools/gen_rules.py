@@ -702,6 +702,38 @@ def has(t, name):
     return bool(trait(t, name))
 
 
+# Selectable.PriorityModifiers as bits (rules.rs SelectionInfo).
+SELECTION_MODIFIERS = {'None': 0, 'Ctrl': 1, 'Alt': 2}
+
+
+def selection_info(t, aid):
+    """OpenRA Selectable (selection.rs): the selection priority, the modifier
+    keys that raise it to the top (bits: 1 Ctrl, 2 Alt), the selection class
+    (the actor's own name unless the trait names one: what double click and
+    the select by type hotkey match) and Bounds [width, height, x, y offset]
+    in world units ([]: the footprint, or one cell for a unit). None for
+    actors without Selectable (walls, mines, husks, crates)."""
+    sel = trait(t, 'Selectable')
+    if not sel:
+        return None
+    v = next(iter(sel.values()))
+    v = v if isinstance(v, dict) else {}
+    bits = 0
+    for m in tokens(v.get('PriorityModifiers')):
+        if m not in SELECTION_MODIFIERS:
+            raise SystemExit(f'{aid}: unknown Selectable.PriorityModifiers {m}')
+        bits |= SELECTION_MODIFIERS[m]
+    bounds = ints(v['Bounds']) if v.get('Bounds') else []
+    if bounds and len(bounds) not in (2, 4):
+        raise SystemExit(f'{aid}: Selectable.Bounds needs 2 or 4 values')
+    return {
+        'priority': int(v.get('Priority', 10)),
+        'modifiers': bits,
+        'class': v.get('Class') or aid.lower(),
+        'bounds': (bounds + [0, 0])[:4] if bounds else [],
+    }
+
+
 # OpenRA UnitStance names as the engine spells them (rules.rs Stance).
 STANCES = {'HoldFire': 'hold_fire', 'ReturnFire': 'return_fire', 'Defend': 'defend', 'AttackAnything': 'attack_anything'}
 
@@ -1359,6 +1391,8 @@ def main():
             'opportunity_fire': opportunity_fire(t),
             # BaseBuilding (Construction Yard, MCV): what the base hotkey cycles through.
             'base_building': 'BaseBuilding' in t,
+            # Selectable (selection.rs): the selection hotkeys and double click.
+            'selection': selection_info(t, aid),
             'death_weapon': None,
             'self_heal': None,
             # Forward/lateral offsets of each Turreted trait (render: ship turrets).

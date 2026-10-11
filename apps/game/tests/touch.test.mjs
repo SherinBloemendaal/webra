@@ -386,8 +386,12 @@ function fakeGame(actors) {
       return hit && hit[1].owner !== 0 ? ACTION.ATTACK : ACTION.MOVE;
     },
     select_box: (_p, x0, y0, x1, y1) => Uint32Array.from(entries().filter(([, a]) => own(a) && inRect(a, x0, y0, x1, y1)).map(([id]) => id)),
-    select_same_type: (_p, id, x0, y0, x1, y1) =>
-      Uint32Array.from(entries().filter(([, a]) => own(a) && a.type === actors[id].type && inRect(a, x0, y0, x1, y1)).map(([i]) => i)),
+    player_count: () => 2,
+    // Selection classes are the types here (engine/src/selection.rs).
+    select_by_class: (owners, ids, x0, y0, x1, y1) => {
+      const types = Array.from(ids).filter((id) => owners.includes(actors[id].owner)).map((id) => actors[id].type);
+      return Uint32Array.from(entries().filter(([, a]) => owners.includes(a.owner) && types.includes(a.type) && inRect(a, x0, y0, x1, y1)).map(([i]) => i));
+    },
     placement_preview: (_p, _id, cx, cy) => Int32Array.from([cx, cy, cx >= 0 && cy >= 0 ? 1 : 0]),
     order_smart: rec('order_smart'),
     order_move: rec('order_move'),

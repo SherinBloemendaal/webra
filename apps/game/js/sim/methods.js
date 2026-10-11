@@ -65,7 +65,8 @@ const EMPTY_F32 = () => new Float32Array(0);
 export const QUERY_DEFAULTS = Object.freeze({
   pick: () => NONE,
   select_box: EMPTY_U32,
-  select_same_type: EMPTY_U32,
+  select_all: EMPTY_U32,
+  select_by_class: EMPTY_U32,
   units_center: EMPTY_F32,
   actor_json: () => 'null',
   cursor_action: () => 0,

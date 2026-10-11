@@ -87,8 +87,10 @@ function fakeGame(over = {}) {
     actor_json: (id) => JSON.stringify({ id, type: 'e1', owner: 0, building: false, carrier: NONE }),
     set_selection: (ids) => (selection = Array.from(ids)),
     selection: () => Uint32Array.from(selection),
+    player_count: () => 2,
     select_box: () => new Uint32Array(0),
-    select_same_type: () => new Uint32Array(0),
+    select_all: () => new Uint32Array(0),
+    select_by_class: () => new Uint32Array(0),
     units_center: (_p, ids) => (ids.length ? Float32Array.from([ids[0] * 10, ids[0] * 20]) : new Float32Array(0)),
     sell_value: () => 0,
     repair_cursor: () => 0,
@@ -390,7 +392,7 @@ test('spectators watching the whole map have no player to cycle through', async 
 test('select all: on screen, then the whole map when nothing new is selected', async () => {
   const boxes = [];
   const game = fakeGame({
-    select_box: (_p, x0, y0, x1) => {
+    select_all: (_owners, x0, y0, x1) => {
       boxes.push(x1 > 1000 ? 'map' : 'screen');
       return x1 > 1000 ? Uint32Array.from([1, 2, 3]) : Uint32Array.from([1, 2]);
     },

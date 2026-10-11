@@ -222,11 +222,10 @@ export class TouchControls {
       return;
     }
     const p = this.local(x, y);
-    const v = i.viewRect();
     const intent = await i.clickIntentNow(i.toWorld(p.x, p.y));
     if (intent.kind === 'select' && intent.id !== undefined && !this.queue) {
-      const same = Array.from(await i.ask.select_same_type(i.player, intent.id, v.x0, v.y0, v.x1, v.y1));
-      if (same.length) i.setSelection(same);
+      // Like a double click (js/input.js selectSameClass).
+      await i.selectSameClass(intent.id);
       i.lastClick = { time: 0, id: NONE };
       this.update();
       return;

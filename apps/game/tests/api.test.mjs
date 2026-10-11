@@ -237,6 +237,28 @@ test('orders: smart move and stop', () => {
   assert.deepEqual(before.map((a) => a.type).sort(), units.map((id) => actor(game, id).type).sort());
 });
 
+test("selection: OpenRA's select all and select by class (priorities, classes, owners)", () => {
+  // Light support: the MCV with riflemen, rocket soldiers and more around it (both sides).
+  const game = newGame({ startingUnits: 'light' });
+  const map = [-1e5, -1e5, 1e5, 1e5];
+  const all = (owners, ctrl = false, alt = false) => Array.from(game.select_all(Uint8Array.from(owners), ...map, ctrl, alt));
+  const types = (ids) => ids.map((id) => actor(game, id).type).sort();
+  const own = all([0]);
+  assert.ok(own.length >= 5, 'the combat units');
+  assert.ok(own.every((id) => actor(game, id).owner === 0), 'own actors only');
+  assert.ok(!types(own).includes('MCV'), 'the MCV (a support unit) is not a combat unit');
+  assert.ok(types(all([0], false, true)).includes('MCV'), 'Alt raises the support units');
+  const both = all([0, 1]);
+  assert.ok(both.some((id) => actor(game, id).owner === 1), 'a spectator watching everyone selects every player');
+  // Select by class: the riflemen of the selection, across the map.
+  const e1 = own.find((id) => actor(game, id).type === 'E1');
+  const riflemen = Array.from(game.select_by_class(Uint8Array.of(0), Uint32Array.of(e1), ...map));
+  assert.ok(riflemen.length >= 2 && riflemen.every((id) => actor(game, id).type === 'E1' && actor(game, id).owner === 0));
+  assert.deepEqual(Array.from(game.select_by_class(Uint8Array.of(1), Uint32Array.of(e1), ...map)), [], "another player's actor gives no class");
+  // An empty view selects nothing.
+  assert.deepEqual(Array.from(game.select_all(Uint8Array.of(0), -500, -500, -400, -400, false, false)), []);
+});
+
 test('same seed gives the same game', () => {
   const a = newGame();
   const b = newGame();
