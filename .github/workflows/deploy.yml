@@ -42,6 +42,11 @@ jobs:
       SENTRY_DSN: ${{ vars.SENTRY_DSN }}
       SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT }}
       SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
+      # Account email (docs/deploy.md, "Email") is opt-in too: only with the
+      # repository variable EMAIL_FROM set (the sender, on a domain onboarded
+      # to Cloudflare Email Sending; needs the Workers Paid plan) does the
+      # deploy add the send_email binding. Unset, the Worker sends no email.
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
     steps:
       # The self-hosted runner image is a minimal Ubuntu (see ci.yml).
       - name: Install system packages
@@ -120,9 +125,11 @@ jobs:
       - name: Deploy the Worker
         working-directory: apps/server
         # The SENTRY_* variables of the Worker (src/telemetry.js) come from the same configuration as the game's.
+        # With EMAIL_FROM, email-config.mjs writes wrangler.deploy.jsonc (the binding) and selects it.
         run: |
           vars=$(node ../../tools/sentry-config.mjs worker-vars)
-          npx --no-install wrangler deploy $vars
+          email=$(node ../../tools/email-config.mjs wrangler-args)
+          npx --no-install wrangler deploy $vars $email
 
       - name: Mark the Sentry release deployed
         env:
