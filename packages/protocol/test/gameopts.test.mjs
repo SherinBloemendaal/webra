@@ -106,8 +106,12 @@ test('the movement model: OpenRA by default, WebRA for games from before it, not
   assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, movement: true }), /movement/);
   // Saves and replays from before the option keep it out: the engine plays them with `webra`.
   const { movement: _m, ...old } = DEFAULT_OPTIONS;
-  assert.equal('movement' in validateLobbyOptions(old), false);
+  assert.equal('movement' in validateLobbyOptions(old, 'options', { legacy: true }), false);
   assert.equal('movement' in validateGameOptions({ ...old, players }), false);
+  // Live lobby options always carry it: a lobby never shows one model and plays another.
+  assert.throws(() => validateLobbyOptions(old), /options\.movement/);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: old })).ok, false);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: DEFAULT_OPTIONS })).ok, true);
   assert.equal(validateGameOptions({ ...DEFAULT_OPTIONS, players }).movement, 'openra');
   // Missions: optional the same way.
   const mission = { seed: 3, gameSpeed: 'normal', options: { difficulty: 'hard' } };

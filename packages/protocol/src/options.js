@@ -48,11 +48,14 @@ export const LOBBY_OPTION_KEYS = [
 ];
 
 /**
- * Strictly validate host-editable lobby options. Every key is required,
- * except `movement`: games saved or recorded before it existed lack it and
- * play with `webra` (the engine's default for an absent key).
+ * Strictly validate host-editable lobby options. Every key is required.
+ * With `legacy` (the options of a game that starts, is saved or is
+ * recorded), `movement` may be absent: games saved or recorded before it
+ * existed lack it and play with `webra` (the engine's default for an
+ * absent key). Live lobby options always carry it, so a lobby never shows
+ * one model while the game would play another.
  */
-export function validateLobbyOptions(v, what = 'options') {
+export function validateLobbyOptions(v, what = 'options', { legacy = false } = {}) {
   object(v, LOBBY_OPTION_KEYS, what);
   const out = {
     seed: int(v.seed, 0, SEED_MAX, `${what}.seed`),
@@ -67,7 +70,7 @@ export function validateLobbyOptions(v, what = 'options') {
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
     timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
   };
-  if (v.movement !== undefined) out.movement = oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`);
+  if (!legacy || v.movement !== undefined) out.movement = oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`);
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;
 }
@@ -81,7 +84,7 @@ const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'diffic
 export function validateGameOptions(v, what = 'options') {
   if (!isPlainObject(v)) fail(`${what} must be an object`);
   const { players, ...rest } = v;
-  const out = validateLobbyOptions(rest, what);
+  const out = validateLobbyOptions(rest, what, { legacy: true });
   if (!Array.isArray(players) || players.length < MIN_PLAYERS || players.length > MAX_PLAYERS) {
     fail(`${what}.players must list ${MIN_PLAYERS} to ${MAX_PLAYERS} players`);
   }

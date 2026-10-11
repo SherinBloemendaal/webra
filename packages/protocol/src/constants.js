@@ -176,6 +176,9 @@ export const BOOLEAN_OPTIONS = [
  */
 export const MOVEMENT_MODELS = ['openra', 'webra'];
 
+/** The model of games, saves and replays without the `movement` option. */
+export const LEGACY_MOVEMENT = 'webra';
+
 /** Time limits in minutes, 0 for none (OpenRA TimeLimitManager TimeLimitOptions). */
 export const TIME_LIMITS = [0, 10, 20, 30, 40, 60, 90];
 /** Handicaps in percent: less firepower and armour, slower production (OpenRA: 0 to 95 in steps of 5). */
