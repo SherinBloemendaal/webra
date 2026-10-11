@@ -69,7 +69,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   stop ground units and ships alike. The engine owns bridge cells: a
   bridge actor writes its template's terrain over them when it is placed,
   damaged, destroyed or repaired, so a destroyed span turns into river or
-  water under it (`engine/src/bridges.rs`).
+  water under it (`engine/src/bridges.rs`). Whatever cannot stand on a
+  span's new terrain dies: a tank on a fallen span, a boat in the water gap
+  of a long bridge when the span is repaired (OpenRA kills only when a span
+  falls or a dead one is repaired).
 - The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
   to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
   (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
@@ -99,6 +102,14 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   GivesCashOnCapture, CashTrickler, InfiltrateForCash and DeliversCash. Landing craft (the Transport, locomotor
   `lcraft`) use their own passability (`World::pass_landing`: water, fords
   and beaches), so they run up on beach cells to unload and other ships do not.
+  No ship is ever on a cell its locomotor cannot enter (OpenRA `naval`:
+  Water; `lcraft`: Water and Beach; `World::terrain_open_to`): every move
+  and crowd push goes through `World::may_enter`, a map actor drawn on
+  terrain it cannot use appears on the nearest cell it can (within 7 cells,
+  else it is left out; OpenRA leaves it stuck where it is), and the map
+  editor places ships and naval yards only on water (`rules_json` actors:
+  `terrain`, the terrain codes a ground unit or ship may stand on, and
+  `onWater` for structures).
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -1503,7 +1514,11 @@ engine leaves it out when there is none, and `null` counts as left out), wasm
 `player_json(p).powers`: `[{ key, kind, name, description, progress (0..1),
 ready, charging, remainingTicks }]`. Superweapons (engine/src/abilities.rs):
 `ChronoshiftPower` takes the destination as (x, y) and the source area as
-(x2, y2) (both required), `GrantExternalConditionPower` (Iron Curtain) and
+(x2, y2) (both required; units whose target cell they cannot enter, ships
+over land, stay); when the Duration runs out a unit goes back to its origin,
+or to the nearest explored cell it can enter if the origin closed meanwhile
+(a naval yard went up there), and dies when there is none (OpenRA Teleport
+killOnFailure), `GrantExternalConditionPower` (Iron Curtain) and
 `NukePower` take the target as (x, y), `GpsPower` launches by itself when
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
@@ -2007,7 +2022,10 @@ then nothing (deaths). The facing comes from the instance angle:
 counter-clockwise), then OpenRA's `IndexFacing` or, for classic 32-facing
 sprites, `ClassicIndexFacing`; the frame drawn is `first + facing * length
 + k` and the sprite is not rotated (interpolated facings turn it by
-OpenRA's `GetInterpolatedFacingRotation`). Slots without a pose table work
+OpenRA's `GetInterpolatedFacingRotation`, with the rest rounded to the
+nearest interpolated step where OpenRA truncates it: a heading a unit short
+of a frame showed that frame turned a whole step, and WebRA's ships hold
+their course a unit or two off, so submarines looked skewed sailing straight). Slots without a pose table work
 as before. `Globals.art.x` tells the terrain shader that the atlas holds
 tile terrain (bit 1), ore overlay tiles at 192 (bit 2, 4 variants x 12
 levels), gem overlay tiles at 240 (bit 4, 4 x 4) and rotating water colours

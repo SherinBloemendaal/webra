@@ -1164,7 +1164,9 @@ impl World {
                     None
                 }
                 Kind::Husk => Some(self.place_husk(ty, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024), 0)),
-                _ => Some(self.spawn_unit(ty as u16, owner, cell_center(a.x), cell_center(a.y), a.facing.rem_euclid(1024))),
+                _ => self
+                    .map_unit_cell(ty, a.x, a.y)
+                    .map(|(x, y)| self.spawn_unit(ty as u16, owner, cell_center(x), cell_center(y), a.facing.rem_euclid(1024))),
             };
             if let Some(i) = placed {
                 self.apply_map_actor_state(i, a);
@@ -1658,7 +1660,12 @@ impl World {
     /// Whether unit `i` is a landing craft: a ship whose locomotor also
     /// drives on beaches (OpenRA `lcraft`, TerrainSpeeds Beach: the Transport).
     pub fn lands(&self, i: usize) -> bool {
-        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| {
+        self.type_lands(self.actors[i].ty as usize)
+    }
+
+    /// `lands` for actor type `ty`.
+    pub fn type_lands(&self, ty: usize) -> bool {
+        self.rules.actors[ty].unit.as_ref().is_some_and(|u| {
             let l = &self.rules.locomotors[u.locomotor];
             l.domain == crate::rules::Domain::Water && l.speeds.get(crate::map::SPEED_BEACH).is_some_and(|&s| s > 0)
         })
@@ -1666,11 +1673,82 @@ impl World {
 
     /// Passability for unit `i`: its domain's, or for landing craft water and beaches.
     pub fn pass_of(&self, i: usize) -> &Passability {
-        if self.lands(i) {
-            &self.pass_landing
-        } else {
-            self.pass_for(self.domain_of(i))
+        self.pass_of_type(self.actors[i].ty as usize)
+    }
+
+    /// `pass_of` for actor type `ty` (structures get the ground's; aircraft ignore it).
+    pub fn pass_of_type(&self, ty: usize) -> &Passability {
+        if self.type_lands(ty) {
+            return &self.pass_landing;
         }
+        let domain =
+            self.rules.actors[ty].unit.as_ref().map_or(crate::rules::Domain::Ground, |u| self.rules.locomotors[u.locomotor].domain);
+        self.pass_for(domain)
+    }
+
+    /// Whether terrain `t` is open to the locomotor of unit type `ty`
+    /// (OpenRA Locomotor TerrainSpeeds; the terrain half of CanEnterCell).
+    /// Ships: water (and WebRA's fords); landing craft also beaches; ground
+    /// units passable land; aircraft anything. Structures stand on nothing.
+    /// The passabilities are built from the same predicates
+    /// (`Passability::water`, `landing`, `new`).
+    pub fn terrain_open_to(&self, ty: usize, t: crate::map::Terrain) -> bool {
+        let Some(u) = self.rules.actors[ty].unit.as_ref() else { return false };
+        match self.rules.locomotors[u.locomotor].domain {
+            crate::rules::Domain::Air => true,
+            crate::rules::Domain::Water if self.type_lands(ty) => t.landing_passable(),
+            crate::rules::Domain::Water => t.ship_passable(),
+            crate::rules::Domain::Ground => t.passable(),
+        }
+    }
+
+    /// Nearest cell to (cx, cy), within `radius` rings, where a unit of type
+    /// `ty` may stand: open terrain for its locomotor and no structure (its
+    /// passability). (cx, cy) itself when it is such a cell; ties go to the
+    /// lowest cell index. Aircraft may be anywhere on the map. Used to put
+    /// units that would appear where they cannot be (map actors, mission
+    /// actors, a chronoshift back to a cell that closed) on open ground or
+    /// water instead, like OpenRA's Nudge and Teleport.ChooseBestDestinationCell.
+    /// The cell a map's pre-placed unit of type `ty` at (cx, cy) appears on:
+    /// that cell when its terrain is open to the unit's locomotor, else the
+    /// nearest open cell within 7 rings (a ship drawn onto the shore, a tank
+    /// in the sea), None when there is none (the unit is not placed). OpenRA
+    /// spawns such map actors where they are, stuck for good; the editor
+    /// warns about them (apps/game/editor/js/mapformat.js).
+    pub(crate) fn map_unit_cell(&self, ty: usize, cx: i32, cy: i32) -> Option<(i32, i32)> {
+        if !self.map.contains(cx, cy) {
+            return None;
+        }
+        // Actors without a locomotor (mines) lie where they are put.
+        if self.rules.actors[ty].unit.is_none() || self.terrain_open_to(ty, self.map.terrain[self.map.idx(cx, cy)]) {
+            return Some((cx, cy));
+        }
+        self.open_cell_for(ty, cx, cy, 7)
+    }
+
+    pub fn open_cell_for(&self, ty: usize, cx: i32, cy: i32, radius: i32) -> Option<(i32, i32)> {
+        let air =
+            self.rules.actors[ty].unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].domain == crate::rules::Domain::Air);
+        let pass = self.pass_of_type(ty);
+        let open = |x: i32, y: i32| self.map.contains(x, y) && (air || !pass.blocked[self.map.idx(x, y)]);
+        for r in 0..=radius {
+            let mut best: Option<(i32, usize, (i32, i32))> = None;
+            for y in cy - r..=cy + r {
+                for x in cx - r..=cx + r {
+                    if ((x - cx).abs() != r && (y - cy).abs() != r) || !open(x, y) {
+                        continue;
+                    }
+                    let key = ((x - cx).pow(2) + (y - cy).pow(2), self.map.idx(x, y));
+                    if best.is_none_or(|(d, c, _)| key < (d, c)) {
+                        best = Some((key.0, key.1, (x, y)));
+                    }
+                }
+            }
+            if let Some((_, _, c)) = best {
+                return Some(c);
+            }
+        }
+        None
     }
 
     /// Rebuild every passability from the map (after replacing it wholesale; tests, harnesses).

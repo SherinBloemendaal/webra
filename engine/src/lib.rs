@@ -114,6 +114,8 @@ mod tests_mission;
 #[cfg(test)]
 mod tests_naval;
 #[cfg(test)]
+mod tests_naval_terrain;
+#[cfg(test)]
 mod tests_neutral;
 #[cfg(test)]
 mod tests_nuke;
@@ -588,7 +590,8 @@ impl Game {
         let actors: Vec<_> = r
             .actors
             .iter()
-            .map(|a| {
+            .enumerate()
+            .map(|(ty_index, a)| {
                 let b = a.building.as_ref();
                 json!({
                     "id": a.id,
@@ -620,6 +623,16 @@ impl Game {
                     "power": b.map_or(0, |b| b.power),
                     "turret": a.turret_turn_speed.is_some(),
                     "radius": a.unit.as_ref().map_or(0, |u| u.radius),
+                    // Terrain codes (map::Terrain) a ground unit or ship may stand on, by
+                    // its locomotor (World::terrain_open_to): the map editor places ships
+                    // on water. None for aircraft and actors that do not move.
+                    "terrain": a.unit.as_ref().filter(|u| r.locomotors[u.locomotor].domain != rules::Domain::Air).map(|_| {
+                        (0..map::TERRAIN_COUNT)
+                            .filter(|&t| self.world.terrain_open_to(ty_index, map::Terrain::from_u8(t).unwrap()))
+                            .collect::<Vec<_>>()
+                    }),
+                    // Naval yards stand on water, other structures on clear ground and roads.
+                    "onWater": b.is_some_and(|b| b.on_water),
                     "harvester": a.unit.as_ref().is_some_and(|u| u.harvester.is_some()),
                     "refinery": b.is_some_and(|b| b.refinery.is_some()),
                     "repairs": b.is_some_and(|b| b.repairs.is_some()),
