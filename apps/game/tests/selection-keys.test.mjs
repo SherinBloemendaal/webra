@@ -226,3 +226,23 @@ test("a click selects the engine's pick; Shift toggles it in or out, any owner's
   assert.deepEqual(clicks.at(-1), [0, false, true], 'Alt goes along');
   assert.deepEqual(input.selection, [6]);
 });
+
+test("Q's modifiers reach the priority when it is bound with one (OpenRA passes the key's modifiers)", async () => {
+  const game = fakeGame();
+  const mods = [];
+  const all = game.select_all;
+  game.select_all = (owners, x0, y0, x1, y1, ctrl, alt) => (mods.push([ctrl, alt]), all(owners, x0, y0, x1, y1));
+  const { input, hotkeys } = await makeInput({ game });
+  const press = (code, k, m = {}) => hotkeys.handle({ code, key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {}, ...m });
+  press('KeyQ', 'q');
+  await settle();
+  assert.equal(hotkeys.rebind('selectAll', 'Ctrl+K').ok, true);
+  input.setSelection([]);
+  press('KeyK', 'k', { ctrlKey: true });
+  await settle();
+  assert.equal(hotkeys.rebind('selectAll', 'Alt+Q').ok, true);
+  input.setSelection([]);
+  press('KeyQ', 'œ', { altKey: true });
+  await settle();
+  assert.deepEqual(mods, [[false, false], [true, false], [false, true]]);
+});

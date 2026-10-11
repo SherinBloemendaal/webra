@@ -211,6 +211,15 @@ fn a_click_takes_the_highest_priority_less_the_distance() {
     assert_eq!(w.select_at_point(Some(0), ex, ey - 256, none), Some(e1));
     assert_eq!(w.select_at_point(Some(0), px + 600, py + 600, none), Some(powr), "outside the rifleman's bounds");
     assert_eq!(w.select_at_point(Some(0), px - 40 * CELL, py, none), None, "nothing there");
+    // OpenRA scores (priority - pixel distance) << 16: a tank 7 px from the click beats a
+    // harvester 6 px from it (10 - 7 > 6 - 6); the nearer centre does not simply win.
+    let t = ty(&w, "1TNK");
+    let (bx, by) = (cell_center(cx + 10), cell_center(cy));
+    let near_tank = w.spawn_unit(t, 0, bx, by, 0);
+    let h = ty(&w, "HARV");
+    let near_harv = w.spawn_unit(h, 0, bx + 600, by, 0);
+    assert_eq!(w.select_at_point(Some(0), bx + 340, by, none), Some(near_tank), "priority outweighs a pixel");
+    assert_eq!(w.select_at_point(Some(0), bx + 500, by, none), Some(near_harv), "11 px against 2 px: the harvester");
     // A tank and a harvester on one spot: the tank, or with Alt the harvester.
     let tank = unit(&mut w, "1TNK", 0, cx + 6, cy);
     let harv = unit(&mut w, "HARV", 0, cx + 6, cy);

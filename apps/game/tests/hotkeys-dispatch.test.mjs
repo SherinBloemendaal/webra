@@ -261,3 +261,33 @@ test('Esc cancels a sidebar mode from a focused switch too', async () => {
   assert.equal(screen.input.mode, null);
   uninstallDom();
 });
+
+test('a click on the button that has the keyboard focus gives Tab and Enter back to the game', async () => {
+  const screen = await gameScreen();
+  const hits = recordHandlers(screen.hotkeys);
+  const button = focusFrom(control(screen.doc, 'button', { class: 'sb-tool' }), true);
+  assert.deepEqual(press(screen, hits, button, 'Tab').ran, [], 'reached with Tab: Tab moves the focus on');
+  // Clicked while focused: no focusin, the focus stays where it is.
+  button.dispatchEvent(new FakeEvent('pointerdown'));
+  assert.deepEqual(press(screen, hits, button, 'Tab').ran, ['selectProductionBuilding']);
+  assert.deepEqual(press(screen, hits, button, 'Enter').ran, ['openTeamChat']);
+  uninstallDom();
+});
+
+test('modifiers held in a text field count for the cursors, its keys stay out of the hotkeys', async () => {
+  const screen = await gameScreen();
+  const hits = recordHandlers(screen.hotkeys);
+  const chat = focusFrom(control(screen.doc, 'input', { type: 'text', class: 'online-game-chat' }), true);
+  for (const key of ['Control', 'Alt', 'Shift', 'Meta']) {
+    chat.dispatchEvent(new FakeEvent('keydown', { key, code: `${key}Left`, cancelable: true }));
+    assert.ok(screen.input.keys.has(key), `${key} held`);
+  }
+  assert.deepEqual(press(screen, hits, chat, 'C').ran, [], 'typing');
+  assert.equal(screen.input.keys.has('c'), false, 'typed letters are not held keys');
+  // Leaving the chat line with Ctrl still held: the game knows it, until it goes up.
+  chat.blur();
+  assert.ok(screen.input.keys.has('Control'));
+  screen.doc.body.dispatchEvent(new FakeEvent('keyup', { key: 'Control', code: 'ControlLeft' }));
+  assert.equal(screen.input.keys.has('Control'), false);
+  uninstallDom();
+});

@@ -120,7 +120,11 @@ impl World {
     /// actors whose bounds hold the point, the one with the highest priority
     /// less its distance in pixels from the point to its bounds' centre
     /// (`CalculateActorSelectionPriority`; the actor type's priority, not
-    /// lowered for other players). The first in actor order on a tie.
+    /// lowered for other players). The first in actor order on a tie. OpenRA
+    /// writes it `info.SelectionPriority(modifiers) - (long)pixelDistance << 16`,
+    /// and C#'s `-` binds tighter than `<<`: `(priority - distance) << 16`, so
+    /// a priority point weighs as much as a pixel (a rifleman beats the
+    /// structure he stands on unless the click is 8 pixels nearer its centre).
     pub fn select_at_point(&self, viewer: Option<u8>, x: i32, y: i32, mods: Mods) -> Option<usize> {
         let mut best: Option<(i64, usize)> = None;
         for i in 0..self.actors.len() {

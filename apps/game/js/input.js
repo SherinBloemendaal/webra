@@ -46,6 +46,8 @@ const CELL = 24;
 const EDGE = 12; // px from the canvas edge that scrolls the view
 const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
+/** Modifier keys (KeyboardEvent.key) the cursors follow in `keys`. */
+const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // Zoom limits at game scale 1 (js/scale.js); an Input's own limits follow its game scale (zoomLimits()).
 export { MIN_ZOOM, MAX_ZOOM };
 const BOOKMARKS = 4;
@@ -816,6 +818,9 @@ export class Input {
   }
 
   onKeyDown(e) {
+    // Held modifiers count wherever the focus is (the mine and command bar
+    // cursors after leaving the chat line with Ctrl held); keyup drops them.
+    if (MODIFIER_KEYS.has(e.key)) this.keys.add(e.key);
     // Typing in a text field, or a key that works the focused switch, slider
     // or list: not the game's (js/hotkeys.js focusKeepsKey; Esc in a switch is).
     if (focusKeepsKey(e)) return;
@@ -937,8 +942,11 @@ export class Input {
    * OpenRA SelectAllUnits: the actors on screen of the highest selection
    * priority (combat units before support units, harvesters and
    * structures); when that selects no more than is selected already (the
-   * key pressed again), the same across the whole map. `e`: the key, whose
-   * Ctrl or Alt raises the actors that allow it (OpenRA PriorityModifiers).
+   * key pressed again), the same across the whole map. `e`: the key event.
+   * OpenRA hands the pressed key's modifiers to the priority
+   * (`SubsetWithHighestSelectionPriority(e.Modifiers)`); the default key Q
+   * has none, but bound to Ctrl+K (or Alt+Q) in Controls the key's Ctrl (Alt)
+   * raises the actors that allow it, as in OpenRA.
    */
   async selectAllUnits(e = null) {
     if (this.hooks.gameOver?.()) return;

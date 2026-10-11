@@ -359,7 +359,13 @@ export class FocusOrigin {
     doc.addEventListener('keydown', (e) => {
       if (!e.metaKey && !e.altKey && !e.ctrlKey) this.keyboard = true;
     }, true);
-    for (const type of ['pointerdown', 'mousedown', 'touchstart']) doc.addEventListener(type, () => (this.keyboard = false), true);
+    // A press also ends a keyboard focus the press does not move (a click on
+    // the button that already has the focus fires no focusin).
+    const press = () => {
+      this.keyboard = false;
+      this.element = null;
+    };
+    for (const type of ['pointerdown', 'mousedown', 'touchstart']) doc.addEventListener(type, press, true);
     doc.addEventListener('focusin', (e) => (this.element = this.keyboard ? e.target : null), true);
   }
 
