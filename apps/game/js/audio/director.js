@@ -352,7 +352,11 @@ export class Director {
 
   /** The game ended for the local player (OpenRA MissionObjectives Win/LoseNotification). */
   onGameOver(won) {
-    this.inWorld(() => this.announce(won ? PLAYER_LINES.win : PLAYER_LINES.lose));
+    // Said at once (OpenRA plays it as the game ends), also while the end of
+    // game dialog stands the game still: not one of the simulation's lines the
+    // announcer holds during a pause. Once: the end of game flow reports each
+    // outcome once, and the line's cooldown covers a repeat.
+    this.announce(won ? PLAYER_LINES.win : PLAYER_LINES.lose);
   }
 
   /**
@@ -411,8 +415,11 @@ export class Director {
    * @param {(x: number, y: number) => boolean} [visible] whether the player can see a pixel position
    */
   onEvents(events, view, visible = () => true) {
-    this.inWorld(() => this.handleEvents(events, visible));
-    this.flush(view);
+    // The positional sounds of the events are the simulation's too (AudioSystem.defer).
+    this.inWorld(() => {
+      this.handleEvents(events, visible);
+      this.flush(view);
+    });
   }
 
   /** The announcer lines, replies and positional sounds of a frame's events (onEvents). */

@@ -263,3 +263,69 @@ test('"Battle control online" (made by OpenRA) is shown, not spoken by WebRA, wh
   await audio.playAnnouncement('startGame', 0);
   assert.deepEqual(spoken, ['Battle control online.']);
 });
+
+test('sounds held while the installed sounds load wait out a pause like the announcer\'s lines (review)', async () => {
+  const { audio, played, release } = await slowAudio(['cannon1.aud']);
+  let t = 0;
+  audio.announcer.now = () => t;
+  // The game's first sounds (the simulation's) and a click of the player's, while the originals load.
+  audio.effect(fireSound('90mm'), { world: true });
+  audio.notify('RadarUp', { world: true });
+  audio.notify('ClickSound');
+  assert.deepEqual(played, []);
+  // Paused (or the tab hidden) in the first second; the load ends during the pause.
+  audio.setPaused(true);
+  t += 600;
+  await release();
+  assert.equal(played.length, 1, 'only the click plays during the pause');
+  assert.ok(!played.some(([n]) => n === 64), 'not the installed cannon');
+  // Going on: paused time is no waiting time, the held sounds play.
+  audio.setPaused(false);
+  assert.equal(played.length, 3);
+  assert.equal(played[1][0], 64, 'the installed cannon1');
+  assert.equal(audio.deferred.length, 0);
+});
+
+test('a held sound of the simulation that waited too long in running game is dropped, not played after the pause', async () => {
+  const { audio, played, release } = await slowAudio(['cannon1.aud']);
+  let t = 0;
+  audio.announcer.now = () => t;
+  audio.effect(fireSound('90mm'), { world: true });
+  t += 2;
+  audio.setPaused(true);
+  await release();
+  audio.setPaused(false);
+  assert.deepEqual(played, []);
+});
+
+test('with original sounds on but none installed, nothing waits for the load (review)', async () => {
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
+  audio.prefs.set({ enabled: true, original: true });
+  let list;
+  const listed = new Promise((r) => (list = r));
+  let read = false;
+  audio.store = async () => ({
+    names: async () => (await listed, ['hell226m.aud', 'notes.txt']),
+    getAll: async () => ((read = true), []),
+  });
+  const played = [];
+  audio.mixer.ctx = { state: 'running', sampleRate: 22050 };
+  audio.mixer.buffer = (samples) => ({ length: samples.length });
+  audio.mixer.apply = () => {};
+  audio.mixer.play = (buffer, opts) => (played.push(opts.bus), { ended: Promise.resolve(), stop() {} });
+  const loading = audio.reloadInstalled();
+  await new Promise((r) => setTimeout(r, 0));
+  // Before the store answered there may be originals: the first sound waits a moment.
+  assert.equal(audio.notify('RadarUp'), false);
+  assert.deepEqual(played, []);
+  list();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(played, ['effects'], 'played as soon as the store said it has no sounds (only music), not dropped');
+  assert.equal(audio.bank.expecting, false);
+  audio.effect(fireSound('90mm'));
+  assert.equal(played.length, 2, 'later sounds play at once');
+  await loading;
+  assert.equal(read, false, 'no sound files to read');
+  assert.equal(audio.bank.loading, false);
+});

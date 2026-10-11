@@ -27,6 +27,12 @@ export class SoundBank {
     this.pack = new Map();
     /** The installed sounds are being read from the content store (index.js reloadInstalled). */
     this.loading = false;
+    /**
+     * Whether the store holds installed sounds, known once a load listed them:
+     * null until then, so sounds wait (index.js defer) only while there may be
+     * originals to wait for.
+     */
+    this.expecting = null;
   }
 
   /** A texture pack's sound for an original file name or a sound event, or null. */
@@ -36,9 +42,21 @@ export class SoundBank {
     return this.pack.get(key) ?? this.pack.get(key.replace(/\.aud$/, '')) ?? null;
   }
 
-  /** Load the installed effects, voices and announcer files (music streams from the store when played). */
-  async loadInstalled(store) {
-    const records = await store.getAll((name) => isSoundName(name) && !MUSIC_FILES.has(name));
+  /**
+   * Load the installed effects, voices and announcer files (music streams
+   * from the store when played). `onListed(expecting)` is called as soon as
+   * the store's names say whether there are any (`expecting`), before their
+   * bytes are read.
+   */
+  async loadInstalled(store, onListed = null) {
+    const wanted = (name) => isSoundName(name) && !MUSIC_FILES.has(name);
+    const listed = typeof store.names === 'function' ? (await store.names()).filter(wanted) : null;
+    if (listed) {
+      this.expecting = listed.length > 0;
+      onListed?.(this.expecting);
+    }
+    const records = listed && !listed.length ? [] : await store.getAll(wanted);
+    if (!listed) this.expecting = records.length > 0;
     this.originals.clear();
     this.decoded.clear();
     for (const r of records) this.originals.set(r.name, new Uint8Array(r.bytes));

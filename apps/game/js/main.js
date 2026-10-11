@@ -36,7 +36,7 @@ import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { aiName, COLOR_NAMES } from './lobby-state.js';
-import { AudioSystem } from './audio/index.js';
+import { AudioSystem, holdsGameAudio } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
 import { mountAudioPanel } from './audio/panel.js';
 import { mountMusicPanel } from './audio/musicplayer.js';
@@ -1273,12 +1273,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let debugPaused = false;
   // OpenRA's Pause hotkey stops a local game without the menu (js/gamekeys.js).
   let keyPaused = false;
-  // Whether the simulation stands still now: a paused local game, or a paused replay.
-  const standingStill = () => paused || !!(replay && !replay.playing);
+  // Whether the game's own sounds and lines wait: the player's pause or a
+  // paused replay, not the end of game dialogs (js/audio/index.js holdsGameAudio).
+  const holdsAudio = () => holdsGameAudio({ menu: menuPaused, debug: debugPaused, key: keyPaused, endDialog: flow.paused, replayPaused: !!(replay && !replay.playing) });
   const updatePaused = () => {
     paused = menuPaused || debugPaused || keyPaused || flow.paused;
     // At once, not only per frame: a hidden tab gets no animation frames.
-    audio?.setPaused(standingStill());
+    audio?.setPaused(holdsAudio());
   };
   const debug = new DebugMenu($('field'), {
     game,
@@ -1771,8 +1772,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const simBefore = simClock.ms;
     const simNow = simClock.update(f.tick, f.alpha);
     const simSeconds = simNow / 1000;
-    // Announcer lines of the simulation wait while it stands still (js/audio/announcer.js).
-    audio?.setPaused(standingStill());
+    // The game's own lines and sounds wait while the player paused it (js/audio/announcer.js).
+    audio?.setPaused(holdsAudio());
     const fresh = f.id !== drawn;
     if (fresh) {
       drawn = f.id;

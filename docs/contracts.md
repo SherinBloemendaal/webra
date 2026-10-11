@@ -1846,10 +1846,15 @@ from world ticks: the low power and silo intervals count the `tick` of
 state the UI polls during a pause (the same tick) never fires them and the
 cadence goes on after it. The announcer holds the simulation's lines (engine
 events, player state, mission speech; `announce(key, { world: true })`) while
-the game stands still (`AudioSystem.setPaused`: the pause hotkey, the game
-menu and a hidden tab of a local game, the end of game dialogs, a paused
-replay) and plays them after it; the player's own clicks (production,
-support powers) still speak, music and interface sounds go on. Radar pings,
+the player pauses (`AudioSystem.setPaused`, `holdsGameAudio`: the pause
+hotkey, the game menu and a hidden tab of a local game, a paused replay) and
+plays them after it; the player's own clicks (production, support powers)
+still speak, music and interface sounds go on. The end of game dialogs
+stand a local game still but hold nothing (OpenRA's world goes on at the
+end): the lines of the last ticks and the Win or Lose line, which is never
+held, play at once. Sounds asked for while the installed originals load
+(`defer`, only while the store may have any) are held the same way: the
+simulation's wait out a pause, the player's play when the load is done. Radar pings,
 floating texts, camera shake, the nuke flash, lightning, thunder, weather
 particles, water and building animations run on the simulation clock
 (js/simclock.js: tick and interpolation), so they stand still with the game.

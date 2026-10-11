@@ -50,7 +50,7 @@ import { installFromFiles, installedSummary, categoryOf } from '../js/audio/inst
 import { MemoryStore } from '../js/audio/store.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { shuffle, Jukebox } from '../js/audio/music.js';
-import { AudioSystem, FOG_VISIBLE, CLICKABLE } from '../js/audio/index.js';
+import { AudioSystem, FOG_VISIBLE, CLICKABLE, holdsGameAudio } from '../js/audio/index.js';
 import { sineSamples, imaAud, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
 
 const wasm = fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url));
@@ -474,7 +474,7 @@ test('the simulation\'s announcer lines are marked, the player\'s clicks are not
     ['lowPower', true],
     ['training', false],
     ['selectTarget', false],
-    ['win', true],
+    ['win', false],
   ]);
 });
 
@@ -667,6 +667,35 @@ test('while the game is paused the simulation\'s lines wait, the player\'s click
   t += 5;
   await finish();
   assert.deepEqual(played.slice(4), ['lowPower'], 'running time still makes old lines stale');
+});
+
+test('the Win and Lose lines play at once when the game ends, though the end of game dialog stands the game still (review)', async () => {
+  const audio = new AudioSystem({ registry: createRegistry({ storage: memoryStorage() }), doc: null });
+  await audio.loaded;
+  audio.prefs.set({ enabled: true });
+  const said = [];
+  audio.announcer.play = async (key) => said.push(key);
+  audio.attachGame({ game: { set_audio_events() {}, map_width: () => 64 }, rules: { actors: [], weapons: [], pxPerCell: 24, players: [] }, player: 0, worldUnitsPerCell: 1024 });
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  // main.js: the end of game flow opens its dialog (onChange: updatePaused), then the line comes.
+  assert.equal(holdsGameAudio({ endDialog: true }), false, 'the end of game dialog holds nothing');
+  assert.equal(holdsGameAudio({ menu: true, endDialog: true }), true, 'the player\'s pause does');
+  assert.equal(holdsGameAudio({ key: true }) && holdsGameAudio({ debug: true }) && holdsGameAudio({ replayPaused: true }), true);
+  // A mission's final speech of the last tick, waiting behind a line that plays: the end does not hold it.
+  audio.announce('objectiveMet', { world: true });
+  audio.announce('reinforcementsArrived', { world: true });
+  audio.setPaused(holdsGameAudio({ endDialog: true }));
+  audio.gameOver(true);
+  await settle();
+  await settle();
+  assert.deepEqual(said, ['objectiveMet', 'reinforcementsArrived', 'win'], 'all of them, in order, at once');
+  // Even inside a pause of the player's the Win or Lose line is not held (it is not a simulation line), and it comes once.
+  said.length = 0;
+  audio.setPaused(true);
+  audio.gameOver(false);
+  audio.gameOver(false);
+  await settle();
+  assert.deepEqual(said, ['lose']);
 });
 
 // ---- Settings ------------------------------------------------------------------------------

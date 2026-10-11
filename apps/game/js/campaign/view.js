@@ -139,11 +139,11 @@ export class MissionView {
         }
         break;
       case 'sound':
-        if (e.player === 255 || e.player === this.localPlayer) o.audio?.notify(e.name);
+        if (e.player === 255 || e.player === this.localPlayer) o.audio?.notify(e.name, { world: true });
         break;
       case 'sound_file':
         // An original sound by file name; without the player's own copy there is nothing to play.
-        o.audio?.effect({ synth: null, originals: [fileName(e.file)] });
+        o.audio?.effect({ synth: null, originals: [fileName(e.file)] }, { world: true });
         break;
       case 'camera':
         o.centerOn(e.x * o.pxPerCell, e.y * o.pxPerCell);
