@@ -588,61 +588,128 @@ fn exercise(over: &serde_json::Value, seed: u64) {
     }
 }
 
-#[test]
-fn nested_rules_overrides_are_rejected_or_safe() {
-    // Like the top-level fuzz above, but systematic and at any depth: every
-    // slot of every built-in actor and weapon (abilities, support powers,
-    // aircraft, transforms, offsets, footprints, warheads...) is broken twice,
-    // once with huge values and once with negative or zero ones, arrays are
-    // emptied, cut, grown or misshapen. Each edit must be rejected, or survive
-    // a game that exercises every rules path. Accepted edits share games, one
-    // edit per actor or weapon per game.
-    let base = base_rules();
-    let ids: Vec<String> = base["actors"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap().to_string()).collect();
-    let mut r = Rng::new(0x0dd5);
-    let (mut accepted, mut rejected) = (Vec::new(), 0);
-    for (section, key) in [("actors", "id"), ("weapons", "name")] {
-        for entry in base[section].as_array().unwrap() {
-            let id = entry[key].as_str().unwrap();
-            for k in 0..count_slots(entry, true) {
-                for big in [true, false] {
-                    let mut changed = entry.clone();
-                    mutate_slot(&mut changed, &mut k.clone(), true, big, &mut r, &ids);
-                    let Some(patch) = diff(entry, &changed) else { continue };
-                    let over = serde_json::json!({ section: { id: patch.clone() } });
-                    match crate::rules::Rules::load_with(Some(&over)) {
-                        Ok(_) => accepted.push((section, id.to_string(), patch)),
-                        Err(_) => rejected += 1,
+/// The games of the nested rules fuzz: each a rules override and its seed,
+/// plus how many single edits were rejected. Built once and shared by the
+/// shards below, which play the games in parallel (one test took 23 minutes
+/// of a CI run on its own).
+struct NestedFuzz {
+    games: Vec<(serde_json::Value, u64)>,
+    rejected: usize,
+}
+
+fn nested_fuzz() -> &'static NestedFuzz {
+    static FUZZ: std::sync::OnceLock<NestedFuzz> = std::sync::OnceLock::new();
+    FUZZ.get_or_init(|| {
+        // Like the top-level fuzz above, but systematic and at any depth:
+        // every slot of every built-in actor and weapon (abilities, support
+        // powers, aircraft, transforms, offsets, footprints, warheads...) is
+        // broken twice, once with huge values and once with negative or zero
+        // ones, arrays are emptied, cut, grown or misshapen. Each edit must
+        // be rejected, or survive a game that exercises every rules path.
+        // Accepted edits share games, one edit per actor or weapon per game.
+        let base = base_rules();
+        let ids: Vec<String> = base["actors"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap().to_string()).collect();
+        let mut r = Rng::new(0x0dd5);
+        let (mut accepted, mut rejected) = (Vec::new(), 0);
+        for (section, key) in [("actors", "id"), ("weapons", "name")] {
+            for entry in base[section].as_array().unwrap() {
+                let id = entry[key].as_str().unwrap();
+                for k in 0..count_slots(entry, true) {
+                    for big in [true, false] {
+                        let mut changed = entry.clone();
+                        mutate_slot(&mut changed, &mut k.clone(), true, big, &mut r, &ids);
+                        let Some(patch) = diff(entry, &changed) else { continue };
+                        let over = serde_json::json!({ section: { id: patch.clone() } });
+                        match crate::rules::Rules::load_with(Some(&over)) {
+                            Ok(_) => accepted.push((section, id.to_string(), patch)),
+                            Err(_) => rejected += 1,
+                        }
                     }
                 }
             }
         }
-    }
-    let mut games = 0u64;
-    while !accepted.is_empty() {
-        let mut batch = serde_json::json!({});
-        let mut rest = Vec::new();
-        for (section, id, patch) in accepted.drain(..) {
-            if batch[section].get(&id).is_some() || batch[section].as_object().is_some_and(|o| o.len() >= 30) {
-                rest.push((section, id, patch));
-            } else {
-                batch[section][&id] = patch;
+        let mut games = Vec::new();
+        while !accepted.is_empty() {
+            let mut batch = serde_json::json!({});
+            let mut rest = Vec::new();
+            for (section, id, patch) in accepted.drain(..) {
+                if batch[section].get(&id).is_some() || batch[section].as_object().is_some_and(|o| o.len() >= 30) {
+                    rest.push((section, id, patch));
+                } else {
+                    batch[section][&id] = patch;
+                }
             }
-        }
-        accepted = rest;
-        // Edits that are fine alone but not together are played one by one.
-        if crate::rules::Rules::load_with(Some(&batch)).is_ok() {
-            exercise(&batch, games);
-            games += 1;
-        } else {
-            for (section, list) in batch.as_object().unwrap() {
-                for (id, patch) in list.as_object().unwrap() {
-                    let one = serde_json::json!({ section: { id: patch.clone() } });
-                    exercise(&one, games);
-                    games += 1;
+            accepted = rest;
+            // Edits that are fine alone but not together are played one by one.
+            if crate::rules::Rules::load_with(Some(&batch)).is_ok() {
+                let seed = games.len() as u64;
+                games.push((batch, seed));
+            } else {
+                for (section, list) in batch.as_object().unwrap() {
+                    for (id, patch) in list.as_object().unwrap() {
+                        let one = serde_json::json!({ section: { id: patch.clone() } });
+                        let seed = games.len() as u64;
+                        games.push((one, seed));
+                    }
                 }
             }
         }
+        NestedFuzz { games, rejected }
+    })
+}
+
+/// Shards of the nested rules fuzz: shard `n` plays every NESTED_SHARDS-th game.
+const NESTED_SHARDS: usize = 8;
+
+fn nested_fuzz_shard(n: usize) {
+    for (over, seed) in nested_fuzz().games.iter().skip(n).step_by(NESTED_SHARDS) {
+        exercise(over, *seed);
     }
+}
+
+#[test]
+fn nested_rules_overrides_are_rejected_or_safe() {
+    let f = nested_fuzz();
+    let (games, rejected) = (f.games.len(), f.rejected);
     assert!(games >= 40 && rejected >= 1000, "{games} games, {rejected} edits rejected");
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_0() {
+    nested_fuzz_shard(0);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_1() {
+    nested_fuzz_shard(1);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_2() {
+    nested_fuzz_shard(2);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_3() {
+    nested_fuzz_shard(3);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_4() {
+    nested_fuzz_shard(4);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_5() {
+    nested_fuzz_shard(5);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_6() {
+    nested_fuzz_shard(6);
+}
+
+#[test]
+fn nested_rules_overrides_survive_their_games_7() {
+    nested_fuzz_shard(7);
 }
