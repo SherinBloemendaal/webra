@@ -23,8 +23,8 @@ import { buildTerrainAtlas, cellTiles, terrainSeed, TILES } from '../js/art/terr
 import { MODE, POSE, packSprite } from '../js/content/sequences.js';
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, baseZoom, gameScaleFor, zoomLimits } from '../js/scale.js';
 import { CELL_PX, TerrainRaster, frameQuad, hash2, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
-import { HOLD_MS, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensPlacement, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
-import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, teamColors } from '../js/maplens/source.js';
+import { HOLD_CLICK_MS, HOLD_MS, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensPlacement, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
+import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, runSteps, teamColors } from '../js/maplens/source.js';
 import { createMap, encodeBase64, TERRAIN } from '../editor/js/mapformat.js';
 
 const wasm = await init({ module_or_path: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
@@ -315,7 +315,7 @@ function fakeContext(canvas) {
 }
 
 /** A page: a fake DOM with canvases, a window with a manual frame clock and timers, and a preview to put a lens on. */
-function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width: 200, height: 120 }, objectFit = 'fill' } = {}) {
+function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width: 200, height: 120 }, objectFit = 'fill', idleCallbacks = false } = {}) {
   const doc = installDom();
   const create = doc.createElement.bind(doc);
   const placed = [];
@@ -354,11 +354,34 @@ function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width
   frame.getBoundingClientRect = preview.getBoundingClientRect;
   frame.append(preview);
   doc.body.append(frame);
+  // Zero-delay tasks (the lens reading its map in steps) run between frames, as in a browser.
+  const runSteps = () => {
+    for (let k = 0; k < 100; k++) {
+      const due = timers.filter((t) => t.fn && t.ms === 0);
+      if (!due.length) return;
+      for (const t of due) {
+        const fn = t.fn;
+        t.fn = null;
+        fn();
+      }
+    }
+  };
   const runFrames = (n = 1) => {
-    for (let i = 0; i < n && frames.length; i++) frames.splice(0).forEach((fn) => fn());
+    for (let i = 0; i < n; i++) {
+      runSteps();
+      if (!frames.length) break;
+      frames.splice(0).forEach((fn) => fn());
+    }
   };
   const runTimers = () => timers.splice(0).forEach((t) => t.fn?.());
-  return { doc, win, frame, preview, placed, frames, runFrames, runTimers };
+  // A page that never has idle time (or a browser without requestIdleCallback) unless `idle` is set.
+  const idle = [];
+  if (idleCallbacks) {
+    win.requestIdleCallback = (fn) => idle.push(fn) && idle.length;
+    win.cancelIdleCallback = (id) => id && idle[id - 1] && (idle[id - 1] = null);
+  }
+  const runIdle = () => idle.splice(0).forEach((fn) => fn?.({ timeRemaining: () => 10, didTimeout: false }));
+  return { doc, win, frame, preview, placed, frames, timers, idle, runFrames, runSteps, runTimers, runIdle };
 }
 
 /** A small synthetic lens map: grey terrain, one sprite at the centre of cell (5, 5), a spawn at (2, 2). */
@@ -383,6 +406,7 @@ function syntheticMap(w = 20, h = 12, version = 0) {
     atlas: { frames, width: 4, height: 4, color: spriteCanvas, mask: spriteCanvas, filter: 'nearest' },
     spriteSource: 'test',
     colors: teamColors(),
+    palette: teamColors(),
     spawns: [[2, 2]],
   };
 }
@@ -412,11 +436,9 @@ test('the lens shows over the preview, is decorative, and hides when the pointer
   assert.equal(el.style.props['--map-lens-y'], `${130 - 88}px`);
   // 200 x 120 preview of a 20 x 12 map at (100, 100): (150, 130) is cell (5, 3).
   assert.deepEqual([lens.centre.x, lens.centre.y], [5, 3]);
-  assert.equal(loads, 0, 'the map is read lazily: first the preview pixels');
+  assert.equal(loads, 0, 'never read inside the pointer event');
   p.runFrames(1);
-  assert.equal(loads, 0);
-  p.runFrames(1);
-  assert.equal(loads, 1, 'then the map, once');
+  assert.equal(loads, 1, 'the map is read in a task of its own, once');
   p.frame.dispatchEvent(pointer('pointerleave', 400, 400));
   assert.equal(el.hidden, true, 'hidden on leave');
   p.frame.dispatchEvent(pointer('pointermove', 120, 110));
@@ -466,7 +488,8 @@ test('tiles are drawn a few rows per frame within the budget, cached, and the ca
   };
   lens.setSource('big', () => map, { width: 64, height: 64 });
   p.frame.dispatchEvent(pointer('pointermove', 320, 320));
-  p.runFrames(2);
+  // The map is read in its own task, then the first frame draws a budget's worth.
+  p.runFrames(1);
   assert.ok(rowCalls >= 1 && rowCalls <= 6, `one frame stops at the budget (${rowCalls} row batches)`);
   assert.ok(lens.stats.work <= 5 + 1, 'the frame stayed within the budget');
   // Placeholders: the preview's own pixels stand in for tiles that are not ready.
@@ -630,6 +653,228 @@ test('a map that cannot be read leaves the preview without a lens; new art rebui
   assert.equal(loads, 2, 'installed content changed: the map is read again with the new art');
 });
 
+// ---- Loading in the background (first hover without a stall) --------------------------------
+
+/** A source read in `n` steps; records in which kind of task each step ran. */
+function stepSource(n, where, version = 0) {
+  return function* () {
+    for (let k = 0; k < n; k++) {
+      where.push(where.current);
+      yield (k + 1) / (n + 1);
+    }
+    where.push(where.current);
+    return syntheticMap(20, 12, version);
+  };
+}
+
+test('the map is read in idle time as soon as the preview shows, one step per task, never in a frame or a pointer event', () => {
+  const p = page({ idleCallbacks: true });
+  const { lens } = lensOn(p);
+  const where = [];
+  where.current = 'setSource';
+  lens.setSource('a', stepSource(4, where), { width: 20, height: 12 });
+  assert.deepEqual([...where], [], 'nothing read while the lobby builds its preview');
+  assert.equal(p.idle.length, 1, 'one idle task queued');
+  where.current = 'idle';
+  for (let k = 0; k < 3; k++) p.runIdle();
+  assert.deepEqual([...where], ['idle', 'idle', 'idle'], 'one step per idle task');
+  assert.equal(lens.map, null);
+  p.runIdle();
+  p.runIdle();
+  assert.ok(lens.map, 'read before anyone pointed at it');
+  // The first hover finds the map: only the tiles are left, drawn within the frame budget.
+  where.current = 'pointer';
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130));
+  where.current = 'frame';
+  p.runFrames(5);
+  assert.equal(where.filter((w) => w !== 'idle').length, 0, 'no step in a pointer event or frame');
+  assert.ok([...lens.tiles.map.values()].some((t) => t.done), 'tiles drawn');
+  // A hidden preview (a lobby not on screen) reads nothing until it shows.
+  const hidden = page({ idleCallbacks: true });
+  hidden.frame.getClientRects = () => [];
+  const quiet = lensOn(hidden).lens;
+  quiet.setSource('q', stepSource(2, []), { width: 20, height: 12 });
+  assert.equal(hidden.idle.length, 0);
+  assert.equal(quiet.job, null);
+});
+
+test('a pointer that comes first sees the loading ring over the preview; the steps then run in zero-delay tasks', () => {
+  const p = page({ idleCallbacks: true });
+  let clock = 0;
+  const { lens } = lensOn(p, { now: () => clock });
+  const where = [];
+  where.current = 'event';
+  lens.setSource('a', stepSource(3, where), { width: 20, height: 12 });
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130));
+  where.current = 'frame';
+  const frameCount = p.frames.length;
+  p.frames.splice(0).forEach((fn) => fn());
+  assert.equal(frameCount, 1);
+  const ctx = p.doc.body.querySelector('.map-lens canvas').getContext('2d');
+  assert.ok(ctx.log.some((l) => l[0] === 'drawImage' && l[1] === p.preview), 'the preview\'s own pixels');
+  assert.ok(ctx.log.some((l) => l[0] === 'fillText' && l[1] === 'Loading map'), 'says it is loading');
+  assert.ok(ctx.log.some((l) => l[0] === 'arc'), 'a ring and a spinner');
+  assert.equal(p.idle.filter(Boolean).length, 0, 'the idle task gave way to a zero-delay one');
+  // The progress ring grows with every step.
+  where.current = 'task';
+  p.runSteps();
+  assert.ok(lens.map, 'read');
+  assert.deepEqual([...new Set(where)], ['task'], 'every step in a task of its own');
+  ctx.log.length = 0;
+  clock += 16;
+  p.runFrames(1);
+  assert.ok(!ctx.log.some((l) => l[0] === 'fillText' && l[1] === 'Loading map'), 'the loading state is gone');
+});
+
+test('the loading ring shows the share read; with reduced motion nothing turns and no frame loop runs', () => {
+  const p = page();
+  const { lens } = lensOn(p, { reducedMotion: () => true });
+  lens.setSource('a', stepSource(3, []), { width: 20, height: 12 });
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130));
+  // Run the first step, then one frame.
+  const first = p.timers.find((t) => t.fn && t.ms === 0);
+  const run = first.fn;
+  first.fn = null;
+  run();
+  p.frames.splice(0).forEach((fn) => fn());
+  const ctx = p.doc.body.querySelector('.map-lens canvas').getContext('2d');
+  const arcs = ctx.log.filter((l) => l[0] === 'arc');
+  assert.equal(arcs.length, 2, 'the track and the progress, no spinner');
+  const [, , , , start, end] = arcs[1];
+  assert.ok(Math.abs(end - start - 0.25 * Math.PI * 2) < 1e-9, 'a quarter read after the first of three steps');
+  assert.equal(p.frames.length, 0, 'no frame loop: the next step asks for the next frame');
+});
+
+test('a new map stops the unfinished read and frees its engine game; a failing step leaves no lens', () => {
+  const p = page();
+  const { lens } = lensOn(p);
+  let freed = 0;
+  function* slow() {
+    try {
+      yield 0.5;
+      yield 0.7;
+      return syntheticMap();
+    } finally {
+      freed++;
+    }
+  }
+  lens.setSource('a', slow, { width: 20, height: 12 });
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130));
+  const first = p.timers.find((t) => t.fn && t.ms === 0);
+  const run = first.fn;
+  first.fn = null;
+  run();
+  assert.equal(freed, 0, 'mid read');
+  lens.setSource('b', () => syntheticMap(), { width: 20, height: 12 });
+  assert.equal(freed, 1, 'abandoned: its game is freed');
+  p.runFrames(2);
+  assert.ok(lens.map);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    lens.setSource('bad', function* () {
+      yield 0.1;
+      throw new Error('broken');
+    }, { width: 20, height: 12 });
+    p.runFrames(3);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(lens.source.failed, true);
+  assert.equal(p.doc.body.querySelector('.map-lens').hidden, true);
+});
+
+test('player colours tint the map without reading it again; the hot marker gets a ring', () => {
+  const p = page();
+  const { lens } = lensOn(p);
+  let loads = 0;
+  lens.setSource('a', () => (loads++, syntheticMap()), { width: 20, height: 12 });
+  p.frame.dispatchEvent(pointer('pointermove', 130, 125));
+  p.runFrames(4);
+  assert.equal(loads, 1);
+  const tiles = lens.tiles.size;
+  assert.ok(tiles > 0);
+  lens.setColors([[1, 0, 0], null]);
+  assert.deepEqual(lens.map.colors[0], [1, 0, 0]);
+  assert.deepEqual(lens.map.colors[1], lens.map.palette[1], 'null keeps the map\'s own');
+  assert.equal(lens.tiles.size, 0, 'the tiles are drawn again');
+  p.runFrames(4);
+  assert.equal(loads, 1, 'the map is not read again');
+  lens.setColors([[1, 0, 0], null]);
+  assert.ok(lens.tiles.size > 0, 'the same colours keep the tiles');
+  // Colours set before the map is read apply once it is.
+  lens.setSource('b', () => syntheticMap(), { width: 20, height: 12 });
+  lens.setColors([[0, 1, 0]]);
+  p.runFrames(2);
+  assert.deepEqual(lens.map.colors[0], [0, 1, 0]);
+  assert.deepEqual(playerColors([[1, 1, 1], [2, 2, 2]], [null, [3, 3, 3, 1]]), [[1, 1, 1], [3, 3, 3]]);
+  // The marker under the pointer or focus is ringed.
+  lens.setMarkers([{ x: 3.5, y: 4, label: 'A', color: null }, { x: 5.5, y: 5, label: 'B', color: [1, 0, 0], picked: true }]);
+  const ctx = p.doc.body.querySelector('.map-lens canvas').getContext('2d');
+  p.runFrames(200);
+  // Per drawing: one arc at each marker, two at the hot one.
+  const rings = () => {
+    const at = new Map();
+    for (const l of ctx.log.filter((x) => x[0] === 'arc')) at.set(`${l[1]},${l[2]}`, (at.get(`${l[1]},${l[2]}`) ?? 0) + 1);
+    return [...at.values()].sort((a, b) => a - b);
+  };
+  ctx.log.length = 0;
+  lens.setHotMarker(1);
+  p.runFrames(1);
+  const [a, b] = rings();
+  assert.equal(b, 2 * a, 'one more ring around the hot marker');
+  lens.setHotMarker(9);
+  assert.equal(lens.hot, -1, 'no such marker');
+});
+
+test('a touch hold that showed the lens is not a tap: heldRecently covers the click that follows', () => {
+  const p = page();
+  let clock = 0;
+  const { lens } = lensOn(p, { now: () => clock });
+  lens.setSource('a', () => syntheticMap(), { width: 20, height: 12 });
+  const touch = (type) => p.frame.dispatchEvent(pointer(type, 150, 130, { pointerType: 'touch', pointerId: 3 }));
+  assert.equal(lens.heldRecently(), false);
+  touch('pointerdown');
+  touch('pointerup');
+  assert.equal(lens.heldRecently(), false, 'a quick tap picks');
+  touch('pointerdown');
+  p.runTimers();
+  assert.equal(lens.heldRecently(), true, 'while the lens shows');
+  touch('pointerup');
+  assert.equal(lens.heldRecently(), true, 'the click after lifting');
+  clock += HOLD_CLICK_MS + 1;
+  assert.equal(lens.heldRecently(), false);
+});
+
+test('LensArt reads in steps: each part of the read is a task of its own; abandoning frees the engine game', () => {
+  globalThis.document = pixelDocument();
+  const art = new LensArt({ Game, memory: () => wasm.memory, content: null });
+  const steps = art.generatedSteps({ seed: 5, size: 64, players: 2 });
+  const shares = [];
+  let r = steps.next();
+  while (!r.done) {
+    shares.push(r.value);
+    r = steps.next();
+  }
+  assert.ok(shares.length >= 5, `${shares.length} steps`);
+  assert.deepEqual([...shares].sort((a, b) => a - b), shares, 'the share only grows');
+  assert.ok(shares.every((v) => v >= 0 && v <= 1));
+  assert.equal(r.value.width, 64);
+  assert.deepEqual(runSteps(art.generatedSteps({ seed: 5, size: 64, players: 2 })).spawns, r.value.spawns, 'the same map in one go');
+  // Abandoned after the engine game exists: it is freed (a freed game refuses calls).
+  let game = null;
+  const Real = Game;
+  const spy = { editor_preview: (json) => (game = Real.editor_preview(json)), generated_map_with: (...a) => Real.generated_map_with(...a) };
+  const watched = new LensArt({ Game: spy, memory: () => wasm.memory, content: null });
+  const it = watched.generatedSteps({ seed: 5, size: 64, players: 2 });
+  it.next();
+  it.next();
+  it.next();
+  assert.ok(game);
+  it.return();
+  assert.throws(() => game.map_width(), 'freed');
+});
+
 test('spriteList keeps the visible sprites with their frames and team', () => {
   const map = syntheticMap();
   map.sprites = Float32Array.from([10, 20, 0, 0, 3, 1, 1, 0, 30, 40, 0, 0, 2, 1, 0, 0]);
@@ -783,13 +1028,16 @@ function recordingLens() {
     setSource: (key, load, size) => calls.push(['source', key, load, size]),
     clearSource: () => calls.push(['clear']),
     setMarkers: (m) => calls.push(['markers', m]),
+    setColors: (c) => calls.push(['colors', c]),
+    setHotMarker: (k) => calls.push(['hot', k]),
+    heldRecently: () => false,
     hide: () => {},
     last: (kind) => calls.filter((c) => c[0] === kind).at(-1),
   };
 }
 
 /** A LensArt stand-in: what a loader asks for. */
-const askedArt = { fromGenerated: (o) => ['generated', o], fromMap: (json, o) => ['map', json, o], fromMission: (text) => ['mission', text] };
+const askedArt = { generatedSteps: (o) => ['generated', o], mapSteps: (json, o) => ['map', json, o], missionSteps: (text) => ['mission', text] };
 
 test('skirmish lobby: the lens sits on the preview and reads the same map (generated with its tech buildings, or the map file)', async () => {
   const doc = installDom();
@@ -830,10 +1078,15 @@ test('skirmish lobby: the lens sits on the preview and reads the same map (gener
     assert.deepEqual(size, { width: mapSize, height: mapSize });
     const [kind, asked] = load(askedArt);
     assert.equal(kind, 'generated');
-    assert.deepEqual({ ...asked, colors: undefined }, { seed, size: mapSize, players: 2, style: mapStyle, biome, tech: 'standard', colors: undefined });
-    assert.deepEqual(asked.colors[0], COLORS[lobby.state.players[0].color], 'spawn 1 in its player\'s colour');
+    assert.deepEqual(asked, { seed, size: mapSize, players: 2, style: mapStyle, biome, tech: 'standard' });
+    assert.deepEqual(lens.last('colors')[1][0], COLORS[lobby.state.players[0].color], 'player 1\'s actors in its colour, without reading the map again');
     const markers = lens.last('markers')[1];
-    assert.deepEqual(markers.map((m) => [m.x, m.y, m.label]), [[3.5, 4, '1'], [51.5, 52, '2']], 'the lobby\'s numbered starts at the construction yard centres');
+    assert.deepEqual(markers.map((m) => [m.x, m.y, m.label]), [[3.5, 4, 'A'], [51.5, 52, 'B']], 'the lobby\'s lettered starts at the construction yard centres');
+    // A pick changes the colours and markers, never the map the lens reads.
+    lobby.pickSpawn({ slot: 0, spawn: 1 });
+    lobby.drawPreview();
+    assert.equal(lens.last('source')[1], key);
+    assert.deepEqual(lens.last('markers')[1].map((m) => [m.label, m.picked]), [['A', false], ['B', true]]);
     // The tech buildings change the map a game gets: the lens follows.
     lobby.techSelect.value = 'extra';
     lobby.techSelect.dispatchEvent(new FakeEvent('change'));
@@ -882,7 +1135,8 @@ test('online lobby: the lens reads the generated map, an installed shared map or
     });
     ui.renderMap();
     const canvas = ui.mapBox.querySelector('canvas');
-    assert.equal(lens.last('attach')[1], canvas);
+    assert.equal(lens.last('attach')[1], canvas.parentNode, 'the frame gets the pointer (the start markers lie over the canvas)');
+    assert.equal(lens.last('attach')[2], canvas);
     let [, key, load, size] = lens.last('source');
     assert.equal(key, 'gen:9/64/2/rivers/desert/oilrush');
     assert.deepEqual(size, { width: 64, height: 64 });
@@ -891,7 +1145,7 @@ test('online lobby: the lens reads the generated map, an installed shared map or
     ui.state.map = { hash: 'abc', name: 'M', author: 'A', players: 2, width: 4, height: 4, bytes: 10, shared: true };
     const before = lens.calls.length;
     ui.renderMap();
-    assert.deepEqual(lens.calls.slice(before).map((c) => c[0]), ['clear', 'attach'], 'cleared, then on the new preview');
+    assert.deepEqual(lens.calls.slice(before).map((c) => c[0]).slice(0, 2), ['clear', 'attach'], 'cleared, then on the new preview');
     ui.installed.set('abc', '{"width":4,"height":4}');
     ui.renderMap();
     [, key, load, size] = lens.last('source');

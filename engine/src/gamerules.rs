@@ -19,11 +19,13 @@ pub const MAX_HANDICAP: u8 = 95;
 /// Handicap steps.
 pub const HANDICAP_STEP: u8 = 5;
 
-/// OpenRA MapStartingLocations with WebRA's lobby: every slot shows its spawn
-/// on the map preview, like a spawn point a player picked in OpenRA, so
-/// without the option (and in free for alls) slot `k` starts at spawn `k`.
+/// OpenRA MapStartingLocations with WebRA's lobby: a player who picked a
+/// spawn in the lobby (OpenRA's spawn selection, `PlayerSetup::spawn`)
+/// starts there. Every other slot shows its spawn on the map preview, so
+/// without the option (and in free for alls) slot `k` starts at spawn `k`
+/// when nobody picked that spawn, else at the lowest spawn left free.
 /// With "Separate team spawns" in a team game the players without a team
-/// keep their own spawn and the team members take the free spawns:
+/// do the same and the team members take the spawns still free:
 /// - on generated maps team by team (in the order of each team's first slot,
 ///   members in slot order) in the order the generator lists its spawns (by
 ///   column, top first: consecutive spawns are neighbours, and splitting the
@@ -31,33 +33,53 @@ pub const HANDICAP_STEP: u8 = 5;
 ///   start together on fair, mirrored sides;
 /// - on map files in slot order, each as far as possible from the enemies
 ///   placed so far (the most squared distance to their spawns, OpenRA's
-///   measure), then as close as possible to team mates, then the lowest spawn.
+///   measure; players who picked their spawn count as placed), then as close
+///   as possible to team mates, then the lowest spawn.
 ///
+/// A pick past the last spawn, or of a spawn an earlier slot picked, counts
+/// as no pick (`spawn_pick_problem` refuses such games at the start).
 /// packages/protocol `assignSpawns` computes the same for the lobby markers;
 /// both run the cases of packages/protocol/test/fixtures/spawn-cases.json.
 pub fn assign_spawns(spawns: &[(i32, i32)], players: &[PlayerSetup], separate: bool, generated: bool) -> Vec<usize> {
-    let identity: Vec<usize> = (0..players.len()).collect();
-    if !separate || players.len() > spawns.len() || !players.iter().any(|p| p.team != 0) {
-        return identity;
+    if players.len() > spawns.len() {
+        return (0..players.len()).collect();
     }
     let mut out = vec![usize::MAX; players.len()];
     let mut taken = vec![false; spawns.len()];
-    // Players without a team keep their slot's spawn.
+    // Picked spawns first.
     for (k, p) in players.iter().enumerate() {
-        if p.team == 0 {
+        if let Some(s) = p.spawn.map(usize::from).filter(|&s| s < spawns.len() && !taken[s]) {
+            out[k] = s;
+            taken[s] = true;
+        }
+    }
+    // Players who keep their slot's spawn: everyone, or with separate team
+    // spawns in a team game those without a team. Their own spawn when it is
+    // free, else (in slot order) the lowest free one.
+    let teams = separate && players.iter().any(|p| p.team != 0);
+    let own: Vec<usize> = (0..players.len()).filter(|&k| out[k] == usize::MAX && !(teams && players[k].team != 0)).collect();
+    for &k in &own {
+        if !taken[k] {
             out[k] = k;
             taken[k] = true;
+        }
+    }
+    for &k in &own {
+        if out[k] == usize::MAX {
+            let s = (0..spawns.len()).find(|&s| !taken[s]).expect("a free spawn for every player");
+            out[k] = s;
+            taken[s] = true;
         }
     }
     // Team members: on generated maps team by team, in the order of each
     // team's first slot; on map files in slot order.
     let mut order: Vec<usize> = Vec::new();
     for (k, p) in players.iter().enumerate() {
-        if p.team == 0 || order.contains(&k) {
+        if out[k] != usize::MAX || order.contains(&k) {
             continue;
         }
         if generated {
-            order.extend((k..players.len()).filter(|&j| players[j].team == p.team));
+            order.extend((k..players.len()).filter(|&j| out[j] == usize::MAX && players[j].team == p.team));
         } else {
             order.push(k);
         }
@@ -97,6 +119,25 @@ pub fn assign_spawns(spawns: &[(i32, i32)], players: &[PlayerSetup], separate: b
         taken[s] = true;
     }
     out
+}
+
+/// Why the spawns the players picked cannot start a game on a map with
+/// `spawns` spawns, or None: a pick past the last spawn, or two players on
+/// one spawn (the lobbies never send either; packages/protocol checks the
+/// same as far as it can without the map).
+pub fn spawn_pick_problem(players: &[PlayerSetup], spawns: usize) -> Option<String> {
+    let mut seen = vec![false; spawns];
+    for (k, p) in players.iter().enumerate() {
+        let Some(s) = p.spawn.map(usize::from) else { continue };
+        if s >= spawns {
+            return Some(format!("player {} picked spawn {}; this map has {spawns}", k + 1, s + 1));
+        }
+        if seen[s] {
+            return Some(format!("two players picked spawn {}", s + 1));
+        }
+        seen[s] = true;
+    }
+    None
 }
 
 impl World {

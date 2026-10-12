@@ -237,7 +237,7 @@ fn snapshots_continue_like_the_original_and_restore_rewinds() {
 fn stats_world() -> World {
     let players: Vec<PlayerSetup> = [("allies", 1u8), ("soviet", 2), ("england", 1)]
         .iter()
-        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, bot: Default::default(), team: t, handicap: 0 })
+        .map(|&(f, t)| PlayerSetup { faction: f.into(), ai: None, bot: Default::default(), team: t, handicap: 0, spawn: None })
         .collect();
     let mut w = World::with_options(5, 64, &players, crate::world::GameOptions::default());
     w.clear_neutral_world();

@@ -775,7 +775,14 @@ fn play(seed: u64, size: i32, teams: &[u8], diff: AiDifficulty, limit_minutes: u
     let players: Vec<PlayerSetup> = teams
         .iter()
         .enumerate()
-        .map(|(k, &team)| PlayerSetup { faction: factions[k % 8].into(), ai: Some(diff), bot: Default::default(), team, handicap: 0 })
+        .map(|(k, &team)| PlayerSetup {
+            faction: factions[k % 8].into(),
+            ai: Some(diff),
+            bot: Default::default(),
+            team,
+            handicap: 0,
+            spawn: None,
+        })
         .collect();
     let mut w = World::with_options(seed, size, &players, GameOptions::default());
     for _ in 0..25 * 60 * limit_minutes {
@@ -828,6 +835,7 @@ fn generated_maps_are_fair_for_four_players() {
                                 bot: Default::default(),
                                 team,
                                 handicap: 0,
+                                spawn: None,
                             })
                             .collect();
                         let mut w = World::with_options(seed, 96, &players, GameOptions::default());
@@ -955,6 +963,7 @@ fn weakest_player_on_a_ring_is_attacked_by_at_most_one_neighbour() {
                 bot: Default::default(),
                 team: 0,
                 handicap: 0,
+                spawn: None,
             })
             .collect();
         let mut w = World::with_options(seed, 96, &players, GameOptions::default());

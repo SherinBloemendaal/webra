@@ -1,7 +1,7 @@
 // Online lobby state and slot rules (pure, no I/O; serializable to storage).
 //
-// Slots: { type: 'human', client, name, faction, color, team, handicap, ready }
-//        { type: 'ai', difficulty, bot, faction, color, team, handicap }
+// Slots: { type: 'human', client, name, faction, color, team, handicap, spawn?, ready }
+//        { type: 'ai', difficulty, bot, faction, color, team, handicap, spawn? }
 //        { type: 'open' } | { type: 'closed' }
 //
 // Rules:
@@ -13,6 +13,13 @@
 // - host changes to options, map or slots reset everyone's ready flag, a
 //   player's own change resets only their flag;
 // - ready needs the lobby's map hash (null for a generated map);
+// - spawns (OpenRA's lobby spawn selection, `spawn` 0-based, absent for the
+//   automatic choice of protocol spawns.js): a player picks or clears its
+//   own, the host an AI's and clears anyone's (OpenRA clear_spawn); a spawn
+//   one slot picked is taken for the others; never in a co-op mission. The
+//   picks belong to one battlefield (`battlefield`): a new map, mission,
+//   seed, size or style, or on a generated map (one spawn per player) a new
+//   player count clears them all, like OpenRA clears them on a map change;
 // - start: host only, every other human ready, 2+ players, 2+ sides, players
 //   fit the map's spawns. Random factions are resolved here.
 //
@@ -84,7 +91,10 @@ import {
   SAVE_COOLDOWN_MS,
   SAVE_HASH_MS,
   SAVE_VOTE_MS,
+  battlefieldSpawns,
   coopMission,
+  generatedMapPlayers,
+  spawnPickProblem,
 } from '@webra/protocol';
 
 export class RoomError extends Error {
@@ -254,6 +264,30 @@ export class Room {
   }
 
   /**
+   * What the picked spawns refer to: the map file, the co-op mission, or the
+   * generated map of this seed, size, style and player count (protocol
+   * generatedMapPlayers: one spawn per player, so another count is another
+   * map; a host alone already has the two player map).
+   */
+  battlefield() {
+    if (this.mission) return 'mission';
+    if (this.map) return `map:${this.map.hash}`;
+    const o = this.options;
+    return `gen:${o.seed}/${o.mapSize}/${o.mapStyle}/${generatedMapPlayers(this.participants().length)}`;
+  }
+
+  /** How many spawns the lobby's battlefield has (protocol battlefieldSpawns, as the clients count them). */
+  spawnCount() {
+    return battlefieldSpawns({ mission: !!this.mission, mapSpawns: this.map ? this.map.players : null, players: this.participants().length });
+  }
+
+  /** Clear every picked spawn when the battlefield is no longer `before` (a battlefield() value). */
+  keepSpawnsFor(before) {
+    if (this.battlefield() === before || this.resume) return;
+    for (const s of this.slots) delete s.spawn;
+  }
+
+  /**
    * Add a member. Players take the first open slot (lobby only); spectators
    * (`spectate`) join the lobby or a running game while places are free.
    * Returns { client, slot (-1 for spectators), role }.
@@ -273,6 +307,7 @@ export class Room {
       if (this.resume) fail('This lobby continues a saved game: only its players can play. You can watch.', 'forbidden');
       fail('The session is full.', 'full');
     }
+    const field = this.battlefield();
     const client = this.nextClient++;
     this.names[client] = name;
     if (account !== null) this.accounts[client] = account;
@@ -280,6 +315,7 @@ export class Room {
     else this.slots[slot] = this.resume ? this.savedSlot(slot, client, name) : this.newPerson(slot, client, name);
     this.pruneNames();
     if (this.phase === 'lobby' && (host || this.hostId === null)) this.hostId = client;
+    if (this.phase === 'lobby') this.keepSpawnsFor(field);
     return { client, slot, role: spectate ? 'spectator' : 'player' };
   }
 
@@ -290,7 +326,11 @@ export class Room {
    */
   leave(client) {
     const slot = this.slotOf(client);
-    if (slot >= 0 && this.phase === 'lobby') this.slots[slot] = this.resume ? { type: 'open', reserved: slot } : { type: 'open' };
+    const field = this.battlefield();
+    if (slot >= 0 && this.phase === 'lobby') {
+      this.slots[slot] = this.resume ? { type: 'open', reserved: slot } : { type: 'open' };
+      this.keepSpawnsFor(field);
+    }
     this.spectators = this.spectators.filter((s) => s.client !== client);
     // Leaving a lobby is final: joining again goes through the password check.
     if (this.phase === 'lobby') {
@@ -328,6 +368,12 @@ export class Room {
   /** Move between a slot (on: false) and the spectators (on: true), lobby only. */
   spectate(client, on) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    const field = this.battlefield();
+    this.moveSides(client, on);
+    this.keepSpawnsFor(field);
+  }
+
+  moveSides(client, on) {
     const slot = this.slotOf(client);
     const watching = this.isSpectator(client);
     if (slot < 0 && !watching) fail('You are not in this session.', 'bad_state');
@@ -403,7 +449,7 @@ export class Room {
   /** The saved player `i` as a lobby slot for `client`. */
   savedSlot(i, client, name) {
     const p = this.resume.options.players[i];
-    return { type: 'human', client, name, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0, ready: false };
+    return { type: 'human', client, name, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0, ...(p.spawn !== undefined ? { spawn: p.spawn } : {}), ready: false };
   }
 
   /** Changing settings is refused while the lobby resumes a save. */
@@ -436,7 +482,7 @@ export class Room {
       if (i >= players.length) return { type: 'closed' };
       const p = players[i];
       if (p.type === 'ai') {
-        return { type: 'ai', difficulty: p.difficulty, bot: p.bot ?? 'normal', faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };
+        return { type: 'ai', difficulty: p.difficulty, bot: p.bot ?? 'normal', faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0, ...(p.spawn !== undefined ? { spawn: p.spawn } : {}) };
       }
       return { type: 'open', reserved: i };
     });
@@ -466,6 +512,7 @@ export class Room {
   setSlot(client, msg) {
     // A refused change changes nothing.
     const before = structuredClone(this.slots);
+    const field = this.battlefield();
     let result;
     try {
       result = this.applySlot(client, msg);
@@ -488,6 +535,8 @@ export class Room {
         }
       }
     }
+    // Another player count makes another generated map: its picks go.
+    this.keepSpawnsFor(field);
     return result;
   }
 
@@ -513,8 +562,11 @@ export class Room {
     if (target >= this.slots.length) fail('No such slot.');
     const cur = this.slots[target];
 
+    if (msg.spawn !== undefined) this.checkSpawn(target, msg.spawn);
+
     if (msg.type !== undefined) {
       if (!host) fail('Only the host can change slot types.', 'not_host');
+      if (msg.spawn !== undefined) fail('Pick the spawn after the slot type.');
       if (target === mine) fail('You cannot change your own slot type.');
       if (this.mission) {
         if (msg.type === 'ai') fail('People play a co-op mission: no AI players.');
@@ -539,7 +591,8 @@ export class Room {
           msg.team !== undefined ||
           msg.difficulty !== undefined ||
           msg.bot !== undefined ||
-          msg.handicap !== undefined
+          msg.handicap !== undefined ||
+          msg.spawn !== undefined
         ) {
           fail('Empty slots have no settings.');
         }
@@ -577,7 +630,28 @@ export class Room {
       return { kicked: null };
     }
 
+    // OpenRA clear_spawn: the host frees another player's spawn (only that;
+    // the player is no longer ready, as in OpenRA).
+    if (cur.type === 'human' && host && msg.spawn === null && Object.keys(msg).every((k) => k === 't' || k === 'slot' || k === 'spawn')) {
+      delete cur.spawn;
+      cur.ready = false;
+      return { kicked: null };
+    }
+
     fail('You cannot change that slot.', 'forbidden');
+  }
+
+  /**
+   * Whether slot `target` may start at `spawn` (0-based; null: automatic
+   * again): a spawn of the lobby's battlefield that no other slot picked,
+   * never in a co-op mission or a resumed save.
+   */
+  checkSpawn(target, spawn) {
+    if (spawn === null) return;
+    if (this.mission) fail('The mission decides where everyone starts.', 'forbidden');
+    const count = this.spawnCount();
+    if (spawn >= count) fail(`This map has ${count} start positions.`);
+    if (this.slots.some((s, i) => i !== target && s.spawn === spawn)) fail('That start position is taken.', 'forbidden');
   }
 
   applySettings(index, msg) {
@@ -590,6 +664,9 @@ export class Room {
     if (msg.team !== undefined) s.team = msg.team;
     // OpenRA handicap: a player's own, or an AI's set by the host (protocol HANDICAPS).
     if (msg.handicap !== undefined) s.handicap = msg.handicap;
+    // The picked spawn (checkSpawn), or null: automatic again.
+    if (msg.spawn === null) delete s.spawn;
+    else if (msg.spawn !== undefined) s.spawn = msg.spawn;
   }
 
   setOptions(client, options) {
@@ -598,7 +675,9 @@ export class Room {
     if (!this.isHost(client)) fail('Only the host can change options.', 'not_host');
     const problem = this.resume ? null : lockedOptionProblem(options, this.map?.setup);
     if (problem) fail(problem, 'forbidden');
+    const field = this.battlefield();
     this.options = { ...options };
+    this.keepSpawnsFor(field);
     this.resetReady();
   }
 
@@ -607,6 +686,7 @@ export class Room {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     if (!resume) this.refuseInResume();
     if (!this.isHost(client)) fail('Only the host can change the map.', 'not_host');
+    const field = this.battlefield();
     // A map that brings its game setup (map format version 2): its slots and options apply now.
     if (map?.setup && !resume) this.applyMapSetup(map.setup);
     this.map = map ? { ...map } : null;
@@ -614,6 +694,7 @@ export class Room {
     this.mapStates = map ? { [client]: 'installed' } : {};
     // A map (or a generated one) means a skirmish: no mission.
     if (!resume) this.mission = null;
+    this.keepSpawnsFor(field);
     this.resetReady();
   }
 
@@ -685,8 +766,10 @@ export class Room {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     if (!resume) this.refuseInResume();
     if (!this.isHost(client)) fail('Only the host can choose a mission.', 'not_host');
+    const field = this.battlefield();
     if (mission === null) {
       this.mission = null;
+      this.keepSpawnsFor(field);
       this.resetReady();
       return;
     }
@@ -706,6 +789,7 @@ export class Room {
     this.mission = { id: mission.id, hash: mission.hash, options: { ...mission.options } };
     this.map = null;
     this.mapStates = {};
+    this.keepSpawnsFor(field);
     this.resetReady();
   }
 
@@ -776,6 +860,8 @@ export class Room {
     if (this.map && players.length > this.map.players) return `This map has room for ${this.map.players} players.`;
     const locked = this.lockedProblem();
     if (locked) return locked;
+    const picks = this.resume ? null : spawnPickProblem(players, this.spawnCount());
+    if (picks) return picks;
     if (this.resume) {
       const waiting = this.resumeView().waiting;
       if (waiting.length) return `Waiting for ${waiting.join(', ')} to come back.`;
@@ -803,19 +889,21 @@ export class Room {
     const players = [];
     const startPlayers = [];
     const seats = [];
+    // The spawn a slot picked; automatic ones are left out (protocol spawns.js decides with the engine).
+    const picked = (s) => (Number.isInteger(s.spawn) ? { spawn: s.spawn } : {});
     this.slots.forEach((s, slot) => {
       if (s.type !== 'human' && s.type !== 'ai') return;
       const index = players.length;
       const pool = RANDOM_FACTIONS[s.faction];
       const faction = pool ? pool[pick(pool.length)] : s.faction;
       if (s.type === 'human') {
-        players.push({ slot: index, type: 'human', name: s.name, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0 });
+        players.push({ slot: index, type: 'human', name: s.name, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0, ...picked(s) });
         startPlayers.push({ player: index, slot, client: s.client, name: s.name, type: 'human' });
         seats.push(s.client);
       } else {
         const name = aiName(s);
         const bot = s.bot ?? 'normal';
-        players.push({ slot: index, type: 'ai', name, difficulty: s.difficulty, bot, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0 });
+        players.push({ slot: index, type: 'ai', name, difficulty: s.difficulty, bot, faction, color: s.color, team: s.team, handicap: s.handicap ?? 0, ...picked(s) });
         startPlayers.push({ player: index, slot, client: null, name, type: 'ai' });
         seats.push(null);
       }
@@ -914,6 +1002,7 @@ export class Room {
     if (!this.rematchAgreed()) fail('Not everyone accepted the rematch.', 'bad_state');
     const by = this.rematch.by;
     const keep = new Set(present.filter((c) => this.slotOf(c) >= 0 || this.isSpectator(c)));
+    const field = this.battlefield();
     this.slots = this.slots.map((s) => {
       if (s.type !== 'human') return s;
       return keep.has(s.client) ? { ...s, ready: false } : { type: 'open' };
@@ -934,6 +1023,7 @@ export class Room {
     this.mapStates = this.map ? Object.fromEntries([...keep].map((c) => [c, 'installed'])) : {};
     this.hostId = keep.has(by) ? by : (this.slots.find((s) => s.type === 'human')?.client ?? this.spectators[0]?.client ?? null);
     this.returning = Object.fromEntries([...keep].map((c) => [c, now + REMATCH_RETURN_MS]));
+    this.keepSpawnsFor(field);
     return [...keep];
   }
 

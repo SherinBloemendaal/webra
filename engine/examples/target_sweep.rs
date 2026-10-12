@@ -46,6 +46,7 @@ fn play(seed: u64, passive: usize, minutes: u32, size: i32) -> Run {
             bot: Default::default(),
             team: 0,
             handicap: 0,
+            spawn: None,
         })
         .collect();
     let options = GameOptions { map_style: MapStyle::Random, ..GameOptions::default() };

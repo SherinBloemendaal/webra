@@ -12,6 +12,12 @@
 //   when chosen) or WebRA's own. Atlases are shared between lenses and kept
 //   for the last few rule sets and biomes; a content change (install,
 //   Graphics setting, pack order) drops them and tells the lenses.
+// - In steps: reading a map takes a few hundred milliseconds the first time
+//   (the engine's map, the sprite and terrain atlases), so `mapSteps`,
+//   `generatedSteps` and `missionSteps` are generators that do one part per
+//   step and yield the share done (0..1) in between; the lens runs one step
+//   per idle task (js/maplens/lens.js), so no single task holds the page up
+//   for all of it. `fromMap` and friends run every step at once.
 
 import { applyGameArt, artActors, buildGameAtlas } from '../gameart.js';
 import { buildTerrainAtlas, cellTiles, terrainSeed } from '../art/terrain.js';
@@ -32,6 +38,14 @@ export function hexColor(text) {
   if (typeof text !== 'string' || !/^[0-9a-f]{6}$/i.test(text)) return null;
   const v = parseInt(text, 16);
   return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+}
+
+/** Run a step generator (`mapSteps` and friends) to its end; returns its map. */
+export function runSteps(steps) {
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
 }
 
 /** 16 team colours: `colors` where given, else the preview palette, else grey. */
@@ -85,19 +99,37 @@ export class LensArt {
     this.changed();
   }
 
-  /** A map file (JSON text). `colors`: team colours by spawn (the lobby's players). */
+  /** A map file (JSON text). `colors`: team colours by player (the lobby's players that play, in slot order). */
   fromMap(json, { colors } = {}) {
-    const map = JSON.parse(json);
-    return this.build(this.Game.editor_preview(json), { biome: map.biome, spawns: map.spawns, colors });
+    return runSteps(this.mapSteps(json, { colors }));
   }
 
   /** A generated map, exactly as a game with these lobby options gets it. */
-  fromGenerated({ seed, size, players, style = 'random', biome = 'random', tech = 'standard', colors }) {
-    return this.fromMap(this.Game.generated_map_with(seed, size, players, style, biome, tech), { colors });
+  fromGenerated(opts) {
+    return runSteps(this.generatedSteps(opts));
   }
 
   /** A mission file (JSON text): its map with the mission's actors, in the mission's colours. */
   fromMission(text) {
+    return runSteps(this.missionSteps(text));
+  }
+
+  /** `fromMap` in steps (see the header). */
+  *mapSteps(json, { colors } = {}) {
+    const map = JSON.parse(json);
+    const game = this.Game.editor_preview(json);
+    return yield* this.buildSteps(game, { biome: map.biome, spawns: map.spawns, colors }, 0.2);
+  }
+
+  /** `fromGenerated` in steps: the engine generates the map first. */
+  *generatedSteps({ seed, size, players, style = 'random', biome = 'random', tech = 'standard', colors }) {
+    const json = this.Game.generated_map_with(seed, size, players, style, biome, tech);
+    yield 0.15;
+    return yield* this.mapSteps(json, { colors });
+  }
+
+  /** `fromMission` in steps. */
+  *missionSteps(text) {
     const game = this.Game.from_mission(text, JSON.stringify({ seed: 1 }));
     let colors = [];
     try {
@@ -106,7 +138,7 @@ export class LensArt {
       game.free?.();
       throw err;
     }
-    return this.build(game, { biome: JSON.parse(text).map?.biome, spawns: [], colors });
+    return yield* this.buildSteps(game, { biome: JSON.parse(text).map?.biome, spawns: [], colors }, 0.2);
   }
 
   /** The sprite atlas for `actors` on `biome`, shared and kept for the last few. */
@@ -136,17 +168,34 @@ export class LensArt {
   }
 
   /** Read everything the lens needs from an engine game, then free it. */
-  build(game, { biome, spawns = [], colors = [] }) {
+  build(game, opts) {
+    return runSteps(this.buildSteps(game, opts));
+  }
+
+  /**
+   * `build` in steps: the rules, the sprite atlas (built once per rule set
+   * and biome), the world's terrain and sprites, the terrain tiles. The
+   * game is freed at the end, or when the steps are abandoned (return()).
+   * Yields the share done, from `from` to 1.
+   */
+  *buildSteps(game, { biome, spawns = [], colors = [] }, from = 0) {
+    const share = (k) => from + ((1 - from) * k) / 4;
     try {
+      yield share(0);
       const b = biome === 'snow' || biome === 'desert' ? biome : 'temperate';
       const width = game.map_width();
       const height = game.map_height();
       const actors = artActors(JSON.parse(game.rules_json()).actors);
+      yield share(1);
       const { atlas, original } = this.spriteAtlas(actors, b);
+      yield share(2);
       applyGameArt(game, atlas, original);
       const terrain = new Uint8Array(this.memory().buffer, game.terrain_ptr(), game.terrain_len()).slice();
       const n = game.build_render(OBSERVER_VIEW, 1, 0, 0, width * CELL_PX, height * CELL_PX);
       const sprites = new Float32Array(this.memory().buffer, game.sprite_ptr(), n * SPRITE_FLOATS).slice();
+      game.free?.();
+      game = null;
+      yield share(3);
       const tiles = this.tiles(b, terrain, width, height);
       return {
         width,
@@ -163,10 +212,12 @@ export class LensArt {
         /** 'installed' when installed graphics (original or a pack) draw sprites, else 'webra'. */
         spriteSource: atlas.filter === 'nearest' ? 'installed' : 'webra',
         colors: teamColors(colors),
+        /** The colours without the players' (the lens puts the lobby's over these, MapLens.setColors). */
+        palette: teamColors(colors),
         spawns: Array.isArray(spawns) ? spawns.filter((s) => Array.isArray(s) && s.length >= 2).map(([x, y]) => [x, y]) : [],
       };
     } finally {
-      game.free?.();
+      game?.free?.();
     }
   }
 }

@@ -20,12 +20,12 @@ export const HELP = Object.freeze({
 
   // ---- Battlefield ---------------------------------------------------------------
   mapSource:
-    "Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold).",
+    "Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.",
   mapSize: 'Width and height of a generated map in cells: Small 64, Medium 96, Large 128, Huge 160. Five or more players need at least Medium.',
   mapFile:
     'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first. Maps made for an older WebRA are upgraded automatically; save them in the map editor to keep the upgrade.',
   onlineMap:
-    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold).',
+    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.',
   seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',
 
   // ---- World -----------------------------------------------------------------------
@@ -54,7 +54,7 @@ export const HELP = Object.freeze({
   shortGame: 'A player loses when its last structure (and MCV) is gone, not its last unit. Defences, walls and fake structures do not count.',
   allyBuildRadius: "Allied structures count too: you may build next to your allies' structures and within range of their Construction Yards.",
   separateTeamSpawns:
-    'In a team game the team mates start next to each other, as far as possible from their enemies. Off, or without teams: every slot starts at the start position with its number.',
+    'In a team game the team mates who did not pick a start position start next to each other, as far as possible from their enemies. Off, or without teams: every slot starts at its own start position (slot 1 at A, slot 2 at B...) unless someone picked that one.',
   bounty: 'Destroying an enemy unit or structure pays 10 percent of its value to the player who did it.',
   timeLimit:
     'The game ends after this many minutes of game time; the announcer counts the last minutes down. Then the side with the most experience (kills, repairs for allies) wins; players without a team count as one side, of which only the best player wins.',
@@ -77,6 +77,8 @@ export const HELP = Object.freeze({
   team: 'Players on the same team share vision, never target each other and win together. None: everyone for themselves.',
   handicap:
     'Makes a player weaker on purpose, to even out a match: a 25 percent handicap means 75 percent firepower, a third more damage taken and 25 percent longer to build.',
+  spawn:
+    'Where the player starts. Automatic shows where the lobby puts the player now (it moves when someone picks that position). Pick a position here, or click a marker on the map preview: a free one is yours (the host places its AI players there first, then itself), clicking your own frees it again, a position another player picked is taken. Right-click (or Delete on a marked position) frees it; the host can free anyone\'s. On a generated map the map itself changes with the seed, size, style and number of players, and so the picks are cleared.',
   spectators:
     'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators.',
 

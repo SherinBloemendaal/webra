@@ -19,6 +19,7 @@ import {
   NAME_MIN,
   PLAYABLE_FACTIONS,
   SEED_MAX,
+  SPAWN_MAX,
   STARTING_CASH,
   STARTING_UNITS,
   TEAM_MAX,
@@ -75,7 +76,7 @@ export function validateLobbyOptions(v, what = 'options', { legacy = false } = {
   return out;
 }
 
-const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'difficulty', 'bot', 'handicap'];
+const PLAYER_KEYS = ['slot', 'type', 'name', 'faction', 'color', 'team', 'difficulty', 'bot', 'handicap', 'spawn'];
 
 /**
  * Validate the options the engine receives at game start: lobby options plus
@@ -89,6 +90,7 @@ export function validateGameOptions(v, what = 'options') {
     fail(`${what}.players must list ${MIN_PLAYERS} to ${MAX_PLAYERS} players`);
   }
   const colors = new Set();
+  const spawns = new Set();
   out.players = players.map((p, i) => {
     const w = `${what}.players[${i}]`;
     object(p, PLAYER_KEYS, w);
@@ -114,6 +116,14 @@ export function validateGameOptions(v, what = 'options') {
     player.team = int(p.team ?? 0, 0, TEAM_MAX, `${w}.team`);
     // Handicap: left out means 0 (the engine's default), as in games before it existed.
     if (p.handicap !== undefined) player.handicap = oneOf(p.handicap, HANDICAPS, `${w}.handicap`);
+    // The spawn picked in the lobby (0-based): left out means the automatic
+    // choice (spawns.js), as in games before spawn picks. Whether the map
+    // has it is the engine's check.
+    if (p.spawn !== undefined) {
+      player.spawn = int(p.spawn, 0, SPAWN_MAX, `${w}.spawn`);
+      if (spawns.has(player.spawn)) fail(`${w}.spawn is picked twice`);
+      spawns.add(player.spawn);
+    }
     return player;
   });
   return out;

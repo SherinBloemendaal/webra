@@ -5,7 +5,7 @@
 
 // The last setup is kept in the settings registry (js/registry.js, group
 // "lobby"), which migrated the older keys webra.lobby.v2 and v1.
-import { assignSpawns } from '../protocol/spawns.js';
+import { assignSpawns, battlefieldSpawns, generatedMapPlayers, spawnLetter, spawnPickProblem } from '../protocol/spawns.js';
 import { validateMap } from '../protocol/map.js';
 import { incompatibleMapMessage, upgradeMap } from '../protocol/mapversions.js';
 import { canonicalSlot, lockedOptionProblem, lockedSlotProblem, mapSlot } from '../protocol/mapsetup.js';
@@ -362,6 +362,8 @@ function sanitizePlayer(raw, fallback) {
     color: p.color,
     team: Number.isInteger(p.team) && p.team >= 0 && p.team <= TEAM_COUNT ? p.team : 0,
     handicap: oneOf(p.handicap, HANDICAPS.map((h) => h.value), 0),
+    // The start position picked on the preview (0-based); absent: automatic.
+    ...(Number.isInteger(p.spawn) && p.spawn >= 0 && p.spawn < MAX_SLOTS && type !== 'closed' ? { spawn: p.spawn } : {}),
   };
 }
 
@@ -499,6 +501,7 @@ export function setSlotType(state, slot, value, spawnLimit = MAX_SLOTS) {
   if (type === 'closed') {
     if (p.type !== 'closed' && activeCount(state) <= MIN_PLAYERS) return false;
     p.type = 'closed';
+    delete p.spawn;
     return true;
   }
   return false;
@@ -536,6 +539,8 @@ export function startProblem(state, mapFile) {
     const locked = mapSetupProblem(state, mapFile.setup);
     if (locked) return locked;
   }
+  const picks = spawnPickProblem(active.map(({ p }) => p), battlefieldSpawns({ mapSpawns: state.mapSource === 'file' && mapFile ? mapFile.spawns : null, players: active.length }));
+  if (picks) return picks;
   const teams = new Set(active.map(({ p }) => p.team));
   if (teams.size === 1 && !teams.has(0)) return 'Everyone is on the same team: nobody to fight.';
   return null;
@@ -635,7 +640,7 @@ export function buildOptions(state, mapJson = null) {
     techBuildings: s.techBuildings,
     players: s.players.map((p, slot) => {
       if (p.type === 'closed') return { slot, type: 'closed' };
-      const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0 };
+      const base = { slot, type: p.type, faction: p.faction, color: p.color, team: p.team, handicap: p.handicap ?? 0, ...(Number.isInteger(p.spawn) ? { spawn: p.spawn } : {}) };
       return p.type === 'human' ? { ...base, name: cleanName(p.name) } : { ...base, difficulty: p.difficulty, bot: p.bot ?? 'normal' };
     }),
     startingCash: s.startingCash,
@@ -739,30 +744,86 @@ export function inspectMapFile(text, validate, versions = undefined) {
 }
 
 /**
- * Start markers for the preview. Spawn k goes to the k-th taking-part slot
- * (closed slots are skipped, like the engine does), or with "Separate team
- * spawns" in a team game where protocol `assignSpawns` puts each player (as
- * the engine does, engine/src/gamerules.rs). Positions are percentages of
- * the map, at the centre of the 3 x 4 construction yard footprint.
+ * Start markers for the preview, one per spawn of the map (js/spawnpick.js
+ * shows them): where each taking-part slot starts (closed slots are
+ * skipped, like the engine does), as protocol `assignSpawns` decides it
+ * with the spawns players picked and "Separate team spawns" (the engine
+ * does the same, engine/src/gamerules.rs). `index` and `letter` name the
+ * spawn (OpenRA's A, B, C...), `slot` and `color` its player (null when
+ * nobody starts there), `picked` whether that player picked it. Positions
+ * are percentages of the map, at the centre of the 3 x 4 construction yard
+ * footprint, and cells (x, y) for the map lens.
  */
 export function spawnMarkers(spawnCells, width, height, state) {
   const active = activeSlots(state);
   const at = new Map();
   if (active.length <= spawnCells.length) {
-    assignSpawns(spawnCells, active.map(({ p }) => ({ team: p.team })), !!state.separateTeamSpawns, state.mapSource !== 'file').forEach((s, k) => at.set(s, active[k]));
+    const players = active.map(({ p }) => ({ team: p.team, spawn: p.spawn }));
+    assignSpawns(spawnCells, players, !!state.separateTeamSpawns, state.mapSource !== 'file').forEach((s, k) => at.set(s, active[k]));
   }
   return spawnCells.map(([x, y], k) => {
     const a = at.get(k);
     return {
+      index: k,
+      letter: spawnLetter(k),
       // The centre in cells (the map lens draws there) and in percent of the map.
       x: x + 1.5,
       y: y + 2,
       left: ((x + 1.5) / width) * 100,
       top: ((y + 2) / height) * 100,
-      // Taken spawns show the player number; empty ones stay blank.
-      number: a ? a.slot + 1 : null,
       slot: a ? a.slot : null,
       color: a ? a.p.color : null,
+      picked: !!a && a.p.spawn === k,
     };
   });
+}
+
+/**
+ * What the picked spawns refer to (the server's Room.battlefield): the map
+ * file, or the generated map of this seed, size, style and player count
+ * (one spawn per player). When it changes the picks are cleared, like
+ * OpenRA clears them on a map change.
+ */
+export function battlefieldKey(state, mapHash = null) {
+  if (state.mapSource === 'file') return `map:${mapHash}`;
+  return `gen:${state.seed}/${state.mapSize}/${state.mapStyle}/${generatedMapPlayers(activeCount(state))}`;
+}
+
+/** Every slot back to an automatic start position. Returns whether any had picked one. */
+export function clearSpawnPicks(state) {
+  let any = false;
+  for (const p of state.players) {
+    if (p.spawn !== undefined) any = true;
+    delete p.spawn;
+  }
+  return any;
+}
+
+/**
+ * Slot `slot` starts at spawn `spawn` (0-based; null: automatic again), on
+ * a battlefield of `count` spawns. Refused (false) for a closed slot, a
+ * spawn the map does not have or one another slot picked.
+ */
+export function setSpawnPick(state, slot, spawn, count) {
+  const p = state.players[slot];
+  if (!p || p.type === 'closed') return false;
+  if (spawn === null) {
+    const had = p.spawn !== undefined;
+    delete p.spawn;
+    return had;
+  }
+  if (!Number.isInteger(spawn) || spawn < 0 || spawn >= count) return false;
+  if (state.players.some((q, i) => i !== slot && q.type !== 'closed' && q.spawn === spawn)) return false;
+  p.spawn = spawn;
+  return true;
+}
+
+/** Drop picks the battlefield of `count` spawns cannot hold (a stored lobby, a smaller map). */
+export function settleSpawnPicks(state, count) {
+  const seen = new Set();
+  for (const p of state.players) {
+    if (p.spawn === undefined) continue;
+    if (p.type === 'closed' || p.spawn >= count || seen.has(p.spawn)) delete p.spawn;
+    else seen.add(p.spawn);
+  }
 }

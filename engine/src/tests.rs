@@ -763,6 +763,7 @@ fn setups(list: &[(&str, bool, u8)]) -> Vec<crate::world::PlayerSetup> {
             bot: Default::default(),
             team,
             handicap: 0,
+            spawn: None,
         })
         .collect()
 }

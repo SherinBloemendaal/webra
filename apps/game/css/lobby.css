@@ -570,32 +570,7 @@
   pointer-events: none;
 }
 
-#menu .lobby-marker {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  transform: translate(-50%, -50%);
-  background: var(--marker-color, #444);
-  border: 2px solid #000;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
-  color: #fff;
-  font: 900 11px/1 var(--ui-font-mono);
-  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
-  pointer-events: auto;
-  cursor: default;
-}
-
-#menu .lobby-marker-empty {
-  background: rgba(0, 0, 0, 0.55);
-  border-style: dashed;
-  border-color: var(--l-muted);
-  box-shadow: none;
-  color: var(--l-muted);
-  text-shadow: none;
-}
+/* The start markers themselves: css/spawns.css. */
 
 #menu .lobby-preview-fail {
   position: absolute;
