@@ -656,9 +656,9 @@ pub struct AircraftInfo {
     pub take_off_on_resupply: bool,
     /// AttackAircraft FacingTolerance: may fire while this far off the target's bearing.
     pub facing_tolerance: i32,
-    /// AttackAircraft AbortOnResupply (OpenRA default true): out of ammo the
-    /// attack and the orders queued after it end, and the aircraft stays at
-    /// its base once rearmed; false: it takes the attack up again.
+    /// AttackAircraft AbortOnResupply: true ends the attack and the orders
+    /// queued after it, and the aircraft stays at its base once rearmed;
+    /// false (WebRA's default, OpenRA's is true) takes the attack up again.
     #[serde(default = "abort_on_resupply_default")]
     pub abort_on_resupply: bool,
     /// Ammo pips shown under a selected aircraft.
@@ -744,9 +744,10 @@ struct RawLocomotor {
     wait_average: i32,
 }
 
-/// OpenRA AttackFollowInfo.AbortOnResupply default.
+/// WebRA's AbortOnResupply default: aircraft out of ammo come back for
+/// their target once rearmed (OpenRA's AttackFollowInfo default is true).
 fn abort_on_resupply_default() -> bool {
-    true
+    false
 }
 
 /// OpenRA LocomotorInfo.WaitAverage default.

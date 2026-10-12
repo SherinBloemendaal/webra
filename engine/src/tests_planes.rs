@@ -132,10 +132,10 @@ fn parked_plane_takes_off_flies_to_the_target_and_circles() {
 }
 
 /// Attack runs of plane `id` (Yak, MiG) until the AmmoPool is empty, then
-/// home to the airfield to rearm. With `abort` (OpenRA AttackAircraft
-/// AbortOnResupply, true in Red Alert) the attack ends there and the plane
-/// stays parked; without it the plane takes off again once full and
-/// resumes the attack.
+/// home to the airfield to rearm. With `abort` (AttackAircraft
+/// AbortOnResupply: OpenRA's default, not WebRA's) the attack ends there
+/// and the plane stays parked; without it the plane takes off again once
+/// full and resumes the attack.
 fn plane_out_of_ammo(id: &str, abort: bool) -> (World, usize) {
     let mut w = game("soviet");
     let t = ty(&w, id) as usize;
@@ -182,8 +182,9 @@ fn plane_out_of_ammo(id: &str, abort: bool) -> (World, usize) {
     (w, p)
 }
 
+/// With AbortOnResupply true (OpenRA's default; a modded map can set it).
 #[test]
-fn planes_out_of_ammo_rearm_and_their_attack_ends_like_openra() {
+fn planes_with_abort_on_resupply_rearm_and_their_attack_ends() {
     for id in ["YAK", "MIG"] {
         let (mut w, p) = plane_out_of_ammo(id, true);
         assert_eq!(w.actors[p].air.phase, Phase::Parked, "{id} stays on the airfield");
@@ -194,9 +195,14 @@ fn planes_out_of_ammo_rearm_and_their_attack_ends_like_openra() {
     }
 }
 
+/// WebRA's default (AbortOnResupply false for every aircraft, the owner's
+/// choice): the plane comes back for its target once rearmed.
 #[test]
-fn planes_without_abort_on_resupply_resume_their_attack_once_rearmed() {
+fn planes_resume_their_attack_once_rearmed_by_default() {
     for id in ["YAK", "MIG"] {
+        let w = game("soviet");
+        let t = ty(&w, id) as usize;
+        assert!(!w.rules.actors[t].unit.as_ref().unwrap().aircraft.as_ref().unwrap().abort_on_resupply, "{id}");
         let (w, p) = plane_out_of_ammo(id, false);
         assert_eq!(w.actors[p].air.phase, Phase::Flying, "{id} resumes the attack once full");
         assert_eq!(w.actors[p].activity, Activity::Attack);

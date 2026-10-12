@@ -14596,7 +14596,7 @@
      "wait_distance": 4096,
      "take_off_on_resupply": true,
      "facing_tolerance": 512,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 0,
      "rotors": [
       597,
@@ -14786,7 +14786,7 @@
      "wait_distance": 4096,
      "take_off_on_resupply": true,
      "facing_tolerance": 80,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 6,
      "rotors": [
       0
@@ -14975,7 +14975,7 @@
      "wait_distance": 4096,
      "take_off_on_resupply": true,
      "facing_tolerance": 80,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 6,
      "rotors": [
       0
@@ -15166,7 +15166,7 @@
      "wait_distance": 4096,
      "take_off_on_resupply": true,
      "facing_tolerance": 80,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 8,
      "rotors": [
       0
@@ -15348,7 +15348,7 @@
      "wait_distance": 3072,
      "take_off_on_resupply": false,
      "facing_tolerance": 80,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 6,
      "rotors": [],
      "drop_range": 0,
@@ -15529,7 +15529,7 @@
      "wait_distance": 3072,
      "take_off_on_resupply": false,
      "facing_tolerance": 80,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 8,
      "rotors": [],
      "drop_range": 0,
@@ -16027,7 +16027,7 @@
      "wait_distance": 3072,
      "take_off_on_resupply": false,
      "facing_tolerance": 512,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 0,
      "rotors": [],
      "drop_range": 0,
@@ -16137,7 +16137,7 @@
      "wait_distance": 3072,
      "take_off_on_resupply": false,
      "facing_tolerance": 512,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 0,
      "rotors": [],
      "drop_range": 4096,
@@ -16240,7 +16240,7 @@
      "wait_distance": 3072,
      "take_off_on_resupply": false,
      "facing_tolerance": 512,
-     "abort_on_resupply": true,
+     "abort_on_resupply": false,
      "ammo_pips": 10,
      "rotors": [],
      "drop_range": 0,

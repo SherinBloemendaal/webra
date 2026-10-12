@@ -14,9 +14,9 @@
 //!   turn back for the next pass. Every shot uses one round of the AmmoPool.
 //! - Out of ammo the plane returns to a free airfield (Rearmable
 //!   `RearmActors`), lands, rearms `ReloadCount` rounds every `ReloadDelay`
-//!   ticks. Its attack ends there (OpenRA AttackAircraft AbortOnResupply,
-//!   true in Red Alert); with AbortOnResupply false it takes off again once
-//!   full and resumes the attack if the target still lives.
+//!   ticks. With AttackAircraft AbortOnResupply false (WebRA's default) it
+//!   takes off again once full and resumes the attack if the target still
+//!   lives; with it true (OpenRA's default) the attack ends there.
 //! - Airborne planes are only hit by anti-air weapons; landed ones count as
 //!   ground vehicles (OpenRA `Targetable@GROUND` / `Targetable@AIRBORNE`).
 //! - Shot down in the air they fall (`FallsToEarth` of `^PlaneHusk`) and
@@ -472,10 +472,11 @@ impl World {
         match self.actors[i].activity {
             Activity::Attack => match self.plane_target(i) {
                 Some(_) if self.ammo_left(i) == 0 => {
-                    // Out of ammo (OpenRA FlyAttack): rearm at a base. With
-                    // AbortOnResupply (Red Alert's default) the attack and the
-                    // orders queued after it end there; without it the plane
-                    // comes back for the target once full (`tick_parked`).
+                    // Out of ammo (OpenRA FlyAttack): rearm at a base. Without
+                    // AbortOnResupply (WebRA's default) the plane comes back
+                    // for the target once full (`tick_parked`); with it
+                    // (OpenRA's default) the attack and the orders queued
+                    // after it end there.
                     if self.abort_on_resupply(i) {
                         let a = &mut self.actors[i];
                         a.activity = Activity::Idle;

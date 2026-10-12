@@ -443,9 +443,10 @@ impl World {
     /// Out of ammo during an attack (OpenRA FlyAttack). On an attack-move it
     /// never resupplies: the attack ends and the move goes on (its scans
     /// skip targets while the AmmoPool is empty, `has_ammo`). Otherwise it
-    /// flies to a helipad to reload (ReturnToBase); with AbortOnResupply
-    /// (Red Alert's default) the attack and the queued orders end, without
-    /// it the attack is taken up again once full (`heli_resume`).
+    /// flies to a helipad to reload (ReturnToBase); without AbortOnResupply
+    /// (WebRA's default) the attack is taken up again once full
+    /// (`heli_resume`), with it (OpenRA's default) the attack and the queued
+    /// orders end. A new order meanwhile cancels the resume (`heli_cancel`).
     fn heli_out_of_ammo(&mut self, i: usize, ft: FireTarget) {
         if self.actors[i].attack_move {
             let (dx, dy) = self.actors[i].dest;

@@ -1655,12 +1655,16 @@ engage on attack-move or an attack order. Rounds are spent per shot; an empty
 helicopter reserves a free helipad (one per pad), lands, reloads
 `reload_count` rounds every `reload_delay` ticks (OpenRA AmmoPool) and takes
 off again. Helicopters and planes out of ammo follow OpenRA's FlyAttack and
-AttackAircraft `AbortOnResupply` (rules.json `aircraft.abort_on_resupply`,
-true for every Red Alert aircraft): the attack and the orders queued after
-it end while they rearm, and they wait at the base (or hover after
-`TakeOffOnResupply`) for a new order; with it false they take the attack up
-again once full, heading for where the target was last seen when the base
-does not see it. On an attack-move they never resupply: the attack ends,
+AttackAircraft `AbortOnResupply` (rules.json `aircraft.abort_on_resupply`).
+WebRA deviates on purpose (the owner's choice): the default is false for every
+aircraft, where OpenRA's is true and no Red Alert rule changes it. So an
+aircraft out of ammo always rearms and then takes the attack up again once
+full, heading for where the target was last seen when the base does not see
+it; a dead target leaves it waiting at the base. A new order given meanwhile
+replaces that attack. A map's rules that set `AbortOnResupply: true` get
+OpenRA's behaviour: the attack and the orders queued after it end while
+they rearm, and they wait at the base (or hover after `TakeOffOnResupply`)
+for a new order. On an attack-move they never resupply: the attack ends,
 the move goes on, and an aircraft with an empty AmmoPool picks no targets. Damaged helicopters land on the service depot to be repaired.
 Shot down in the air they fall and explode on impact.
 
