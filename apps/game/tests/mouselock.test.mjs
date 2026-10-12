@@ -18,17 +18,22 @@ import {
   CAPTURE_ACTION,
   CAPTURE_MODES,
   ESC_GUARD_MS,
+  FIRST_MOVE_JUMP,
   HINT_LIMIT,
   MouseCapture,
+  RAW_ACCEL,
   RELOCK_COOLDOWN_MS,
   VIRTUAL_POINTER_ID,
   clampToView,
   cursorArt,
   hintText,
   mirrorPointerStates,
+  moveDuration,
   movementFactor,
   parseCursor,
   pointerLockAvailable,
+  rawGain,
+  requestRawLock,
 } from '../js/mouselock.js';
 
 const NONE = 0xffffffff;
@@ -48,12 +53,23 @@ function clock() {
 }
 
 /**
+ * What a browser does with requestPointerLock({ unadjustedMovement }):
+ * - full: reads the option and returns a promise (Chromium with raw input)
+ * - unsupported: reads the option and rejects it with NotSupportedError
+ *   (Chromium where the system has no raw input)
+ * - ignored: returns a promise but never reads the option
+ * - legacy: returns undefined and never reads the option (older Firefox, Safari)
+ */
+const RAW_SUPPORT = ['full', 'unsupported', 'ignored', 'legacy'];
+
+/**
  * The game page: #app with the battlefield canvas (x < 800) and the sidebar
  * (x >= 800) holding a card, a chat line, a list, a scrollable panel and the
  * radar; the Menu button outside the hit map. Pointer Lock on <html>, the
- * game's settings and hotkeys, and a MouseCapture over all of it.
+ * game's settings and hotkeys, and a MouseCapture over all of it. `requests`
+ * records each request's option names (null for none) without reading them.
  */
-function page({ fullscreen = false, unadjusted = true, settingsInit = {}, rejectOptions = false } = {}) {
+function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr = 2 } = {}) {
   const el = (tag, id, parent) => {
     const e = doc.createElement(tag);
     if (id) e.id = id;
@@ -73,7 +89,7 @@ function page({ fullscreen = false, unadjusted = true, settingsInit = {}, reject
   const menuButton = el('button', 'menu-button', app);
   menuButton.dataset.noCapture = '';
   const outside = el('div', 'lobby', doc.body);
-  Object.assign(win, { innerWidth: 1000, innerHeight: 600, devicePixelRatio: 2, Element: FakeElement });
+  Object.assign(win, { innerWidth: 1000, innerHeight: 600, devicePixelRatio: dpr, Element: FakeElement });
   // Hit map: the sidebar's parts in bands of 100 px from the top.
   const bands = [card, chat, list, row, radar, menuButton];
   doc.elementFromPoint = (x, y) => (x < 800 ? view : (bands[Math.floor(y / 100)] ?? sidebar));
@@ -85,9 +101,12 @@ function page({ fullscreen = false, unadjusted = true, settingsInit = {}, reject
   const requests = [];
   doc.pointerLockElement = null;
   doc.documentElement.requestPointerLock = (opts) => {
-    requests.push(opts ?? null);
-    if (opts && rejectOptions) return Promise.reject(Object.assign(new Error('no raw input'), { name: 'NotSupportedError' }));
-    return unadjusted ? Promise.resolve() : undefined;
+    requests.push(opts ? Object.keys(opts) : null);
+    const reads = rawSupport === 'full' || rawSupport === 'unsupported';
+    if (opts && reads && opts.unadjustedMovement && rawSupport === 'unsupported') {
+      return Promise.reject(Object.assign(new Error('no raw input'), { name: 'NotSupportedError' }));
+    }
+    return rawSupport === 'legacy' ? undefined : Promise.resolve();
   };
   let exits = 0;
   const lockChange = () => doc.dispatchEvent(new FakeEvent('pointerlockchange', { bubbles: false }));
@@ -170,7 +189,7 @@ function lockAt(p, x = 100, y = 100) {
   assert.equal(p.capture.state, 'locked');
 }
 
-/** A real mouse move while locked; the first one after locking is skipped (Chromium can jump then). */
+/** A real mouse move while locked; a first one after locking that jumps (Chromium) is skipped. */
 const move = (p, dx, dy, mods = {}) => p.real('mousemove', { movementX: dx, movementY: dy, ...mods });
 
 // ---- Settings and the hotkey ----------------------------------------------------------------
@@ -246,10 +265,11 @@ test('helpers: availability, speed, clamping, cursor art and the hint text', () 
   assert.equal(pointerLockAvailable(lockable, coarse), false, 'touch only: no capture');
   assert.equal(pointerLockAvailable({ documentElement: {}, exitPointerLock() {} }, fine), false, 'iOS Safari: no Pointer Lock');
   assert.equal(pointerLockAvailable(null, fine), false);
-  assert.equal(movementFactor({ speed: 1, unadjusted: false, dpr: 2 }), 1, 'accelerated movement is CSS px already');
-  assert.equal(movementFactor({ speed: 1, unadjusted: true, dpr: 2 }), 0.5, 'raw counts are about one per device pixel');
-  assert.equal(movementFactor({ speed: 2, unadjusted: true, dpr: 1 }), 2);
-  assert.equal(movementFactor({ speed: NaN, dpr: 0 }), 1);
+  assert.equal(movementFactor({ speed: 1 }), 1, 'accelerated movement is CSS px already');
+  assert.equal(movementFactor({ speed: 2, distance: 50, dtMs: 1 }), 2, 'only the speed setting: the OS accelerated it');
+  assert.equal(movementFactor({ speed: 1, raw: true, distance: 0 }), 1, 'raw at rest: one CSS px per count');
+  assert.equal(movementFactor({ speed: 2, raw: true, distance: RAW_ACCEL.halfSpeed * RAW_ACCEL.nominalMs }), 4, 'raw: the speed setting times the gain (2 at halfSpeed)');
+  assert.equal(movementFactor({ speed: NaN }), 1);
   assert.deepEqual(clampToView(-5, 700, 1000, 600), { x: 0, y: 599 });
   assert.deepEqual(clampToView(1200, 10, 1000, 600), { x: 999, y: 10 });
   assert.deepEqual(parseCursor(CURSORS.attack), { src: parseCursor(CURSORS.attack).src, x: 16, y: 16 });
@@ -268,17 +288,17 @@ test('helpers: availability, speed, clamping, cursor art and the hint text', () 
 
 // ---- The state machine ----------------------------------------------------------------------
 
-test('capture: in fullscreen by default; a click into the game asks with unadjusted movement; the hint shows the first times', () => {
+test('capture: in fullscreen by default; a click into the game asks for the plain (accelerated) lock; the hint shows the first times', () => {
   const p = page();
   p.clickInto(p.view);
   assert.equal(p.requests.length, 0, 'not fullscreen: no capture');
   p.setFullscreen(true);
   assert.equal(p.requests.length, 1, 'entering fullscreen asks');
-  assert.deepEqual(p.requests[0], { unadjustedMovement: true });
+  assert.equal(p.requests[0], null, 'no unadjustedMovement unless Raw mouse input is on');
   assert.equal(p.capture.state, 'pending');
   p.grant();
   assert.equal(p.capture.state, 'locked');
-  assert.equal(p.capture.unadjusted, true);
+  assert.equal(p.capture.raw, false);
   assert.deepEqual(p.hints, ['Mouse captured. Alt+M or Esc to release.']);
   assert.equal(p.settings.get('mouseCaptureHints'), 1);
   // Leaving fullscreen lets go; clicks there do not capture.
@@ -310,11 +330,11 @@ test('capture: what a click captures (the game, not Menu, text fields, lists or 
 });
 
 test('capture: no raw movement falls back to the plain lock; refusals and late grants end cleanly', async () => {
-  const p = page({ fullscreen: true, rejectOptions: true });
+  const p = page({ fullscreen: true, rawSupport: 'unsupported', settingsInit: { mouseCaptureRaw: true } });
   p.clickInto(p.view);
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(p.requests, [{ unadjustedMovement: true }, null]);
-  assert.equal(p.capture.unadjusted, false);
+  assert.deepEqual(p.requests, [['unadjustedMovement'], null]);
+  assert.equal(p.capture.raw, false);
   p.grant();
   assert.equal(p.capture.state, 'locked');
   p.capture.release();
@@ -431,17 +451,17 @@ test('virtual pointer: starts at the real pointer, moves by movement at the righ
   lockAt(p, 100, 100);
   const log = record(p.view, ['pointermove', 'mousemove']);
   move(p, 500, 500);
-  assert.equal(log.length, 0, 'the first movement after locking is skipped');
+  assert.equal(log.length, 0, 'a first movement that jumps is skipped');
   move(p, 30, -10);
-  // Unadjusted (raw) movement on a 2x screen: half.
+  // The OS cursor's (accelerated) movement on a 2x screen: CSS px as they come.
   assert.deepEqual(log.map((e) => [e.type, e.x, e.y]), [
-    ['pointermove', 115, 95],
-    ['mousemove', 115, 95],
+    ['pointermove', 130, 90],
+    ['mousemove', 130, 90],
   ]);
   assert.equal(log[0].pointerId, VIRTUAL_POINTER_ID);
   p.settings.set('mouseCaptureSpeed', 2);
   move(p, 10, 10);
-  assert.deepEqual([log.at(-1).x, log.at(-1).y], [125, 105]);
+  assert.deepEqual([log.at(-1).x, log.at(-1).y], [150, 110]);
   move(p, -100000, -100000);
   assert.deepEqual([log.at(-1).x, log.at(-1).y], [0, 0]);
   move(p, 100000, 100000);
@@ -455,6 +475,138 @@ test('virtual pointer: starts at the real pointer, moves by movement at the righ
   assert.equal(p.capture.pointer.x, 499);
 });
 
+// ---- Raw mouse input, the speed and the first move ------------------------------------------------
+
+test('raw mouse input: off by default, a switch synced through the account document', () => {
+  const s = createSettings(null);
+  assert.equal(s.get('mouseCaptureRaw'), false, 'the OS movement by default');
+  assert.equal(specOf('game', 'mouseCaptureRaw').type, 'boolean');
+  assert.equal(defaultValues().game.mouseCaptureRaw, false);
+  assert.equal(s.set('mouseCaptureRaw', 'yes'), false, 'not a boolean: the default');
+  assert.equal(s.set('mouseCaptureRaw', true), true);
+  assert.deepEqual(validateSettingsDocument({ game: { mouseCaptureRaw: true } }).game, { mouseCaptureRaw: true });
+  assert.throws(() => validateSettingsDocument({ game: { mouseCaptureRaw: 1 } }), (err) => err.field === 'settings.game.mouseCaptureRaw');
+});
+
+test('raw detection: raw only where the browser read the option and took the request', async () => {
+  const lock = async (rawSupport) => {
+    const p = page({ fullscreen: true, rawSupport, settingsInit: { mouseCaptureRaw: true } });
+    p.clickInto(p.view);
+    await new Promise((r) => setImmediate(r));
+    p.grant();
+    assert.equal(p.capture.state, 'locked', rawSupport);
+    const out = { requests: p.requests, raw: p.capture.raw };
+    p.capture.dispose();
+    for (const n of [...doc.body.childNodes]) n.remove();
+    return out;
+  };
+  assert.deepEqual(await lock('full'), { requests: [['unadjustedMovement']], raw: true });
+  assert.deepEqual(await lock('ignored'), { requests: [['unadjustedMovement']], raw: false }, 'a promise alone is no proof');
+  assert.deepEqual(await lock('legacy'), { requests: [['unadjustedMovement']], raw: false }, 'no promise and the option unread');
+  assert.deepEqual(await lock('unsupported'), { requests: [['unadjustedMovement'], null], raw: false }, 'NotSupportedError: the plain lock');
+  // A browser that reads the option but returns no promise (it reports through the events): raw once it locks.
+  const el = { requestPointerLock: (o) => void o.unadjustedMovement };
+  assert.deepEqual(requestRawLock(el), { result: undefined, raw: true });
+  // Errors other than NotSupportedError are the caller's (no gesture, another window has focus).
+  assert.throws(() => requestRawLock({ requestPointerLock: () => { throw new Error('denied'); } }), /denied/);
+  // With the setting off the option is never sent, whatever the browser can do.
+  const off = page({ fullscreen: true, rawSupport: 'full' });
+  off.clickInto(off.view);
+  off.grant();
+  assert.deepEqual(off.requests, [null]);
+  assert.equal(off.capture.raw, false);
+});
+
+test('raw acceleration: 1 at rest, monotonic in the speed and in the distance moved, bounded by maxGain', () => {
+  assert.equal(rawGain(0), 1);
+  assert.equal(rawGain(-5), 1);
+  assert.equal(rawGain(NaN), 1);
+  assert.equal(rawGain(RAW_ACCEL.halfSpeed), (1 + RAW_ACCEL.maxGain) / 2, 'half way at halfSpeed');
+  let prev = rawGain(0);
+  for (let v = 0.05; v <= 1000; v *= 1.1) {
+    const g = rawGain(v);
+    assert.ok(g >= prev, `rising at ${v}`);
+    assert.ok(g >= 1 && g < RAW_ACCEL.maxGain, `bounded at ${v}`);
+    prev = g;
+  }
+  assert.ok(RAW_ACCEL.maxGain - rawGain(1e6) < 1e-6, 'tends to maxGain');
+  // A slow aim is barely scaled, a flick goes about 3 times as far (a 1000 CPI mouse: counts per ms = inches per second).
+  assert.ok(rawGain(0.5) < 1.15);
+  assert.ok(rawGain(6) > 2.7);
+  // Per event: more counts in the same time always move the pointer further, and never more than maxGain times.
+  let last = 0;
+  for (let d = 1; d <= 400; d++) {
+    const out = d * movementFactor({ raw: true, distance: d, dtMs: 8 });
+    assert.ok(out > last, `${d} counts`);
+    assert.ok(out <= d * RAW_ACCEL.maxGain);
+    last = out;
+  }
+  // The same speed gives the same gain whatever the polling rate (125 Hz and 1000 Hz).
+  assert.equal(movementFactor({ raw: true, distance: 16, dtMs: 8 }), movementFactor({ raw: true, distance: 2, dtMs: 1 }));
+  // The time of a move: kept within limits; unknown or after a pause it is a nominal event.
+  assert.equal(moveDuration(0), RAW_ACCEL.minMs);
+  assert.equal(moveDuration(4), 4);
+  assert.equal(moveDuration(NaN), RAW_ACCEL.nominalMs);
+  assert.equal(moveDuration(RAW_ACCEL.maxMs + 1), RAW_ACCEL.nominalMs);
+});
+
+test('captured speed: 1x moves like the OS cursor (CSS px) at 1x and 2x screens; raw is never divided by the pixel ratio', async () => {
+  for (const dpr of [1, 2]) {
+    // The OS (accelerated) movement: exactly what the OS cursor got.
+    const a = page({ dpr });
+    lockAt(a, 100, 100);
+    move(a, 5, 5);
+    move(a, 30, -10);
+    assert.deepEqual([a.capture.pointer.x, a.capture.pointer.y], [135, 95], `accelerated at ${dpr}x`);
+    a.capture.dispose();
+    for (const n of [...doc.body.childNodes]) n.remove();
+    // Raw: counts times the gain at the move's speed, the same at 1x and 2x.
+    const r = page({ dpr, settingsInit: { mouseCaptureRaw: true } });
+    lockAt(r, 100, 100);
+    await new Promise((res) => setImmediate(res));
+    assert.equal(r.capture.raw, true);
+    r.real('mousemove', { movementX: 2, movementY: 0, timeStamp: 1000 });
+    const slow = r.capture.pointer.x - 100;
+    assert.ok(Math.abs(slow - 2 * rawGain(2 / RAW_ACCEL.nominalMs)) < 1e-9, `a slow first move at ${dpr}x: ${slow}`);
+    assert.ok(slow > 2 && slow < 2.1, 'about one CSS px per count');
+    r.real('mousemove', { movementX: 48, movementY: 0, timeStamp: 1008 });
+    const fast = r.capture.pointer.x - 100 - slow;
+    assert.ok(Math.abs(fast - 48 * rawGain(6)) < 1e-9, `a flick at ${dpr}x: ${fast}`);
+    r.settings.set('mouseCaptureSpeed', 0.5);
+    r.real('mousemove', { movementX: 0, movementY: 4, timeStamp: 1100 });
+    assert.ok(Math.abs(r.capture.pointer.y - 100 - 0.5 * 4 * rawGain(4 / RAW_ACCEL.nominalMs)) < 1e-9, 'times the speed setting');
+    r.capture.dispose();
+    for (const n of [...doc.body.childNodes]) n.remove();
+  }
+});
+
+test('first move after locking: dropped only when it jumps more than FIRST_MOVE_JUMP; real deltas are kept', () => {
+  const small = page();
+  lockAt(small, 100, 100);
+  move(small, 12, -7);
+  assert.deepEqual([small.capture.pointer.x, small.capture.pointer.y], [112, 93], 'a real first move is not lost');
+  small.capture.dispose();
+  for (const n of [...doc.body.childNodes]) n.remove();
+  const edge = page();
+  lockAt(edge, 100, 100);
+  move(edge, FIRST_MOVE_JUMP, 0);
+  assert.equal(edge.capture.pointer.x, 100 + FIRST_MOVE_JUMP, 'up to the limit it is a move');
+  edge.capture.dispose();
+  for (const n of [...doc.body.childNodes]) n.remove();
+  const jump = page();
+  lockAt(jump, 100, 100);
+  move(jump, 80, 80); // 113 px: the jump to the old OS cursor position
+  assert.deepEqual([jump.capture.pointer.x, jump.capture.pointer.y], [100, 100]);
+  move(jump, 80, 80);
+  assert.deepEqual([jump.capture.pointer.x, jump.capture.pointer.y], [180, 180], 'only the first one: later large moves are moves');
+  // Each new lock checks its first move again.
+  jump.capture.release();
+  jump.clickInto(jump.view, 50, 50);
+  jump.grant();
+  move(jump, 300, 0);
+  assert.equal(jump.capture.pointer.x, 50);
+});
+
 test('virtual pointer: hover (over, out, enter, leave, :hover marks), clicks, double clicks, right clicks', () => {
   const p = page();
   lockAt(p, 790, 50);
@@ -462,7 +614,7 @@ test('virtual pointer: hover (over, out, enter, leave, :hover marks), clicks, do
   const view = record(p.view, ['pointerout', 'pointerleave', 'mouseout', 'mouseleave']);
   const card = record(p.card, ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'contextmenu', 'auxclick']);
   const sidebar = record(p.sidebar, ['pointerenter', 'mouseenter', 'click']);
-  move(p, 40, 0); // 2x screen, raw: 20 CSS px, into the card at x 810
+  move(p, 20, 0); // 20 CSS px, into the card at x 810
   assert.deepEqual(view.map((e) => e.type), ['pointerout', 'pointerleave', 'mouseout', 'mouseleave']);
   assert.equal(view[0].related, 'card');
   assert.deepEqual(card.map((e) => e.type), ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']);
@@ -530,7 +682,7 @@ test('virtual pointer: text fields take the focus, lists let go of the mouse, th
   p.real('mouseup', { button: 0, buttons: 0 });
   assert.notEqual(doc.activeElement, p.chat, 'a click elsewhere leaves it');
   // The wheel: a panel that scrolls scrolls (a replayed wheel event does not by itself).
-  move(p, 400, 400); // x 900, y 350: the panel's row
+  move(p, 400, 200); // x 900, y 350: the panel's row
   p.real('wheel', { deltaY: 3, deltaMode: 1 });
   assert.equal(p.panel.scrollTop, 48);
   // The battlefield takes the wheel itself (zoom): nothing scrolls.
@@ -540,7 +692,7 @@ test('virtual pointer: text fields take the focus, lists let go of the mouse, th
   assert.equal(w.defaultPrevented, true, 'no page scroll from the real one');
   assert.ok(p.seen.some(([type, how, id]) => type === 'wheel' && how === 'virtual' && id === 'view'));
   // A list needs the OS cursor: the press lets go and focuses it.
-  move(p, 400, -200); // x 900, y 250: the list
+  move(p, 400, -100); // x 900, y 250: the list
   p.real('mousedown', { button: 0, buttons: 1 });
   assert.equal(p.capture.state, 'off');
   assert.equal(doc.activeElement, p.list);
@@ -554,7 +706,7 @@ test('virtual pointer: setPointerCapture works for it (the radar drag), released
   p.radar.addEventListener('pointerdown', (e) => p.radar.setPointerCapture(e.pointerId));
   p.real('mousedown', { button: 0, buttons: 1 });
   assert.equal(p.radar.hasPointerCapture(VIRTUAL_POINTER_ID), true);
-  move(p, -1000, 0); // far off the radar
+  move(p, -500, 0); // far off the radar: x 400
   p.real('mouseup', { button: 0, buttons: 0 });
   assert.deepEqual(radar.map((e) => e.type), ['pointerdown', 'gotpointercapture', 'pointermove', 'pointerup', 'lostpointercapture']);
   assert.equal(radar[2].x, 400, 'the move still went to the radar');
@@ -702,7 +854,7 @@ test('box selection, orders and the wheel through js/input.js with the virtual p
   move(p, 0, 0);
   p.real('mousedown', { button: 0, buttons: 1 });
   assert.deepEqual([input.drag.sx, input.drag.sy], [100, 100]);
-  move(p, 200, 100); // raw on a 2x screen: +100, +50
+  move(p, 100, 50); // CSS px as they come: +100, +50
   p.real('mouseup', { button: 0, buttons: 0 });
   await new Promise((r) => setImmediate(r));
   const cx = input.camera.x;

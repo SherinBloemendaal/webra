@@ -54,6 +54,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'playerStanceColors',
   'mouseCapture',
   'mouseCaptureSpeed',
+  'mouseCaptureRaw',
   'mouseCaptureEscMenu',
   'errorReports',
 ]);
@@ -135,13 +136,18 @@ export function scaleLabel(setting, resolved) {
 
 /** What the Display section says about the three ways the picture changes. */
 export const DISPLAY_HELP =
-  'UI scale sizes the sidebar, bars, menus and dialogs. Game scale sizes units and terrain; the mouse wheel and pinch zoom from there. ' +
+  'UI scale sizes the sidebar, bars, menus and dialogs. Game scale sizes units and terrain; the mouse wheel and pinch zoom from there, and the next game starts at the zoom you last used. ' +
   'Max resolution and low quality set how many pixels the battlefield is drawn with: sharpness and speed, not size.';
 
-/** Game menu settings that the Defaults button puts back (the Audio section's are added). */
+/**
+ * Game menu settings that the Defaults button puts back (the Audio section's
+ * are added). The remembered zoom (zoomFactor) has no row of its own: Defaults
+ * clears it like Reset zoom does, and the battlefield follows.
+ */
 export const MENU_SETTINGS = Object.freeze([
   'uiScale',
   'gameScale',
+  'zoomFactor',
   'pixelRatioCap',
   'lowQuality',
   'reduceMotion',
@@ -153,6 +159,7 @@ export const MENU_SETTINGS = Object.freeze([
   'playerStanceColors',
   'mouseCapture',
   'mouseCaptureSpeed',
+  'mouseCaptureRaw',
   'mouseCaptureEscMenu',
 ]);
 
@@ -546,6 +553,7 @@ export class GameMenu {
         el('p', 'hint game-menu-explain', MOUSE_CAPTURE_HELP),
         withHelp(mode, 'mouseCapture', mode.querySelector('[role="radiogroup"]')),
         slider('mouseCaptureSpeed', 'Captured mouse speed'),
+        check('mouseCaptureRaw', 'Raw mouse input'),
         check('mouseCaptureEscMenu', 'Esc also opens the menu'),
       );
     }

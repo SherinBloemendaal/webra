@@ -229,8 +229,10 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   stand in until a tile is ready) and kept in an LRU cache of 48 tiles per
   lens; at most two sprite atlases are kept, and all of it is let go when a
   game starts (`LensArt.release`). The lens starts at half the game's
-  zoom (`LENS_START_FACTOR` of `baseZoom` at the player's game scale), so it
-  shows twice the map around the pointer; the mouse wheel zooms it
+  zoom (`LENS_START_FACTOR` of `baseZoom` at the player's game scale, at the
+  render ratio a game uses: `gameScaleFor`), so it shows twice the map
+  around the pointer; not at the zoom the player last used in a game
+  (`game.zoomFactor`), which is for playing. The mouse wheel zooms it
   between the game's zoom limits only while it shows after the pointer
   moved over the preview, and scrolls the page again at a limit. On touch,
   press and hold (350 ms) shows it above the finger. It is `aria-hidden`,

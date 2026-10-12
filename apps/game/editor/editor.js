@@ -39,7 +39,7 @@ import { applyFix, openMapFile } from './js/upgrade.js';
 import { mapThumbnail } from '../js/protocol.js';
 import { LensArt } from '../js/maplens/source.js';
 import { MapLens } from '../js/maplens/lens.js';
-import { resolveGameScale, screenOf } from '../js/scale.js';
+import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, store } from './js/ui.js';
 
@@ -163,7 +163,7 @@ async function boot() {
     preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
     thumbLens = new MapLens({
       art: new LensArt({ Game, memory: () => wasm.memory, content: art.content }),
-      gameScale: () => resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: window.devicePixelRatio || 1 }),
+      gameScale: () => gameScaleFor(settings, window),
     });
     await start();
   } catch (err) {

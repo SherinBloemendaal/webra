@@ -30,16 +30,20 @@ export const KEYS = Object.freeze({
   // 'auto' or a factor (js/scale.js): the size of the chrome, and of units and terrain.
   uiScale: ['game', 'uiScale'],
   gameScale: ['game', 'gameScale'],
+  // The player's zoom as a factor of the game scale's base zoom (js/input.js): the next game starts there.
+  zoomFactor: ['game', 'zoomFactor'],
   // Graphics (js/content): 'webra' (WebRA's own art) or 'original' (the
   // original Red Alert graphics the player installed from their own copy).
   graphics: ['game', 'graphics'],
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
   hotkeys: ['game', 'hotkeys'],
   // Mouse capture (js/mouselock.js): 'off', 'fullscreen' or 'always'; the
-  // pointer speed while captured; whether Esc also opens the menu then; how
-  // often the "Mouse captured" hint was shown.
+  // pointer speed while captured; raw movement with the game's acceleration
+  // instead of the system's; whether Esc also opens the menu then; how often
+  // the "Mouse captured" hint was shown.
   mouseCapture: ['game', 'mouseCapture'],
   mouseCaptureSpeed: ['game', 'mouseCaptureSpeed'],
+  mouseCaptureRaw: ['game', 'mouseCaptureRaw'],
   mouseCaptureEscMenu: ['game', 'mouseCaptureEscMenu'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
   // "Send error reports" (js/telemetry/index.js follows it).

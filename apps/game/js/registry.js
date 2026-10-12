@@ -38,7 +38,7 @@ import { SYMMETRY_MODES } from '../editor/js/symmetry.js';
 import { BRUSH_SIZES } from '../editor/js/edits.js';
 import { FACTIONS } from '../protocol/constants.js';
 import { text as protocolText } from '../protocol/check.js';
-import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, MUSIC_REPEAT_MODES } from '../protocol/accounts.js';
+import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, ZOOM_FACTOR_LIMITS, MUSIC_REPEAT_MODES } from '../protocol/accounts.js';
 import { PRESETS_MAX, presetNameKey, validateSavedPresets } from '../protocol/presets.js';
 
 /** localStorage key of the registry document. */
@@ -118,6 +118,15 @@ export const GROUPS = deepFreeze({
         label: 'Game scale',
         help: 'How big units and terrain appear (1 = 100%); the mouse wheel zooms from there. Auto picks one for the screen.',
       },
+      // The player's own zoom (wheel, zoom keys, pinch) as a factor of the game scale's base zoom (js/input.js, js/scale.js).
+      zoomFactor: {
+        type: 'number',
+        default: 1,
+        min: ZOOM_FACTOR_LIMITS.min,
+        max: ZOOM_FACTOR_LIMITS.max,
+        label: 'Remembered zoom',
+        help: 'The zoom of your last game as a factor of the game scale (1 = the game scale itself); the next game starts there. Reset zoom and Defaults set it back to 1.',
+      },
       healthBars: {
         type: 'choice',
         default: 'damaged',
@@ -150,6 +159,13 @@ export const GROUPS = deepFreeze({
         labels: { off: 'Off', fullscreen: 'In fullscreen', always: 'Always (click into the game)' },
         label: 'Capture the mouse',
         help: 'Keeps the pointer inside the game. The capture hotkey or Esc releases it.',
+      },
+      // Unadjusted movement (raw mouse counts) with WebRA's own acceleration curve, where the browser has it (js/mouselock.js).
+      mouseCaptureRaw: {
+        type: 'boolean',
+        default: false,
+        label: 'Raw mouse input',
+        help: "Off: the captured pointer moves exactly like the system pointer. On: raw mouse movement with the game's own acceleration, where the browser supports it.",
       },
       mouseCaptureSpeed: { type: 'number', default: 1, min: 0.25, max: 3, step: 0.25, label: 'Captured mouse speed', help: 'Pointer speed while the mouse is captured.' },
       mouseCaptureEscMenu: {

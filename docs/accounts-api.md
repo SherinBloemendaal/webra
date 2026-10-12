@@ -787,12 +787,14 @@ Serialized size at most 32 KiB.
     "lowQuality": false,
     "uiScale": "auto",             // "auto" | number 0.5..2 (size of the sidebar, bars, menus; UI_SCALE_LIMITS)
     "gameScale": "auto",           // "auto" | number 0.5..3 (base zoom of the battlefield; GAME_SCALE_LIMITS)
+    "zoomFactor": 1,               // number 1/3..8/3 (the player's last zoom over the base zoom; ZOOM_FACTOR_LIMITS)
     "healthBars": "off",           // "off" | "damaged" | "all"
     "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
     "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
+    "mouseCaptureRaw": false,      // true: raw (unadjusted) movement with the game's acceleration curve
     "mouseCaptureSpeed": 1,        // number 0.25..3 (pointer speed while captured)
     "mouseCaptureEscMenu": false   // true: Esc releases the mouse and opens the menu at once
   },

@@ -18,6 +18,7 @@ import {
   validNewPassword,
   validUsername,
   validateSettingsDocument,
+  ZOOM_FACTOR_LIMITS,
   UI_SCALE_LIMITS,
   GAME_SCALE_LIMITS,
   MUSIC_REPEAT_MODES,
@@ -113,6 +114,18 @@ test('settings document: UI and game scale take "auto" or a factor in their limi
   throwsField(() => validateSettingsDocument({ audio: { musicRepeat: 'never' } }), 'settings.audio.musicRepeat');
   throwsField(() => validateSettingsDocument({ audio: { musicOn: 1 } }), 'settings.audio.musicOn');
   throwsField(() => validateSettingsDocument({ audio: { musicShuffle: 'yes' } }), 'settings.audio.musicShuffle');
+});
+
+test('settings document: the remembered zoom factor and raw mouse input', () => {
+  const doc = { game: { zoomFactor: 0.75, mouseCaptureRaw: true } };
+  assert.deepEqual(validateSettingsDocument(doc), doc);
+  // The game's zoom limits (0.5 to 4) over its base zoom (1.5).
+  assert.deepEqual(ZOOM_FACTOR_LIMITS, { min: 0.5 / 1.5, max: 4 / 1.5 });
+  for (const ok of [ZOOM_FACTOR_LIMITS.min, 1, ZOOM_FACTOR_LIMITS.max]) assert.deepEqual(validateSettingsDocument({ game: { zoomFactor: ok } }), { game: { zoomFactor: ok } });
+  for (const bad of [0.33, 2.67, 0, -1, '1', null, NaN, Infinity, true]) throwsField(() => validateSettingsDocument({ game: { zoomFactor: bad } }), 'settings.game.zoomFactor');
+  assert.throws(() => validateSettingsDocument({ game: { zoomFactor: 3 } }), /from 1\/3 to 8\/3/);
+  assert.deepEqual(validateSettingsDocument({ game: { mouseCaptureRaw: false } }), { game: { mouseCaptureRaw: false } });
+  for (const bad of ['yes', 1, null]) throwsField(() => validateSettingsDocument({ game: { mouseCaptureRaw: bad } }), 'settings.game.mouseCaptureRaw');
 });
 
 test('site settings: merge, validation, stored values over defaults', () => {

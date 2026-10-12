@@ -343,8 +343,11 @@ export class TouchControls {
     const i = this.input;
     const p = this.local(x, y);
     const limits = i.zoomLimits();
+    const zoom = i.camera.zoom;
     Object.assign(i.camera, pinchCamera(i.camera, { x: p.x, y: p.y, dx, dy, scale }, limits.min, limits.max));
     i.clampCamera();
+    // A pinch that zoomed is remembered like the wheel (js/input.js zoomed).
+    if (i.camera.zoom !== zoom) i.zoomed();
   }
 
   // ---- Building placement --------------------------------------------------------
