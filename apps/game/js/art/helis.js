@@ -7,6 +7,7 @@
 // HELI_SPECIALS[0], so the blades read as a spinning blur.
 
 import { C, rect, rrect, circle, poly, line } from './kit.js';
+import { pixelUnitDraw } from './pixel.js';
 
 /** Rotor blades around the sprite centre: `n` blades of length `len`. */
 function blades(ctx, P, cx, cy, n, len, width = 1.6) {
@@ -81,29 +82,9 @@ export const HELI_DRAW = {
     }],
     turret: [34, 34, (ctx, P) => blades(ctx, P, 17, 17, 5, 16)],
   },
-  // Black Hawk: utility helicopter with a wide cabin and a chain gun.
-  MH60: {
-    body: [26, 34, (ctx, P) => {
-      rrect(ctx, P.c(C.shadow), 9, 4, 11, 20, 4);
-      tail(ctx, P, 13, 20, 33, 12);
-      // Cabin.
-      rrect(ctx, P.team(0.5), 7.5, 3, 11, 19, 4.5);
-      rrect(ctx, P.team(0.72), 8.5, 4, 9, 9, 3.5);
-      // Windshield and side doors.
-      rrect(ctx, P.c(C.glass), 9.5, 4.5, 7, 3, 1.5);
-      rect(ctx, P.c(C.steelDark), 12.6, 4.5, 0.8, 3);
-      rect(ctx, P.c(C.steelDark), 7.5, 11, 1.2, 5);
-      rect(ctx, P.c(C.steelDark), 17.3, 11, 1.2, 5);
-      // Door guns.
-      rect(ctx, P.c(C.track), 5.5, 12.5, 2, 1);
-      rect(ctx, P.c(C.track), 18.5, 12.5, 2, 1);
-      // Engine housing behind the mast.
-      rrect(ctx, P.team(0.4), 10, 14, 6, 6, 2);
-      rect(ctx, P.c(C.steelDark), 11, 19, 1.5, 1.5);
-      rect(ctx, P.c(C.steelDark), 13.5, 19, 1.5, 1.5);
-    }],
-    turret: [32, 32, (ctx, P) => blades(ctx, P, 16, 16, 4, 15)],
-  },
+  // Black Hawk: WebRA's own pixel art in Red Alert's style (art/pixel.js),
+  // the stopped rotor over it.
+  MH60: pixelUnitDraw('MH60'),
   // Longbow (Apache): slim gunship, Hellfire racks on stub wings, mast radar.
   HELI: {
     body: [26, 34, (ctx, P) => {

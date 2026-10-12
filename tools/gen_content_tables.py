@@ -27,7 +27,8 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - SEQUENCES[image][sequence] = normalized sequence fields (see SequenceDef in
   apps/game/js/content/sequences.js).
 - ACTOR_ART[actor id] = { image, body: {pose: sequence}, second: {pose:
-  sequence} | null, wall?, overlay?, bib?, cameo }: which sequence each pose of
+  sequence} | null, wall?, overlay?, bib?, cameo, muzzle? } (or only { image,
+  muzzle } for an actor without an original body): which sequence each pose of
   (infantry: stand variants, idle animations and deaths too) of
   the engine's body slot (2t) and second slot (2t + 1: turret, prone for
   infantry, or the layer drawn over a structure: `overlay` names its kind,
@@ -176,7 +177,8 @@ ORIGINAL_SHORTER = {
     'gunfire2.shp': ('gunfire.shp', 3),
 }
 # OpenRA's files with no original counterpart: sequences using them are left
-# out (fake structures show the real cameo, OpenRA's own units keep WebRA art,
+# out (fake structures show the real cameo, OpenRA's own units, the Mobile
+# Flak and the Black Hawk, are WebRA's own pixel art, tools/gen_pixel_art.py,
 # small bibs and the refinery top are not drawn).
 NO_ORIGINAL = {
     'ateficon.shp', 'fapwicon.shp', 'fixficon.shp', 'fpwricon.shp', 'mslficon.shp', 'pdoficon.shp', 'tenficon.shp',
@@ -968,8 +970,7 @@ def actor_art(actors, seqs):
                     if up:
                         # Turreted.Offset height: the turret sits higher on the body.
                         entry['lift'] = {pose: lift_px(up) for pose in entry['second']}
-        if 'idle' not in entry['body']:
-            continue
+        bodyless = 'idle' not in entry['body']
         if trait(tree, 'WithMuzzleOverlay') is not None:
             seqs_used = {ch.get('MuzzleSequence', [''])[0] for k, (_v, ch) in tree.items() if (k == 'Armament' or k.startswith('Armament@'))} - {''}
             if len(seqs_used) > 1:
@@ -979,6 +980,13 @@ def actor_art(actors, seqs):
                 got = use(image, seqs_used.pop())
                 if got:
                     entry['muzzle'] = got
+        if bodyless:
+            # No original body (OpenRA's own units, the Black Hawk and the
+            # Mobile Flak: WebRA's own pixel art, tools/gen_pixel_art.py): only
+            # an original muzzle flash is kept (Red Alert's minigun and gunfire).
+            if 'muzzle' in entry:
+                art[aid] = {'image': image, 'muzzle': entry['muzzle']}
+            continue
         fake = aid.upper() != image.upper() and kind == 'building' and use(image, 'fake-icon')
         cameo = 'fake-icon' if fake else use(image, 'icon')
         if cameo:

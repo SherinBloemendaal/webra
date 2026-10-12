@@ -307,8 +307,8 @@ export function sequenceFrames(def, files, tileset) {
   return { frames };
 }
 
-/** The ways a loaded sequence can be played (vanish: once, then nothing, for deaths). */
-function modes(resolved, frames, def, lead = 0) {
+/** The ways a loaded sequence can be played (vanish: once, then nothing, for deaths); art/pixel.js too. */
+export function modes(resolved, frames, def, lead = 0) {
   return {
     loop: descriptor(resolved, frames, lead ? MODE.LEAD : MODE.LOOP, def, lead),
     once: descriptor(resolved, frames, MODE.ONCE, def),
@@ -607,7 +607,8 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
   };
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
-    if (!entry) {
+    // No entry, or only a muzzle flash (no original body: WebRA's own art, the flash below).
+    if (!entry || (!entry.body && !entry.bridge)) {
       if (a.kind !== 'proxy') out.missing.push(a.id);
       return;
     }

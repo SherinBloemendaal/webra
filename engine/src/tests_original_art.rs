@@ -195,6 +195,44 @@ fn original_spinners_sit_over_units_and_the_silo_shows_the_storage_level() {
 }
 
 #[test]
+fn pre_rendered_turrets_sit_at_the_turreted_offset() {
+    // The Mobile Flak's turret is 298 units behind the body's centre (OpenRA
+    // FTRK Turreted Offset -298,0,298; the height is drawn into its frames).
+    let mut w = world();
+    let ftrk = ty(&w, "FTRK");
+    let i = w.spawn_unit(ftrk, 0, cell_center(14), cell_center(14), 0);
+    let slot = ftrk as u32 * 2 + 1;
+    let place = |w: &World| {
+        let all = sprites(w);
+        let body = all.iter().find(|s| unpack(s[3]).0 == ftrk as u32 * 2).expect("the body")[..2].to_vec();
+        let turret = in_slot(&all, slot);
+        assert_eq!(turret.len(), 1, "one turret");
+        [turret[0][0] - body[0], turret[0][1] - body[1]]
+    };
+    // WebRA's vector turret has the offset drawn in: centred on the body.
+    assert_eq!(place(&w), [0.0, 0.0]);
+    w.render_opts.set_original_art(&[slot], &[]);
+    for facing in [0, 256, 384] {
+        w.actors[i].facing = facing;
+        w.actors[i].pfacing = facing;
+        let want = classic_offset(-298, 0, facing);
+        let got = place(&w);
+        assert!((got[0] - want[0]).abs() < 1e-3 && (got[1] - want[1]).abs() < 1e-3, "facing {facing}: {got:?} {want:?}");
+    }
+    assert!(place(&w)[0] < -1.0, "facing south east, the turret sits to the north west");
+    // Turrets on the body's centre stay there (the Medium Tank's).
+    let tank = ty(&w, "2TNK");
+    let t = w.spawn_unit(tank, 0, cell_center(30), cell_center(30), 0);
+    w.actors[t].facing = 300;
+    w.actors[t].pfacing = 300;
+    w.render_opts.set_original_art(&[tank as u32 * 2 + 1], &[]);
+    let all = sprites(&w);
+    let body = all.iter().find(|s| unpack(s[3]).0 == tank as u32 * 2).expect("the tank");
+    let turret = in_slot(&all, tank as u32 * 2 + 1);
+    assert_eq!((turret[0][0], turret[0][1]), (body[0], body[1]));
+}
+
+#[test]
 fn original_art_never_changes_the_simulation() {
     let run = |original: bool| {
         let mut w = world();
