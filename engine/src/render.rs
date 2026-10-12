@@ -394,9 +394,22 @@ impl World {
                     flash,
                 ),
             );
-            if self.rules.actors[a.ty as usize].turret_turn_speed.is_some() {
-                let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look((a.ty * 2 + 1) as f32, a.owner as f32, 1.0, 1.0, flash);
-                sink.sprite(&mut turrets, r);
+            let info = &self.rules.actors[a.ty as usize];
+            if info.turret_turn_speed.is_some() {
+                let slot = a.ty as u32 * 2 + 1;
+                let r = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(slot as f32, a.owner as f32, 1.0, 1.0, flash);
+                match info.turret_offsets.first() {
+                    // Pre-rendered turrets (original graphics, WebRA's pixel art) sit
+                    // at OpenRA's Turreted offset on the body (the Mobile Flak's is
+                    // behind the cab); WebRA's vector turrets have it drawn in.
+                    Some(&(fwd, side)) if (fwd, side) != (0, 0) && self.render_opts.is_original(slot) => {
+                        sink.sprite(
+                            &mut turrets,
+                            r.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)),
+                        );
+                    }
+                    _ => sink.sprite(&mut turrets, r),
+                }
             } else if let Some((fwd, side)) = self.render_opts.unit_overlay(a.ty) {
                 // An original overlay over the body (OpenRA WithIdleOverlay@SPINNER) at its offset.
                 let turn = angle_diff(a.pfacing, a.facing);

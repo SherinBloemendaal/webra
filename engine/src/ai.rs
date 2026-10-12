@@ -87,6 +87,8 @@ pub struct AiState {
     pub(crate) support: crate::ai_support::SupportState,
     pub(crate) capture: crate::ai_infantry::CaptureState,
     pub(crate) mines: crate::ai_mines::MineState,
+    /// Which water reaches an enemy, this bot tick (ai_naval.rs).
+    pub(crate) reach: crate::ai_naval::ReachCache,
     /// Tick of the last structure sold for cash (ai_economy.rs).
     pub(crate) last_sale: u32,
 }
@@ -114,6 +116,7 @@ impl AiState {
             support: Default::default(),
             capture: Default::default(),
             mines: Default::default(),
+            reach: Default::default(),
             last_sale: 0,
         }
     }
@@ -280,6 +283,12 @@ pub(crate) fn damage_state(hp: i32, max: i32) -> u8 {
 /// `player` can see. Enemy structures count as seen (the AI knows the bases),
 /// and so do the units of a player without structures.
 pub(crate) fn is_preferred_enemy(w: &World, player: u8, i: usize, ignored: u32) -> bool {
+    is_preferred_enemy_with(w, player, i, ignored, |p| has_buildings(w, p))
+}
+
+/// `is_preferred_enemy` with whether a player has structures given, for
+/// callers that check many actors (ai_naval.rs counts them once).
+pub(crate) fn is_preferred_enemy_with(w: &World, player: u8, i: usize, ignored: u32, has_buildings: impl Fn(u8) -> bool) -> bool {
     let a = &w.actors[i];
     if !a.alive || !a.in_world() || matches!(a.kind, Kind::Husk | Kind::Crate | Kind::Mine | Kind::Proxy) {
         return false;
@@ -289,7 +298,7 @@ pub(crate) fn is_preferred_enemy(w: &World, player: u8, i: usize, ignored: u32) 
     }
     // The last units of a player without structures are hunted down, even
     // aircraft squads would otherwise ignore (or AI-only games could stall).
-    let hunted = !has_buildings(w, a.owner);
+    let hunted = !has_buildings(a.owner);
     let tt = crate::ai_bots::target_types(w, i);
     if tt == 0 || (tt & ignored != 0 && !hunted) {
         return false;
@@ -308,16 +317,64 @@ pub(crate) fn can_attack(w: &World, i: usize, t: usize) -> bool {
 /// ClosestTo: the target itself or one of eight points at the edge of the
 /// unit's weapon range around it, which the unit can reach); the offset
 /// from the target of the nearest such point, or None.
+///
+/// WebRA: a ship can only fire at what its owner sees, so for a target out
+/// of sight it must get within its own sight (less a cell, after the
+/// weather, `sight_reach`) instead of its
+/// weapon range: a Cruiser (sight 7 cells, range 20) on a river stretch 20
+/// cells from a structure cannot see it, and OpenRA's test sent fleets
+/// there to wait for good. (Ground squads aim at a structure itself.)
 pub(crate) fn attack_offset(w: &World, i: usize, t: usize) -> Option<(i32, i32)> {
     let d = w.domain_of(i);
     if d == crate::rules::Domain::Air {
         return Some((0, 0));
     }
-    let pass = w.pass_for(d);
     let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
-    let comp = pass.component[ci];
+    let comp = w.pass_for(d).component[ci];
+    reach_offset(w, w.actors[i].owner, w.actors[i].ty, comp, t)
+}
+
+/// `attack_offset` for a unit of `player` of type `ty` (ground or water)
+/// anywhere in connectivity component `comp` of its domain's passability.
+pub(crate) fn reach_offset(w: &World, player: u8, ty: u16, comp: u32, t: usize) -> Option<(i32, i32)> {
+    let info = &w.rules.actors[ty as usize];
+    let d = info.unit.as_ref().map_or(crate::rules::Domain::Ground, |u| w.rules.locomotors[u.locomotor].domain);
     // The reach of the weapons that can hit it (GetMaximumRangeVersusTarget).
-    let r = w.rules.actors[w.actors[i].ty as usize].range_against(&w.rules, w.target_class(t));
+    let mut r = info.range_against(&w.rules, w.target_class(t));
+    if d == crate::rules::Domain::Water && !w.targetable(t, player) {
+        r = r.min(sight_reach(w, ty)).max(0);
+    }
+    offset_within(w, w.pass_for(d), comp, t, r)
+}
+
+/// Where ship `i` should aim to attack actor `t` (WebRA, naval squads): the
+/// nearest of OpenRA's nine points at the smaller of its weapon range and
+/// its sight (less a cell) that it can reach, so it sees the target when
+/// it gets there, else `attack_offset`. OpenRA's squads send every unit to
+/// the point the leader picked at the leader's range, where ships with a
+/// shorter range or sight could not fire.
+pub(crate) fn view_offset(w: &World, i: usize, t: usize) -> Option<(i32, i32)> {
+    let info = &w.rules.actors[w.actors[i].ty as usize];
+    let d = w.domain_of(i);
+    let r = info.range_against(&w.rules, w.target_class(t));
+    if r == 0 || d != crate::rules::Domain::Water {
+        return None;
+    }
+    let pass = w.pass_for(d);
+    let comp = pass.component[w.cell_index(w.actors[i].x, w.actors[i].y)];
+    offset_within(w, pass, comp, t, r.min(sight_reach(w, w.actors[i].ty)).max(0)).or_else(|| attack_offset(w, i, t))
+}
+
+/// How near a unit of type `ty` must get to an actor to see it: its sight
+/// as the weather leaves it (rain, snow, sandstorms; vision.rs uses the
+/// same), less a cell.
+pub(crate) fn sight_reach(w: &World, ty: u16) -> i32 {
+    w.env.sight(w.rules.actors[ty as usize].sight) - CELL
+}
+
+/// The nearest of the target itself and the eight points `r` around it
+/// that are open and in component `comp` of `pass`, as an offset.
+fn offset_within(w: &World, pass: &crate::flowfield::Passability, comp: u32, t: usize, r: i32) -> Option<(i32, i32)> {
     let diag = r * 724 / 1024;
     let (tx, ty) = (w.actors[t].x, w.actors[t].y);
     [(0, 0), (r, 0), (-r, 0), (0, r), (0, -r), (diag, diag), (-diag, diag), (-diag, -diag), (diag, -diag)]
@@ -340,7 +397,7 @@ pub(crate) fn current_target(w: &World, player: u8) -> Option<u8> {
 
 // ---- Target choice in free for alls ------------------------------------------------
 
-fn has_buildings(w: &World, player: u8) -> bool {
+pub(crate) fn has_buildings(w: &World, player: u8) -> bool {
     w.actors.iter().any(|a| a.alive && a.owner == player && a.kind == Kind::Building)
 }
 

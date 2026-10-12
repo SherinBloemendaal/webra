@@ -8,11 +8,11 @@ use crate::math::{dist, CELL};
 use crate::rules::{Kind, Rules};
 use crate::world::{cell_center, Activity, AiDifficulty, GameOptions, PlayerSetup, World};
 
-fn ty(w: &World, id: &str) -> u16 {
+pub(crate) fn ty(w: &World, id: &str) -> u16 {
     w.rules.actor_index(id).unwrap() as u16
 }
 
-fn run(w: &mut World, ticks: u32) {
+pub(crate) fn run(w: &mut World, ticks: u32) {
     for _ in 0..ticks {
         w.step();
     }
@@ -24,10 +24,10 @@ fn count(w: &World, owner: u8, id: &str) -> usize {
 }
 
 /// One arena player: faction, bot and difficulty (None: a passive human), team, yard cell.
-type Seat<'a> = (&'a str, Option<(BotType, AiDifficulty)>, u8, (i32, i32));
+pub(crate) type Seat<'a> = (&'a str, Option<(BotType, AiDifficulty)>, u8, (i32, i32));
 
 /// An all-clear square map without ore. Everyone is rich.
-fn arena(size: i32, players: &[Seat]) -> World {
+pub(crate) fn arena(size: i32, players: &[Seat]) -> World {
     let rules = Rules::load();
     let mut map = Map::generate(size, size, 3, 12);
     for i in 0..map.cells() {
@@ -60,7 +60,7 @@ fn normal() -> Option<(BotType, AiDifficulty)> {
 }
 
 /// Turn part of the map into water and refresh passability.
-fn flood(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
+pub(crate) fn flood(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
     for y in y0..=y1 {
         for x in x0..=x1 {
             let i = w.map.idx(x, y);
@@ -110,7 +110,7 @@ fn complete_base(w: &mut World, player: u8) {
 }
 
 /// Units that never fire (bait and spotters).
-fn quiet_unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
+pub(crate) fn quiet_unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
     let u = w.spawn_unit(ty(w, id), owner, cell_center(cx), cell_center(cy), 512);
     w.actors[u].reload = [1_000_000; crate::world::MAX_WEAPONS];
     u
@@ -118,7 +118,7 @@ fn quiet_unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
 
 /// Put a structure at (x, y), or at the nearest spot after it where no other
 /// structure is in the way (structures never share cells).
-fn put(w: &mut World, id: &str, player: u8, x: i32, y: i32) -> usize {
+pub(crate) fn put(w: &mut World, id: &str, player: u8, x: i32, y: i32) -> usize {
     let t = ty(w, id);
     for k in 0..400 {
         if let Some(b) = w.spawn_building(t, player, x + k % 20, y + k / 20) {
@@ -129,7 +129,7 @@ fn put(w: &mut World, id: &str, player: u8, x: i32, y: i32) -> usize {
 }
 
 /// Own units (not structures) of a player, by type id.
-fn army(w: &World, player: u8) -> Vec<String> {
+pub(crate) fn army(w: &World, player: u8) -> Vec<String> {
     w.actors
         .iter()
         .filter(|a| a.alive && a.owner == player && a.is_unit() && a.kind != Kind::Mine)

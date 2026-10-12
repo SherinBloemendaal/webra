@@ -8,7 +8,8 @@
 //! WebRA does not build refineries while no ore is in reach of its ground
 //! units (OpenRA would), and while it has no income and little money left
 //! (ai_economy.rs) it only builds the power its factories need, or a
-//! factory when it has none left. Placement differs from OpenRA's random cell order: structures spiral out
+//! factory when it has none left. It builds naval yards only on water from
+//! which its warships can hit an enemy (ai_naval.rs). Placement differs from OpenRA's random cell order: structures spiral out
 //! from the base centre (mirrored for bases in the right half, so mirrored
 //! spawns lay out mirrored bases), refineries go where their dock is closest
 //! to ore, and defences use OpenRA's ordering toward the nearest enemy with
@@ -375,6 +376,9 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
     if buildable.is_empty() {
         return None;
     }
+    // Whether water near the base reaches an enemy (`reaching_water_near`),
+    // asked once.
+    let mut naval_water: Option<bool> = None;
     // The power plant of the most power (OpenRA orders by Power.Amount).
     let power = buildable
         .iter()
@@ -444,6 +448,7 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
         && bb.new_production_cash_threshold > 0
         && funds > bb.new_production_cash_threshold
         && water_area_near(w, &area_givers(w, player), bb.check_for_water_radius)
+        && *naval_water.get_or_insert_with(|| !reaching_water_near(w, player, cfg, bb.check_for_water_radius).is_empty())
     {
         if let Some(n) = producible(w, player, cfg, &cfg.naval_production, &buildable) {
             if sufficient_power(w, player, cfg, n) {
@@ -487,7 +492,9 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
             continue;
         }
         if cfg.naval_production.contains(&ty)
-            && (qm(w, player, idx).water == Water::NotEnough || !water_area_near(w, &area_givers(w, player), bb.check_for_water_radius))
+            && (qm(w, player, idx).water == Water::NotEnough
+                || !water_area_near(w, &area_givers(w, player), bb.check_for_water_radius)
+                || !*naval_water.get_or_insert_with(|| !reaching_water_near(w, player, cfg, bb.check_for_water_radius).is_empty()))
         {
             continue;
         }
@@ -518,17 +525,46 @@ fn area_givers(w: &World, player: u8) -> Vec<usize> {
 /// OpenRA AIUtils.IsAreaAvailable: a water cell whose eight neighbours are
 /// water too, within `radius` cells of one of `actors`.
 fn water_area_near(w: &World, actors: &[usize], radius: i32) -> bool {
+    !water_spots_near(w, actors, radius, true).is_empty()
+}
+
+/// Cells of the water spots of `water_area_near` (all of them, or with
+/// `first` only the first found).
+fn water_spots_near(w: &World, actors: &[usize], radius: i32, first: bool) -> Vec<usize> {
     let water = |x: i32, y: i32| w.map.contains(x, y) && w.map.terrain[w.map.idx(x, y)] == crate::map::Terrain::Water;
-    actors.iter().any(|&a| {
+    let mut out = Vec::new();
+    for &a in actors {
         let (ax, ay) = (w.actors[a].cx, w.actors[a].cy);
-        (ay - radius..=ay + radius).any(|y| {
-            (ax - radius..=ax + radius).any(|x| {
-                (x - ax) * (x - ax) + (y - ay) * (y - ay) <= radius * radius
+        for y in ay - radius..=ay + radius {
+            for x in ax - radius..=ax + radius {
+                if (x - ax) * (x - ax) + (y - ay) * (y - ay) <= radius * radius
                     && water(x, y)
                     && (-1..=1).all(|dy| (-1..=1).all(|dx| water(x + dx, y + dy)))
-            })
-        })
-    })
+                {
+                    out.push(w.map.idx(x, y));
+                    if first {
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// WebRA (ai_naval.rs): the water labels near the base (as `water_area_near`
+/// finds it) from which the bot's warships could attack an enemy. A naval
+/// yard is only built on such water.
+fn reaching_water_near(w: &mut World, player: u8, cfg: &BotConfig, radius: i32) -> Vec<u32> {
+    let mut comps: Vec<u32> = water_spots_near(w, &area_givers(w, player), radius, false)
+        .into_iter()
+        .filter(|&c| !w.pass_water.blocked[c])
+        .map(|c| w.pass_water.component[c])
+        .collect();
+    comps.sort_unstable();
+    comps.dedup();
+    let types = crate::ai_naval::warship_types(w, cfg);
+    crate::ai_naval::reaching(w, player, cfg, &types, &comps)
 }
 
 // ---- Where to build ------------------------------------------------------------------
@@ -579,6 +615,13 @@ fn choose_build_location(w: &mut World, player: u8, cfg: &BotConfig, ty: u16, ki
                 None => (spiral(w, player, ty, center, bb.max_base_radius), Some(center)),
             }
         }
+        // WebRA: a naval yard launches its ships onto water that reaches an enemy (ai_naval.rs).
+        Placement::Building if cfg.naval_production.contains(&ty) => {
+            let reach = reaching_water_near(w, player, cfg, bb.check_for_water_radius);
+            let b = w.rules.actors[ty as usize].building.as_ref().map_or((1, 1), |b| (b.width, b.height));
+            let ok = |w: &World, x: i32, y: i32| crate::ai_naval::water_around(w, x, y, b.0, b.1).iter().any(|c| reach.contains(c));
+            (spiral_where(w, player, ty, center, bb.max_base_radius, ok), Some(center))
+        }
         Placement::Building => (spiral(w, player, ty, center, bb.max_base_radius), Some(center)),
     }
 }
@@ -627,6 +670,18 @@ fn find_pos(
 /// Spiral out from `center`, preferring spots that leave a one cell gap so
 /// units can still pass, mirrored for bases in the right half of the map.
 fn spiral(w: &World, player: u8, ty: u16, center: (i32, i32), max: i32) -> Option<(i32, i32)> {
+    spiral_where(w, player, ty, center, max, |_, _, _| true)
+}
+
+/// `spiral` over the spots `accept` takes.
+fn spiral_where(
+    w: &World,
+    player: u8,
+    ty: u16,
+    center: (i32, i32),
+    max: i32,
+    accept: impl Fn(&World, i32, i32) -> bool,
+) -> Option<(i32, i32)> {
     let b = w.rules.actors[ty as usize].building.as_ref()?;
     let (bw, bh) = (b.width, b.height);
     // Never flip vertically: structures face south, so a base laid out upside
@@ -642,7 +697,7 @@ fn spiral(w: &World, player: u8, ty: u16, center: (i32, i32), max: i32) -> Optio
                     // Mirror around the footprint centre, not the top-left corner.
                     let cx = if flip_x { center.0 - dx - (bw - 3) } else { center.0 + dx };
                     let cy = center.1 + dy;
-                    if w.can_place(player, ty, cx, cy) && (!strict || has_clearance(w, cx, cy, bw, bh)) {
+                    if w.can_place(player, ty, cx, cy) && (!strict || has_clearance(w, cx, cy, bw, bh)) && accept(w, cx, cy) {
                         return Some((cx, cy));
                     }
                 }

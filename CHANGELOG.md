@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.13.0](https://github.com/SherinBloemendaal/webra/compare/v0.12.0...v0.13.0) (2026-10-12)
+
+
+### Features
+
+* **game:** draw the Black Hawk and Mobile Flak as WebRA's own pixel art ([13a160c](https://github.com/SherinBloemendaal/webra/commit/13a160c2ec4f0e096a75b3220a601b2ba46fe4d6))
+* **game:** draw the oil derrick as WebRA's own pixel art ([5bcdfbd](https://github.com/SherinBloemendaal/webra/commit/5bcdfbd0d67717e05511ecff063eb496b9e4e15b))
+
+
+### Bug Fixes
+
+* **engine:** send the bots' fleets after targets they can reach and see ([dc028b5](https://github.com/SherinBloemendaal/webra/commit/dc028b5df748d6bc37b0548e2a34e81d5221adb0))
+* **engine:** weather, cloaks, landing craft and cost in the fleets' reach ([1cc2c93](https://github.com/SherinBloemendaal/webra/commit/1cc2c93016d25012ef585ea4f62488ca104a727d))
+* **game:** draw original art OpenRA also ships and audit what is left out ([723bb80](https://github.com/SherinBloemendaal/webra/commit/723bb804607f24ccc3a0c5bb61c4a899703bbe63))
+* **game:** give the Mobile Flak's cab its roof ([cf4774c](https://github.com/SherinBloemendaal/webra/commit/cf4774cca2b9d45783681b916ae2390e11a1e820))
+
 ## [0.12.0](https://github.com/SherinBloemendaal/webra/compare/v0.11.0...v0.12.0) (2026-10-12)
 
 
