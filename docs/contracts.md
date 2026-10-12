@@ -1511,19 +1511,23 @@ engine's rules:
   of 37 and 41 ships that never fired in 1v1s on generated maps,
   `examples/naval_probe.rs`). WebRA's bots build naval yards
   and warships only for water from which a warship can hit an enemy
-  structure or ship (within its sight, less a cell, when the target is out
-  of sight: units only fire at what their owner sees), put the yard's rally
+  structure or ship (within its sight after the weather, less a cell, when
+  the target is out of sight: units only fire at what their owner sees),
+  put the yard's rally
   point on that water and make that yard primary; keep one naval squad per
   body of water; scan around the target itself; send each ship to a point
   from which it sees the target and order ships to attack a target they see
   directly (bots' Missile Submarines are on ReturnFire, and attack moves
   below AttackAnything skip most structures); do not order firing ships on
   or count them stuck; leave a target alone for two minutes when the fleet
-  stood where it should see it and did not (a Gap Generator); fall back to
+  stood where it should see it and did not (fog or a Gap Generator's
+  shroud; a diving submarine's cloak does not count); fall back to
   a naval yard on their own water when fleeing; and let the ship nearest an
   attacker of the base decide whether the fleet can answer it. Ships left
   on water with nothing in reach stay there as a defensive fleet, as in
-  OpenRA. Ground squads keep OpenRA's behaviour.
+  OpenRA. A Transport (in OpenRA's NavalUnitsTypes) joins the fleet of the
+  water it floats on or beaches next to. Ground squads keep OpenRA's
+  behaviour.
 
 **Measurements** (`examples/bot_matrix.rs -- 16 90`, 16 seeds per pairing,
 1v1 on generated 80 maps of random style with the standard tech buildings,

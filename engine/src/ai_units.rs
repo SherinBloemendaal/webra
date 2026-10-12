@@ -140,7 +140,7 @@ fn choose_unit(w: &mut World, player: u8, cfg: &BotConfig, q: QueueType) -> Opti
 
 /// A warship of the naval squads (NavalUnitsTypes) that could attack no
 /// enemy from the water of the player's yards (ai_naval.rs).
-fn useless_warship(w: &World, player: u8, cfg: &BotConfig, ty: u16) -> bool {
+fn useless_warship(w: &mut World, player: u8, cfg: &BotConfig, ty: u16) -> bool {
     crate::ai_naval::warship_types(w, cfg).contains(&ty) && !crate::ai_naval::warship_useful(w, player, cfg, ty)
 }
 

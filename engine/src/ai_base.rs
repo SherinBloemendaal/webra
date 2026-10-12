@@ -376,6 +376,9 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
     if buildable.is_empty() {
         return None;
     }
+    // Whether water near the base reaches an enemy (`reaching_water_near`),
+    // asked once.
+    let mut naval_water: Option<bool> = None;
     // The power plant of the most power (OpenRA orders by Power.Amount).
     let power = buildable
         .iter()
@@ -445,7 +448,7 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
         && bb.new_production_cash_threshold > 0
         && funds > bb.new_production_cash_threshold
         && water_area_near(w, &area_givers(w, player), bb.check_for_water_radius)
-        && !reaching_water_near(w, player, cfg, bb.check_for_water_radius).is_empty()
+        && *naval_water.get_or_insert_with(|| !reaching_water_near(w, player, cfg, bb.check_for_water_radius).is_empty())
     {
         if let Some(n) = producible(w, player, cfg, &cfg.naval_production, &buildable) {
             if sufficient_power(w, player, cfg, n) {
@@ -491,7 +494,7 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
         if cfg.naval_production.contains(&ty)
             && (qm(w, player, idx).water == Water::NotEnough
                 || !water_area_near(w, &area_givers(w, player), bb.check_for_water_radius)
-                || reaching_water_near(w, player, cfg, bb.check_for_water_radius).is_empty())
+                || !*naval_water.get_or_insert_with(|| !reaching_water_near(w, player, cfg, bb.check_for_water_radius).is_empty()))
         {
             continue;
         }
@@ -552,7 +555,7 @@ fn water_spots_near(w: &World, actors: &[usize], radius: i32, first: bool) -> Ve
 /// WebRA (ai_naval.rs): the water labels near the base (as `water_area_near`
 /// finds it) from which the bot's warships could attack an enemy. A naval
 /// yard is only built on such water.
-fn reaching_water_near(w: &World, player: u8, cfg: &BotConfig, radius: i32) -> Vec<u32> {
+fn reaching_water_near(w: &mut World, player: u8, cfg: &BotConfig, radius: i32) -> Vec<u32> {
     let mut comps: Vec<u32> = water_spots_near(w, &area_givers(w, player), radius, false)
         .into_iter()
         .filter(|&c| !w.pass_water.blocked[c])

@@ -327,11 +327,25 @@ fn find_new_units(w: &mut World, player: u8, cfg: &BotConfig) {
     w.ai[player as usize].units.idle_units = sq(w, player).hanging.len();
 }
 
-/// The water connectivity label under ship `i` (None on a blocked cell).
-fn water_of(w: &World, i: usize) -> Option<u32> {
-    let pass = w.pass_of(i);
-    let c = w.cell_index(w.actors[i].x, w.actors[i].y);
-    (!pass.blocked[c]).then(|| pass.component[c])
+/// The body of water ship `i` is on, as a `pass_water` label (None on no
+/// water). Landing craft (the Transport, in OpenRA's NavalUnitsTypes, so
+/// it joins naval squads) move on `pass_landing`, whose labels also join
+/// beaches and cannot be compared; on a beach the craft counts as on the
+/// water next to it (the first open neighbour, row by row).
+pub(crate) fn water_of(w: &World, i: usize) -> Option<u32> {
+    let pass = &w.pass_water;
+    let (cx, cy) = w.cell_of(w.actors[i].x, w.actors[i].y);
+    let open = |x: i32, y: i32| w.map.contains(x, y) && !pass.blocked[w.map.idx(x, y)];
+    if open(cx, cy) {
+        return Some(pass.component[w.map.idx(cx, cy)]);
+    }
+    if !w.lands(i) {
+        return None;
+    }
+    (-1..=1)
+        .flat_map(|dy| (-1..=1).map(move |dx| (cx + dx, cy + dy)))
+        .find(|&(x, y)| open(x, y))
+        .map(|(x, y)| pass.component[w.map.idx(x, y)])
 }
 
 /// The naval squad on ship `i`'s body of water. WebRA: one naval squad per
@@ -590,23 +604,40 @@ pub(crate) fn naval_blind(w: &World, player: u8, t: usize) -> bool {
     w.ai[player as usize].squads.blind.iter().any(|&(b, until)| b == r && w.tick < until)
 }
 
-/// WebRA: a ship of naval squad `k` that can hit its target stands where
-/// it should see it (ai.rs `view_offset`) and does not, as under a Gap
-/// Generator's shroud: naval squads leave that target alone for BLIND_TICKS
-/// (the engine's units only fire at what their owner sees; OpenRA's fleets
-/// waited there for good).
+/// Whether actor `t` is out of `player`'s sight because of the fog or a
+/// Gap Generator's shroud, not because it is cloaked (a submerged
+/// submarine sits on a cell `player` sees: it surfaces to fire).
+fn fogged(w: &World, t: usize, player: u8) -> bool {
+    if w.actors[t].kind == Kind::Building {
+        return !w.is_visible_to(t, player);
+    }
+    w.players[player as usize].visible[w.cell_index(w.actors[t].x, w.actors[t].y)] == 0
+}
+
+/// WebRA: a ship of naval squad `k` that can hit its target is within its
+/// sight reach of it (ai.rs `sight_reach`, after the weather), or for a
+/// structure at the point it went to see it from (ai.rs `view_offset`),
+/// and does not see it, as under a Gap Generator's shroud (`fogged`; a
+/// cloak does not count): naval squads leave that target alone for
+/// BLIND_TICKS (the engine's units only fire at what their owner sees;
+/// OpenRA's fleets waited there for good).
 fn check_blind(w: &mut World, player: u8, k: usize) {
     if sq(w, player).squads[k].kind != SquadType::Naval {
         return;
     }
-    let Some(t) = target_actor(w, player, k).filter(|&t| !w.targetable(t, player)) else { return };
+    let Some(t) = target_actor(w, player, k).filter(|&t| fogged(w, t, player)) else { return };
     let (tx, ty) = (w.actors[t].x, w.actors[t].y);
+    let building = w.actors[t].kind == Kind::Building;
     let there = units_k(w, player, k).into_iter().any(|u| {
+        let (ux, uy) = (w.actors[u].x, w.actors[u].y);
+        let near = crate::ai::sight_reach(w, w.actors[u].ty).max(0) as i64;
         can_attack(w, u, t)
-            && crate::ai::view_offset(w, u, t).is_some_and(|(ox, oy)| {
-                let r = (3 * CELL / 2) as i64;
-                dist_sq(w.actors[u].x, w.actors[u].y, tx + ox, ty + oy) <= r * r
-            })
+            && (dist_sq(ux, uy, tx, ty) <= near * near
+                || building
+                    && crate::ai::view_offset(w, u, t).is_some_and(|(ox, oy)| {
+                        let r = (3 * CELL / 2) as i64;
+                        dist_sq(ux, uy, tx + ox, ty + oy) <= r * r
+                    }))
     });
     if !there {
         return;
@@ -615,6 +646,7 @@ fn check_blind(w: &mut World, player: u8, k: usize) {
     let st = sq(w, player);
     st.blind.retain(|&(_, until)| tick < until);
     st.blind.push((r, tick + BLIND_TICKS));
+    crate::ai_naval::invalidate(w, player);
 }
 
 // ---- Squad positions ------------------------------------------------------------------
@@ -947,8 +979,11 @@ fn move_to_target(w: &mut World, player: u8, k: usize, units: &[usize], tp: (i32
 /// for a naval squad) leave the squad and its roles; aircraft always can.
 fn drop_cut_off(w: &mut World, player: u8, k: usize, l: usize) {
     let reach = |w: &World, i: usize| -> Option<u32> {
-        if w.domain_of(i) == crate::rules::Domain::Air {
-            return None;
+        match w.domain_of(i) {
+            crate::rules::Domain::Air => return None,
+            // Ships and landing craft compare bodies of water (`water_of`).
+            crate::rules::Domain::Water => return water_of(w, i),
+            _ => {}
         }
         let pass = w.pass_of(i);
         let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
@@ -1283,6 +1318,15 @@ pub fn naval_report(w: &World, player: u8) -> NavalReport {
 pub(crate) fn naval_target(w: &World, player: u8) -> Option<usize> {
     let k = squad_of_type(w, player, SquadType::Naval)?;
     target_actor(w, player, k)
+}
+
+/// Point `player`'s first naval squad at actor `t` and run its check for
+/// a target it cannot see (tests).
+#[cfg(test)]
+pub(crate) fn naval_target_check(w: &mut World, player: u8, t: usize) {
+    let k = squad_of_type(w, player, SquadType::Naval).expect("a naval squad");
+    set_target(w, player, k, Some((t, (0, 0))));
+    check_blind(w, player, k);
 }
 
 /// Own living units in squads of `kind` (tests).

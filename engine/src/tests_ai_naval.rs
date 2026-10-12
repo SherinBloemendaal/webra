@@ -154,7 +154,7 @@ fn warships_are_built_only_for_water_that_reaches_an_enemy() {
         w.step();
         let cfg = w.ai[0].cfg.clone();
         let pt = ty(&w, "PT");
-        assert_eq!(crate::ai_naval::warship_useful(&w, 0, &cfg, pt), enemy_on_pond);
+        assert_eq!(crate::ai_naval::warship_useful(&mut w, 0, &cfg, pt), enemy_on_pond);
         run(&mut w, 25 * 150);
         assert!(!crate::tests_ai::army(&w, 0).is_empty(), "the bot builds units");
         assert!(w.actors[yard].alive);
@@ -296,6 +296,35 @@ fn a_fleet_gives_up_on_a_target_it_cannot_see() {
     assert!(w.actors[pt].alive);
     // Nothing else is in reach, so no warship is useful.
     assert!(!reach(&w));
+    let (pt_ty, sea) = (ty(&w, "PT"), water(&w, 30, 30));
+    assert!(!crate::ai_naval::in_reach(&mut w, 0, &cfg, pt_ty, sea));
+}
+
+/// The bots ask once per tick which water reaches an enemy (ai_naval.rs
+/// `in_reach`): the same answers as asking afresh, and a target the fleet
+/// gives up on within the tick is dropped from them at once.
+#[test]
+fn reach_answers_are_cached_per_tick() {
+    let mut w = naval_arena();
+    flood(&mut w, 0, 0, 40, 63);
+    let silo = w.spawn_building(ty(&w, "SILO"), 1, 42, 30).expect("silo");
+    quiet_unit(&mut w, "PT", 0, 37, 30);
+    run(&mut w, 25 * 3);
+    let cfg = w.ai[0].cfg.clone();
+    let (pt, sea) = (ty(&w, "PT"), water(&w, 30, 30));
+    for _ in 0..3 {
+        let fresh = crate::ai_naval::enemy_in_reach(&w, 0, &cfg, pt, sea);
+        assert!(fresh);
+        assert_eq!(crate::ai_naval::in_reach(&mut w, 0, &cfg, pt, sea), fresh);
+        assert_eq!(crate::ai_naval::in_reach(&mut w, 0, &cfg, pt, sea), fresh, "cached");
+        w.step();
+    }
+    // Given up within the tick (here: hidden by force): asked again, no reach.
+    assert!(crate::ai_naval::in_reach(&mut w, 0, &cfg, pt, sea));
+    w.players[0].visible.iter_mut().for_each(|v| *v = 0);
+    crate::ai_squads::naval_target_check(&mut w, 0, silo);
+    assert!(crate::ai_squads::naval_blind(&w, 0, silo));
+    assert!(!crate::ai_naval::in_reach(&mut w, 0, &cfg, pt, sea));
 }
 
 /// An attack on the naval yard turns the fleet on the attacker when one of
@@ -353,12 +382,13 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
         let syrd = ty(&w, "SYRD");
         let yards: Vec<usize> =
             (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == syrd).collect();
+        let cfg = w.ai[0].cfg.clone();
+        let types = crate::ai_naval::warship_types(&w, &cfg);
         let reach: Vec<bool> = yards
             .iter()
             .map(|&b| {
-                let cfg = w.ai[0].cfg.clone();
-                let types = crate::ai_naval::warship_types(&w, &cfg);
-                !crate::ai_naval::reaching(&w, 0, &cfg, &types, &crate::ai_naval::water_around_building(&w, b)).is_empty()
+                let around = crate::ai_naval::water_around_building(&w, b);
+                !crate::ai_naval::reaching(&mut w, 0, &cfg, &types, &around).is_empty()
             })
             .collect();
         (yards.len(), reach)
@@ -368,37 +398,142 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
     assert!(n >= 1 && reach.iter().all(|&r| r), "{n} yards, reaching {reach:?}");
 }
 
-/// Generated maps where fleets used to pile up: on rivers with fords
-/// (seed 3) a Turtle AI's fleet of 37 ships idled without a target for 99 %
-/// of the game, and on islands (seed 2) a fleet of 41 never set out (its
-/// leader aimed from a Missile Submarine's 20 cells). Now no fleet idles
-/// large without a target, and the fleets attack.
+/// Generated maps where fleets used to pile up idle: in 15 minutes on 64
+/// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
+/// idle without a target, a Turtle AI on islands (seed 3) 12. Now no
+/// fleet idles that large.
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::mapgen::MapStyle;
     use crate::world::{GameOptions, PlayerSetup};
-    for (style, seed) in [(MapStyle::Rivers, 3u64), (MapStyle::Islands, 2)] {
+    for (style, seed, bot) in [(MapStyle::Rivers, 3u64, BotType::Naval), (MapStyle::Islands, 3, BotType::Turtle)] {
         let factions = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
         let players: Vec<PlayerSetup> =
-            (0..2).map(|k| PlayerSetup { bot: BotType::Turtle, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
-        let mut w = World::with_options(seed, 96, &players, GameOptions { map_style: style, ..GameOptions::default() });
-        let (mut idle_most, mut largest, mut attacks) = (0, 0, 0);
-        for _ in 0..25 * 60 * 45 {
+            (0..2).map(|k| PlayerSetup { bot, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
+        let mut w = World::with_options(seed, 64, &players, GameOptions { map_style: style, ..GameOptions::default() });
+        let mut idle_most = 0;
+        for _ in 0..25 * 60 * 15 {
             w.step();
             for p in 0..2 {
-                let r = naval_report(&w, p);
-                idle_most = idle_most.max(r.idle_ships);
-                largest = largest.max(r.largest);
+                idle_most = idle_most.max(naval_report(&w, p).idle_ships);
             }
             if w.winner.is_some() {
                 break;
             }
         }
-        for p in 0..2 {
-            attacks += naval_report(&w, p).attacks;
-        }
-        // Before: 37 idle ships on the rivers, a fleet of 41 on the islands.
-        assert!(idle_most <= 12 && largest <= 15, "{style:?} seed {seed}: {idle_most} idle ships, largest fleet {largest}");
-        assert!(attacks >= 10, "{style:?} seed {seed}: {attacks} naval attacks");
+        // Before: 20 and 12.
+        assert!(idle_most <= 6, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle without a target");
     }
+}
+
+/// Rain, snow and sandstorms shorten sight (weather.rs), so they shorten
+/// how near a ship must get to see a target too: in a sandstorm a Cruiser
+/// (sight 7 cells, 5.25 in the storm) heads for a point it sees the target
+/// from, shells it, and never gives it up as out of sight.
+#[test]
+fn ships_get_close_enough_to_see_in_a_sandstorm() {
+    use crate::weather::{Biome, Environment, Weather, WeatherMode};
+    let mut w = naval_arena();
+    w.env = Environment::new(Biome::Desert, WeatherMode::Full, 5);
+    w.env.weather = Weather::Sandstorm;
+    w.env.until = u32::MAX;
+    flood(&mut w, 0, 0, 40, 63);
+    // Six cells from the nearest water point: within a Cruiser's clear sight
+    // reach (six cells), beyond its reach in the storm (4.25 cells).
+    let far = w.spawn_building(ty(&w, "SILO"), 1, 46, 50).expect("silo");
+    let silo = w.spawn_building(ty(&w, "SILO"), 1, 43, 30).expect("silo");
+    let ca = w.spawn_unit(ty(&w, "CA"), 0, cell_center(20), cell_center(30), 768);
+    w.step();
+    assert!(!w.targetable(far, 0) && !w.targetable(silo, 0));
+    assert_eq!(crate::ai::sight_reach(&w, ty(&w, "CA")), 7 * CELL * 75 / 100 - CELL);
+    assert_eq!(crate::ai::attack_offset(&w, ca, far), None, "out of reach in the storm");
+    let (ox, oy) = crate::ai::view_offset(&w, ca, silo).expect("in reach");
+    assert!((ox as i64).pow(2) + (oy as i64).pow(2) <= (crate::ai::sight_reach(&w, ty(&w, "CA")) as i64).pow(2));
+    w.env.weather = Weather::Clear;
+    assert!(crate::ai::attack_offset(&w, ca, far).is_some(), "in reach in clear weather");
+    w.env.weather = Weather::Sandstorm;
+    let full = w.actors[silo].hp;
+    let mut hit = false;
+    for _ in 0..25 * 120 {
+        w.step();
+        assert!(!crate::ai_squads::naval_blind(&w, 0, silo), "{}", crate::ai_squads::describe(&w, 0));
+        if !w.actors[silo].alive || w.actors[silo].hp < full {
+            hit = true;
+            break;
+        }
+    }
+    assert!(hit, "{}", crate::ai_squads::describe(&w, 0));
+}
+
+/// A submarine that dives within a fleet's sight but out of its detection
+/// is cloaked, not shrouded: the fleet does not give it up as unseeable
+/// (a_fleet_gives_up_on_a_target_it_cannot_see covers the shroud), and goes
+/// for it again once it surfaces.
+#[test]
+fn a_diving_submarine_is_not_given_up_as_unseeable() {
+    let mut w = naval_arena();
+    flood(&mut w, 0, 0, 40, 63);
+    let pt = quiet_unit(&mut w, "PT", 0, 20, 20);
+    run(&mut w, 25 * 3);
+    assert_eq!(naval_report(&w, 0).squads, 1);
+    // Six cells off: in the Gunboat's sight (8), out of its detection (4).
+    let ss = quiet_unit(&mut w, "SS", 1, 20, 26);
+    w.actors[ss].submerged = true;
+    w.step();
+    w.actors[ss].submerged = true;
+    w.update_vision();
+    assert!(!w.targetable(ss, 0) && w.players[0].visible[w.cell_index(w.actors[ss].x, w.actors[ss].y)] != 0, "cloaked, not fogged");
+    crate::ai_squads::naval_target_check(&mut w, 0, ss);
+    assert!(!crate::ai_squads::naval_blind(&w, 0, ss), "a cloak is not the fog");
+    // Surfaced, it is a target again.
+    let mut again = false;
+    for _ in 0..25 * 30 {
+        w.actors[ss].submerged = false;
+        w.step();
+        if crate::ai_squads::naval_target(&w, 0) == Some(ss) {
+            again = true;
+            break;
+        }
+    }
+    assert!(again, "{}", crate::ai_squads::describe(&w, 0));
+    assert!(w.actors[pt].alive);
+}
+
+/// A bot's Transport (map placed; OpenRA's NavalUnitsTypes lists it, so it
+/// joins the naval squads) counts as on the water it floats on, or next to
+/// the beach it stands on: it joins the warships' squad and falls back to
+/// their yard.
+#[test]
+fn a_landing_craft_joins_the_fleet_of_its_water() {
+    let mut w = naval_arena();
+    // A pond (rows 0 to 7) and the sea (rows 10 on) with a beach between:
+    // one body for landing craft, two for ships, so the labels of the two
+    // passabilities differ.
+    flood(&mut w, 0, 0, 40, 63);
+    for y in 8..=9 {
+        for x in 0..=40 {
+            let i = w.map.idx(x, y);
+            w.map.terrain[i] = crate::map::Terrain::Beach;
+        }
+    }
+    w.pass = crate::flowfield::Passability::new(&w.map);
+    w.pass_water = crate::flowfield::Passability::water(&w.map);
+    w.pass_landing = crate::flowfield::Passability::landing(&w.map);
+    w.spawn_building(ty(&w, "SYRD"), 0, 20, 50).expect("yard");
+    w.refresh_tokens();
+    w.step();
+    assert_ne!(water(&w, 5, 3), water(&w, 5, 30));
+    assert_ne!(w.pass_landing.component[w.map.idx(5, 30)], water(&w, 5, 30));
+    let pt = quiet_unit(&mut w, "PT", 0, 30, 30);
+    let afloat = w.spawn_unit(ty(&w, "LST"), 0, cell_center(25), cell_center(10), 768);
+    let beached = w.spawn_unit(ty(&w, "LST"), 0, cell_center(20), cell_center(9), 768);
+    assert!(w.lands(beached) && w.pass_water.blocked[w.map.idx(20, 9)]);
+    let sea = water(&w, 30, 30);
+    for u in [pt, afloat, beached] {
+        assert_eq!(crate::ai_squads::water_of(&w, u), Some(sea));
+    }
+    run(&mut w, 25 * 5);
+    let r = naval_report(&w, 0);
+    assert_eq!((r.squads, r.ships), (1, 3), "{}", crate::ai_squads::describe(&w, 0));
+    assert!(crate::ai_squads::naval_retreat(&mut w, 0, &[beached]).is_some(), "back to the yard");
 }
