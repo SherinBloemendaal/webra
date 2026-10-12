@@ -102,6 +102,9 @@ pub struct Passability {
     /// Cells per connectivity label of `component` (index 0 unused).
     pub sizes: Vec<u32>,
     pub version: u32,
+    /// Grows only when the connectivity labels were recomputed (`version`
+    /// also grows for movement cost changes).
+    pub labels_version: u32,
     dirty: bool,
     /// Crush classes of the wall on each blocked cell (`CRUSH_WALL`,
     /// `CRUSH_HEAVY_WALL`; OpenRA Crushable CrushClasses), 0 elsewhere.
@@ -176,6 +179,7 @@ impl Passability {
             component: vec![0; n],
             sizes: Vec::new(),
             version: 1,
+            labels_version: 1,
             dirty: true,
             crush: vec![0; n],
             crush_components: Vec::new(),
@@ -276,6 +280,7 @@ impl Passability {
         self.dirty = false;
         self.cost_dirty = false;
         self.version += 1;
+        self.labels_version += 1;
         label(map, &self.blocked, &mut self.component);
         let labels = self.component.iter().copied().max().unwrap_or(0) as usize;
         self.sizes = vec![0; labels + 1];

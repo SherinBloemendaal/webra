@@ -552,6 +552,9 @@ impl World {
             let Some(terrain) = crate::map::Terrain::from_letter(c) else { continue };
             self.map.terrain[ci] = terrain;
             if !terrain.holds_ore() {
+                if self.map.has_resource(ci) {
+                    self.note_resource_flip(ci, false);
+                }
                 self.map.clear_resource(ci);
             }
             self.set_cell_passability(ci);

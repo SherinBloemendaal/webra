@@ -80,6 +80,7 @@ fn ore(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
             w.map.ore[i] = 10;
         }
     }
+    w.resource_cells_changed();
 }
 
 /// A base around the yard: power, refineries, factories, radar, depot, tech.
@@ -864,6 +865,48 @@ fn ai_never_bombs_or_attacks_allies() {
     }
 }
 
+// ---- Economy ------------------------------------------------------------------------
+
+/// ai_economy's cached count of the ore a base reaches equals a fresh count
+/// on every tick of a game in which ore trucks mine fields bare, mines grow
+/// ore back, structures come and go (the ground's components) and a nuke
+/// burns a field.
+#[test]
+fn reachable_ore_cache_matches_a_fresh_count() {
+    let players: Vec<PlayerSetup> =
+        ["england", "russia", "germany"].iter().map(|f| PlayerSetup::new(f, Some(AiDifficulty::Normal))).collect();
+    let mut w = World::with_options(11, 64, &players, GameOptions::default());
+    let atomic = w.rules.weapons.iter().position(|x| x.name == "Atomic").unwrap();
+    let mut last = w.pass.version;
+    let mut changes = 0;
+    let mut counted = 0;
+    for t in 0..25 * 60 * 8 {
+        w.step();
+        if t == 25 * 60 * 3 {
+            let c = (0..w.map.cells()).find(|&c| w.map.has_resource(c)).expect("ore on the map");
+            let (x, y) = (c as i32 % w.map.width, c as i32 / w.map.width);
+            w.impact(atomic, cell_center(x), cell_center(y), 0);
+        }
+        for p in 0..players.len() as u8 {
+            assert_eq!(
+                crate::ai_economy::reachable_resources(&w, p),
+                crate::ai_economy::count_reachable_resources(&w, p),
+                "tick {t} player {p}"
+            );
+        }
+        let key = w.pass.version;
+        if key != last {
+            changes += 1;
+            last = key;
+        }
+        if w.reach_counts_labels == w.pass.labels_version {
+            counted += 1;
+        }
+    }
+    assert!(changes > 50, "passability changed {changes} times");
+    assert!(counted > 25 * 60 * 7, "the counts served most ticks: {counted}");
+}
+
 // ---- Whole games ------------------------------------------------------------------
 
 fn play(seed: u64, size: i32, teams: &[u8], diff: AiDifficulty, limit_minutes: u32) -> (Option<u8>, World) {
@@ -1020,12 +1063,7 @@ fn a_broke_ai_without_income_sells_its_surplus_for_an_army() {
 fn an_ai_with_income_keeps_its_base() {
     let mut w = arena(64, &[("england", normal(), 0, (4, 4)), ("russia", None, 0, (40, 44))]);
     complete_base(&mut w, 0);
-    for y in 30..36 {
-        for x in 4..12 {
-            let i = w.map.idx(x, y);
-            w.map.ore[i] = 10;
-        }
-    }
+    ore(&mut w, 4, 30, 11, 35);
     w.players[0].cash = 0;
     let before = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Building).count();
     run(&mut w, 25 * 60);

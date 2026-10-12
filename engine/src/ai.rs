@@ -136,6 +136,7 @@ pub fn think(w: &mut World, player: u8) {
         respond_to_attack(w, player, e);
     }
     update_target_player(w, player);
+    w.refresh_reach_counts();
     crate::ai_harvest::tick_resource_map(w, player);
     crate::ai_support::tick(w, player);
     crate::ai_harvest::tick(w, player);

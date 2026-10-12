@@ -163,6 +163,7 @@ impl World {
         }
         let all = e.resources == 0;
         let mut changed = false;
+        let mut bared = Vec::new();
         for ci in self.effect_cells(e, x, y) {
             for (bit, cell) in [(RESOURCE_ORE, &mut self.map.ore[ci]), (RESOURCE_GEMS, &mut self.map.gems[ci])] {
                 if *cell == 0 || !(all || e.resources & bit != 0) {
@@ -170,10 +171,16 @@ impl World {
                 }
                 *cell = if e.amount <= 0 { 0 } else { cell.saturating_sub(e.amount.min(255) as u8) };
                 changed = true;
+                if *cell == 0 {
+                    bared.push(ci);
+                }
             }
         }
         if changed {
             self.terrain_dirty = true;
+        }
+        for ci in bared {
+            self.note_resource_flip(ci, false);
         }
     }
 
@@ -198,6 +205,9 @@ impl World {
             let cell = if gems { &mut self.map.gems[ci] } else { &mut self.map.ore[ci] };
             *cell = (*cell + splash).min(max);
             changed = true;
+            if mine == 0 {
+                self.note_resource_flip(ci, true);
+            }
         }
         if changed {
             self.terrain_dirty = true;

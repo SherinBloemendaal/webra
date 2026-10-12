@@ -47,6 +47,7 @@ fn main() {
     let mut mcvs_seen: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); n];
     println!("seed {seed} size {} layout {layout} style {style:?} redeploy {redeploy} bots {bots:?}", w.map.width);
     println!("time  p  yards mcvs sites built bldgs procs  far  mean clusters funds");
+    let t0 = std::time::Instant::now();
     for t in 1..=(1500 * minutes) {
         w.step();
         if t % 25 == 0 {
@@ -97,6 +98,7 @@ fn main() {
             break;
         }
     }
+    println!("simulated in {:.2?}", t0.elapsed());
     for (p, used) in sites.iter().enumerate() {
         println!("player {p} spawn {:?} yard sites {used:?}", w.players[p].start);
     }
