@@ -14,6 +14,18 @@
 //! knows the bases), and an air squad skips flight paths with heavy
 //! anti-air (OpenRA's check is inverted and skips the safe ones) and looks
 //! for targets all over the map (OpenRA's grid misses the far edges).
+//!
+//! Naval squads (WebRA, ai_naval.rs): one per body of water; an idle fleet
+//! looks for enemies around its target rather than around the point it
+//! aims at (at a Cruiser's range those are 20 cells apart, and OpenRA's
+//! fleets never set out); each ship heads for a point from which it sees
+//! the target and attacks what it sees directly (on an attack move ships
+//! below the AttackAnything stance skip most structures); ships that are
+//! firing are not ordered on, nor is the fleet counted stuck; a target the
+//! fleet cannot see from where it should is left alone for a while (a Gap
+//! Generator); a fleeing fleet falls back to a naval yard on its water;
+//! and the ship nearest an attacker of the base decides whether the fleet
+//! can answer it.
 
 use crate::ai::{attack_offset, can_attack, current_target, is_preferred_enemy, owned_buildings, rand};
 use crate::ai_bots::BotConfig;
@@ -47,6 +59,9 @@ const PATIENCE_TICKS: u32 = 300 * crate::world::TICKS_PER_SECOND;
 /// enemies for this long (else a squad too weak for its target player's
 /// defences would gather, flee and gather again for good).
 const FLED_TICKS: u32 = 180 * crate::world::TICKS_PER_SECOND;
+/// WebRA: a naval squad that got where it should see its target and does
+/// not (a Gap Generator's shroud) leaves it alone for this long.
+const BLIND_TICKS: u32 = 120 * crate::world::TICKS_PER_SECOND;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SquadType {
@@ -113,6 +128,11 @@ pub(crate) struct SquadState {
     left_at: u32,
     /// Players a squad fled from, and until when squads look elsewhere first.
     fled_from: Vec<(u8, u32)>,
+    /// Attacks naval squads started (idle to attack move), for `naval_report`.
+    naval_attacks: u32,
+    /// Targets naval squads could not see from where they should have
+    /// (`check_blind`), and until when; kept when a squad disbands.
+    blind: Vec<(u32, u32)>,
 }
 
 pub(crate) fn start(w: &mut World, player: u8) {
@@ -297,7 +317,7 @@ fn find_new_units(w: &mut World, player: u8, cfg: &BotConfig) {
             let k = squad_of_type(w, player, SquadType::Air).unwrap_or_else(|| new_squad(w, player, SquadType::Air, None));
             sq(w, player).squads[k].units.push(r);
         } else if cfg.naval_units.contains(&ty) {
-            let k = squad_of_type(w, player, SquadType::Naval).unwrap_or_else(|| new_squad(w, player, SquadType::Naval, None));
+            let k = naval_squad_for(w, player, i).unwrap_or_else(|| new_squad(w, player, SquadType::Naval, None));
             sq(w, player).squads[k].units.push(r);
         } else {
             sq(w, player).hanging.push(r);
@@ -305,6 +325,37 @@ fn find_new_units(w: &mut World, player: u8, cfg: &BotConfig) {
         sq(w, player).active.push(r);
     }
     w.ai[player as usize].units.idle_units = sq(w, player).hanging.len();
+}
+
+/// The body of water ship `i` is on, as a `pass_water` label (None on no
+/// water). Landing craft (the Transport, in OpenRA's NavalUnitsTypes, so
+/// it joins naval squads) move on `pass_landing`, whose labels also join
+/// beaches and cannot be compared; on a beach the craft counts as on the
+/// water next to it (the first open neighbour, row by row).
+pub(crate) fn water_of(w: &World, i: usize) -> Option<u32> {
+    let pass = &w.pass_water;
+    let (cx, cy) = w.cell_of(w.actors[i].x, w.actors[i].y);
+    let open = |x: i32, y: i32| w.map.contains(x, y) && !pass.blocked[w.map.idx(x, y)];
+    if open(cx, cy) {
+        return Some(pass.component[w.map.idx(cx, cy)]);
+    }
+    if !w.lands(i) {
+        return None;
+    }
+    (-1..=1)
+        .flat_map(|dy| (-1..=1).map(move |dx| (cx + dx, cy + dy)))
+        .find(|&(x, y)| open(x, y))
+        .map(|(x, y)| pass.component[w.map.idx(x, y)])
+}
+
+/// The naval squad on ship `i`'s body of water. WebRA: one naval squad per
+/// body of water (OpenRA has one naval squad, so ships on a lake or behind
+/// a ford held a whole fleet back with their leader; ai_naval.rs).
+fn naval_squad_for(w: &World, player: u8, i: usize) -> Option<usize> {
+    let water = water_of(w, i);
+    w.ai[player as usize].squads.squads.iter().position(|s| {
+        s.kind == SquadType::Naval && s.units.iter().find_map(|&u| orderable(w, player, u)).is_some_and(|u| water_of(w, u) == water)
+    })
 }
 
 /// Enough units at the base: they all leave as an assault squad.
@@ -417,7 +468,16 @@ fn protect_own(w: &mut World, player: u8, cfg: &BotConfig, from: u32) {
     let r = cfg.info.squads.protect_unit_scan_radius;
     let ac = w.cell_of(w.actors[attacker].x, w.actors[attacker].y);
     for k in 0..sq(w, player).squads.len() {
-        let Some(first) = sq(w, player).squads[k].units.first().copied().and_then(|u| orderable(w, player, u)) else { continue };
+        // OpenRA asks the squad's first unit (the first of a hash set, any
+        // of them); WebRA asks a naval squad's ship nearest the attacker, so
+        // a fleet by the harbour defends it whichever ship was built first.
+        let (ax, ay) = (w.actors[attacker].x, w.actors[attacker].y);
+        let first = if sq(w, player).squads[k].kind == SquadType::Naval {
+            units_k(w, player, k).into_iter().min_by_key(|&i| (dist_sq(w.actors[i].x, w.actors[i].y, ax, ay), i))
+        } else {
+            sq(w, player).squads[k].units.first().copied().and_then(|u| orderable(w, player, u))
+        };
+        let Some(first) = first else { continue };
         let fc = w.cell_of(w.actors[first].x, w.actors[first].y);
         let near = (fc.0 - ac.0) * (fc.0 - ac.0) + (fc.1 - ac.1) * (fc.1 - ac.1) <= r * r;
         if near && !find_enemies(w, player, cfg, &[attacker], first).is_empty() {
@@ -474,12 +534,15 @@ fn find_enemies(w: &World, player: u8, cfg: &BotConfig, actors: &[usize], source
 /// OpenRA FindClosestEnemy (within `radius` cells, if given): the nearest
 /// enemy `source` can hit and reach; among the actors of the player the AI
 /// attacks first, when there are any.
-fn closest_enemy(w: &World, player: u8, cfg: &BotConfig, source: usize, radius: Option<i32>) -> Option<(usize, (i32, i32))> {
+/// Never one squad `k` cannot see (`check_blind`).
+fn closest_enemy(w: &World, player: u8, cfg: &BotConfig, k: usize, source: usize, radius: Option<i32>) -> Option<(usize, (i32, i32))> {
     let (sx, sy) = (w.actors[source].x, w.actors[source].y);
     let candidates: Vec<usize> = (0..w.actors.len())
         .filter(|&i| {
             let a = &w.actors[i];
-            a.alive && radius.is_none_or(|r| dist_sq(a.x, a.y, sx, sy) <= (r * CELL) as i64 * (r * CELL) as i64)
+            a.alive
+                && radius.is_none_or(|r| dist_sq(a.x, a.y, sx, sy) <= (r * CELL) as i64 * (r * CELL) as i64)
+                && !is_blind(w, player, k, i)
         })
         .collect();
     let enemies = find_enemies(w, player, cfg, &candidates, source);
@@ -521,12 +584,69 @@ fn target_pos(w: &World, player: u8, k: usize) -> Option<(i32, i32)> {
 fn target_valid(w: &mut World, player: u8, cfg: &BotConfig, k: usize, unit: usize) -> bool {
     let Some(t) = target_actor(w, player, k) else { return false };
     let units = units_of(w, player, &w.ai[player as usize].squads.squads[k]);
-    if !units.iter().any(|&u| can_attack(w, u, t)) || w.actors[t].kind == Kind::Husk {
+    if !units.iter().any(|&u| can_attack(w, u, t)) || w.actors[t].kind == Kind::Husk || is_blind(w, player, k, t) {
         return false;
     }
     let found = find_enemies(w, player, cfg, &[t], unit).first().copied();
     set_target(w, player, k, found);
     found.is_some()
+}
+
+/// Whether naval squad `k` leaves actor `t` alone as out of sight (`check_blind`).
+fn is_blind(w: &World, player: u8, k: usize, t: usize) -> bool {
+    w.ai[player as usize].squads.squads[k].kind == SquadType::Naval && naval_blind(w, player, t)
+}
+
+/// Whether the naval squads of `player` leave actor `t` alone as out of
+/// sight (`check_blind`; ai_naval.rs builds no warships for it either).
+pub(crate) fn naval_blind(w: &World, player: u8, t: usize) -> bool {
+    let r = w.make_ref(t);
+    w.ai[player as usize].squads.blind.iter().any(|&(b, until)| b == r && w.tick < until)
+}
+
+/// Whether actor `t` is out of `player`'s sight because of the fog or a
+/// Gap Generator's shroud, not because it is cloaked (a submerged
+/// submarine sits on a cell `player` sees: it surfaces to fire).
+fn fogged(w: &World, t: usize, player: u8) -> bool {
+    if w.actors[t].kind == Kind::Building {
+        return !w.is_visible_to(t, player);
+    }
+    w.players[player as usize].visible[w.cell_index(w.actors[t].x, w.actors[t].y)] == 0
+}
+
+/// WebRA: a ship of naval squad `k` that can hit its target is within its
+/// sight reach of it (ai.rs `sight_reach`, after the weather), or for a
+/// structure at the point it went to see it from (ai.rs `view_offset`),
+/// and does not see it, as under a Gap Generator's shroud (`fogged`; a
+/// cloak does not count): naval squads leave that target alone for
+/// BLIND_TICKS (the engine's units only fire at what their owner sees;
+/// OpenRA's fleets waited there for good).
+fn check_blind(w: &mut World, player: u8, k: usize) {
+    if sq(w, player).squads[k].kind != SquadType::Naval {
+        return;
+    }
+    let Some(t) = target_actor(w, player, k).filter(|&t| fogged(w, t, player)) else { return };
+    let (tx, ty) = (w.actors[t].x, w.actors[t].y);
+    let building = w.actors[t].kind == Kind::Building;
+    let there = units_k(w, player, k).into_iter().any(|u| {
+        let (ux, uy) = (w.actors[u].x, w.actors[u].y);
+        let near = crate::ai::sight_reach(w, w.actors[u].ty).max(0) as i64;
+        can_attack(w, u, t)
+            && (dist_sq(ux, uy, tx, ty) <= near * near
+                || building
+                    && crate::ai::view_offset(w, u, t).is_some_and(|(ox, oy)| {
+                        let r = (3 * CELL / 2) as i64;
+                        dist_sq(ux, uy, tx + ox, ty + oy) <= r * r
+                    }))
+    });
+    if !there {
+        return;
+    }
+    let (r, tick) = (w.make_ref(t), w.tick);
+    let st = sq(w, player);
+    st.blind.retain(|&(_, until)| tick < until);
+    st.blind.push((r, tick + BLIND_TICKS));
+    crate::ai_naval::invalidate(w, player);
 }
 
 // ---- Squad positions ------------------------------------------------------------------
@@ -580,7 +700,7 @@ fn leader(w: &mut World, player: u8, k: usize) -> Option<usize> {
 fn new_leader_and_closest(w: &mut World, player: u8, cfg: &BotConfig, k: usize) -> Option<(usize, (i32, i32))> {
     sq(w, player).squads[k].leader = NONE;
     let l = leader(w, player, k)?;
-    if let Some(e) = closest_enemy(w, player, cfg, l, None) {
+    if let Some(e) = closest_enemy(w, player, cfg, k, l, None) {
         return Some(e);
     }
     let units = units_k(w, player, k);
@@ -595,7 +715,7 @@ fn new_leader_and_closest(w: &mut World, player: u8, cfg: &BotConfig, k: usize) 
             continue;
         }
         asked.push(weapons);
-        if let Some(e) = closest_enemy(w, player, cfg, u, None) {
+        if let Some(e) = closest_enemy(w, player, cfg, k, u, None) {
             let r = w.make_ref(u);
             sq(w, player).squads[k].leader = r;
             return Some(e);
@@ -650,6 +770,16 @@ fn random_building_location(w: &mut World, player: u8) -> (i32, i32) {
     (cell_center(c.0), cell_center(c.1))
 }
 
+/// Where a fleeing naval squad goes: WebRA, the water by a random own ship
+/// producer on its body of water (OpenRA's random own structure is on land,
+/// out of a ship's reach), or None when it has none there.
+pub(crate) fn naval_retreat(w: &mut World, player: u8, units: &[usize]) -> Option<(i32, i32)> {
+    let water = units.iter().find_map(|&u| water_of(w, u))?;
+    let docks: Vec<(i32, i32)> = owned_buildings(w, player).into_iter().filter_map(|b| crate::ai_naval::dock_cell(w, b, water)).collect();
+    let (x, y) = crate::ai_units::pick(w, &docks)?;
+    Some((cell_center(x), cell_center(y)))
+}
+
 fn busy_attack(w: &World, i: usize) -> bool {
     w.actors[i].activity == Activity::Attack
 }
@@ -667,7 +797,11 @@ fn update_squad(w: &mut World, player: u8, cfg: &BotConfig, id: u32) {
         State::GroundAttack => ground_attack(w, player, cfg, k),
         State::GroundFlee => {
             let units = units_k(w, player, k);
-            let to = random_building_location(w, player);
+            let to = match sq(w, player).squads[k].kind {
+                SquadType::Naval => naval_retreat(w, player, &units),
+                _ => None,
+            };
+            let to = to.unwrap_or_else(|| random_building_location(w, player));
             order_move(w, player, &units, to, false);
             change_state(w, player, k, State::GroundIdle);
         }
@@ -730,16 +864,25 @@ fn ground_idle(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
     }
     let Some(l) = leader(w, player, k) else { return };
     let Some(tp) = target_pos(w, player, k) else { return };
+    let Some(t) = target_actor(w, player, k) else { return };
+    // OpenRA scans around the point it aims at, which for a ship firing
+    // from the edge of its weapon range (a Cruiser's 20 cells) is far from
+    // the target: it found nothing there, so the fleet never set out and
+    // grew without end. WebRA scans around a naval squad's target itself.
+    let (cx, cy) = if sq(w, player).squads[k].kind == SquadType::Naval { (w.actors[t].x, w.actors[t].y) } else { tp };
     let r = (cfg.info.squads.idle_scan_radius * CELL) as i64;
     let around: Vec<usize> =
-        (0..w.actors.len()).filter(|&i| w.actors[i].alive && dist_sq(w.actors[i].x, w.actors[i].y, tp.0, tp.1) <= r * r).collect();
+        (0..w.actors.len()).filter(|&i| w.actors[i].alive && dist_sq(w.actors[i].x, w.actors[i].y, cx, cy) <= r * r).collect();
     let enemies: Vec<usize> = find_enemies(w, player, cfg, &around, l).into_iter().map(|e| e.0).collect();
     if enemies.is_empty() {
         return;
     }
     let units = units_k(w, player, k);
     if fuzzy_attack(w, Fuzzy::Default, &units, &enemies) {
-        order_move(w, player, &units, tp, true);
+        move_to_target(w, player, k, &units, tp, true);
+        if sq(w, player).squads[k].kind == SquadType::Naval {
+            sq(w, player).naval_attacks += 1;
+        }
         change_state(w, player, k, State::GroundAttackMove);
     } else {
         change_state(w, player, k, State::GroundFlee);
@@ -751,7 +894,14 @@ fn ground_idle(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
 fn stuck(w: &mut World, player: u8, k: usize, l: usize) -> bool {
     let cell = w.cell_of(w.actors[l].x, w.actors[l].y);
     let tick = w.tick;
+    // WebRA: a naval squad's leader that is firing makes progress too
+    // (OpenRA counts it stuck after 63 ticks in place, which drops a fleet
+    // shelling the shore back to idle and orders every ship to move again).
+    let firing = sq(w, player).squads[k].kind == SquadType::Naval && busy_attack(w, l);
     let s = &mut sq(w, player).squads[k];
+    if firing {
+        s.last_updated = tick;
+    }
     if s.last_leader_cell != Some(cell) {
         s.last_leader_cell = Some(cell);
         s.last_updated = tick;
@@ -764,6 +914,7 @@ fn stuck(w: &mut World, player: u8, k: usize, l: usize) -> bool {
 }
 
 fn ground_attack_move(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
+    check_blind(w, player, k);
     if !ensure_target(w, player, cfg, k) {
         change_state(w, player, k, State::GroundFlee);
         return;
@@ -788,23 +939,51 @@ fn ground_attack_move(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
         w.queue_order(Order::Stop { player, ids: vec![lr] });
         let cell = w.cell_of(lx, ly);
         order_move(w, player, &behind, (cell_center(cell.0), cell_center(cell.1)), true);
-    } else if let Some(t) = closest_enemy(w, player, cfg, l, Some(cfg.info.squads.attack_scan_radius)) {
+    } else if let Some(t) = closest_enemy(w, player, cfg, k, l, Some(cfg.info.squads.attack_scan_radius)) {
         set_target(w, player, k, Some(t));
         change_state(w, player, k, State::GroundAttack);
     } else if let Some(tp) = target_pos(w, player, k) {
-        order_move(w, player, &units, tp, true);
+        // WebRA: ships already firing (a Cruiser shelling the shore from
+        // here) keep firing; OpenRA orders the whole squad on again.
+        let movers: Vec<usize> = if sq(w, player).squads[k].kind == SquadType::Naval {
+            units.into_iter().filter(|&u| !busy_attack(w, u)).collect()
+        } else {
+            units
+        };
+        move_to_target(w, player, k, &movers, tp, true);
     }
     if ground_should_flee(w, player, cfg, k) {
         change_state(w, player, k, State::GroundFlee);
     }
 }
 
+/// Attack move `units` of squad `k` to its target point `tp`. WebRA: the
+/// ships of a naval squad each to a point where they can see the target
+/// (ai.rs `view_offset`). `grouped`: one order for the units that go to
+/// `tp` (else one order each).
+fn move_to_target(w: &mut World, player: u8, k: usize, units: &[usize], tp: (i32, i32), grouped: bool) {
+    let naval = sq(w, player).squads[k].kind == SquadType::Naval;
+    let t = target_actor(w, player, k).filter(|_| naval);
+    let mut rest = Vec::new();
+    for &u in units {
+        match t.and_then(|t| crate::ai::view_offset(w, u, t).map(|o| (t, o))) {
+            Some((t, (ox, oy))) => order_move(w, player, &[u], (w.actors[t].x + ox, w.actors[t].y + oy), true),
+            None if grouped => rest.push(u),
+            None => order_move(w, player, &[u], tp, true),
+        }
+    }
+    order_move(w, player, &rest, tp, true);
+}
+
 /// Members of squad `k` that cannot reach leader `l` by ground (or water,
 /// for a naval squad) leave the squad and its roles; aircraft always can.
 fn drop_cut_off(w: &mut World, player: u8, k: usize, l: usize) {
     let reach = |w: &World, i: usize| -> Option<u32> {
-        if w.domain_of(i) == crate::rules::Domain::Air {
-            return None;
+        match w.domain_of(i) {
+            crate::rules::Domain::Air => return None,
+            // Ships and landing craft compare bodies of water (`water_of`).
+            crate::rules::Domain::Water => return water_of(w, i),
+            _ => {}
         }
         let pass = w.pass_of(i);
         let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
@@ -825,6 +1004,7 @@ fn drop_cut_off(w: &mut World, player: u8, k: usize, l: usize) {
 }
 
 fn ground_attack(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
+    check_blind(w, player, k);
     if !ensure_target(w, player, cfg, k) {
         change_state(w, player, k, State::GroundFlee);
         return;
@@ -835,12 +1015,25 @@ fn ground_attack(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
         return;
     }
     let units = units_k(w, player, k);
-    if let Some(tp) = target_pos(w, player, k) {
-        for u in units {
-            if !busy_attack(w, u) {
-                order_move(w, player, &[u], tp, true);
+    let mut idle: Vec<usize> = units.into_iter().filter(|&u| !busy_attack(w, u)).collect();
+    // WebRA: ships attack a target they see directly. On an attack move
+    // their auto-targeting skips structures other than defences below the
+    // AttackAnything stance (OpenRA AutoTargetPriority@DEFAULT), and the
+    // bots' Missile Submarines start on ReturnFire (InitialStanceAI): OpenRA's
+    // submarine fleets wait beside the structure they were sent to.
+    if sq(w, player).squads[k].kind == SquadType::Naval {
+        if let Some(t) = target_actor(w, player, k).filter(|&t| w.targetable(t, player)) {
+            let tr = w.make_ref(t);
+            let (direct, rest): (Vec<usize>, Vec<usize>) = idle.into_iter().partition(|&u| can_attack(w, u, t));
+            for u in direct {
+                let r = w.make_ref(u);
+                w.queue_order(Order::Attack { player, ids: vec![r], target: tr });
             }
+            idle = rest;
         }
+    }
+    if let Some(tp) = target_pos(w, player, k) {
+        move_to_target(w, player, k, &idle, tp, false);
     }
     if ground_should_flee(w, player, cfg, k) {
         change_state(w, player, k, State::GroundFlee);
@@ -850,7 +1043,7 @@ fn ground_attack(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
 fn protection_attack(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
     let Some(l) = leader(w, player, k) else { return };
     if !target_valid(w, player, cfg, k, l) {
-        let t = closest_enemy(w, player, cfg, l, Some(cfg.info.squads.protection_scan_radius));
+        let t = closest_enemy(w, player, cfg, k, l, Some(cfg.info.squads.protection_scan_radius));
         set_target(w, player, k, t);
         if t.is_none() {
             change_state(w, player, k, State::ProtectionFlee);
@@ -1017,7 +1210,7 @@ fn is_rearming(w: &World, i: usize) -> bool {
 fn air_attack(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
     let Some(l) = center_unit(w, player, k) else { return };
     if !target_valid(w, player, cfg, k, l) {
-        let t = closest_enemy(w, player, cfg, l, None);
+        let t = closest_enemy(w, player, cfg, k, l, None);
         set_target(w, player, k, t);
         if t.is_none() {
             change_state(w, player, k, State::AirFlee);
@@ -1089,6 +1282,51 @@ pub(crate) fn describe(w: &World, player: u8) -> String {
         })
         .collect();
     parts.join(" ")
+}
+
+/// What a bot's naval squads do right now (examples/naval_probe.rs).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NavalReport {
+    /// Naval squads and the ships in them.
+    pub squads: usize,
+    pub ships: usize,
+    /// Ships of the largest naval squad.
+    pub largest: usize,
+    /// Ships in naval squads that idle without a target.
+    pub idle_ships: usize,
+    /// Attacks naval squads started so far.
+    pub attacks: u32,
+}
+
+pub fn naval_report(w: &World, player: u8) -> NavalReport {
+    let st = &w.ai[player as usize].squads;
+    let mut r = NavalReport { attacks: st.naval_attacks, ..NavalReport::default() };
+    for (k, s) in st.squads.iter().enumerate().filter(|(_, s)| s.kind == SquadType::Naval) {
+        let n = units_of(w, player, s).len();
+        r.squads += 1;
+        r.ships += n;
+        r.largest = r.largest.max(n);
+        if s.state == State::GroundIdle && target_actor(w, player, k).is_none() {
+            r.idle_ships += n;
+        }
+    }
+    r
+}
+
+/// The target actor of `player`'s first naval squad (tests).
+#[cfg(test)]
+pub(crate) fn naval_target(w: &World, player: u8) -> Option<usize> {
+    let k = squad_of_type(w, player, SquadType::Naval)?;
+    target_actor(w, player, k)
+}
+
+/// Point `player`'s first naval squad at actor `t` and run its check for
+/// a target it cannot see (tests).
+#[cfg(test)]
+pub(crate) fn naval_target_check(w: &mut World, player: u8, t: usize) {
+    let k = squad_of_type(w, player, SquadType::Naval).expect("a naval squad");
+    set_target(w, player, k, Some((t, (0, 0))));
+    check_blind(w, player, k);
 }
 
 /// Own living units in squads of `kind` (tests).

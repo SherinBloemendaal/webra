@@ -71,12 +71,20 @@ export const FX_LIMITS = Object.freeze({
  * WebRA's own pixel art when it draws the role's pose (art/pixel.js), else
  * WebRA's vector art.
  */
-function ownPixelArt(id, spec) {
-  const pose = typeof spec?.pose === 'string' ? spec.pose : null;
+function ownPixelArt(id, role, seq, image) {
+  const spec = ROLES[role];
   const art = pixelArtOf(id);
-  if (art && spec?.part === 'body' && pose && pose in art.poses) {
-    return { webra: `pixel ${id.toLowerCase()}.${pose}`, where: `body.${pose}`, note: "OpenRA made this art (bits.txt); Red Alert has none: WebRA's own pixel art in Red Alert's style" };
+  const note = "OpenRA made this art (bits.txt); Red Alert has none: WebRA's own pixel art in Red Alert's style";
+  const pose = typeof spec?.pose === 'string' ? spec.pose : null;
+  if (art && (spec?.part === 'body' || spec?.part === 'second') && pose && art[spec.part]?.[pose]) {
+    const name = spec.part === 'body' ? pose : `second.${pose}`;
+    return { webra: `pixel ${id.toLowerCase()}.${name}`, where: `${spec.part}.${pose}`, note };
   }
+  // A helicopter's husk is its body falling (engine helicopter.rs), OpenRA's too (the idle sequence).
+  if (art?.body?.idle && spec?.huskActor && image === RENDER_FACTS[id]?.image && seq === 'idle') {
+    return { webra: `pixel ${id.toLowerCase()}.idle`, where: 'body.idle', note };
+  }
+  if (art?.cameo && spec?.part === 'cameo') return { webra: `pixel ${id.toLowerCase()}.cameo`, where: 'cameo', note };
   return { note: 'OpenRA made this art (bits.txt); Red Alert has none' };
 }
 
@@ -391,7 +399,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
       if (!original) {
         const have = installedMade([openra]);
         if (have.length) row({ ...base, status: 'wrong', note: `no original mapping although Red Alert has ${have.join(' ')} (tools/gen_content_tables.py IN_RED_ALERT_TOO)` });
-        else row({ ...base, ...ownPixelArt(a.id, ROLES[role]), status: 'webra-only' });
+        else row({ ...base, ...ownPixelArt(a.id, role, seq, image), status: 'webra-only' });
         continue;
       }
       // Original on other tilesets only (the desert's trees and gem mine): WebRA's art on this one.

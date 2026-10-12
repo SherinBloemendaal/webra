@@ -16,6 +16,7 @@ mod ai_harvest;
 mod ai_infantry;
 mod ai_mcv;
 mod ai_mines;
+mod ai_naval;
 mod ai_squads;
 mod ai_support;
 mod ai_units;
@@ -85,6 +86,8 @@ mod tests;
 mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
+#[cfg(test)]
+mod tests_ai_naval;
 #[cfg(test)]
 mod tests_antiair;
 #[cfg(test)]
@@ -173,6 +176,8 @@ pub const GIT_HASH: &str = env!("WEBRA_GIT_HASH");
 
 /// One line about an AI player's bot state (examples/ai_probe.rs).
 pub use ai::debug_summary as ai_debug_summary;
+/// What an AI player's naval squads do (examples/naval_probe.rs).
+pub use ai_squads::{naval_report as ai_naval_report, NavalReport};
 
 /// The built-in rules (engine/rules.json) as JSON: the base that map rules
 /// overrides apply to. Used by the map editor to validate and show defaults.
