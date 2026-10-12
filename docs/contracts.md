@@ -2248,8 +2248,11 @@ tested or measured headless.
 WebRA's own sprites are single frames the shader rotates by the instance
 angle. Original graphics and texture packs are pre-rendered per facing and
 animated, the OpenRA way, so the renderer needs to know what each actor is
-doing. `Game.set_sprite_poses(true)` (a render setting, off by default; the
-main thread turns it on when the atlas holds such art) makes body sprites
+doing. So is WebRA's own pixel art (`js/art/pixel.js`, from
+`tools/gen_pixel_art.py`: the oil derrick `OILB`, idle and damaged frames),
+which every atlas holds. `Game.set_sprite_poses(true)` (a render setting,
+off by default; the main thread turns it on when the atlas holds such art,
+`buildAtlas` `poses`) makes body sprites
 carry a pose in the sprite id:
 
     id = slot + 4096 * (pose + 32 * age)
@@ -2400,7 +2403,8 @@ actor and special sprite each sequence OpenRA's render traits draw
 (`js/content/render-facts.js`, generated with `tables.js`) and whether
 WebRA shows it (ok), falls back to its own art, maps a wrong one, has no
 way to show it yet (gap, with what is missing) or Red Alert has no art for
-it (webra-only). The campaign's characters and wrecks (`render-facts.js`
+it (webra-only; its note and `webra` field say when WebRA draws that part
+with its own pixel art in Red Alert's style, `js/art/pixel.js`). The campaign's characters and wrecks (`render-facts.js`
 `MISSION_ACTORS`, `withMissionActors`) are audited like the rules actors.
 An OpenRA-made file (`render-facts.js` `OPENRA_MADE_FILES`) found among the
 player's files makes its rows and a `(files)` row wrong: the tables would
@@ -2411,7 +2415,19 @@ files whose frames spell their own file and frame number, so a missing
 mapping or a frame out of OpenRA's order fails CI.
 
 Content priority per part, cameo, terrain and sound: texture pack > original
-content > WebRA. The pack format is in `docs/texture-packs.md`; packs are
+content > WebRA (its pixel art, then its vector art).
+
+WebRA's own pixel art (`tools/gen_pixel_art.py` writes
+`js/art/pixel-data.js`, CI checks it is up to date): 8-bit frames at one
+pixel per world pixel on WebRA's own palette with Red Alert's index
+conventions (0 transparent, 4 shadow, 80 to 95 the owner's colour), for
+actors Red Alert has no art for. `js/art/pixel.js` `pixelSlots` makes the
+body slot's pose table (idle, damaged; centred on the footprint plus the
+building's centre offset, like the original structures), stored at two
+atlas pixels per world pixel so it stays crisp with either sampler;
+`buildAtlas` adds it to every atlas where no pack or original art has the
+slot, and `pixelDraw` paints the idle frame for icons. Nothing in it comes
+from Westwood's or OpenRA's files. The pack format is in `docs/texture-packs.md`; packs are
 cosmetic and never reach the simulation.
 
 ### Game methods across the boundary

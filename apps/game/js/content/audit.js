@@ -23,7 +23,9 @@
 //   gap        OpenRA draws it, the engine has nothing that shows it (the
 //              note says what is missing and who adds it)
 //   webra-only Red Alert has no art for it (OpenRA made the file itself,
-//              data/source/bits.txt), so WebRA's own art stays; when the
+//              data/source/bits.txt), so WebRA's own art stays (the note
+//              says when that is WebRA's pixel art in Red Alert's style,
+//              art/pixel.js, and `webra` names its pose); when the
 //              player's files do have such a file (render-facts.js
 //              OPENRA_MADE_FILES) every row using it is wrong instead, and
 //              so is a row "(files)" naming it
@@ -41,6 +43,7 @@ import { originalCursorFrames } from './cursors.js';
 import { CURSOR_NAMES, COMMAND_CURSOR_NAMES } from '../cursors.js';
 import { MODE, POSE, TICKS_PER_SECOND, resolveSequence, sequenceFile } from './sequences.js';
 import { decodeSprite } from './shp.js';
+import { pixelArtOf } from '../art/pixel.js';
 
 /**
  * Ticks the engine draws an effect (engine/src/fx.rs): an original sequence
@@ -63,6 +66,20 @@ export const FX_LIMITS = Object.freeze({
  * role's first, second, ... sequence (OpenRA picks among them at random:
  * stand variants, idle animations, attack sequences).
  */
+/**
+ * The webra and note fields of a row whose OpenRA art has no original:
+ * WebRA's own pixel art when it draws the role's pose (art/pixel.js), else
+ * WebRA's vector art.
+ */
+function ownPixelArt(id, spec) {
+  const pose = typeof spec?.pose === 'string' ? spec.pose : null;
+  const art = pixelArtOf(id);
+  if (art && spec?.part === 'body' && pose && pose in art.poses) {
+    return { webra: `pixel ${id.toLowerCase()}.${pose}`, where: `body.${pose}`, note: "OpenRA made this art (bits.txt); Red Alert has none: WebRA's own pixel art in Red Alert's style" };
+  }
+  return { note: 'OpenRA made this art (bits.txt); Red Alert has none' };
+}
+
 export const ROLES = Object.freeze({
   body: { part: 'body', pose: 'idle' },
   'body-damaged': { part: 'body', pose: 'damaged', kinds: ['building'] },
@@ -374,7 +391,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
       if (!original) {
         const have = installedMade([openra]);
         if (have.length) row({ ...base, status: 'wrong', note: `no original mapping although Red Alert has ${have.join(' ')} (tools/gen_content_tables.py IN_RED_ALERT_TOO)` });
-        else row({ ...base, status: 'webra-only', note: 'OpenRA made this art (bits.txt); Red Alert has none' });
+        else row({ ...base, ...ownPixelArt(a.id, ROLES[role]), status: 'webra-only' });
         continue;
       }
       // Original on other tilesets only (the desert's trees and gem mine): WebRA's art on this one.

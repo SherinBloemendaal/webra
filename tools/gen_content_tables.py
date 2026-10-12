@@ -189,7 +189,8 @@ NO_ORIGINAL = {
     'jmin.shp',
     # The neutral world's art OpenRA drew itself (it keeps WebRA art): ammo
     # boxes, huts, the hospital icon, make animations of tech buildings, the
-    # oil derrick, ore and gem mines on some tilesets, poles, traps and more.
+    # oil derrick (WebRA's own pixel art, tools/gen_pixel_art.py), ore and gem
+    # mines on some tilesets, poles, traps and more.
     'ammobox1.shp', 'ammobox2.shp', 'ammobox3.shp', 'asianhut.shp', 'c11.shp', 'ctflag.shp', 'fcommake.shp',
     'gmine.des', 'gmine.sno', 'gmine.tem', 'hospicon.shp', 'lhus.shp', 'mine.des', 'mine.int', 'missmake.shp', 'oilb.shp',
     'railmine.des', 'railmine.sno', 'railmine.tem', 'rushouse.shp', 'snowhut.shp', 'tanktrap1.shp', 'tanktrap2.shp',

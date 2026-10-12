@@ -18,7 +18,7 @@ It is modernised where it helps (large unit counts, flow-field pathfinding, a lo
 
 ## Why the simple art style
 
-WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and readable silhouettes instead of hyper-detailed textures. Simple images are easier to recognise at a glance and easier to remember, which is exactly what you want when a hundred units are moving across the screen. All sprites are generated procedurally at startup with Canvas2D (at 2x resolution), and the terrain tiles of each biome are computed pixel by pixel at game start, so the project ships no image assets at all.
+WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and readable silhouettes instead of hyper-detailed textures. Simple images are easier to recognise at a glance and easier to remember, which is exactly what you want when a hundred units are moving across the screen. All sprites are generated procedurally at startup with Canvas2D (at 2x resolution), except the oil derrick, WebRA's own pixel art in Red Alert's style painted by a script (`tools/gen_pixel_art.py`), and the terrain tiles of each biome are computed pixel by pixel at game start, so the project ships no image assets at all.
 
 ## Features
 
@@ -170,7 +170,9 @@ them (WebRA's own art and synthesized sounds).
   interior theater is not used (WebRA has no interior maps).
 - Art Red Alert does not have keeps WebRA's: the Mobile Flak and the Black
   Hawk (OpenRA's own units, unit and cameo), neutral decorations OpenRA drew
-  itself (huts, ammo boxes, poles, tank traps, the oil derrick, ...),
+  itself (huts, ammo boxes, poles, tank traps, ...; the oil derrick is
+  WebRA's own pixel art in Red Alert's style, with or without the
+  original graphics),
   veterancy ranks, contrails, the chronoshift shimmer, ability markers and
   the level up crate animation. OpenRA's own files are not
   shipped (see [data/CATALOG.md](data/CATALOG.md) for why).
@@ -480,7 +482,7 @@ Notes on browsers:
 - **[OpenRA](https://github.com/OpenRA/OpenRA)**: the open-source reimplementation of the classic Westwood RTS games. WebRA's gameplay values (costs, build times, health, armour, weapons, prerequisites, timing) come from OpenRA's `mods/ra` rules, which are licensed under GPLv3. Many thanks to the OpenRA contributors.
 - **Westwood Studios and Electronic Arts**: for the original *Command & Conquer: Red Alert*.
 
-*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are generated procedurally by the game at runtime and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
+*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are WebRA's own, generated procedurally by the game at runtime (the oil derrick's pixel art by a script in `tools/`), and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
 
 ## License
 

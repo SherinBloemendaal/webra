@@ -164,6 +164,16 @@ test('art audit: an actor OpenRA draws from Red Alert files without an original 
   assert.ok(OPENRA_MADE_FILES['oilb.shp'].includes('oilb.idle'), 'the oil derrick is OpenRA\'s own art');
   assert.equal(OPENRA_MADE_FILES['einstein.shp'], undefined, 'Einstein is not OpenRA-made');
   assert.equal(status('OILB', 'oilb.idle'), 'webra-only');
+  // Red Alert has no derrick: WebRA draws its own pixel art (art/pixel.js), idle and damaged.
+  for (const [seq, pose] of [['oilb.idle', 'idle'], ['oilb.damaged-idle', 'damaged']]) {
+    const r = rows.find((x) => x.actor === 'OILB' && x.openra === seq);
+    assert.equal(r.status, 'webra-only', seq);
+    assert.equal(r.webra, `pixel oilb.${pose}`, seq);
+    assert.equal(r.where, `body.${pose}`, seq);
+    assert.match(r.note, /WebRA's own pixel art in Red Alert's style/);
+  }
+  // Without pixel art (the Mobile Flak) the note says only that Red Alert has none.
+  assert.equal(rows.find((r) => r.actor === 'FTRK' && r.openra === 'ftrk.idle').note, 'OpenRA made this art (bits.txt); Red Alert has none');
   const fake = buildShp(4, 2, [new Uint8Array(8).fill(1), new Uint8Array(8).fill(2)]);
   const withOilb = (n) => (n === 'oilb.shp' ? fake : getFile(n));
   const r2 = auditOriginalArt(AUDITED, withOilb, { identify });
