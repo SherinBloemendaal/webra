@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.0](https://github.com/SherinBloemendaal/webra/compare/v0.11.0...v0.12.0) (2026-10-12)
+
+
+### Features
+
+* **engine:** send aircraft out of ammo back to their target once rearmed ([e0868f7](https://github.com/SherinBloemendaal/webra/commit/e0868f784e7f4dd063927fb9d9d2b45a4e89600c))
+* **game:** let one Esc release the mouse and open the menu by default ([c83dee9](https://github.com/SherinBloemendaal/webra/commit/c83dee9f86b159686c0e83c7b5b81ee5592678e1))
+
+
+### Bug Fixes
+
+* **engine:** end aircraft attacks on resupply like OpenRA ([73186ef](https://github.com/SherinBloemendaal/webra/commit/73186ef1580b36accc2b18afba2f18c00ef49463))
+* **engine:** make anti-air defences and rocket soldiers shoot aircraft ([3c0f9ab](https://github.com/SherinBloemendaal/webra/commit/3c0f9ab63dcf270ddd8bc6cecc03572b48382e7f))
+* **game:** keep help tips inside the panel that shows them ([a3afdab](https://github.com/SherinBloemendaal/webra/commit/a3afdabd225d86c9c0be93b30c28556cb11a947d))
+* **game:** start the map lens at half the game's zoom ([9f24a21](https://github.com/SherinBloemendaal/webra/commit/9f24a2151f1870aff8da9e88222afb2fc85e469f))
+
 ## [0.11.0](https://github.com/SherinBloemendaal/webra/compare/v0.10.0...v0.11.0) (2026-10-11)
 
 
