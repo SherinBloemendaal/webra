@@ -148,9 +148,11 @@ impl World {
         self.pass.set_blocked(ci, true);
         self.pass_water.set_blocked(ci, true);
         self.pass_landing.set_blocked(ci, true);
-        self.pass.refresh(&self.map);
-        self.pass_water.refresh(&self.map);
-        self.pass_landing.refresh(&self.map);
+        if !self.placing_map_actors {
+            self.pass.refresh(&self.map);
+            self.pass_water.refresh(&self.map);
+            self.pass_landing.refresh(&self.map);
+        }
         h
     }
 

@@ -1013,3 +1013,90 @@ fn the_neutral_world_is_deterministic() {
     }
     assert!(a.actors.iter().any(|x| x.alive && x.kind == Kind::Infantry));
 }
+
+// ---- Units on cells they cannot stand on -------------------------------------------------
+
+#[test]
+fn a_map_unit_on_a_structures_cell_stays_there_like_openra_and_walks_off() {
+    // OpenRA maps can put a civilian on its house: it is placed there all the
+    // same (no placement check) and leaves when it moves, pathing from the
+    // open neighbour (World::nearest_reachable). Whichever the file names first.
+    for actors in [vec![actor("C1", 30, 30), actor("V19", 30, 30)], vec![actor("V19", 30, 30), actor("C1", 30, 30)]] {
+        let mut w = world(actors);
+        let ci = w.map.idx(30, 30);
+        let house = w.building_at[ci];
+        assert_ne!(house, NONE, "the house stands where the map put it");
+        assert_eq!(w.actors[house as usize].ty, ty(&w, "V19"));
+        let civ = find(&w, "C1")[0];
+        assert_eq!(w.cell_of(w.actors[civ].x, w.actors[civ].y), (30, 30), "the civilian starts on the house's cell");
+        assert!(w.pass.blocked[ci]);
+        w.actors[civ].world.wander_countdown = 1;
+        w.actors[civ].world.wander_busy = false;
+        let mut off = false;
+        for _ in 0..600 {
+            w.step();
+            if w.cell_of(w.actors[civ].x, w.actors[civ].y) != (30, 30) {
+                off = true;
+                break;
+            }
+        }
+        assert!(off, "the civilian walks off the house");
+        assert!(w.actors[house as usize].alive && w.actors[civ].alive);
+    }
+}
+
+#[test]
+fn a_unit_on_a_blocked_cell_paths_from_the_open_neighbour_and_walks_off() {
+    let mut w = world(vec![actor("C1", 30, 30)]);
+    let civ = find(&w, "C1")[0];
+    // Rock closes over the civilian's cell (as a structure going up around it would).
+    let ci = w.map.idx(30, 30);
+    w.map.terrain[ci] = Terrain::Rock;
+    w.update_world_terrain();
+    assert!(w.pass.blocked[ci]);
+    assert_eq!(w.cell_of(w.actors[civ].x, w.actors[civ].y), (30, 30));
+    // A goal across the map is reachable from the neighbour nearest to it.
+    let goal = w.path_goal_from(civ, 40, 30, (30, 30));
+    assert_eq!(goal, w.map.idx(40, 30) as u32, "pathing starts from the open neighbour, not from a cell without a component");
+    // Its next stroll takes it off the rock.
+    w.actors[civ].world.wander_countdown = 1;
+    w.actors[civ].world.wander_busy = false;
+    let mut off = false;
+    for _ in 0..600 {
+        w.step();
+        if w.cell_of(w.actors[civ].x, w.actors[civ].y) != (30, 30) {
+            off = true;
+            break;
+        }
+    }
+    assert!(off, "the civilian walks off the blocked cell");
+}
+
+#[test]
+fn a_walled_in_civilian_waits_its_countdown_instead_of_asking_for_a_path_every_tick() {
+    let mut w = world(vec![actor("C1", 30, 30)]);
+    let civ = find(&w, "C1")[0];
+    let wd = w.world_traits(civ).wanders.clone().expect("civilians wander");
+    // Rock on its cell and all around it: nowhere to go at all.
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            let i = w.map.idx(30 + dx, 30 + dy);
+            w.map.terrain[i] = Terrain::Rock;
+        }
+    }
+    w.update_world_terrain();
+    w.actors[civ].world.wander_countdown = 1;
+    w.actors[civ].world.wander_busy = false;
+    w.step();
+    assert_eq!(w.actors[civ].activity, Activity::Idle, "the stroll could not start");
+    assert!(w.actors[civ].world.wander_busy, "OpenRA Wanders: the Move ended, the unit became idle");
+    // The next idle tick draws a fresh countdown (OnBecomingIdle) and waits it out.
+    w.step();
+    let countdown = w.actors[civ].world.wander_countdown;
+    assert!(countdown >= wd.min_delay - 1 && countdown <= wd.max_delay, "a fresh countdown, got {countdown}");
+    assert!(!w.actors[civ].world.wander_busy);
+    let searches = w.flow.computed;
+    run(&mut w, (wd.min_delay / 2) as u32);
+    assert_eq!(w.flow.computed, searches, "no path work while the countdown runs");
+    assert_eq!(w.actors[civ].world.wander_countdown, countdown - wd.min_delay / 2);
+}

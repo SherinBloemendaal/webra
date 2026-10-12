@@ -18,7 +18,7 @@
 // Everything else (Lua, other rules, custom art and sounds, unknown actors) is
 // listed in the report and never applied.
 
-import { BRIDGES, PICK_ANY, TILESETS } from './tables.js';
+import { BRIDGES, TILESETS } from './tables.js';
 import { child, childValue, parseIntPair, parseIntQuad, parseInteger, parseList, parseWDist } from './miniyaml.js';
 import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, holdsResource, isBuildable, MAP_FORMAT_VERSION, TERRAIN } from '../../editor/js/mapformat.js';
 import { ACTOR_CARGO_MAX, GAME_VERSION, PREVIEW_TEAM } from '../protocol.js';
@@ -509,6 +509,11 @@ export function convertOramap(input, opts) {
     .map(([l, n]) => `${LETTER_NAMES[l] ?? l} ${n}`)
     .join(', ');
   report.converted.push(`Terrain: ${bw}x${bh} cells of the ${tileset} tileset (${terrainSummary}).`);
+  // WebRA maps hold terrain types, not tiles: the look of OpenRA's cliff,
+  // shore and road templates is not carried over (docs/contracts.md).
+  report.converted.push(
+    'Each cell keeps its terrain type (clear, rough, rock, water, tree, beach, road, river, bridge, wall), not its OpenRA tile: the game draws cliffs, shores and roads with its own terrain tiles.',
+  );
   if (letterCounts.get('d') || letterCounts.get('b') || letterCounts.get('v') || letterCounts.get('l')) {
     report.converted.push('Roads, beaches, rivers and walls keep their OpenRA terrain types (roads are faster, beaches slow wheels, rivers and walls stop everything).');
   }
@@ -687,7 +692,6 @@ export function convertTerrain({ tileset, bin, bounds }, report) {
   const letterCounts = new Map();
   let unknownTemplates = 0;
   let missingTiles = 0;
-  const pickAny = new Set(PICK_ANY[tileset] ?? []);
   // Bridges (OpenRA LegacyBridgeLayer.ConvertBridgeToActor): a bridge actor at
   // the top-left cell of every bridge template, found from any of its tiles.
   const bridgeTable = BRIDGES[tileset] ?? {};
@@ -708,9 +712,9 @@ export function convertTerrain({ tileset, bin, bounds }, report) {
     if (letters === undefined) {
       unknownTemplates++;
     } else {
-      let idx = bin.tileIndex[i];
-      if (pickAny.has(type) && idx >= letters.length) idx %= letters.length;
-      const l = letters[idx];
+      // The index as OpenRA reads it (mapbin.js: 255 is (x % 4) + (y % 4) * 4);
+      // one past the template's tiles is a missing tile, as OpenRA cannot load it.
+      const l = letters[bin.tileIndex[i]];
       if (l === undefined || l === '.') missingTiles++;
       else letter = l;
     }

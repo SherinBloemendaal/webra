@@ -995,6 +995,12 @@ pub struct World {
     pub winner: Option<u8>,
     pub circle_cache: Vec<Vec<(i32, i32)>>,
     pub stress: bool,
+    /// While a map's actors are placed (`place_map_actors`, missions):
+    /// structures, bridge terrain and husks mark their cells but the
+    /// connectivity labels are recomputed once at the end (nothing in
+    /// between reads them), not three times per actor. Never part of the
+    /// state hash.
+    pub(crate) placing_map_actors: bool,
     /// Actors destroyed so far, per owner.
     pub losses: Vec<u32>,
     pub pending: Vec<PendingImpact>,
@@ -1178,7 +1184,14 @@ impl World {
     /// Place a map file's pre-placed actors (owners of `players` spawns,
     /// neutral ones to `neutral`; those of empty spawns are skipped), then
     /// the trees of tree terrain and the bridges (neutral.rs, bridges.rs).
+    /// A unit the map puts on a structure's cell stays there, as in OpenRA
+    /// (no placement check), and walks off when it moves (`nearest_reachable`,
+    /// movement/cellmove.rs `route_next`). The connectivity labels are
+    /// recomputed once for all of them (`placing_map_actors`): a large map
+    /// with hundreds of trees, mines and derricks would otherwise relabel
+    /// every cell three times per structure.
     fn place_map_actors(&mut self, actors: &[crate::mapdata::MapActor], players: usize, neutral: u8) {
+        self.placing_map_actors = true;
         for a in actors {
             let owner = if a.owner < 0 { neutral } else { a.owner as u8 };
             if a.owner >= players as i32 {
@@ -1205,7 +1218,11 @@ impl World {
                 self.apply_map_actor_state(i, a);
             }
         }
+        // The trees of tree terrain, the bridges (their terrain too) and
+        // husks mark their cells as well; the one relabelling of all cells
+        // is `update_world_terrain` in `setup_neutral`.
         self.setup_neutral();
+        self.placing_map_actors = false;
         self.refresh_tokens();
         self.update_power();
         self.update_vision();
@@ -1313,6 +1330,7 @@ impl World {
             winner: None,
             circle_cache: Vec::new(),
             stress: false,
+            placing_map_actors: false,
             losses: Vec::new(),
             pending: Vec::new(),
             options: GameOptions::default(),
@@ -1537,9 +1555,11 @@ impl World {
                 self.pass.set_crush(ci, crush);
             }
         }
-        self.pass.refresh(&self.map);
-        self.pass_water.refresh(&self.map);
-        self.pass_landing.refresh(&self.map);
+        if !self.placing_map_actors {
+            self.pass.refresh(&self.map);
+            self.pass_water.refresh(&self.map);
+            self.pass_landing.refresh(&self.map);
+        }
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
@@ -1760,7 +1780,10 @@ impl World {
         if !self.map.contains(cx, cy) {
             return None;
         }
-        // Actors without a locomotor (mines) lie where they are put.
+        // Actors without a locomotor (mines) lie where they are put. So does
+        // a unit on a cell a structure holds (OpenRA maps can put a civilian
+        // on its house: it walks off); only terrain closed to its locomotor
+        // moves it to the nearest open cell.
         if self.rules.actors[ty].unit.is_none() || self.terrain_open_to(ty, self.map.terrain[self.map.idx(cx, cy)]) {
             return Some((cx, cy));
         }

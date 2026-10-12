@@ -969,6 +969,12 @@ impl World {
         s.wander_radius = wd.radius;
         let (cx, cy) = self.cell_of(x, y);
         self.start_single_move(i, cx, cy);
+        // OpenRA queues the Move whether or not it can go anywhere; when it
+        // ends (at once, with nowhere to go) the unit becomes idle and waits
+        // a fresh countdown. The same here, so a civilian that cannot move
+        // (walled in, on a cell no unit may stand on) does not ask for a
+        // path every tick.
+        self.actors[i].world.wander_busy = true;
         true
     }
 
@@ -1209,16 +1215,47 @@ impl World {
 
     /// Nearest cell to `goal` that unit `i` can reach from where it stands
     /// (crushers: also through walls of their class), ties toward `from`.
+    /// A unit on a blocked cell (a structure went up around it, or a map
+    /// put it there) steps off to the open neighbour nearest the goal first
+    /// (movement/cellmove.rs `route_next`), so it searches from that cell.
     pub(crate) fn nearest_reachable(&self, i: usize, goal: (i32, i32), from: (i32, i32)) -> Option<u32> {
         let d = self.domain_of(i);
         let pass = self.pass_of(i);
-        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         let mask = if d == crate::rules::Domain::Ground { self.crush_mask(i) } else { 0 };
+        let ci = self.standing_cell(i, pass, mask, goal)?;
         if mask == 0 {
             return crate::flowfield::nearest_in_component(&self.map, pass, goal, pass.component[ci], from);
         }
         let labels = pass.components_for(mask);
         crate::flowfield::nearest_in_labels(&self.map, labels, |c| pass.open_for(c, mask), goal, labels[ci], from)
+    }
+
+    /// The cell unit `i` paths from: its own, or, standing on a cell blocked
+    /// for it (crushers: a wall of their class is open), the open neighbour
+    /// nearest `goal` (ties by direction order, the same on every machine).
+    /// None when no neighbour is open either.
+    fn standing_cell(&self, i: usize, pass: &crate::flowfield::Passability, mask: u8, goal: (i32, i32)) -> Option<usize> {
+        let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
+        if pass.open_for(ci, mask) {
+            return Some(ci);
+        }
+        let (cx, cy) = self.cell_of(self.actors[i].x, self.actors[i].y);
+        let mut best: Option<(i32, usize)> = None;
+        for &(dx, dy) in crate::flowfield::DIRS.iter() {
+            let (x, y) = (cx + dx, cy + dy);
+            if !self.map.contains(x, y) {
+                continue;
+            }
+            let n = self.map.idx(x, y);
+            if !pass.open_for(n, mask) {
+                continue;
+            }
+            let d = (x - goal.0).pow(2) + (y - goal.1).pow(2);
+            if best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, n));
+            }
+        }
+        best.map(|(_, n)| n)
     }
 
     /// Unit `i` drove onto cell `ci`: a wall there it may crush is crushed

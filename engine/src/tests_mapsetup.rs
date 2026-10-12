@@ -265,3 +265,61 @@ fn null_setup_and_actor_fields_are_refused() {
     v["actors"][0]["stance"] = serde_json::json!("hold_fire");
     assert!(MapData::parse(&v.to_string()).is_ok(), "a present stance is read");
 }
+
+#[test]
+fn a_map_full_of_structures_relabels_the_cells_once() {
+    // A community map carries hundreds of trees, mines and derricks; the
+    // connectivity labels (every cell, three passabilities) are computed
+    // once for all of its actors, structures, bridges and husks alike, not
+    // per actor (World::place_map_actors), and they are right afterwards.
+    let rules = crate::rules::Rules::load();
+    let br1 = rules.actors[rules.actor_index("BR1").unwrap()].world.bridge.as_ref().unwrap().templates["temperate"].healthy.clone();
+    let river_and_bridge = |m: &mut Map| {
+        for x in 10..16 {
+            for y in 40..44 {
+                let i = m.idx(x, y);
+                m.terrain[i] = Terrain::Water;
+            }
+        }
+        for (dy, row) in br1.iter().enumerate() {
+            for (dx, c) in row.chars().enumerate() {
+                if let Some(t) = Terrain::from_letter(c) {
+                    let i = m.idx(11 + dx as i32, 40 + dy as i32);
+                    m.terrain[i] = t;
+                }
+            }
+        }
+    };
+    let make = |actors: Vec<MapActor>, edit: &dyn Fn(&mut Map)| {
+        let mut m = Map::filled(48, 48, Terrain::Clear);
+        m.spawns = vec![(4, 4), (40, 40)];
+        edit(&mut m);
+        let mut d = MapData::from_map(&m, "Setup", "Test", "");
+        d.actors = actors;
+        World::from_map(&d, 1, &players(), opts()).expect("world")
+    };
+    // A wall of tank traps across the whole map, a husk and a bridge.
+    let mut actors: Vec<MapActor> = (0..48).map(|y| MapActor::new("TANKTRAP2", -1, 24, y, 0)).collect();
+    actors.push(MapActor::new("3TNK.Husk", -1, 30, 30, 0));
+    actors.push(MapActor::new("BR1", -1, 11, 40, 0));
+    let many = make(actors, &river_and_bridge);
+    let none = make(vec![], &|_| {});
+    assert_eq!(many.actors.iter().filter(|a| a.alive && a.ty == many.rules.actor_index("TANKTRAP2").unwrap() as u16).count(), 48);
+    assert!(many.husk_at(many.map.idx(30, 30)).is_some(), "the husk is on the map");
+    assert!(many.actors.iter().any(|a| a.alive && a.ty == many.rules.actor_index("BR1").unwrap() as u16), "the bridge is on the map");
+    assert_eq!(
+        many.pass.version,
+        none.pass.version + 1,
+        "exactly one relabelling of the ground for all map actors ({} and {})",
+        none.pass.version,
+        many.pass.version
+    );
+    // Nothing on the water changed: land was closed to ships already, so no relabelling there.
+    assert_eq!(many.pass_water.version, none.pass_water.version);
+    assert_eq!(many.pass_landing.version, none.pass_landing.version);
+    // And the labels are right: the traps split the map in two, the husk blocks its cell.
+    assert!(many.pass.blocked[many.map.idx(24, 0)] && many.pass.blocked[many.map.idx(24, 47)] && many.pass.blocked[many.map.idx(30, 30)]);
+    assert_ne!(many.pass.component[many.map.idx(10, 10)], many.pass.component[many.map.idx(40, 10)], "two sides of the wall");
+    assert_eq!(many.pass.component[many.map.idx(10, 10)], many.pass.component[many.map.idx(10, 30)], "one side");
+    assert_eq!(none.pass.component[none.map.idx(10, 10)], none.pass.component[none.map.idx(40, 10)]);
+}

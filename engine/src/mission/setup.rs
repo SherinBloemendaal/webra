@@ -216,9 +216,12 @@ impl World {
                 m.options.insert(id.clone(), v.to_string());
             }
         }
+        // One relabelling of the cells for all map actors (world.rs `placing_map_actors`).
+        w.placing_map_actors = true;
         w.spawn_map_actors(&mut m);
         // Bridges take their state from the terrain, trees of tree terrain become actors (neutral.rs).
         w.setup_neutral();
+        w.placing_map_actors = false;
         w.refresh_tokens();
         w.update_power();
         w.update_vision();

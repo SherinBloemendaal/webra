@@ -556,9 +556,11 @@ impl World {
             }
             self.set_cell_passability(ci);
         }
-        self.pass.refresh(&self.map);
-        self.pass_water.refresh(&self.map);
-        self.pass_landing.refresh(&self.map);
+        if !self.placing_map_actors {
+            self.pass.refresh(&self.map);
+            self.pass_water.refresh(&self.map);
+            self.pass_landing.refresh(&self.map);
+        }
         self.terrain_dirty = true;
     }
 

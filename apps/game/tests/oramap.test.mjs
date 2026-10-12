@@ -278,6 +278,8 @@ test('convert: terrain, crop, resources, the neutral world, spawns and actors', 
   assert.ok(report.skipped.some((s) => s.includes('brl3') && s.includes('outside')));
   assert.ok(report.skipped.some((s) => s.includes('waypoint')));
   assert.ok(report.converted.some((s) => s.includes('gems 4 cells')));
+  // The player is told what the conversion keeps: terrain types, not OpenRA's tiles.
+  assert.ok(report.converted.some((s) => s.includes('not its OpenRA tile')));
   assert.ok(protocolParseMap(JSON.stringify(map)).ok);
 });
 
@@ -537,6 +539,33 @@ test('convert: a folder inside the package, unknown templates and hostile text',
   assert.ok(!/[\u202e\u0007]/.test(map.name));
   assert.ok(report.warnings.some((w) => w.includes('tile templates the TEMPERAT tileset does not have')));
   assert.equal(cleanText('  a\n\tb  ', 10), 'a b');
+});
+
+test('convert: tile index 255 is the tile OpenRA picks; an index past the template is a missing tile', async () => {
+  // INTERIOR template 253 (PickAny) has 6 clear tiles; 255 on cell (3, 2) is
+  // tile 3 + 2 * 4 = 11, which it has not (OpenRA cannot load that), so the
+  // cell is a missing tile, clear and reported, like index 9 on template 291
+  // (4 wall tiles) whose index 2 is a wall.
+  const yaml = mapYaml({ tileset: 'INTERIOR', actors: [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }] });
+  const tile = (x, y) => {
+    if (x === 3 && y === 2) return [253, 255];
+    if (x === 20 && y === 20) return [291, 9];
+    if (x === 21 && y === 20) return [291, 2];
+    if (x === 5 && y === 5) return [253, 5];
+    return [T.CLEAR, 255];
+  };
+  const bytes = buildZip([
+    { name: 'map.yaml', data: yaml },
+    { name: 'map.bin', data: buildMapBin(48, 48, tile) },
+  ]);
+  const { map, report } = await parse(bytes);
+  const { terrain } = decodeLayers(map);
+  const at = (x, y) => terrain[(y - 2) * map.width + (x - 2)];
+  assert.equal(at(3, 2), TERRAIN.CLEAR);
+  assert.equal(at(5, 5), TERRAIN.CLEAR);
+  assert.equal(at(20, 20), TERRAIN.CLEAR, 'index 9 of a 4-tile template is missing');
+  assert.equal(at(21, 20), TERRAIN.WALL);
+  assert.ok(report.warnings.some((w) => w.includes('2 cells use tiles their template does not have')), report.warnings.join('; '));
 });
 
 test('isOramapFile: by extension or ZIP signature', () => {
