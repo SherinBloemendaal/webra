@@ -557,6 +557,102 @@ fn a_second_mcv_expands_to_another_ore_field() {
     assert_eq!(crate::ai_mcv::yards_and_mcvs(&w, 0).0, 2);
 }
 
+/// An extra passive player that owns neutral structures (ore mines), as
+/// generated maps and map files have.
+fn add_neutral(w: &mut World) -> u8 {
+    let fi = w.rules.faction_index("allies").unwrap();
+    w.add_player(fi, false, (0, 0));
+    let n = w.players.len() - 1;
+    w.players[n].neutral = true;
+    w.players[n].cash = 0;
+    w.ai.push(crate::ai::AiState::new(&w.rules, n as u8, BotType::Normal, AiDifficulty::Easy));
+    n as u8
+}
+
+/// The expansion square an idle MCV of player 0 would pick (CheckResource
+/// mode, the resource map freshly built). The 80 map's resource squares
+/// are centred on 4, 28, 52 and 76.
+fn expansion_square(w: &mut World, mcv: usize) -> Option<(i32, i32)> {
+    crate::ai_harvest::tick_resource_map(w, 0);
+    crate::ai_mcv::expansion_square(w, 0, mcv)
+}
+
+/// GetExpansionCenter: a square without ore is no candidate. OpenRA's
+/// resource centre of such a square is CPos.Zero, outside every map's
+/// bounds; WebRA's maps have a corner cell (0, 0), which used to draw MCVs
+/// to the top left corner whenever every ore field was already taken.
+#[test]
+fn expansions_skip_squares_without_ore() {
+    let mut w = arena(80, &[("england", normal(), 0, (40, 4)), ("russia", None, 0, (4, 70))]);
+    w.ai[0].passive = true;
+    ore(&mut w, 50, 50, 54, 54);
+    // The only ore field already has a refinery: a poor square, yet the only one.
+    put(&mut w, "PROC", 0, 50, 56);
+    let mcv = w.spawn_unit(ty(&w, "MCV"), 0, cell_center(41), cell_center(41), 0);
+    assert_eq!(expansion_square(&mut w, mcv), Some((52, 52)));
+}
+
+/// GetExpansionCenter: an own refinery near a field counts as much against
+/// it as an own Construction Yard (twice the square's area, an ally's half).
+#[test]
+fn expansions_weigh_own_refineries_like_own_yards() {
+    let mut w = arena(80, &[("england", normal(), 0, (4, 4)), ("russia", None, 0, (4, 70))]);
+    w.ai[0].passive = true;
+    ore(&mut w, 26, 26, 30, 30);
+    ore(&mut w, 50, 50, 54, 54);
+    put(&mut w, "PROC", 0, 26, 32);
+    put(&mut w, "FACT", 0, 50, 56);
+    // Two steps nearer to the second field: with equal penalties it wins.
+    let mcv = w.spawn_unit(ty(&w, "MCV"), 0, cell_center(41), cell_center(41), 0);
+    assert_eq!(expansion_square(&mut w, mcv), Some((52, 52)));
+}
+
+/// GetExpansionCenter: an ore mine in a square adds 8 to its attraction
+/// (ResourceCreatorLocs), so of two equal fields the one with a mine wins.
+#[test]
+fn expansions_prefer_ore_fields_with_a_mine() {
+    let mut w = arena(80, &[("england", normal(), 0, (4, 4)), ("russia", None, 0, (4, 70))]);
+    w.ai[0].passive = true;
+    let neutral = add_neutral(&mut w);
+    ore(&mut w, 26, 26, 30, 30);
+    ore(&mut w, 50, 50, 54, 54);
+    put(&mut w, "GMINE", neutral, 56, 52);
+    let mcv = w.spawn_unit(ty(&w, "MCV"), 0, cell_center(40), cell_center(40), 0);
+    assert_eq!(expansion_square(&mut w, mcv), Some((52, 52)));
+}
+
+/// SellUselessRefinery: a refinery without ore within SellRefineryNoResourceDistance
+/// is kept while an ore mine stands within that distance (its ore regrows).
+#[test]
+fn a_dry_refinery_by_an_ore_mine_is_not_sold() {
+    let mut w = arena(80, &[("england", normal(), 0, (4, 4)), ("russia", None, 0, (4, 70))]);
+    // No ore regrowth: the mine must not grow gems into the refinery's reach.
+    w.options.ore_regrowth = false;
+    let neutral = add_neutral(&mut w);
+    // Three refineries (above the Normal AI's two), apart from each other:
+    // two by ore, the third 13 cells from it but 7 from a gem mine.
+    ore(&mut w, 4, 20, 20, 24);
+    put(&mut w, "PROC", 0, 4, 12);
+    put(&mut w, "PROC", 0, 16, 12);
+    put(&mut w, "PROC", 0, 30, 12);
+    put(&mut w, "GMINE", neutral, 36, 16);
+    assert_eq!(count(&w, 0, "PROC"), 3);
+    let cfg = w.ai[0].cfg.clone();
+    crate::ai_base::sell_useless_refinery(&mut w, 0, &cfg);
+    run(&mut w, 2);
+    assert_eq!(count(&w, 0, "PROC"), 3, "the refinery by the mine stays");
+    w.remove(actor_of(&w, neutral, "GMINE"));
+    crate::ai_base::sell_useless_refinery(&mut w, 0, &cfg);
+    run(&mut w, 2);
+    assert_eq!(count(&w, 0, "PROC"), 2, "without the mine it is sold");
+}
+
+/// The one live actor of `owner` of type `id`.
+fn actor_of(w: &World, owner: u8, id: &str) -> usize {
+    let t = ty(w, id);
+    (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == owner && w.actors[i].ty == t).expect(id)
+}
+
 /// The Naval AI's McvManager deploys its starting MCV where it stands.
 #[test]
 fn bots_deploy_their_starting_mcv() {

@@ -904,8 +904,9 @@ fn set_rally_point(w: &mut World, _player: u8, b: usize, radius: i32) {
 }
 
 /// OpenRA SellUselessRefinery: one refinery too close to another, or far
-/// from any valuable resource, is sold (never below the minimum count).
-fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) {
+/// from any valuable resource and any ore mine, is sold (never below the
+/// minimum count).
+pub(crate) fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) {
     let bb = &cfg.info.base_builder;
     let refineries: Vec<usize> = owned_buildings(w, player)
         .into_iter()
@@ -919,7 +920,15 @@ fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) {
     for (k, &r) in refineries.iter().enumerate() {
         let at = (w.actors[r].cx, w.actors[r].cy);
         let crowded = refineries[k + 1..].iter().any(|&o| cell_dist_sq(at, (w.actors[o].cx, w.actors[o].cy)) <= (close * close) as i64);
+        let (rx, ry) = (w.actors[r].x, w.actors[r].y);
+        let mine_near = w.actors.iter().any(|a| {
+            a.alive
+                && a.in_world()
+                && cfg.resource_creators.contains(&a.ty)
+                && dist_sq(a.x, a.y, rx, ry) <= (far * CELL) as i64 * (far * CELL) as i64
+        });
         let dry = cfg.info.resource_map.is_some()
+            && !mine_near
             && !(at.1 - far..=at.1 + far).any(|y| {
                 (at.0 - far..=at.0 + far).any(|x| {
                     (x - at.0) * (x - at.0) + (y - at.1) * (y - at.1) <= far * far

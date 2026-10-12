@@ -1486,7 +1486,13 @@ engine's rules:
   defences use OpenRA's ordering toward the nearest enemy with mirrored
   ties.
 - The ResourceMap recounts friendly units on every update (OpenRA only adds).
-- MCVs remember their spot and deploy on arrival (no queued deploy).
+- MCVs remember their spot and deploy on arrival (no queued deploy). A
+  resource square without ore is never an expansion target: OpenRA's
+  resource centre of such a square is CPos.Zero, outside every map's
+  bounds, so no path leads there; WebRA's maps have a corner cell (0, 0).
+  A yard waits with packing up while a refinery is queued, as OpenRA
+  intends (its check looks at the yard's own queues, and RA's queues
+  belong to the player, so it never holds there).
 - The Iron Curtain (on the army in a fight), Chronosphere (idle vehicles
   into the enemy base) and Sonar Pulse (where an unseen attacker hit a ship)
   are WebRA additions: OpenRA's bots have no decisions for them. The GPS
@@ -1536,6 +1542,21 @@ measured before the movement models, with what is now the WebRA model).
 Four player free for alls on 96 maps (the engine's whole-game tests) end
 after 20 to 66 minutes, 2v2s after 9 to 49. `ai_vs_ai -- 3` (an hour at
 most) ends after 20:08 with the OpenRA model and 16:03 with the WebRA model.
+
+**Base spread.** OpenRA's Rush, Normal and Turtle AI (McvExpansionManager,
+since 2025) keep MinimumConstructionYardCount 2 yards and found bases over
+the whole map: after every factory, tech structure or refinery placed while
+refineries lag behind factories plus tech structures (ExpansionTolerate, less
+cash / PerExpansionTolerateOnCash), and every MoveConyardTick (3.8 minutes,
+Turtle 5.3) anyway, a yard packs up (with the "Redeployable MCVs" option, on
+by default in OpenRA and WebRA) and drives to the ore square scoring best
+(CRmodeFriendlyConyardDislikeRange and the refinery range: 14 cells from
+its own yards and refineries), asking for a refinery there. The old
+structures stay. WebRA matches this (`examples/base_spread.rs`, Normal
+against Normal, 20 minutes in: 9 to 10 yard sites and 4 to 8 clusters of
+structures on an 80 or 128 land map; with the option off 2 sites and 1 to 2
+clusters). Only OpenRA's releases up to 2025 (McvManagerBotModule, one yard)
+stay compact.
 
 ### Skirmish AI target choice (`engine/src/ai.rs`)
 

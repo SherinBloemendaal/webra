@@ -10,7 +10,10 @@
 //! queued deploy, so a moving MCV is remembered and deploys once it stands
 //! at its spot. Path lengths are ground cell steps (OpenRA asks its path
 //! finder), and Construction Yards only pack up with the "Redeployable MCVs"
-//! lobby option.
+//! lobby option. A square without ore is never a target (OpenRA's centre of
+//! it, CPos.Zero, lies outside its maps; WebRA's maps have a cell (0, 0)),
+//! and a yard waits with packing up while a refinery is queued (OpenRA
+//! checks the yard's own queues, which RA does not have).
 
 use crate::ai::{count_own, own_of, rand};
 use crate::ai_base::Cell;
@@ -402,6 +405,12 @@ fn expansion_center(w: &mut World, player: u8, cfg: &BotConfig, mcv: usize, fall
                 if (failed > max_failed >> 1 && ix.resource_cells <= threshold) || last_failed == Some(ix.center) {
                     continue;
                 }
+                // A square without ore has no resource centre (OpenRA's is
+                // CPos.Zero, outside every map's bounds, so no path leads
+                // there); WebRA's maps have a corner cell (0, 0).
+                if ix.resource_cells == 0 {
+                    continue;
+                }
                 let rc = ix.resource_center;
                 if !w.map.contains(rc.0, rc.1) {
                     continue;
@@ -413,12 +422,20 @@ fn expansion_center(w: &mut World, player: u8, cfg: &BotConfig, mcv: usize, fall
                 let path = d + 1;
                 let mut a = half - path * path / factor;
                 a += (half - (ix.resource_cells - half).abs()) >> 2;
-                let res_center = rc;
+                // Ore mines draw an expansion: 8 per mine, and half the
+                // time the spot is one of them rather than the ore's centre.
+                a += 8 * ix.creators.len() as i32;
+                let res_center = if ix.creators.is_empty() || rand(w, 0, 2) > 0 {
+                    rc
+                } else {
+                    ix.creators[rand(w, 0, ix.creators.len() as i32) as usize]
+                };
                 a -= threats(w, player, side2, i);
+                // Own refineries weigh as much as own yards (an ally's half).
                 let refine_r2 = m.cr_mode_friendly_refinery_dislike_range * m.cr_mode_friendly_refinery_dislike_range;
                 for &loc in &refineries {
                     if cell_dist_sq(res_center, loc) <= refine_r2 {
-                        a -= side2;
+                        a -= side2 << 1;
                     }
                 }
                 let yard_r2 = m.cr_mode_friendly_conyard_dislike_range * m.cr_mode_friendly_conyard_dislike_range;
@@ -644,4 +661,11 @@ fn manager_deploy_all(w: &mut World, player: u8, cfg: &BotConfig, choose: bool) 
 pub(crate) fn yards_and_mcvs(w: &World, player: u8) -> (usize, usize) {
     let cfg = w.ai[player as usize].cfg.clone();
     (count_own(w, player, &cfg.yards), count_own(w, player, &cfg.mcvs))
+}
+
+/// The resource square (its centre) MCV `mcv` would expand to now (tests).
+#[cfg(test)]
+pub(crate) fn expansion_square(w: &mut World, player: u8, mcv: usize) -> Option<Cell> {
+    let cfg = w.ai[player as usize].cfg.clone();
+    expansion_center(w, player, &cfg, mcv, true).2
 }
