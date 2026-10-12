@@ -768,7 +768,8 @@ while it is broke with fewer than four army units, sells one structure every
 8 s that it can do without (refineries without ore, aircraft and naval yards
 without aircraft or ships, tech and support structures, spare power), never
 its Construction Yard, its first barracks and war factory or its defences.
-Warships are only bought when they can hurt something the enemy fields.
+Warships are only bought for water from which they can hit an enemy structure
+or ship (see the naval bullet under the Skirmish AI's differences).
 Waves that do not fill up go after 90 s without growth or 120 s without a
 wave (after the eighth minute) and set the next wave to their size; an enemy
 without structures is hunted by the whole army; ground waves never aim at
@@ -1520,6 +1521,33 @@ engine's rules:
   a hospital.
 - Allies: an attack on an ally's structure, ore truck or MCV calls the
   bot's protection squad too.
+- Fleets (`ai_naval.rs`, `ai_squads.rs`): OpenRA's bots build naval yards
+  wherever the base has water and ships by their UnitsToBuild shares, and
+  put every ship into one naval squad that scans for enemies around the
+  point its leader aims at; with a Cruiser or Missile Submarine leading
+  (20 cell range) that point is 20 cells from the target, the scan finds
+  nothing and the fleet never sets out, and on a lake or a river stretch
+  between fords it idles for good while it keeps growing (Turtle AI fleets
+  of 37 and 41 ships that never fired in 1v1s on generated maps,
+  `examples/naval_probe.rs`). WebRA's bots build naval yards
+  and warships only for water from which a warship can hit an enemy
+  structure or ship (within its sight after the weather, less a cell, when
+  the target is out of sight: units only fire at what their owner sees),
+  put the yard's rally
+  point on that water and make that yard primary; keep one naval squad per
+  body of water; scan around the target itself; send each ship to a point
+  from which it sees the target and order ships to attack a target they see
+  directly (bots' Missile Submarines are on ReturnFire, and attack moves
+  below AttackAnything skip most structures); do not order firing ships on
+  or count them stuck; leave a target alone for two minutes when the fleet
+  stood where it should see it and did not (fog or a Gap Generator's
+  shroud; a diving submarine's cloak does not count); fall back to
+  a naval yard on their own water when fleeing; and let the ship nearest an
+  attacker of the base decide whether the fleet can answer it. Ships left
+  on water with nothing in reach stay there as a defensive fleet, as in
+  OpenRA. A Transport (in OpenRA's NavalUnitsTypes) joins the fleet of the
+  water it floats on or beaches next to. Ground squads keep OpenRA's
+  behaviour.
 
 **Measurements** (`examples/bot_matrix.rs -- 16 90`, 16 seeds per pairing,
 1v1 on generated 80 maps of random style with the standard tech buildings,
@@ -2269,8 +2297,9 @@ WebRA's own sprites are single frames the shader rotates by the instance
 angle. Original graphics and texture packs are pre-rendered per facing and
 animated, the OpenRA way, so the renderer needs to know what each actor is
 doing. So is WebRA's own pixel art (`js/art/pixel.js`, from
-`tools/gen_pixel_art.py`: the oil derrick `OILB`, idle and damaged frames),
-which every atlas holds. `Game.set_sprite_poses(true)` (a render setting,
+`tools/gen_pixel_art.py`: the oil derrick `OILB`, idle and damaged frames;
+the Black Hawk `MH60` and the Mobile Flak `FTRK`, 32 facings, the rotor and
+the turret), which every atlas holds. `Game.set_sprite_poses(true)` (a render setting,
 off by default; the main thread turns it on when the atlas holds such art,
 `buildAtlas` `poses`) makes body sprites
 carry a pose in the sprite id:
@@ -2354,11 +2383,13 @@ tick back to 0. Under fog the value itself (the layer's still pose) is
 drawn.
 
 Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
-render setting; `js/content/atlas.js` `originalSlotInfo`) are drawn the way
+render setting; `js/content/atlas.js` `originalSlotInfo`, plus the slots of
+WebRA's own pixel art, `js/gameart.js` `applyGameArt`) are drawn the way
 OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
 slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
 10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
-ships and spinners on units with OpenRA's classic perspective
+ships, turrets on vehicles with a Turreted offset (the Mobile Flak's) and
+spinners on units with OpenRA's classic perspective
 (`BodyOrientation.LocalToWorld`: the north-south part of an offset along
 the body times sin 40 degrees, `render.rs` `classic_offset`); heights of
 turrets and overlays are drawn into their frames. Explosions and splashes
@@ -2441,13 +2472,32 @@ WebRA's own pixel art (`tools/gen_pixel_art.py` writes
 `js/art/pixel-data.js`, CI checks it is up to date): 8-bit frames at one
 pixel per world pixel on WebRA's own palette with Red Alert's index
 conventions (0 transparent, 4 shadow, 80 to 95 the owner's colour), for
-actors Red Alert has no art for. `js/art/pixel.js` `pixelSlots` makes the
-body slot's pose table (idle, damaged; centred on the footprint plus the
-building's centre offset, like the original structures), stored at two
-atlas pixels per world pixel so it stays crisp with either sampler;
-`buildAtlas` adds it to every atlas where no pack or original art has the
-slot, and `pixelDraw` paints the idle frame for icons. Nothing in it comes
-from Westwood's or OpenRA's files. The pack format is in `docs/texture-packs.md`; packs are
+actors Red Alert has no art for: the oil derrick, the Black Hawk and the
+Mobile Flak. Per actor `PIXEL_ART` holds trimmed frames placed around the
+actor's origin and OpenRA-style sequences over them (`start`, `length`,
+`facings` anticlockwise from north in even steps, `tick`) for the `body`
+and `second` slot, the same roles the original art has: the derrick's idle
+and damaged body, the Black Hawk's 32 body facings (its falling husk too)
+and its rotor (pose idle the 8 frame slow-rotor on the ground, move the 4
+frame blurred rotor in the air, around the hub over the mast like OpenRA's
+rotor overlay at offset 0), the Mobile Flak's 32 body and 32 turret facings
+(the turret drawn around its pivot at the height of OpenRA's Turreted
+offset -298,0,298). `js/art/pixel.js` `pixelSlots` makes the pose tables
+(`content/sequences.js` resolveSequence and `content/atlas.js` poseTable,
+like loaded original sequences; structures centred on the footprint plus
+the building's centre offset), stored at two atlas pixels per world pixel
+so they stay crisp with either sampler; `buildAtlas` adds each to every
+atlas where no pack or original art has that slot and lists them in
+`pixel`, and `gameart.js` `applyGameArt` passes them to
+`Game.set_original_slots` with the original ones: the engine draws them as
+pre-rendered art (rotor sequences instead of WebRA's spinning blades and
+disc, the turret at `classic_offset` of the Turreted offset's forward part,
+as for original turrets). The muzzle flashes stay the slot's own: Red
+Alert's (`ACTOR_ART` keeps only `muzzle` for these two) with the original
+graphics, WebRA's otherwise. `pixelDraw` and `pixelUnitDraw` paint the idle
+frame (north) for icons, `drawPixelCameo` the 64 x 48 cameo, in its own
+colours like Red Alert's cameos (the sidebar labels it). Nothing in it
+comes from Westwood's or OpenRA's files. The pack format is in `docs/texture-packs.md`; packs are
 cosmetic and never reach the simulation.
 
 ### Game methods across the boundary

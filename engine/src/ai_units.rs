@@ -88,6 +88,9 @@ fn build_random_unit(w: &mut World, player: u8, cfg: &BotConfig, q: QueueType) {
     if cfg.units_to_build.is_empty() || !w.players[player as usize].queues[q as usize].items.is_empty() {
         return;
     }
+    if q == QueueType::Ship {
+        crate::ai_naval::choose_primary_yard(w, player, cfg);
+    }
     if let Some(ty) = choose_unit(w, player, cfg, q) {
         w.start_production(player, ty, 1);
     }
@@ -96,7 +99,9 @@ fn build_random_unit(w: &mut World, player: u8, cfg: &BotConfig, q: QueueType) {
 /// OpenRA ChooseRandomUnitToBuild: in random order, the first buildable type
 /// below its UnitsToBuild share of the listed units, else the one closest to
 /// its share; never past UnitLimits or before UnitDelays, and an aircraft
-/// only while it has a free rearm structure.
+/// only while it has a free rearm structure. WebRA: a warship only while
+/// the water of the yard it leaves reaches an enemy (that yard is made
+/// primary when another one's does not, ai_naval.rs).
 fn choose_unit(w: &mut World, player: u8, cfg: &BotConfig, q: QueueType) -> Option<u16> {
     let mut buildable: Vec<u16> =
         (0..w.rules.actors.len() as u16).filter(|&t| w.rules.actors[t as usize].queue == q && w.can_start(player, t)).collect();
@@ -118,6 +123,10 @@ fn choose_unit(w: &mut World, player: u8, cfg: &BotConfig, q: QueueType) -> Opti
         if BotConfig::lookup(&cfg.unit_limits, ty).is_some_and(|l| count >= l as i64) {
             continue;
         }
+        // WebRA: no warships for water that reaches no enemy (ai_naval.rs).
+        if useless_warship(w, player, cfg, ty) {
+            continue;
+        }
         let error = if listed.is_empty() { -1 } else { count * 100 / listed.len() as i64 - share as i64 };
         if error < 0 {
             return rearm_ok(w, player, ty).then_some(ty);
@@ -127,6 +136,12 @@ fn choose_unit(w: &mut World, player: u8, cfg: &BotConfig, q: QueueType) -> Opti
         }
     }
     desired.map(|(_, t)| t).filter(|&t| rearm_ok(w, player, t))
+}
+
+/// A warship of the naval squads (NavalUnitsTypes) that could attack no
+/// enemy from the water of the player's yards (ai_naval.rs).
+fn useless_warship(w: &mut World, player: u8, cfg: &BotConfig, ty: u16) -> bool {
+    crate::ai_naval::warship_types(w, cfg).contains(&ty) && !crate::ai_naval::warship_useful(w, player, cfg, ty)
 }
 
 /// OpenRA HasAdequateAirUnitReloadBuildings: fewer aircraft of this type than
