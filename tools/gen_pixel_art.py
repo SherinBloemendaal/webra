@@ -19,11 +19,14 @@ them as grey levels with the team mask set). Every other colour is one of
 the ramps below, darkest first.
 
 Output: PIXEL_PALETTE (768 bytes of RGB, base64) and PIXEL_ART[actor id] =
-{ width, height, offset: [x, y] (the frame centre relative to the
-footprint centre, world pixels), poses: { pose: frame }, frames: [base64 of
-width * height palette indices, row by row] }. apps/game/js/art/pixel.js
-turns them into atlas slots (body poses idle and damaged) and the editor
-and sidebar icons.
+{ offset: [x, y] (the frames' origin relative to the footprint centre,
+world pixels), frames: [[left, top, width, height, base64 of width * height
+palette indices, row by row]] (trimmed; left and top relative to the
+origin), body and second: { pose: { start, length?, facings?, tick? } }
+(OpenRA sequences over the frames: facings anticlockwise from north),
+cameo?: [width, height, base64] }. apps/game/js/art/pixel.js turns them
+into atlas slots (pose tables of the body and of the turret or rotor), the
+editor and sidebar icons and the cameos.
 
 Art:
 - OILB, the oil derrick (OpenRA civilian.yaml OILB: a 2x2 tech building
@@ -35,11 +38,16 @@ Art:
   one behind, pipes and oil drums. The damaged frame has a broken tower top,
   scorched concrete, a holed tank and rubble, like Red Alert's damaged
   structures.
+- MH60, the Black Hawk, and FTRK, the Mobile Flak: OpenRA's own units,
+  drawn from its own mh60.shp, yrotorlg.shp, ftrk.shp and their icons.
+  Here: 3D models rendered facing by facing (see "Units" below), with the
+  rotor and the turret as OpenRA's sequences have them, and cameos.
 
 Run: python3 tools/gen_pixel_art.py (CI checks the output is up to date).
 """
 import base64
 import json
+import math
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,6 +78,12 @@ RAMPS = {
     'dirt': [(52, 40, 26), (76, 60, 38), (102, 82, 54), (128, 106, 72), (152, 130, 92)],
     # Red oil drums.
     'red': [(60, 10, 8), (100, 20, 14), (142, 34, 22), (184, 56, 36), (220, 92, 60)],
+    # Cockpit and cab glass: dark blue-grey, a pale sky reflection at the top.
+    'glass': [(10, 16, 24), (18, 30, 42), (30, 48, 64), (46, 72, 92), (72, 104, 124), (112, 148, 166), (176, 204, 216)],
+    # Olive drab: the painted parts in the cameos, which keep their own colours
+    # (Red Alert's cameos are not remapped to the owner's colour).
+    'drab': [(22, 24, 12), (36, 40, 20), (52, 58, 30), (68, 76, 40), (86, 94, 52), (106, 114, 66), (128, 136, 84),
+             (152, 158, 104)],
 }
 # The remap range: a neutral ramp of WebRA's own; the game tints it with the
 # owner's colour (content/palette.js paletteLookup).
@@ -590,25 +604,723 @@ def damage(cv, rng):
             cv.put(x, 44, c('grey', 3))
 
 
-def encode(cv):
-    return base64.b64encode(bytes(cv.px)).decode('ascii')
+# ---- Units: 3D models rendered facing by facing --------------------------------------------
+# Westwood rendered its vehicles and aircraft from 3D models, one frame per
+# facing, lit from the top left and anti-aliased against black (which leaves
+# the dark rims of Red Alert's units). Here, too: each unit is a handful of
+# convex solids (prisms cut from side, front and top views, ellipsoids and
+# cylinders) that a small ray caster renders per facing with the same light,
+# so the frames turn smoothly and every facing is drawn, none mirrored.
+#
+# Model space: x to the right of the unit, y forward, z up, one world pixel
+# per unit. World space: x east, y south, z up. Frames are projected like
+# OpenRA's classic perspective (engine render.rs classic_offset): screen x is
+# world x, screen y is world y shortened by the sine of the 40 degree camera
+# pitch minus the height, so parts OpenRA places by offset (the Mobile Flak's
+# turret, the rotor hubs) land where the frames draw them.
+
+PITCH = 654 / 1024  # engine render.rs CLASSIC_PITCH_SIN
+PI = 3.141592653589793
+
+
+def dsin(deg):
+    """Sine of an angle in degrees, with + - * / only: the same bits on every platform."""
+    d = deg % 360.0
+    if d > 180.0:
+        d -= 360.0
+    x = d * PI / 180.0
+    x2 = x * x
+    term = x
+    total = x
+    for n in range(1, 15):
+        term *= -x2 / ((2 * n) * (2 * n + 1))
+        total += term
+    return total
+
+
+def dcos(deg):
+    return dsin(deg + 90.0)
+
+
+def vnorm(v):
+    n = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    return (v[0] / n, v[1] / n, v[2] / n)
+
+
+def rot(yaw=0.0, pitch=0.0):
+    """Rows of the rotation local -> model: `pitch` degrees nose up about x, then `yaw` degrees anticlockwise about z."""
+    cp, sp = dcos(pitch), dsin(pitch)
+    cy, sy = dcos(yaw), dsin(yaw)
+    # Rz(yaw) * Rx(pitch)
+    return ((cy, -sy * cp, sy * sp), (sy, cy * cp, -cy * sp), (0.0, sp, cp))
+
+
+IDENTITY = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+
+
+class Solid:
+    """A convex solid in its own frame: half-spaces n . p <= d, optionally cut
+    with an axis-aligned quadric sum w_k (p_k - c_k)^2 <= 1 (an ellipsoid, or
+    a cylinder with one weight 0). `mat` is (ramp, brightness change) or
+    mat(p, n) of the model-space point and normal; `frame` places it in the
+    model (rotation rows local -> model, translation)."""
+
+    def __init__(self, planes, box, quad=None, mat=('grey', 0.0), frame=(IDENTITY, (0.0, 0.0, 0.0)), shadow=True):
+        self.planes = list(planes)
+        self.box = box  # local bounds (x0, x1, y0, y1, z0, z1)
+        self.quad = quad
+        self.mat = mat
+        self.frame = frame
+        self.shadow = shadow
+
+    def moved(self, yaw=0.0, pitch=0.0, t=(0.0, 0.0, 0.0)):
+        """The solid turned (pitch, then yaw) about the model origin, then moved by t."""
+        r = rot(yaw, pitch)
+        (r0, t0) = self.frame
+        rr = tuple(tuple(sum(r[i][k] * r0[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+        tt = tuple(sum(r[i][k] * t0[k] for k in range(3)) + t[i] for i in range(3))
+        return Solid(self.planes, self.box, self.quad, self.mat, (rr, tt), self.shadow)
+
+    def paint(self, mat):
+        return Solid(self.planes, self.box, self.quad, mat, self.frame, self.shadow)
+
+    def no_shadow(self):
+        return Solid(self.planes, self.box, self.quad, self.mat, self.frame, False)
+
+    def corners(self):
+        """The model-space corners of its local bounds."""
+        (r, t) = self.frame
+        x0, x1, y0, y1, z0, z1 = self.box
+        out = []
+        for x in (x0, x1):
+            for y in (y0, y1):
+                for z in (z0, z1):
+                    out.append(tuple(r[i][0] * x + r[i][1] * y + r[i][2] * z + t[i] for i in range(3)))
+        return out
+
+    def hit(self, o, d):
+        """Entry distance and local normal of the model-space ray o + t d, or None."""
+        (r, t) = self.frame
+        p = (o[0] - t[0], o[1] - t[1], o[2] - t[2])
+        # Into the local frame: the transpose of the rotation.
+        lo = (r[0][0] * p[0] + r[1][0] * p[1] + r[2][0] * p[2], r[0][1] * p[0] + r[1][1] * p[1] + r[2][1] * p[2],
+              r[0][2] * p[0] + r[1][2] * p[1] + r[2][2] * p[2])
+        ld = (r[0][0] * d[0] + r[1][0] * d[1] + r[2][0] * d[2], r[0][1] * d[0] + r[1][1] * d[1] + r[2][1] * d[2],
+              r[0][2] * d[0] + r[1][2] * d[1] + r[2][2] * d[2])
+        t0, t1 = -1e9, 1e9
+        normal = None
+        if self.quad:
+            cx, cy, cz, wx, wy, wz = self.quad
+            ox, oy, oz = lo[0] - cx, lo[1] - cy, lo[2] - cz
+            a = wx * ld[0] * ld[0] + wy * ld[1] * ld[1] + wz * ld[2] * ld[2]
+            b = 2 * (wx * ld[0] * ox + wy * ld[1] * oy + wz * ld[2] * oz)
+            cc = wx * ox * ox + wy * oy * oy + wz * oz * oz - 1
+            if a == 0:
+                if cc > 0:
+                    return None
+            else:
+                disc = b * b - 4 * a * cc
+                if disc < 0:
+                    return None
+                sq = math.sqrt(disc)
+                t0, t1 = (-b - sq) / (2 * a), (-b + sq) / (2 * a)
+                normal = 'quad'
+        for nx, ny, nz, dd in self.planes:
+            den = nx * ld[0] + ny * ld[1] + nz * ld[2]
+            num = dd - (nx * lo[0] + ny * lo[1] + nz * lo[2])
+            if den == 0:
+                if num < 0:
+                    return None
+                continue
+            tt = num / den
+            if den < 0:
+                if tt > t0:
+                    t0 = tt
+                    normal = (nx, ny, nz)
+            elif tt < t1:
+                t1 = tt
+            if t0 > t1:
+                return None
+        if normal is None:
+            return None
+        if normal == 'quad':
+            cx, cy, cz, wx, wy, wz = self.quad
+            q = (lo[0] + t0 * ld[0] - cx, lo[1] + t0 * ld[1] - cy, lo[2] + t0 * ld[2] - cz)
+            normal = vnorm((wx * q[0], wy * q[1], wz * q[2]))
+        # Back to the model frame.
+        n = tuple(r[i][0] * normal[0] + r[i][1] * normal[1] + r[i][2] * normal[2] for i in range(3))
+        return t0, n
+
+
+def box3(x0, x1, y0, y1, z0, z1, mat=('grey', 0.0)):
+    planes = [(1, 0, 0, x1), (-1, 0, 0, -x0), (0, 1, 0, y1), (0, -1, 0, -y0), (0, 0, 1, z1), (0, 0, -1, -z0)]
+    return Solid(planes, (x0, x1, y0, y1, z0, z1), mat=mat)
+
+
+def prism(axis, poly, lo, hi, mat=('grey', 0.0)):
+    """A convex polygon extruded along `axis` from lo to hi. The polygon's
+    points are (y, z) for axis 'x' (a side view), (x, z) for 'y' (a front
+    view) and (x, y) for 'z' (a top view)."""
+    area = sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))
+    pts = poly if area > 0 else list(reversed(poly))
+    a, b = {'x': (1, 2), 'y': (0, 2), 'z': (0, 1)}[axis]
+    k = 'xyz'.index(axis)
+    planes = []
+    for i in range(len(pts)):
+        (u0, v0), (u1, v1) = pts[i], pts[(i + 1) % len(pts)]
+        nu, nv = v1 - v0, -(u1 - u0)
+        ln = math.sqrt(nu * nu + nv * nv)
+        nu, nv = nu / ln, nv / ln
+        n = [0.0, 0.0, 0.0]
+        n[a], n[b] = nu, nv
+        planes.append((n[0], n[1], n[2], nu * u0 + nv * v0))
+    cap = [0.0, 0.0, 0.0]
+    cap[k] = 1.0
+    planes.append((cap[0], cap[1], cap[2], hi))
+    planes.append((-cap[0], -cap[1], -cap[2], -lo))
+    bounds = [0.0] * 6
+    bounds[2 * a], bounds[2 * a + 1] = min(p[0] for p in pts), max(p[0] for p in pts)
+    bounds[2 * b], bounds[2 * b + 1] = min(p[1] for p in pts), max(p[1] for p in pts)
+    bounds[2 * k], bounds[2 * k + 1] = lo, hi
+    return Solid(planes, tuple(bounds), mat=mat)
+
+
+def cut(*solids, mat=None):
+    """The intersection of solids in the same frame (one quadric at most)."""
+    planes = []
+    quad = None
+    b = [-1e9, 1e9, -1e9, 1e9, -1e9, 1e9]
+    for s in solids:
+        planes += s.planes
+        if s.quad:
+            quad = s.quad
+        for i in range(3):
+            b[2 * i] = max(b[2 * i], s.box[2 * i])
+            b[2 * i + 1] = min(b[2 * i + 1], s.box[2 * i + 1])
+    return Solid(planes, tuple(b), quad, mat if mat is not None else solids[0].mat)
+
+
+def ellipsoid(cx, cy, cz, rx, ry, rz, mat=('grey', 0.0)):
+    return Solid([], (cx - rx, cx + rx, cy - ry, cy + ry, cz - rz, cz + rz), (cx, cy, cz, 1 / (rx * rx), 1 / (ry * ry), 1 / (rz * rz)), mat)
+
+
+def bar(axis, c, r, lo, hi, mat=('grey', 0.0)):
+    """A round bar along `axis` through the point c (its coordinate on the axis ignored), lo to hi."""
+    k = 'xyz'.index(axis)
+    w = [1 / (r * r)] * 3
+    w[k] = 0.0
+    cc = list(c)
+    cc[k] = 0.0
+    b = [cc[0] - r, cc[0] + r, cc[1] - r, cc[1] + r, cc[2] - r, cc[2] + r]
+    b[2 * k], b[2 * k + 1] = lo, hi
+    cap = [0.0, 0.0, 0.0]
+    cap[k] = 1.0
+    planes = [(cap[0], cap[1], cap[2], hi), (-cap[0], -cap[1], -cap[2], -lo)]
+    return Solid(planes, tuple(b), (cc[0], cc[1], cc[2], w[0], w[1], w[2]), mat)
+
+
+# Toward the light (world space): from the north west and above, so the
+# top and the left of every unit are lit, as in Red Alert. Toward the camera:
+# from the south, along the classic perspective.
+LIGHT = vnorm((-1.0, -1.0, 1.55))
+EYE = vnorm((0.0, 1.0, PITCH))
+HALF = vnorm((LIGHT[0] + EYE[0], LIGHT[1] + EYE[1], LIGHT[2] + EYE[2]))
+
+
+def brightness(n):
+    """0 (black) to about 1.1 (a highlight) for a world-space normal."""
+    nl = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]
+    ne = n[0] * EYE[0] + n[1] * EYE[1] + n[2] * EYE[2]
+    nh = n[0] * HALF[0] + n[1] * HALF[1] + n[2] * HALF[2]
+    v = 0.12 + 0.8 * max(0.0, nl) + 0.12 * max(0.0, ne)
+    if nh > 0:
+        h2 = nh * nh
+        h4 = h2 * h2
+        h8 = h4 * h4
+        v += 0.32 * h8 * h8
+    return v
+
+
+# Ordered dither (2 x 2 Bayer), a fraction of a shade: the grain of
+# Westwood's renders where a surface's shade changes.
+BAYER = ((0.0, 0.5), (0.75, 0.25))
+
+
+class Shot:
+    """One frame being rendered: model solids seen at a heading (WebRA's
+    clockwise degrees from north) and a zoom (cameos)."""
+
+    def __init__(self, solids, heading, zoom=1.0, lift=0.0):
+        self.solids = solids
+        self.zoom = zoom
+        self.lift = lift  # model z added (a turret's height on its body)
+        self.c, self.s = dcos(heading), dsin(heading)
+
+    def to_model(self, v, point):
+        """World -> model (an orthogonal mapping that is its own inverse)."""
+        z = v[2] - self.lift if point else v[2]
+        return (v[0] * self.c + v[1] * self.s, v[0] * self.s - v[1] * self.c, z)
+
+    def to_world(self, v):
+        return (v[0] * self.c + v[1] * self.s, v[0] * self.s - v[1] * self.c, v[2])
+
+    def screen(self, p):
+        w = self.to_world((p[0], p[1], p[2] + self.lift))
+        return (w[0] * self.zoom, (w[1] * PITCH - w[2]) * self.zoom)
+
+    def bounds(self, solid):
+        pts = [self.screen(p) for p in solid.corners()]
+        return (min(p[0] for p in pts), max(p[0] for p in pts), min(p[1] for p in pts), max(p[1] for p in pts))
+
+    def ground_bounds(self, solid, ground):
+        """Screen bounds of a solid's cast shadow on the ground (height `ground`)."""
+        out = []
+        for p in solid.corners():
+            w = self.to_world((p[0], p[1], p[2] + self.lift))
+            k = (w[2] - ground) / LIGHT[2]
+            g = (w[0] - k * LIGHT[0], w[1] - k * LIGHT[1], ground)
+            out.append((g[0] * self.zoom, (g[1] * PITCH - g[2]) * self.zoom))
+        return (min(p[0] for p in out), max(p[0] for p in out), min(p[1] for p in out), max(p[1] for p in out))
+
+    def trace(self, sx, sy, candidates):
+        """The nearest solid under the screen point: (solid, model point, model normal, world normal) or None."""
+        x = sx / self.zoom
+        y = sy / self.zoom
+        o = self.to_model((x, 60.0, PITCH * 60.0 - y), True)
+        d = self.to_model((0.0, -1.0, -PITCH), False)
+        best = None
+        for s in candidates:
+            h = s.hit(o, d)
+            if h and (best is None or h[0] < best[0]):
+                best = (h[0], s, h[1])
+        if not best:
+            return None
+        t, s, n = best
+        return s, (o[0] + t * d[0], o[1] + t * d[1], o[2] + t * d[2]), n, self.to_world(n)
+
+    def shaded(self, sx, sy, ground, candidates):
+        """Whether the ground point under (sx, sy) lies in a cast shadow."""
+        x = sx / self.zoom
+        y = (sy / self.zoom + ground) / PITCH
+        o = self.to_model((x, y, ground), True)
+        d = self.to_model(LIGHT, False)
+        return any(s.hit(o, d) and s.hit(o, d)[0] > 1e-6 for s in candidates)
+
+
+def material(solid, p, n):
+    m = solid.mat
+    return m(p, n) if callable(m) else m
+
+
+def render(solids, heading, zoom=1.0, lift=0.0, ground=None, samples=3, rim=True):
+    """Pixels {(x, y): palette index} of `solids` at `heading` (pixel (x, y)
+    covers screen x..x+1, y..y+1, the origin is the model's origin on the
+    screen). `ground` is the height cast shadows fall on (None: no shadow)."""
+    shot = Shot(solids, heading, zoom, lift)
+    boxes = [(s, shot.bounds(s)) for s in solids]
+    x0 = int(math.floor(min(b[0] for _, b in boxes))) - 1
+    x1 = int(math.ceil(max(b[1] for _, b in boxes))) + 1
+    y0 = int(math.floor(min(b[2] for _, b in boxes))) - 1
+    y1 = int(math.ceil(max(b[3] for _, b in boxes))) + 1
+    full = samples * samples
+    cells = {}
+    for py in range(y0, y1):
+        for px in range(x0, x1):
+            cand = [s for s, b in boxes if b[0] <= px + 1 and b[1] >= px and b[2] <= py + 1 and b[3] >= py]
+            if not cand:
+                continue
+            got = {}
+            hits = 0
+            for j in range(samples):
+                for i in range(samples):
+                    h = shot.trace(px + (i + 0.5) / samples, py + (j + 0.5) / samples, cand)
+                    if not h:
+                        continue
+                    s, p, n, nw = h
+                    ramp, change = material(s, p, n)
+                    hits += 1
+                    k = got.setdefault(ramp, [0, 0.0])
+                    k[0] += 1
+                    k[1] += brightness(nw) + change
+            if hits * 2 < full:
+                continue
+            ramp = max(got, key=lambda r: (got[r][0], r))
+            cells[(px, py)] = (ramp, got[ramp][1] / got[ramp][0], hits / full)
+    out = {}
+    for (px, py), (ramp, v, cover) in cells.items():
+        n = len(IDX[ramp])
+        # Partly covered pixels darken towards the black the models were rendered on.
+        v *= 0.55 + 0.45 * cover
+        shade = v * (n - 1) + BAYER[py % 2][px % 2] * 0.7 - 0.25
+        if rim:
+            # Dark rims on the far (bottom and right) edges, as in Westwood's renders.
+            if (px + 1, py) not in cells or (px, py + 1) not in cells:
+                shade -= max(1.0, n / 6)
+            elif (px - 1, py) not in cells or (px, py - 1) not in cells:
+                shade -= max(0.5, n / 14)
+        out[(px, py)] = c(ramp, int(math.floor(shade + 0.5)))
+    if ground is not None:
+        casting = [s for s in solids if s.shadow]
+        gboxes = [(s, shot.ground_bounds(s, ground)) for s in casting]
+        gx0 = int(math.floor(min(b[0] for _, b in gboxes))) - 1
+        gx1 = int(math.ceil(max(b[1] for _, b in gboxes))) + 1
+        gy0 = int(math.floor(min(b[2] for _, b in gboxes))) - 1
+        gy1 = int(math.ceil(max(b[3] for _, b in gboxes))) + 1
+        for py in range(gy0, gy1):
+            for px in range(gx0, gx1):
+                if (px, py) in out:
+                    continue
+                if shot.shaded(px + 0.5, py + 0.5, ground, casting):
+                    out[(px, py)] = SHADOW
+    return out
+
+
+def pixels_frame(px):
+    """[left, top, width, height, base64] of a pixel dict (left and top
+    relative to the model's origin on the screen)."""
+    if not px:
+        return [0, 0, 0, 0, '']
+    l = min(x for x, _ in px)
+    t = min(y for _, y in px)
+    w = max(x for x, _ in px) - l + 1
+    h = max(y for _, y in px) - t + 1
+    data = bytearray(w * h)
+    for (x, y), v in px.items():
+        data[(y - t) * w + x - l] = v
+    return [l, t, w, h, base64.b64encode(bytes(data)).decode('ascii')]
+
+
+# Facings: frame f of a 32-facing sequence faces f * 11.25 degrees
+# anticlockwise from north (OpenRA's order, content/sequences.js), rendered
+# at exactly that heading, so OpenRA's plain IndexFacing picks it (Westwood's
+# frames need the uneven classic ranges; these are even).
+FACINGS = 32
+
+
+def facing_heading(f):
+    """WebRA's clockwise heading in degrees of frame f."""
+    return -f * 360.0 / FACINGS
+
+
+# ---- The Black Hawk (MH60) ------------------------------------------------------------------
+# OpenRA aircraft.yaml MH60 (an Allied transport helicopter with a chain gun,
+# Hind-sized: 1 cell radius) and sequences/aircraft.yaml mh60: idle (32
+# classic facings, also its husk falling), rotor (4 frames, airborne) and
+# slow-rotor (8 frames, on the ground) from OpenRA's own yrotorlg.shp, the
+# muzzle (Red Alert's minigun.shp) and its cameo. Model: the UH-60's long
+# cabin with a rounded nose and dark glazing, two engines on the roof, a
+# slim tail boom rising to a swept fin with the tail rotor on the right and
+# the stabilator low on the fin, door guns, wheels. About 32 pixels from
+# nose to tail like the Longbow and the Hind. Model z 0 is the middle of
+# the fuselage, which is centred on the actor like the other helicopters;
+# the engine draws the aircraft's shadow itself (the same sprite, dark, on
+# the ground), so the frames have no cast shadow.
+
+HUB_Z = 6.5  # the rotor hub over the mast (the rotor frames are drawn around it)
+ROTOR_R = 15.5
+
+
+def mh60_cabin_mat(p, n):
+    x, y, z = p
+    # Cockpit glazing: the windscreen over the nose and the side windows.
+    if y > 6.2 and z > -0.2:
+        return ('glass', 0.05)
+    if abs(n[0]) > 0.6 and z > 0.4 and z < 2.6 and (2.0 < y < 5.4 or -3.8 < y < -0.4):
+        return ('glass', 0.0)
+    # Door frames and panel lines.
+    if abs(n[0]) > 0.6 and (abs(y - 0.4) < 0.35 or abs(y + 4.2) < 0.35):
+        return ('team', -0.12)
+    if n[2] < -0.5:
+        return ('team', -0.08)
+    return ('team', 0.0)
+
+
+def mh60_model():
+    side = [(-8.0, -2.4), (5.0, -2.6), (9.0, -1.8), (11.4, -0.2), (11.0, 1.2), (8.6, 2.8), (6.2, 3.4), (-6.4, 3.4), (-9.0, 1.6)]
+    front = [(-4.0, -1.6), (-3.2, -2.6), (3.2, -2.6), (4.0, -1.6), (4.0, 2.0), (2.8, 3.4), (-2.8, 3.4), (-4.0, 2.0)]
+    top = [(-4.0, -9.0), (4.0, -9.0), (4.0, 5.4), (3.0, 9.4), (1.2, 11.6), (-1.2, 11.6), (-3.0, 9.4), (-4.0, 5.4)]
+    cabin = cut(prism('x', side, -4.0, 4.0), prism('y', front, -9.0, 11.6), prism('z', top, -2.6, 3.4), mat=mh60_cabin_mat)
+    boom = cut(
+        prism('x', [(-7.0, -1.8), (-21.0, 0.6), (-21.0, 2.0), (-7.0, 2.6)], -2.0, 2.0),
+        prism('z', [(-2.0, -7.0), (2.0, -7.0), (0.8, -21.0), (-0.8, -21.0)], -2.0, 2.6),
+        mat=('team', -0.02),
+    )
+    fin = prism('x', [(-19.0, 1.6), (-21.4, 1.4), (-23.6, 6.2), (-22.0, 6.4)], -0.45, 0.45, mat=('team', -0.04))
+    stab = box3(-4.4, 4.4, -22.4, -20.6, 0.8, 1.3, mat=('team', -0.02))
+    tail_rotor = bar('x', (0.0, -22.2, 4.4), 2.2, 0.5, 0.8, mat=('steel', 0.0))
+    tail_hub = bar('x', (0.0, -22.2, 4.4), 0.5, 0.5, 1.1, mat=('steel', 0.05))
+    engines = [ellipsoid(side_x, -2.0, 3.8, 1.5, 4.2, 1.4, mat=('team', 0.04)) for side_x in (-2.0, 2.0)]
+    exhausts = [bar('y', (side_x, 0.0, 4.0), 0.7, -6.6, -5.4, mat=('steel', -0.2)) for side_x in (-2.6, 2.6)]
+    mast = bar('z', (0.0, 0.0, 0.0), 1.0, 3.4, 5.8, mat=('steel', 0.0))
+    hub_fairing = ellipsoid(0.0, 0.4, 4.0, 1.6, 2.6, 0.9, mat=('team', -0.03))
+    guns = [bar('y', (side_x, 0.0, 0.8), 0.35, 1.0, 4.4, mat=('steel', -0.3)) for side_x in (-4.5, 4.5)]
+    gun_mounts = [box3(side_x - 0.4, side_x + 0.4, 0.6, 1.8, 0.2, 1.2, mat=('steel', -0.2)) for side_x in (-4.3, 4.3)]
+    wheels = [bar('x', (0.0, 4.4, -3.4), 1.05, side_x - 0.45, side_x + 0.45, mat=('grey', -0.45)) for side_x in (-3.5, 3.5)]
+    struts = [box3(side_x - 0.25, side_x + 0.25, 4.0, 4.8, -3.0, -1.8, mat=('steel', -0.1)) for side_x in (-3.3, 3.3)]
+    tail_wheel = bar('x', (0.0, -19.4, -0.6), 0.6, -0.3, 0.3, mat=('grey', -0.45))
+    return [cabin, boom, fin, stab, tail_rotor, tail_hub, mast, hub_fairing] + engines + exhausts + guns + gun_mounts + wheels + struts + [tail_wheel]
+
+
+def blade_mat(p, n):
+    return ('steel', -0.22)
+
+
+def rotor_model(angle, blades=4):
+    """The main rotor at `angle` degrees: blades around the hub over the mast."""
+    blade = box3(1.0, ROTOR_R, -0.85, 0.85, -0.12, 0.12, mat=blade_mat)
+    out = [blade.moved(yaw=angle + k * 360.0 / blades, t=(0.0, 0.0, HUB_Z)) for k in range(blades)]
+    out.append(bar('z', (0.0, 0.0, 0.0), 1.4, HUB_Z - 0.4, HUB_Z + 0.5, mat=('steel', 0.0)))
+    out.append(ellipsoid(0.0, 0.0, HUB_Z + 0.5, 0.9, 0.9, 0.5, mat=('steel', 0.15)))
+    return out
+
+
+def merge(*layers):
+    """Pixel dicts on top of each other, the last on top."""
+    out = {}
+    for layer in layers:
+        out.update(layer)
+    return out
+
+
+def slow_rotor_frame(k):
+    """Ground rotor frame k of 8: a quarter turn of the four blades (they idle round anticlockwise)."""
+    return render(rotor_model(k * 90.0 / 8), 0.0)
+
+
+def fast_rotor_frame(k):
+    """Airborne rotor frame k of 4: blades blurred over their sweep, a faint
+    disc (shadow pixels: drawn translucent dark) where they spin."""
+    a = k * 90.0 / 4
+    trail = [render(rotor_model(a - 7.0 * j)[:4], 0.0, rim=False) for j in (3, 2, 1)]
+    out = {}
+    # The disc: a sparse stipple turning with the frame.
+    for y in range(-int(ROTOR_R * PITCH) - 2 - int(HUB_Z), int(ROTOR_R * PITCH) + 2 - int(HUB_Z)):
+        for x in range(-int(ROTOR_R) - 1, int(ROTOR_R) + 2):
+            dx = (x + 0.5) / ROTOR_R
+            dy = (y + 0.5 + HUB_Z) / (ROTOR_R * PITCH)
+            d = dx * dx + dy * dy
+            if d <= 1.0 and d > 0.02 and (x + k) % 2 == 0 and (y + k // 2 + (x + k) // 2) % 2 == 0:
+                out[(x, y)] = SHADOW
+    for j, layer in enumerate(trail):
+        for p, v in layer.items():
+            if v == SHADOW:
+                continue
+            # Older positions of the blades fade into the disc.
+            if j == 0 and (p[0] + p[1]) % 2:
+                continue
+            out[p] = c('steel', 1 + j)
+    blades = render(rotor_model(a), 0.0)
+    return merge(out, blades)
+
+
+def mh60_frames():
+    body = mh60_model()
+    frames = [render(body, facing_heading(f)) for f in range(FACINGS)]
+    frames += [slow_rotor_frame(k) for k in range(8)]
+    frames += [fast_rotor_frame(k) for k in range(4)]
+    return frames
+
+
+# ---- The Mobile Flak (FTRK) -----------------------------------------------------------------
+# OpenRA vehicles.yaml FTRK (a Soviet anti-air truck: Turreted Offset
+# -298,0,298, its guns at LocalOffset 512,0,192) and sequences/vehicles.yaml
+# ftrk: idle (32 classic facings), turret (32 classic facings), the muzzle
+# (Red Alert's gunfire.shp) and its cameo. Model: a three-axle army truck
+# (hood, cab with glazing, flatbed with drop sides, six wheels) like the
+# supply truck and the APC in size, with a twin 23 mm gun on a turntable on
+# the bed. The turret frames draw the mount around its pivot, raised the 7
+# pixels of the offset's height; the engine places them 298 world units
+# (7 pixels) behind the truck's centre, as OpenRA does. Model z 0 is the
+# ground, where the cast shadow falls.
+
+TURRET_FWD = -298 * 24 / 1024
+TURRET_UP = 298 * 24 / 1024
+
+
+def ftrk_cab_mat(p, n):
+    x, y, z = p
+    if y > 8.0 and z > 6.7 and n[1] > 0.2:
+        return ('glass', 0.05)  # windscreen
+    if abs(n[0]) > 0.6 and 5.0 < y < 8.0 and 6.6 < z < 8.8:
+        return ('glass', 0.0)  # side windows
+    if n[1] > 0.6 and y > 11.6:
+        if abs(abs(x) - 3.1) < 0.8 and 4.3 < z < 5.5:
+            return ('yellow', 0.1)  # headlights
+        return ('steel', -0.25)  # grille
+    return ('team', 0.0)
+
+
+def wheel_mat(p, n):
+    return ('grey', -0.42) if abs(n[0]) < 0.6 else ('grey', -0.2)
+
+
+def ftrk_body():
+    cab_side = [(4.2, 3.0), (12.4, 3.0), (12.4, 5.8), (11.6, 6.6), (9.4, 6.8), (8.4, 9.4), (4.6, 9.6), (4.2, 9.2)]
+    cab_front = [(-4.6, 3.0), (4.6, 3.0), (4.6, 8.6), (3.8, 9.6), (-3.8, 9.6), (-4.6, 8.6)]
+    cab_top = [(-4.6, 4.2), (4.6, 4.2), (4.6, 9.4), (3.6, 12.4), (-3.6, 12.4), (-4.6, 9.4)]
+    cab = cut(prism('x', cab_side, -4.6, 4.6), prism('y', cab_front, 4.2, 12.4), prism('z', cab_top, 3.0, 9.6), mat=ftrk_cab_mat)
+    chassis = box3(-3.2, 3.2, -11.6, 11.8, 1.6, 3.4, mat=('steel', -0.2))
+    bed = box3(-4.8, 4.8, -12.4, 3.8, 3.4, 4.8, mat=lambda p, n: ('grey', -0.45) if n[2] > 0.6 else ('team', -0.06))
+    sides = [box3(-4.8, -4.2, -12.4, 3.8, 4.8, 6.0, mat=('team', -0.02)), box3(4.2, 4.8, -12.4, 3.8, 4.8, 6.0, mat=('team', -0.02)),
+             box3(-4.8, 4.8, -12.4, -11.8, 4.8, 6.0, mat=('team', -0.04)), box3(-4.8, 4.8, 3.2, 3.8, 4.8, 6.6, mat=('team', -0.04))]
+    guards = [box3(side_x - 1.0, side_x + 1.0, 5.2, 9.8, 4.4, 5.0, mat=('team', -0.1)) for side_x in (-3.9, 3.9)]
+    wheels = []
+    for wy in (7.6, -3.4, -8.0):
+        for side_x in (-3.9, 3.9):
+            wheels.append(bar('x', (0.0, wy, 2.2), 2.2, side_x - 0.9, side_x + 0.9, mat=wheel_mat))
+    jacks = [box3(side_x - 0.4, side_x + 0.4, -6.0, -5.2, 0.4, 3.6, mat=('steel', -0.1)) for side_x in (-5.0, 5.0)]
+    ring = bar('z', (0.0, TURRET_FWD, 0.0), 3.0, 4.8, 5.4, mat=('steel', -0.05))
+    return [cab, chassis, bed] + sides + guards + wheels + jacks + [ring]
+
+
+def ftrk_turret():
+    """The gun mount around its pivot (z 0 is the turret's height on the body)."""
+    base = bar('z', (0.0, 0.0, 0.0), 3.4, -1.8, -0.6, mat=('steel', 0.0))
+    cradle = cut(
+        prism('x', [(-3.0, -0.6), (2.6, -0.6), (3.0, 0.6), (1.4, 2.2), (-3.0, 2.0)], -2.6, 2.6),
+        prism('z', [(-2.6, -3.0), (2.6, -3.0), (2.6, 2.0), (1.6, 3.0), (-1.6, 3.0), (-2.6, 2.0)], -0.6, 2.2),
+        mat=('team', 0.0),
+    )
+    boxes = [box3(side_x - 0.7, side_x + 0.7, -1.6, 1.2, -0.2, 1.6, mat=('drab', -0.05)) for side_x in (-3.2, 3.2)]
+    barrels = []
+    for side_x in (-0.9, 0.9):
+        barrels.append(bar('y', (side_x, 0.0, 0.0), 0.45, 0.0, 9.4, mat=('steel', -0.1)).moved(pitch=20.0, t=(0.0, 2.0, 1.2)))
+        barrels.append(bar('y', (side_x, 0.0, 0.0), 0.62, 8.2, 9.6, mat=('steel', 0.0)).moved(pitch=20.0, t=(0.0, 2.0, 1.2)))
+    gunner = [box3(-2.2, -0.6, -2.9, -1.7, 0.6, 2.6, mat=('drab', 0.0)), ellipsoid(-1.4, -2.2, 3.3, 0.85, 0.85, 0.85, mat=('drab', 0.1))]
+    sight = box3(0.9, 1.6, -0.4, 0.8, 2.0, 3.2, mat=('steel', -0.1))
+    return [base, cradle] + boxes + barrels + gunner + [sight]
+
+
+def ftrk_frames():
+    body = ftrk_body()
+    turret = ftrk_turret()
+    frames = [render(body, facing_heading(f), ground=0.0) for f in range(FACINGS)]
+    frames += [render(turret, facing_heading(f), lift=TURRET_UP) for f in range(FACINGS)]
+    return frames
+
+
+# ---- Cameos ---------------------------------------------------------------------------------
+# Red Alert's sidebar pictures are 64 x 48 pixel renders of the unit, larger
+# than in the field, turned to show its front and left side, lit from the
+# top left over a dark ground, in their own colours (the owner's colour is
+# not applied: the painted parts are olive drab here). The sidebar adds the
+# name (they do not have it in the picture).
+
+CAMEO_W, CAMEO_H = 64, 48
+
+
+def drab(solids):
+    """The solids with the owner's colour painted olive drab (cameos keep their colours)."""
+    out = []
+    for s in solids:
+        m = s.mat
+
+        def paint(p, n, m=m):
+            ramp, change = m(p, n) if callable(m) else m
+            return ('drab', change) if ramp == 'team' else (ramp, change)
+
+        out.append(s.paint(paint))
+    return out
+
+
+def cameo(solids, heading, zoom, centre, ground, extra=()):
+    """A cameo: the backdrop, the unit's cast shadow and the unit at `centre` (screen pixels)."""
+    rng = Rng(0xCA3E0)
+    px = [0] * (CAMEO_W * CAMEO_H)
+    horizon = 15
+    for y in range(CAMEO_H):
+        for x in range(CAMEO_W):
+            if y < horizon:
+                # Haze over the horizon.
+                s = 1 + (1 if (x + y) % 2 and y > horizon - 5 else 0)
+                px[y * CAMEO_W + x] = c('steel', s)
+            else:
+                f = (y - horizon) / (CAMEO_H - horizon)
+                s = 1 + int(f * 2.6 + BAYER[y % 2][x % 2] * 0.9)
+                if rng.next() < 0.08:
+                    s += rng.int(-1, 1)
+                px[y * CAMEO_W + x] = c('dirt', max(0, min(3, s)))
+    for x in range(CAMEO_W):
+        px[horizon * CAMEO_W + x] = c('steel', 3)
+    unit = render(solids, heading, zoom=zoom, ground=ground)
+    for layer in (unit,) + tuple(extra):
+        for (x, y), v in layer.items():
+            x += centre[0]
+            y += centre[1]
+            if 0 <= x < CAMEO_W and 0 <= y < CAMEO_H:
+                if v == SHADOW:
+                    old = px[y * CAMEO_W + x]
+                    # A shadow darkens the ground two shades (cameos are opaque).
+                    for ramp, idx in IDX.items():
+                        if old in idx:
+                            px[y * CAMEO_W + x] = c(ramp, idx.index(old) - 2)
+                            break
+                else:
+                    px[y * CAMEO_W + x] = v
+    # A dark rim around the picture, lit on the top and the left.
+    for x in range(CAMEO_W):
+        px[x] = c('steel', 4)
+        px[(CAMEO_H - 1) * CAMEO_W + x] = c('steel', 0)
+    for y in range(CAMEO_H):
+        px[y * CAMEO_W] = c('steel', 4)
+        px[y * CAMEO_W + CAMEO_W - 1] = c('steel', 0)
+    return [CAMEO_W, CAMEO_H, base64.b64encode(bytes(px)).decode('ascii')]
+
+
+def mh60_cameo():
+    zoom = 1.3
+    heading = 232.0
+    # Hovering a little over its shadow, the rotor stopped mid-turn.
+    return cameo(drab(mh60_model()) + rotor_model(20.0), heading, zoom, (31, 26), ground=-7.5)
+
+
+def ftrk_cameo():
+    zoom = 1.6
+    heading = 232.0
+    body = drab(ftrk_body())
+    # The guns turned to the left, raised to the sky, the mount on its pivot.
+    turret = [s.moved(yaw=-50.0, t=(0.0, TURRET_FWD, TURRET_UP)) for s in drab(ftrk_turret())]
+    return cameo(body + turret, heading, zoom, (34, 28), ground=0.0)
+
+
+def canvas_frame(cv):
+    """A derrick canvas as a frame centred on it."""
+    px = {(x - cv.w // 2, y - cv.h // 2): v for y in range(cv.h) for x in range(cv.w) if (v := cv.px[y * cv.w + x])}
+    return pixels_frame(px)
+
+
+def checked(aid, frames, allowed):
+    for k, f in enumerate(frames):
+        bad = set(base64.b64decode(f[-1])) - allowed
+        if bad:
+            raise SystemExit(f'{aid} frame {k}: indices outside the palette: {sorted(bad)}')
+    return frames
 
 
 def main():
-    art = {}
-    frames = [derrick_frame(False), derrick_frame(True)]
     allowed = valid_indices()
-    for cv in frames:
-        bad = set(cv.px) - allowed
-        if bad:
-            raise SystemExit(f'OILB: indices outside the palette: {sorted(bad)}')
-    art['OILB'] = {
-        'width': W,
-        'height': H,
-        # The frame is the 2x2 footprint, centred on it.
-        'offset': [0, 0],
-        'poses': {'idle': 0, 'damaged': 1},
-        'frames': [encode(cv) for cv in frames],
+    art = {
+        'OILB': {
+            # The frames are the 2x2 footprint, centred on it.
+            'offset': [0, 0],
+            'body': {'idle': {'start': 0}, 'damaged': {'start': 1}},
+            'frames': checked('OILB', [canvas_frame(derrick_frame(False)), canvas_frame(derrick_frame(True))], allowed),
+        },
+        'MH60': {
+            'offset': [0, 0],
+            'body': {'idle': {'start': 0, 'facings': FACINGS}},
+            # The rotor (the second slot): slow on the ground (idle), blurred in the air (move).
+            'second': {'idle': {'start': FACINGS, 'length': 8}, 'move': {'start': FACINGS + 8, 'length': 4}},
+            'frames': checked('MH60', [pixels_frame(px) for px in mh60_frames()], allowed),
+            'cameo': checked('MH60 cameo', [mh60_cameo()], allowed)[0],
+        },
+        'FTRK': {
+            'offset': [0, 0],
+            'body': {'idle': {'start': 0, 'facings': FACINGS}},
+            'second': {'idle': {'start': FACINGS, 'facings': FACINGS}},
+            'frames': checked('FTRK', [pixels_frame(px) for px in ftrk_frames()], allowed),
+            'cameo': checked('FTRK cameo', [ftrk_cameo()], allowed)[0],
+        },
     }
     pal = bytes(v for rgb in PALETTE for v in rgb)
 
@@ -627,8 +1339,11 @@ def main():
         f'export const PIXEL_INDICES = {js(sorted(allowed))};',
         '',
         '/**',
-        ' * Per actor id: { width, height, offset: [x, y] (frame centre relative to the',
-        ' * footprint centre), poses: { pose: frame }, frames: [base64 palette indices] }.',
+        ' * Per actor id: { offset: [x, y] (the frames\' origin relative to the footprint',
+        ' * centre), frames: [[left, top, width, height, base64 palette indices]] (left and',
+        ' * top relative to the origin), body and second: { pose: { start, length?,',
+        ' * facings?, tick? } } (an OpenRA sequence over `frames`: facings anticlockwise',
+        ' * from north, even steps), cameo?: [width, height, base64] (opaque) }.',
         ' */',
         'export const PIXEL_ART = {',
     ]

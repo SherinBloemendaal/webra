@@ -264,8 +264,8 @@ test('sequences: OpenRA frame order for facings, stride, Length *, Frames, Rever
 
 test('the sequences table covers the engine actors and names only files it lists', () => {
   const files = new Set(GRAPHICS_FILES);
-  // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert art: they keep WebRA's.
-  // So does the neutral world art OpenRA drew itself (tools/gen_content_tables.py
+  // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert body: WebRA's own pixel
+  // art draws them, only their muzzle flash is Red Alert's. So does the neutral world art OpenRA drew itself (tools/gen_content_tables.py
   // NO_ORIGINAL: huts, ammo boxes, poles, the oil derrick, the desert and small
   // bridges, ...); bridge huts are invisible.
   const openraOnly = new Set(['FTRK', 'MH60',
@@ -273,7 +273,7 @@ test('the sequences table covers the engine actors and names only files it lists
     'AMMOBOX3', 'BRIDGE3', 'BRIDGE4', 'SBRIDGE1', 'SBRIDGE2', 'SBRIDGE3', 'SBRIDGE4', 'BRIDGEHUT', 'BRIDGEHUT.small', 'UTILPOL1', 'UTILPOL2', 'TANKTRAP1', 'TANKTRAP2', 'GMINE']);
   for (const a of BASE.actors) {
     if (a.kind === 'proxy') continue;
-    assert.equal(!!ACTOR_ART[a.id], !openraOnly.has(a.id), `${a.id} has original art`);
+    assert.equal(!!ACTOR_ART[a.id]?.body || !!ACTOR_ART[a.id]?.bridge, !openraOnly.has(a.id), `${a.id} has original art`);
   }
   for (const [id, entry] of Object.entries(ACTOR_ART)) {
     if (entry.bridge) {
@@ -297,7 +297,10 @@ test('the sequences table covers the engine actors and names only files it lists
         if (def.classic) assert.equal(f, 32, 'classic facings need 32 facings');
       }
     }
-    assert.ok(entry.body.idle, `${id} has an idle sequence`);
+    if (entry.muzzle) assert.ok(seqs[entry.muzzle] && files.has(seqs[entry.muzzle].file), `${id} muzzle`);
+    // Only a muzzle flash: OpenRA's own units (WebRA's pixel art draws the rest).
+    if (!entry.body) assert.deepEqual(Object.keys(entry).sort(), ['image', 'muzzle'], `${id} has a muzzle only`);
+    else assert.ok(entry.body.idle, `${id} has an idle sequence`);
   }
   assert.ok(files.has(ACTOR_PALETTE));
   for (const t of Object.values(TERRAIN)) assert.ok(files.has(t.palette));
@@ -603,9 +606,11 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
   assert.equal(ACTOR_ART.SAM.bib, undefined);
   // Fakes without an original fake cameo show the real one.
   assert.equal(ACTOR_ART.TENF.cameo, 'icon');
-  // OpenRA's own units have no original art: WebRA's stays.
-  assert.equal(ACTOR_ART.FTRK, undefined);
-  assert.equal(ACTOR_ART.MH60, undefined);
+  // OpenRA's own units have no original body (WebRA's own pixel art stays), only Red Alert's muzzle flashes.
+  assert.deepEqual(ACTOR_ART.FTRK, { image: 'ftrk', muzzle: 'muzzle' });
+  assert.deepEqual(ACTOR_ART.MH60, { image: 'mh60', muzzle: 'muzzle' });
+  assert.equal(SEQUENCES.ftrk.muzzle.file, 'gunfire.shp', 'OpenRA gunfire2.shp: Red Alert gunfire.shp');
+  assert.equal(SEQUENCES.mh60.muzzle.file, 'minigun.shp');
 });
 
 test('composite: the body over the bib, both in place, shadows blended, team mask kept', () => {

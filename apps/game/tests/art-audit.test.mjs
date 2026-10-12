@@ -172,8 +172,32 @@ test('art audit: an actor OpenRA draws from Red Alert files without an original 
     assert.equal(r.where, `body.${pose}`, seq);
     assert.match(r.note, /WebRA's own pixel art in Red Alert's style/);
   }
-  // Without pixel art (the Mobile Flak) the note says only that Red Alert has none.
-  assert.equal(rows.find((r) => r.actor === 'FTRK' && r.openra === 'ftrk.idle').note, 'OpenRA made this art (bits.txt); Red Alert has none');
+  // The Black Hawk and the Mobile Flak: every sequence OpenRA draws from its own files is WebRA's pixel art.
+  for (const [actor, seq, webra, where] of [
+    ['MH60', 'mh60.idle', 'pixel mh60.idle', 'body.idle'],
+    ['MH60', 'mh60.slow-rotor', 'pixel mh60.second.idle', 'second.idle'],
+    ['MH60', 'mh60.rotor', 'pixel mh60.second.move', 'second.move'],
+    ['MH60', 'mh60.icon', 'pixel mh60.cameo', 'cameo'],
+    ['FTRK', 'ftrk.idle', 'pixel ftrk.idle', 'body.idle'],
+    ['FTRK', 'ftrk.turret', 'pixel ftrk.second.idle', 'second.idle'],
+    ['FTRK', 'ftrk.icon', 'pixel ftrk.cameo', 'cameo'],
+  ]) {
+    const r = rows.find((x) => x.actor === actor && x.openra === seq && x.role !== 'husk');
+    assert.deepEqual([r.status, r.webra, r.where], ['webra-only', webra, where], `${actor} ${seq}`);
+    assert.match(r.note, /WebRA's own pixel art in Red Alert's style/);
+  }
+  // The Black Hawk's husk is its body falling (the idle sequence).
+  const husk = rows.find((x) => x.actor === 'MH60' && x.role === 'husk');
+  assert.deepEqual([husk.status, husk.webra, husk.where], ['webra-only', 'pixel mh60.idle', 'body.idle']);
+  // Their muzzle flashes are Red Alert's (minigun, gunfire) when installed.
+  for (const [actor, seq] of [['MH60', 'mh60.muzzle'], ['FTRK', 'ftrk.muzzle']]) {
+    const r = rows.find((x) => x.actor === actor && x.openra === seq);
+    assert.equal(r.where, 'muzzle', seq);
+    assert.equal(r.status, 'ok', seq);
+  }
+  // Without pixel art (the hut) the note says only that Red Alert has none.
+  const hut = rows.find((r) => r.actor === 'ASIANHUT' && r.openra === 'asianhut.idle');
+  assert.deepEqual([hut.status, hut.webra, hut.note], ['webra-only', null, 'OpenRA made this art (bits.txt); Red Alert has none']);
   const fake = buildShp(4, 2, [new Uint8Array(8).fill(1), new Uint8Array(8).fill(2)]);
   const withOilb = (n) => (n === 'oilb.shp' ? fake : getFile(n));
   const r2 = auditOriginalArt(AUDITED, withOilb, { identify });

@@ -41,7 +41,7 @@ import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
 import { EXPLOSIONS, MUZZLE_ACTORS } from './content/tables.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
-import { pixelSlots } from './art/pixel.js';
+import { drawPixelCameo, pixelSlots, pixelUnitDraw } from './art/pixel.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
 import { INFANTRY_TIMED_POSES, MODE, POSE, POSE_STRIDE, onceTicks, packSprite } from './content/sequences.js';
 
@@ -145,22 +145,9 @@ const UNIT_DRAW = {
       rect(ctx, P.team(0.32), 7, 20.5, 8, 2); // rear door
     }],
   },
-  FTRK: {
-    body: [20, 24, (ctx, P) => {
-      const bed = truck(ctx, P, 20, 24, [3, 10, 17]);
-      rrect(ctx, P.team(0.5), 3.5, bed, 13, 22 - bed, 1);
-      rect(ctx, P.team(0.38), 3.5, 20, 13, 2);
-      for (const x of [4.5, 13.5]) rect(ctx, P.c(C.steel), x, bed + 1, 2, 9); // outriggers
-    }],
-    turret: [20, 24, (ctx, P) => {
-      rect(ctx, P.c(C.steelDark), 7.6, 2, 1.6, 9);
-      rect(ctx, P.c(C.steelDark), 10.8, 2, 1.6, 9);
-      rect(ctx, P.c(C.steelDark), 7, 2, 6, 1.5); // flak muzzles
-      rrect(ctx, P.c(C.steelDark), 5, 10, 10, 9, 2);
-      rrect(ctx, P.team(0.82), 6, 11, 8, 7, 1.5);
-      rect(ctx, P.team(1.0), 7, 12, 2.5, 1.5);
-    }],
-  },
+  // WebRA's own pixel art in Red Alert's style (art/pixel.js); the turret sits
+  // at OpenRA's Turreted offset (vehicles.yaml FTRK: -298,0,298).
+  FTRK: pixelUnitDraw('FTRK', [-298, 0]),
   '2TNK': {
     body: [24, 24, (ctx, P) => {
       tracks(ctx, P, 1, 1, 6, 22);
@@ -681,18 +668,23 @@ function shelfPack(boxes, width, startY = 0) {
  * interpolated facings, lead-in frames]) and the frames of each pose, facing by facing.
  * `images` are `{ width, height, color (RGBA), mask (one byte per pixel, 255
  * team colour) | null, offset: [x, y], scale }` with offset and scale in world
- * pixels; each is placed in the atlas once. Body slots of actors with WebRA's
- * own pixel art (art/pixel.js pixelSlots) get its pose table unless
- * `opts.slots` has them. A building whose second slot is
+ * pixels; each is placed in the atlas once. Slots of actors with WebRA's
+ * own pixel art (art/pixel.js pixelSlots) get its pose tables unless
+ * `opts.slots` has them (listed in the result's `pixel`). A building whose second slot is
  * replaced has no animated WebRA layer (`overlays` 0). `opts.filter` is the
  * sampler the renderer uses ('nearest' for pixel art); `opts.maxSize` the
  * largest atlas side. `opts.biome` is the map's biome (temperate, snow or
  * desert): the neutral world's trees, ice and huts follow it (art/world.js).
  */
 export function buildAtlas(actors, opts = {}) {
-  // WebRA's own pixel art (art/pixel.js) fills the body slots nobody else does.
+  // WebRA's own pixel art (art/pixel.js) fills the slots nobody else does.
   const slots = new Map(opts.slots ?? []);
-  for (const [k, art] of pixelSlots(actors)) if (!slots.has(k)) slots.set(k, art);
+  const pixel = [];
+  for (const [k, art] of pixelSlots(actors)) {
+    if (slots.has(k)) continue;
+    slots.set(k, art);
+    pixel.push(k);
+  }
   const maxSize = opts.maxSize ?? 8192;
   const list = spriteList(actors);
   const slotCount = list.length;
@@ -886,7 +878,8 @@ export function buildAtlas(actors, opts = {}) {
   }
   // Pose tables (sequence slots) need the engine's poses (Game.set_sprite_poses).
   const filter = opts.filter ?? 'linear';
-  return { color, mask, frames, overlays, deaths, deathTicks, filter, poses: filter === 'nearest' || extra.length > 0, width, height };
+  // `pixel`: the slots of WebRA's pixel art, which the engine draws like pre-rendered art (gameart.js applyGameArt).
+  return { color, mask, frames, overlays, deaths, deathTicks, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), width, height };
 }
 
 /**
@@ -1003,6 +996,8 @@ function cameoModel(typeName, kind) {
  * without dedicated art. Returns false (drawing nothing) for a type without art.
  */
 export function drawCameo(ctx, typeName, size, opts = {}) {
+  // WebRA's own pixel art cameos (art/pixel.js) are pictures of their own.
+  if (drawPixelCameo(ctx, spriteKey(typeName), size, opts.height ?? size)) return true;
   const model = cameoModel(typeName, opts.kind);
   if (!model) return false;
   const width = size;
