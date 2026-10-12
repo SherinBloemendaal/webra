@@ -23,7 +23,7 @@ import { buildTerrainAtlas, cellTiles, terrainSeed, TILES } from '../js/art/terr
 import { MODE, POSE, packSprite } from '../js/content/sequences.js';
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM } from '../js/scale.js';
 import { CELL_PX, TerrainRaster, frameQuad, hash2, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
-import { HOLD_MS, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensPlacement, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
+import { HOLD_MS, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensPlacement, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
 import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, teamColors } from '../js/maplens/source.js';
 import { createMap, encodeBase64, TERRAIN } from '../editor/js/mapformat.js';
 
@@ -521,9 +521,9 @@ test('mouse wheel zooms the lens only while it shows after a pointer move, and l
   p.frame.dispatchEvent(pointer('pointerenter', 150, 130));
   assert.equal(wheel(-100), false);
   p.frame.dispatchEvent(pointer('pointermove', 151, 130));
-  assert.equal(lens.zoom(), DEFAULT_ZOOM, 'starts at the game zoom');
+  assert.equal(lens.zoom(), DEFAULT_ZOOM * LENS_START_FACTOR, 'starts at half the game zoom');
   assert.equal(wheel(-100), true, 'zooms in');
-  assert.ok(lens.zoom() > DEFAULT_ZOOM);
+  assert.ok(lens.zoom() > DEFAULT_ZOOM * LENS_START_FACTOR);
   for (let i = 0; i < 100; i++) wheel(-100);
   assert.equal(lens.zoom(), MAX_ZOOM);
   assert.equal(wheel(-100), false, 'at the limit the wheel is the page\'s again');
@@ -535,7 +535,7 @@ test('mouse wheel zooms the lens only while it shows after a pointer move, and l
 test('the zoom follows the game scale', () => {
   const p = page();
   const { lens } = lensOn(p, { gameScale: () => 2 });
-  assert.equal(lens.zoom(), DEFAULT_ZOOM * 2);
+  assert.equal(lens.zoom(), DEFAULT_ZOOM * 2 * LENS_START_FACTOR);
 });
 
 test('touch: press and hold shows the lens above the finger; a swipe stays a scroll; lifting hides it', () => {

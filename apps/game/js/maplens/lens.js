@@ -13,8 +13,9 @@
 //   (below it near the top of the screen), so the finger does not cover it;
 //   it follows the finger, the page does not scroll meanwhile, and lifting
 //   the finger hides it. A swipe that starts as a scroll stays a scroll.
-// - The zoom starts at the game's own scale (js/scale.js baseZoom of the
-//   player's game scale), so the lens shows the map as big as a game does.
+// - The zoom starts at half the game's own scale (LENS_START_FACTOR of
+//   js/scale.js baseZoom at the player's game scale): at the game's own
+//   scale the lens showed too little map around the pointer.
 // - Purely decorative: aria-hidden, never focused, no keyboard handling
 //   (the preview keeps its label). It does not animate: it shows and hides
 //   at once and the art is the first frame, so reduced motion needs nothing.
@@ -31,6 +32,9 @@
 // come from css/maplens.css (theme tokens, --ui-px).
 
 import { baseZoom, zoomLimits } from '../scale.js';
+
+/** The lens starts at this factor of the game's base zoom (the wheel changes it). */
+export const LENS_START_FACTOR = 0.5;
 import { CELL_PX, SPRITE_FLOATS, frameQuad, spriteFrame, tintPixels } from './raster.js';
 
 /** Cells per side of a cached tile. */
@@ -211,7 +215,7 @@ export class MapLens {
     this.tiles = new LruCache(maxTiles);
     this.frames = new LruCache(maxFrames);
     /** Wheel zoom as a factor of the game's base zoom. */
-    this.factor = 1;
+    this.factor = LENS_START_FACTOR;
     this.target = null;
     this.image = null;
     this.offs = [];
