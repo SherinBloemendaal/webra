@@ -154,7 +154,7 @@ export const GROUPS = deepFreeze({
       mouseCaptureSpeed: { type: 'number', default: 1, min: 0.25, max: 3, step: 0.25, label: 'Captured mouse speed', help: 'Pointer speed while the mouse is captured.' },
       mouseCaptureEscMenu: {
         type: 'boolean',
-        default: false,
+        default: true,
         label: 'Esc also opens the menu while the mouse is captured',
         help: 'Off: the first Esc only releases the mouse, the next one opens the menu.',
       },

@@ -794,7 +794,7 @@ Serialized size at most 32 KiB.
     "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
     "mouseCaptureSpeed": 1,        // number 0.25..3 (pointer speed while captured)
-    "mouseCaptureEscMenu": false   // true: Esc releases the mouse and opens the menu at once
+    "mouseCaptureEscMenu": true    // true (default): Esc releases the mouse and opens the menu at once
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
