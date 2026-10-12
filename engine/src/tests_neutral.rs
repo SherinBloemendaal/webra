@@ -1017,19 +1017,31 @@ fn the_neutral_world_is_deterministic() {
 // ---- Units on cells they cannot stand on -------------------------------------------------
 
 #[test]
-fn a_map_unit_on_a_structures_cell_starts_beside_it_whichever_comes_first_in_the_file() {
-    // OpenRA maps can put a civilian on its house. The unit is placed after
-    // the structures, on the nearest open cell (World::map_unit_cell).
+fn a_map_unit_on_a_structures_cell_stays_there_like_openra_and_walks_off() {
+    // OpenRA maps can put a civilian on its house: it is placed there all the
+    // same (no placement check) and leaves when it moves, pathing from the
+    // open neighbour (World::nearest_reachable). Whichever the file names first.
     for actors in [vec![actor("C1", 30, 30), actor("V19", 30, 30)], vec![actor("V19", 30, 30), actor("C1", 30, 30)]] {
-        let w = world(actors);
-        let house = w.building_at[w.map.idx(30, 30)];
+        let mut w = world(actors);
+        let ci = w.map.idx(30, 30);
+        let house = w.building_at[ci];
         assert_ne!(house, NONE, "the house stands where the map put it");
         assert_eq!(w.actors[house as usize].ty, ty(&w, "V19"));
         let civ = find(&w, "C1")[0];
-        let (cx, cy) = w.cell_of(w.actors[civ].x, w.actors[civ].y);
-        assert_ne!((cx, cy), (30, 30), "the civilian is not inside the house");
-        assert!((cx - 30).abs() <= 1 && (cy - 30).abs() <= 1, "but right beside it, at {cx},{cy}");
-        assert!(!w.pass.blocked[w.map.idx(cx, cy)]);
+        assert_eq!(w.cell_of(w.actors[civ].x, w.actors[civ].y), (30, 30), "the civilian starts on the house's cell");
+        assert!(w.pass.blocked[ci]);
+        w.actors[civ].world.wander_countdown = 1;
+        w.actors[civ].world.wander_busy = false;
+        let mut off = false;
+        for _ in 0..600 {
+            w.step();
+            if w.cell_of(w.actors[civ].x, w.actors[civ].y) != (30, 30) {
+                off = true;
+                break;
+            }
+        }
+        assert!(off, "the civilian walks off the house");
+        assert!(w.actors[house as usize].alive && w.actors[civ].alive);
     }
 }
 

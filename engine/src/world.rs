@@ -991,9 +991,11 @@ pub struct World {
     pub winner: Option<u8>,
     pub circle_cache: Vec<Vec<(i32, i32)>>,
     pub stress: bool,
-    /// While a map's actors are placed (`place_map_actors`): structures
-    /// mark their cells but the connectivity labels are recomputed once at
-    /// the end, not three times per structure. Never part of the state hash.
+    /// While a map's actors are placed (`place_map_actors`, missions):
+    /// structures, bridge terrain and husks mark their cells but the
+    /// connectivity labels are recomputed once at the end (nothing in
+    /// between reads them), not three times per actor. Never part of the
+    /// state hash.
     pub(crate) placing_map_actors: bool,
     /// Actors destroyed so far, per owner.
     pub losses: Vec<u32>,
@@ -1175,20 +1177,15 @@ impl World {
     /// Place a map file's pre-placed actors (owners of `players` spawns,
     /// neutral ones to `neutral`; those of empty spawns are skipped), then
     /// the trees of tree terrain and the bridges (neutral.rs, bridges.rs).
-    /// Structures go first, in file order, then the rest in file order, so
-    /// a unit the map puts on a structure's cell (OpenRA maps can) starts
-    /// beside it (`map_unit_cell`) whichever of the two the file names
-    /// first. The connectivity labels are recomputed once for all of them
-    /// (`placing_map_actors`): a large map with hundreds of trees, mines and
-    /// derricks would otherwise relabel every cell three times per structure.
+    /// A unit the map puts on a structure's cell stays there, as in OpenRA
+    /// (no placement check), and walks off when it moves (`nearest_reachable`,
+    /// movement/cellmove.rs `route_next`). The connectivity labels are
+    /// recomputed once for all of them (`placing_map_actors`): a large map
+    /// with hundreds of trees, mines and derricks would otherwise relabel
+    /// every cell three times per structure.
     fn place_map_actors(&mut self, actors: &[crate::mapdata::MapActor], players: usize, neutral: u8) {
         self.placing_map_actors = true;
-        let structures =
-            actors.iter().filter(|a| self.rules.actor_index(&a.ty).is_some_and(|ty| self.rules.actors[ty].kind == Kind::Building));
-        let others =
-            actors.iter().filter(|a| !self.rules.actor_index(&a.ty).is_some_and(|ty| self.rules.actors[ty].kind == Kind::Building));
-        let ordered: Vec<&crate::mapdata::MapActor> = structures.chain(others).collect();
-        for a in ordered {
+        for a in actors {
             let owner = if a.owner < 0 { neutral } else { a.owner as u8 };
             if a.owner >= players as i32 {
                 continue;
@@ -1214,8 +1211,9 @@ impl World {
                 self.apply_map_actor_state(i, a);
             }
         }
-        // The trees of tree terrain and the bridges are structures too; the
-        // one relabelling of all cells is in `setup_neutral`.
+        // The trees of tree terrain, the bridges (their terrain too) and
+        // husks mark their cells as well; the one relabelling of all cells
+        // is `update_world_terrain` in `setup_neutral`.
         self.setup_neutral();
         self.placing_map_actors = false;
         self.refresh_tokens();
@@ -1775,12 +1773,11 @@ impl World {
         if !self.map.contains(cx, cy) {
             return None;
         }
-        // Actors without a locomotor (mines) lie where they are put; so do
-        // aircraft. A unit on a cell it cannot stand on (terrain closed to
-        // its locomotor, or a cell a structure holds: OpenRA maps can put a
-        // civilian on its house) starts on the nearest open cell.
-        let Some(u) = self.rules.actors[ty].unit.as_ref() else { return Some((cx, cy)) };
-        if self.rules.locomotors[u.locomotor].domain == crate::rules::Domain::Air || !self.pass_of_type(ty).blocked[self.map.idx(cx, cy)] {
+        // Actors without a locomotor (mines) lie where they are put. So does
+        // a unit on a cell a structure holds (OpenRA maps can put a civilian
+        // on its house: it walks off); only terrain closed to its locomotor
+        // moves it to the nearest open cell.
+        if self.rules.actors[ty].unit.is_none() || self.terrain_open_to(ty, self.map.terrain[self.map.idx(cx, cy)]) {
             return Some((cx, cy));
         }
         self.open_cell_for(ty, cx, cy, 7)

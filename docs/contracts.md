@@ -109,21 +109,21 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   No ship is ever on a cell its locomotor cannot enter (OpenRA `naval`:
   Water; `lcraft`: Water and Beach; `World::terrain_open_to`): every move
   and crowd push goes through `World::may_enter`, a map actor drawn on
-  terrain it cannot use, or on a cell a structure of the map holds (OpenRA
-  maps can put a civilian on its house), appears on the nearest cell it can
-  stand on (within 7 cells, else it is left out; OpenRA leaves it stuck
-  where it is), and the map editor places ships and naval yards only on
-  water (`rules_json` actors: `terrain`, the terrain codes a ground unit or
-  ship may stand on, and `onWater` for structures). A game on a map file
-  places the map's structures first (in file order), then its units, so
-  the units see every structure; the connectivity labels of the cells are
-  computed once for all of them (`World::place_map_actors`). A unit that
-  ends up on a cell blocked for it all the same (a structure went up around
-  it) paths from the open neighbour nearest its goal and steps off first
-  (`World::nearest_reachable`, movement/cellmove.rs `route_next`); a
-  wandering civilian whose stroll cannot start waits a fresh Wanders
-  countdown like OpenRA's (the queued Move ends at once and the unit
-  becomes idle), instead of asking for a path every tick.
+  terrain it cannot use appears on the nearest cell it can (within 7 cells,
+  else it is left out; OpenRA leaves it stuck where it is), and the map
+  editor places ships and naval yards only on water (`rules_json` actors:
+  `terrain`, the terrain codes a ground unit or ship may stand on, and
+  `onWater` for structures). A map actor on a cell a structure of the map
+  holds (OpenRA maps can put a civilian on its house) stays there, as in
+  OpenRA (no placement check), and walks off when it moves: a unit on a
+  cell blocked for it paths from the open neighbour nearest its goal and
+  steps off first (`World::nearest_reachable`, movement/cellmove.rs
+  `route_next`). A game on a map file computes the connectivity labels of
+  the cells once for all the map's actors, structures, bridges and husks
+  alike (`World::place_map_actors`, `placing_map_actors`; mission maps
+  too). A wandering civilian whose stroll cannot start waits a fresh
+  Wanders countdown like OpenRA's (the queued Move ends at once and the
+  unit becomes idle), instead of asking for a path every tick.
 - Biome (`engine/src/weather.rs`): `temperate`, `snow` or `desert`, the
   terrain look and which weather can happen (section 3). It is optional:
   absent means temperate, and a temperate map leaves the key out of its
@@ -503,8 +503,10 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   WebRA terrain of the same name (section 2: roads and bridges faster,
   beaches slow wheels, rivers and walls stop everything, as OpenRA lets
   neither tanks nor ships through rivers); Rock to rock; Water to water;
-  Tree to tree (`ORA_TO_WEBRA_TERRAIN`). A tile index of 255 means any tile
-  of a PickAny template (`(x % 4) + (y % 4) * 4`, OpenRA Map.LoadBinaryData).
+  Tree to tree (`ORA_TO_WEBRA_TERRAIN`). A tile index of 255 means the
+  tile `(x % 4) + (y % 4) * 4` of the template, as OpenRA Map.LoadBinaryData
+  reads it; an index the template has no tile for (OpenRA cannot load such a
+  map) is a missing tile, clear ground, reported like an unknown template.
   Only the terrain type of each cell is kept: the map file has no tile
   templates, so the game draws the terrain from the types alone (WebRA
   tiles, or tile terrain chosen from the theater's templates when original
