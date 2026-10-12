@@ -172,7 +172,7 @@ them (WebRA's own art and synthesized sounds).
   Hawk (OpenRA's own units, unit and cameo), neutral decorations OpenRA drew
   itself (huts, ammo boxes, poles, tank traps, the oil derrick, ...),
   veterancy ranks, contrails, the chronoshift shimmer, ability markers and
-  the level up and heal crate animations. OpenRA's own files are not
+  the level up crate animation. OpenRA's own files are not
   shipped (see [data/CATALOG.md](data/CATALOG.md) for why).
 - With original sounds, a sound OpenRA does not have stays silent instead
   of WebRA's (a bullet's impact, a tree falling), and so do the lines OpenRA

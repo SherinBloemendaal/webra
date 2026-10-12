@@ -14,10 +14,13 @@ Input (OpenRA mods/ra, GPL-3.0, copied into data/source, see data/CATALOG.md):
 - data/source/tilesets/*.yaml: the terrain type of every tile of every
   template, used to pick templates for WebRA's terrain types.
 - data/source/bits.txt: the files OpenRA makes and ships itself (mods/ra/bits).
-  A player's own copy of Red Alert never has them, so every sequence that uses
-  one is mapped to the original file it stands in for (ORIGINAL_FILES,
-  ORIGINAL_SEQUENCES), kept when the original has the same frame layout
-  (SAME_LAYOUT), or left out. A bits file nobody decided about is an error.
+  Most are missing from a player's own copy of Red Alert, so every sequence
+  that uses one is mapped to the original file it stands in for
+  (ORIGINAL_FILES, ORIGINAL_SEQUENCES) or left out (NO_ORIGINAL). Some are
+  OpenRA's copies of Red Alert files of the same name (IN_RED_ALERT_TOO):
+  those are drawn from the player's file (SAME_LAYOUT) unless the layout
+  differs (OTHER_LAYOUT). A bits file nobody decided about is an error, and
+  so is an actor OpenRA draws from an original file without ACTOR_ART.
 - engine/rules.json: the actors WebRA has (id, kind, turret, harvester).
 
 Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
@@ -146,10 +149,6 @@ ORIGINAL_FILES = {
     'hhusk.shp': 'harv.shp',
     'hhusk2.shp': 'harv.shp',
     'mcvhusk.shp': 'mcv.shp',
-    # Smudges OpenRA made a snow version of: the temperate original.
-    'cr4.sno': 'cr4.tem',
-    'cr5.sno': 'cr5.tem',
-    'sc4.sno': 'sc4.tem',
 }
 # Sequences whose OpenRA file has another layout than the original one.
 ORIGINAL_SEQUENCES = {
@@ -182,8 +181,8 @@ ORIGINAL_SHORTER = {
 NO_ORIGINAL = {
     'ateficon.shp', 'fapwicon.shp', 'fixficon.shp', 'fpwricon.shp', 'mslficon.shp', 'pdoficon.shp', 'tenficon.shp',
     'ftrk.shp', 'ftrkicon.shp', 'mh60.shp', 'mh60icon.shp', 'proctop.shp', 'yrotorlg.shp',
-    # Crate pickup animations OpenRA drew (crate-effects levelup and heal): WebRA art.
-    'levelup.shp', 'invun.shp',
+    # The crate level up animation OpenRA drew (crate-effects levelup): WebRA art.
+    'levelup.shp',
     # Veterancy ranks, the repair wrench and the power off sign exist in OpenRA only.
     'rank.shp', 'allyrepair.shp', 'poweroff.shp',
     # The mines' sidebar icon.
@@ -195,8 +194,8 @@ NO_ORIGINAL = {
     'gmine.des', 'gmine.sno', 'gmine.tem', 'hospicon.shp', 'lhus.shp', 'mine.des', 'mine.int', 'missmake.shp', 'oilb.shp',
     'railmine.des', 'railmine.sno', 'railmine.tem', 'rushouse.shp', 'snowhut.shp', 'tanktrap1.shp', 'tanktrap2.shp',
     'rice.tem', 'tc01.des', 'utilpol1.shp', 'utilpol2.shp', 'v19.des', 'windmill.shp',
-    # Campaign characters and wrecks OpenRA drew itself (MISSION_ART): WebRA art.
-    'einstein.shp', 'chan.shp', 'tran1husk.shp', 'tran2husk.shp', 'anticon.shp',
+    # Campaign wrecks OpenRA drew itself (MISSION_ART) and its anti-ant cameo: WebRA art.
+    'tran1husk.shp', 'tran2husk.shp', 'anticon.shp',
 } | {f'mb{b}.{ext}' for b in ['agun', 'fix', 'ftur', 'gap', 'gun', 'hosp', 'iron', 'pbox', 'pdox', 'sam', 'silo', 'tsla'] for ext in ['tem', 'sno', 'int', 'des']}
 # OpenRA's files that replace an original of the same name and frame layout
 # (shadows or touch-ups): the player's original works with the same sequence.
@@ -205,6 +204,33 @@ SAME_LAYOUT = {
     'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp',
     # OpenRA's engineer only adds team colours to the original's frames.
     'e6.shp',
+    # Einstein and Dr. Chan (hires.mix): the original's 165 frames, one touched up.
+    'einstein.shp', 'chan.shp',
+    # The crate heal animation (conquer.mix): the same file.
+    'invun.shp',
+    # The small napalm explosion (conquer.mix): Red Alert's own 14 frames,
+    # which OpenRA redrew larger.
+    'napalm1.shp',
+    # Snow smudges (snow.mix): the original's frames, one touched up.
+    'cr4.sno', 'cr5.sno', 'sc4.sno',
+    # Desert water (Tiberian Dawn's desert.mix): the same file.
+    'w1.des',
+}
+# OpenRA's files that a player's Red Alert has under the same name with
+# another frame layout: the crates (ORIGINAL_SEQUENCES maps their sequences)
+# and a desert debris template (Tiberian Dawn's has two tiles, OpenRA's four;
+# the tile terrain leaves it out, it uses no debris).
+OTHER_LAYOUT = {'scrate.shp', 'wcrate.shp', 'br10.des'}
+# OpenRA's files (bits.txt) whose name the archives of a player's own Red
+# Alert also have (conquer.mix, hires.mix, snow.mix, Aftermath's hires1.mix,
+# Tiberian Dawn's desert.mix), found by the archives' name hashes. Each is
+# decided in SAME_LAYOUT or OTHER_LAYOUT, never NO_ORIGINAL or a stand-in
+# (check_bits_decisions). tools/art-audit.mjs reports any other bits file it
+# finds in a player's files (render-facts.js OPENRA_MADE_FILES).
+IN_RED_ALERT_TOO = {
+    'br10.des', 'chan.shp', 'cr4.sno', 'cr5.sno', 'e6.shp', 'einstein.shp', 'fact.shp', 'factmake.shp', 'gap.shp',
+    'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'invun.shp', 'mgg.shp', 'napalm1.shp', 'sc4.sno', 'scrate.shp',
+    'silomake.shp', 'stnkicon.shp', 'truk.shp', 'w1.des', 'wcrate.shp', 'yak.shp',
 }
 
 # What the engine's special sprites (engine/src/render.rs SpriteIds, the
@@ -303,13 +329,13 @@ SPECIAL_ART = {
     # scorch marks (OpenRA Husk WithIdleOverlay@Burns: fire 1), crater smoke
     # (SmudgeLayer SmokeType: smoke_m, played once), the PRIMARY tag
     # (WithDecoration@primary: pips tag-primary) and the crate pickup
-    # animations (crate-effects). Level up and heal use files only OpenRA has
-    # (levelup.shp, invun.shp): WebRA's art stays.
+    # animations (crate-effects). Level up uses a file only OpenRA has
+    # (levelup.shp): WebRA's art stays.
     'leftovers.0': ['fire', '1', 'loop'],
     'leftovers.1': ['smoke_m', 'idle', 'effect'],
     'leftovers.2': ['pips', 'tag-primary', 'loop'],
     'leftovers.3': None,
-    'leftovers.4': None,
+    'leftovers.4': ['crate-effects', 'heal', 'effect'],
     'leftovers.5': ['crate-effects', 'hide-map', 'effect'],
     'leftovers.6': ['crate-effects', 'reveal-map', 'effect'],
     'leftovers.7': ['crate-effects', 'invuln', 'effect'],
@@ -335,6 +361,44 @@ def load_bits():
 
 
 BITS = load_bits()
+
+
+def check_bits_decisions():
+    """OpenRA's files Red Alert has too are drawn from the player's copy (or
+    knowingly left out for another layout); the lists agree with bits.txt."""
+    for name, files in [('SAME_LAYOUT', SAME_LAYOUT), ('OTHER_LAYOUT', OTHER_LAYOUT), ('IN_RED_ALERT_TOO', IN_RED_ALERT_TOO),
+                        ('NO_ORIGINAL', NO_ORIGINAL), ('ORIGINAL_FILES', set(ORIGINAL_FILES)), ('ORIGINAL_SHORTER', set(ORIGINAL_SHORTER))]:
+        for fn in sorted(files - BITS):
+            raise SystemExit(f'{name}: {fn} is not one of OpenRA\'s files (data/source/bits.txt)')
+    for fn in sorted(IN_RED_ALERT_TOO):
+        if fn in NO_ORIGINAL or fn in ORIGINAL_FILES or fn in ORIGINAL_SHORTER:
+            raise SystemExit(f'{fn}: Red Alert has this file; draw the original (SAME_LAYOUT), not WebRA art or a stand-in')
+        if (fn in SAME_LAYOUT) == (fn in OTHER_LAYOUT):
+            raise SystemExit(f'{fn}: Red Alert has this file; list it in SAME_LAYOUT or OTHER_LAYOUT')
+    for fn in sorted((SAME_LAYOUT | OTHER_LAYOUT) - IN_RED_ALERT_TOO):
+        raise SystemExit(f'{fn}: listed as an original Red Alert file but not in IN_RED_ALERT_TOO')
+    for fn in sorted(NO_ORIGINAL & (set(ORIGINAL_FILES) | set(ORIGINAL_SHORTER))):
+        raise SystemExit(f'{fn}: both without an original and mapped to one')
+
+
+def sequence_files(tree, name):
+    """The files OpenRA's sequence `name` of an image reads (any tileset, Combine parts too)."""
+    defaults = tree.get('Defaults', ['', {}])[1]
+    data = tree[name][1]
+    out = set()
+
+    def add(fn, ts):
+        if fn and fn[0]:
+            out.add(fn[0].lower())
+        if ts and ts[1]:
+            out.update(v.lower() for v, _ in ts[1].values() if v)
+
+    if 'Combine' in data:
+        for _k, (_v, sub) in data['Combine'][1].items():
+            add(sub.get('Filename'), sub.get('TilesetFilenames'))
+    else:
+        add(field(data, defaults, 'Filename'), field(data, defaults, 'TilesetFilenames'))
+    return out
 
 
 def original_file(fn, where, strict=True):
@@ -593,7 +657,7 @@ def bridge_art(aid, templates):
                 continue
             rec[state] = t[0]
         # Templates OpenRA made (the desert and small bridges): WebRA art there.
-        if any(v in BITS for k, v in rec.items() if k != 'size'):
+        if any(v in BITS and v not in SAME_LAYOUT for k, v in rec.items() if k != 'size'):
             continue
         out[tid] = rec
     return out
@@ -614,7 +678,8 @@ def infantry_poses(tree):
     StandSequences (stand, stand2), IdleSequences (idle1, idle2), MoveSequence,
     the primary armament's AttackSequences (attack, attack2: OpenRA picks one
     per shot) or else DefaultAttackSequence, and the WithDeathAnimation
-    sequences die1..die6 and CrushedSequence."""
+    sequences die1..die6 (DeathSequence for all of them without the death
+    type suffix) and CrushedSequence."""
     body = infantry_body(tree)
     val = lambda key, default: (body.get(key, [default])[0] or default)
     names = lambda key, default: [x.strip() for x in val(key, default).split(',') if x.strip()]
@@ -634,8 +699,14 @@ def infantry_poses(tree):
     death = trait(tree, 'WithDeathAnimation')
     if death is not None:
         prefix = death.get('DeathSequence', ['die'])[0] or 'die'
-        for _type, (n, _ch) in death.get('DeathTypes', ['', {}])[1].items():
-            out[f'die{n}'] = f'{prefix}{n}'
+        if death.get('UseDeathTypeSuffix', ['True'])[0].lower() == 'false':
+            # One death for every damage type (the campaign's ants): OpenRA
+            # plays DeathSequence itself, whatever the engine's death pose.
+            for n in range(1, 7):
+                out[f'die{n}'] = prefix
+        else:
+            for _type, (n, _ch) in death.get('DeathTypes', ['', {}])[1].items():
+                out[f'die{n}'] = f'{prefix}{n}'
         crushed = death.get('CrushedSequence', [''])[0]
         if crushed:
             out['crushed'] = crushed
@@ -1107,7 +1178,7 @@ def terrain_tables():
         beach = []
         for _key, (_v, ch) in root['Templates'][1].items():
             img = ch['Images'][0].split(',')[0].strip().lower()
-            if img in BITS:
+            if img in BITS and img not in SAME_LAYOUT:
                 continue
             w, h = (int(x) for x in ch['Size'][0].split(','))
             cells = sorted(int(k) for k in ch.get('Tiles', ['', {}])[1])
@@ -1292,6 +1363,7 @@ def cursor_tables():
 
 
 def main():
+    check_bits_decisions()
     with open(RULES_JSON) as f:
         rules = json.load(f)
     seqs = load_sequences()
@@ -1315,6 +1387,22 @@ def main():
     art, used = actor_art(actors, seqs)
     specials, explosion_art = special_art(seqs, used, render['explosions'])
     facts = render_facts(actors, seqs)
+    for a in actors:
+        # An actor OpenRA draws from an original file has original art: one
+        # dropped here (no idle pose) would silently keep WebRA's.
+        body = [p for p in facts[a['id']]['parts'] if p[0] in ('body', 'stand', 'crate-land')]
+        if a['id'] not in art and not a.get('bridge') and any(p[3] for p in body):
+            raise SystemExit(f"{a['id']}: OpenRA draws {body[0][1]}.{body[0][2]} from an original file, but ACTOR_ART has no entry")
+    # OpenRA's files the tables treat as missing from Red Alert, with the
+    # sequences of the actors that use them (the art audit reports any a
+    # player's files have: then IN_RED_ALERT_TOO is incomplete).
+    openra_made = {fn: set() for fn in BITS - IN_RED_ALERT_TOO}
+    for f in facts.values():
+        for _role, img, seq, original in f['parts']:
+            if not original:
+                for fn in sequence_files(seqs[img], seq):
+                    if fn in openra_made:
+                        openra_made[fn].add(f'{img}.{seq}')
 
     trees = {}
     for t in TREES:
@@ -1499,7 +1587,25 @@ def main():
     ]
     for aid in sorted(facts):
         facts_lines.append(f'  {json.dumps(aid)}: {js(facts[aid])},')
-    facts_lines += ['};', '']
+    facts_lines += [
+        '};',
+        '',
+        '/**',
+        ' * The campaign\'s characters and wrecks (tools/gen_content_tables.py',
+        ' * MISSION_ART): art key -> kind. Mission actors are drawn as them (their',
+        ' * `art`), so the audit checks them like the rules actors.',
+        ' */',
+        f'export const MISSION_ACTORS = {js({key: kind for key, _source, kind in MISSION_ART})};',
+        '',
+        '/**',
+        ' * OpenRA\'s own files (data/source/bits.txt) the tables treat as missing',
+        ' * from Red Alert -> the actor sequences (image.sequence) that use them.',
+        ' * Found in a player\'s Red Alert files, one is a wrong decision',
+        ' * (tools/gen_content_tables.py IN_RED_ALERT_TOO).',
+        ' */',
+        f'export const OPENRA_MADE_FILES = {js({fn: sorted(v) for fn, v in openra_made.items()})};',
+        '',
+    ]
     with open(FACTS_OUT, 'w') as f:
         f.write('\n'.join(facts_lines))
     print(f'wrote {os.path.relpath(FACTS_OUT, ROOT)}: {sum(len(f["parts"]) for f in facts.values())} sequences of {len(facts)} actors')

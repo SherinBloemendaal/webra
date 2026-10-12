@@ -2400,7 +2400,13 @@ actor and special sprite each sequence OpenRA's render traits draw
 (`js/content/render-facts.js`, generated with `tables.js`) and whether
 WebRA shows it (ok), falls back to its own art, maps a wrong one, has no
 way to show it yet (gap, with what is missing) or Red Alert has no art for
-it (webra-only). `apps/game/tests/art-audit.test.mjs` runs it on synthetic
+it (webra-only). The campaign's characters and wrecks (`render-facts.js`
+`MISSION_ACTORS`, `withMissionActors`) are audited like the rules actors.
+An OpenRA-made file (`render-facts.js` `OPENRA_MADE_FILES`) found among the
+player's files makes its rows and a `(files)` row wrong: the tables would
+leave out art Red Alert has (`tools/gen_content_tables.py`
+`IN_RED_ALERT_TOO`). The generator itself fails when an actor OpenRA draws
+from an original file has no `ACTOR_ART` entry. `apps/game/tests/art-audit.test.mjs` runs it on synthetic
 files whose frames spell their own file and frame number, so a missing
 mapping or a frame out of OpenRA's order fails CI.
 

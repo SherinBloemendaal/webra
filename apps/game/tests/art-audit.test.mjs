@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ACTOR_ART, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, SPECIAL_ART } from '../js/content/tables.js';
-import { RENDER_FACTS } from '../js/content/render-facts.js';
-import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS } from '../js/content/audit.js';
+import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS } from '../js/content/render-facts.js';
+import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS, withMissionActors } from '../js/content/audit.js';
 import { originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
 import { POSE, POSE_COUNT } from '../js/content/sequences.js';
 import { SPECIALS } from '../js/content/packs.js';
@@ -24,10 +24,13 @@ import { EFFECT_SPECIALS } from '../js/art/effects.js';
 import { LEFTOVER_SPECIALS } from '../js/art/leftovers.js';
 import { INFANTRY_SPECIALS } from '../js/art/infantry.js';
 import { syntheticFiles, identifier } from './original-fixtures.mjs';
+import { buildShp } from './content-fixtures.mjs';
 import init, { Game } from '../pkg/webra_sim.js';
 
 await init({ module_or_path: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 const ACTORS = JSON.parse(new Game(7, 'england', 'russia', 64).rules_json()).actors;
+// The rules actors and the campaign's characters and wrecks (mission actors are drawn as them).
+const AUDITED = withMissionActors(ACTORS);
 
 const SYNTH = syntheticFiles();
 const getFile = (n) => SYNTH.files.get(n) ?? null;
@@ -37,7 +40,7 @@ const identify = identifier(SYNTH.names, SYNTH.pal);
 
 test('art audit: every actor and special sprite shows OpenRA frames or is a known gap', () => {
   for (const tileset of ['TEMPERAT', 'SNOW', 'DESERT']) {
-    const result = auditOriginalArt(ACTORS, getFile, { tileset, identify });
+    const result = auditOriginalArt(AUDITED, getFile, { tileset, identify });
     const bad = result.rows.filter((r) => r.status === 'wrong' || r.status === 'fallback');
     assert.deepEqual(bad, [], `${tileset}:\n${formatAudit({ ...result, rows: bad })}`);
     assert.deepEqual(result.problems, [], tileset);
@@ -47,8 +50,9 @@ test('art audit: every actor and special sprite shows OpenRA frames or is a know
 });
 
 test('art audit: complete, every rules actor and every OpenRA render sequence has a row with a reason', () => {
-  const { rows } = auditOriginalArt(ACTORS, getFile, { identify });
-  for (const a of ACTORS) {
+  const { rows } = auditOriginalArt(AUDITED, getFile, { identify });
+  assert.ok(AUDITED.length > ACTORS.length, 'the campaign characters are audited too');
+  for (const a of AUDITED) {
     assert.ok(RENDER_FACTS[a.id], `${a.id}: OpenRA facts (python3 tools/gen_content_tables.py)`);
     const mine = rows.filter((r) => r.actor === a.id);
     assert.equal(mine.length, RENDER_FACTS[a.id].parts.length, `${a.id}: a row per OpenRA sequence`);
@@ -127,6 +131,51 @@ test('art audit: a wrong mapping, missing files and shifted frames are caught', 
   assert.match(formatAudit(r2, { only: ['fallback'] }), /HELI\s+rotor-air/);
 });
 
+test('art audit: an actor OpenRA draws from Red Alert files without an original mapping fails', () => {
+  // The campaign's characters are checked like the rules actors: Einstein and
+  // Chan are Red Alert's (hires.mix), their whole body is the original's.
+  const { rows } = auditOriginalArt(AUDITED, getFile, { identify });
+  const status = (actor, openra) => rows.find((r) => r.actor === actor && r.openra === openra)?.status;
+  for (const id of Object.keys(MISSION_ACTORS)) assert.ok(rows.some((r) => r.actor === id), `${id} has rows`);
+  for (const id of ['EINSTEIN', 'CHAN']) {
+    for (const seq of ['stand', 'run', 'idle1', 'die1', 'die5']) assert.equal(status(id, `${id.toLowerCase()}.${seq}`), 'ok', `${id} ${seq}`);
+  }
+  // The ants die with their one death sequence (WithDeathAnimation UseDeathTypeSuffix: false).
+  for (const id of ['ANT', 'FIREANT', 'SCOUTANT']) assert.equal(status(id, `${id.toLowerCase()}.die`), 'ok', `${id} die`);
+  assert.deepEqual(new Set(['die1', 'die2', 'die3', 'die4', 'die5', 'die6'].map((p) => ACTOR_ART.ANT.body[p])), new Set(['die']));
+  assert.equal(status('(special)', 'crate-effects.heal'), 'ok', 'the crate heal animation is Red Alert\'s invun.shp');
+  assert.equal(rows.find((r) => r.actor === '(explosion)' && r.role === 'small_napalm').status, 'ok', "Red Alert's napalm1.shp");
+  assert.ok(!rows.some((r) => r.actor === '(files)'), 'no OpenRA-made file among the synthetic originals');
+
+  // An actor whose OpenRA sequences are on original files but has no mapping: every such row fails.
+  const without = { ...ACTOR_ART };
+  delete without.EINSTEIN;
+  delete without.POWR;
+  const r1 = auditOriginalArt(AUDITED, getFile, { identify, actorArt: without });
+  for (const id of ['EINSTEIN', 'POWR']) {
+    // (Parachutes and damage smoke are special sprites, the power plant's ruin is OpenRA's own art.)
+    const mine = r1.rows.filter((r) => r.actor === id && !r.where.startsWith('special') && r.status !== 'webra-only');
+    assert.ok(mine.length > 1 && mine.every((r) => r.status === 'fallback' && r.note === 'no ACTOR_ART entry'), `${id}: ${formatAudit({ ...r1, rows: mine })}`);
+  }
+
+  // OpenRA's own files are left out (webra-only) only while Red Alert has
+  // none: a player's copy with an "OpenRA-made" file means the tables miss
+  // its original art (as they once missed Einstein's and Chan's).
+  assert.ok(OPENRA_MADE_FILES['oilb.shp'].includes('oilb.idle'), 'the oil derrick is OpenRA\'s own art');
+  assert.equal(OPENRA_MADE_FILES['einstein.shp'], undefined, 'Einstein is not OpenRA-made');
+  assert.equal(status('OILB', 'oilb.idle'), 'webra-only');
+  const fake = buildShp(4, 2, [new Uint8Array(8).fill(1), new Uint8Array(8).fill(2)]);
+  const withOilb = (n) => (n === 'oilb.shp' ? fake : getFile(n));
+  const r2 = auditOriginalArt(AUDITED, withOilb, { identify });
+  for (const seq of ['oilb.idle', 'oilb.damaged-idle']) {
+    assert.equal(r2.rows.find((r) => r.actor === 'OILB' && r.openra === seq).status, 'wrong', seq);
+  }
+  const file = r2.rows.find((r) => r.actor === '(files)' && r.role === 'oilb.shp');
+  assert.equal(file?.status, 'wrong');
+  assert.match(file.note, /IN_RED_ALERT_TOO; used by .*oilb\.idle/);
+  assert.match(formatAudit(r2, { only: ['wrong'] }), /OILB\s+body\s+oilb\.idle/);
+});
+
 // ---- Slots, specials and what the engine is told -------------------------------------
 
 test('art audit: crates, husks, their fire and the smudges come from the original art', () => {
@@ -148,7 +197,7 @@ test('art audit: crates, husks, their fire and the smudges come from the origina
   // The vehicles' husk rows point at the husk actors.
   assert.deepEqual(status('2TNK', 'husk'), ['ok actor 2TNK.Husk']);
   assert.deepEqual(status('HARV', 'husk'), ['ok actor HARV.EmptyHusk']);
-  for (const key of ['leftovers.0', 'leftovers.1', 'leftovers.2', 'leftovers.5', 'leftovers.6', 'leftovers.7']) {
+  for (const key of ['leftovers.0', 'leftovers.1', 'leftovers.2', 'leftovers.4', 'leftovers.5', 'leftovers.6', 'leftovers.7']) {
     assert.deepEqual(status('(special)', key), [`ok special ${key}`], key);
   }
   assert.equal(rows.filter((r) => r.actor === '(terrain)' && (r.role === 'scorch' || r.role === 'crater') && r.status === 'ok').length, 12);

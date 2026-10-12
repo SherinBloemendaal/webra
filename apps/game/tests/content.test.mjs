@@ -568,7 +568,13 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
       .split('\n')
       .filter((l) => l && !l.startsWith('#')),
   );
-  const sameLayout = new Set(['fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp', 'e6.shp']);
+  // OpenRA's copies of Red Alert files with the original's frame layout
+  // (tools/gen_content_tables.py SAME_LAYOUT): Einstein and Chan, the crate
+  // heal animation, the small napalm, snow smudges and desert water among them.
+  const sameLayout = new Set([
+    'fact.shp', 'factmake.shp', 'gap.shp', 'gapmake.shp', 'harv.shp', 'heli.shp', 'hind.shp', 'mgg.shp', 'silomake.shp', 'truk.shp', 'yak.shp', 'stnkicon.shp', 'e6.shp',
+    'einstein.shp', 'chan.shp', 'invun.shp', 'napalm1.shp', 'cr4.sno', 'cr5.sno', 'sc4.sno', 'w1.des',
+  ]);
   // Red Alert's own crate overlays (SCRATE and WCRATE in its source) share
   // their names with OpenRA's crate files; only their first frame is used.
   const crates = new Set(['scrate.shp', 'wcrate.shp']);
