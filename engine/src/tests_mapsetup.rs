@@ -265,3 +265,28 @@ fn null_setup_and_actor_fields_are_refused() {
     v["actors"][0]["stance"] = serde_json::json!("hold_fire");
     assert!(MapData::parse(&v.to_string()).is_ok(), "a present stance is read");
 }
+
+#[test]
+fn a_map_full_of_structures_relabels_the_cells_once() {
+    // A community map carries hundreds of trees, mines and derricks; the
+    // connectivity labels (every cell, three passabilities) are computed
+    // once for all of them, not per structure (World::place_map_actors).
+    let mut traps = Vec::new();
+    for y in (8..40).step_by(2) {
+        for x in (8..40).step_by(2) {
+            traps.push(MapActor::new("TANKTRAP2", -1, x, y, 0));
+        }
+    }
+    assert_eq!(traps.len(), 256);
+    let many = World::from_map(&data(traps), 1, &players(), opts()).expect("world");
+    let one = World::from_map(&data(vec![MapActor::new("TANKTRAP2", -1, 20, 20, 0)]), 1, &players(), opts()).expect("world");
+    assert_eq!(many.actors.iter().filter(|a| a.alive && a.ty == many.rules.actor_index("TANKTRAP2").unwrap() as u16).count(), 256);
+    assert!(many.pass.blocked[many.map.idx(8, 8)] && many.pass.blocked[many.map.idx(38, 38)]);
+    for (a, b) in [(&many.pass, &one.pass), (&many.pass_water, &one.pass_water), (&many.pass_landing, &one.pass_landing)] {
+        assert_eq!(a.version, b.version, "the same few relabellings whatever the number of map actors");
+        assert!(a.version <= 8, "{}", a.version);
+    }
+    // And the labels are right: the trap cells are blocked, the rest connected.
+    let open = many.map.idx(9, 9);
+    assert_eq!(many.pass.component[open], many.pass.component[many.map.idx(45, 45)]);
+}

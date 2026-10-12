@@ -661,27 +661,36 @@ pub fn nearest_in_labels(
     if labels[gi] == component && open(gi) {
         return Some(gi as u32);
     }
+    // Square rings around the goal, nearest first; the first ring with a
+    // cell of the component decides. Only the ring's own cells are visited
+    // (the four edges, clipped to the map), so a goal far from the component
+    // (or a component without a single open cell) costs the map's cells
+    // once, not once per ring.
     let max_r = map.width.max(map.height);
     for r in 1..max_r {
         let mut best: Option<((i32, i32, i32), u32)> = None;
-        for y in goal.1 - r..=goal.1 + r {
-            for x in goal.0 - r..=goal.0 + r {
-                if (x - goal.0).abs() != r && (y - goal.1).abs() != r {
-                    continue;
-                }
-                if !map.contains(x, y) {
-                    continue;
-                }
-                let i = map.idx(x, y);
-                if labels[i] == component && open(i) {
-                    let d = (x - goal.0).pow(2) + (y - goal.1).pow(2);
-                    let df = (x - from.0).pow(2) + (y - from.1).pow(2);
-                    let key = (d, df, centre_distance(map, x, y));
-                    if best.is_none_or(|(bk, bi)| key < bk || (key == bk && (i as u32) < bi)) {
-                        best = Some((key, i as u32));
-                    }
+        let mut visit = |x: i32, y: i32| {
+            if !map.contains(x, y) {
+                return;
+            }
+            let i = map.idx(x, y);
+            if labels[i] == component && open(i) {
+                let d = (x - goal.0).pow(2) + (y - goal.1).pow(2);
+                let df = (x - from.0).pow(2) + (y - from.1).pow(2);
+                let key = (d, df, centre_distance(map, x, y));
+                if best.is_none_or(|(bk, bi)| key < bk || (key == bk && (i as u32) < bi)) {
+                    best = Some((key, i as u32));
                 }
             }
+        };
+        // Top and bottom edges, then the left and right edges between them.
+        for x in (goal.0 - r).max(0)..=(goal.0 + r).min(map.width - 1) {
+            visit(x, goal.1 - r);
+            visit(x, goal.1 + r);
+        }
+        for y in (goal.1 - r + 1).max(0)..=(goal.1 + r - 1).min(map.height - 1) {
+            visit(goal.0 - r, y);
+            visit(goal.0 + r, y);
         }
         if let Some((_, i)) = best {
             return Some(i);
@@ -799,5 +808,75 @@ mod tests {
         let comp = pass.component[map.idx(2, 2)];
         let g = nearest_in_component(&map, &pass, (15, 5), comp, (2, 2)).unwrap();
         assert_eq!(g, map.idx(9, 5) as u32);
+    }
+
+    /// `nearest_in_labels` as a full scan of every square around the goal
+    /// (what it did before it walked the rings' edges only): the reference
+    /// the fast walk must agree with, cell for cell.
+    fn nearest_by_full_scan(map: &Map, pass: &Passability, goal: (i32, i32), component: u32, from: (i32, i32)) -> Option<u32> {
+        let gi = map.idx(goal.0, goal.1);
+        if pass.component[gi] == component && !pass.blocked[gi] {
+            return Some(gi as u32);
+        }
+        for r in 1..map.width.max(map.height) {
+            let mut best: Option<((i32, i32, i32), u32)> = None;
+            for y in goal.1 - r..=goal.1 + r {
+                for x in goal.0 - r..=goal.0 + r {
+                    if ((x - goal.0).abs() != r && (y - goal.1).abs() != r) || !map.contains(x, y) {
+                        continue;
+                    }
+                    let i = map.idx(x, y);
+                    if pass.component[i] == component && !pass.blocked[i] {
+                        let key = (
+                            (x - goal.0).pow(2) + (y - goal.1).pow(2),
+                            (x - from.0).pow(2) + (y - from.1).pow(2),
+                            centre_distance(map, x, y),
+                        );
+                        if best.is_none_or(|(bk, bi)| key < bk || (key == bk && (i as u32) < bi)) {
+                            best = Some((key, i as u32));
+                        }
+                    }
+                }
+            }
+            if let Some((_, i)) = best {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn nearest_in_component_walks_the_rings_like_the_full_scan() {
+        // A scattered map with many pockets, goals near every edge and
+        // corner, and the blocked cells' label (no open cell anywhere).
+        let mut map = open_map(37, 29);
+        let mut s = 0x2545_F491_u32;
+        for i in 0..map.cells() {
+            s ^= s << 13;
+            s ^= s >> 17;
+            s ^= s << 5;
+            if s % 100 < 45 {
+                map.terrain[i] = Terrain::Rock;
+            }
+        }
+        let pass = Passability::new(&map);
+        let labels = pass.component.iter().copied().max().unwrap();
+        assert!(labels > 10, "many pockets, {labels}");
+        let mut checked = 0;
+        for goal in [(0, 0), (36, 0), (0, 28), (36, 28), (18, 14), (1, 27), (35, 2), (7, 13)] {
+            for from in [(0, 0), (36, 28), (18, 14), (30, 3)] {
+                for component in [0, 1, 2, 3, labels / 2, labels] {
+                    let want = nearest_by_full_scan(&map, &pass, goal, component, from);
+                    assert_eq!(
+                        nearest_in_component(&map, &pass, goal, component, from),
+                        want,
+                        "goal {goal:?} from {from:?} component {component}"
+                    );
+                    checked += 1;
+                }
+                assert_eq!(nearest_in_component(&map, &pass, goal, 0, from), None, "the blocked cells have no open cell");
+            }
+        }
+        assert!(checked > 100);
     }
 }

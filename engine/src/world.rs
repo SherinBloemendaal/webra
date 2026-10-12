@@ -991,6 +991,10 @@ pub struct World {
     pub winner: Option<u8>,
     pub circle_cache: Vec<Vec<(i32, i32)>>,
     pub stress: bool,
+    /// While a map's actors are placed (`place_map_actors`): structures
+    /// mark their cells but the connectivity labels are recomputed once at
+    /// the end, not three times per structure. Never part of the state hash.
+    pub(crate) placing_map_actors: bool,
     /// Actors destroyed so far, per owner.
     pub losses: Vec<u32>,
     pub pending: Vec<PendingImpact>,
@@ -1171,8 +1175,20 @@ impl World {
     /// Place a map file's pre-placed actors (owners of `players` spawns,
     /// neutral ones to `neutral`; those of empty spawns are skipped), then
     /// the trees of tree terrain and the bridges (neutral.rs, bridges.rs).
+    /// Structures go first, in file order, then the rest in file order, so
+    /// a unit the map puts on a structure's cell (OpenRA maps can) starts
+    /// beside it (`map_unit_cell`) whichever of the two the file names
+    /// first. The connectivity labels are recomputed once for all of them
+    /// (`placing_map_actors`): a large map with hundreds of trees, mines and
+    /// derricks would otherwise relabel every cell three times per structure.
     fn place_map_actors(&mut self, actors: &[crate::mapdata::MapActor], players: usize, neutral: u8) {
-        for a in actors {
+        self.placing_map_actors = true;
+        let structures =
+            actors.iter().filter(|a| self.rules.actor_index(&a.ty).is_some_and(|ty| self.rules.actors[ty].kind == Kind::Building));
+        let others =
+            actors.iter().filter(|a| !self.rules.actor_index(&a.ty).is_some_and(|ty| self.rules.actors[ty].kind == Kind::Building));
+        let ordered: Vec<&crate::mapdata::MapActor> = structures.chain(others).collect();
+        for a in ordered {
             let owner = if a.owner < 0 { neutral } else { a.owner as u8 };
             if a.owner >= players as i32 {
                 continue;
@@ -1198,7 +1214,10 @@ impl World {
                 self.apply_map_actor_state(i, a);
             }
         }
+        // The trees of tree terrain and the bridges are structures too; the
+        // one relabelling of all cells is in `setup_neutral`.
         self.setup_neutral();
+        self.placing_map_actors = false;
         self.refresh_tokens();
         self.update_power();
         self.update_vision();
@@ -1306,6 +1325,7 @@ impl World {
             winner: None,
             circle_cache: Vec::new(),
             stress: false,
+            placing_map_actors: false,
             losses: Vec::new(),
             pending: Vec::new(),
             options: GameOptions::default(),
@@ -1530,9 +1550,11 @@ impl World {
                 self.pass.set_crush(ci, crush);
             }
         }
-        self.pass.refresh(&self.map);
-        self.pass_water.refresh(&self.map);
-        self.pass_landing.refresh(&self.map);
+        if !self.placing_map_actors {
+            self.pass.refresh(&self.map);
+            self.pass_water.refresh(&self.map);
+            self.pass_landing.refresh(&self.map);
+        }
         self.tokens_dirty = true;
         if let Some((ty, (ox, oy))) = free_actor {
             let (x, y) = (cell_center(cx + ox), cell_center(cy + oy));
@@ -1753,8 +1775,12 @@ impl World {
         if !self.map.contains(cx, cy) {
             return None;
         }
-        // Actors without a locomotor (mines) lie where they are put.
-        if self.rules.actors[ty].unit.is_none() || self.terrain_open_to(ty, self.map.terrain[self.map.idx(cx, cy)]) {
+        // Actors without a locomotor (mines) lie where they are put; so do
+        // aircraft. A unit on a cell it cannot stand on (terrain closed to
+        // its locomotor, or a cell a structure holds: OpenRA maps can put a
+        // civilian on its house) starts on the nearest open cell.
+        let Some(u) = self.rules.actors[ty].unit.as_ref() else { return Some((cx, cy)) };
+        if self.rules.locomotors[u.locomotor].domain == crate::rules::Domain::Air || !self.pass_of_type(ty).blocked[self.map.idx(cx, cy)] {
             return Some((cx, cy));
         }
         self.open_cell_for(ty, cx, cy, 7)
