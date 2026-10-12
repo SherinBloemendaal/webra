@@ -103,6 +103,8 @@ test('the Mobile Flak has 32 body and 32 turret facings and a cameo', () => {
     // About the supply truck's and the APC's size.
     assert.ok(Math.max(f.width, f.height) >= 18 && Math.max(f.width, f.height) <= 34, `body ${k}: ${f.width} x ${f.height}`);
   }
+  // Side on, the cab stands to its full height (about 9.6 pixels), over the hood and the bed.
+  for (const k of [8, 24]) assert.ok(pixelFrame(art, k).top <= -11, `body ${k}: the cab's roof`);
   for (const k of range(32, 32)) {
     const f = pixelFrame(art, k);
     // Drawn around its pivot raised by the Turreted offset's height (298 units: 7 pixels).

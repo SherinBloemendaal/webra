@@ -763,6 +763,11 @@ def prism(axis, poly, lo, hi, mat=('grey', 0.0)):
     view) and (x, y) for 'z' (a top view)."""
     area = sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))
     pts = poly if area > 0 else list(reversed(poly))
+    # The half-spaces of a concave polygon would cut away more than its outline: refuse it.
+    for i in range(len(pts)):
+        (u0, v0), (u1, v1), (u2, v2) = pts[i - 2], pts[i - 1], pts[i]
+        if (u1 - u0) * (v2 - v1) - (v1 - v0) * (u2 - u1) < 0:
+            raise SystemExit(f'prism: the polygon is not convex at {pts[i - 1]}')
     a, b = {'x': (1, 2), 'y': (0, 2), 'z': (0, 1)}[axis]
     k = 'xyz'.index(axis)
     planes = []
@@ -1155,10 +1160,15 @@ def wheel_mat(p, n):
 
 
 def ftrk_body():
-    cab_side = [(4.2, 3.0), (12.4, 3.0), (12.4, 5.8), (11.6, 6.6), (9.4, 6.8), (8.4, 9.4), (4.6, 9.6), (4.2, 9.2)]
+    # The cab with its sloped windscreen, and the lower hood in front of it:
+    # two solids, as each must be convex (one profile of both had a concave
+    # corner at the windscreen's foot, which cut the cab down to the hood).
+    cab_side = [(4.2, 3.0), (9.6, 3.0), (9.6, 6.8), (8.4, 9.4), (4.6, 9.6), (4.2, 9.2)]
     cab_front = [(-4.6, 3.0), (4.6, 3.0), (4.6, 8.6), (3.8, 9.6), (-3.8, 9.6), (-4.6, 8.6)]
-    cab_top = [(-4.6, 4.2), (4.6, 4.2), (4.6, 9.4), (3.6, 12.4), (-3.6, 12.4), (-4.6, 9.4)]
-    cab = cut(prism('x', cab_side, -4.6, 4.6), prism('y', cab_front, 4.2, 12.4), prism('z', cab_top, 3.0, 9.6), mat=ftrk_cab_mat)
+    cab = cut(prism('x', cab_side, -4.6, 4.6), prism('y', cab_front, 4.2, 9.6), mat=ftrk_cab_mat)
+    hood_side = [(9.4, 3.0), (12.4, 3.0), (12.4, 5.8), (11.6, 6.6), (9.4, 6.9)]
+    hood_top = [(-4.6, 9.4), (4.6, 9.4), (3.6, 12.4), (-3.6, 12.4)]
+    hood = cut(prism('x', hood_side, -4.6, 4.6), prism('z', hood_top, 3.0, 6.9), mat=ftrk_cab_mat)
     chassis = box3(-3.2, 3.2, -11.6, 11.8, 1.6, 3.4, mat=('steel', -0.2))
     bed = box3(-4.8, 4.8, -12.4, 3.8, 3.4, 4.8, mat=lambda p, n: ('grey', -0.45) if n[2] > 0.6 else ('team', -0.06))
     sides = [box3(-4.8, -4.2, -12.4, 3.8, 4.8, 6.0, mat=('team', -0.02)), box3(4.2, 4.8, -12.4, 3.8, 4.8, 6.0, mat=('team', -0.02)),
@@ -1170,7 +1180,7 @@ def ftrk_body():
             wheels.append(bar('x', (0.0, wy, 2.2), 2.2, side_x - 0.9, side_x + 0.9, mat=wheel_mat))
     jacks = [box3(side_x - 0.4, side_x + 0.4, -6.0, -5.2, 0.4, 3.6, mat=('steel', -0.1)) for side_x in (-5.0, 5.0)]
     ring = bar('z', (0.0, TURRET_FWD, 0.0), 3.0, 4.8, 5.4, mat=('steel', -0.05))
-    return [cab, chassis, bed] + sides + guards + wheels + jacks + [ring]
+    return [cab, hood, chassis, bed] + sides + guards + wheels + jacks + [ring]
 
 
 def ftrk_turret():
