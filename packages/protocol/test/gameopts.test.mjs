@@ -14,6 +14,8 @@ import {
   TIME_LIMITS,
   assignSpawns,
   spawnLetter,
+  battlefieldSpawns,
+  generatedMapPlayers,
   spawnPickProblem,
   SPAWN_MAX,
   parseClientMessage,
@@ -107,6 +109,12 @@ test('picked spawns: start options, slot messages and lobby slots carry them str
   assert.equal(spawnPickProblem([{ spawn: 1 }, {}], 2), null);
   assert.match(spawnPickProblem([{ spawn: 2 }, {}], 2), /picked start position C; this map has 2/);
   assert.match(spawnPickProblem([{ spawn: 0 }, { spawn: 0 }], 2), /Two players picked start position A/);
+  // One count for both lobbies and the server: a generated map has a spawn per player, at least two.
+  assert.deepEqual([0, 1, 2, 5].map(generatedMapPlayers), [2, 2, 2, 5]);
+  assert.equal(battlefieldSpawns({ players: 1 }), 2, 'a host alone: the two player map');
+  assert.equal(battlefieldSpawns({ players: 3 }), 3);
+  assert.equal(battlefieldSpawns({ mapSpawns: 6, players: 2 }), 6, 'a map file: its own spawns');
+  assert.equal(battlefieldSpawns({ mission: true, mapSpawns: 6, players: 2 }), 0, 'a mission places everyone');
 });
 
 test('spawn assignment matches the engine on the shared cases', () => {

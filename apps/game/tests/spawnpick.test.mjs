@@ -179,17 +179,31 @@ test('markers are buttons: click, right-click and Delete pick and free; focus an
   // Focus survives a redraw (a lobby update).
   markersView.render(spawnMarkers(CORNERS.slice(0, 2), 48, 48, state), view);
   assert.equal(doc.activeElement, layer.querySelectorAll('button.spawn-marker')[0]);
-  // Lifting a finger after a lens hold is not a tap.
+  // Lifting a finger after a lens hold is not a tap, and its context menu is not a right click.
   lens.held = true;
   layer.querySelectorAll('button.spawn-marker')[1].click();
+  layer.querySelectorAll('button.spawn-marker')[0].dispatchEvent(new FakeEvent('contextmenu', { cancelable: true }));
   assert.equal(picks.length, 3);
   lens.held = false;
+  // A long press without the lens (no engine): the touch's context menu frees nothing either.
+  const held = layer.querySelectorAll('button.spawn-marker')[0];
+  held.dispatchEvent(new FakeEvent('pointerdown', { pointerType: 'touch' }));
+  const touchMenu = new FakeEvent('contextmenu', { cancelable: true });
+  held.dispatchEvent(touchMenu);
+  assert.equal(touchMenu.defaultPrevented, true, 'no browser menu');
+  held.dispatchEvent(new FakeEvent('contextmenu', { cancelable: true, pointerType: 'touch' }));
+  assert.equal(picks.length, 3);
+  // A real right click with the mouse still frees it.
+  held.dispatchEvent(new FakeEvent('pointerdown', { pointerType: 'mouse', button: 2 }));
+  held.dispatchEvent(new FakeEvent('contextmenu', { cancelable: true, pointerType: 'mouse' }));
+  assert.deepEqual(picks.at(-1), { slot: 1, spawn: null });
+  assert.equal(picks.length, 4);
   // Picking off (a resumed save, a spectator): nothing happens, the markers still say who starts where.
   markersView.render(spawnMarkers(CORNERS.slice(0, 2), 48, 48, state), { ...view, enabled: false });
   const off = layer.querySelectorAll('button.spawn-marker')[1];
   assert.equal(off.getAttribute('aria-disabled'), 'true');
   off.click();
-  assert.equal(picks.length, 3);
+  assert.equal(picks.length, 4);
 });
 
 test('skirmish lobby: a click on a marker picks the spawn, the start list follows, the game gets it; a new seed clears it', async () => {
@@ -301,6 +315,15 @@ test('online lobby: markers on the preview send slot messages; the host frees a 
     assert.deepEqual(sent.at(-1), { t: 'slot', slot: 1, spawn: null }, 'the host frees it (OpenRA clear_spawn)');
     markers[0].click();
     assert.deepEqual(sent.at(-1), { t: 'slot', slot: 0, spawn: 0 }, 'the host picks its own');
+    // A host alone: the two player map, as the server counts it.
+    const { Room } = await import('../../server/src/room.js');
+    ui.state.slots = [ui.state.slots[0], { type: 'open' }, { type: 'open' }];
+    ui.spawnCells = null;
+    const solo = ui.lobbyMarkers();
+    const room = Room.create({ maxPlayers: 3, seed: 9 });
+    room.join('Host', { host: true });
+    assert.equal(solo.length, room.spawnCount(), 'client and server agree on the spawns');
+    assert.equal(solo.length, 2);
     // A co-op mission places everyone itself: no markers.
     ui.state.mission = { id: 'evacuation', hash: 'h', options: {} };
     assert.deepEqual(ui.lobbyMarkers(), []);

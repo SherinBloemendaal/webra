@@ -21,6 +21,30 @@
 // A pick past the last spawn, or of a spawn an earlier slot picked, counts as
 // no pick (spawnPickProblem refuses such a game).
 
+import { MIN_PLAYERS } from './constants.js';
+
+/**
+ * How many players a generated map is made for when `players` take part:
+ * never fewer than a game needs, so a host alone sees (and picks on) the
+ * two player map the first guest keeps. The lobbies' previews and spawn
+ * lists and the server's checks all use it.
+ */
+export function generatedMapPlayers(players) {
+  return Math.max(MIN_PLAYERS, players);
+}
+
+/**
+ * The spawns a lobby's battlefield has: none in a co-op mission (the mission
+ * places everyone), a map file's own (`mapSpawns`), else one per player of
+ * the generated map (generatedMapPlayers). The skirmish lobby, the online
+ * lobby and the server all count with this.
+ */
+export function battlefieldSpawns({ mission = false, mapSpawns = null, players }) {
+  if (mission) return 0;
+  if (mapSpawns !== null && mapSpawns !== undefined) return mapSpawns;
+  return generatedMapPlayers(players);
+}
+
 /** OpenRA's name of spawn `k` (0-based) on the preview and in the spawn lists: A, B, C... */
 export function spawnLetter(k) {
   return String.fromCharCode(65 + k);

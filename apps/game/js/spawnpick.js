@@ -27,7 +27,8 @@
 // never takes the pointer (css/maplens.css pointer-events: none), so a click
 // on a marker under it still reaches the marker; the lens rings the marker
 // the pointer or focus is on. A touch hold that showed the lens never picks
-// (lifting the finger is not a tap).
+// (lifting the finger is not a tap), and a long press on a marker (whose
+// context menu the browser fires) never frees a spawn.
 
 import { spawnLetter } from '../protocol/spawns.js';
 import { attachTooltip } from './ui/tooltip.js';
@@ -144,8 +145,16 @@ export class SpawnMarkers {
         e.preventDefault();
         this.act(m.index, 'left');
       });
+      // The pointer that pressed the marker: a long press on a touch screen
+      // opens the context menu too, and that is a hold (to read the tooltip
+      // or the lens), never a right click.
+      let pressed = null;
+      b.addEventListener('pointerdown', (e) => {
+        pressed = e.pointerType ?? null;
+      });
       b.addEventListener('contextmenu', (e) => {
         e.preventDefault();
+        if (e.pointerType === 'touch' || pressed === 'touch') return;
         this.act(m.index, 'right');
       });
       b.addEventListener('keydown', (e) => {
@@ -163,11 +172,15 @@ export class SpawnMarkers {
     this.lens?.setMarkers?.(markers.map((m) => ({ x: m.x, y: m.y, label: m.letter, color: m.slot === null ? null : view.colors[m.color], picked: m.picked })));
   }
 
-  /** Carry out a click on spawn `k` (a touch hold that showed the lens is not a click). */
+  /**
+   * Carry out a click on spawn `k`: 'left', or 'right' (a right click, Delete
+   * or Backspace). Neither while a touch hold showed the lens or just did:
+   * lifting the finger and the long press's context menu are not clicks.
+   */
   act(k, button) {
     const v = this.view;
     if (!v?.enabled) return;
-    if (button === 'left' && this.lens?.heldRecently?.()) return;
+    if (this.lens?.heldRecently?.()) return;
     const action = spawnAction(v.slots, k, { you: v.you, host: v.host, button });
     if (action) this.onPick(action);
   }

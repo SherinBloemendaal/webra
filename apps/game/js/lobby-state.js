@@ -5,7 +5,7 @@
 
 // The last setup is kept in the settings registry (js/registry.js, group
 // "lobby"), which migrated the older keys webra.lobby.v2 and v1.
-import { assignSpawns, spawnLetter, spawnPickProblem } from '../protocol/spawns.js';
+import { assignSpawns, battlefieldSpawns, generatedMapPlayers, spawnLetter, spawnPickProblem } from '../protocol/spawns.js';
 import { validateMap } from '../protocol/map.js';
 import { incompatibleMapMessage, upgradeMap } from '../protocol/mapversions.js';
 import { canonicalSlot, lockedOptionProblem, lockedSlotProblem, mapSlot } from '../protocol/mapsetup.js';
@@ -539,7 +539,7 @@ export function startProblem(state, mapFile) {
     const locked = mapSetupProblem(state, mapFile.setup);
     if (locked) return locked;
   }
-  const picks = spawnPickProblem(active.map(({ p }) => p), state.mapSource === 'file' && mapFile ? mapFile.spawns : active.length);
+  const picks = spawnPickProblem(active.map(({ p }) => p), battlefieldSpawns({ mapSpawns: state.mapSource === 'file' && mapFile ? mapFile.spawns : null, players: active.length }));
   if (picks) return picks;
   const teams = new Set(active.map(({ p }) => p.team));
   if (teams.size === 1 && !teams.has(0)) return 'Everyone is on the same team: nobody to fight.';
@@ -786,7 +786,7 @@ export function spawnMarkers(spawnCells, width, height, state) {
  */
 export function battlefieldKey(state, mapHash = null) {
   if (state.mapSource === 'file') return `map:${mapHash}`;
-  return `gen:${state.seed}/${state.mapSize}/${state.mapStyle}/${activeCount(state)}`;
+  return `gen:${state.seed}/${state.mapSize}/${state.mapStyle}/${generatedMapPlayers(activeCount(state))}`;
 }
 
 /** Every slot back to an automatic start position. Returns whether any had picked one. */

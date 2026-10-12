@@ -227,7 +227,8 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   map, the rules, the sprite atlas, the world's terrain and sprites, the
   terrain tiles. A pointer that comes before the map is in sees the
   preview's pixels, dimmed, under a ring that fills with the share read, a
-  turning arc (still with "Reduce motion") and "Loading map"; the remaining
+  turning arc (not with "Reduce motion", the setting or the browser's: then
+  the ring alone shows the progress) and "Loading map"; the remaining
   steps then run in zero-delay tasks, never inside a frame or a pointer
   event. Another map stops an unfinished read (`return()` frees its engine
   game). Measured in Node with the real engine and WebRA's art (fake 2D
@@ -990,9 +991,26 @@ and online lobbies (`apps/game/js/spawnpick.js`):
 - Hover or focus shows the shared tooltip (who starts there, team, picked
   or automatic, and what a click does); the markers are buttons (Tab, Enter
   or Space), and the lens rings the one under the pointer or focus.
+- How many spawns a battlefield has is one definition for both lobbies
+  and the server (`packages/protocol` `battlefieldSpawns`): a map file's
+  own, none in a co-op mission, else one per player of the generated map,
+  which is made for `generatedMapPlayers(n)` = at least 2 players (so a
+  host alone already sees, and picks on, the two player map).
 - Picks belong to one battlefield: the map file (by hash), or the generated
-  map of a seed, size, style and player count (one spawn per player). When
-  it changes the picks are cleared (OpenRA clears them on a map change).
+  map of a seed, size, style and `generatedMapPlayers` count. When it
+  changes the picks are cleared (OpenRA clears them on a map change): on a
+  generated map another player count is another map, generated anew with
+  its spawns elsewhere, so a pick there would name a different place.
+  The first guest joining a lone host keeps the host's pick (still the two
+  player map); a third player, or an AI added or closed beyond two,
+  clears all picks.
+- A map file's pre-placed actors belong to the player of their slot
+  (actor owner k is the k-th slot that plays), wherever that player
+  starts, as in OpenRA: its actors name a map player (`Owner: Multi0`),
+  the player in that slot becomes that map player (`Player.InternalName =
+  PlayerReference.Name`, `CreateMapPlayers`) and `SpawnMapActors` gives
+  them to it, while the start position comes separately from
+  `MapStartingLocations` (`HomeLocation`).
   No picks in a co-op mission (the mission places everyone); a resumed
   save keeps the saved ones.
 - Online: the client sends `slot { slot, spawn }` (null: automatic). The

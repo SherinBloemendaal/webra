@@ -87,6 +87,7 @@ import { SaveStore } from './saves.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 import { aiName, spawnMarkers } from './lobby-state.js';
 import { SpawnMarkers } from './spawnpick.js';
+import { battlefieldSpawns, generatedMapPlayers } from '../protocol/spawns.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
@@ -1402,7 +1403,8 @@ export class OnlineUI {
     // The map may have come in since the slots were drawn (an install).
     this.markerList = this.lobbyMarkers();
     const caption = el('p', 'online-caption');
-    const players = Math.max(MIN_PLAYERS, st.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
+    // The generated map is made for this many players (protocol generatedMapPlayers, as its spawns).
+    const players = generatedMapPlayers(st.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
     if (st.mission) {
       const m = coopMission(st.mission.id);
       caption.append(el('span', null, `${m.title} (${m.players.length} players)`), el('span', 'online-badge', 'CO-OP MISSION'));
@@ -1608,7 +1610,8 @@ export class OnlineUI {
       const o = st.options;
       const G = this.ctx.Game;
       if (!G?.generated_map_styled) return [];
-      const n = Math.max(MIN_PLAYERS, players);
+      // One spawn per player of the generated map, counted as the server counts them.
+      const n = battlefieldSpawns({ players });
       // The style shapes the map (the biome only paints it).
       field = { key: `gen:${o.seed}/${o.mapSize}/${n}/${o.mapStyle}`, width: o.mapSize, height: o.mapSize, cells: () => JSON.parse(G.generated_map_styled(o.seed, o.mapSize, n, o.mapStyle, 'temperate')).spawns };
     }

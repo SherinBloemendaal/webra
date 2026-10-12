@@ -681,6 +681,18 @@ test('spawns: picks belong to one battlefield; a new map, seed, style, mission o
   throwsRoom(() => room.setSlot(host, { slot: 0, spawn: 0 }), 'forbidden');
 });
 
+test('spawns: a host alone picks on the two player map the preview shows; the first guest keeps it, a third player clears it', () => {
+  const room = Room.create({ maxPlayers: 4, seed: 7 });
+  const host = room.join('Host', { host: true }).client;
+  assert.equal(room.spawnCount(), 2, 'as the clients count (protocol battlefieldSpawns)');
+  room.setSlot(host, { slot: 0, spawn: 1 });
+  throwsRoom(() => room.setSlot(host, { slot: 0, spawn: 2 }));
+  room.join('Guest');
+  assert.equal(room.slots[0].spawn, 1, 'still the two player map');
+  room.join('Third');
+  assert.equal(room.slots[0].spawn, undefined, 'three players: another map');
+});
+
 test('spawns: a stored lobby whose picks no longer fit is refused at the start', () => {
   const { room, host, guest } = lobby(2);
   room.setMap(host, MAP4);

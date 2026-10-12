@@ -63,6 +63,7 @@ import {
   settleSpawnPicks,
 } from './lobby-state.js';
 import { SpawnMarkers } from './spawnpick.js';
+import { battlefieldSpawns } from '../protocol/spawns.js';
 import { defaultRegistry } from './registry.js';
 import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
@@ -1402,7 +1403,7 @@ export class Lobby {
 
   /** The number of spawns of the battlefield the lobby shows. */
   spawnCount() {
-    return this.state.mapSource === 'file' && this.mapFile ? this.mapFile.info.spawns : activeCount(this.state);
+    return battlefieldSpawns({ mapSpawns: this.state.mapSource === 'file' && this.mapFile ? this.mapFile.info.spawns : null, players: activeCount(this.state) });
   }
 
   /**

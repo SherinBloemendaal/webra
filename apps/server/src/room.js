@@ -91,7 +91,9 @@ import {
   SAVE_COOLDOWN_MS,
   SAVE_HASH_MS,
   SAVE_VOTE_MS,
+  battlefieldSpawns,
   coopMission,
+  generatedMapPlayers,
   spawnPickProblem,
 } from '@webra/protocol';
 
@@ -263,20 +265,20 @@ export class Room {
 
   /**
    * What the picked spawns refer to: the map file, the co-op mission, or the
-   * generated map of this seed, size, style and player count (one spawn per
-   * player, so another count is another map).
+   * generated map of this seed, size, style and player count (protocol
+   * generatedMapPlayers: one spawn per player, so another count is another
+   * map; a host alone already has the two player map).
    */
   battlefield() {
     if (this.mission) return 'mission';
     if (this.map) return `map:${this.map.hash}`;
     const o = this.options;
-    return `gen:${o.seed}/${o.mapSize}/${o.mapStyle}/${this.participants().length}`;
+    return `gen:${o.seed}/${o.mapSize}/${o.mapStyle}/${generatedMapPlayers(this.participants().length)}`;
   }
 
-  /** How many spawns the lobby's battlefield has (0 in a co-op mission: the mission places everyone). */
+  /** How many spawns the lobby's battlefield has (protocol battlefieldSpawns, as the clients count them). */
   spawnCount() {
-    if (this.mission) return 0;
-    return this.map ? this.map.players : this.participants().length;
+    return battlefieldSpawns({ mission: !!this.mission, mapSpawns: this.map ? this.map.players : null, players: this.participants().length });
   }
 
   /** Clear every picked spawn when the battlefield is no longer `before` (a battlefield() value). */
