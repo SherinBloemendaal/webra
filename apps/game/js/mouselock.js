@@ -1,8 +1,8 @@
 // Mouse capture, like desktop OpenRA's locked cursor: on a multi-monitor
 // setup the pointer cannot slip off the game onto another screen.
 //
-// Through the Pointer Lock API (requestPointerLock, with unadjustedMovement
-// where the browser has it). While the lock holds, the browser hides the OS
+// Through the Pointer Lock API (requestPointerLock; unadjustedMovement only
+// for Settings > Raw mouse input). While the lock holds, the browser hides the OS
 // cursor and reports only movement, so the game keeps a virtual pointer of
 // its own: moved by movementX / movementY, clamped to the window, drawn with
 // the cursor art the page asks for at that spot (js/cursors.js on the
@@ -37,13 +37,21 @@
 // captures it again. Browsers refuse a new lock for about a second after the
 // player pressed Esc; clicks in that time just act.
 //
-// Speed: movementX is in CSS px for the normal (accelerated) movement, the
-// same distance the OS cursor would go, so it is used as is. Unadjusted
-// movement is raw device counts without the OS acceleration, about one per
-// physical pixel, so it is divided by devicePixelRatio. Both are times the
-// Captured mouse speed setting. UI scale and game scale do not change it:
-// they size the chrome and the battlefield, not CSS pixels, just as they do
-// not change the speed of the OS cursor.
+// Speed (movementFactor): by default the lock is the plain one, and
+// movementX / movementY are the OS cursor's own movement in CSS px, with the
+// system's pointer speed and acceleration, so at Captured mouse speed 1x the
+// game cursor goes exactly where the OS cursor would. Settings > Raw mouse
+// input asks for unadjusted movement instead: raw mouse counts without the
+// system's acceleration (mouse counts, not device pixels: never divided by
+// devicePixelRatio). Without any acceleration a flick then travels 2 to 4
+// times less far than the OS cursor, so raw movement gets a curve of its own
+// (rawGain): one CSS px per count while the mouse moves slowly, rising
+// smoothly with the speed to RAW_ACCEL.maxGain for fast flicks. Raw is used
+// only where the browser really gives it (requestRawLock: a returned promise
+// alone does not say so). Both are times the Captured mouse speed setting.
+// UI scale and game scale do not change it: they size the chrome and the
+// battlefield, not CSS pixels, just as they do not change the speed of the OS
+// cursor.
 //
 // No Pointer Lock (iOS Safari, phones, tablets without a mouse): nothing is
 // set up (pointerLockAvailable), the setting is hidden and touch input is
@@ -64,6 +72,12 @@ export const RELOCK_COOLDOWN_MS = 1100;
 export const ESC_GUARD_MS = 250;
 /** The "Mouse captured" hint shows the first few times only. */
 export const HINT_LIMIT = 3;
+/**
+ * The first movement after locking is dropped only when it jumps more than
+ * this far (CSS px or counts): Chromium can report the distance to where the
+ * OS cursor was then, while a real first move is small and is kept.
+ */
+export const FIRST_MOVE_JUMP = 100;
 const DOUBLE_CLICK_MS = 500;
 const DOUBLE_CLICK_SLOP = 4; // px
 const LINE_PX = 16; // a wheel "line" (deltaMode 1)
@@ -131,14 +145,69 @@ export function pointerLockAvailable(doc = globalThis.document, win = globalThis
 }
 
 /**
- * CSS px of virtual pointer movement per unit of movementX / movementY:
- * the speed setting, and for unadjusted (raw, about one per physical pixel)
- * movement over the device pixel ratio.
+ * The acceleration curve of raw movement (rawGain). The gain is a smooth
+ * step in the mouse's speed v (counts per ms):
+ *
+ *   gain(v) = 1 + (maxGain - 1) * k / (1 + k),   k = (v / halfSpeed) ^ power
+ *
+ * 1 at rest (one CSS px per count: slow, precise moves are not scaled), half
+ * way (2) at halfSpeed, and never above maxGain. It rises with the speed and
+ * nothing else, so a move that is faster goes further, and the curve is the
+ * same whatever the mouse's polling rate (the speed is counts per time, not
+ * per event). Numbers for a 1000 CPI mouse (1 count/ms = 1 inch/s): a slow
+ * aim at 0.5 count/ms gets 1.1, a quick move at 2 counts/ms 2, a flick at 6
+ * counts/ms 2.8. The speed comes from the time between two moves (dtMs),
+ * kept within minMs..maxMs; a first move or one after a pause counts as
+ * nominalMs (a 125 Hz mouse).
  */
-export function movementFactor({ speed = 1, unadjusted = false, dpr = 1 } = {}) {
+export const RAW_ACCEL = Object.freeze({ maxGain: 3, halfSpeed: 2, power: 2, minMs: 1, maxMs: 50, nominalMs: 8 });
+
+/** The raw movement gain at a mouse speed of `countsPerMs` (RAW_ACCEL): from 1 up to maxGain. */
+export function rawGain(countsPerMs) {
+  const v = Number.isFinite(countsPerMs) && countsPerMs > 0 ? countsPerMs : 0;
+  const k = (v / RAW_ACCEL.halfSpeed) ** RAW_ACCEL.power;
+  return 1 + ((RAW_ACCEL.maxGain - 1) * k) / (1 + k);
+}
+
+/** The time (ms) a move took, for the raw speed: within RAW_ACCEL's limits, nominalMs when unknown or after a pause. */
+export function moveDuration(dtMs) {
+  if (!Number.isFinite(dtMs) || dtMs > RAW_ACCEL.maxMs) return RAW_ACCEL.nominalMs;
+  return Math.max(RAW_ACCEL.minMs, dtMs);
+}
+
+/**
+ * CSS px of virtual pointer movement per unit of movementX / movementY:
+ * the speed setting, and for raw movement times rawGain at the move's speed
+ * (`distance` counts in `dtMs`). The device pixel ratio plays no part:
+ * accelerated movement is CSS px already, and raw counts are the mouse's.
+ */
+export function movementFactor({ speed = 1, raw = false, distance = 0, dtMs = RAW_ACCEL.nominalMs } = {}) {
   const s = Number.isFinite(speed) && speed > 0 ? speed : 1;
-  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
-  return unadjusted ? s / ratio : s;
+  if (!raw) return s;
+  const d = Number.isFinite(distance) ? Math.abs(distance) : 0;
+  return s * rawGain(d / moveDuration(dtMs));
+}
+
+/**
+ * Ask `el` for a lock with unadjusted (raw) movement. Returns { result, raw }:
+ * what requestPointerLock returned (a promise in Chromium and newer browsers,
+ * else undefined), and whether the browser took the option. A returned
+ * promise is no proof: Firefox returns one and ignores the option. So the
+ * option is a getter, and raw counts only when the browser read it while it
+ * took the request (the WebIDL dictionary conversion reads every member it
+ * knows); a browser that reads it and cannot give raw movement rejects with
+ * NotSupportedError, which the caller handles. Throws what the call throws.
+ */
+export function requestRawLock(el) {
+  let read = false;
+  const options = {
+    get unadjustedMovement() {
+      read = true;
+      return true;
+    },
+  };
+  const result = el.requestPointerLock(options);
+  return { result, raw: read };
 }
 
 /** A point kept inside a w x h view (the last pixel row and column included). */
@@ -608,12 +677,15 @@ export class MouseCapture {
     this.blocked = false;
     this.cooldownUntil = 0;
     this.escGuardUntil = 0;
-    /** The browser granted unadjusted (raw) movement. */
-    this.unadjusted = false;
+    /** The lock in force (or asked for) gives raw (unadjusted) movement: the setting asked and the browser took it. */
+    this.raw = false;
     this.pointer = null;
     this.overlay = null;
     this.art = null; // what the cursor overlay shows: { src, x, y } or null
-    this.skipMoves = 0;
+    /** The next move is the first after locking (FIRST_MOVE_JUMP). */
+    this.firstMove = false;
+    /** timeStamp of the last real move while locked (the raw speed), or null. */
+    this.lastMoveAt = null;
     this.raf = 0;
     // The real pointer while unlocked: where the virtual one starts, and buttons held into the lock.
     this.real = { x: (this.win?.innerWidth ?? 0) / 2, y: (this.win?.innerHeight ?? 0) / 2, buttons: 0, target: null, mods: null };
@@ -664,28 +736,37 @@ export class MouseCapture {
 
   // ---- Asking for and letting go of the lock --------------------------------------------
 
-  /** Ask the browser for the lock (unadjusted movement first, then the plain one). */
+  /**
+   * Ask the browser for the lock: the plain one (the OS cursor's movement),
+   * or with Raw mouse input on, unadjusted movement first (requestRawLock)
+   * and the plain one where the browser cannot give it.
+   */
   async request() {
     if (this.state !== 'off' || this.blocked) return false;
     this.state = 'pending';
     const el = this.lockTarget;
-    try {
-      const p = el.requestPointerLock({ unadjustedMovement: true });
-      this.unadjusted = !!p;
-      if (p) await p;
-    } catch (err) {
-      if (err?.name !== 'NotSupportedError' || this.state !== 'pending') {
-        this.onLockError();
-        return false;
-      }
-      // No raw movement here: the accelerated movement then.
+    this.raw = false;
+    if (this.settings.get('mouseCaptureRaw')) {
       try {
-        this.unadjusted = false;
-        await el.requestPointerLock();
-      } catch {
-        this.onLockError();
-        return false;
+        const { result, raw } = requestRawLock(el);
+        this.raw = raw;
+        if (result) await result;
+        return true;
+      } catch (err) {
+        this.raw = false;
+        if (err?.name !== 'NotSupportedError' || this.state !== 'pending') {
+          this.onLockError();
+          return false;
+        }
+        // No raw movement here: the plain lock then.
       }
+    }
+    try {
+      const p = el.requestPointerLock();
+      if (p) await p;
+    } catch {
+      this.onLockError();
+      return false;
     }
     return true;
   }
@@ -764,8 +845,9 @@ export class MouseCapture {
     mirrorPointerStates(this.doc);
     this.pointer = new VirtualPointer({ doc: this.doc, win: this.win, makeEvent: this.opts.makeEvent, now: this.now });
     activePointer = this.pointer;
-    // The first movement after locking can be a jump (Chromium): skipped.
-    this.skipMoves = 1;
+    // The first movement after locking can be a jump (Chromium): skipped when it is one.
+    this.firstMove = true;
+    this.lastMoveAt = null;
     const { w, h } = this.view();
     const p = clampToView(this.real.x, this.real.y, w, h);
     this.pointer.place(p.x, p.y, this.real.mods, { buttons: this.real.buttons, target: this.real.target });
@@ -864,13 +946,19 @@ export class MouseCapture {
     const p = this.pointer;
     const mods = { ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey };
     if (type === 'mousemove') {
-      if (this.skipMoves > 0) {
-        this.skipMoves--;
-        return;
+      const mx = Number(e.movementX) || 0;
+      const my = Number(e.movementY) || 0;
+      const distance = Math.hypot(mx, my);
+      const at = Number.isFinite(e.timeStamp) ? e.timeStamp : null;
+      const dtMs = at !== null && this.lastMoveAt !== null ? at - this.lastMoveAt : NaN;
+      this.lastMoveAt = at;
+      if (this.firstMove) {
+        this.firstMove = false;
+        if (distance > FIRST_MOVE_JUMP) return;
       }
-      const f = movementFactor({ speed: this.settings.get('mouseCaptureSpeed'), unadjusted: this.unadjusted, dpr: this.win?.devicePixelRatio ?? 1 });
+      const f = movementFactor({ speed: this.settings.get('mouseCaptureSpeed'), raw: this.raw, distance, dtMs });
       const { w, h } = this.view();
-      p.moveBy((e.movementX ?? 0) * f, (e.movementY ?? 0) * f, w, h, mods);
+      p.moveBy(mx * f, my * f, w, h, mods);
       this.drawCursor();
     } else if (type === 'mousedown') {
       const control = p.down(e.button, mods);

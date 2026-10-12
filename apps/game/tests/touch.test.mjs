@@ -549,6 +549,10 @@ test('touch: two fingers pan and pinch-zoom the camera around the fingers', asyn
   await p.up(1, 320, 340);
   await p.up(2, 520, 340);
   assert.deepEqual(input.selection, [], 'no tap fired');
+  // The pinch zoom is remembered like the wheel's (game.zoomFactor, a factor of the base zoom 1.5).
+  assert.ok(input.zoomSave, 'stored once the zooming pauses');
+  input.flushZoom();
+  assert.ok(Math.abs(input.settings.get('zoomFactor') - 2 / 1.5) < 1e-9);
 });
 
 test('touch: long press force-attacks, attack-moves, or cancels; Force toggle attacks any actor', async () => {

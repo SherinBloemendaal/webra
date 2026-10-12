@@ -8,7 +8,9 @@
 //   size, text stays sharp, and the battlefield canvas takes the room left.
 // - Game scale: how big units and terrain appear, as the camera's base zoom
 //   (js/input.js). The mouse wheel, pinch and the zoom keys zoom relative to
-//   it, between limits that scale with it.
+//   it, between limits that scale with it. The player's own zoom is kept as
+//   a factor of it (game.zoomFactor), so the next game starts there and a
+//   new game scale keeps it.
 // - Render resolution (pixelRatioCap, lowQuality; js/layout.js): how many
 //   pixels the battlefield is drawn with. Sharpness and speed, not size.
 //
@@ -17,10 +19,10 @@
 //
 // No DOM at module level: Node tests import the math.
 
-import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS } from '../protocol/accounts.js';
-import { isCompact, layoutMode } from './layout.js';
+import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, ZOOM_FACTOR_LIMITS } from '../protocol/accounts.js';
+import { isCompact, layoutMode, renderPixelRatio } from './layout.js';
 
-export { UI_SCALE_LIMITS, GAME_SCALE_LIMITS };
+export { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, ZOOM_FACTOR_LIMITS };
 
 /** Camera zoom (CSS px per world px) at game scale 1, and the zoom limits at game scale 1. */
 export const DEFAULT_ZOOM = 1.5;
@@ -190,6 +192,16 @@ export const clampZoom = (zoom, scale) => {
 export const rescaleZoom = (zoom, from, to) => clampZoom((zoom * to) / from, to);
 
 /**
+ * The player's zoom as a factor of the base zoom (the remembered zoom,
+ * game.zoomFactor), kept within ZOOM_FACTOR_LIMITS: the zoom limits over
+ * the base zoom, the same at every game scale.
+ */
+export const zoomFactorOf = (zoom, scale) => clamp(zoom / baseZoom(scale), ZOOM_FACTOR_LIMITS.min, ZOOM_FACTOR_LIMITS.max);
+
+/** The zoom for a remembered factor at a game scale, within its zoom limits (no factor: the base zoom). */
+export const zoomForFactor = (factor, scale) => clampZoom(baseZoom(scale) * positive(factor, 1), scale);
+
+/**
  * Render pixels per world pixel at a game scale and render pixel ratio
  * (js/renderer.js draws with camera.zoom times the render ratio).
  */
@@ -229,10 +241,13 @@ export const GAME_AUTO_FIT = Object.freeze({ min: 0.85, max: 1.5 });
 
 /**
  * The game scale Auto picks: larger windows show the battlefield larger
- * (a 4K monitor at 100% does not look tiny), smaller ones a little smaller,
- * phones keep 100%. When a world pixel covers two or more render pixels, it
- * is rounded to a whole number of them, so sprites stay sharp on high-density
- * screens.
+ * (a 4K monitor at 100% does not look tiny), smaller ones smaller, phones
+ * keep 100%. When a world pixel covers two or more render pixels, it is
+ * rounded to a whole number of them, so sprites stay sharp on high-density
+ * screens: to the nearest one for windows of at least GAME_REFERENCE, and
+ * down for smaller windows, so they never show the battlefield larger than
+ * the reference does (a 14" MacBook, 1512 x 982 at 2x: 2.55 render px goes
+ * down to 2, about 63 x 41 cells, not up to 3 and 42 x 27 cells).
  * @param {{ width: number, height: number, ratio?: number, compact?: boolean }} screen
  *   ratio: the render pixel ratio (device ratio after the resolution cap)
  */
@@ -242,7 +257,8 @@ export function autoGameScale({ width, height, ratio = 1, compact = false }) {
     : clamp(Math.min(positive(width, GAME_REFERENCE.width) / GAME_REFERENCE.width, positive(height, GAME_REFERENCE.height) / GAME_REFERENCE.height), GAME_AUTO_FIT.min, GAME_AUTO_FIT.max);
   const per = DEFAULT_ZOOM * positive(ratio, 1);
   let render = per * fit;
-  if (render >= 2) render = Math.round(render);
+  // The small epsilon keeps a product like 2.9999999999999996 at 3.
+  if (render >= 2) render = fit < 1 ? Math.floor(render + 1e-9) : Math.round(render);
   return clamp(render / per, GAME_SCALE_LIMITS.min, GAME_SCALE_LIMITS.max);
 }
 
@@ -250,4 +266,16 @@ export function autoGameScale({ width, height, ratio = 1, compact = false }) {
 export function resolveGameScale(setting, screen) {
   if (setting === 'auto' || !Number.isFinite(setting)) return autoGameScale(screen);
   return clamp(setting, GAME_SCALE_LIMITS.min, GAME_SCALE_LIMITS.max);
+}
+
+/**
+ * The game scale in use for this window outside a game (the map lens of the
+ * lobby, the campaign screen and the map editor), at the render pixel ratio
+ * a game would draw with (js/layout.js renderPixelRatio, as js/main.js gives
+ * the renderer), so it matches the game's own base zoom.
+ * @param {{ get(k: string): any }} settings  the game settings (js/settings.js)
+ */
+export function gameScaleFor(settings, win = globalThis.window) {
+  const ratio = renderPixelRatio(win?.devicePixelRatio, settings.get('pixelRatioCap'), settings.get('lowQuality'));
+  return resolveGameScale(settings.get('gameScale'), { ...screenOf(win), ratio });
 }

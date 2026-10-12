@@ -11,7 +11,9 @@ import {
   MIN_ZOOM,
   MAX_ZOOM,
   UI_SCALE_LIMITS,
+  GAME_AUTO_FIT,
   GAME_SCALE_LIMITS,
+  ZOOM_FACTOR_LIMITS,
   UiScale,
   applyUiScale,
   autoGameScale,
@@ -19,6 +21,7 @@ import {
   baseZoom,
   clampZoom,
   crispGameScales,
+  gameScaleFor,
   percent,
   renderPixelsPerWorldPixel,
   rescaleZoom,
@@ -27,6 +30,8 @@ import {
   roundStep,
   screenOf,
   snapGameScale,
+  zoomFactorOf,
+  zoomForFactor,
   zoomLimits,
   CRISP_SNAP,
 } from '../js/scale.js';
@@ -34,7 +39,7 @@ import { renderPixelRatio } from '../js/layout.js';
 import { createSettings } from '../js/settings.js';
 import { createRegistry } from '../js/registry.js';
 import { HotkeyRegistry } from '../js/hotkeys.js';
-import { installDom, uninstallDom } from './dom-fixtures.mjs';
+import { installDom, uninstallDom, memoryStorage } from './dom-fixtures.mjs';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -244,8 +249,8 @@ test('game scale: sharp scales put whole render pixels on a world pixel; the sli
 test('game scale: auto follows the window and rounds to whole render pixels on dense screens', () => {
   // 1080p at 1x: 100% as before.
   assert.equal(autoGameScale({ width: 1920, height: 1080, ratio: 1 }), 1);
-  // Retina laptop: 3 render px per world px, 100%.
-  assert.equal(autoGameScale({ width: 1512, height: 982, ratio: 2 }), 1);
+  // Retina laptop (14" MacBook): smaller than the reference, so 2.55 render px goes down to 2, not up to 3.
+  assert.ok(near(autoGameScale({ width: 1512, height: 982, ratio: 2 }), 2 / 3));
   // 4K at 100%: larger, rounded to 2 render px.
   assert.ok(near(autoGameScale({ width: 3840, height: 2160, ratio: 1 }), 4 / 3));
   // 5K at 200%: 4 render px.
@@ -262,15 +267,68 @@ test('game scale: auto follows the window and rounds to whole render pixels on d
       if (px >= 2) assert.ok(near(px, Math.round(px)), `${w}x${h}@${ratio}: whole render pixels`);
     }
   }
+  // Windows smaller than the reference never show the battlefield larger than their fit asks for.
+  for (const ratio of [1, 1.25, 1.5, 2, 3]) {
+    for (const [w, h] of [[1280, 720], [1366, 768], [1440, 900], [1512, 982], [1728, 1117], [1800, 1000]]) {
+      const fit = Math.max(GAME_AUTO_FIT.min, Math.min(w / 1920, h / 1080));
+      assert.ok(autoGameScale({ width: w, height: h, ratio }) <= fit + 1e-9, `${w}x${h}@${ratio}`);
+    }
+  }
   const screen = { width: 1920, height: 1080, ratio: 1 };
   assert.equal(resolveGameScale('auto', screen), 1);
   assert.equal(resolveGameScale(2.5, screen), 2.5);
   assert.equal(resolveGameScale(99, screen), GAME_SCALE_LIMITS.max);
 });
 
+test('game scale: the starting view before and after rounding down on small sharp screens', () => {
+  // [window, ratio, scale before (rounded to the nearest), scale now, cells across x down at the base zoom now].
+  const CELL = 24;
+  const table = [
+    [1512, 982, 2, 1, 2 / 3, [63, 40.9]],
+    [1728, 1117, 2, 1, 2 / 3, [72, 46.5]],
+    [1920, 1080, 1, 1, 1, [53.3, 30]],
+    [2560, 1440, 1, 4 / 3, 4 / 3, [53.3, 30]],
+  ];
+  for (const [width, height, ratio, before, now, [cx, cy]] of table) {
+    const s = autoGameScale({ width, height, ratio });
+    assert.ok(near(s, now), `${width}x${height}@${ratio}: ${s}`);
+    // The old rule: the nearest whole number of render px at any window size.
+    const per = DEFAULT_ZOOM * ratio;
+    const fit = Math.min(GAME_AUTO_FIT.max, Math.max(GAME_AUTO_FIT.min, Math.min(width / 1920, height / 1080)));
+    const old = per * fit >= 2 ? Math.round(per * fit) / per : fit;
+    assert.ok(near(old, before), `before: ${old}`);
+    const zoom = baseZoom(s);
+    assert.ok(Math.abs(width / (CELL * zoom) - cx) < 0.05 && Math.abs(height / (CELL * zoom) - cy) < 0.05, `${width}x${height}: cells`);
+  }
+});
+
+test('game scale outside a game: the map lens sees the scale a game would use (render ratio after the cap)', () => {
+  const settings = memorySettings();
+  const win = { innerWidth: 1512, innerHeight: 982, devicePixelRatio: 2 };
+  assert.ok(near(gameScaleFor(settings, win), 2 / 3));
+  // A 3x screen with the default cap of 2 draws at 2, as js/main.js gives the renderer.
+  const dense = { innerWidth: 1512, innerHeight: 982, devicePixelRatio: 3 };
+  assert.ok(near(gameScaleFor(settings, dense), autoGameScale({ ...screenOf(dense), ratio: renderPixelRatio(3, settings.get('pixelRatioCap')) })));
+  settings.set('gameScale', 1.25);
+  assert.equal(gameScaleFor(settings, win), 1.25);
+});
+
+test('remembered zoom: a factor of the base zoom within the zoom limits, the same at every game scale', () => {
+  assert.ok(near(ZOOM_FACTOR_LIMITS.min * DEFAULT_ZOOM, MIN_ZOOM) && near(ZOOM_FACTOR_LIMITS.max * DEFAULT_ZOOM, MAX_ZOOM), 'the zoom limits over the base zoom');
+  for (const scale of [0.5, 2 / 3, 1, 4 / 3, 3]) {
+    assert.ok(near(zoomForFactor(1, scale), baseZoom(scale)));
+    assert.ok(near(zoomForFactor(0.5, scale), baseZoom(scale) / 2));
+    assert.ok(near(zoomFactorOf(zoomForFactor(1.7, scale), scale), 1.7));
+    assert.ok(near(zoomForFactor(99, scale), MAX_ZOOM * scale), 'clamped to the limits');
+    assert.ok(near(zoomForFactor(0.01, scale), MIN_ZOOM * scale));
+    assert.equal(zoomForFactor(NaN, scale), baseZoom(scale), 'no factor: the base zoom');
+    assert.equal(zoomFactorOf(1e9, scale), ZOOM_FACTOR_LIMITS.max);
+  }
+});
+
 // ---- Input at several game scales and pixel ratios ------------------------------------------------
 
-function makeInput() {
+function makeInput(settings = memorySettings()) {
   installDom();
   const canvas = document.createElement('canvas');
   canvas.clientWidth = 800;
@@ -283,7 +341,6 @@ function makeInput() {
     pick: () => 0xffffffff,
     select_at: () => 0xffffffff,
   };
-  const settings = memorySettings();
   const hotkeys = new HotkeyRegistry(settings);
   const hooks = { onSelectionChanged() {}, onPlaced() {}, onCancelPlace() {}, onPowerTargeting() {}, onSellMode() {} };
   return import('../js/input.js').then(({ Input }) => ({ input: new Input(canvas, game, { actors: [] }, 0, hooks, { hotkeys, settings }), hotkeys }));
@@ -356,3 +413,68 @@ test('input: wheel zoom and bookmarks keep their factor of the base zoom when th
     uninstallDom();
   }
 });
+
+test('input: the player zoom is remembered across a reload and kept through game scale changes; Reset zoom and Defaults clear it', async () => {
+  const { ZOOM_SAVE_MS } = await import('../js/input.js');
+  const storage = memoryStorage();
+  // A page load: a registry over this browser's storage (js/registry.js), as js/settings.js makes it.
+  const load = () => createSettings(createRegistry({ storage }));
+  const wheel = (input, deltaY) => input.onWheel({ preventDefault() {}, clientX: 500, clientY: 350, deltaY });
+  let factor;
+  let { input } = await makeInput(load());
+  try {
+    assert.equal(input.camera.zoom, DEFAULT_ZOOM, 'nothing remembered: the base zoom');
+    input.setGameScale(2 / 3); // Auto on a 14" MacBook
+    input.centerOn(1000, 1000);
+    for (let i = 0; i < 3; i++) wheel(input, 200);
+    factor = input.camera.zoom / baseZoom(2 / 3);
+    assert.ok(factor < 1, 'zoomed out');
+    assert.equal(input.settings.get('zoomFactor'), 1, 'not stored on every wheel event');
+    await new Promise((r) => setTimeout(r, ZOOM_SAVE_MS + 50));
+    assert.ok(near(input.settings.get('zoomFactor'), factor), 'stored once the wheel stops');
+    input.dispose();
+  } finally {
+    uninstallDom();
+  }
+  // Reload: the next game starts at the same factor, before and after its game scale is applied.
+  let hotkeys;
+  ({ input, hotkeys } = await makeInput(load()));
+  try {
+    assert.ok(near(input.camera.zoom, DEFAULT_ZOOM * factor), 'at game scale 1');
+    input.setGameScale(2 / 3);
+    assert.ok(near(input.camera.zoom, baseZoom(2 / 3) * factor), 'at the game scale of the screen');
+    input.setGameScale(4 / 3);
+    assert.ok(near(input.camera.zoom, baseZoom(4 / 3) * factor), 'a new game scale keeps it');
+    assert.ok(near(input.settings.get('zoomFactor'), factor), 'and the factor does not change');
+    // The zoom keys are remembered too (pinch: tests/touch.test.mjs).
+    assert.equal(hotkeys.run('zoomIn'), true);
+    assert.ok(input.zoomSave);
+    input.flushZoom(); // the page goes away (pagehide)
+    assert.ok(near(input.settings.get('zoomFactor'), factor * 1.25));
+    // Reset zoom ("."): the base zoom, and the remembered zoom is cleared.
+    assert.equal(hotkeys.run('resetZoom'), true);
+    assert.ok(near(input.camera.zoom, baseZoom(4 / 3)));
+    assert.equal(input.settings.get('zoomFactor'), 1);
+    // Changed elsewhere (another tab, the account): the view follows; Defaults reset it: back to the base zoom.
+    input.settings.set('zoomFactor', 2);
+    assert.ok(near(input.camera.zoom, baseZoom(4 / 3) * 2));
+    input.settings.reset('zoomFactor');
+    assert.ok(near(input.camera.zoom, baseZoom(4 / 3)));
+    // Out of the limits: clamped, in the setting and the view.
+    assert.equal(input.settings.set('zoomFactor', 50), ZOOM_FACTOR_LIMITS.max);
+    assert.ok(near(input.camera.zoom, MAX_ZOOM * (4 / 3)));
+    for (let i = 0; i < 60; i++) wheel(input, 400);
+    input.flushZoom();
+    assert.ok(near(input.settings.get('zoomFactor'), ZOOM_FACTOR_LIMITS.min), 'the wheel stops at the limit');
+    // Only zooming by the player is remembered (the stress test sets the zoom directly).
+    input.camera.zoom = 1;
+    input.flushZoom();
+    assert.ok(near(input.settings.get('zoomFactor'), ZOOM_FACTOR_LIMITS.min));
+    input.dispose();
+    input.settings.set('zoomFactor', 1);
+    assert.equal(input.camera.zoom, 1, 'a disposed view no longer follows');
+  } finally {
+    uninstallDom();
+  }
+});
+
