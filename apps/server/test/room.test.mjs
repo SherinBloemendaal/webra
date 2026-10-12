@@ -596,3 +596,99 @@ test('map setup: after a rematch, people who join take the map slot settings', (
   assert.deepEqual([room.slots[2].client, room.slots[2].faction], [late, 'france']);
   assert.equal(room.lockedProblem(), null);
 });
+
+// ---- Picked spawns (OpenRA's lobby spawn selection) -----------------------------------------
+
+const MAP4 = { id: '0123456789abcdef', hash: 'c'.repeat(64), name: 'Four', modded: false, players: 4, author: 'Tester', width: 64, height: 64, bytes: 900, shared: false };
+
+test('spawns: a player picks and clears its own, a taken spawn is refused, the pick reaches the start', () => {
+  const { room, host, guest } = lobby(4);
+  room.setMap(host, MAP4);
+  room.setSlot(host, { slot: 0, spawn: 2 });
+  assert.equal(room.slots[0].spawn, 2);
+  // Validated on the wire, then by the room.
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'slot', slot: 1, spawn: 2 })).ok, true);
+  throwsRoom(() => room.setSlot(guest, { slot: 1, spawn: 2 }), 'forbidden');
+  throwsRoom(() => room.setSlot(guest, { slot: 1, spawn: 4 }), 'invalid');
+  // Someone else's slot: refused (a guest), even the spawn alone.
+  throwsRoom(() => room.setSlot(guest, { slot: 0, spawn: null }), 'forbidden');
+  room.setReady(guest, true, MAP4.hash);
+  room.setSlot(guest, { slot: 1, spawn: 0 });
+  assert.equal(room.slots[1].ready, false, 'a change of your own makes you not ready');
+  room.setSlot(host, { slot: 0, spawn: null });
+  assert.equal(room.slots[0].spawn, undefined, 'automatic again');
+  room.setSlot(host, { slot: 0, spawn: 3 });
+  room.setReady(guest, true, MAP4.hash);
+  const view = room.lobbyView();
+  assert.deepEqual(view.slots.map((s) => s.spawn), [3, 0, undefined, undefined]);
+  assert.ok(parseServerMessage(encodeServer({ t: 'lobby', ...view })).ok);
+  assert.deepEqual(Room.fromJSON(JSON.parse(JSON.stringify(room))).slots.map((s) => s.spawn), [3, 0, undefined, undefined], 'kept in storage');
+  const start = room.start(host, first);
+  assert.deepEqual(start.options.players.map((p) => p.spawn), [3, 0]);
+  assert.ok(parseServerMessage(encodeServer({ t: 'start', ...start })).ok, 'the start message validates');
+});
+
+test('spawns: the host places AI players and frees anyone, like OpenRA; guests cannot', () => {
+  const { room, host, guest } = lobby(4);
+  room.setMap(host, MAP4);
+  room.setSlot(host, { slot: 2, type: 'ai' });
+  room.setSlot(host, { slot: 2, spawn: 1 });
+  assert.equal(room.slots[2].spawn, 1);
+  throwsRoom(() => room.setSlot(guest, { slot: 2, spawn: 0 }), 'forbidden');
+  throwsRoom(() => room.setSlot(host, { slot: 3, type: 'ai', spawn: 0 }));
+  room.setSlot(guest, { slot: 1, spawn: 0 });
+  room.setReady(guest, true, MAP4.hash);
+  // OpenRA clear_spawn: the host frees a player's spawn, which unreadies it; it cannot set one.
+  throwsRoom(() => room.setSlot(host, { slot: 1, spawn: 3 }), 'forbidden');
+  throwsRoom(() => room.setSlot(host, { slot: 1, spawn: null, team: 1 }), 'forbidden');
+  room.setSlot(host, { slot: 1, spawn: null });
+  assert.equal(room.slots[1].spawn, undefined);
+  assert.equal(room.slots[1].ready, false);
+});
+
+test('spawns: picks belong to one battlefield; a new map, seed, style, mission or player count on a generated map clears them', async () => {
+  const { room, host, guest } = lobby(4);
+  // A generated map has one spawn per player: two players, spawns 0 and 1.
+  throwsRoom(() => room.setSlot(host, { slot: 0, spawn: 2 }));
+  room.setSlot(host, { slot: 0, spawn: 1 });
+  room.setOptions(host, { ...room.options, fog: false });
+  assert.equal(room.slots[0].spawn, 1, 'an option that keeps the map keeps the picks');
+  room.setOptions(host, { ...room.options, seed: 8 });
+  assert.equal(room.slots[0].spawn, undefined, 'a new seed is a new map');
+  room.setSlot(host, { slot: 0, spawn: 1 });
+  room.setSlot(host, { slot: 2, type: 'ai' });
+  assert.equal(room.slots[0].spawn, undefined, 'three players: another generated map');
+  room.setSlot(host, { slot: 0, spawn: 2 });
+  room.join('Third');
+  assert.equal(room.slots[0].spawn, undefined, 'a joining player changes the generated map');
+  // A map file keeps its spawns whoever comes and goes.
+  room.setMap(host, MAP4);
+  room.setSlot(host, { slot: 0, spawn: 3 });
+  room.setSlot(guest, { slot: 1, spawn: 2 });
+  room.leave(room.slots[3].client);
+  room.spectate(guest, true);
+  assert.equal(room.slots[0].spawn, 3);
+  room.spectate(guest, false);
+  assert.equal(room.slots.find((s) => s.client === guest).spawn, undefined, 'back from the spectators without a pick');
+  room.setMap(host, { ...MAP4, hash: 'd'.repeat(64) });
+  assert.equal(room.slots[0].spawn, undefined, 'another map');
+  // A co-op mission places everyone itself.
+  const { COOP_MISSIONS } = await import('@webra/protocol');
+  const m = COOP_MISSIONS[0];
+  room.setSlot(host, { slot: 0, spawn: 0 });
+  room.setMission(host, { id: m.id, hash: m.hash, options: {} });
+  assert.equal(room.slots[0].spawn, undefined);
+  throwsRoom(() => room.setSlot(host, { slot: 0, spawn: 0 }), 'forbidden');
+});
+
+test('spawns: a stored lobby whose picks no longer fit is refused at the start', () => {
+  const { room, host, guest } = lobby(2);
+  room.setMap(host, MAP4);
+  room.setReady(guest, true, MAP4.hash);
+  // As an older room or a hand-edited record could hold it.
+  room.slots[0].spawn = 1;
+  room.slots[1].spawn = 1;
+  assert.match(room.startProblem(host), /Two players picked start position B/);
+  room.slots[1].spawn = 0;
+  assert.equal(room.startProblem(host), null);
+});

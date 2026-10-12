@@ -213,12 +213,40 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   over a map preview that shows the real map under the pointer as a game on
   it starts, fog free like the preview: terrain with ore, gems, cliffs and
   water, bridges, buildings, units and trees, and the start positions. The
-  map is read on the first hover through `Game.editor_preview(mapJson)` (map
+  map is read through `Game.editor_preview(mapJson)` (map
   files, and generated maps through `Game.generated_map_with` with the
   lobby's seed, size, player count, style, biome and tech buildings) or
   `Game.from_mission(text, '{"seed":1}')` (missions: their actors after
   `WorldLoaded`, in the mission's colours), copied out (`terrain_ptr`,
   `build_render` for the spectator view 255) and the engine game is freed.
+  The read does not wait for the first hover and never runs in one go: as
+  soon as a preview with a lens is shown (`setSource`, `attach`; a preview
+  that is not on screen waits) `LensArt.mapSteps`, `generatedSteps` and
+  `missionSteps` (generators) read it one part per idle task
+  (`requestIdleCallback` with a 500 ms timeout, else a timer): the engine's
+  map, the rules, the sprite atlas, the world's terrain and sprites, the
+  terrain tiles. A pointer that comes before the map is in sees the
+  preview's pixels, dimmed, under a ring that fills with the share read, a
+  turning arc (still with "Reduce motion") and "Loading map"; the remaining
+  steps then run in zero-delay tasks, never inside a frame or a pointer
+  event. Another map stops an unfinished read (`return()` frees its engine
+  game). Measured in Node with the real engine and WebRA's art (fake 2D
+  canvases, so canvas drawing is not counted; a fresh `LensArt` per map,
+  so every atlas is built): before, the first hover's longest task was
+  339 ms (96 x 96, 2 players, cold), 160 ms (128 x 128, 4) and 238 ms
+  (160 x 160, 8), all of the read in one frame; after, with the read done
+  in the background first, the hover path's longest task is 6.4 to 6.9 ms
+  (a frame's tile budget), and the read's longest single step 45 to 65 ms
+  (the sprite atlas, built once per rule set and biome) in an idle task of
+  its own; a pointer that comes first waits for the same steps in their own
+  tasks while the frames stay within the budget. The players'
+  colours (`setColors`: player k's actors) and the start markers
+  (`setMarkers`) change without reading the map again; the marker under
+  the pointer or keyboard focus (`setHotMarker`, from js/spawnpick.js) gets
+  a ring, and the lens never takes a click (`pointer-events: none`), so a
+  click on a start marker under it picks that start position (section 4,
+  "Start positions"). A touch hold that showed the lens is no tap
+  (`heldRecently`: until 700 ms after the finger lifts).
   It is drawn with the game's art (`js/gameart.js` `buildGameAtlas`, the
   biome's terrain tiles, installed original graphics or texture packs when
   chosen, else WebRA's) by `js/maplens/raster.js`, a 2D canvas port of
@@ -532,7 +560,7 @@ on upload like any other map (it never unpacks `.oramap` files itself).
 
 `options` JSON as produced by `apps/game/js/lobby.js` (value sets in
 `apps/game/js/lobby-state.js`): `seed, mapSize, players[{slot, type:
-human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?}],
+human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?, spawn?}],
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
@@ -585,6 +613,14 @@ that is not closed, and it takes spawn N (unless separate team spawns
 moves it, below). `map` is the map file JSON string
 (the client starts `Game.from_map(map, options)`) or null for a generated map
 (`Game.from_options(options)`); it is not passed on to the engine options.
+`spawn` (optional, 0 to 7) is the start position the player picked in the
+lobby (OpenRA's lobby spawn selection; 0-based, where OpenRA counts from 1
+and uses 0 for random); left out, the lobby's automatic choice applies
+(below), as in games, replays and saves from before spawn picks (protocol
+6, no version bump: an optional field, and sessions pair identical builds).
+No two players may pick one spawn, and the map must have it (a generated
+map has one per player): the protocol refuses doubles, the engine refuses
+both (`gamerules.rs` `spawn_pick_problem`, `from_options`, `from_map`).
 
 OpenRA's other lobby options (rules in `data/source/rules/world.yaml`,
 `player.yaml`, `misc.yaml`; protocol version 6 requires the keys, the
@@ -601,14 +637,19 @@ joined protocol 6 the same way, without a version of its own):
   unit counts too.
 - `allyBuildRadius` (default on): structures may also be placed near allied
   structures.
+- Start positions (OpenRA MapStartingLocations): a player who picked a
+  spawn starts there. Everyone else shows their spawn on the preview: slot
+  k (the k-th that plays) at spawn k when nobody picked it, else (in slot
+  order, after those who keep theirs) the lowest free spawn.
 - `separateTeamSpawns` (default on, OpenRA MapStartingLocations): in a team
-  game the players without a team keep their slot's spawn and team members
-  take the free spawns. On a generated map the teams take them team by team
+  game the players without a team (and without a pick) take their spawn as
+  above and team members without a pick take the spawns still free. On a generated map the teams take them team by team
   (in the order of each team's first slot, members in slot order) in the
   order the map lists its spawns, which is by column, top first, so the
   halves of the list are mirrored sides; on a map file the members, in slot
   order, take the free spawn farthest from the enemies placed so far (sum of
-  squared distances), then nearest to team mates, then the lowest.
+  squared distances; picked spawns count as placed), then nearest to team
+  mates, then the lowest.
   `engine/src/gamerules.rs` `assign_spawns` and `packages/protocol`
   `assignSpawns` (lobby markers) share the cases of
   `packages/protocol/test/fixtures/spawn-cases.json`.
@@ -862,7 +903,7 @@ Client to server:
 | t | Fields | When |
 |---|--------|------|
 | `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
-| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?` (difficulty and bot: AI slots, host only) | lobby |
+| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions") | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
 | `resume` | | rejoining player, after catching up |
@@ -922,6 +963,48 @@ Time within 1 s of the frame a client needed going out does not count; the
 client runs waiting frames at once as soon as more than `delay` are queued.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
 delay: 3 ticks.
+
+### Start positions
+
+OpenRA's lobby spawn selection (`LobbyUtils.SelectSpawnPoint`, the `spawn`
+and `clear_spawn` commands, `SpawnSelectorTooltipLogic`), in the skirmish
+and online lobbies (`apps/game/js/spawnpick.js`):
+
+- The map preview shows every spawn as a marker named A, B, C... (OpenRA's
+  letters), filled in the colour of the player who starts there: a solid
+  ring for a picked spawn, a dashed one where the automatic choice
+  (section 3) puts a player, hollow for an empty spawn. Each slot row has a
+  start list (OpenRA's spawn dropdown): "Automatic (B)" (where it starts
+  now) and the spawns no other slot picked.
+- Left click on a free spawn (one nobody picked; one the automatic choice
+  gave someone counts as free, that player moves on): the first of your
+  slots without a pick goes there; yours are your own slot and, for the
+  host, the AI slots, you first. When all have one, you move there (OpenRA).
+  Left click on a spawn one of yours picked frees it (automatic again; a
+  WebRA addition, OpenRA ignores it). A spawn another slot picked is taken.
+- Right click (or Delete / Backspace on a focused marker) frees a picked
+  spawn: your own; the host frees anyone's, which makes that player not
+  ready (OpenRA `clear_spawn`). OpenRA also frees with a click beside every
+  spawn; WebRA does not, because the preview carries the map lens. OpenRA's
+  host disables empty spawns with a right click; WebRA has no disabled spawns.
+- Hover or focus shows the shared tooltip (who starts there, team, picked
+  or automatic, and what a click does); the markers are buttons (Tab, Enter
+  or Space), and the lens rings the one under the pointer or focus.
+- Picks belong to one battlefield: the map file (by hash), or the generated
+  map of a seed, size, style and player count (one spawn per player). When
+  it changes the picks are cleared (OpenRA clears them on a map change).
+  No picks in a co-op mission (the mission places everyone); a resumed
+  save keeps the saved ones.
+- Online: the client sends `slot { slot, spawn }` (null: automatic). The
+  server (`apps/server/src/room.js`) checks it: your own slot (a change of
+  your own makes you not ready), the host for AI slots (everyone not
+  ready, like other host changes) or `spawn: null` alone for another
+  person's slot; the spawn on the battlefield (`map.players` spawns, or one
+  per player); not picked by another slot; never with `type` and never in
+  a mission or a resumed save. Lobby slots carry `spawn` when picked; the
+  start message's players carry it to the engine. Like OpenRA a ready player
+  could not change its spawn; WebRA lets every own change through and makes
+  the player not ready, as for faction or colour.
 
 ### Reconnecting
 

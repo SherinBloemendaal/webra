@@ -17,6 +17,7 @@ fn main() {
             bot: Default::default(),
             team: c.to_digit(10).expect("team digit") as u8,
             handicap: 0,
+            spawn: None,
         })
         .collect();
     let mut w = World::with_options(seed, size, &players, GameOptions::default());

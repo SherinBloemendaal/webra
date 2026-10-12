@@ -157,7 +157,8 @@ async function boot() {
       preview: (seed, size, players, style = 'random', biome = 'temperate') => Game.map_preview_styled(seed, size, players, style, biome),
       // "Rivers, Snow": the style and biome a seed gives a generated map.
       describe: (seed, style, biome) => `${capitalize(Game.resolved_style(seed, style))}, ${capitalize(Game.resolved_biome(seed, biome))}`,
-      spawns: (seed, size, players) => JSON.parse(Game.generated_map(seed, size, players)).spawns,
+      // The style shapes the map (the biome only paints it).
+      spawns: (seed, size, players, style = 'random') => JSON.parse(Game.generated_map_styled(seed, size, players, style, 'temperate')).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
       filePreview: (json) => Game.map_file_preview(json),
       // OpenRA .oramap maps: converted in the browser, checked by the engine like any map file.
@@ -203,7 +204,12 @@ async function boot() {
  */
 function newMapLens() {
   if (!lensArt) return undefined;
-  return new MapLens({ art: lensArt, gameScale: () => gameScaleFor(settings, window) });
+  return new MapLens({
+    art: lensArt,
+    gameScale: () => gameScaleFor(settings, window),
+    // Its loading spinner turns only without "Reduce motion" (the setting, or the browser's).
+    reducedMotion: () => motionReduced(settings.get('reduceMotion'), !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches),
+  });
 }
 
 /** Compile the engine (kept for the simulation worker) and instantiate it for the lobby. */

@@ -247,6 +247,10 @@ impl Game {
     /// already be resolved (no "random"); closed slots are left out.
     pub fn from_options(json: &str) -> Result<Game, JsError> {
         let o = parse_options(json).map_err(|e| JsError::new(&e))?;
+        // A generated map has a spawn for every player.
+        if let Some(problem) = gamerules::spawn_pick_problem(&o.players, o.players.len()) {
+            return Err(JsError::new(&problem));
+        }
         Ok(Game::wrap(World::with_options(o.seed, o.map_size, &o.players, o.options)))
     }
 
@@ -1801,7 +1805,17 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
                 .and_then(ai_bots::BotType::from_name)
                 .ok_or_else(|| "players[].bot must be rush, normal, turtle or naval".to_string())?,
         };
-        players.push(PlayerSetup { faction, ai, bot, team, handicap });
+        // The spawn picked in the lobby (0-based); absent or null: automatic
+        // (gamerules.rs `assign_spawns`; games from before spawn picks).
+        let spawn = match p.get("spawn") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(s) => Some(
+                s.as_u64()
+                    .filter(|&s| s < crate::world::EDITOR_SLOTS as u64)
+                    .ok_or_else(|| "players[].spawn must be a spawn index (0 to 7) or null".to_string())? as u8,
+            ),
+        };
+        players.push(PlayerSetup { faction, ai, bot, team, handicap, spawn });
     }
     if !(2..=8).contains(&players.len()) {
         return Err("a game needs 2 to 8 players".to_string());

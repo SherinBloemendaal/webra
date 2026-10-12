@@ -1,6 +1,6 @@
 // OpenRA's other lobby options (src/constants.js, options.js, presets.js,
 // spawns.js): crates, short game, kill bounties, separate team spawns, ally
-// build radius, the time limit and per player handicaps.
+// build radius, the time limit, per player handicaps and picked spawns.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -13,6 +13,9 @@ import {
   PRESET_KEYS,
   TIME_LIMITS,
   assignSpawns,
+  spawnLetter,
+  spawnPickProblem,
+  SPAWN_MAX,
   parseClientMessage,
   presetOptions,
   validateGameOptions,
@@ -81,11 +84,37 @@ test('modes carry the new options; modes saved before them take the defaults', (
   assert.throws(() => validateSavedPresets([{ name: 'Bad', options: { ...old, timeLimit: 5 } }]), /timeLimit/);
 });
 
+test('picked spawns: start options, slot messages and lobby slots carry them strictly', () => {
+  // Start options: a picked spawn per player, at most once; left out is automatic.
+  const opts = validateGameOptions({ ...DEFAULT_OPTIONS, players: [{ ...players[0], spawn: 3 }, players[1]] });
+  assert.deepEqual(opts.players.map((p) => p.spawn), [3, undefined]);
+  assert.throws(() => validateGameOptions({ ...DEFAULT_OPTIONS, players: [{ ...players[0], spawn: 1 }, { ...players[1], spawn: 1 }] }), /picked twice/);
+  for (const bad of [-1, SPAWN_MAX + 1, 1.5, '1', null]) {
+    assert.throws(() => validateGameOptions({ ...DEFAULT_OPTIONS, players: [{ ...players[0], spawn: bad }, players[1]] }), /spawn/, String(bad));
+  }
+  // The lobby: a slot picks a spawn, or goes back to automatic with null.
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'slot', slot: 0, spawn: 2 })).msg.spawn, 2);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'slot', slot: 0, spawn: null })).msg.spawn, null);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'slot', slot: 0, spawn: 8 })).ok, false);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'slot', slot: 0, spawn: 'A' })).ok, false);
+  const slot = { type: 'ai', difficulty: 'hard', faction: 'random', color: 2, team: 0 };
+  assert.equal(validLobbySlot({ ...slot, spawn: 4 }).spawn, 4);
+  assert.equal(validLobbySlot(slot).spawn, undefined, 'automatic');
+  assert.throws(() => validLobbySlot({ ...slot, spawn: null }), /spawn/);
+  assert.throws(() => validLobbySlot({ type: 'open', spawn: 1 }), /spawn/);
+  // OpenRA names spawns A, B, C...; the lobby refuses picks the map cannot take.
+  assert.deepEqual([0, 1, 7].map(spawnLetter), ['A', 'B', 'H']);
+  assert.equal(spawnPickProblem([{ spawn: 1 }, {}], 2), null);
+  assert.match(spawnPickProblem([{ spawn: 2 }, {}], 2), /picked start position C; this map has 2/);
+  assert.match(spawnPickProblem([{ spawn: 0 }, { spawn: 0 }], 2), /Two players picked start position A/);
+});
+
 test('spawn assignment matches the engine on the shared cases', () => {
   const { cases } = JSON.parse(readFileSync(new URL('./fixtures/spawn-cases.json', import.meta.url), 'utf8'));
   assert.ok(cases.length >= 5);
   for (const c of cases) {
-    assert.deepEqual(assignSpawns(c.spawns, c.teams.map((team) => ({ team })), c.separate, !!c.generated), c.want, JSON.stringify(c));
+    const players = c.teams.map((team, k) => ({ team, spawn: c.picks?.[k] ?? null }));
+    assert.deepEqual(assignSpawns(c.spawns, players, c.separate, !!c.generated), c.want, JSON.stringify(c));
   }
 });
 

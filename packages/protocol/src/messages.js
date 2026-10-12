@@ -16,6 +16,7 @@ import {
   BOTS,
   ERROR_CODE_RE,
   ERROR_MESSAGE_MAX,
+  SPAWN_MAX,
   HASH_INTERVAL,
   HOST_KEY_RE,
   HOST_SLOT_TYPES,
@@ -316,7 +317,7 @@ const CLIENT = {
     return out;
   },
   [C2S.SLOT](m) {
-    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'bot', 'handicap'], 'slot');
+    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'bot', 'handicap', 'spawn'], 'slot');
     const out = { t: C2S.SLOT, slot: int(m.slot, 0, SLOT_MAX, 'slot') };
     if (has(m, 'handicap')) out.handicap = oneOf(m.handicap, HANDICAPS, 'handicap');
     if (has(m, 'faction')) out.faction = validFaction(m.faction, 'faction');
@@ -325,6 +326,8 @@ const CLIENT = {
     if (has(m, 'type')) out.type = oneOf(m.type, HOST_SLOT_TYPES, 'type');
     if (has(m, 'difficulty')) out.difficulty = oneOf(m.difficulty, DIFFICULTIES, 'difficulty');
     if (has(m, 'bot')) out.bot = oneOf(m.bot, BOTS, 'bot');
+    // The spawn this slot starts at (OpenRA's lobby spawn selection), null: automatic again.
+    if (has(m, 'spawn')) out.spawn = m.spawn === null ? null : int(m.spawn, 0, SPAWN_MAX, 'spawn');
     return out;
   },
   [C2S.OPTIONS](m) {
@@ -426,7 +429,7 @@ function validSessionInfo(v, what = 'session') {
   };
 }
 
-const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'bot', 'ready', 'handicap', 'mapState'];
+const LOBBY_SLOT_KEYS = ['type', 'client', 'name', 'account', 'faction', 'color', 'team', 'difficulty', 'bot', 'ready', 'handicap', 'spawn', 'mapState'];
 
 /** One slot of the online lobby as the server publishes it. */
 export function validLobbySlot(v, what = 'slot') {
@@ -459,6 +462,8 @@ export function validLobbySlot(v, what = 'slot') {
   out.team = int(v.team, 0, TEAM_MAX, `${what}.team`);
   // Handicap: left out means 0.
   if (has(v, 'handicap')) out.handicap = oneOf(v.handicap, HANDICAPS, `${what}.handicap`);
+  // The spawn the slot picked: left out means automatic.
+  if (has(v, 'spawn')) out.spawn = int(v.spawn, 0, SPAWN_MAX, `${what}.spawn`);
   return out;
 }
 

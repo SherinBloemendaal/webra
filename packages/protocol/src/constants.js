@@ -21,6 +21,12 @@ export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 8;
 /** Lobby slot indices are 0..MAX_PLAYERS-1. */
 export const SLOT_MAX = MAX_PLAYERS - 1;
+/**
+ * A spawn a player picks in the lobby is 0..SPAWN_MAX (maps have at most
+ * MAX_PLAYERS spawns, map.js MAP_MAX_SPAWNS); whether the map has it is the
+ * lobby's and the engine's check (spawns.js spawnPickProblem).
+ */
+export const SPAWN_MAX = MAX_PLAYERS - 1;
 export const COLOR_COUNT = 8;
 /** Team 0 means no team; 1..TEAM_MAX are alliances. */
 export const TEAM_MAX = 4;

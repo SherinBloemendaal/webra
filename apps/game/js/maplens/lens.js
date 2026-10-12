@@ -21,15 +21,34 @@
 //   while the lens is for looking over a map before playing it, and a
 //   player who zooms in to play would get a lens that shows less of the map.
 // - Purely decorative: aria-hidden, never focused, no keyboard handling
-//   (the preview keeps its label). It does not animate: it shows and hides
-//   at once and the art is the first frame, so reduced motion needs nothing.
+//   (the preview keeps its label). It shows and hides at once and the art
+//   is the first frame; only the loading spinner turns, and not with
+//   reduced motion (then the progress ring alone shows the loading).
+// - It never takes the pointer (css/maplens.css pointer-events: none):
+//   clicks under it reach the preview, and the start markers over it
+//   (js/spawnpick.js), which tell the lens which marker the pointer or the
+//   focus is on (setHotMarker): the lens rings it. A touch hold that showed
+//   the lens is not a tap (heldRecently), so lifting the finger over a
+//   marker does not pick it.
+// - Loading: reading a map (the engine's map, the sprite and terrain
+//   atlases; js/maplens/source.js) takes a few hundred milliseconds the
+//   first time. It is not done on the first hover in one go: as soon as a
+//   preview with a lens is on the page (setSource, attach) the lens reads
+//   its map in the background, one step per idle task (requestIdleCallback,
+//   else a timer), so the page stays responsive and the map is usually
+//   ready before the pointer gets there. A pointer that comes first sees
+//   the preview's pixels under a progress ring with a spinner and "Loading
+//   map" until the map is in; the steps then go on without waiting for
+//   idle time. The players' colours (setColors) tint the map's actors
+//   without reading it again.
 //
 // The map is drawn into tiles of TILE_CELLS x TILE_CELLS cells at one world
 // pixel per pixel (24 per cell), each tile once, a few pixel rows per frame
 // within a time budget so moving the pointer stays smooth; until a tile is
 // ready the lens shows the preview's pixels there. Tiles live in an LRU
 // cache of `maxTiles`, tinted sprite frames in one of `maxFrames`; the map
-// itself is read on the first hover and dropped when the preview changes.
+// itself is read in the background (see Loading) and dropped when the
+// preview changes.
 //
 // CSP: the lens is placed through CSSOM custom properties (as js/scale.js
 // sets --ui-scale), never inline style attributes; its size and colours
@@ -49,6 +68,20 @@ export const HOLD_MS = 350;
 export const HOLD_SLOP = 10;
 /** Space between the finger and the lens (CSS px). */
 export const TOUCH_GAP = 24;
+/** After a touch hold that showed the lens, a click this soon (ms) is the finger lifting, not a tap. */
+export const HOLD_CLICK_MS = 700;
+/** Background reading waits at most this long for idle time (ms) before it runs anyway. */
+export const IDLE_TIMEOUT_MS = 500;
+/** While the lens waits for its map, the next step runs after this (ms): the pointer is waiting. */
+export const LOADING_STEP_MS = 0;
+
+/**
+ * The colours a lens map draws its players' actors in: `colors[k]` (0..1
+ * RGB) for player k where given, else the map's own (`palette`).
+ */
+export function playerColors(palette, colors) {
+  return palette.map((c, k) => (Array.isArray(colors?.[k]) ? colors[k].slice(0, 3) : c.slice(0, 3)));
+}
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const px = (v) => parseFloat(v) || 0;
@@ -209,8 +242,27 @@ export class MapLens {
    * @param {number} [o.budgetMs] terrain drawing per frame
    * @param {() => number} [o.now]
    */
-  constructor({ art, gameScale = () => 1, doc = globalThis.document, win = globalThis.window, maxTiles = 48, maxFrames = 512, budgetMs = 6, now = () => globalThis.performance.now() }) {
+  constructor({
+    art,
+    gameScale = () => 1,
+    doc = globalThis.document,
+    win = globalThis.window,
+    maxTiles = 48,
+    maxFrames = 512,
+    budgetMs = 6,
+    now = () => globalThis.performance.now(),
+    reducedMotion = () => !!win?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches,
+  }) {
     this.art = art;
+    this.reducedMotion = reducedMotion;
+    /** The map being read in the background: { source, steps, progress, timer } or null. */
+    this.job = null;
+    /** The lobby's player colours (setColors), or null for the map's own. */
+    this.colors = null;
+    /** The marker the pointer or focus is on (setHotMarker), or -1. */
+    this.hot = -1;
+    /** When a touch hold that showed the lens ended (heldRecently). */
+    this.holdEnded = -Infinity;
     this.gameScale = gameScale;
     this.doc = doc;
     this.win = win;
@@ -275,6 +327,7 @@ export class MapLens {
       this.armed = mouse.armed;
       this.follow();
     }
+    this.prefetch();
   }
 
   detach() {
@@ -298,8 +351,9 @@ export class MapLens {
       if (size) this.source.size = size;
       return;
     }
-    this.source = { key, load, size: size ?? null, failed: false, pending: false };
+    this.source = { key, load, size: size ?? null, failed: false };
     this.dropMap();
+    this.prefetch();
     if (this.visible) this.requestFrame();
   }
 
@@ -310,10 +364,39 @@ export class MapLens {
     this.hide();
   }
 
-  /** Start markers: [{ x, y } cell centres, label, color (0..1 RGB) or null for an empty start]. */
+  /** Start markers: [{ x, y } cell centres, label, color (0..1 RGB) or null for an empty start, picked?]. */
   setMarkers(markers) {
     this.markers = Array.isArray(markers) ? markers : [];
+    if (this.hot >= this.markers.length) this.hot = -1;
     if (this.visible) this.requestFrame();
+  }
+
+  /** The marker (index into setMarkers) the pointer or focus is on, -1 for none: the lens rings it. */
+  setHotMarker(k) {
+    const hot = Number.isInteger(k) && k >= 0 && k < this.markers.length ? k : -1;
+    if (hot === this.hot) return;
+    this.hot = hot;
+    if (this.visible) this.requestFrame();
+  }
+
+  /**
+   * The players' colours (0..1 RGB, player k's actors; null keeps the
+   * map's own): the drawn tiles go, the map stays.
+   */
+  setColors(colors) {
+    const list = Array.isArray(colors) ? colors : null;
+    if (JSON.stringify(list) === JSON.stringify(this.colors)) return;
+    this.colors = list;
+    if (!this.map) return;
+    this.map.colors = playerColors(this.map.palette ?? this.map.colors, this.colors);
+    this.tiles.clear();
+    this.frames.clear();
+    if (this.visible) this.requestFrame();
+  }
+
+  /** Whether a touch hold showed the lens just now (a click then is the finger lifting). */
+  heldRecently() {
+    return !!this.touch?.shown || this.now() - this.holdEnded < HOLD_CLICK_MS;
   }
 
   /** Installed content changed: draw the map again with the new art. */
@@ -321,14 +404,111 @@ export class MapLens {
     if (!this.source) return;
     this.source.failed = false;
     this.dropMap();
+    this.prefetch();
     if (this.visible) this.requestFrame();
   }
 
   dropMap() {
+    this.cancelJob();
     this.map = null;
     this.list = null;
     this.tiles.clear();
     this.frames.clear();
+  }
+
+  // ---- Reading the map in the background ------------------------------------------------
+
+  /** Whether the preview is on the page and shown (a hidden lobby reads nothing). */
+  targetShown() {
+    const t = this.target;
+    if (!t?.isConnected) return false;
+    return typeof t.getClientRects === 'function' ? t.getClientRects().length > 0 : true;
+  }
+
+  /**
+   * Start reading the source's map when there is one to read: in idle
+   * time while nobody waits, `urgent` (the lens shows) right away.
+   */
+  prefetch(urgent = false) {
+    const src = this.source;
+    if (!src || src.failed || this.map) return;
+    if (!urgent && !this.targetShown()) return;
+    if (this.job?.source !== src) {
+      this.cancelJob();
+      this.job = { source: src, steps: null, progress: 0, timer: null };
+    }
+    this.schedule(urgent);
+  }
+
+  /** Queue the job's next step (once). */
+  schedule(urgent) {
+    const job = this.job;
+    if (!job) return;
+    // Waiting for idle time while someone now waits for the map: run sooner.
+    if (job.timer?.idle && urgent) {
+      job.timer.cancel();
+      job.timer = null;
+    }
+    if (job.timer) return;
+    const run = () => {
+      job.timer = null;
+      this.pump(job);
+    };
+    if (!urgent && !this.visible && typeof this.win?.requestIdleCallback === 'function') {
+      const id = this.win.requestIdleCallback(run, { timeout: IDLE_TIMEOUT_MS });
+      job.timer = { idle: true, cancel: () => this.win.cancelIdleCallback?.(id) };
+    } else {
+      const id = this.win?.setTimeout?.(run, LOADING_STEP_MS);
+      job.timer = { cancel: () => this.win?.clearTimeout?.(id) };
+    }
+  }
+
+  /** One step of reading the map (a source's `load` gives the map, or step generator: js/maplens/source.js). */
+  pump(job) {
+    if (this.job !== job) return;
+    const src = job.source;
+    try {
+      let map = null;
+      if (!job.steps) {
+        const r = src.load(this.art);
+        if (r && typeof r.next === 'function') job.steps = r;
+        else map = r;
+      }
+      if (job.steps) {
+        const r = job.steps.next();
+        if (r.done) map = r.value;
+        else job.progress = Math.max(job.progress, Math.min(1, Number(r.value) || 0));
+      }
+      if (map) {
+        this.job = null;
+        this.map = map;
+        this.list = null;
+        if (this.colors) map.colors = playerColors(map.palette ?? map.colors, this.colors);
+        if (this.visible) this.requestFrame();
+        return;
+      }
+    } catch (err) {
+      this.job = null;
+      src.failed = true;
+      console.warn('Map lens unavailable:', err);
+      this.hide();
+      return;
+    }
+    if (this.visible) this.requestFrame();
+    this.schedule(this.visible);
+  }
+
+  /** Stop reading (another map, or none): the engine game of an unfinished read is freed. */
+  cancelJob() {
+    const job = this.job;
+    if (!job) return;
+    this.job = null;
+    job.timer?.cancel();
+    try {
+      job.steps?.return?.();
+    } catch (err) {
+      console.warn('Map lens: stopping a read failed:', err);
+    }
   }
 
   destroy() {
@@ -336,6 +516,7 @@ export class MapLens {
     this.offArt?.();
     this.win?.removeEventListener?.('scroll', this.onScroll, { capture: true });
     this.win?.removeEventListener?.('blur', this.onBlur);
+    this.cancelJob();
     if (this.frame) this.win?.cancelAnimationFrame?.(this.frame);
     this.frame = 0;
     this.clearSource();
@@ -381,7 +562,10 @@ export class MapLens {
     this.win?.clearTimeout?.(this.touch.timer);
     const shown = this.touch.shown;
     this.touch = null;
-    if (shown) this.leave();
+    if (shown) {
+      this.holdEnded = this.now();
+      this.leave();
+    }
   }
 
   leave() {
@@ -483,35 +667,19 @@ export class MapLens {
     });
   }
 
-  /** Read the map on the first hover (once per source; a failure leaves the preview without a lens). */
-  loadMap() {
-    const src = this.source;
-    if (this.map || !src || src.failed) return;
-    try {
-      this.map = src.load(this.art);
-      this.list = null;
-    } catch (err) {
-      src.failed = true;
-      console.warn('Map lens unavailable:', err);
-      this.hide();
-    }
-  }
-
   /** One frame: draw the lens, then work on the tiles it needs within the budget. */
   step() {
     if (!this.visible) return;
     if (this.map && this.art && this.map.version !== this.art.version) this.dropMap();
     if (!this.map) {
-      // Show the preview's pixels first, read the map in the next frame.
-      if (this.source && !this.source.pending) {
-        this.source.pending = true;
-        this.draw();
-        this.requestFrame();
-        return;
-      }
-      this.loadMap();
-      if (this.source) this.source.pending = false;
+      // The preview's pixels under the loading ring; the map is read in
+      // steps between frames (never in this frame).
+      this.prefetch(true);
       if (!this.visible) return;
+      this.draw();
+      this.drawLoading();
+      if (!this.reducedMotion()) this.requestFrame();
+      return;
     }
     const t0 = this.now();
     const missing = this.draw();
@@ -525,6 +693,52 @@ export class MapLens {
     this.stats.work = this.now() - t1;
     if (changed) this.draw();
     if (missing.some((k) => !this.tiles.get(k)?.done)) this.requestFrame();
+  }
+
+  /**
+   * The loading state over the preview's pixels: dimmed, a ring that fills
+   * with the share read, a turning arc (not with reduced motion) and
+   * "Loading map".
+   */
+  drawLoading() {
+    const ctx = this.canvas.getContext('2d');
+    const side = this.canvas.width;
+    const c = side / 2;
+    const r = side * 0.16;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, 0, side, side);
+    ctx.lineWidth = Math.max(3, side * 0.03);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(c, c, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.stroke();
+    const progress = this.job?.progress ?? 0;
+    const accent = this.win.getComputedStyle?.(this.el)?.borderTopColor || '#e0301f';
+    if (progress > 0) {
+      ctx.beginPath();
+      ctx.arc(c, c, r, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.strokeStyle = accent;
+      ctx.stroke();
+    }
+    if (!this.reducedMotion()) {
+      const a = ((this.now() / 900) % 1) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(c, c, r * 0.62, a, a + Math.PI * 0.6);
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+    }
+    const family = this.win.getComputedStyle?.(this.el)?.fontFamily || 'sans-serif';
+    ctx.font = `900 ${Math.round(side * 0.075)}px ${family}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(2, side * 0.015);
+    ctx.strokeStyle = '#000';
+    ctx.fillStyle = '#fff';
+    ctx.strokeText('Loading map', c, c + r + side * 0.09);
+    ctx.fillText('Loading map', c, c + r + side * 0.09);
   }
 
   /** A tile entry: its canvas, pixels and how many rows are drawn. */
@@ -646,6 +860,7 @@ export class MapLens {
   /** Numbered start markers in their player's colour (empty starts hollow), at the game's construction yard centres. */
   drawMarkers(ctx, ox, oy, scale) {
     const list = this.markers.length ? this.markers : (this.map?.spawns ?? []).map(([x, y], k) => ({ x: x + 1.5, y: y + 2, label: String(k + 1), color: this.map.colors[k] }));
+    const hot = this.markers.length ? this.hot : -1;
     if (!list.length) return;
     const r = Math.max(9, CELL_PX * 0.55 * scale);
     const family = this.win.getComputedStyle?.(this.el)?.fontFamily || 'sans-serif';
@@ -653,10 +868,21 @@ export class MapLens {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = Math.max(2, r / 5);
-    for (const m of list) {
+    for (const [k, m] of list.entries()) {
       const x = (m.x * CELL_PX - ox) * scale;
       const y = (m.y * CELL_PX - oy) * scale;
-      if (x < -r || y < -r || x > this.canvas.width + r || y > this.canvas.height + r) continue;
+      if (x < -r * 2 || y < -r * 2 || x > this.canvas.width + r * 2 || y > this.canvas.height + r * 2) continue;
+      if (k === hot) {
+        // The marker a click picks: an accent ring around it.
+        ctx.beginPath();
+        ctx.arc(x, y, r * 1.45, 0, Math.PI * 2);
+        ctx.strokeStyle = this.win.getComputedStyle?.(this.el)?.borderTopColor || '#e0301f';
+        ctx.lineWidth = Math.max(3, r / 3);
+        ctx.stroke();
+        ctx.lineWidth = Math.max(2, r / 5);
+      }
+      // The automatic choice's start (not picked) has a dashed ring.
+      ctx.setLineDash?.(m.color && m.picked === false ? [r / 3, r / 4] : []);
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.strokeStyle = m.color ? '#000' : '#fff';
@@ -665,6 +891,7 @@ export class MapLens {
         ctx.fill();
       }
       ctx.stroke();
+      ctx.setLineDash?.([]);
       if (m.label) {
         ctx.strokeText(m.label, x, y);
         ctx.fillStyle = '#fff';

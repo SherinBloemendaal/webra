@@ -2,7 +2,7 @@
 //! and OwnerLostAction, the time limit, kill bounties, handicaps, player
 //! experience, ally build radius and the options' parsing.
 
-use crate::gamerules::assign_spawns;
+use crate::gamerules::{assign_spawns, spawn_pick_problem};
 use crate::map::{Map, Terrain};
 use crate::rules::{Kind, Rules};
 use crate::sound_events::{SoundEventKind, EVENT_STRIDE};
@@ -24,7 +24,7 @@ fn unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
 }
 
 fn setup(faction: &str, team: u8) -> PlayerSetup {
-    PlayerSetup { faction: faction.into(), ai: None, bot: Default::default(), team, handicap: 0 }
+    PlayerSetup { faction: faction.into(), ai: None, bot: Default::default(), team, handicap: 0, spawn: None }
 }
 
 /// An open 48 by 48 map, spawns in the corners, players without a base.
@@ -66,8 +66,14 @@ fn spawn_assignment_matches_the_protocol_package() {
     for c in cases["cases"].as_array().unwrap() {
         let spawns: Vec<(i32, i32)> =
             c["spawns"].as_array().unwrap().iter().map(|p| (p[0].as_i64().unwrap() as i32, p[1].as_i64().unwrap() as i32)).collect();
-        let players: Vec<PlayerSetup> =
-            c["teams"].as_array().unwrap().iter().map(|t| setup("england", t.as_u64().unwrap() as u8)).collect();
+        let picks = |k: usize| c.get("picks").and_then(|p| p[k].as_u64()).map(|s| s as u8);
+        let players: Vec<PlayerSetup> = c["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(k, t)| PlayerSetup { spawn: picks(k), ..setup("england", t.as_u64().unwrap() as u8) })
+            .collect();
         let want: Vec<usize> = c["want"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as usize).collect();
         let generated = c["generated"].as_bool().unwrap_or(false);
         assert_eq!(assign_spawns(&spawns, &players, c["separate"].as_bool().unwrap(), generated), want, "{c}");
@@ -112,6 +118,50 @@ fn separate_team_spawns_on_generated_maps_split_the_spawn_list_by_team() {
     let half = |p: usize| spawns.iter().position(|&s| s == w.players[p].start).unwrap() / 2;
     assert_eq!((half(0), half(2)), (0, 0), "team 1 on the first side");
     assert_eq!((half(1), half(3)), (1, 1), "team 2 on the mirrored side");
+}
+
+/// OpenRA's lobby spawn selection: a picked spawn is where the player
+/// starts; the others fill in around it (gamerules.rs `assign_spawns`).
+#[test]
+fn picked_spawns_are_kept_and_the_others_fill_in() {
+    let spawns = [(4, 4), (40, 40), (40, 4), (4, 40)];
+    let picked = |s: u8, team: u8| PlayerSetup { spawn: Some(s), ..setup("england", team) };
+    // Free for all: slot 1 takes spawn 0, slot 0 moves to the lowest free spawn.
+    let ffa = [setup("england", 0), picked(0, 0), setup("russia", 0), setup("france", 0)];
+    assert_eq!(assign_spawns(&spawns, &ffa, true, false), vec![1, 0, 2, 3]);
+    let w = world(&ffa, GameOptions::default());
+    assert_eq!((w.players[0].start, w.players[1].start), (spawns[1], spawns[0]), "the world starts them there");
+    // Separate team spawns: the picked player counts as an enemy already placed.
+    let teams = [setup("england", 1), setup("germany", 1), setup("russia", 2), picked(1, 2)];
+    assert_eq!(assign_spawns(&spawns, &teams, true, false), vec![0, 2, 3, 1]);
+    // Picks the lobbies never send are refused at the start.
+    assert_eq!(spawn_pick_problem(&ffa, 4), None);
+    assert!(spawn_pick_problem(&[picked(4, 0), setup("russia", 0)], 4).unwrap().contains("this map has 4"));
+    assert!(spawn_pick_problem(&[picked(1, 0), picked(1, 0)], 4).unwrap().contains("two players"));
+}
+
+#[test]
+fn spawn_picks_come_from_the_lobby_options_and_must_fit_the_map() {
+    let options = |spawn: &str| {
+        format!(
+            r#"{{"seed":3,"mapSize":64,"players":[{{"slot":0,"type":"human","faction":"england","team":0,"spawn":{spawn}}},{{"slot":1,"type":"ai","difficulty":"normal","faction":"russia","team":0}}]}}"#
+        )
+    };
+    let o = crate::parse_options(&options("1")).unwrap();
+    assert_eq!(o.players.iter().map(|p| p.spawn).collect::<Vec<_>>(), vec![Some(1), None]);
+    assert_eq!(crate::parse_options(&options("null")).unwrap().players[0].spawn, None, "null: automatic");
+    assert!(crate::parse_options(&options("8")).is_err());
+    assert!(crate::parse_options(&options("\"a\"")).is_err());
+    // A map file with two spawns: spawn 2 (index 2) is not on it.
+    let mut players = [setup("england", 0), setup("russia", 0)];
+    players[0].spawn = Some(2);
+    let data = crate::mapdata::MapData::parse(&crate::Game::generated_map(3, 64, 2)).unwrap();
+    let refused = World::from_map(&data, 1, &players, GameOptions::default()).err().expect("refused");
+    assert!(refused.contains("this map has 2"), "{refused}");
+    players[0].spawn = Some(1);
+    let Ok(w) = World::from_map(&data, 1, &players, GameOptions::default()) else { panic!("a valid pick is refused") };
+    let cell = |k: usize| (data.spawns[k][0], data.spawns[k][1]);
+    assert_eq!((w.players[0].start, w.players[1].start), (cell(1), cell(0)));
 }
 
 // ---- Starting units ---------------------------------------------------------------------------
@@ -433,6 +483,7 @@ fn games_with_every_option_stay_deterministic() {
             bot: Default::default(),
             team: 0,
             handicap: (k * 10) as u8,
+            spawn: None,
         })
         .collect();
     let options = GameOptions {

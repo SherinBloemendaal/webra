@@ -56,7 +56,13 @@ import {
   inspectMapFile,
   spawnMarkers,
   withDefaults,
+  aiName,
+  battlefieldKey,
+  clearSpawnPicks,
+  setSpawnPick,
+  settleSpawnPicks,
 } from './lobby-state.js';
+import { SpawnMarkers } from './spawnpick.js';
 import { defaultRegistry } from './registry.js';
 import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
@@ -91,6 +97,7 @@ export const HELP_KEYS = [
   'faction',
   'team',
   'handicap',
+  'spawn',
 ];
 
 let uid = 0;
@@ -390,6 +397,10 @@ export class Lobby {
     this.blocked = false;
     this.previewFrame = 0;
     this.spawnCache = { key: '', cells: [] };
+    /** The battlefield the picked spawns belong to (lobby-state battlefieldKey); null until the first preview. */
+    this.spawnField = null;
+    /** The spawn markers of the last preview (lobby-state spawnMarkers). */
+    this.markerList = [];
 
     const stored = loadStored();
     this.state = sanitizeState(withDefaults(stored, defaultRegistry().group('lobby'), this.colors.length), this.colors.length);
@@ -695,6 +706,8 @@ export class Lobby {
     this.previewFail.hidden = true;
     frame.append(this.canvas, this.markers, this.previewFail);
     this.lens?.attach(frame, this.canvas);
+    // The start positions: click one to start there (js/spawnpick.js).
+    this.spawnLayer = new SpawnMarkers(this.markers, { lens: this.lens, onPick: (a) => this.pickSpawn(a) });
     this.caption = el('p', 'lobby-preview-caption');
 
     this.mapSizeSelect = el('select', 'lobby-select');
@@ -871,6 +884,9 @@ export class Lobby {
       if (key === 'team') {
         this.columnTips.handicap = infoTip('handicap', { label: 'Handicap' });
         c.append(' / Handicap', this.columnTips.handicap.root);
+        // And the start position (OpenRA's spawn column).
+        this.columnTips.spawn = infoTip('spawn', { label: 'Start' });
+        c.append(' / Start', this.columnTips.spawn.root);
       }
       this.slotHead.append(c);
     }
@@ -1032,8 +1048,16 @@ export class Lobby {
       this.state.players[slot].handicap = Number(handicap.value);
     });
     titleFollowsChoice(handicap);
-    teamCell.append(team, handicap);
-    Object.assign(rec, { team, handicap });
+    // Start position (OpenRA's spawn dropdown): automatic, or a spawn of the map (renderSpawnChoices fills it).
+    const spawn = el('select', 'lobby-select lobby-spawn');
+    spawn.disabled = closed;
+    spawn.setAttribute('aria-label', `Player ${slot + 1} start position`);
+    describedBy(spawn, this.columnTips.spawn);
+    spawn.addEventListener('change', () => {
+      this.pickSpawn({ slot, spawn: spawn.value === 'auto' ? null : Number(spawn.value) });
+    });
+    teamCell.append(team, handicap, spawn);
+    Object.assign(rec, { team, handicap, spawn });
 
     // Remove.
     const removeCell = cell('lobby-cell-remove', '');
@@ -1347,6 +1371,59 @@ export class Lobby {
     rec.flag.dataset.faction = p.faction;
     rec.desc.textContent = p.type === 'closed' ? 'Nobody plays in this slot.' : f.desc;
     this.pickers[slot].render();
+    this.renderSpawnChoice(slot);
+  }
+
+  /**
+   * Slot `slot`'s start position list: Automatic (with the spawn it gives
+   * now), then the spawns of the map no other slot picked.
+   */
+  renderSpawnChoice(slot) {
+    const p = this.state.players[slot];
+    const select = this.slotRows[slot]?.spawn;
+    if (!select) return;
+    select.textContent = '';
+    const option = (value, label) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      select.append(o);
+    };
+    const auto = this.markerList.find((m) => m.slot === slot && !m.picked);
+    option('auto', auto ? `Automatic (${auto.letter})` : 'Automatic');
+    for (const m of this.markerList) {
+      const other = this.state.players.some((q, i) => i !== slot && q.type !== 'closed' && q.spawn === m.index);
+      if (!other) option(String(m.index), `Position ${m.letter}`);
+    }
+    select.value = Number.isInteger(p.spawn) && this.markerList.some((m) => m.index === p.spawn) ? String(p.spawn) : 'auto';
+    select.disabled = p.type === 'closed' || this.markerList.length === 0;
+    select.title = [...select.querySelectorAll('option')].find((o) => o.value === select.value)?.textContent ?? '';
+  }
+
+  /** The number of spawns of the battlefield the lobby shows. */
+  spawnCount() {
+    return this.state.mapSource === 'file' && this.mapFile ? this.mapFile.info.spawns : activeCount(this.state);
+  }
+
+  /**
+   * The picks belong to one battlefield: on another map, seed, size, style
+   * or (generated maps) player count they are cleared, like OpenRA clears
+   * them on a map change; picks a smaller map cannot hold go too.
+   */
+  syncSpawnField() {
+    const key = battlefieldKey(this.state, this.mapFile?.info.hash ?? null);
+    if (this.spawnField !== null && key !== this.spawnField) clearSpawnPicks(this.state);
+    this.spawnField = key;
+    settleSpawnPicks(this.state, this.spawnCount());
+  }
+
+  /** Carry out a pick on the preview or in a slot's start list ({ slot, spawn }: spawn null is automatic). */
+  pickSpawn({ slot, spawn }) {
+    this.syncSpawnField();
+    if (setSpawnPick(this.state, slot, spawn, this.spawnCount())) this.schedulePreview();
+    // Keep the list in step even when nothing changed (a refused pick).
+    this.renderSpawnChoice(slot);
+    this.renderProblem();
   }
 
   /** Show why the game cannot start (or a one-off message), and gate the start button. */
@@ -1379,16 +1456,17 @@ export class Lobby {
     });
   }
 
-  /** Spawn cells of the generated map, cached per seed, size and player count. */
-  generatedSpawns(seed, size, players) {
-    const key = `${seed}/${size}/${players}`;
-    if (this.spawnCache.key !== key) this.spawnCache = { key, cells: this.maps.spawns(seed, size, players) };
+  /** Spawn cells of the generated map, cached per seed, size, player count and style (the style shapes the map). */
+  generatedSpawns(seed, size, players, style) {
+    const key = `${seed}/${size}/${players}/${style}`;
+    if (this.spawnCache.key !== key) this.spawnCache = { key, cells: this.maps.spawns(seed, size, players, style) };
     return this.spawnCache.cells;
   }
 
   drawPreview() {
     const file = this.state.mapSource === 'file' && this.mapFile;
     const n = activeCount(this.state);
+    this.syncSpawnField();
     let width;
     let height;
     let spawns = [];
@@ -1402,7 +1480,7 @@ export class Lobby {
         width = height = this.state.mapSize;
         if (this.maps) {
           data = this.maps.preview(this.state.seed, width, n, this.state.mapStyle, this.state.biome);
-          spawns = this.generatedSpawns(this.state.seed, width, n);
+          spawns = this.generatedSpawns(this.state.seed, width, n, this.state.mapStyle);
         } else {
           data = this.legacyPreview(this.state.seed, width);
         }
@@ -1426,51 +1504,47 @@ export class Lobby {
       this.renderMarkers(spawns, width, height);
       return;
     }
-    const markers = this.renderMarkers(spawns, width, height);
-    this.setLensSource(file, width, height, n, markers);
+    this.renderMarkers(spawns, width, height);
+    this.setLensSource(file, width, height, n);
   }
 
   /**
    * The lens over the preview shows the same map, read when the pointer
    * first rests on it: a map file, or the generated map with the tech
-   * buildings a game gets. Actors of a start position take the colour of
-   * the player starting there.
+   * buildings a game gets. The map's actors of player k take that player's colour.
    */
-  setLensSource(file, width, height, players, markers) {
+  setLensSource(file, width, height, players) {
     if (!this.lens) return;
-    const colors = markers.map((m) => (m.slot === null ? null : this.colors[m.color]));
-    const tint = colors.map((c) => (c ? c.join(':') : '-')).join(',');
+    // The map's actors of player k (the k-th slot that plays, wherever it
+    // starts) in that player's colour; colours change without reading the map again.
+    const colors = this.state.players.filter((p) => p.type !== 'closed').map((p) => this.colors[p.color]);
     if (file) {
       const json = this.mapFile.json;
-      this.lens.setSource(`file:${tint}:${json}`, (art) => art.fromMap(json, { colors }), { width, height });
+      this.lens.setSource(`file:${this.mapFile.info.hash}`, (art) => art.mapSteps(json), { width, height });
     } else if (this.maps) {
       const { seed, mapStyle: style, biome, techBuildings: tech } = this.state;
-      this.lens.setSource(`gen:${tint}:${seed}/${width}/${players}/${style}/${biome}/${tech}`, (art) => art.fromGenerated({ seed, size: width, players, style, biome, tech, colors }), { width, height });
+      this.lens.setSource(`gen:${seed}/${width}/${players}/${style}/${biome}/${tech}`, (art) => art.generatedSteps({ seed, size: width, players, style, biome, tech }), { width, height });
     } else {
       this.lens.clearSource();
+      return;
     }
+    this.lens.setColors?.(colors);
   }
 
   /** Lay the start markers over the preview (and into the lens); returns them (lobby-state spawnMarkers). */
   renderMarkers(spawns, width, height) {
-    this.markers.textContent = '';
     const list = spawnMarkers(spawns, width, height, this.state);
-    this.lens?.setMarkers(
-      list.map((m) => ({ x: m.x, y: m.y, label: m.number === null ? '' : String(m.number), color: m.slot === null ? null : this.colors[m.color] })),
-    );
-    for (const m of list) {
-      const dot = el('span', 'lobby-marker', m.number === null ? '' : String(m.number));
-      dot.style.left = `${m.left}%`;
-      dot.style.top = `${m.top}%`;
-      if (m.slot === null) {
-        dot.classList.add('lobby-marker-empty');
-        dot.title = 'Empty start position';
-      } else {
-        dot.style.setProperty('--marker-color', rgbCss(this.colors[m.color]));
-        dot.title = `Player ${m.number} starts here`;
-      }
-      this.markers.append(dot);
-    }
+    this.markerList = list;
+    const you = this.state.players.findIndex((p) => p.type === 'human');
+    this.spawnLayer.render(list, {
+      slots: this.state.players,
+      you,
+      host: true,
+      colors: this.colors,
+      nameOf: (k) => (this.state.players[k].type === 'human' ? cleanName(this.state.players[k].name) : aiName(this.state.players[k])),
+      enabled: list.length > 0,
+    });
+    this.state.players.forEach((_, slot) => this.renderSpawnChoice(slot));
     return list;
   }
 

@@ -85,6 +85,8 @@ import { mapLibrary } from './maplibrary.js';
 import { formatTicks } from './replay.js';
 import { SaveStore } from './saves.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
+import { aiName, spawnMarkers } from './lobby-state.js';
+import { SpawnMarkers } from './spawnpick.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
@@ -171,6 +173,7 @@ export const ONLINE_HELP_KEYS = [
   'colorOnline',
   'team',
   'handicap',
+  'spawn',
   'spectators',
 ];
 /** What a member's map state says in the lobby (protocol MAP_STATES). */
@@ -960,6 +963,9 @@ export class OnlineUI {
       if (key === 'team') {
         this.columnTips.handicap = infoTip('handicap', { label: 'Handicap' });
         c.append(' / Handicap', this.columnTips.handicap.root);
+        // And the start position (OpenRA's spawn column).
+        this.columnTips.spawn = infoTip('spawn', { label: 'Start' });
+        c.append(' / Start', this.columnTips.spawn.root);
       }
       this.slotHead.append(c);
     }
@@ -1057,6 +1063,7 @@ export class OnlineUI {
 
   renderLobby() {
     if (!this.slotBox) return;
+    this.markerList = this.lobbyMarkers();
     this.renderSlots();
     this.renderOptions();
     this.renderMap();
@@ -1232,7 +1239,18 @@ export class OnlineUI {
         handicap.disabled = !editable;
         handicap.setAttribute('aria-label', `Player ${i + 1} handicap`);
         describedBy(handicap, this.columnTips.handicap);
-        const cells = [faction, color, [team, handicap]].map((c) => {
+        // Start position (OpenRA's spawn dropdown): automatic, or a spawn no other slot picked.
+        const markers = this.markerList ?? [];
+        const auto = markers.find((m) => m.slot === i && !m.picked);
+        const spawn = select(
+          [['auto', auto ? `Automatic (${auto.letter})` : 'Automatic'], ...markers.filter((m) => !this.state.slots.some((x, k) => k !== i && x.spawn === m.index)).map((m) => [m.index, `Position ${m.letter}`])],
+          Number.isInteger(slot.spawn) && markers.some((m) => m.index === slot.spawn) ? slot.spawn : 'auto',
+          (v) => this.send({ t: 'slot', slot: i, spawn: v === 'auto' ? null : Number(v) }),
+        );
+        spawn.disabled = !editable || !this.spawnsEnabled();
+        spawn.setAttribute('aria-label', `Player ${i + 1} start position`);
+        describedBy(spawn, this.columnTips.spawn);
+        const cells = [faction, color, [team, handicap, spawn]].map((c) => {
           const cell = el('div', 'online-cell');
           cell.append(...[c].flat());
           return cell;
@@ -1374,8 +1392,15 @@ export class OnlineUI {
     const st = this.state;
     box.textContent = '';
     box.append(el('h2', 'online-panel-title', 'Battlefield'));
+    // A marker with focus keeps it across the lobby update.
+    const refocus = this.spawnLayer?.buttons.indexOf(globalThis.document?.activeElement) ?? -1;
+    const frame = el('div', 'online-preview-frame');
     const canvas = el('canvas', 'online-preview');
     canvas.setAttribute('role', 'img');
+    const layer = el('div', 'spawn-layer');
+    frame.append(canvas, layer);
+    // The map may have come in since the slots were drawn (an install).
+    this.markerList = this.lobbyMarkers();
     const caption = el('p', 'online-caption');
     const players = Math.max(MIN_PLAYERS, st.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
     if (st.mission) {
@@ -1390,7 +1415,7 @@ export class OnlineUI {
       const json = this.installed.get(st.map.hash);
       if (json) {
         this.drawPreview(canvas, () => this.ctx.Game.map_file_preview(json), JSON.parse(json).width);
-        this.lens?.setSource(`map:${st.map.hash}`, (art) => art.fromMap(json), { width: st.map.width, height: st.map.height });
+        this.lens?.setSource(`map:${st.map.hash}`, (art) => art.mapSteps(json), { width: st.map.width, height: st.map.height });
       } else {
         // Not installed: no preview, nothing to magnify.
         this.lens?.clearSource();
@@ -1403,12 +1428,14 @@ export class OnlineUI {
       caption.textContent = `Generated, ${LABELS.mapSize[o.mapSize]} ${o.mapSize} x ${o.mapSize}${look}, seed ${o.seed}`;
       this.drawPreview(canvas, () => G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
       const gen = { seed: o.seed, size: o.mapSize, players, style: o.mapStyle, biome: o.biome, tech: o.techBuildings ?? 'standard' };
-      this.lens?.setSource(`gen:${gen.seed}/${gen.size}/${gen.players}/${gen.style}/${gen.biome}/${gen.tech}`, (art) => art.fromGenerated(gen), { width: gen.size, height: gen.size });
+      this.lens?.setSource(`gen:${gen.seed}/${gen.size}/${gen.players}/${gen.style}/${gen.biome}/${gen.tech}`, (art) => art.generatedSteps(gen), { width: gen.size, height: gen.size });
     }
     canvas.setAttribute('aria-label', `Map preview: ${caption.textContent}`);
-    box.append(canvas, caption);
-    // On the page first: a lens showing under the mouse stays over the new preview.
-    this.lens?.attach(canvas);
+    box.append(frame, caption);
+    // On the page first: a lens showing under the mouse stays over the new
+    // preview. The frame gets the pointer (the start markers lie over the canvas).
+    this.lens?.attach(frame, canvas);
+    this.renderSpawnLayer(layer, refocus);
     if (st.map) box.append(el('p', 'online-muted online-map-details', `By ${st.map.author}, ${st.map.width} x ${st.map.height} cells, ${formatBytes(st.map.bytes)}`));
     if (st.mission) box.append(this.renderMission());
     const offer = this.renderMapOffer();
@@ -1518,7 +1545,7 @@ export class OnlineUI {
     const cached = this.missionPreviews.get(mission.hash);
     if (cached) {
       this.drawPreview(canvas, () => cached.rgba, cached.width);
-      this.lens?.setSource(`mission:${mission.hash}`, (art) => art.fromMission(cached.text), { width: cached.width, height: cached.rgba.length / 4 / cached.width });
+      this.lens?.setSource(`mission:${mission.hash}`, (art) => art.missionSteps(cached.text), { width: cached.width, height: cached.rgba.length / 4 / cached.width });
       return;
     }
     this.lens?.clearSource();
@@ -1561,6 +1588,71 @@ export class OnlineUI {
     }
     box.append(actions);
     return box;
+  }
+
+  /**
+   * The spawn markers of the lobby's battlefield (lobby-state spawnMarkers):
+   * a map file's spawns once it is installed, a generated map's (one per
+   * player), none in a co-op mission (the mission places everyone).
+   */
+  lobbyMarkers() {
+    const st = this.state;
+    if (st.mission) return [];
+    const players = st.slots.filter((s) => s.type === 'human' || s.type === 'ai').length;
+    let field = null;
+    if (st.map) {
+      const json = this.installed?.get(st.map.hash);
+      if (!json) return [];
+      field = { key: `map:${st.map.hash}`, width: st.map.width, height: st.map.height, cells: () => JSON.parse(json).spawns };
+    } else {
+      const o = st.options;
+      const G = this.ctx.Game;
+      if (!G?.generated_map_styled) return [];
+      const n = Math.max(MIN_PLAYERS, players);
+      // The style shapes the map (the biome only paints it).
+      field = { key: `gen:${o.seed}/${o.mapSize}/${n}/${o.mapStyle}`, width: o.mapSize, height: o.mapSize, cells: () => JSON.parse(G.generated_map_styled(o.seed, o.mapSize, n, o.mapStyle, 'temperate')).spawns };
+    }
+    if (this.spawnCells?.key !== field.key) {
+      let cells = [];
+      try {
+        const got = field.cells();
+        cells = Array.isArray(got) ? got : [];
+      } catch (err) {
+        console.error('Spawn positions unavailable:', err);
+      }
+      this.spawnCells = { key: field.key, cells };
+    }
+    const lobbyState = {
+      players: st.slots.map((s) => (s.type === 'human' || s.type === 'ai' ? s : { type: 'closed' })),
+      separateTeamSpawns: st.options.separateTeamSpawns,
+      mapSource: st.map ? 'file' : 'random',
+    };
+    return spawnMarkers(this.spawnCells.cells, field.width, field.height, lobbyState);
+  }
+
+  /** Whether this member can pick spawns now: a player or the host, in a skirmish lobby that is not a resumed save, with the map at hand. */
+  spawnsEnabled() {
+    const st = this.state;
+    return !st.resume && !st.mission && this.mapReady() && (this.mySlot() >= 0 || this.isHost) && (this.markerList?.length ?? 0) > 0;
+  }
+
+  /** The start markers over the preview (js/spawnpick.js); a click sends the pick to the server, which checks it. */
+  renderSpawnLayer(layer, refocus = -1) {
+    this.spawnLayer?.destroy();
+    this.spawnLayer = new SpawnMarkers(layer, { lens: this.lens, onPick: ({ slot, spawn }) => this.send({ t: 'slot', slot, spawn }) });
+    const st = this.state;
+    const markers = this.markerList ?? [];
+    this.spawnLayer.render(markers, {
+      slots: st.slots,
+      you: this.mySlot(),
+      host: this.isHost && !st.resume,
+      colors: this.ctx.colors,
+      nameOf: (k) => (st.slots[k].type === 'human' ? st.slots[k].name : aiName(st.slots[k])),
+      enabled: this.spawnsEnabled(),
+    });
+    if (refocus >= 0) this.spawnLayer.buttons[Math.min(refocus, this.spawnLayer.buttons.length - 1)]?.focus();
+    // The lens draws the map's actors of player k (the k-th slot that plays) in that player's colour.
+    this.lens?.setColors?.(st.slots.filter((s) => s.type === 'human' || s.type === 'ai').map((s) => this.ctx.colors?.[s.color] ?? null));
   }
 
   /** Draw an RGBA-per-cell preview of `width` cells per row. */

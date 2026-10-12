@@ -574,11 +574,15 @@ pub struct PlayerSetup {
     /// OpenRA handicap in percent (0..95, steps of 5): less firepower and
     /// armour, slower production (gamerules.rs).
     pub handicap: u8,
+    /// The spawn the player picked in the lobby (OpenRA's lobby spawn
+    /// selection, Session.Client.SpawnPoint, here 0-based), or None for the
+    /// lobby's automatic choice (gamerules.rs `assign_spawns`).
+    pub spawn: Option<u8>,
 }
 
 impl PlayerSetup {
     pub fn new(faction: &str, ai: Option<AiDifficulty>) -> PlayerSetup {
-        PlayerSetup { faction: faction.to_string(), ai, bot: crate::ai_bots::BotType::Normal, team: 0, handicap: 0 }
+        PlayerSetup { faction: faction.to_string(), ai, bot: crate::ai_bots::BotType::Normal, team: 0, handicap: 0, spawn: None }
     }
 }
 
@@ -1099,6 +1103,9 @@ impl World {
         }
         if players.len() > data.spawns.len() {
             return Err(format!("this map has {} spawns, {} players joined", data.spawns.len(), players.len()));
+        }
+        if let Some(problem) = crate::gamerules::spawn_pick_problem(players, data.spawns.len()) {
+            return Err(problem);
         }
         let rules = Rules::load_with(data.rules())?;
         let map = data.to_map()?;

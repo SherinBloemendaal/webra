@@ -131,7 +131,7 @@ export {
   SAVE_SLOTS_MAX,
   validateReplay,
 } from './replay.js';
-export { assignSpawns } from './spawns.js';
+export { assignSpawns, spawnLetter, spawnPickProblem } from './spawns.js';
 export {
   COOP_MISSIONS,
   coopMission,

@@ -543,7 +543,7 @@ function renderThumbnail() {
   if (thumbLens) {
     if (thumbLens.image !== canvas) thumbLens.attach(canvas);
     const json = JSON.stringify(map);
-    thumbLens.setSource(json, (lensArt) => lensArt.fromMap(json), { width, height });
+    thumbLens.setSource(json, (lensArt) => lensArt.mapSteps(json), { width, height });
   }
 }
 

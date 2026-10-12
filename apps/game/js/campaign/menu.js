@@ -257,7 +257,7 @@ export class CampaignMenu {
       canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(p.rgba), p.width, p.height), 0, 0);
       canvas.style.aspectRatio = `${p.width} / ${p.height}`;
       // The lens shows the mission as it starts: its map with the mission's actors.
-      this.lens?.setSource(`mission:${entry.id}:${entry.sha256}`, (art) => art.fromMission(text), { width: p.width, height: p.height });
+      this.lens?.setSource(`mission:${entry.id}:${entry.sha256}`, (art) => art.missionSteps(text), { width: p.width, height: p.height });
     } catch (err) {
       if (token === this.previewToken) canvas.replaceWith(el('p', 'campaign-error', `The mission could not be loaded: ${err.message ?? err}`));
     }

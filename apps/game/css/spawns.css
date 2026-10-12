@@ -1,0 +1,78 @@
+/* Start positions on a lobby's map preview (js/spawnpick.js), like OpenRA's
+   lobby: a round marker per spawn with its letter, filled in the colour of
+   the player who starts there. A picked spawn has a solid ring, one the
+   automatic choice gives a dashed ring, an empty one is hollow. The markers
+   are buttons: the layer they sit in lets the pointer through to the
+   preview (and its map lens) everywhere else. Placed with CSSOM (CSP). */
+
+.spawn-layer,
+#menu .lobby-markers {
+  position: absolute;
+  pointer-events: none;
+}
+
+.spawn-layer {
+  inset: 0;
+}
+
+.spawn-marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: calc(22 * var(--ui-px, 1px));
+  height: calc(22 * var(--ui-px, 1px));
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  background: var(--marker-color, var(--ui-metal-2));
+  border: 2px solid var(--ui-edge);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--ui-text);
+  color: #fff;
+  font: 900 calc(11 * var(--ui-px, 1px)) / 1 var(--ui-font-mono);
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.spawn-marker-auto {
+  border-style: dashed;
+  box-shadow: 0 0 0 1px var(--ui-muted);
+}
+
+.spawn-marker-picked {
+  box-shadow:
+    0 0 0 1px var(--ui-text),
+    0 0 0 3px var(--ui-edge);
+}
+
+.spawn-marker-you {
+  box-shadow:
+    0 0 0 2px var(--ui-accent-hi),
+    0 0 0 4px var(--ui-edge);
+}
+
+.spawn-marker-empty {
+  background: rgba(0, 0, 0, 0.55);
+  border-style: dashed;
+  border-color: var(--ui-muted);
+  box-shadow: none;
+  color: var(--ui-muted);
+  text-shadow: none;
+}
+
+.spawn-marker:hover {
+  filter: brightness(1.25);
+}
+
+.spawn-marker:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.spawn-marker[aria-disabled='true'] {
+  cursor: default;
+  filter: none;
+}

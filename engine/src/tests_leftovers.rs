@@ -26,7 +26,7 @@ fn unit(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
 }
 
 fn setup(faction: &str) -> PlayerSetup {
-    PlayerSetup { faction: faction.into(), ai: None, bot: Default::default(), team: 0, handicap: 0 }
+    PlayerSetup { faction: faction.into(), ai: None, bot: Default::default(), team: 0, handicap: 0, spawn: None }
 }
 
 /// 48 by 48 open land with a lake on the right, two explored players with a

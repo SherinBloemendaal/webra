@@ -279,12 +279,12 @@ test('spawn markers follow the playing slots in order', () => {
     s,
   );
   assert.deepEqual(
-    markers.map((m) => [m.number, m.slot, m.color]),
+    markers.map((m) => [m.letter, m.slot, m.color, m.picked]),
     [
-      [1, 0, 0],
-      [3, 2, 2],
-      [4, 3, 3],
-      [null, null, null],
+      ['A', 0, 0, false],
+      ['B', 2, 2, false],
+      ['C', 3, 3, false],
+      ['D', null, null, false],
     ],
   );
   assert.equal(markers[0].left, ((8 + 1.5) / 64) * 100);
@@ -359,7 +359,7 @@ test('spawn markers follow separate team spawns', () => {
   s.players[2].team = 2;
   s.players[3].team = 2;
   const cells = [[4, 4], [40, 40], [40, 4], [4, 40]];
-  const numbers = (state) => spawnMarkers(cells, 48, 48, state).map((m) => m.number);
+  const numbers = (state) => spawnMarkers(cells, 48, 48, state).map((m) => (m.slot === null ? null : m.slot + 1));
   s.separateTeamSpawns = false;
   assert.deepEqual(numbers(s), [1, 2, 3, 4]);
   s.separateTeamSpawns = true;
@@ -370,7 +370,7 @@ test('spawn markers follow separate team spawns', () => {
   s.players[1].team = 2;
   s.players[2].team = 1;
   const columns = [[4, 4], [4, 40], [40, 4], [40, 40]];
-  assert.deepEqual(spawnMarkers(columns, 48, 48, s).map((m) => m.number), [1, 3, 2, 4], 'generated: team 1 left, team 2 right');
+  assert.deepEqual(spawnMarkers(columns, 48, 48, s).map((m) => m.slot + 1), [1, 3, 2, 4], 'generated: team 1 left, team 2 right');
 });
 
 test('the movement model: lobby default, stored choice, and what the engine plays', () => {

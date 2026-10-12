@@ -394,15 +394,28 @@
   gap: 6px;
 }
 
-.online-preview {
-  display: block;
+/* The preview with its start markers (css/spawns.css) laid over it. */
+.online-preview-frame {
+  position: relative;
   width: 100%;
   max-width: 260px;
   aspect-ratio: 1;
   margin: 0 auto;
+}
+
+.online-preview {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   background: #000;
   border: 1px solid var(--o-edge);
+}
+
+/* Inside the border, where the map is drawn. */
+.online-preview-frame .spawn-layer {
+  inset: 1px;
 }
 
 .online-caption {
