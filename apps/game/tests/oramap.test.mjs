@@ -278,6 +278,8 @@ test('convert: terrain, crop, resources, the neutral world, spawns and actors', 
   assert.ok(report.skipped.some((s) => s.includes('brl3') && s.includes('outside')));
   assert.ok(report.skipped.some((s) => s.includes('waypoint')));
   assert.ok(report.converted.some((s) => s.includes('gems 4 cells')));
+  // The player is told what the conversion keeps: terrain types, not OpenRA's tiles.
+  assert.ok(report.converted.some((s) => s.includes('not its OpenRA tile')));
   assert.ok(protocolParseMap(JSON.stringify(map)).ok);
 });
 

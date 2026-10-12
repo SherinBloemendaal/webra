@@ -509,6 +509,11 @@ export function convertOramap(input, opts) {
     .map(([l, n]) => `${LETTER_NAMES[l] ?? l} ${n}`)
     .join(', ');
   report.converted.push(`Terrain: ${bw}x${bh} cells of the ${tileset} tileset (${terrainSummary}).`);
+  // WebRA maps hold terrain types, not tiles: the look of OpenRA's cliff,
+  // shore and road templates is not carried over (docs/contracts.md).
+  report.converted.push(
+    'Each cell keeps its terrain type (clear, rough, rock, water, beach, road, river, bridge, wall), not its OpenRA tile: the game draws cliffs, shores and roads with its own terrain tiles.',
+  );
   if (letterCounts.get('d') || letterCounts.get('b') || letterCounts.get('v') || letterCounts.get('l')) {
     report.converted.push('Roads, beaches, rivers and walls keep their OpenRA terrain types (roads are faster, beaches slow wheels, rivers and walls stop everything).');
   }
