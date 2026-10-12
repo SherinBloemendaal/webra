@@ -307,16 +307,56 @@ pub(crate) fn can_attack(w: &World, i: usize, t: usize) -> bool {
 /// ClosestTo: the target itself or one of eight points at the edge of the
 /// unit's weapon range around it, which the unit can reach); the offset
 /// from the target of the nearest such point, or None.
+///
+/// WebRA: a ship can only fire at what its owner sees, so for a target out
+/// of sight it must get within its own sight (less a cell) instead of its
+/// weapon range: a Cruiser (sight 7 cells, range 20) on a river stretch 20
+/// cells from a structure cannot see it, and OpenRA's test sent fleets
+/// there to wait for good. (Ground squads aim at a structure itself.)
 pub(crate) fn attack_offset(w: &World, i: usize, t: usize) -> Option<(i32, i32)> {
     let d = w.domain_of(i);
     if d == crate::rules::Domain::Air {
         return Some((0, 0));
     }
-    let pass = w.pass_for(d);
     let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
-    let comp = pass.component[ci];
+    let comp = w.pass_for(d).component[ci];
+    reach_offset(w, w.actors[i].owner, w.actors[i].ty, comp, t)
+}
+
+/// `attack_offset` for a unit of `player` of type `ty` (ground or water)
+/// anywhere in connectivity component `comp` of its domain's passability.
+pub(crate) fn reach_offset(w: &World, player: u8, ty: u16, comp: u32, t: usize) -> Option<(i32, i32)> {
+    let info = &w.rules.actors[ty as usize];
+    let d = info.unit.as_ref().map_or(crate::rules::Domain::Ground, |u| w.rules.locomotors[u.locomotor].domain);
     // The reach of the weapons that can hit it (GetMaximumRangeVersusTarget).
-    let r = w.rules.actors[w.actors[i].ty as usize].range_against(&w.rules, w.target_class(t));
+    let mut r = info.range_against(&w.rules, w.target_class(t));
+    if d == crate::rules::Domain::Water && !w.targetable(t, player) {
+        r = r.min(info.sight - CELL).max(0);
+    }
+    offset_within(w, w.pass_for(d), comp, t, r)
+}
+
+/// Where ship `i` should aim to attack actor `t` (WebRA, naval squads): the
+/// nearest of OpenRA's nine points at the smaller of its weapon range and
+/// its sight (less a cell) that it can reach, so it sees the target when
+/// it gets there, else `attack_offset`. OpenRA's squads send every unit to
+/// the point the leader picked at the leader's range, where ships with a
+/// shorter range or sight could not fire.
+pub(crate) fn view_offset(w: &World, i: usize, t: usize) -> Option<(i32, i32)> {
+    let info = &w.rules.actors[w.actors[i].ty as usize];
+    let d = w.domain_of(i);
+    let r = info.range_against(&w.rules, w.target_class(t));
+    if r == 0 || d != crate::rules::Domain::Water {
+        return None;
+    }
+    let pass = w.pass_for(d);
+    let comp = pass.component[w.cell_index(w.actors[i].x, w.actors[i].y)];
+    offset_within(w, pass, comp, t, r.min(info.sight - CELL).max(0)).or_else(|| attack_offset(w, i, t))
+}
+
+/// The nearest of the target itself and the eight points `r` around it
+/// that are open and in component `comp` of `pass`, as an offset.
+fn offset_within(w: &World, pass: &crate::flowfield::Passability, comp: u32, t: usize, r: i32) -> Option<(i32, i32)> {
     let diag = r * 724 / 1024;
     let (tx, ty) = (w.actors[t].x, w.actors[t].y);
     [(0, 0), (r, 0), (-r, 0), (0, r), (0, -r), (diag, diag), (-diag, diag), (-diag, -diag), (diag, -diag)]

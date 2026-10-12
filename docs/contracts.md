@@ -746,7 +746,8 @@ while it is broke with fewer than four army units, sells one structure every
 8 s that it can do without (refineries without ore, aircraft and naval yards
 without aircraft or ships, tech and support structures, spare power), never
 its Construction Yard, its first barracks and war factory or its defences.
-Warships are only bought when they can hurt something the enemy fields.
+Warships are only bought for water from which they can hit an enemy structure
+or ship (see the naval bullet under the Skirmish AI's differences).
 Waves that do not fill up go after 90 s without growth or 120 s without a
 wave (after the eighth minute) and set the next wave to their size; an enemy
 without structures is hunted by the whole army; ground waves never aim at
@@ -1498,6 +1499,29 @@ engine's rules:
   a hospital.
 - Allies: an attack on an ally's structure, ore truck or MCV calls the
   bot's protection squad too.
+- Fleets (`ai_naval.rs`, `ai_squads.rs`): OpenRA's bots build naval yards
+  wherever the base has water and ships by their UnitsToBuild shares, and
+  put every ship into one naval squad that scans for enemies around the
+  point its leader aims at; with a Cruiser or Missile Submarine leading
+  (20 cell range) that point is 20 cells from the target, the scan finds
+  nothing and the fleet never sets out, and on a lake or a river stretch
+  between fords it idles for good while it keeps growing (Turtle AI fleets
+  of 37 and 41 ships that never fired in 1v1s on generated maps,
+  `examples/naval_probe.rs`). WebRA's bots build naval yards
+  and warships only for water from which a warship can hit an enemy
+  structure or ship (within its sight, less a cell, when the target is out
+  of sight: units only fire at what their owner sees), put the yard's rally
+  point on that water and make that yard primary; keep one naval squad per
+  body of water; scan around the target itself; send each ship to a point
+  from which it sees the target and order ships to attack a target they see
+  directly (bots' Missile Submarines are on ReturnFire, and attack moves
+  below AttackAnything skip most structures); do not order firing ships on
+  or count them stuck; leave a target alone for two minutes when the fleet
+  stood where it should see it and did not (a Gap Generator); fall back to
+  a naval yard on their own water when fleeing; and let the ship nearest an
+  attacker of the base decide whether the fleet can answer it. Ships left
+  on water with nothing in reach stay there as a defensive fleet, as in
+  OpenRA. Ground squads keep OpenRA's behaviour.
 
 **Measurements** (`examples/bot_matrix.rs -- 16 90`, 16 seeds per pairing,
 1v1 on generated 80 maps of random style with the standard tech buildings,
