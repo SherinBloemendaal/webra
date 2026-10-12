@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { installDom, uninstallDom, FakeEvent, click } from './dom-fixtures.mjs';
 import { HELP, helpText } from '../js/help.js';
-import { infoTip, describedBy, closeOpenTip, openTip } from '../js/infotip.js';
+import { infoTip, describedBy, closeOpenTip, openTip, clipBounds, tipPlacement, TIP_MARGIN } from '../js/infotip.js';
 import { LOBBY_OPTION_KEYS, SPEED_MS, GAME_SPEEDS } from '../protocol/index.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
@@ -231,4 +231,27 @@ test('CSP: the help and mode modules never use inline styles or HTML strings', (
   const css = read('../css/help.css');
   assert.doesNotMatch(css, /@import|url\(/, 'help.css loads nothing');
   assert.match(read('../index.html'), /<link rel="stylesheet" href="css\/help\.css" \/>/);
+});
+
+test('help tips stay inside the panels that clip them, not only the screen', () => {
+  const rect = (left, top, right, bottom) => ({ left, top, right, bottom, width: right - left, height: bottom - top, getBoundingClientRect: null });
+  // tip -> wrapper (visible) -> settings panel (scrolls, x 120..520) -> page.
+  const page = { parentElement: null, rect: rect(0, 0, 1200, 800), overflowX: 'visible', overflowY: 'visible' };
+  const panel = { parentElement: page, rect: rect(120, 40, 520, 700), overflowX: 'hidden', overflowY: 'auto' };
+  const wrap = { parentElement: panel, rect: rect(130, 300, 300, 330), overflowX: 'visible', overflowY: 'visible' };
+  const tip = { parentElement: wrap };
+  for (const n of [page, panel, wrap]) n.getBoundingClientRect = () => n.rect;
+  const style = (n) => ({ overflowX: n.overflowX, overflowY: n.overflowY });
+  const b = clipBounds(tip, { left: 0, top: 0, right: 1200, bottom: 800 }, style);
+  assert.deepEqual(b, { left: 120, top: 40, right: 520, bottom: 700 });
+  // A tip starting left of the panel (the screenshot: cut at the panel edge) moves right into it.
+  assert.deepEqual(tipPlacement(rect(60, 320, 360, 420), b, TIP_MARGIN), { shift: 68, up: false });
+  // One running past the panel's right edge moves left.
+  assert.deepEqual(tipPlacement(rect(300, 320, 600, 420), b, TIP_MARGIN), { shift: -88, up: false });
+  // Too wide for the panel: the left edge wins, so the start of the text shows.
+  assert.equal(tipPlacement(rect(100, 320, 600, 420), b, TIP_MARGIN).shift, 28);
+  // Past the panel's bottom with room above: it opens upwards.
+  assert.equal(tipPlacement(rect(200, 620, 400, 720), b, TIP_MARGIN).up, true);
+  // Without clipping ancestors the screen is the bound.
+  assert.deepEqual(clipBounds({ parentElement: page }, { left: 0, top: 0, right: 1200, bottom: 800 }, style), { left: 0, top: 0, right: 1200, bottom: 800 });
 });

@@ -146,7 +146,11 @@ class InfoTip {
     if (open) this.place();
   }
 
-  /** Keep the tip on screen: shift it sideways and open it upwards near the bottom. */
+  /**
+   * Keep the tip visible: shift it sideways and open it upwards near the
+   * bottom, within the screen and within every ancestor that clips its
+   * content (a scrolling settings panel cut the tip off at its edge).
+   */
   place() {
     const tip = this.tip;
     tip.style.setProperty('--info-shift', '0px');
@@ -154,14 +158,53 @@ class InfoTip {
     const vw = globalThis.document?.documentElement?.clientWidth || globalThis.innerWidth || 0;
     const vh = globalThis.document?.documentElement?.clientHeight || globalThis.innerHeight || 0;
     if (!vw || !vh) return;
-    const r = tip.getBoundingClientRect();
-    const margin = 8;
-    let shift = 0;
-    if (r.right > vw - margin) shift = vw - margin - r.right;
-    if (r.left + shift < margin) shift = margin - r.left;
-    tip.style.setProperty('--info-shift', `${Math.round(shift)}px`);
-    if (r.bottom > vh - margin && r.top - r.height > margin) tip.classList.add('info-tip-up');
+    const bounds = clipBounds(tip, { left: 0, top: 0, right: vw, bottom: vh });
+    const { shift, up } = tipPlacement(tip.getBoundingClientRect(), bounds, TIP_MARGIN);
+    tip.style.setProperty('--info-shift', `${shift}px`);
+    if (up) tip.classList.add('info-tip-up');
   }
+}
+
+/** Gap kept between a tip and the edge of what shows it (CSS px). */
+export const TIP_MARGIN = 8;
+
+/**
+ * The visible area for element `el`: the viewport `view` cut down to each
+ * ancestor whose overflow clips (anything but visible), as {left, top,
+ * right, bottom} in viewport px. `style` reads an element's computed style.
+ */
+export function clipBounds(el, view, style = (e) => globalThis.getComputedStyle?.(e)) {
+  const b = { ...view };
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const cs = style(p);
+    if (!cs) continue;
+    const clipsX = cs.overflowX !== 'visible';
+    const clipsY = cs.overflowY !== 'visible';
+    if (!clipsX && !clipsY) continue;
+    const r = p.getBoundingClientRect();
+    if (clipsX) {
+      b.left = Math.max(b.left, r.left);
+      b.right = Math.min(b.right, r.right);
+    }
+    if (clipsY) {
+      b.top = Math.max(b.top, r.top);
+      b.bottom = Math.min(b.bottom, r.bottom);
+    }
+  }
+  return b;
+}
+
+/**
+ * Where a tip with rect `r` goes inside `bounds`: a whole-pixel sideways
+ * `shift` that keeps it `margin` inside (the left edge wins when it is too
+ * wide for both), and `up` when it runs past the bottom but fits above.
+ */
+export function tipPlacement(r, bounds, margin) {
+  let shift = 0;
+  if (r.right > bounds.right - margin) shift = bounds.right - margin - r.right;
+  if (r.left + shift < bounds.left + margin) shift = bounds.left + margin - r.left;
+  const up = r.bottom > bounds.bottom - margin && r.top - r.height > bounds.top + margin;
+  return { shift: Math.round(shift), up };
 }
 
 /**
