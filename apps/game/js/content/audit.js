@@ -23,7 +23,10 @@
 //   gap        OpenRA draws it, the engine has nothing that shows it (the
 //              note says what is missing and who adds it)
 //   webra-only Red Alert has no art for it (OpenRA made the file itself,
-//              data/source/bits.txt), so WebRA's own art stays
+//              data/source/bits.txt), so WebRA's own art stays; when the
+//              player's files do have such a file (render-facts.js
+//              OPENRA_MADE_FILES) every row using it is wrong instead, and
+//              so is a row "(files)" naming it
 //   n/a        OpenRA draws it in a situation WebRA never has (vehicles
 //              dropped by parachute)
 //
@@ -32,7 +35,7 @@
 // and frame every image came from, so every frame is checked too.
 
 import { ACTOR_ART, CURSOR_ART, EXPLOSION_ART, EXPLOSIONS, RESOURCES, SEQUENCES, SMUDGES, SPECIAL_ART, TERRAIN, TREES } from './tables.js';
-import { RENDER_FACTS } from './render-facts.js';
+import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS } from './render-facts.js';
 import { explosionSlot, muzzleSlot, originalSlots, specialSlot } from './atlas.js';
 import { originalCursorFrames } from './cursors.js';
 import { CURSOR_NAMES, COMMAND_CURSOR_NAMES } from '../cursors.js';
@@ -131,8 +134,22 @@ const SPECIAL_NOTES = {
   'veterancy.2': "OpenRA's rank.shp (Red Alert has no veterancy)",
   'veterancy.3': "OpenRA's rank.shp (Red Alert has no veterancy)",
   'leftovers.3': "OpenRA's levelup.shp (Red Alert has no crate level up animation)",
-  'leftovers.4': "OpenRA's invun.shp (Red Alert has no crate heal animation)",
 };
+
+/** OpenRA-made files per actor sequence ("image.sequence" -> [file]), from OPENRA_MADE_FILES. */
+const MADE_FILES_OF = new Map();
+for (const [file, users] of Object.entries(OPENRA_MADE_FILES)) {
+  for (const u of users) MADE_FILES_OF.set(u, [...(MADE_FILES_OF.get(u) ?? []), file]);
+}
+
+/**
+ * The rules actors plus the campaign's characters and wrecks
+ * (MISSION_ACTORS) the audit checks: mission actors are drawn as their art key.
+ */
+export function withMissionActors(actors) {
+  const have = new Set(actors.map((a) => a.id));
+  return [...actors, ...Object.entries(MISSION_ACTORS).filter(([id]) => !have.has(id)).map(([id, kind]) => ({ id, kind }))];
+}
 
 /** The ACTOR_ART body poses of a soldier's deaths (WithDeathAnimation). */
 const DEATH_POSES = ['die1', 'die2', 'die3', 'die4', 'die5', 'die6', 'crushed'];
@@ -281,11 +298,12 @@ const specialDefs = (spec) => spec.sequences.map((n) => SEQUENCES[spec.image]?.[
 
 /**
  * Audit the original art for `actors` (rules_json actors, as the game hands
- * them to originalSlots) with the files `getFile` has. `identify(image)`
- * (optional) names the `{ file, frame }` an atlas image was cut from.
+ * them to originalSlots; withMissionActors adds the campaign's) with the
+ * files `getFile` has. `identify(image)` (optional) names the `{ file,
+ * frame }` an atlas image was cut from. `actorArt` replaces ACTOR_ART (tests).
  * Returns `{ rows, problems, counts }`.
  */
-export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identify = null } = {}) {
+export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identify = null, actorArt = ACTOR_ART } = {}) {
   const built = originalSlots(actors, getFile, tileset);
   const files = fileCache(getFile);
   const rows = [];
@@ -325,10 +343,24 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
     }
   };
 
+  // OpenRA-made files the player's files have after all (the tables would leave them out).
+  const installedMade = (users) => users.flatMap((u) => MADE_FILES_OF.get(u) ?? []).filter((f) => getFile(f));
+  for (const [file, users] of Object.entries(OPENRA_MADE_FILES)) {
+    if (!getFile(file)) continue;
+    row({
+      actor: '(files)',
+      role: file,
+      openra: null,
+      where: 'files',
+      status: 'wrong',
+      note: `Red Alert has it, the tables treat it as OpenRA's own (data/source/bits.txt): add it to tools/gen_content_tables.py IN_RED_ALERT_TOO${users.length ? `; used by ${users.join(' ')}` : ''}`,
+    });
+  }
+
   for (const a of actors) {
     const t = index.get(a.id);
     const facts = RENDER_FACTS[a.id];
-    const entry = ACTOR_ART[a.id];
+    const entry = actorArt[a.id];
     if (!facts) {
       row({ actor: a.id, role: 'body', openra: null, status: 'webra-only', note: 'not an OpenRA actor' });
       continue;
@@ -340,7 +372,9 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
       const openra = `${image}.${seq}`;
       const base = { actor: a.id, role, openra };
       if (!original) {
-        row({ ...base, status: 'webra-only', note: 'OpenRA made this art (bits.txt); Red Alert has none' });
+        const have = installedMade([openra]);
+        if (have.length) row({ ...base, status: 'wrong', note: `no original mapping although Red Alert has ${have.join(' ')} (tools/gen_content_tables.py IN_RED_ALERT_TOO)` });
+        else row({ ...base, status: 'webra-only', note: 'OpenRA made this art (bits.txt); Red Alert has none' });
         continue;
       }
       // Original on other tilesets only (the desert's trees and gem mine): WebRA's art on this one.
@@ -370,7 +404,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
         continue;
       }
       if (spec.huskActor) {
-        const husk = actors.find((b) => b.kind === 'husk' && ACTOR_ART[b.id]?.image === image && ACTOR_ART[b.id]?.body?.idle === seq);
+        const husk = actors.find((b) => b.kind === 'husk' && actorArt[b.id]?.image === image && actorArt[b.id]?.body?.idle === seq);
         row({ ...base, webra: husk ? openra : null, where: husk ? `actor ${husk.id}` : '', status: husk ? 'ok' : 'gap', note: husk ? '' : 'this vehicle leaves no husk in WebRA' });
         continue;
       }
