@@ -468,9 +468,7 @@ fn naval_bots_keep_every_ship_on_water() {
     // and build at most one ship in twelve minutes (with either movement
     // model), too few to check fleets.
     game(MapStyle::Islands, 2, 12 * minutes);
-    // Lakes seed 10: the bots of seed 7 build one ship in twelve minutes
-    // since anti-air shoots aircraft down (seed 10: 17 at once).
-    let lakes = game(MapStyle::Lakes, 10, 12 * minutes);
+    let lakes = game(MapStyle::Lakes, 7, 12 * minutes);
     game(MapStyle::Rivers, 3, 12 * minutes);
-    assert_eq!(game(MapStyle::Lakes, 10, 12 * minutes), lakes, "deterministic");
+    assert_eq!(game(MapStyle::Lakes, 7, 12 * minutes), lakes, "deterministic");
 }

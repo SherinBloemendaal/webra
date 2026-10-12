@@ -14,7 +14,9 @@
 //!   turn back for the next pass. Every shot uses one round of the AmmoPool.
 //! - Out of ammo the plane returns to a free airfield (Rearmable
 //!   `RearmActors`), lands, rearms `ReloadCount` rounds every `ReloadDelay`
-//!   ticks, and resumes its attack once full if the target still lives.
+//!   ticks. Its attack ends there (OpenRA AttackAircraft AbortOnResupply,
+//!   true in Red Alert); with AbortOnResupply false it takes off again once
+//!   full and resumes the attack if the target still lives.
 //! - Airborne planes are only hit by anti-air weapons; landed ones count as
 //!   ground vehicles (OpenRA `Targetable@GROUND` / `Targetable@AIRBORNE`).
 //! - Shot down in the air they fall (`FallsToEarth` of `^PlaneHusk`) and
@@ -196,6 +198,26 @@ impl World {
             crash_weapon: ac.crash_weapon,
             drop_range: ac.drop_range,
         }
+    }
+
+    /// OpenRA AttackAircraft AbortOnResupply of aircraft `i`: out of ammo,
+    /// its attack ends while it rearms (true) or resumes afterwards (false).
+    pub(crate) fn abort_on_resupply(&self, i: usize) -> bool {
+        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().and_then(|u| u.aircraft.as_ref()).is_none_or(|ac| ac.abort_on_resupply)
+    }
+
+    /// Whether aircraft `i` has rounds left for a weapon (OpenRA pauses
+    /// armaments with an empty AmmoPool, so it picks no targets either).
+    /// Other actors always do.
+    pub(crate) fn has_ammo(&self, i: usize) -> bool {
+        if self.actors[i].kind != Kind::Aircraft {
+            return true;
+        }
+        if self.is_helicopter(i) {
+            let (left, max) = self.heli_ammo(i);
+            return max == 0 || left > 0;
+        }
+        self.ammo_left(i) > 0
     }
 
     /// AmmoPool size of an aircraft (0: unlimited / no pool).
@@ -381,6 +403,24 @@ impl World {
         info.weapons.iter().any(|&w| self.rules.weapons[w].can_target(tk)).then_some(t)
     }
 
+    /// Where the out-of-sight attack target of plane `i` was last seen,
+    /// while it still lives and the plane is not yet within weapon range of
+    /// that spot (OpenRA FlyAttack's last visible target), else None.
+    fn plane_last_seen(&self, i: usize) -> Option<(i32, i32)> {
+        let a = &self.actors[i];
+        let (lx, ly) = a.target_seen?;
+        let t = self.resolve(a.target)?;
+        if t == i
+            || !self.actors[t].in_world()
+            || self.untargetable_aircraft(t)
+            || !(a.forced || self.are_enemies(a.owner, self.actors[t].owner))
+        {
+            return None;
+        }
+        let range = self.rules.actors[a.ty as usize].range_against(&self.rules, self.target_class(t));
+        (range > 0 && dist(a.x, a.y, lx, ly) > range).then_some((lx, ly))
+    }
+
     fn tick_parked(&mut self, i: usize) {
         let f = self.flight(i);
         let on_base = self.resolve(self.actors[i].air.base).filter(|&b| self.is_rearm_base_for(i, b));
@@ -399,16 +439,21 @@ impl World {
         };
         match self.actors[i].activity {
             Activity::Move => self.take_off(i),
-            Activity::Attack => match self.plane_target(i) {
-                // OpenRA ReturnToBase then resume: take off again once fully rearmed.
-                Some(_) if full => self.take_off(i),
-                Some(_) => {}
-                None => {
+            Activity::Attack => {
+                // OpenRA ReturnToBase then resume (AbortOnResupply false):
+                // take off again once fully rearmed (to where the target was
+                // last seen when the airfield does not see it).
+                if self.plane_target(i).is_some() || self.plane_last_seen(i).is_some() {
+                    if full {
+                        self.take_off(i);
+                    }
+                } else {
                     let a = &mut self.actors[i];
                     a.activity = Activity::Idle;
                     a.target = NONE;
+                    a.target_seen = None;
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -427,18 +472,37 @@ impl World {
         match self.actors[i].activity {
             Activity::Attack => match self.plane_target(i) {
                 Some(_) if self.ammo_left(i) == 0 => {
-                    // Out of ammo: rearm, then come back for the target.
+                    // Out of ammo (OpenRA FlyAttack): rearm at a base. With
+                    // AbortOnResupply (Red Alert's default) the attack and the
+                    // orders queued after it end there; without it the plane
+                    // comes back for the target once full (`tick_parked`).
+                    if self.abort_on_resupply(i) {
+                        let a = &mut self.actors[i];
+                        a.activity = Activity::Idle;
+                        a.target = NONE;
+                        a.air.overshoot = false;
+                        a.waypoints.clear();
+                    }
                     self.actors[i].air.phase = Phase::Returning;
                     self.tick_returning(i);
                 }
-                Some(t) => self.attack_run(i, t, &f),
-                None => {
-                    let a = &mut self.actors[i];
-                    a.activity = Activity::Idle;
-                    a.target = NONE;
-                    a.air.overshoot = false;
-                    self.fly_circle(i, &f);
+                Some(t) => {
+                    self.actors[i].target_seen = Some(self.tick_start_pos(t));
+                    self.attack_run(i, t, &f)
                 }
+                None => match self.plane_last_seen(i) {
+                    // Out of sight (OpenRA FlyAttack lastVisibleTarget): fly
+                    // to where it was seen, to pick it up there.
+                    Some((lx, ly)) => self.fly_toward(i, &f, lx, ly, f.cruise),
+                    None => {
+                        let a = &mut self.actors[i];
+                        a.activity = Activity::Idle;
+                        a.target = NONE;
+                        a.target_seen = None;
+                        a.air.overshoot = false;
+                        self.fly_circle(i, &f);
+                    }
+                },
             },
             Activity::Move if self.actors[i].goal != NONE => {
                 let g = self.actors[i].goal as i32;

@@ -254,7 +254,8 @@ impl World {
     /// stance (OpenRA scans on attack-move regardless of it). Actors without
     /// AutoTarget (Demolition Truck) never pick targets themselves.
     pub(crate) fn try_auto_target(&mut self, i: usize) -> bool {
-        if !self.has_stance(i) {
+        // An aircraft with an empty AmmoPool has its armaments paused (OpenRA): no targets.
+        if !self.has_stance(i) || !self.has_ammo(i) {
             return false;
         }
         if !self.scan_due(i) {
@@ -272,7 +273,7 @@ impl World {
     /// (Defend and up) and chase them (AttackAnything only).
     pub(crate) fn try_idle_target(&mut self, i: usize) -> bool {
         let aggressor = std::mem::replace(&mut self.actors[i].aggressor, NONE);
-        if !self.has_stance(i) {
+        if !self.has_stance(i) || !self.has_ammo(i) {
             return false;
         }
         let stance = self.actors[i].stance;

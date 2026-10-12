@@ -656,6 +656,11 @@ pub struct AircraftInfo {
     pub take_off_on_resupply: bool,
     /// AttackAircraft FacingTolerance: may fire while this far off the target's bearing.
     pub facing_tolerance: i32,
+    /// AttackAircraft AbortOnResupply (OpenRA default true): out of ammo the
+    /// attack and the orders queued after it end, and the aircraft stays at
+    /// its base once rearmed; false: it takes the attack up again.
+    #[serde(default = "abort_on_resupply_default")]
+    pub abort_on_resupply: bool,
     /// Ammo pips shown under a selected aircraft.
     pub ammo_pips: i32,
     /// Forward offsets (world units) of the rotors drawn while airborne.
@@ -737,6 +742,11 @@ struct RawLocomotor {
     shares_cell: bool,
     #[serde(default = "default_wait_average")]
     wait_average: i32,
+}
+
+/// OpenRA AttackFollowInfo.AbortOnResupply default.
+fn abort_on_resupply_default() -> bool {
+    true
 }
 
 /// OpenRA LocomotorInfo.WaitAverage default.

@@ -1839,6 +1839,9 @@ def main():
                     'wait_distance': wdist(m.get('WaitDistanceFromResupplyBase', WAIT_DISTANCE_FROM_RESUPPLY)),
                     'take_off_on_resupply': str(m.get('TakeOffOnResupply', 'false')).lower() == 'true',
                     'facing_tolerance': int(first(t, 'AttackAircraft').get('FacingTolerance', FACING_TOLERANCE)),
+                    # AttackFollow.AbortOnResupply (default true): out of ammo the attack
+                    # (and what was queued after it) ends while it rearms; false resumes it.
+                    'abort_on_resupply': str(first(t, 'AttackAircraft').get('AbortOnResupply', 'true')).lower() == 'true',
                     # Forward offsets of the rotors shown while airborne (WithIdleOverlay@ROTOR*).
                     # WithAmmoPipsDecoration.PipCount (defaults to one pip per round).
                     'ammo_pips': int(first(t, 'WithAmmoPipsDecoration').get('PipCount', ammo.get('Ammo', 0) or 0)),

@@ -68,6 +68,11 @@ pub struct HeliState {
     pub always_land: bool,
     /// `land_x, land_y` holds the spot chosen to land on for unloading.
     pub unload_spot: bool,
+    /// The attack to take up again once rearmed (AbortOnResupply false):
+    /// the target actor, or NONE; `resume_ground`: the ground at `fire_at`.
+    pub resume: u32,
+    pub resume_forced: bool,
+    pub resume_ground: bool,
 }
 
 impl Default for HeliState {
@@ -82,6 +87,9 @@ impl Default for HeliState {
             landed: false,
             always_land: false,
             unload_spot: false,
+            resume: NONE,
+            resume_forced: false,
+            resume_ground: false,
         }
     }
 }
@@ -188,6 +196,8 @@ impl World {
         h.rearm_timer = 0;
         h.always_land = false;
         h.unload_spot = false;
+        h.resume = NONE;
+        h.resume_ground = false;
     }
 
     // ---- Tick --------------------------------------------------------------------
@@ -378,7 +388,11 @@ impl World {
 
     fn tick_heli_attack(&mut self, i: usize) {
         let Some(t) = self.live_target(i) else {
+            if self.heli_chase_last_seen(i) {
+                return;
+            }
             self.actors[i].target = NONE;
+            self.actors[i].target_seen = None;
             if self.resume_guard(i) {
                 return;
             }
@@ -394,8 +408,113 @@ impl World {
             }
             return;
         };
+        self.actors[i].target_seen = Some(self.tick_start_pos(t));
         let class = self.target_kind(t).target_class();
         self.heli_engage(i, FireTarget::Actor(t), class);
+    }
+
+    /// The target is out of sight (OpenRA FlyAttack with its last visible
+    /// target): fly to where it was last seen and pick it up again once it
+    /// shows; false when it is gone, may not be chased (`hold`), or the
+    /// helicopter got within weapon range of that spot without seeing it.
+    fn heli_chase_last_seen(&mut self, i: usize) -> bool {
+        let a = &self.actors[i];
+        let (owner, forced) = (a.owner, a.forced);
+        let Some((lx, ly)) = a.target_seen.filter(|_| !a.hold) else { return false };
+        let Some(t) = self.resolve(a.target) else { return false };
+        if t == i
+            || !self.actors[t].in_world()
+            || self.untargetable_aircraft(t)
+            || !(forced || self.are_enemies(owner, self.actors[t].owner))
+        {
+            return false;
+        }
+        let range = self.rules.actors[self.actors[i].ty as usize].range_against(&self.rules, self.target_class(t));
+        if range == 0 || dist(self.actors[i].x, self.actors[i].y, lx, ly) <= range {
+            return false;
+        }
+        if !self.heli_climb(i) {
+            return true;
+        }
+        self.heli_fly(i, lx, ly);
+        true
+    }
+
+    /// Out of ammo during an attack (OpenRA FlyAttack). On an attack-move it
+    /// never resupplies: the attack ends and the move goes on (its scans
+    /// skip targets while the AmmoPool is empty, `has_ammo`). Otherwise it
+    /// flies to a helipad to reload (ReturnToBase); with AbortOnResupply
+    /// (Red Alert's default) the attack and the queued orders end, without
+    /// it the attack is taken up again once full (`heli_resume`).
+    fn heli_out_of_ammo(&mut self, i: usize, ft: FireTarget) {
+        if self.actors[i].attack_move {
+            let (dx, dy) = self.actors[i].dest;
+            let (gx, gy) = self.cell_of(dx, dy);
+            let goal = self.path_goal(i, gx, gy);
+            let a = &mut self.actors[i];
+            a.target = NONE;
+            a.goal = goal;
+            a.activity = if goal == NONE { Activity::Idle } else { Activity::Move };
+            return;
+        }
+        let abort = self.abort_on_resupply(i);
+        let resume = match ft {
+            FireTarget::Actor(_) if !abort => self.actors[i].target,
+            _ => NONE,
+        };
+        // Where the target was: the resumed attack heads there when the
+        // helipad is out of sight of it (OpenRA FlyAttack lastVisibleTarget).
+        if let FireTarget::Actor(t) = ft {
+            self.actors[i].target_seen = Some(self.tick_start_pos(t));
+        }
+        let a = &mut self.actors[i];
+        a.heli.resume = resume;
+        a.heli.resume_forced = a.forced;
+        a.heli.resume_ground = !abort && matches!(ft, FireTarget::Ground(..));
+        if abort {
+            a.waypoints.clear();
+        }
+        a.target = NONE;
+        a.attack_move = false;
+        a.activity = Activity::Idle;
+        if !self.heli_air(i).rearm_actors.is_empty() {
+            self.actors[i].heli.task = HeliTask::Resupply;
+        }
+    }
+
+    /// Rearmed (AbortOnResupply false): take the attack up again, on the
+    /// same actor while it can still be hit, or on the same ground.
+    fn heli_resume(&mut self, i: usize) {
+        let h = self.actors[i].heli;
+        let a = &mut self.actors[i];
+        a.heli.resume = NONE;
+        a.heli.resume_ground = false;
+        if h.resume_ground {
+            a.activity = Activity::AttackGround;
+            a.forced = true;
+            return;
+        }
+        if h.resume == NONE {
+            return;
+        }
+        a.target = h.resume;
+        a.forced = h.resume_forced;
+        a.hold = false;
+        // Still there and still something its weapons hit (seen or not: it
+        // heads for where it saw it, `tick_heli_attack`).
+        let owner = self.actors[i].owner;
+        let valid = self.resolve(h.resume).is_some_and(|t| {
+            self.actors[t].in_world()
+                && !self.untargetable_aircraft(t)
+                && (h.resume_forced || self.are_enemies(owner, self.actors[t].owner))
+                && self.can_attack_actor(i, t)
+        });
+        if valid {
+            self.actors[i].activity = Activity::Attack;
+        } else {
+            self.actors[i].target = NONE;
+            self.actors[i].target_seen = None;
+        }
     }
 
     /// Fly into range of a target (an actor, or the ground) and fire on it
@@ -403,14 +522,7 @@ impl World {
     fn heli_engage(&mut self, i: usize, ft: FireTarget, tclass: u32) {
         let (ammo, max_ammo) = self.heli_ammo(i);
         if max_ammo > 0 && ammo == 0 {
-            // Out of ammo: fly back to a helipad to reload (OpenRA FlyAttack -> ReturnToBase).
-            let a = &mut self.actors[i];
-            a.target = NONE;
-            a.attack_move = false;
-            a.activity = Activity::Idle;
-            if !self.heli_air(i).rearm_actors.is_empty() {
-                self.actors[i].heli.task = HeliTask::Resupply;
-            }
+            self.heli_out_of_ammo(i, ft);
             return;
         }
         if !self.heli_climb(i) {
@@ -651,10 +763,12 @@ impl World {
         let stay = h.always_land;
         h.always_land = false;
         self.actors[i].activity = Activity::Idle;
-        if take_off && !stay {
+        let resumes = self.actors[i].heli.resume != NONE || self.actors[i].heli.resume_ground;
+        if (take_off || resumes) && !stay {
             self.release_pad(i);
             self.actors[i].heli.landed = false;
         }
+        self.heli_resume(i);
     }
 
     /// Hold position near a busy helipad (WaitDistanceFromResupplyBase); the
