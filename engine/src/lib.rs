@@ -86,6 +86,8 @@ mod tests_abilities;
 #[cfg(test)]
 mod tests_ai;
 #[cfg(test)]
+mod tests_antiair;
+#[cfg(test)]
 mod tests_combat;
 #[cfg(test)]
 mod tests_commands;
@@ -1202,6 +1204,17 @@ impl Game {
         ids.iter()
             .filter_map(|&r| w.resolve(r))
             .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_attack_ground(i, x, y))
+    }
+
+    /// Whether one of `player`'s `ids` has a weapon that can hit actor
+    /// `target` as it is now (force attack on an aircraft: anti-air only;
+    /// world.rs `can_attack_actor`).
+    pub fn can_attack_actor(&self, player: u8, ids: Vec<u32>, target: u32) -> bool {
+        let w = &self.world;
+        let Some(t) = w.resolve(target) else { return false };
+        ids.iter()
+            .filter_map(|&r| w.resolve(r))
+            .any(|i| w.actors[i].owner == player && w.actors[i].is_unit() && w.actors[i].in_world() && w.can_attack_actor(i, t))
     }
 
     /// Helicopters: land on or next to the cell at (x, y) (world pixels).

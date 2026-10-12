@@ -476,8 +476,10 @@ test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists,
   assert.equal(settings.get('mouseCapture'), 'always');
   typeInto(root.querySelector('#game-menu-mouseCaptureSpeed'), '1.5');
   assert.equal(settings.get('mouseCaptureSpeed'), 1.5);
-  check(root.querySelector('#game-menu-mouseCaptureEscMenu'));
-  assert.equal(settings.get('mouseCaptureEscMenu'), true);
+  const escMenu = root.querySelector('#game-menu-mouseCaptureEscMenu');
+  assert.ok(escMenu.checked, 'Esc also opens the menu by default');
+  check(escMenu, false);
+  assert.equal(settings.get('mouseCaptureEscMenu'), false);
   assert.match(textOf(root), /(Alt|Option)\+M or Esc releases it/);
   uninstallDom();
   doc = installDom();

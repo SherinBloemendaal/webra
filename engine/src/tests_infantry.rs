@@ -320,8 +320,8 @@ fn a_disguised_spy_is_left_alone_except_by_dogs() {
     assert!(!w.appears_hostile(spy, guard));
     assert!(w.appears_hostile(spy, dog), "IgnoresDisguise");
     w.rebuild_hash();
-    assert_eq!(w.scan_for_target(guard), None, "the rifleman leaves its 'friend' alone");
-    assert_eq!(w.scan_for_target(dog), Some(spy));
+    assert_eq!(w.auto_scan(guard), None, "the rifleman leaves its 'friend' alone");
+    assert_eq!(w.auto_scan(dog), Some(spy));
     // Attacking drops the disguise.
     w.on_fire(spy);
     assert!(w.actors[spy].inf.disguise.is_none());
@@ -496,8 +496,11 @@ fn ai_trains_dogs_and_grenadiers_within_limits() {
     let mut w = World::new(5, 64, &[("russia", true), ("england", false)]);
     w.players[0].cash = 50_000;
     // The Normal AI builds its kennel after BuildingDelays kenn 7000, when
-    // BuildingFractions pick it (in random order among the others).
-    run(&mut w, 25 * 60 * 14);
+    // BuildingFractions pick it (in random order among the others): at
+    // minute 14 on this seed (12 before the first skirmish, at minute 5,
+    // went otherwise once anti-air and missile fuel came in), the first
+    // dogs a minute later.
+    run(&mut w, 25 * 60 * 16);
     let count = |id: &str| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == ty(&w, id)).count();
     assert!(count("E2") > 0, "grenadiers");
     assert!(count("DOG") > 0 && count("DOG") <= 4, "dogs, UnitLimits 4: {}", count("DOG"));

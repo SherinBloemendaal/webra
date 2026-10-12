@@ -56,6 +56,9 @@ pub const ZAP_TICKS: i32 = 2;
 pub const FX_SMOKE: f32 = 0.0;
 pub const FX_ZAP_BRIGHT: f32 = 1.0;
 pub const FX_ZAP_DIM: f32 = 2.0;
+/// The anti-air missile (OpenRA Image MISSILE: Nike, RedEye, SubMissileAA;
+/// `RenderData::sam_missile`), drawn pointing east like the `missile` special.
+pub const FX_SAM_MISSILE: f32 = 3.0;
 
 /// OpenRA's damage states the smoke starts at (WithDamageOverlay.MinimumDamageState).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,6 +122,9 @@ pub struct RenderData {
     pub explosions: Vec<String>,
     /// Per weapon of the rules, its effect warheads.
     pub weapons: Vec<Vec<EffectWarhead>>,
+    /// Per weapon of the rules: its missiles are OpenRA's MISSILE image
+    /// (`FX_SAM_MISSILE`), not the DRAGON rocket of the `missile` special.
+    pub sam_missile: Vec<bool>,
     /// Per actor type of the rules.
     pub actors: Vec<ActorRender>,
 }
@@ -229,7 +235,9 @@ impl RenderData {
                 }
             })
             .collect();
-        RenderData { explosions, weapons, actors }
+        let missiles: Vec<&str> = v["missiles"].as_array().map(|a| a.iter().filter_map(|s| s.as_str()).collect()).unwrap_or_default();
+        let sam_missile = rules.weapons.iter().map(|w| missiles.contains(&w.name.as_str())).collect();
+        RenderData { explosions, weapons, sam_missile, actors }
     }
 }
 

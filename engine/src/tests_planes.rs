@@ -131,14 +131,20 @@ fn parked_plane_takes_off_flies_to_the_target_and_circles() {
     }
 }
 
-#[test]
-fn yak_attack_runs_use_ammo_then_it_rearms_and_returns_to_the_target() {
+/// Attack runs of plane `id` (Yak, MiG) until the AmmoPool is empty, then
+/// home to the airfield to rearm. With `abort` (AttackAircraft
+/// AbortOnResupply: OpenRA's default, not WebRA's) the attack ends there
+/// and the plane stays parked; without it the plane takes off again once
+/// full and resumes the attack.
+fn plane_out_of_ammo(id: &str, abort: bool) -> (World, usize) {
     let mut w = game("soviet");
+    let t = ty(&w, id) as usize;
+    w.rules.actors[t].unit.as_mut().unwrap().aircraft.as_mut().unwrap().abort_on_resupply = abort;
     let afld = place(&mut w, 0, "AFLD");
-    let p = parked_plane(&mut w, "YAK", afld);
-    // An enemy power plant (40000 HP): one AmmoPool does not destroy it.
+    let p = parked_plane(&mut w, id, afld);
+    // An enemy war factory (150000 HP): one AmmoPool does not destroy it.
     let (tx, ty_) = open_ground(&w, 18);
-    let powr = w.spawn_building(ty(&w, "POWR"), 1, tx / CELL, ty_ / CELL).unwrap();
+    let powr = w.spawn_building(ty(&w, "WEAP"), 1, tx / CELL, ty_ / CELL).unwrap();
     // Planes attack what their owner can see.
     w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
     w.update_vision();
@@ -152,7 +158,7 @@ fn yak_attack_runs_use_ammo_then_it_rearms_and_returns_to_the_target() {
             break;
         }
     }
-    assert!(out_of_ammo, "spent all 18 rounds");
+    assert!(out_of_ammo, "{id} spent all its rounds");
     assert!(w.actors[powr].hp < hp0, "the attack runs hit");
     assert!(w.actors[powr].alive);
     w.step();
@@ -168,12 +174,39 @@ fn yak_attack_runs_use_ammo_then_it_rearms_and_returns_to_the_target() {
     assert!(landed, "landed on the airfield");
     assert_eq!((w.actors[p].x, w.actors[p].y), (w.actors[afld].x, w.actors[afld].y));
     assert_eq!(w.actors[p].altitude, 0);
-    // Yak: ReloadDelay 11 per round, 18 rounds.
-    run(&mut w, 18 * 11 + 2);
-    assert_eq!(w.ammo_left(p), 18, "rearmed");
+    let ac = w.rules.actors[t].unit.as_ref().unwrap().aircraft.clone().unwrap();
+    let steps = (ac.ammo + ac.reload_count - 1) / ac.reload_count;
+    run(&mut w, (steps * ac.reload_delay + 2) as u32);
+    assert_eq!(w.ammo_left(p), ac.ammo, "{id} rearmed");
     run(&mut w, 3);
-    assert_eq!(w.actors[p].air.phase, Phase::Flying, "resumes the attack once full");
-    assert_eq!(w.actors[p].activity, Activity::Attack);
+    (w, p)
+}
+
+/// With AbortOnResupply true (OpenRA's default; a modded map can set it).
+#[test]
+fn planes_with_abort_on_resupply_rearm_and_their_attack_ends() {
+    for id in ["YAK", "MIG"] {
+        let (mut w, p) = plane_out_of_ammo(id, true);
+        assert_eq!(w.actors[p].air.phase, Phase::Parked, "{id} stays on the airfield");
+        assert_eq!(w.actors[p].activity, Activity::Idle);
+        assert_eq!(w.actors[p].target, crate::world::NONE);
+        run(&mut w, 200);
+        assert_eq!(w.actors[p].air.phase, Phase::Parked, "{id} waits for a new order");
+    }
+}
+
+/// WebRA's default (AbortOnResupply false for every aircraft, the owner's
+/// choice): the plane comes back for its target once rearmed.
+#[test]
+fn planes_resume_their_attack_once_rearmed_by_default() {
+    for id in ["YAK", "MIG"] {
+        let w = game("soviet");
+        let t = ty(&w, id) as usize;
+        assert!(!w.rules.actors[t].unit.as_ref().unwrap().aircraft.as_ref().unwrap().abort_on_resupply, "{id}");
+        let (w, p) = plane_out_of_ammo(id, false);
+        assert_eq!(w.actors[p].air.phase, Phase::Flying, "{id} resumes the attack once full");
+        assert_eq!(w.actors[p].activity, Activity::Attack);
+    }
 }
 
 #[test]
@@ -195,7 +228,7 @@ fn ground_weapons_hit_landed_planes_only() {
     assert_eq!(w.target_kind(p), Kind::Aircraft);
     assert!(!tank_info.can_attack(&w.rules, w.target_kind(p)));
     w.rebuild_hash();
-    assert_ne!(w.scan_for_target(tank), Some(p), "the tank ignores the plane overhead");
+    assert_ne!(w.auto_scan(tank), Some(p), "the tank ignores the plane overhead");
 }
 
 #[test]

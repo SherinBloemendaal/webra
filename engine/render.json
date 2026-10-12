@@ -925,6 +925,11 @@
   "water_piff",
   "water_piffs"
  ],
+ "missiles": [
+  "Nike",
+  "RedEye",
+  "SubMissileAA"
+ ],
  "weapons": {
   "105mm": [
    {

@@ -198,7 +198,7 @@ test('settings: capture in fullscreen by default, speed 1, the first Esc only re
   const s = createSettings(null);
   assert.equal(s.get('mouseCapture'), 'fullscreen');
   assert.equal(s.get('mouseCaptureSpeed'), 1);
-  assert.equal(s.get('mouseCaptureEscMenu'), false);
+  assert.equal(s.get('mouseCaptureEscMenu'), true);
   assert.equal(s.get('mouseCaptureHints'), 0);
   assert.deepEqual(specOf('game', 'mouseCapture').options, CAPTURE_MODES);
   assert.equal(s.set('mouseCapture', 'sometimes'), 'fullscreen', 'not a mode: the default');
@@ -383,8 +383,8 @@ test('capture: menus, dialogs, blur, hidden pages and touches let go; a blocked 
 
 // ---- Esc --------------------------------------------------------------------------------------
 
-test('Esc: the first one only releases the mouse, the next one reaches the game (menu)', () => {
-  const p = page();
+test('Esc with "Esc also opens the menu" off: the first one only releases the mouse, the next one reaches the game (menu)', () => {
+  const p = page({ settingsInit: { mouseCaptureEscMenu: false } });
   lockAt(p);
   const esc = () => p.real('keydown', { key: 'Escape' }, doc.body);
   const e1 = esc();
@@ -412,8 +412,8 @@ test('Esc: with "Esc also opens the menu" it releases and goes on; in a text fie
   assert.equal(q.seen.filter(([type]) => type === 'keydown').length, 1, 'the chat line closes as always');
 });
 
-test('Esc kept by the browser: no menu, the Esc that follows is swallowed, and the browser cooldown is waited out', () => {
-  const p = page();
+test('Esc kept by the browser with "Esc also opens the menu" off: no menu, the Esc that follows is swallowed, and the browser cooldown is waited out', () => {
+  const p = page({ settingsInit: { mouseCaptureEscMenu: false } });
   lockAt(p);
   p.browserExit();
   assert.equal(p.capture.state, 'off');

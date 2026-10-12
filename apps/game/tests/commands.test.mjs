@@ -114,6 +114,7 @@ test('clicks in command modes and with modifiers', () => {
     allied: (o) => o === 0,
     selected: (id) => id === 5,
     canAttackGround: true,
+    canAttackHit: true,
     canGuard: false,
   };
   assert.equal(commandClick(base), null, 'a plain click is a normal order');
@@ -122,6 +123,8 @@ test('clicks in command modes and with modifiers', () => {
   assert.deepEqual(commandClick({ ...base, ctrl: true, hit: 9, hitOwner: 0 }), { kind: 'attack', target: 9 }, 'force-fire on own units');
   assert.deepEqual(commandClick({ ...base, mode: 'forceAttack', hit: 9, hitOwner: 1 }), { kind: 'attack', target: 9 });
   assert.deepEqual(commandClick({ ...base, ctrl: true, hit: 5, hitOwner: 0 }), { kind: 'attackGround' }, 'not at itself: the ground under it');
+  assert.deepEqual(commandClick({ ...base, ctrl: true, hit: 9, hitOwner: 1, canAttackHit: false }), { kind: 'attackGround' }, 'a flying aircraft without anti-air: the ground under it');
+  assert.deepEqual(commandClick({ ...base, ctrl: true, hit: 9, hitOwner: 1, canAttackHit: false, canAttackGround: false }), { kind: 'ignore' });
   assert.deepEqual(commandClick({ ...base, alt: true, hit: 9, hitOwner: 1 }), { kind: 'move' }, 'force move ignores what is there');
   assert.deepEqual(commandClick({ ...base, mode: 'forceMove' }), { kind: 'move' });
   assert.deepEqual(commandClick({ ...base, shift: true }), { kind: 'waypoint', attackMove: false });
@@ -215,6 +218,27 @@ test('command_state counts units, weapons and stances of own actors only', () =>
   assert.equal(g.are_allies(0, 0), true);
   assert.equal(g.are_allies(0, 1), false);
   assert.equal(g.are_allies(0, 9), false, 'out of range');
+});
+
+test('can_attack_actor and the smart cursor over a flying aircraft: anti-air only', () => {
+  const g = game([
+    { type: 'E1', owner: 0, x: 20, y: 20, facing: 0 },
+    { type: 'E3', owner: 0, x: 20, y: 22, facing: 0 },
+    { type: 'MH60', owner: 1, x: 22, y: 21, facing: 0 },
+  ]);
+  g.tick();
+  const [e1, e3] = [at(g, 20, 20), at(g, 20, 22)];
+  const heli = g.pick(0, px(22), px(21));
+  assert.notEqual(heli, NONE, 'the Black Hawk is seen');
+  assert.equal(g.can_attack_actor(0, ids(e1), heli), false, 'rifles cannot hit it');
+  assert.equal(g.can_attack_actor(0, ids(e3), heli), true, 'the Redeye can');
+  assert.equal(g.can_attack_actor(0, ids(e1, e3), heli), true);
+  assert.equal(g.can_attack_actor(1, ids(e3), heli), false, 'not your unit');
+  assert.equal(g.can_attack_actor(0, ids(e3), NONE), false);
+  // Smart cursor (world.rs SmartAction): 1 move, 2 attack.
+  assert.equal(g.cursor_action(0, ids(e1), px(22), px(21)), 1, 'no attack cursor without anti-air');
+  assert.equal(g.cursor_action(0, ids(e3), px(22), px(21)), 2);
+  assert.equal(g.cursor_action(0, ids(e1, e3), px(22), px(21)), 2);
 });
 
 test('move_hint: a plain move of armed units past visible enemies (attack-move tip)', () => {

@@ -74,6 +74,8 @@ export const QUERY_DEFAULTS = Object.freeze({
   command_state: () => JSON.stringify({ units: 0, armed: 0, attackGround: 0, guard: 0, scatter: 0, queued: 0, stances: {} }),
   can_guard: () => false,
   can_attack_ground: () => false,
+  // Force attack on an actor: whether a selected weapon can hit it (js/commandbar.js).
+  can_attack_actor: () => false,
   // Whether a plain move passes visible enemies (the attack-move tip, js/hints.js).
   move_hint: () => false,
   sell_value: () => 0,
@@ -154,6 +156,7 @@ export const FOLLOW_LATEST = Object.freeze(
     'cursor_action',
     'can_guard',
     'can_attack_ground',
+    'can_attack_actor',
     'teleport_valid',
     'placement_preview',
     'debug_cells',

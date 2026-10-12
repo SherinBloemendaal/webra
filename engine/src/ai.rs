@@ -315,7 +315,8 @@ pub(crate) fn attack_offset(w: &World, i: usize, t: usize) -> Option<(i32, i32)>
     let pass = w.pass_for(d);
     let ci = w.cell_index(w.actors[i].x, w.actors[i].y);
     let comp = pass.component[ci];
-    let r = w.rules.actors[w.actors[i].ty as usize].max_range(&w.rules);
+    // The reach of the weapons that can hit it (GetMaximumRangeVersusTarget).
+    let r = w.rules.actors[w.actors[i].ty as usize].range_against(&w.rules, w.target_class(t));
     let diag = r * 724 / 1024;
     let (tx, ty) = (w.actors[t].x, w.actors[t].y);
     [(0, 0), (r, 0), (-r, 0), (0, r), (0, -r), (diag, diag), (-diag, diag), (-diag, -diag), (diag, -diag)]

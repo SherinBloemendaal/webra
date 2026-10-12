@@ -528,3 +528,110 @@ fn passengers_die_when_the_chinook_is_shot_down() {
     w.damage(tran, 1_000_000);
     assert!(!w.actors[s].alive, "went down with the Chinook");
 }
+
+/// A helicopter of type `id` attacks a tank until its AmmoPool is empty,
+/// reloads on the helipad and is full again; `abort` sets its OpenRA
+/// AttackAircraft AbortOnResupply. Returns the world, helicopter and tank.
+fn heli_out_of_ammo(id: &str, abort: bool) -> (World, usize, usize) {
+    let mut w = flat_world();
+    let t = ty(&w, id) as usize;
+    w.rules.actors[t].unit.as_mut().unwrap().aircraft.as_mut().unwrap().abort_on_resupply = abort;
+    w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.update_power();
+    let i = heli(&mut w, id, 0, 24, 20);
+    // Two rounds left: the tank outlives them.
+    let max = w.heli_ammo(i).1;
+    w.actors[i].heli.ammo_used = max - 2;
+    let tank = w.spawn_unit(ty(&w, "4TNK"), 1, cell_center(28), cell_center(20), 0);
+    w.actors[tank].reload = [1_000_000; crate::world::MAX_WEAPONS];
+    w.actors[tank].stance = crate::rules::Stance::HoldFire;
+    run(&mut w, 2);
+    w.queue_order(Order::Attack { player: 0, ids: r(&w, i), target: w.make_ref(tank) });
+    run_until(&mut w, 400, |w| w.heli_ammo(i).0 == 0);
+    run(&mut w, 2);
+    assert_eq!(w.actors[i].heli.task, HeliTask::Resupply, "{id}: out of ammo, back to base");
+    // The last rounds are still in flight when the pool runs dry.
+    run(&mut w, 40);
+    assert!(w.actors[tank].hp < w.rules.actors[w.actors[tank].ty as usize].hp, "{id} hit the tank");
+    run_until(&mut w, 2000, |w| w.heli_ammo(i).0 == max);
+    run(&mut w, 40);
+    (w, i, tank)
+}
+
+/// With AbortOnResupply true (OpenRA's default; a modded map can set it)
+/// the attack ends; rearmed, the helicopter does not go back for the target.
+#[test]
+fn rearmed_helicopters_with_abort_on_resupply_do_not_resume_their_attack() {
+    for id in ["HELI", "HIND"] {
+        let (mut w, i, tank) = heli_out_of_ammo(id, true);
+        let hp = w.actors[tank].hp;
+        assert_eq!(w.actors[i].target, crate::world::NONE, "{id}: the attack ended");
+        run(&mut w, 300);
+        assert_eq!(w.actors[tank].hp, hp, "{id}: no new attack on the tank");
+    }
+}
+
+/// WebRA's default (AbortOnResupply false for every aircraft, the owner's
+/// choice): the rearmed helicopter takes its attack up again.
+#[test]
+fn rearmed_helicopters_resume_their_attack_by_default() {
+    for id in ["HELI", "HIND"] {
+        let w = flat_world();
+        let t = ty(&w, id) as usize;
+        assert!(!w.rules.actors[t].unit.as_ref().unwrap().aircraft.as_ref().unwrap().abort_on_resupply, "{id}");
+        let (mut w, i, tank) = heli_out_of_ammo(id, false);
+        let hp = w.actors[tank].hp;
+        assert_eq!(w.actors[i].activity, Activity::Attack, "{id} back on the attack");
+        assert_eq!(w.actors[i].target, w.make_ref(tank));
+        run(&mut w, 400);
+        assert!(!w.actors[tank].alive || w.actors[tank].hp < hp, "{id} hit the tank again");
+    }
+}
+
+/// A new order given while the helicopter flies home to rearm replaces the
+/// attack it would take up again: once full it follows the new order.
+#[test]
+fn a_new_order_replaces_the_attack_a_rearming_helicopter_would_resume() {
+    let mut w = flat_world();
+    w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.update_power();
+    let i = heli(&mut w, "HELI", 0, 24, 20);
+    let max = w.heli_ammo(i).1;
+    w.actors[i].heli.ammo_used = max - 2;
+    let tank = w.spawn_unit(ty(&w, "4TNK"), 1, cell_center(28), cell_center(20), 0);
+    w.actors[tank].reload = [1_000_000; crate::world::MAX_WEAPONS];
+    w.actors[tank].stance = crate::rules::Stance::HoldFire;
+    run(&mut w, 2);
+    w.queue_order(Order::Attack { player: 0, ids: r(&w, i), target: w.make_ref(tank) });
+    run_until(&mut w, 400, |w| w.heli_ammo(i).0 == 0);
+    run(&mut w, 2);
+    assert_eq!(w.actors[i].heli.task, HeliTask::Resupply, "out of ammo, back to base");
+    w.queue_order(Order::Move { player: 0, ids: r(&w, i), x: cell_center(14), y: cell_center(34), attack_move: false });
+    run(&mut w, 600);
+    assert_ne!(w.actors[i].target, w.make_ref(tank), "the move replaced the attack");
+    assert_eq!(w.actors[i].heli.resume, crate::world::NONE);
+    let (cx, cy) = w.cell_of(w.actors[i].x, w.actors[i].y);
+    assert!((cx - 14).abs() <= 2 && (cy - 34).abs() <= 2, "flew where it was sent: ({cx}, {cy})");
+}
+
+/// OpenRA FlyAttack: attack-moves never resupply. Out of ammo the
+/// helicopter flies on to the attack-move's end and picks no new targets.
+#[test]
+fn attack_moving_helicopters_out_of_ammo_fly_on_without_resupplying() {
+    let mut w = flat_world();
+    w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.update_power();
+    let i = heli(&mut w, "HIND", 0, 16, 20);
+    let max = w.heli_ammo(i).1;
+    w.actors[i].heli.ammo_used = max - 1;
+    let tank = w.spawn_unit(ty(&w, "4TNK"), 1, cell_center(22), cell_center(20), 0);
+    w.actors[tank].reload = [1_000_000; crate::world::MAX_WEAPONS];
+    w.queue_order(Order::Move { player: 0, ids: r(&w, i), x: cell_center(36), y: cell_center(20), attack_move: true });
+    run_until(&mut w, 400, |w| w.heli_ammo(i).0 == 0);
+    run_until(&mut w, 800, |w| {
+        w.actors[w.actors.len() - 1].alive && dist(w.actors[i].x, w.actors[i].y, cell_center(36), cell_center(20)) <= 2 * CELL
+    });
+    assert_ne!(w.actors[i].heli.task, HeliTask::Resupply, "no resupply on an attack-move");
+    assert_eq!(w.actors[i].target, crate::world::NONE);
+    let _ = tank;
+}

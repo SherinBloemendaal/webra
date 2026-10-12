@@ -107,7 +107,7 @@ test('art audit: helicopters, spinners, the silo and specials come from the orig
   for (const kind of ['select', 'move', 'attack', 'sell', 'repairMode', 'deploy', 'nuke', 'guard', 'scrollNW', 'blocked']) {
     assert.equal(rows.find((r) => r.actor === '(cursor)' && r.role === kind).status, 'ok', kind);
   }
-  for (const key of ['fx.0', 'fx.1', 'fx.2', 'planes.0']) assert.equal(rows.find((r) => r.actor === '(special)' && r.role === key).status, 'ok', key);
+  for (const key of ['fx.0', 'fx.1', 'fx.2', 'fx.3', 'missile', 'planes.0']) assert.equal(rows.find((r) => r.actor === '(special)' && r.role === key).status, 'ok', key);
   // OpenRA's own units have no Red Alert art at all.
   for (const id of ['MH60', 'FTRK']) assert.equal(status(id, `${id.toLowerCase()}.idle`), 'webra-only');
   for (const key of ['bullet', 'small_explosion', 'large_explosion', 'piff', 'rally', 'missile', 'nuke', 'naval.0', 'naval.2', 'planes.0', 'helis.2', 'decorations.0']) {

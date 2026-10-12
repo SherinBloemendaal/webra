@@ -126,6 +126,13 @@ impl World {
         !self.is_plane(i) && info.can_attack_class(&self.rules, self.ground_class(x, y))
     }
 
+    /// Whether unit `i` has a weapon that can hit actor `t` as it is now
+    /// (OpenRA AttackBase.ChooseArmamentsForTarget): an aircraft in the air
+    /// only anti-air weapons, a landed one ground weapons too.
+    pub fn can_attack_actor(&self, i: usize, t: usize) -> bool {
+        i != t && self.can_attack_class_now(i, t)
+    }
+
     pub(crate) fn order_attack_ground(&mut self, units: &[usize], x: i32, y: i32) {
         let (mx, my) = (self.map.width * CELL - 1, self.map.height * CELL - 1);
         let (x, y) = (x.clamp(0, mx), y.clamp(0, my));

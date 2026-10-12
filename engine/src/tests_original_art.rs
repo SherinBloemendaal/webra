@@ -118,21 +118,41 @@ fn original_explosions_animate_from_their_start_and_dust_is_left_out() {
 
 #[test]
 fn original_missiles_pick_their_facing_frame_instead_of_turning_the_sprite() {
-    let mut w = world();
-    let ids = SpriteIds::new(w.rules.actors.len());
-    let weapon = (0..w.rules.weapons.len())
-        .find(|&k| w.rules.weapons[k].projectile == Flight::Missile && w.naval_projectile_sprite(k).is_none())
-        .expect("a missile weapon") as u16;
-    let (x, y) = (cell_center(12), cell_center(12));
-    let shot = crate::veterancy::Shot::NONE;
-    w.projectiles.push(Projectile { x, y, tx: x + 1000, ty: y, weapon, owner: 0, target: crate::world::NONE, facing: 256, shot });
-    let angle = |all: &[[f32; SPRITE_FLOATS]]| in_slot(all, ids.missile as u32)[0][2];
-    let turned = angle(&sprites(&w));
-    w.render_opts.set_original_art(&[ids.missile as u32], &[]);
-    let own = angle(&sprites(&w));
-    // WebRA's missile art points east and is turned back a quarter; the original one is not turned.
-    let d = (own - turned).rem_euclid(std::f32::consts::TAU);
-    assert!((d - std::f32::consts::FRAC_PI_2).abs() < 1e-4, "{own} {turned}");
+    // Rockets (DRAGON) in the missile special, anti-air missiles (MISSILE:
+    // the SAM site's Nike, the Redeye) in their own effect slot.
+    let ids = SpriteIds::new(world().rules.actors.len());
+    let sam_slot = (ids.fx_base + crate::fx::FX_SAM_MISSILE) as u32;
+    for (name, slot) in [("Dragon", ids.missile as u32), ("Nike", sam_slot), ("RedEye", sam_slot)] {
+        let mut w = world();
+        let weapon = w.rules.weapons.iter().position(|k| k.name == name).unwrap();
+        assert_eq!(w.rules.weapons[weapon].projectile, Flight::Missile);
+        assert!(w.naval_projectile_sprite(weapon).is_none());
+        let (x, y) = (cell_center(12), cell_center(12));
+        let shot = crate::veterancy::Shot::NONE;
+        let weapon = weapon as u16;
+        w.projectiles.push(Projectile {
+            x,
+            y,
+            tx: x + 1000,
+            ty: y,
+            weapon,
+            owner: 0,
+            target: crate::world::NONE,
+            facing: 256,
+            shot,
+            alt: 0,
+            ox: 0,
+            oy: 0,
+            travel: 0,
+        });
+        let angle = |all: &[[f32; SPRITE_FLOATS]]| in_slot(all, slot)[0][2];
+        let turned = angle(&sprites(&w));
+        w.render_opts.set_original_art(&[slot], &[]);
+        let own = angle(&sprites(&w));
+        // WebRA's missile art points east and is turned back a quarter; the original one is not turned.
+        let d = (own - turned).rem_euclid(std::f32::consts::TAU);
+        assert!((d - std::f32::consts::FRAC_PI_2).abs() < 1e-4, "{name}: {own} {turned}");
+    }
 }
 
 #[test]
