@@ -18,7 +18,7 @@ It is modernised where it helps (large unit counts, flow-field pathfinding, a lo
 
 ## Why the simple art style
 
-WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and readable silhouettes instead of hyper-detailed textures. Simple images are easier to recognise at a glance and easier to remember, which is exactly what you want when a hundred units are moving across the screen. All sprites are generated procedurally at startup with Canvas2D (at 2x resolution), and the terrain tiles of each biome are computed pixel by pixel at game start, so the project ships no image assets at all.
+WebRA keeps the plain, flat look of 1996: simple shapes, solid team colours and readable silhouettes instead of hyper-detailed textures. Simple images are easier to recognise at a glance and easier to remember, which is exactly what you want when a hundred units are moving across the screen. All sprites are generated procedurally at startup with Canvas2D (at 2x resolution), except the oil derrick, WebRA's own pixel art in Red Alert's style painted by a script (`tools/gen_pixel_art.py`), and the terrain tiles of each biome are computed pixel by pixel at game start, so the project ships no image assets at all.
 
 ## Features
 
@@ -90,7 +90,8 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] Touch action bar for what the keyboard does on desktop: Add (Shift), attack move, force attack, stop, deploy, select all, cancel; building placement by dragging the footprint with Place and Cancel buttons; support powers aimed by tap
 - [x] Phone layouts: the build sidebar becomes a collapsible drawer (bottom in portrait, right in landscape), 44 px touch targets, safe-area insets for notches, compact HUD, Menu button for the game menu; the lobby and the website work at phone width
 - [x] Render resolution cap and a low quality setting for mobile GPUs
-- [x] **UI scale** (the sidebar, bars, menus and dialogs) and **game scale** (how big units and terrain appear; the mouse wheel and pinch zoom from there) in Settings, each with **Auto** for the screen (a smaller UI on small and high-density desktop screens, sharp whole-pixel steps for the battlefield); touch targets stay 44 px at any UI scale
+- [x] **UI scale** (the sidebar, bars, menus and dialogs) and **game scale** (how big units and terrain appear; the mouse wheel and pinch zoom from there) in Settings, each with **Auto** for the screen (a smaller UI on small and high-density desktop screens, sharp whole-pixel steps for the battlefield, rounded down on screens smaller than 1920 x 1080 so laptops see more of the map); touch targets stay 44 px at any UI scale
+- [x] **Remembered zoom**: the zoom you last used (wheel, zoom keys, pinch) is kept as a share of the game scale and synced with your settings, so every game, mission, replay and spectated game starts there; Reset zoom (.) and Defaults forget it
 
 ### Sound
 - [x] Our own effects in the same places: muzzle flashes, damage smoke and a picture for each of OpenRA's explosions (bullet hits, cannon hits, splashes, napalm, flak, unit and building explosions)
@@ -169,9 +170,11 @@ them (WebRA's own art and synthesized sounds).
   interior theater is not used (WebRA has no interior maps).
 - Art Red Alert does not have keeps WebRA's: the Mobile Flak and the Black
   Hawk (OpenRA's own units, unit and cameo), neutral decorations OpenRA drew
-  itself (huts, ammo boxes, poles, tank traps, the oil derrick, ...),
+  itself (huts, ammo boxes, poles, tank traps, ...; the oil derrick is
+  WebRA's own pixel art in Red Alert's style, with or without the
+  original graphics),
   veterancy ranks, contrails, the chronoshift shimmer, ability markers and
-  the level up and heal crate animations. OpenRA's own files are not
+  the level up crate animation. OpenRA's own files are not
   shipped (see [data/CATALOG.md](data/CATALOG.md) for why).
 - With original sounds, a sound OpenRA does not have stays silent instead
   of WebRA's (a bullet's impact, a tree falling), and so do the lines OpenRA
@@ -422,7 +425,7 @@ Notes on browsers:
 - **Focus.** Like OpenRA, a key goes to the focused control first and to the hotkeys only when the control does not use it. Text fields (the chat line, save names) take every key while they show. A switch, slider or list takes only the keys that work it (Space for a switch; the arrows, Home and End for a slider; those plus Space and Enter for a list), so C, Z and the other hotkeys keep working after a click on the debug menu's switches, the replay's seek bar or the observer's panel list. A button clicked with the mouse keeps no key at all (Tab, Shift + Tab and Enter stay hotkeys); one reached with Tab keeps Tab, Shift + Tab and Enter. A field that is no longer shown (a lobby field after the game started) takes no key.
 - **Saved hotkeys.** Hotkeys changed in older versions keep working; the ones that were never changed (and keys an older version took away from an action when another one was rebound) move to OpenRA's defaults.
 - **Fullscreen.** F11 belongs to the browser, so the game uses Alt + Enter (or the button in the menu). Without the Fullscreen API the menu says so.
-- **Mouse capture.** Like desktop OpenRA's locked cursor, the game can keep the mouse from slipping onto another monitor (Pointer Lock API). Settings, Mouse capture: Off, In fullscreen (the default: entering fullscreen or a click into the game while fullscreen captures it) or Always (any click into the game). While captured the game draws its own cursor and the screen edges always scroll; everything else works as with the free pointer (selection boxes, orders, the radar, sidebar, command bar, chat line, tooltips). Alt + M (Option + M on macOS, rebindable) releases it and captures it again; Esc releases it, and only the next Esc opens the menu unless Settings, "Esc also opens the menu" is on. The menu, other dialogs, switching windows and leaving fullscreen release it too; a click into the game captures it again (browsers wait about a second after Esc). Captured mouse speed sets the pointer speed; Chromium passes raw movement without the system's acceleration, which can feel slower. Lists, sliders and pickers release the mouse when clicked, since they need the system pointer. Browsers without Pointer Lock (iOS Safari, phones and tablets without a mouse) do not show the setting, and touch input never goes through it.
+- **Mouse capture.** Like desktop OpenRA's locked cursor, the game can keep the mouse from slipping onto another monitor (Pointer Lock API). Settings, Mouse capture: Off, In fullscreen (the default: entering fullscreen or a click into the game while fullscreen captures it) or Always (any click into the game). While captured the game draws its own cursor and the screen edges always scroll; everything else works as with the free pointer (selection boxes, orders, the radar, sidebar, command bar, chat line, tooltips). Alt + M (Option + M on macOS, rebindable) releases it and captures it again; Esc releases it, and only the next Esc opens the menu unless Settings, "Esc also opens the menu" is on. The menu, other dialogs, switching windows and leaving fullscreen release it too; a click into the game captures it again (browsers wait about a second after Esc). At Captured mouse speed 1x the game cursor moves exactly like the system pointer (its speed and acceleration). **Raw mouse input** (off by default) asks the browser for raw mouse counts instead, where it supports them (such as Chrome and Edge; elsewhere the normal movement is used), with WebRA's own acceleration curve: one pixel per count for slow moves, up to three times that for fast flicks. Lists, sliders and pickers release the mouse when clicked, since they need the system pointer. Browsers without Pointer Lock (iOS Safari, phones and tablets without a mouse) do not show the setting, and touch input never goes through it.
 - **Screenshots** are of the battlefield (without the sidebar).
 - **Leaving.** Closing or reloading the tab during a game asks first.
 
@@ -479,7 +482,7 @@ Notes on browsers:
 - **[OpenRA](https://github.com/OpenRA/OpenRA)**: the open-source reimplementation of the classic Westwood RTS games. WebRA's gameplay values (costs, build times, health, armour, weapons, prerequisites, timing) come from OpenRA's `mods/ra` rules, which are licensed under GPLv3. Many thanks to the OpenRA contributors.
 - **Westwood Studios and Electronic Arts**: for the original *Command & Conquer: Red Alert*.
 
-*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are generated procedurally by the game at runtime and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
+*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are WebRA's own, generated procedurally by the game at runtime (the oil derrick's pixel art by a script in `tools/`), and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
 
 ## License
 

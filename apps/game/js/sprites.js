@@ -41,6 +41,7 @@ import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
 import { EXPLOSIONS, MUZZLE_ACTORS } from './content/tables.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM } from './art/animated.js';
+import { pixelSlots } from './art/pixel.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
 import { INFANTRY_TIMED_POSES, MODE, POSE, POSE_STRIDE, onceTicks, packSprite } from './content/sequences.js';
 
@@ -680,14 +681,18 @@ function shelfPack(boxes, width, startY = 0) {
  * interpolated facings, lead-in frames]) and the frames of each pose, facing by facing.
  * `images` are `{ width, height, color (RGBA), mask (one byte per pixel, 255
  * team colour) | null, offset: [x, y], scale }` with offset and scale in world
- * pixels; each is placed in the atlas once. A building whose second slot is
+ * pixels; each is placed in the atlas once. Body slots of actors with WebRA's
+ * own pixel art (art/pixel.js pixelSlots) get its pose table unless
+ * `opts.slots` has them. A building whose second slot is
  * replaced has no animated WebRA layer (`overlays` 0). `opts.filter` is the
  * sampler the renderer uses ('nearest' for pixel art); `opts.maxSize` the
  * largest atlas side. `opts.biome` is the map's biome (temperate, snow or
  * desert): the neutral world's trees, ice and huts follow it (art/world.js).
  */
 export function buildAtlas(actors, opts = {}) {
-  const slots = opts.slots ?? new Map();
+  // WebRA's own pixel art (art/pixel.js) fills the body slots nobody else does.
+  const slots = new Map(opts.slots ?? []);
+  for (const [k, art] of pixelSlots(actors)) if (!slots.has(k)) slots.set(k, art);
   const maxSize = opts.maxSize ?? 8192;
   const list = spriteList(actors);
   const slotCount = list.length;
@@ -879,7 +884,9 @@ export function buildAtlas(actors, opts = {}) {
     });
     deathTicks.push(...t.slice(0, 7), Math.max(t[7], t[8]));
   }
-  return { color, mask, frames, overlays, deaths, deathTicks, filter: opts.filter ?? 'linear', width, height };
+  // Pose tables (sequence slots) need the engine's poses (Game.set_sprite_poses).
+  const filter = opts.filter ?? 'linear';
+  return { color, mask, frames, overlays, deaths, deathTicks, filter, poses: filter === 'nearest' || extra.length > 0, width, height };
 }
 
 /**

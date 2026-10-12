@@ -1,9 +1,9 @@
 // Procedural art for the neutral world of OpenRA maps (engine/src/neutral.rs,
 // bridges.rs): trees and their burnt stumps, civilian houses, fields and huts,
 // tech buildings (hospital, bio lab, communications center, forward command
-// post, oil derrick), barrels and ammo boxes, crates, ice floes, rocks, poles
-// and tank traps, ore and gem mines, the map-only walls, bridges and the
-// civilians. Same camera, light and helpers as buildings.js (volume.js).
+// post; the oil derrick is pixel art, art/pixel.js), barrels and ammo boxes,
+// crates, ice floes, rocks, poles and tank traps, ore and gem mines, the
+// map-only walls, bridges and the civilians. Same camera, light and helpers as buildings.js (volume.js).
 //
 // Structures draw into their footprint box (cells times 24 world pixels).
 // Trees and the like draw only over their occupied cells (OpenRA footprints
@@ -13,6 +13,7 @@
 // (`P.biome`: temperate, snow or desert; js/sprites.js buildAtlas passes it).
 
 import { C, rect, circle, poly, polyline, ring } from './kit.js';
+import { pixelDraw } from './pixel.js';
 import { K, KY, tone, radial, quad, disc, oval, stroke, at, castShadows, box, patch, mark, cylinder, dome, gable, prism } from './volume.js';
 
 /** Seeded pseudo random numbers in [0, 1). */
@@ -398,29 +399,6 @@ function commandPost(ctx, P) {
   poly(ctx, P.team(0.9), [fx + 3, fy - 13, fx + 10, fy - 11, fx + 3, fy - 8.5]);
 }
 
-function derrick(ctx, P) {
-  rect(ctx, P.c('#3c3a34'), 2, 6, 44, 40);
-  rect(ctx, P.c('#4a473f'), 3, 7, 42, 38);
-  castShadows(ctx, P, [{ cx: 33, cy: 34, r: 6.5, z: 9 }, { x: 8, y: 16, w: 16, d: 16, z: 24 }]);
-  cylinder(ctx, P, 33, 34, 6.5, 9, K('#b7b3a5'), K('#cbc7b9'), { bands: [[3, 4, K('#8a3a2a')]] });
-  cylinder(ctx, P, 36, 18, 4.5, 7, K('#b7b3a5'), K('#cbc7b9'));
-  // the lattice tower
-  const base = [[8, 32], [24, 32], [24, 16], [8, 16]];
-  const top = at(16, 24, 24);
-  for (const [gx, gy] of base) stroke(ctx, P.c('#2b2b28'), 1.2, gx, gy, top[0], top[1]);
-  for (let h = 6; h < 24; h += 6) {
-    const f = 1 - h / 24;
-    const pts = base.map(([gx, gy]) => at(16 + (gx - 16) * f, 24 + (gy - 24) * f, h));
-    for (let k = 0; k < 4; k++) {
-      const [a, b] = [pts[k], pts[(k + 1) % 4]];
-      stroke(ctx, P.c('#4a4a44'), 0.6, a[0], a[1], b[0], b[1]);
-    }
-  }
-  disc(ctx, P.c('#ff4a3a'), top[0], top[1], 1);
-  stroke(ctx, P.team(0.9), 1.4, 2, 46, 46, 46);
-  polyline(ctx, P.c('#2b2b28'), 1, [24, 26, 28, 32, 33, 34]);
-}
-
 // ---- Barrels, boxes and other decorations ------------------------------------------------------
 
 function oilBarrel(ctx, P, cx, cy, tint = '#a8321e') {
@@ -734,7 +712,8 @@ const STRUCTURES = {
   BIO: () => bioLab,
   MISS: () => commCenter,
   FCOM: () => commandPost,
-  OILB: () => derrick,
+  // WebRA's own pixel art in Red Alert's style (art/pixel.js).
+  OILB: (a) => pixelDraw(a),
   V01: () => (ctx, P) => church(ctx, P, false),
   V25: () => (ctx, P) => church(ctx, P, true),
   V12: () => (ctx, P) => haystack(ctx, P, 12),

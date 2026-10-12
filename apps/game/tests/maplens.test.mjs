@@ -21,7 +21,7 @@ import { createRegistry } from '../js/registry.js';
 import { FRAME_FLOATS } from '../js/sprites.js';
 import { buildTerrainAtlas, cellTiles, terrainSeed, TILES } from '../js/art/terrain.js';
 import { MODE, POSE, packSprite } from '../js/content/sequences.js';
-import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM } from '../js/scale.js';
+import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, baseZoom, gameScaleFor, zoomLimits } from '../js/scale.js';
 import { CELL_PX, TerrainRaster, frameQuad, hash2, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
 import { HOLD_MS, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensPlacement, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
 import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, teamColors } from '../js/maplens/source.js';
@@ -536,6 +536,17 @@ test('the zoom follows the game scale', () => {
   const p = page();
   const { lens } = lensOn(p, { gameScale: () => 2 });
   assert.equal(lens.zoom(), DEFAULT_ZOOM * 2 * LENS_START_FACTOR);
+});
+
+test('the auto game scale of a 14" MacBook: the lens starts at LENS_START_FACTOR of that base zoom, not at the remembered game zoom', () => {
+  const p = page();
+  const settings = createSettings(createRegistry({ storage: null }));
+  settings.set('zoomFactor', 2); // the player zoomed in during games
+  const win = { innerWidth: 1512, innerHeight: 982, devicePixelRatio: 2 };
+  const { lens } = lensOn(p, { gameScale: () => gameScaleFor(settings, win) });
+  assert.ok(Math.abs(gameScaleFor(settings, win) - 2 / 3) < 1e-9, 'Auto rounds down on this screen');
+  assert.ok(Math.abs(lens.zoom() - baseZoom(2 / 3) * LENS_START_FACTOR) < 1e-9, 'half the base zoom: 0.5 CSS px per world px');
+  assert.ok(lens.zoom() >= zoomLimits(2 / 3).min, 'inside the zoom limits');
 });
 
 test('touch: press and hold shows the lens above the finger; a swipe stays a scroll; lifting hides it', () => {

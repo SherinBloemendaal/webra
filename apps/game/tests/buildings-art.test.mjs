@@ -10,6 +10,7 @@ import { buildAtlas, animationPlan, spriteList, drawCameo, drawIcon, getCameo, c
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM } from '../js/art/animated.js';
 import { worldDraw } from '../js/art/world.js';
+import { pixelSlots } from '../js/art/pixel.js';
 import init, { Game } from '../pkg/webra_sim.js';
 
 // The rules as the game gets them (Game.rules_json: width/height, footprint cells, world traits).
@@ -153,8 +154,14 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
   };
   try {
     const { frames } = buildAtlas(actors);
+    const pixel = pixelSlots(actors);
     actors.forEach((a, i) => {
       if (a.kind !== 'building') return;
+      if (pixel.has(2 * i)) {
+        // WebRA's pixel art (art/pixel.js, tests/pixel-art.test.mjs): a pose table heads the slot.
+        assert.ok(frames[i * 2 * FRAME_FLOATS + 13] > 0, `${a.id} pose table`);
+        return;
+      }
       assert.equal(frames[i * 2 * FRAME_FLOATS + 4], a.width * 24, `${a.id} sprite width`);
       assert.equal(frames[i * 2 * FRAME_FLOATS + 5], a.height * 24, `${a.id} sprite height`);
     });
@@ -267,7 +274,12 @@ test('the atlas holds every animation once: head slots point at their frames, fo
     const entry = (i) => Array.from(frames.slice(i * FRAME_FLOATS, (i + 1) * FRAME_FLOATS));
     const keys = new Set(plan.map((p) => p.key));
     const total = [...keys].reduce((n, k) => n + BUILDING_ANIM[k].frames, 0);
-    assert.equal(frames.length, (listLength + total) * FRAME_FLOATS, 'one copy of each animation after the sprite list');
+    // Then the pose tables of WebRA's pixel art (art/pixel.js): descriptors and their frames, once per table.
+    let tables = 0;
+    for (const art of new Set(pixelSlots(actors).values())) {
+      tables += art.poses.length + [...new Set(art.poses)].reduce((n, d) => n + d.frames.length, 0);
+    }
+    assert.equal(frames.length, (listLength + total + tables) * FRAME_FLOATS, 'one copy of each animation after the sprite list');
     assert.ok(plan.length > keys.size, 'fakes share the frames of their originals');
     for (const p of plan) {
       const a = actors[p.actor];

@@ -269,11 +269,19 @@ const HOTKEY_COMBO_RE = /^[\x21-\x7e]{1,40}$/;
  */
 export const UI_SCALE_LIMITS = Object.freeze({ min: 0.5, max: 2, step: 0.05 });
 export const GAME_SCALE_LIMITS = Object.freeze({ min: 0.5, max: 3, step: 0.05 });
+/**
+ * game.zoomFactor: the player's remembered camera zoom as a factor of the
+ * game scale's base zoom (1 = the base zoom). The game's zoom limits are
+ * 0.5 to 4 CSS px per world px at a base zoom of 1.5 (apps/game/js/scale.js),
+ * so a factor from 1/3 to 8/3 at every game scale.
+ */
+export const ZOOM_FACTOR_LIMITS = Object.freeze({ min: 1 / 3, max: 8 / 3 });
 /** audio.musicRepeat: repeat the playlist, repeat one track, or stop after the last track. */
 export const MUSIC_REPEAT_MODES = Object.freeze(['all', 'one', 'off']);
 
-const num = (min, max) => (v, f) => {
-  if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) bad(f, `Must be a number from ${min} to ${max}.`);
+/** `range` names the limits in the message when they are not short decimals (1/3 to 8/3). */
+const num = (min, max, range = `${min} to ${max}`) => (v, f) => {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) bad(f, `Must be a number from ${range}.`);
   return v;
 };
 const scale = ({ min, max }) => (v, f) => {
@@ -378,6 +386,7 @@ const SETTINGS_SECTIONS = {
     reduceMotion: choice(['auto', 'on', 'off']),
     uiScale: scale(UI_SCALE_LIMITS),
     gameScale: scale(GAME_SCALE_LIMITS),
+    zoomFactor: num(ZOOM_FACTOR_LIMITS.min, ZOOM_FACTOR_LIMITS.max, '1/3 to 8/3'),
     healthBars: choice(['off', 'damaged', 'all']),
     playerStanceColors: boolean,
     graphics: choice(['webra', 'original']),
@@ -385,6 +394,7 @@ const SETTINGS_SECTIONS = {
     attackMoveTipSeen: boolean,
     mouseCapture: choice(['off', 'fullscreen', 'always']),
     mouseCaptureSpeed: num(0.25, 3),
+    mouseCaptureRaw: boolean,
     mouseCaptureEscMenu: boolean,
   },
   audio: {

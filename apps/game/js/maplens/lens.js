@@ -14,8 +14,12 @@
 //   it follows the finger, the page does not scroll meanwhile, and lifting
 //   the finger hides it. A swipe that starts as a scroll stays a scroll.
 // - The zoom starts at half the game's own scale (LENS_START_FACTOR of
-//   js/scale.js baseZoom at the player's game scale): at the game's own
-//   scale the lens showed too little map around the pointer.
+//   js/scale.js baseZoom at the player's game scale, gameScaleFor: the
+//   render ratio a game would use): at the game's own scale the lens showed
+//   too little map around the pointer. It does not start at the zoom the
+//   player last used in a game (game.zoomFactor): that zoom is for playing,
+//   while the lens is for looking over a map before playing it, and a
+//   player who zooms in to play would get a lens that shows less of the map.
 // - Purely decorative: aria-hidden, never focused, no keyboard handling
 //   (the preview keeps its label). It does not animate: it shows and hides
 //   at once and the art is the first frame, so reduced motion needs nothing.

@@ -39,7 +39,7 @@ import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups } from './controlgroups.js';
 import { actorInfo, askOf, queryOf } from './sim/methods.js';
-import { DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM, baseZoom, clampZoom, rescaleZoom, zoomLimits } from './scale.js';
+import { MIN_ZOOM, MAX_ZOOM, baseZoom, clampZoom, rescaleZoom, zoomFactorOf, zoomForFactor, zoomLimits } from './scale.js';
 
 const NONE = 0xffffffff;
 const CELL = 24;
@@ -51,6 +51,12 @@ const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // Zoom limits at game scale 1 (js/scale.js); an Input's own limits follow its game scale (zoomLimits()).
 export { MIN_ZOOM, MAX_ZOOM };
 const BOOKMARKS = 4;
+/**
+ * The player's zoom is remembered (game.zoomFactor) this long after the last
+ * zoom step: one turn of the wheel is many events, and each write is stored
+ * and synced.
+ */
+export const ZOOM_SAVE_MS = 300;
 
 /** Sidebar modes (OpenRA order generators), see `Input.setMode`. */
 export const MODES = Object.freeze(['sell', 'repair', 'powerDown', 'beacon']);
@@ -120,7 +126,10 @@ export class Input {
     this.watchAll = false;
     /** Game scale (game menu, Settings; js/scale.js): the base zoom and the zoom limits follow it. */
     this.gameScale = 1;
-    this.camera = { x: 0, y: 0, zoom: DEFAULT_ZOOM };
+    // The zoom the player last used, as a factor of the base zoom (setGameScale keeps the factor).
+    this.camera = { x: 0, y: 0, zoom: zoomForFactor(settings.get('zoomFactor'), this.gameScale) };
+    /** Timer of a remembered zoom not stored yet (zoomed). */
+    this.zoomSave = 0;
     this.mapPx = { w: game.map_width() * CELL, h: game.map_height() * CELL };
     this.selection = [];
     this.ownUnits = null;
@@ -148,6 +157,9 @@ export class Input {
     this.mineDrag = null; // Ctrl + drag with Minelayers selected: { sx, sy, ex, ey, units }
     this.bind();
     this.unregister = this.registerHotkeys();
+    // The remembered zoom changed elsewhere (Defaults in the game menu, another tab, the account): the view follows.
+    // While a zoom of this view waits to be stored, that one is newer.
+    this.offZoomFactor = settings.subscribe?.('zoomFactor', (factor) => !this.zoomSave && this.applyZoomFactor(factor)) ?? null;
   }
 
   // ---- Coordinates ------------------------------------------------------------
@@ -195,9 +207,52 @@ export class Input {
     return zoomLimits(this.gameScale);
   }
 
-  /** The base zoom of the game scale: where the view starts and "Reset zoom" goes. */
+  /** The base zoom of the game scale: where "Reset zoom" goes (the view starts at the remembered factor of it). */
   baseZoom() {
     return baseZoom(this.gameScale);
+  }
+
+  /**
+   * The player zoomed (wheel, zoom keys, pinch, a bookmark): the zoom is
+   * remembered as a factor of the base zoom (game.zoomFactor) once the
+   * zooming pauses for ZOOM_SAVE_MS, so the next game starts there.
+   */
+  zoomed() {
+    if (this.zoomSave) clearTimeout(this.zoomSave);
+    this.zoomSave = setTimeout(() => this.saveZoom(), ZOOM_SAVE_MS);
+  }
+
+  /** Store the zoom of this view as the remembered one now. */
+  saveZoom() {
+    if (this.zoomSave) clearTimeout(this.zoomSave);
+    this.zoomSave = 0;
+    this.settings.set('zoomFactor', zoomFactorOf(this.camera.zoom, this.gameScale));
+  }
+
+  /** Store a zoom that waits for the pause (the page is going away); nothing when none waits. */
+  flushZoom() {
+    if (this.zoomSave) this.saveZoom();
+  }
+
+  /** Zoom to a remembered factor of the base zoom, keeping the view centre. */
+  applyZoomFactor(factor) {
+    const zoom = zoomForFactor(factor, this.gameScale);
+    if (Math.abs(zoom - this.camera.zoom) > 1e-9) this.setZoom(zoom);
+  }
+
+  /** "Reset zoom": the base zoom, and the remembered zoom is cleared (back to its default, 1). */
+  resetZoom() {
+    if (this.zoomSave) clearTimeout(this.zoomSave);
+    this.zoomSave = 0;
+    this.setZoom(this.baseZoom());
+    this.settings.reset('zoomFactor');
+  }
+
+  /** Stop following the remembered zoom (the view is gone). A zoom that waits is stored first. */
+  dispose() {
+    this.flushZoom();
+    this.offZoomFactor?.();
+    this.offZoomFactor = null;
   }
 
   /**
@@ -811,10 +866,12 @@ export class Input {
     const p = this.local(e);
     const before = this.toWorld(p.x, p.y);
     const factor = Math.exp(-e.deltaY * 0.0015);
-    this.camera.zoom = clampZoom(this.camera.zoom * factor, this.gameScale);
+    const zoom = this.camera.zoom;
+    this.camera.zoom = clampZoom(zoom * factor, this.gameScale);
     this.camera.x = before.x - p.x / this.camera.zoom;
     this.camera.y = before.y - p.y / this.camera.zoom;
     this.clampCamera();
+    if (this.camera.zoom !== zoom) this.zoomed();
   }
 
   onKeyDown(e) {
@@ -1088,13 +1145,20 @@ export class Input {
       reg(`bookmarkJump${i}`, `MapBookmarkRestore0${i}`, () => {
         const b = this.bookmarks.get(i);
         if (!b) return;
+        const zoom = this.camera.zoom;
         this.camera.zoom = clampZoom(b.zoom, this.gameScale);
         this.centerOn(b.x, b.y);
+        if (this.camera.zoom !== zoom) this.zoomed();
       });
     }
-    reg('zoomIn', 'ZoomIn', () => this.setZoom(this.camera.zoom * 1.25), { repeat: true });
-    reg('zoomOut', 'ZoomOut', () => this.setZoom(this.camera.zoom / 1.25), { repeat: true });
-    reg('resetZoom', 'ResetZoom', () => this.setZoom(this.baseZoom()));
+    const zoomTo = (next) => {
+      const zoom = this.camera.zoom;
+      this.setZoom(next);
+      if (this.camera.zoom !== zoom) this.zoomed();
+    };
+    reg('zoomIn', 'ZoomIn', () => zoomTo(this.camera.zoom * 1.25), { repeat: true });
+    reg('zoomOut', 'ZoomOut', () => zoomTo(this.camera.zoom / 1.25), { repeat: true });
+    reg('resetZoom', 'ResetZoom', () => this.resetZoom());
     // Control groups: 1..9, 0 select (twice: centre), Ctrl creates, Ctrl+Shift
     // adds the selection, Shift adds the group to the selection, Alt jumps.
     for (let n = 1; n <= 10; n++) {

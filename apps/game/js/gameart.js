@@ -40,12 +40,13 @@ export function buildGameAtlas(content, actors, biome, maxSize = 8192) {
 /**
  * Tell a game (an engine Game, or the simulation proxy) how to draw with
  * `atlas`: slots with original art are drawn the OpenRA way (rotors, effects,
- * projectiles, overlays), animated building layers and pre-rendered poses,
+ * projectiles, overlays), animated building layers and pre-rendered poses
+ * (the original graphics, texture packs and WebRA's own pixel art),
  * and the death sequences of art that has them.
  */
 export function applyGameArt(game, atlas, original) {
   game.set_original_slots(original?.slots ?? new Uint32Array(0), original?.info ?? new Int32Array(0));
   game.set_building_overlays(atlas.overlays);
-  game.set_sprite_poses(atlas.filter === 'nearest');
+  game.set_sprite_poses(atlas.poses ?? atlas.filter === 'nearest');
   game.set_death_art(Uint32Array.from(atlas.deaths), Uint32Array.from(atlas.deathTicks));
 }

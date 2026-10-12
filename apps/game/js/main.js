@@ -58,7 +58,7 @@ import { TouchControls } from './touch.js';
 import { Layout, hudText, renderPixelRatio } from './layout.js';
 import { attachHudTooltips } from './hudtips.js';
 import { hideTooltip } from './ui/tooltip.js';
-import { UiScale, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
+import { UiScale, gameScaleFor, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
 import { buildTerrainAtlas, cellTiles, terrainSeed } from './art/terrain.js';
 import { applyGameArt, artActors as gameArtActors, buildGameAtlas } from './gameart.js';
 import { ContentSystem } from './content/index.js';
@@ -203,7 +203,7 @@ async function boot() {
  */
 function newMapLens() {
   if (!lensArt) return undefined;
-  return new MapLens({ art: lensArt, gameScale: () => resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: window.devicePixelRatio || 1 }) });
+  return new MapLens({ art: lensArt, gameScale: () => gameScaleFor(settings, window) });
 }
 
 /** Compile the engine (kept for the simulation worker) and instantiate it for the lobby. */
@@ -1363,11 +1363,16 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, replay, recorder };
   // Game scale (game menu, Settings; js/scale.js): the view's base zoom. Auto
   // follows the window and the render resolution, so those changes pick again.
+  // The view starts at the zoom the player last used (game.zoomFactor, a
+  // factor of the base zoom: js/input.js), in games, missions, replays and
+  // as a spectator, and keeps that factor when the game scale changes.
   const applyGameScale = () => input.setGameScale(resolveGameScale(settings.get('gameScale'), { ...screenOf(window), ratio: renderer.pixelRatio() }));
   applyGameScale();
   for (const key of ['gameScale', 'pixelRatioCap', 'lowQuality']) settings.subscribe(key, applyGameScale);
   window.addEventListener('resize', applyGameScale);
   watchPixelRatio(window, applyGameScale);
+  // A zoom that waits to be remembered is stored before the page goes (leaving reloads it).
+  window.addEventListener('pagehide', () => input.flushZoom());
   // A mission starts where its script put the camera; editor test play where
   // the editor's view was (once); else at the player's first actor.
   const [sx, sy] = game.info.mission?.camera ?? takeTestCamera() ?? game.start_position(player);

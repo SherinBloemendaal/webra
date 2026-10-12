@@ -213,8 +213,8 @@ export function templateImage(tiles, lookup, [width, height], [boxW, boxH]) {
   return { width: w, height: h, color, mask: null, offset, scale: 1 };
 }
 
-/** A pose table of single still images (bridge states): `images[k]` for pose name `names[k]`. */
-function stillPoses(images, names) {
+/** A pose table of single still images (bridge states, art/pixel.js): `images[k]` for pose name `names[k]`. */
+export function stillPoses(images, names) {
   const have = {};
   names.forEach((name, k) => {
     // Every way a pose can be played (deaths vanish too), like a loaded sequence.

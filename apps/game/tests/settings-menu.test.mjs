@@ -199,9 +199,14 @@ test('settings page: Defaults puts back every setting of the page, the audio one
   settings.set('uiScale', 1.5);
   settings.set('gameScale', 2);
   settings.set('edgeScrollSpeed', 3);
+  // The remembered zoom has no row: Defaults clears it like Reset zoom.
+  settings.set('zoomFactor', 2);
+  settings.set('mouseCaptureRaw', true);
   audio.prefs.set({ music: 0.1, musicRepeat: 'one', enabled: false });
   click(root.querySelectorAll('button').find((b) => b.textContent === 'Defaults'));
   for (const key of MENU_SETTINGS) assert.deepEqual(settings.get(key), createSettings(null).get(key), key);
+  assert.equal(settings.get('zoomFactor'), 1);
+  assert.equal(settings.get('mouseCaptureRaw'), false);
   assert.deepEqual(audio.prefs.get(), DEFAULT_PREFS);
 });
 
@@ -481,6 +486,23 @@ test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists,
   const none = setup({ pointerLock: false });
   assert.ok(!none.root.querySelectorAll('h2').some((h) => h.textContent === 'Mouse capture'), 'phones and iOS Safari: no section');
   assert.equal(none.root.querySelector('#game-menu-mouseCapture-always'), null);
+});
+
+test('settings page: Raw mouse input, off by default, with help, after the speed', () => {
+  const { settings, root } = setup();
+  const raw = root.querySelector('#game-menu-mouseCaptureRaw');
+  assert.ok(raw, 'the switch');
+  assert.equal(raw.checked, false, 'the system movement by default');
+  const ids = root.querySelectorAll('input').map((i) => i.id);
+  assert.ok(ids.indexOf('game-menu-mouseCaptureSpeed') < ids.indexOf('game-menu-mouseCaptureRaw'));
+  assert.ok(ids.indexOf('game-menu-mouseCaptureRaw') < ids.indexOf('game-menu-mouseCaptureEscMenu'));
+  assert.match(textOf(root), /Raw mouse input/);
+  assert.ok(MENU_HELP_KEYS.includes('mouseCaptureRaw') && HELP['settings.mouseCaptureRaw'], 'a "?" with help');
+  assert.match(HELP['settings.mouseCaptureSpeed'], /exactly like the system pointer/);
+  check(raw);
+  assert.equal(settings.get('mouseCaptureRaw'), true);
+  check(raw, false);
+  assert.equal(settings.get('mouseCaptureRaw'), false);
 });
 
 test('privacy: the error report switch, with a note while this build reports nothing', async () => {

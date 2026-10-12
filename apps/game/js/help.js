@@ -90,9 +90,9 @@ export const HELP = Object.freeze({
   'settings.uiScale':
     'Size of the sidebar, bars, menus and dialogs, from 50 % to 200 %; the battlefield gets the room that is left. It changes size only: how sharp the battlefield is drawn is Max resolution and Low quality.',
   'settings.gameScale':
-    'How big units and terrain look, from 50 % to 300 %: the zoom a game starts at and Reset zoom returns to. The mouse wheel, pinch and the zoom keys zoom from there. The marks on the slider are the scales where pixel art is sharpest. Unlike Max resolution and Low quality, it changes size, not sharpness.',
+    'How big units and terrain look, from 50 % to 300 %: the zoom Reset zoom returns to. The mouse wheel, pinch and the zoom keys zoom from there, and the zoom you last used is remembered as a share of this scale: the next game (also missions, replays and watching) starts there, and changing the scale keeps it. Reset zoom and Defaults forget it. The marks on the slider are the scales where pixel art is sharpest. Unlike Max resolution and Low quality, it changes size, not sharpness.',
   'settings.scaleAuto':
-    'Auto picks the scale for your screen and picks again when the window or its pixel density changes; moving the slider turns it off. UI scale: 100 % on phones and in windows of at least 1600 x 900, smaller in smaller windows, never below 85 %, the same on retina and other screens. Game scale: 100 % at 1920 x 1080, from 85 % to 150 % for other window sizes, 100 % on phones.',
+    'Auto picks the scale for your screen and picks again when the window or its pixel density changes; moving the slider turns it off. UI scale: 100 % on phones and in windows of at least 1600 x 900, smaller in smaller windows, never below 85 %, the same on retina and other screens. Game scale: 100 % at 1920 x 1080, from 85 % to 150 % for other window sizes, 100 % on phones; on sharp screens it moves to the nearest scale where pixel art is sharpest, and in windows smaller than 1920 x 1080 to the smaller one (a 14 inch MacBook gets 67 %), so small screens show more of the map.',
   'settings.pixelRatioCap':
     'Highest number of pixels the battlefield is drawn with per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer. Sharpness and speed only: sizes are UI scale and game scale.',
   'settings.lowQuality':
@@ -109,7 +109,9 @@ export const HELP = Object.freeze({
   'settings.mouseCapture':
     'Locks the pointer to the game, like the locked cursor of desktop OpenRA, so it cannot slip onto another monitor and the screen edges always scroll. In fullscreen: when you enter fullscreen or click into the game there. Always: on every click into the game. Alt+M (Option+M on a Mac; rebindable in Controls) turns it off and on, Esc releases it; opening the menu, switching windows or leaving fullscreen releases it too. A click into the game captures it again.',
   'settings.mouseCaptureSpeed':
-    'How fast the game cursor moves while the mouse is captured: 1x matches the normal pointer. Browsers that pass raw mouse movement (without the system acceleration) can feel slower; raise it then.',
+    "How fast the game cursor moves while the mouse is captured. At 1x it moves exactly like the system pointer, with your system's pointer speed and acceleration. With Raw mouse input on, 1x is one pixel per mouse count at slow speed, with the game's own acceleration on top.",
+  'settings.mouseCaptureRaw':
+    "Off (recommended): the captured pointer gets the same movement as the system pointer. On: the browser passes raw mouse counts without the system's acceleration where it supports that (such as Chrome and Edge; elsewhere the normal movement is used), and the game adds its own curve: slow, precise moves go one pixel per count, fast flicks up to three times as far. The change applies from the next capture.",
   'settings.errorReports':
     "When the site's operator has turned error reporting on, sends the error with the game's version, your browser and the game mode to WebRA's own Sentry (sentry.vitrion.dev) when something breaks. Never your name, chat, maps or account. Off: nothing is sent from this browser (the switch covers this browser; signed in, it syncs to your other devices). WebRA's server then reports its own errors either way, also of a request of yours that failed, without player data. The privacy notice on the website says whether reporting is on and what a report holds.",
   'settings.mouseCaptureEscMenu':

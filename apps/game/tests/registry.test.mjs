@@ -60,6 +60,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     'lowQuality',
     'mouseCapture',
     'mouseCaptureEscMenu',
+    'mouseCaptureRaw',
     'mouseCaptureSpeed',
     'pixelRatioCap',
     'playerStanceColors',
@@ -67,6 +68,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     'showUnitPaths',
     'targetLines',
     'uiScale',
+    'zoomFactor',
   ]);
   assert.deepEqual(Object.keys(GROUPS.audio.settings), ['enabled', 'master', 'effects', 'voices', 'music', 'speech', 'original', 'cashTicks', 'clickSounds', 'menuMusic', 'musicOn', 'musicShuffle', 'musicRepeat']);
   assert.deepEqual(Object.keys(GROUPS.debug.settings), [...VIEWS.map((v) => v.key), 'cpuInstances']);
@@ -224,6 +226,10 @@ test('registry: every old key migrates once, and the old keys are removed after 
   const r = createRegistry({ storage });
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
+  // Settings newer than every old key get their default too; the rest of the group is compared below.
+  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw], [1, false]);
+  for (const key of ['zoomFactor', 'mouseCaptureRaw']) delete v.game[key];
+
   assert.deepEqual(
     v.game,
     { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, attackMoveTipSeen: false },
@@ -347,6 +353,7 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
   // The scales and the music settings: the same keys, limits and choices on both sides.
   assert.deepEqual([specOf('game', 'uiScale').min, specOf('game', 'uiScale').max], [protocol.UI_SCALE_LIMITS.min, protocol.UI_SCALE_LIMITS.max]);
   assert.deepEqual([specOf('game', 'gameScale').min, specOf('game', 'gameScale').max], [protocol.GAME_SCALE_LIMITS.min, protocol.GAME_SCALE_LIMITS.max]);
+  assert.deepEqual([specOf('game', 'zoomFactor').min, specOf('game', 'zoomFactor').max], [protocol.ZOOM_FACTOR_LIMITS.min, protocol.ZOOM_FACTOR_LIMITS.max]);
   assert.deepEqual(specOf('audio', 'musicRepeat').options, [...protocol.MUSIC_REPEAT_MODES]);
   const values = [
     'auto',
@@ -378,6 +385,8 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
   for (const [group, key] of [
     ['game', 'uiScale'],
     ['game', 'gameScale'],
+    ['game', 'zoomFactor'],
+    ['game', 'mouseCaptureRaw'],
     ['audio', 'musicOn'],
     ['audio', 'musicShuffle'],
     ['audio', 'musicRepeat'],
