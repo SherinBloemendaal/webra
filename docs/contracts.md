@@ -1887,6 +1887,38 @@ killOnFailure), `GrantExternalConditionPower` (Iron Curtain) and
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
 
+Support power timers (OpenRA `SupportPowerTimerWidget`, the
+`SupportPowerTimer@SUPPORT_POWER_TIMER` of mods/ra/chrome/ingame-player.yaml;
+engine `World::power_timers`, apps/game/js/powertimers.js): wasm
+`Game.power_timers_json(viewer)` lists `[{ player, key, name, remainingTicks,
+ready }]`, the countdowns `viewer` may see: every power whose
+`display_timer` (rules.json, from `DisplayTimerRelationships`; empty, the
+OpenRA default `None`, shows nobody, not even the owner) holds the owner's
+relationship to the viewer (`World::relationship`: the owner and its team are
+`ally`, hostile players `enemy`, the rest `neutral`). A negative viewer sees
+every power that shows to anyone. In Red Alert only `NukePower` and `GpsPower`
+show (to everyone); the missions soviet-13a (GPS: Ally), allies-10a and
+situation-critical (the enemy silo: Neutral, so hidden) override it. A power
+is listed from its first provider until its owner loses the last one, also
+while paused by low power or a power down (the clock stops, `ready` is
+false), not after a one-shot power fired (GPS), and never for a defeated or
+non-combatant owner. `ready` is OpenRA's `Ready`: charged and charging. Order:
+by player, then the owner's power bar order (palette order; OpenRA keeps the
+order the powers were first acquired in). The client shows one line per timer
+right of the power bar, "<player>'s <power>: m:ss" (mods/ra/fluent/ra.ftl
+`support-power-timer`, `WidgetUtils.FormatTime` without a leading minute zero
+at the game speed's tick length), Bold 14 with a one pixel contrast shadow,
+in the owner's colour (relationship colours when that setting is on), white
+for 25 of every 50 ticks once ready. Like OpenRA's Red Alert, only players
+see the list: spectators, replays and a defeated player who watches on get
+the observer panel (its Support powers view lists every player's powers)
+instead, since mods/ra/chrome/ingame-observer.yaml has no timer. There is no
+setting for it in OpenRA, so none here. The notifications that go with the
+same powers were already in place (js/audio/director.js `powerActivated`,
+OpenRA `SupportPower.PlayLaunchSounds`): "A-bomb launch detected" for every
+player not allied to the silo's owner, "Satellite launched" to the owner and
+allies; RA defines no `DetectedSound` or `DetectedSpeechNotification`.
+
 Unit abilities (engine/src/abilities.rs): orders `{"o": "lay_mines", player,
 ids, x0, y0, x1, y1}` (cells, at most 32 * 32 cells) and `{"o": "teleport",
 player, ids, x, y}` (world units); `deploy` also lays a mine, deploys a MAD
@@ -2638,7 +2670,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the

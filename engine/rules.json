@@ -3482,7 +3482,12 @@
       "palette_order": 90,
       "order_name": "GpsPowerInfoOrder",
       "reveal_delay": 375,
-      "one_shot": true
+      "one_shot": true,
+      "display_timer": [
+       "ally",
+       "neutral",
+       "enemy"
+      ]
      }
     ]
    },
@@ -4561,7 +4566,12 @@
       "camera_range": 10240,
       "camera_spawn_advance": 25,
       "camera_remove_delay": 25,
-      "one_shot": false
+      "one_shot": false,
+      "display_timer": [
+       "ally",
+       "neutral",
+       "enemy"
+      ]
      }
     ]
    },

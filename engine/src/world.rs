@@ -352,6 +352,25 @@ pub struct Ghost {
     pub cy: i32,
 }
 
+/// OpenRA `PlayerRelationship` between two players (`World::relationship`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Relationship {
+    Ally,
+    Neutral,
+    Enemy,
+}
+
+impl Relationship {
+    /// The name the rules use (`SupportPowerInfo::display_timer`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Relationship::Ally => "ally",
+            Relationship::Neutral => "neutral",
+            Relationship::Enemy => "enemy",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Player {
     pub faction: usize,
@@ -1416,6 +1435,18 @@ impl World {
             return a == b || self.diplomacy[a as usize * self.players.len() + b as usize] == crate::mission::setup::ALLY;
         }
         a == b || (!self.are_enemies(a, b) && !self.players[a as usize].neutral && !self.players[b as usize].neutral)
+    }
+
+    /// OpenRA `Player.RelationshipWith`: how `b` stands to `a` (a player is
+    /// its own ally; neither allied nor hostile is neutral).
+    pub fn relationship(&self, a: u8, b: u8) -> Relationship {
+        if self.are_allies(a, b) {
+            Relationship::Ally
+        } else if self.are_enemies(a, b) {
+            Relationship::Enemy
+        } else {
+            Relationship::Neutral
+        }
     }
 
     /// Whether some players are allied to others (teams, or a mission's relations).

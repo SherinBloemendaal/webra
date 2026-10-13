@@ -374,7 +374,7 @@
      "id": "allies-08a",
      "title": "08a: Protect the Chronosphere",
      "file": "allies-08a.json",
-     "sha256": "00e5af6e0ab87990cfcbcd681ac82cb4375f1ad7643c05a296e5d4e22410b157",
+     "sha256": "a4abc85887f4c6d8b88487997da976624a1a647868cdf1d12157200151b07ffb",
      "faction": "allies",
      "briefing": "Our latest technology, the Chronosphere, is housed in this research station. The timer represents the appointed time for the completion of a vital experiment. The Soviets have learned of this and are moving in.\n\nProtect the Chronosphere and the Advanced-Tech research center. Make sure the base is fully powered at the appointed time. If not, all will be lost!",
      "options": {
@@ -408,7 +408,7 @@
      "id": "allies-08b",
      "title": "08b: Protect the Chronosphere",
      "file": "allies-08b.json",
-     "sha256": "a2c7418a182af4ebc8274884315558cfda00658593ddb5c4fc55aa14d31b9185",
+     "sha256": "48a6acca2539a6b7b6f73f5366d0399641057571f97e247935a9d60a6884c2f9",
      "faction": "allies",
      "briefing": "Our latest technology, the Chronosphere, is housed in this research station. The timer represents the appointed time for the completion of a vital experiment. The Soviets have learned of this and are moving in.\n\nProtect the Chronosphere and the Advanced-Tech research center. Make sure the base is fully powered at the appointed time. If not, all will be lost!",
      "options": {
@@ -471,7 +471,7 @@
      "id": "allies-10a",
      "title": "10a: Suspicion",
      "file": "allies-10a.json",
-     "sha256": "d87696949640bde719aa7047405ff298ed7bd219f10d47cf4e2084ffc8364a18",
+     "sha256": "1c24a9a8f8a07a8a47c504e2153f09cfe3be9ffe52ed1edd05dd8be1cb84816d",
      "faction": "allies",
      "briefing": "Kosygin has indicated that this is the site of Stalin's main atomic weapons plant. Use extreme care in approaching the Soviet base -- we don't know if any atomic bombs are armed. Take the facility offline and destroy any atomic weapons that exist.",
      "options": {
@@ -1044,7 +1044,7 @@
      "id": "soviet-13a",
      "title": "13a: Capture the Chronosphere",
      "file": "soviet-13a.json",
-     "sha256": "b80e3554e314171d9e71ac3fb2d6f826186f2dc5236ac08c45e98e3d5b790e44",
+     "sha256": "291841c1b9eb01f31eec27a73c7ec1f69648adfbe3514bac4398d943dad01576",
      "faction": "soviet",
      "briefing": "We have another chance to capture the Chronosphere. Take out the Radar Domes to sever their link with the Chronosphere. Then capture it!",
      "options": {
@@ -1078,7 +1078,7 @@
      "id": "soviet-13b",
      "title": "13b: Capture the Chronosphere",
      "file": "soviet-13b.json",
-     "sha256": "e4e139b2d88f635c677bab2cd936fd29445aa3c8af70658d2a2cefe1ffcbf261",
+     "sha256": "3d62e277634d390b8527f76acf1c1e35d38dfbfe00ff2ef3e44c925ff1e2452f",
      "faction": "soviet",
      "briefing": "We have another chance to capture the Chronosphere. Take out the Radar Domes to sever their link with the Chronosphere. Then capture it!",
      "options": {
@@ -1398,7 +1398,7 @@
      "id": "soviet-soldier-volkov-n-chitzkoi",
      "title": "Soviet Soldier Volkov & Chitzkoi",
      "file": "soviet-soldier-volkov-n-chitzkoi.json",
-     "sha256": "b3b11cb42d1bbce5f1e8dfb3fc8683c2f1febfe844e23404358d869593d5a8b1",
+     "sha256": "bdf2a11dfc195a6883e9a7893906de6b604b237812871ac2a1b33df880151891",
      "faction": "soviet",
      "briefing": "The Allies have stolen a new armor plating from us. With it, they can make structures nearly invulnerable. Their processing plant must be destroyed.\n\nFor this critical mission, we are allowing you access to Soldier Volkov. Use him and his cybernetic dog to sabotage the Allied control center, allowing our units in the southeast access to the alloy facility.\n\nThe mission is a success when Volkov destroys the control center, and our units destroy the alloy facility.",
      "options": {
@@ -1575,7 +1575,7 @@
      "id": "situation-critical",
      "title": "Situation Critical",
      "file": "situation-critical.json",
-     "sha256": "af288c286d11acfdb5558d133b64f1783b072c985047be90a11009a3ae8b2a31",
+     "sha256": "cc31e5dee06969cfb06e8980d90d7876446beb30a296a0992c0a0fdabd37135e",
      "faction": "soviet",
      "briefing": "A radical faction of our forces has stolen a biological weapon, threatening to use it on Allied emplacements. Since the weapon is highly unstable, it could destroy us all if released.\n\nThe facility must be destroyed, but the weapon must be neutralized first. Destroy the island's defenses, then use Volkov to assist our scientist in reaching the bio-research center. If either are killed before the weapon is neutralized, the mission is a failure.\n\nOnce the scientist completes his mission, destroy the base.",
      "options": {},
@@ -1717,7 +1717,7 @@
      "id": "survival01",
      "title": "Survival 01",
      "file": "survival01.json",
-     "sha256": "9fe923004aa58934d6d0db14608709b20208d312c089811cb00b44d55df0c15f",
+     "sha256": "9ba27c7d915874e72e8eeaf2eda2df12abd5ceab5a9fd8617d8e4229b9bc9a2b",
      "faction": "allies",
      "briefing": "LANDCOM 66 HQS.\nTOP SECRET.\nTO: FIELD COMMANDER A34\n\nSOVIETS HAVE LAUNCHED HEAVY ATTACKS ON OUR POSITION.\n SURVIVE AND HOLD THE BASE UNTIL OUR FRENCH ALLIES ARRIVE.\n\nCONFIRMATION CODE 5593.\n\nTRANSMISSION ENDS.",
      "options": {

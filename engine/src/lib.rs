@@ -137,6 +137,8 @@ mod tests_planes;
 #[cfg(test)]
 mod tests_poses;
 #[cfg(test)]
+mod tests_power_timers;
+#[cfg(test)]
 mod tests_production;
 #[cfg(test)]
 mod tests_repair;
@@ -1473,6 +1475,21 @@ impl Game {
     pub fn placement_preview(&self, player: u8, actor: &str, cx: i32, cy: i32) -> Vec<i32> {
         let Some(ty) = self.world.rules.actor_index(actor) else { return Vec::new() };
         self.world.placement_cells(player, ty as u16, cx, cy).into_iter().flat_map(|(x, y, ok)| [x, y, ok as i32]).collect()
+    }
+
+    /// The support power countdowns of the top-left timer list (OpenRA
+    /// SupportPowerTimerWidget, powers.rs `power_timers`) that `viewer` may
+    /// see; a negative viewer has no player of its own and sees every timer
+    /// a power shows to anyone. `[{ player, key, name, remainingTicks, ready }]`.
+    pub fn power_timers_json(&self, viewer: i32) -> String {
+        let viewer = u8::try_from(viewer).ok();
+        let timers: Vec<_> = self
+            .world
+            .power_timers(viewer)
+            .into_iter()
+            .map(|t| json!({"player": t.player, "key": t.key, "name": t.name, "remainingTicks": t.remaining, "ready": t.ready}))
+            .collect();
+        serde_json::Value::Array(timers).to_string()
     }
 
     // ---- Player state for the sidebar --------------------------------------

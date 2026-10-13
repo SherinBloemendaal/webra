@@ -43,7 +43,7 @@ export const HELP = Object.freeze({
   startingUnits:
     "MCV only: one Mobile Construction Vehicle. Light support (OpenRA's sets): the MCV with 3 riflemen and 2 rocket soldiers around it, plus a Ranger and a light tank (Allies) or an APC and a Mobile Flak (Soviets). Heavy support: the same plus 3 medium tanks (Allies) or 2 heavy tanks (Soviets). Construction Yard: the yard already deployed, no units.",
   techLevel:
-    'What can be built. Infantry only: power, refineries, barracks and basic infantry. Low: adds war factories, naval yards, light tanks, APCs, gunboats and submarines. Medium: adds radar, aircraft, medium and heavy tanks, artillery and defences such as turrets and Tesla Coils. No superweapons: everything but the Chronosphere, Iron Curtain and Missile Silo. Unrestricted: everything.',
+    'What can be built. Infantry only: power, refineries, barracks and basic infantry. Low: adds war factories, naval yards, light tanks, APCs, gunboats and submarines. Medium: adds radar, aircraft, medium and heavy tanks, artillery and defences such as turrets and Tesla Coils. No superweapons: everything but the Chronosphere, Iron Curtain and Missile Silo. Unrestricted: everything. Like OpenRA, every player sees the countdowns of the Atom Bomb and the GPS Satellite, whoever owns them, at the top left of the battlefield.',
   gameSpeed: 'How fast game time runs, compared with Normal: Slowest 50 %, Slower 80 %, Fast 114 %, Faster 133 %, Fastest 200 %.',
   fog: 'You only see enemies within sight of your own (and allied) units and structures. Off: everything you have ever explored stays visible.',
   explored: 'The black shroud is lifted at the start, so the whole map is known. With fog of war on, enemies still hide outside your sight.',

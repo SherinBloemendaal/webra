@@ -30,6 +30,10 @@
 //! - [`World::power_instances`] lists a player's powers for the UI
 //!   (`player_json().powers`: `{ key, kind, name, description, progress, ready }`).
 //! - [`World::power_info`] resolves a key to its rules entry.
+//! - [`World::power_timers`] lists the countdowns a viewer may see in the
+//!   top-left timer list (OpenRA `SupportPowerTimerWidget`): the powers whose
+//!   `display_timer` (DisplayTimerRelationships) includes the viewer's
+//!   relationship to the owner (`Game.power_timers_json(viewer)`).
 //! - [`PowersState::reveals`] holds temporary map reveals ("cameras") that
 //!   vision.rs applies every vision update; push a [`Reveal`] for any power
 //!   that uncovers an area for a while.
@@ -109,6 +113,21 @@ pub struct FallingBomb {
     pub shot: crate::veterancy::Shot,
 }
 
+/// One countdown of the top-left support power timer list ([`World::power_timers`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PowerTimer {
+    /// The owner.
+    pub player: u8,
+    pub key: String,
+    /// The power's name (OpenRA SupportPowerInfo.Name).
+    pub name: String,
+    /// Ticks until ready (OpenRA SupportPowerInstance.RemainingTicks).
+    pub remaining: i32,
+    /// Charged and charging (OpenRA SupportPowerInstance.Ready: a charged
+    /// power that is paused for lack of power does not count).
+    pub ready: bool,
+}
+
 #[derive(Clone, Default)]
 pub struct PowersState {
     /// Power instances per player, sorted by palette order, then key.
@@ -128,6 +147,47 @@ impl World {
     /// The player's power instances (empty when none).
     pub fn power_instances(&self, player: u8) -> &[PowerInstance] {
         self.powers.players.get(player as usize).map_or(&[], |v| v.as_slice())
+    }
+
+    /// The support power countdowns `viewer` sees (OpenRA
+    /// `SupportPowerTimerWidget`): every power of a combatant, undefeated
+    /// player whose `display_timer` holds the owner's relationship to the
+    /// viewer (the owner is its own ally). `None` (no player of one's own)
+    /// sees every power that shows its timer to anyone. A power is listed
+    /// while its owner has an instance: from the first provider to the
+    /// last one's loss, paused or not, until a one-shot power was used.
+    /// Ordered by player, then like the player's power bar (palette order).
+    pub fn power_timers(&self, viewer: Option<u8>) -> Vec<PowerTimer> {
+        let mut out = Vec::new();
+        for (p, list) in self.powers.players.iter().enumerate() {
+            let player = &self.players[p];
+            // OpenRA: !Owner.NonCombatant, and SupportPowerInstance.Disabled once the owner lost.
+            let non_combatant =
+                player.neutral || self.mission.as_ref().is_some_and(|m| m.players.get(p).is_some_and(|mp| mp.non_combatant));
+            if non_combatant || player.defeated {
+                continue;
+            }
+            for inst in list {
+                let info = self.power_info(inst);
+                let shown = match viewer {
+                    Some(v) if (v as usize) < self.players.len() => {
+                        let rel = self.relationship(p as u8, v);
+                        info.display_timer.iter().any(|r| r == rel.name())
+                    }
+                    _ => !info.display_timer.is_empty(),
+                };
+                if shown {
+                    out.push(PowerTimer {
+                        player: p as u8,
+                        key: inst.key.clone(),
+                        name: info.name.clone(),
+                        remaining: inst.remaining.max(0),
+                        ready: inst.ready() && inst.charging,
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// Whether `player` meets the prerequisites of a power.

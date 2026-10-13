@@ -109,3 +109,30 @@
     animation: none;
   }
 }
+
+/* Support power timers (js/powertimers.js, OpenRA SupportPowerTimer): the
+   superweapon countdowns right of the power bar, one line each in the
+   owner's colour (set inline) with OpenRA's one pixel contrast shadow, in
+   OpenRA's Bold font size (14) and line gap (5). Over the map, not clickable. */
+#power-timers {
+  position: absolute;
+  left: calc(148 * var(--ui-px));
+  top: calc(34 * var(--ui-px));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: calc(5 * var(--ui-px));
+  max-width: calc(100% - calc(156 * var(--ui-px)));
+  font: 700 calc(14 * var(--ui-px)) / 1 var(--ui-font);
+  pointer-events: none;
+}
+
+#power-timers[hidden] {
+  display: none;
+}
+
+#power-timers .power-timer {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1699,6 +1699,12 @@ def main():
                     power['detect_range'] = wdist(det.get('Range', '5c0'))
                     power['detect_types'] = tokens(det.get('DetectionTypes', 'Cloak'))
                 power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
+                # SupportPowerInfo.DisplayTimerRelationships (default None): to whom the
+                # top-left countdown shows, relative to the owner (powers.rs power_timers).
+                shown = [r.lower() for r in tokens(v.get('DisplayTimerRelationships')) if r.lower() != 'none']
+                assert all(r in ('ally', 'neutral', 'enemy') for r in shown), (aid, k, shown)
+                if shown:
+                    power['display_timer'] = shown
                 powers.append(power)
         if powers:
             ab['support_powers'] = powers

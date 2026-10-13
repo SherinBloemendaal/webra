@@ -31,6 +31,7 @@ import { SimClock } from './simclock.js';
 import { Input } from './input.js';
 import { Sidebar } from './sidebar.js';
 import { PowerBar } from './powers.js';
+import { PowerTimers, timerLines } from './powertimers.js';
 import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
@@ -1097,6 +1098,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let sidebar = null;
   let notices = null;
   let powerBar = null;
+  let powerTimers = null;
   let commandBar = null;
   let touch = null;
   // One-time attack-move tip (js/hints.js); spectators give no orders.
@@ -1251,6 +1253,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onTargetLost: () => input.cancelPower(),
     hotkeys,
   });
+  // Superweapon countdowns (js/powertimers.js, OpenRA SupportPowerTimer): players only, like OpenRA's player widgets.
+  powerTimers = new PowerTimers($('field'));
   // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
   commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys, spectator: !!viewer });
   // Spectators and replays give no orders: no power bar, no command bar.
@@ -1665,6 +1669,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     placementEnded();
     input.setSelection([]);
     powerBar.root.hidden = true;
+    powerTimers.clear();
     commandBar.root.hidden = true;
     $('app').classList.add('viewer');
     view.player = OBSERVER_VIEW;
@@ -1907,6 +1912,14 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (state && !watching()) {
         sidebar.update(state);
         powerBar.update(state.powers ?? []);
+        powerTimers.update(
+          timerLines(JSON.parse(game.power_timers_json(player)), {
+            tick: state.tick,
+            tickMs,
+            nameOf: (owner) => players[owner]?.name ?? `Player ${owner + 1}`,
+            colorOf: (owner) => TEAM_COLORS[owner],
+          }),
+        );
         commandBar.update();
         audio?.playerState(state);
         sidebar.setSelection(selectionInfo(game, input.selection, allied));

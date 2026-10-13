@@ -549,6 +549,11 @@ pub struct SupportPowerInfo {
     /// Fires once per game (GPS Satellite).
     #[serde(default)]
     pub one_shot: bool,
+    /// DisplayTimerRelationships: who sees the power's countdown in the
+    /// top-left timer list, relative to its owner ("ally", "neutral", "enemy";
+    /// the owner counts as an ally). Empty: nobody (OpenRA's default None).
+    #[serde(default)]
+    pub display_timer: Vec<String>,
     // ---- SpawnActorPower (the Sonar Pulse, infantry.rs).
     /// Terrain types the target cell must have (empty: any).
     #[serde(default)]
