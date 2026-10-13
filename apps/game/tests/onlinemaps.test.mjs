@@ -490,20 +490,22 @@ test('an online save file: the frames before the save point, its hash and the re
 test('an online replay keeps the chat as received; saves and other games keep none', async () => {
   const { parseReplay, REPLAY_CHAT_MAX } = await import('../protocol/index.js');
   const rec = await onlineRecorder();
-  rec.noteChat(5, 0, 'Host', 'glhf', false);
-  rec.noteChat(12, -1, 'Watcher', 'nice', true);
-  rec.noteChat(40, 1, 'Guest', 'later', false);
+  rec.noteChat(5, 0, 'Host', 'glhf', 0);
+  rec.noteChat(12, -1, 'Watcher', 'nice', 2);
+  rec.noteChat(14, 1, 'Guest', 'push', 1);
+  rec.noteChat(40, 1, 'Guest', 'later', 0);
   const r = await parseReplay(rec.encode('replay', 30));
   assert.ok(r.ok, r.error);
   assert.deepEqual(r.replay.chat, [
     [5, 0, 'Host', 'glhf', 0],
-    [12, -1, 'Watcher', 'nice', 1],
+    [12, -1, 'Watcher', 'nice', 2],
+    [14, 1, 'Guest', 'push', 1],
   ]);
   const save = await parseReplay(rec.encodeOnlineSave(26, 'abcd', '0123456789abcdef'));
   assert.equal(save.replay.chat, undefined, 'saves never carry chat');
   const { Recorder } = await import('../js/replay.js');
   const skirmish = new Recorder({ mode: 'skirmish', options: SAVE_OPTIONS, map: null, mapHash: null, player: 0, engine: '1.0.0', title: 'x' });
-  skirmish.noteChat(1, 0, 'Host', 'nobody hears', false);
+  skirmish.noteChat(1, 0, 'Host', 'nobody hears', 0);
   assert.equal(skirmish.build('replay', 10).chat, undefined);
   // The file is checked strictly.
   const text = JSON.parse(rec.encode('replay', 30));
@@ -511,7 +513,7 @@ test('an online replay keeps the chat as received; saves and other games keep no
   assert.equal(await bad([[5, 2, 'Host', 'x', 0]]), false, 'no such player');
   assert.equal(await bad([[31, 0, 'Host', 'x', 0]]), false, 'after the end');
   assert.equal(await bad([[5, 0, 'Host', '', 0]]), false, 'empty text');
-  assert.equal(await bad([[5, 0, 'Host', 'x', 2]]), false, 'team is 0 or 1');
+  assert.equal(await bad([[5, 0, 'Host', 'x', 3]]), false, 'channel is 0, 1 or 2');
   assert.equal(await bad([[9, 0, 'Host', 'x', 0], [5, 0, 'Host', 'y', 0]]), false, 'in tick order');
   assert.equal(await bad(Array.from({ length: REPLAY_CHAT_MAX + 1 }, () => [1, 0, 'Host', 'x', 0])), false);
   assert.equal(await bad([[5, 0, 'Host', 'x', 0]]), true);

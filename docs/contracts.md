@@ -955,9 +955,14 @@ a save: `{ id, title, createdAt, ticks, waiting: [names] }`; `mission?` while
 the lobby plays a co-op mission: `{ id, hash, options }`, also in `start`), `rematch {state, by, accepted,
 waiting, msLeft?, reason?}` (see "Rematch"), `save {state, ...}` and
 `start.resume?: { ticks, hash }` (see "Online saves"), `chat
-{from, text, team?}` (with `team: true` the line went to the sender's team
-only: the players of its non-zero team, the sender alone without a team, the
-spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
+{from, text, team?, spectators?}` (with `team: true` the line went to the
+sender's team only: the players of its non-zero team, the sender alone
+without a team, the spectators among themselves; OpenRA's team chat. A player
+that reported `defeated` is on the spectators' side from then on, also after
+a rejoin: its team chat goes to the spectators and the other defeated
+players, and it gets theirs, no longer its old team's, like OpenRA sending a
+player with a win state's team chat as ExtraData uint.MaxValue; such lines
+carry `spectators: true`), `start {seed, options, map, players, delay}`, `frame {tick,
 orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
@@ -1249,8 +1254,8 @@ skips them. A defeated player may keep watching: its client switches to the
 observer view, keeps running lockstep (empty `orders` every tick, `hash`
 as before, the same stall rules) and sends `defeated` once (again after a
 reconnect). The server keeps the seat but drops its orders from then on,
-also ones already waiting for a frame and after a rejoin. A seat cannot
-undo it; a spectator sending `defeated` gets `bad_state`. Online games never
+also ones already waiting for a frame and after a rejoin, and its team chat
+joins the spectators' (see `chat`). A seat cannot undo it; a spectator sending `defeated` gets `bad_state`. Online games never
 pause for the end-game dialog.
 
 Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
@@ -2162,7 +2167,11 @@ IngameChatLogic, TextNotificationsManager):
   `Media.DisplayMessage` (AddMissionLine, js/campaign/view.js `missionLine`).
   Chat lines carry the sender's name in the player's colour with OpenRA
   UnitOrders' marks (`chatPrefix`): " (Dead)", " (Spectator)", " (Ally)" in
-  all chat, "[Team] name", "[Spectators] name", in replays "[Team N] name".
+  all chat, "[Team] name", in replays "[Team N] name", and "[Spectators] name"
+  for the spectators' team chat (the server's `spectators` mark: spectators
+  and defeated players). A defeated player's Team mode talks to the
+  spectators; once the game is over nobody has team chat (OpenRA
+  IngameChatLogic).
 - The overlay (CHAT_OVERLAY, TextNotificationsDisplayWidget) shows the newest
   8 lines while the panel is closed; each leaves after 10 s (DisplayDurationMs
   10000; WebRA's old online overlay kept 15 s). WebRA's connection lines that
@@ -2173,7 +2182,9 @@ IngameChatLogic, TextNotificationsManager):
   button (Team / All, ToggleChatMode Shift+Tab), the chat line (Tab completes
   a name) and the close button. Where nobody can be talked to (single player,
   missions, replays) the line is off and Enter or Esc closes the panel, like
-  OpenRA. Up and Down in the chat line recall sent lines (CommandHistory: 50,
+  OpenRA. Esc closes the open panel wherever the focus is (also after a click
+  on the battlefield), before it can cancel a mode or open the game menu;
+  with the panel closed Esc is the game's as before. Up and Down in the chat line recall sent lines (CommandHistory: 50,
   newest first, a repeat moves to the front). OpenRA keeps only chat commands
   (`/...`) there; WebRA has no chat commands, so it keeps the sent lines.
 - The scrollback shows each line's local time (TIME label, HH:MM), as
@@ -2300,9 +2311,9 @@ mission of `COOP_MISSIONS` with this version's file, every player a person.
 
 - Chat: a replay of an online game keeps the chat its recording client
   received (OpenRA replays hold the Chat orders): `[tick, player, name,
-  text, team]`, `player` the sender's seat or -1 for a spectator, `team` 1
-  for team chat (only the recording client's own team's or the spectators'
-  team chat reaches it), at most 5000 lines in tick order. The viewer shows
+  text, channel]`, `player` the sender's seat or -1 for a spectator,
+  `channel` 0 all chat, 1 team chat, 2 the spectators' team chat (only the
+  team chat of the recording client's own side reaches it), at most 5000 lines in tick order. The viewer shows
   each line as the replay passes its tick (not while seeking); saves never
   carry chat.
 - Limits: 32 MiB, eight hours of game time, orders and options as strict as

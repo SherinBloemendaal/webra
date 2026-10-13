@@ -53,7 +53,10 @@ test('chat prefixes follow OpenRA UnitOrders', () => {
   assert.equal(chatPrefix({ name: 'Alice', ally: true }), 'Alice (Ally)');
   assert.equal(chatPrefix({ name: 'Alice', dead: true, ally: true }), 'Alice (Dead) (Ally)');
   assert.equal(chatPrefix({ name: 'Alice', team: true }), '[Team] Alice');
-  assert.equal(chatPrefix({ name: 'Bob', team: true, spectator: true }), '[Spectators] Bob');
+  assert.equal(chatPrefix({ name: 'Bob', team: true, spectators: true, spectator: true }), '[Spectators] Bob');
+  // The channel decides, not the sender: a defeated player's team chat is the spectators'.
+  assert.equal(chatPrefix({ name: 'Alice', team: true, spectators: true, dead: true }), '[Spectators] Alice');
+  assert.equal(chatPrefix({ name: 'Alice', team: true, dead: true }), '[Team] Alice', 'sent before the server knew of the defeat');
   assert.equal(chatPrefix({ name: 'Alice', team: true, replay: true, teamNumber: 2 }), '[Team 2] Alice');
 });
 
@@ -113,7 +116,7 @@ test('replay chat appears as the replay passes it, not while seeking', () => {
   const lines = [
     [10, 0, 'Alice', 'hi', 0],
     [20, 1, 'Bob', 'team plan', 1],
-    [30, -1, 'Watcher', 'nice', 1],
+    [30, -1, 'Watcher', 'nice', 2],
     [40, 0, 'Alice', 'gg', 0],
   ];
   const rc = new ReplayChat(lines, log, { teamOf: (p) => p + 1, colorOf: (p) => `c${p}`, dead: (p) => p === 0 });
@@ -145,7 +148,7 @@ function keydown(target, key, init = {}) {
 }
 
 async function panel(opts = {}) {
-  const doc = installDom();
+  const doc = installDom({ windowEvents: true });
   const { ChatPanel } = await import('../js/chatpanel.js');
   const field = doc.createElement('div');
   doc.body.append(field);
@@ -253,6 +256,56 @@ test('without anyone to talk to the panel shows the history with the line off; E
   byName('openGeneralChat').handler();
   keydown(p.scroll, 'Escape');
   assert.equal(p.isOpen, false);
+  uninstallDom();
+});
+
+test('Esc closes the open panel wherever the focus is, before the game sees it', async () => {
+  const { doc, p, byName } = await panel();
+  const game = [];
+  // js/input.js listens on the window: Esc cancels a mode or opens the menu.
+  window.addEventListener('keydown', (e) => game.push(e.key));
+  byName('openGeneralChat').handler();
+  // A click on the battlefield took the focus from the chat line.
+  p.input.blur();
+  const canvas = doc.createElement('canvas');
+  doc.body.append(canvas);
+  const esc = keydown(canvas, 'Escape');
+  assert.equal(p.isOpen, false, 'the panel closed');
+  assert.ok(esc.defaultPrevented);
+  assert.deepEqual(game, [], 'the game did not get it (no menu)');
+  // Closed: Esc is the game's again (cancel a mode, the menu, its mouse capture setting).
+  keydown(canvas, 'Escape');
+  assert.deepEqual(game, ['Escape']);
+  // Typing in the chat line: its own Esc closes, nothing reaches the game either.
+  byName('openGeneralChat').handler();
+  keydown(p.input, 'Escape');
+  assert.equal(p.isOpen, false);
+  assert.deepEqual(game, ['Escape']);
+  // Other keys go on to the game while the panel is open.
+  byName('openGeneralChat').handler();
+  p.input.blur();
+  keydown(canvas, 'a');
+  assert.equal(p.isOpen, true);
+  assert.deepEqual(game, ['Escape', 'a']);
+  p.dispose();
+  keydown(canvas, 'Escape');
+  assert.deepEqual(game, ['Escape', 'a', 'Escape'], 'no listener left after dispose');
+  uninstallDom();
+});
+
+test('a defeated player chats with the spectators; nobody has team chat once the game is over', async () => {
+  const { p, byName } = await panel({ teamChat: false });
+  byName('openTeamChat').handler();
+  assert.equal(p.mode, 'all', 'no team mate: all chat');
+  keydown(p.input, 'Escape');
+  p.setTeamChat(true, true);
+  byName('openTeamChat').handler();
+  assert.equal(p.mode, 'team');
+  assert.match(p.input.placeholder, /^Spectators:/);
+  assert.equal(p.modeButton.disabled, false);
+  p.setTeamChat(false, true);
+  assert.equal(p.mode, 'all', 'the game is over: back to all chat');
+  assert.equal(p.modeButton.disabled, true);
   uninstallDom();
 });
 

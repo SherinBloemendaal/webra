@@ -44,15 +44,16 @@ export function formatLineTime(ms) {
 /**
  * The prefix of a chat line, as OpenRA UnitOrders writes it for a Chat order.
  * All chat: the name, " (Dead)" for a defeated player, " (Spectator)" for a
- * spectator, then " (Ally)" for a team mate of the viewer. Team chat:
- * "[Spectators] name" among spectators, "[Team] name" (in a replay "[Team N]")
- * for a team.
- * @param {{ name: string, team?: boolean, spectator?: boolean, dead?: boolean,
+ * spectator, then " (Ally)" for a team mate of the viewer. Team chat, by its
+ * channel: "[Spectators] name" for the spectators' side (`spectators`:
+ * spectators and players with a win state, OpenRA ExtraData uint.MaxValue),
+ * else "[Team] name" (in a replay "[Team N]").
+ * @param {{ name: string, team?: boolean, spectators?: boolean, spectator?: boolean, dead?: boolean,
  *   ally?: boolean, replay?: boolean, teamNumber?: number }} o
  */
-export function chatPrefix({ name, team = false, spectator = false, dead = false, ally = false, replay = false, teamNumber = 0 }) {
+export function chatPrefix({ name, team = false, spectators = false, spectator = false, dead = false, ally = false, replay = false, teamNumber = 0 }) {
   if (team) {
-    if (spectator || dead) return `[Spectators] ${name}`;
+    if (spectators) return `[Spectators] ${name}`;
     return `[Team${replay ? ` ${teamNumber}` : ''}] ${name}`;
   }
   let suffix = dead ? ' (Dead)' : '';
@@ -205,7 +206,8 @@ export class CommandHistory {
 
 /**
  * The chat of an online game's replay (js/replay.js Recorder.noteChat:
- * `[tick, player, name, text, team]`, player -1 for a spectator), shown as
+ * `[tick, player, name, text, channel]`, player -1 for a spectator, channel
+ * 0 all chat, 1 team chat, 2 the spectators' team chat), shown as
  * the replay passes each line's tick, with OpenRA's replay prefixes
  * ("[Team N] name", "[Spectators] name"). Lines skipped by seeking are not
  * shown, like the sounds and other events of a fast-forward.
@@ -232,9 +234,17 @@ export class ReplayChat {
     }
     this.ticks = ticks;
     while (this.index < this.lines.length && this.lines[this.index][0] <= ticks) {
-      const [, player, name, text, team] = this.lines[this.index++];
+      const [, player, name, text, channel] = this.lines[this.index++];
       const spectator = player < 0;
-      const prefix = chatPrefix({ name, team: !!team, spectator, dead: !spectator && this.dead(player), replay: true, teamNumber: spectator ? 0 : this.teamOf(player) });
+      const prefix = chatPrefix({
+        name,
+        team: channel > 0,
+        spectators: channel === 2,
+        spectator,
+        dead: !spectator && this.dead(player),
+        replay: true,
+        teamNumber: spectator ? 0 : this.teamOf(player),
+      });
       // Recorded lines have no client id: the player's seat stands in for the sender.
       this.log.chat(spectator ? `spectator:${name}` : `player:${player}`, prefix, text, spectator ? null : this.colorOf(player));
     }

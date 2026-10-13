@@ -2323,12 +2323,14 @@ export class OnlineUI {
     }
     const seat = this.startPlayers?.find((p) => p.client === m.from) ?? null;
     // The replay keeps what was said (OpenRA replays hold the Chat orders), muted or not.
-    this.recorder?.noteChat?.(seat ? seat.player : -1, m.name, m.text, !!m.team);
+    this.recorder?.noteChat?.(seat ? seat.player : -1, m.name, m.text, m.spectators ? 2 : m.team ? 1 : 0);
     const teams = this.startOptions?.players ?? [];
     const myTeam = this.mySeat === null || this.mySeat === undefined ? 0 : (teams[this.mySeat]?.team ?? 0);
     const prefix = chatPrefix({
       name: m.name,
       team: !!m.team,
+      // The server marks the spectators' side (spectators and defeated players).
+      spectators: !!m.spectators,
       spectator: !seat,
       dead: !!seat && this.chatPeople.defeated(seat.player),
       ally: !!seat && m.from !== this.state?.you && myTeam > 0 && teams[seat.player]?.team === myTeam,

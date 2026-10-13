@@ -110,7 +110,7 @@ export class Recorder {
     this.start = { mode, options, map, mapHash, player, engine, title, createdAt, mission };
     this.frames = frames.slice();
     this.hashes = hashes.slice();
-    /** Online chat as received: [tick, player (-1 spectator), name, text, team (0 or 1)] (replays only). */
+    /** Online chat as received: [tick, player (-1 spectator), name, text, channel (0 all, 1 team, 2 spectators)] (replays only). */
     this.chat = [];
     this.bytes = (map ? map.length : 0) + JSON.stringify(frames).length;
     /** Too large or too long to keep recording (the game goes on). */
@@ -130,10 +130,10 @@ export class Recorder {
     this.frames.push([tick, orders]);
   }
 
-  /** A chat line received at `tick` (online games: OpenRA replays hold the Chat orders). */
-  noteChat(tick, player, name, text, team) {
+  /** A chat line received at `tick` (online games: OpenRA replays hold the Chat orders); `channel` 0 all, 1 team, 2 spectators. */
+  noteChat(tick, player, name, text, channel) {
     if (this.full || this.start.mode !== 'online' || this.chat.length >= REPLAY_CHAT_MAX) return;
-    const line = [tick, player ?? -1, name, text, team ? 1 : 0];
+    const line = [tick, player ?? -1, name, text, [0, 1, 2].includes(channel) ? channel : 0];
     const size = JSON.stringify(line).length + 2;
     if (this.bytes + size > REPLAY_MAX_BYTES - 64 * 1024) return;
     this.bytes += size;

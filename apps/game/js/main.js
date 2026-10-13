@@ -1994,6 +1994,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
       }
+      // OpenRA IngameChatLogic: a defeated player's team chat goes to the
+      // spectators (the server routes it, js/chatpanel.js labels it); nobody
+      // has team chat once the game is over.
+      if (onlineChat) {
+        const out = !viewer && lost.has(player);
+        chat.setTeamChat(!flow.over && (out || onlineChat.teamChat), !!onlineChat.spectator || out);
+      }
     }
     requestAnimationFrame(frame);
   }

@@ -11,7 +11,9 @@
 //   every line of the game (scrollback), the mode button (Team / All), the
 //   chat line and the close button. Where nobody can be talked to (single
 //   player, replays) the line is disabled and Enter or Esc closes the panel,
-//   like OpenRA's KEY_LISTENER.
+//   like OpenRA's KEY_LISTENER. Esc closes the open panel wherever the focus
+//   is (after a click on the battlefield too), before it can cancel a mode
+//   or open the game menu.
 // - Each new line plays ChatLine (ChromeMetrics ChatLineSound) unless it is
 //   muted chat or replay chat hidden by "Hide chat in replays".
 // - The mute toggles of the other people in the game (OpenRA's MUTE
@@ -67,8 +69,9 @@ export class ChatPanel {
    * @param {() => number} [o.now] wall clock in ms
    * @param {boolean} [o.autoPrune] expire overlay lines on a timer (tests call prune)
    * @param {number} [o.maxLength] longest line
+   * @param {EventTarget | null} [o.win] where Esc is caught first (capture phase): the window
    */
-  constructor(parent, { log, hotkeys = null, send = null, teamChat = false, spectator = false, names = [], mutable = () => [], sound = () => {}, withTime = true, now = () => Date.now(), autoPrune = true, maxLength = DEFAULT_MAX_LENGTH }) {
+  constructor(parent, { log, hotkeys = null, send = null, teamChat = false, spectator = false, names = [], mutable = () => [], sound = () => {}, withTime = true, now = () => Date.now(), autoPrune = true, maxLength = DEFAULT_MAX_LENGTH, win = globalThis.window ?? null }) {
     Object.assign(this, { log, send, teamChat, spectator, names, mutable, sound, withTime, now });
     this.history = new CommandHistory();
     this.mode = 'all';
@@ -115,14 +118,20 @@ export class ChatPanel {
     parent.append(this.root);
 
     this.input.addEventListener('keydown', (e) => this.onInputKey(e));
-    // A disabled line takes no keys: Enter and Esc close the panel from the scrollback.
-    this.scroll.addEventListener('keydown', (e) => {
-      if (this.input.disabled && (e.key === 'Enter' || e.key === 'Escape') && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    // OpenRA's KEY_LISTENER: while the panel is open, Esc closes it wherever
+    // the focus is, before the game's keys (input.js: cancel a mode, open the
+    // menu); with the line off, Enter closes it too. The chat line handles
+    // its own keys (onInputKey).
+    this.onWindowKey = (e) => {
+      if (!this.isOpen || e.target === this.input || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey && this.input.disabled)) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         this.close();
       }
-    });
+    };
+    this.win = win;
+    this.win?.addEventListener('keydown', this.onWindowKey, true);
     this.setMode('all');
 
     // Lines from before the panel existed (an online game's first lines):
@@ -228,6 +237,18 @@ export class ChatPanel {
     this.input.setAttribute('aria-label', !this.send ? 'Chat (not available here)' : team ? 'Team chat' : 'Chat to all');
   }
 
+  /**
+   * Who team chat reaches now (OpenRA IngameChatLogic chatMode.IsDisabled):
+   * a defeated player talks to the spectators, nobody has team chat once the
+   * game is over. Team mode falls back to all chat when it is gone.
+   */
+  setTeamChat(teamChat, spectator) {
+    if (this.teamChat === !!teamChat && this.spectator === !!spectator) return;
+    this.teamChat = !!teamChat;
+    this.spectator = !!spectator;
+    this.setMode(this.mode === 'team' && this.teamChat ? 'team' : 'all');
+  }
+
   /** OpenRA ToggleChatMode: only when there is a team to talk to. */
   toggleMode() {
     if (this.teamChat && this.send) this.setMode(this.mode === 'team' ? 'all' : 'team');
@@ -301,6 +322,7 @@ export class ChatPanel {
 
   dispose() {
     clearInterval(this.timer);
+    this.win?.removeEventListener('keydown', this.onWindowKey, true);
     this.offLine?.();
     this.offMute?.();
     for (const off of this.unregister ?? []) off();
