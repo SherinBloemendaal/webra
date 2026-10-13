@@ -328,6 +328,29 @@ impl World {
         self.sound.push(SoundEventKind::PlayerLost, 0, 0, 0, player, 0);
     }
 
+    /// `Order::Surrender` (OpenRA's in-game menu Surrender): the "Surrender"
+    /// order MissionObjectives.ResolveOrder answers with ForceDefeat, which
+    /// fails the player's open objectives. In a skirmish that is
+    /// ConquestVictoryConditions' "Destroy all opposition!", so the player
+    /// loses now (OwnerLostAction, the defeat line) and the game ends when
+    /// the players left are on one side. A mission fails the objectives in
+    /// its own tick (mission/runtime.rs), with the scripts' triggers. A player
+    /// that already lost, the neutral player and a decided game ignore it.
+    pub(crate) fn surrender(&mut self, player: u8) {
+        let Some(pl) = self.players.get(player as usize) else { return };
+        if pl.defeated || pl.neutral || self.game_over {
+            return;
+        }
+        if let Some(m) = self.mission.as_mut() {
+            if !m.surrenders.contains(&player) {
+                m.surrenders.push(player);
+            }
+            return;
+        }
+        self.lose(player);
+        self.decide_winner();
+    }
+
     /// The neutral player, if the game has one.
     pub fn neutral_player(&self) -> Option<u8> {
         self.players.iter().position(|p| p.neutral).map(|p| p as u8)

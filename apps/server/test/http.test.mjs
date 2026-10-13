@@ -252,13 +252,15 @@ test('sidebar button orders name no actor type and pass the rules check once the
     { o: 'repair_building', player: 0, building: 12 },
     { o: 'power_down', player: 0, building: 13 },
     { o: 'place_beacon', player: 0, x: 600, y: 900 },
+    // The game menu's Surrender (engine/src/gamerules.rs).
+    { o: 'surrender', player: 0 },
   ];
   const msg = parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders }));
   assert.ok(msg.ok, msg.message);
   assert.deepEqual(msg.msg.orders, orders);
   assert.equal(ordersFitRules(msg.msg.orders, ENGINE_RULES.actors.length), true);
   assert.equal(cheatsAllowed(msg.msg.orders, { cheats: false }), true, 'not cheats');
-  for (const o of [{ o: 'repair_building', player: 0, building: 'x' }, { o: 'place_beacon', player: 0, x: 1 }, { o: 'power_down', player: 0 }]) {
+  for (const o of [{ o: 'repair_building', player: 0, building: 'x' }, { o: 'place_beacon', player: 0, x: 1 }, { o: 'power_down', player: 0 }, { o: 'surrender', player: 0, ids: [] }]) {
     assert.equal(parseClientMessage(JSON.stringify({ t: 'orders', tick: 4, orders: [o] })).ok, false, JSON.stringify(o));
   }
 });

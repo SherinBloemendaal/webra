@@ -182,6 +182,8 @@ test('orders and hash', () => {
     { o: 'repair_building', player: 1, building: 4 },
     { o: 'power_down', player: 1, building: 0xffffffff },
     { o: 'place_beacon', player: 1, x: -24, y: 2 ** 31 - 1 },
+    // The in-game menu's Surrender (engine/src/gamerules.rs).
+    { o: 'surrender', player: 1 },
   ]) {
     assert.deepEqual(ok({ t: 'orders', tick: 1, orders: [o] }).orders[0], o);
   }
@@ -220,6 +222,8 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'power_down', player: 0, building: 1.5 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'place_beacon', player: 0, x: 0 }] }, /required/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'place_beacon', player: 0, x: 0, y: 2 ** 31 }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'surrender', player: 0, x: 0 }] }, /unknown field/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'surrender' }] });
   bad({ t: 'orders', tick: 3, orders: Array.from({ length: 33 }, () => ({ o: 'stop', player: 0, ids: [] })) }, /at most/);
   bad('{"t":"orders","tick":3,"orders":[{"o":"stop","player":0,"ids":[],"__proto__":{"x":1}}]}');
   assert.deepEqual(ok({ t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' }), { t: 'hash', tick: 50, hash: '00ff00ff00ff00ff' });

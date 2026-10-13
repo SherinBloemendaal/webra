@@ -67,6 +67,12 @@ impl Ctx<'_> {
     pub(crate) fn run_tick(&mut self, lua: &mut Lua) {
         lua.set_budget(TICK_BUDGET);
         self.drain_events(lua);
+        // Surrender orders of this tick (OpenRA MissionObjectives.ResolveOrder: ForceDefeat).
+        for q in std::mem::take(&mut self.m.surrenders) {
+            if self.m.players[q as usize].win == WinState::Undefined {
+                self.force_defeat(lua, q);
+            }
+        }
         if self.m.error.is_none() {
             self.tick_conditions();
             self.tick_spawns(lua);

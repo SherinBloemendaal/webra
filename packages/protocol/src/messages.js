@@ -159,6 +159,9 @@ const ORDER_SCHEMA = {
   repair_building: { building: u32 },
   power_down: { building: u32 },
   place_beacon: { x: i32, y: i32 },
+  // engine/src/gamerules.rs: the in-game menu's Surrender (OpenRA's
+  // "Surrender" order): the sender loses. No fields; the server stamps the seat.
+  surrender: {},
   // engine/src/debug.rs: debug menu cheats, only valid in games with the
   // `cheats` option (the server refuses them otherwise, see CHEAT_ORDER_KINDS).
   dev_flag: { flag: (v, w) => oneOf(v, DEV_FLAGS, w), on: bool },
