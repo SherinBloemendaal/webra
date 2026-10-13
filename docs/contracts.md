@@ -2614,12 +2614,13 @@ and heat shimmer instances (`heatCount`, 4 floats each,
 `instances: 'gpu'` (below) it carries tick-rate records and fog instead of
 sprites, rects and fog, only when they changed, plus `instances`, `buildMs`
 (time spent building render data this step) and `renderBytes` (render data
-handed over this step). Every frame also carries its timings for the
-debug panel and the performance capture (section 10): `simFrameMs` (the
-ticks), `tickMaxMs` (the slowest tick of the step; under the lockstep driver
-and in replays, which tick inside, the mean of the step's ticks), `queryMs`
-(the query answers) and `stepMs` (the whole step in the simulation), and
-`actors` (actors alive) when `req.perf` is set, else null. In a mission it also carries `mission { state,
+handed over this step). Every frame carries `simFrameMs` (the ticks, for
+the debug panel). With `req.perf` (a performance capture records, section
+10) it also carries `tickMaxMs` (the slowest tick of the step; under the
+lockstep driver and in replays, which tick inside, the mean of the step's
+ticks), `queryMs` (the query answers), `stepMs` (the whole step in the
+simulation) and `actors` (actors alive); without it these are null and the
+step reads the clock no more than before. In a mission it also carries `mission { state,
 events }`: `Game.mission_state()` text when a tick ran (else null) and the
 `Game.take_mission_events()` text of the step (null when empty or busy); the
 handles keep the newest state and queue the events (`MissionFeed`).
@@ -3169,12 +3170,21 @@ callback on the next tick).
 A recording of where a game's time went, saved as a JSON file the player
 sends with a report of a slow game. Started from the debug menu ("Record
 performance", for 10, 30, 60 or 120 seconds: debug setting
-`perfCaptureSeconds`), with `recordPerformance` (Alt+P; again: stop and save),
-or for the first 60 seconds of every game, from its launch, with the debug
+`perfCaptureSeconds`, which takes only these lengths, `PERF_CAPTURE_SECONDS`
+of packages/protocol accounts.js), with `recordPerformance` (Alt+P; again:
+stop and save), or for the first 60 seconds of every game with the debug
 setting `perfCaptureStart` ("Record the start of every game", also on the game
-menu's Settings page). A capture the player started or stopped downloads when
-it ends; the start-of-game capture waits in the debug menu ("Download last
-capture"). Nothing is sent anywhere by the game.
+menu's Settings page). The start-of-game capture begins with the game's first
+frame, so a slow load never uses up its 60 seconds; the loading steps before
+it are in the file's `startup` spans. A capture the player started or stopped
+downloads when it ends; the start-of-game capture waits in the debug menu
+("Download last capture"). Leaving the game (Leave, Exit, Restart, a rematch,
+the next mission) ends a running capture with what it recorded and downloads
+any capture not downloaded yet before the page reloads (`endReason: "left"`);
+closing or reloading the tab itself leaves no time for a download, so a
+capture still in memory is lost then.
+Launching another game ends a running capture first (`"restarted"`, with the
+facts of the game it recorded). Nothing is sent anywhere by the game.
 
 File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
 
@@ -3191,7 +3201,7 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
     ],
     "time": {                      // where the time went
       "mainThreadMs": 6100.2, "mainThreadShare": 0.2,
-      "stepMs": { "avg": .., "p50": .., "p95": .., "max": .. },   // also drawMs, gpuMs, gpuDoneMs, workerMs, tickMaxMs, roundTripMs (null: never measured)
+      "stepMs": { "avg": .., "p50": .., "p95": .., "max": .. },   // also drawMs, gpuMs, gpuDoneMs, workerMs, workerStepMs, tickMaxMs, roundTripMs (null: never measured)
       "longTasks": { "count": 2, "totalMs": 900 }, "longAnimationFrames": { "count": 4, "totalMs": 1100 },
       "gcHints": { "count": 3, "freedMB": 40 },
       "spans": [{ "name": "terrain.tiles", "count": 1, "totalMs": 701, "maxMs": 701 }]   // the 12 largest by total
@@ -3201,7 +3211,7 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
   },
   "privacy": "...",                // what the file holds and leaves out (PRIVACY_NOTE)
   "capture": { "reason": "manual", "requestedSeconds": 30, "durationMs": 30012, "frames": 1790,
-               "endReason": "time", "maxFrames": 30000, "droppedEvents": 0 },   // reason manual | start; endReason time | full | stopped | restarted
+               "endReason": "time", "maxFrames": 30000, "droppedEvents": 0 },   // reason manual | start; endReason time | full | stopped | left | restarted
   "build": { "version": "0.13.0" },
   "environment": { "userAgent": "...", "brands": ["Chromium 140"], "mobile": false, "platform": "macOS", "cores": 8, "deviceMemoryGB": 8,
                    "devicePixelRatio": 2, "viewport": { "width": 1512, "height": 860 }, "screen": { .. }, "crossOriginIsolated": true,
@@ -3216,7 +3226,7 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
             "players": 2, "ais": 1, "spectating": false, "tickMs": 40, "gameSpeed": "normal",
             "options": { "seed": 1, "startingCash": 10000, "players": [{ "type": "human", "faction": "england", "team": 0, "difficulty": null, "bot": null }] } },
   "startup": { "spans": [{ "name": "sim.start", "t": 120.4, "ms": 61.2, "detail": { "kind": "skirmish", "engineMs": 43.8 } }], "dropped": 0 },
-  "frameFields": ["t", "frameMs", "workMs", "stepMs", "drawMs", "gpuMs", "gpuDoneMs", "workerMs", "ticks", "tickMaxMs", "buildMs",
+  "frameFields": ["t", "frameMs", "workMs", "stepMs", "drawMs", "gpuMs", "gpuDoneMs", "workerMs", "workerStepMs", "ticks", "tickMaxMs", "buildMs",
                   "queryMs", "roundTripMs", "uploadKB", "sprites", "tick", "actors", "heapMB", "wasmMB"],
   "frames": { "t": [16.7, 33.4], "frameMs": [16.7, 16.7], "...": [] },   // one array per field, frame order, 2 decimals, null: none
   "events": [{ "t": 1220.1, "kind": "span", "name": "terrain.tiles", "ms": 701.2, "detail": { "source": "original", "tiles": 557 } }]
@@ -3231,7 +3241,8 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
   `stepMs` (handing the step to the simulation; in main thread mode the ticks
   themselves) and `drawMs` (encoding the WebGPU frame); `gpuMs` the render
   pass on the GPU (timestamp queries, where the adapter has `timestamp-query`),
-  `gpuDoneMs` from the frame's submit until the GPU finished it; `workerMs`,
+  `gpuDoneMs` from the frame's submit until the GPU finished it; `workerMs`
+  (its ticks), `workerStepMs` (its whole step: ticks, queries, render data),
   `ticks`, `tickMaxMs`, `buildMs`, `queryMs` from the newest simulation frame
   (0 when no new one came: section 8), `roundTripMs` a step's way to the worker
   and back, `uploadKB` texture and buffer writes of the frame, `sprites` the
@@ -3260,4 +3271,7 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
   adapter facts the browser reports, screen size and the map's title are in
   it.
 - Off, the capture costs one check per span and the per-frame upload counter;
-  `step` asks for `actors` only while recording.
+  the simulation's capture timings and actor count (`req.perf`, section 8)
+  and GPU timing (js/gputimer.js) run only while recording. GPU timestamps
+  stop for good (their buffers freed) when a readback fails or the device is
+  lost; `environment.gpu.timestampError` says why.
