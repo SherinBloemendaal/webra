@@ -1929,11 +1929,13 @@ yard, sub pen, war factory), else the real cameo with the same mark
 
 OpenRA's WithMakeAnimation grants a structure the `build-incomplete`
 condition while its `make` sequence plays once, and Red Alert's rules
-switch traits off with it. In WebRA a structure that appears during the
-game (placed, an MCV deployed, a mission's `Actor.Create`) is being built
-from the tick after it appeared through `building.make_ticks` ticks
-(`make_until`, in the state hash; the structures of the starting map and a
-mission's SpawnActorOnDeath, OpenRA SkipMakeAnimsInit, skip it).
+switch traits off with it. In WebRA a structure that is placed, deployed
+from an MCV or created by a mission script (`Actor.Create`, also in
+WorldLoaded at tick 0: OpenRA adds no SkipMakeAnimsInit there) is being
+built from the tick it appeared through `building.make_ticks` ticks after
+it (`make_until`, `World::begin_make`, in the state hash; the map's own
+actors, the starting base and a mission's SpawnActorOnDeath skip it, like
+OpenRA's SkipMakeAnimsInit).
 Meanwhile its `building.make_gates` are off: `sell` (Sellable: no sell
 order, `sell_value` 0), `capture` (Capturable), `attack` (AttackTurreted,
 AttackTesla, AttackGarrisoned paused and Turreted off: it neither aims nor

@@ -677,6 +677,7 @@ impl World {
         // OpenRA PlaceBuilding: NewOptions when the placement adds buildable items (sound only).
         let options_before = self.sound.enabled().then(|| self.buildable_count(player));
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
+        self.begin_make(b);
         self.players[player as usize].queues[qi].items.remove(0);
         self.note_built(player, ty);
         let (bx, by) = (self.actors[b].x, self.actors[b].y);
@@ -861,6 +862,8 @@ impl World {
                 self.sound.push(SoundEventKind::DeployBlocked, from as i32, x, y, owner, 0);
                 return false;
             };
+            // OpenRA Transform without SkipMakeAnims: the yard unfolds.
+            self.begin_make(j);
             j
         } else {
             self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)

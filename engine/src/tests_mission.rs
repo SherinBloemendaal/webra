@@ -602,3 +602,31 @@ fn mission_bots_play_the_campaign_bot_of_their_rules() {
     let greece = w.mission().unwrap().player_slot("Greece").unwrap();
     assert!(w.scripted_player(greece));
 }
+
+/// OpenRA's Actor.Create adds no SkipMakeAnimsInit: a structure a script
+/// creates plays its make animation (build-incomplete), also in WorldLoaded
+/// at tick 0, while the map's own structures skip it.
+#[test]
+fn script_created_structures_are_built_and_map_structures_are_not() {
+    let mut w = start("allies-01", None);
+    assert_eq!(w.tick, 0);
+    let map_structures: Vec<usize> =
+        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].kind == crate::rules::Kind::Building).collect();
+    assert!(!map_structures.is_empty());
+    assert!(map_structures.iter().all(|&i| w.actors[i].make_until == 0 && !w.build_incomplete(i)), "map actors skip the make animation");
+    let powr = w.rules.actor_index("powr").unwrap() as u16;
+    let before = w.actors.iter().filter(|a| a.alive && a.ty == powr).count();
+    // The first spot (in the script's map coordinates) where it fits.
+    lua_in(
+        &mut w,
+        "for y = 30, 90 do for x = 30, 90 do \
+           if pcall(Actor.Create, 'powr', true, { Owner = Player.GetPlayer('Greece'), Location = CPos.New(x, y) }) then return end \
+         end end",
+    );
+    let made: Vec<usize> =
+        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].ty == powr && !map_structures.contains(&i)).collect();
+    assert_eq!((before + 1, made.len()), (w.actors.iter().filter(|a| a.alive && a.ty == powr).count(), 1));
+    let p = made[0];
+    assert_eq!(w.actors[p].make_until, 13, "created at tick 0: being built through tick 13");
+    assert!(w.build_incomplete(p));
+}

@@ -464,13 +464,20 @@ fn naval_bots_keep_every_ship_on_water() {
         w.state_hash()
     };
     let minutes = 25 * 60;
-    // Seed 6: the island bots of seeds 2 and 3 now spend their money on a
-    // land war and build no ship in twelve minutes (since structures wait
-    // for their make animation), too few to check fleets; seed 6 builds 4.
+    // Seeds 6 (islands) and 7 (rivers, 182 ford cells): since structures
+    // wait for their make animation, new defences pause briefly (about 60
+    // ticks in a 12 minute game, the only build-incomplete gate the bots
+    // meet; no order of theirs is refused), which changes their target
+    // scans and the game from then on. Ships built in 12 minutes by the 4
+    // bots, seeds 1 to 8, without the make time and with it: islands 7/3,
+    // 2/0, 0/0, 2/2, 0/2, 4/4, 4/2, 0/0; rivers 2/2, 1/0, 3/0, 3/2, 6/4,
+    // 2/2, 3/4, 8/7. First naval yard (seconds): islands 359/361, 441/695,
+    // 708/none, 401/426, 647/390, 366/374, 388/411, 417/491; rivers
+    // 302/414, 417/445, 421/464, 354/441, 325/366, 532/440, 377/501,
+    // 389/349. Seeds 2 and 3 of either style build no ship now, too few to
+    // check fleets.
     game(MapStyle::Islands, 6, 12 * minutes);
     let lakes = game(MapStyle::Lakes, 7, 12 * minutes);
-    // Seed 7 (182 ford cells): the river bots of seed 3 build no ship in
-    // twelve minutes since structures wait for their make animation.
     game(MapStyle::Rivers, 7, 12 * minutes);
     assert_eq!(game(MapStyle::Lakes, 7, 12 * minutes), lakes, "deterministic");
 }

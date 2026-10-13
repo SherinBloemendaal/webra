@@ -31,13 +31,14 @@ fn make_ticks(w: &World, id: &str) -> u32 {
     w.rules.actors[ty(w, id) as usize].building.as_ref().unwrap().make_ticks
 }
 
-/// Spawn `id` for `owner` during the game (tick > 0), as placing it does.
+/// `id` for `owner` placed during the game (`World::begin_make`, as placing it does).
 fn placed(w: &mut World, id: &str, owner: u8, cx: i32, cy: i32) -> usize {
     while w.tick == 0 {
         w.step();
     }
     let t = ty(w, id);
     let b = w.spawn_building(t, owner, cx, cy).expect("room for the structure");
+    w.begin_make(b);
     w.refresh_tokens();
     w.update_power();
     b
@@ -69,8 +70,9 @@ fn the_starting_map_skips_the_make_animation_and_placed_structures_play_it() {
     let p = placed(&mut w, "POWR", 0, 30, 30);
     let at = w.tick;
     assert_eq!(w.actors[p].make_until, at + 13);
-    // From the tick after it appeared through the last frame's tick (OpenRA
-    // revokes build-incomplete at the end of that tick).
+    // From the tick it appeared through the last frame's tick, 13 ticks
+    // later (OpenRA revokes build-incomplete at the end of that tick).
+    assert!(w.build_incomplete(p), "the tick it appeared");
     for _ in 0..13 {
         w.step();
         assert!(w.build_incomplete(p), "tick {}", w.tick - at);

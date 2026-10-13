@@ -401,14 +401,22 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 /// Generated maps where fleets used to pile up idle: in 15 minutes on 64
 /// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
 /// idle without a target, a Turtle AI on islands (seed 3) 12. Now no
-/// fleet idles that large: at most 8 on the rivers (since structures wait
-/// for their make animation, 8 of its 11 ships at the worst moment; seeds
-/// 1 to 6 idle 1 to 8), 6 on the islands.
+/// fleet idles that large.
+///
+/// The river game is seed 4 since structures wait for their make animation
+/// (build-incomplete): that briefly pauses new defences (the only gate the
+/// bots meet; they never order a sale, capture or pack-up that is refused),
+/// which changes their target scans and so the whole game from then on.
+/// Most idle ships and largest fleet, seeds 1 to 8, without the make time
+/// and with it: 3/4 and 1/4, 2/2 and 2/3, 4/6 and 8/11, 4/4 and 3/5, 0/0
+/// and 1/2, 0/0 and 1/1, 4/6 and 6/7, 0/0 and 1/2. Seed 3 now builds an 11
+/// ship fleet of which 8 wait at the worst moment; the idle share stays
+/// what it was.
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::mapgen::MapStyle;
     use crate::world::{GameOptions, PlayerSetup};
-    for (style, seed, bot) in [(MapStyle::Rivers, 3u64, BotType::Naval), (MapStyle::Islands, 3, BotType::Turtle)] {
+    for (style, seed, bot) in [(MapStyle::Rivers, 4u64, BotType::Naval), (MapStyle::Islands, 3, BotType::Turtle)] {
         let factions = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
         let players: Vec<PlayerSetup> =
             (0..2).map(|k| PlayerSetup { bot, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
@@ -424,8 +432,7 @@ fn generated_naval_maps_keep_no_idle_fleets() {
             }
         }
         // Before: 20 and 12.
-        let most = if style == MapStyle::Rivers { 8 } else { 6 };
-        assert!(idle_most <= most, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle without a target");
+        assert!(idle_most <= 6, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle without a target");
     }
 }
 

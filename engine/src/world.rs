@@ -198,8 +198,8 @@ pub struct Actor {
     pub born: u32,
     /// Last tick of a structure's make animation (OpenRA WithMakeAnimation's
     /// `build-incomplete` condition, `World::build_incomplete`), 0 for none:
-    /// placed during the game it plays `building.make_ticks` ticks; map
-    /// actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
+    /// set by `World::begin_make` when it is placed, deployed or created by
+    /// a script; map actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
     /// Simulation state (state hash).
     pub make_until: u32,
     /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
@@ -1544,6 +1544,18 @@ impl World {
         i
     }
 
+    /// Structure `i` starts its make animation now (OpenRA WithMakeAnimation
+    /// on a created actor without SkipMakeAnimsInit): it is `build-incomplete`
+    /// from this tick through `building.make_ticks` ticks after it (OpenRA
+    /// revokes the condition at the end of the last frame's tick). Placing,
+    /// an MCV deploying and a mission script's Actor.Create call it, also at
+    /// tick 0; the map's actors, the starting base and SpawnActorOnDeath do
+    /// not (`spawn_building` alone builds nothing).
+    pub(crate) fn begin_make(&mut self, i: usize) {
+        let ticks = self.rules.actors[self.actors[i].ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        self.actors[i].make_until = if ticks > 0 { self.tick + ticks } else { 0 };
+    }
+
     /// Put a structure with its top-left at (cx, cy). Returns None, and
     /// changes nothing, when `ty` is not a structure, its footprint does not
     /// fit inside the map (every footprint cell of a live structure indexes
@@ -1584,13 +1596,6 @@ impl World {
         a.hp = info.hp;
         a.stance = self.initial_stance(ty, owner);
         a.born = self.tick;
-        // Placed during the game: the make animation, `build-incomplete` until
-        // it ends (from the tick after this one through `make_ticks` ticks,
-        // OpenRA revokes the condition at the end of the last frame's tick).
-        // Actors of the starting map (tick 0) skip it like OpenRA's map actors.
-        if self.tick > 0 && b.make_ticks > 0 {
-            a.make_until = self.tick + b.make_ticks;
-        }
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset)).filter(|_| free_actor);
         let crush = info.abilities.crushable.as_ref().map_or(0, crate::flowfield::crush_bits);

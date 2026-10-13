@@ -270,9 +270,7 @@ impl Ctx<'_> {
         match self.w.rules.actors[t].kind {
             crate::rules::Kind::Building => {
                 // SpawnActorOnDeath.SkipMakeAnimations (default true): built at once.
-                if let Some(j) = self.w.spawn_building(t as u16, snap.owner, cx, cy) {
-                    self.w.actors[j].make_until = 0;
-                }
+                self.w.spawn_building(t as u16, snap.owner, cx, cy);
             }
             _ => {
                 self.w.spawn_unit(t as u16, snap.owner, snap.x, snap.y, snap.facing);

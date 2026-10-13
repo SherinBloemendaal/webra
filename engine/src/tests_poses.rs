@@ -138,6 +138,7 @@ fn buildings_report_make_damage_and_power() {
     // Placed during the game: make, with the ticks since placement as the age.
     w.tick = 500;
     let i = w.spawn_building(dome, 0, 30, 30).unwrap();
+    w.begin_make(i);
     w.update_vision();
     w.tick = 510;
     assert_eq!(pose_of(&w, body), Some((Pose::Make as u32, 10)));
@@ -237,7 +238,8 @@ fn records_with_poses_match_the_cpu_path() {
     w.actors[a].px -= 120;
     let h = w.spawn_unit(harv, 0, cell_center(14), cell_center(8), 300);
     w.actors[h].harv = HarvState::Harvesting;
-    w.spawn_building(ty(&w, "WEAP"), 0, 20, 20).unwrap();
+    let f = w.spawn_building(ty(&w, "WEAP"), 0, 20, 20).unwrap();
+    w.begin_make(f);
     w.tick = 210;
     w.update_vision();
     let (mut recs, mut extras, mut rect_recs) = (Vec::new(), Vec::new(), Vec::new());
@@ -269,6 +271,7 @@ fn structure_layers_hide_while_built_and_show_the_door_frame_by_damage_state() {
     w.players[0].power_gen = 100;
     w.tick = 500;
     let f = w.spawn_building(weap, 0, 30, 30).unwrap();
+    w.begin_make(f);
     w.update_vision();
     // Hidden while the structure is built (OpenRA: RequiresCondition !build-incomplete).
     w.tick = 510;
@@ -334,7 +337,8 @@ fn structure_layers_show_when_the_make_animation_ends() {
     w.render_opts.make_art = vec![true; w.rules.actors.len()];
     w.players[0].power_gen = 100;
     w.tick = 500;
-    w.spawn_building(weap, 0, 30, 30).unwrap();
+    let f = w.spawn_building(weap, 0, 30, 30).unwrap();
+    w.begin_make(f);
     w.update_vision();
     for age in [0, 10, 14] {
         w.tick = 500 + age;
