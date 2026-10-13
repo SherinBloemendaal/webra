@@ -462,7 +462,11 @@ impl World {
             "aircraftBuilt": s.aircraft_built,
             "shipsBuilt": s.ships_built,
             "builtValue": s.built_value,
-            "experience": s.experience,
+            // OpenRA PlayerStatistics.Experience: the PlayerExperience trait
+            // (kills, repairs for allies, infiltrations; gamerules.rs). The
+            // veterancy experience of the player's units is `unitExperience`.
+            "experience": pl.experience,
+            "unitExperience": s.experience,
             "promotions": s.promotions,
             "powersUsed": s.powers_used,
             "orders": s.orders,

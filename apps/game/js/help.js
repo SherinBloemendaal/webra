@@ -121,7 +121,7 @@ export const HELP = Object.freeze({
 
   // ---- Game menu pages (js/gamemenu.js MENU_PAGE_HELP_KEYS) ---------------------------------
   'menu.gameInfo':
-    "The game's map, objectives and options, like OpenRA's game info. Objectives shows your mission and every player's score (experience from kills and repairs), the teams with the most score first; opponents keep the country the lobby showed until your game is decided. Briefing shows the mission briefing or the map's description, Options the lobby options this game is played with.",
+    "The game's map, objectives and options, like OpenRA's game info. Objectives shows your mission and every player's score (OpenRA's player experience: a point per 100 credits of what they destroyed, plus repairs of allies' structures and infiltrations), the teams with the most score first; opponents keep the country the lobby showed until your game is decided. Briefing shows the mission briefing or the map's description, Options the lobby options this game is played with.",
   'menu.surrender':
     'Online games with more than one person, like OpenRA: you lose at once, your units and structures are destroyed and everyone sees you defeated. You can stay and watch the rest of the game as a spectator. Single player games have Leave and Restart instead.',
 

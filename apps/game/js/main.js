@@ -987,8 +987,9 @@ async function startStress(seed, units, lobby) {
  * `map` the map file JSON (null: a generated map), `options` the game
  * options, `mission` a mission's index entry (null when the index no longer
  * lists it) with `missionText` its file and `missionValues` its options,
- * `lobbyFactions` the countries as the lobby showed them (null: only the
- * drawn ones are known, as in saves and replays), `spectators()` the names
+ * `lobbyFactions` the countries as the lobby showed them (null: unknown,
+ * as in saves and replays, whose files keep only the drawn countries; a
+ * player still in the game then sees "Unknown" for opponents), `spectators()` the names
  * of who watches. The preview is made when the Briefing tab is drawn.
  */
 function gameAbout({ map = null, options = null, mission = null, missionText = null, missionValues = null, lobbyFactions = null, spectators = () => [] }) {

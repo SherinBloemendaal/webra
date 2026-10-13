@@ -233,6 +233,7 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
       fmtInt(s.unitsLost + s.buildingsLost),
       formatMoney(s.assetsDestroyed),
       formatMoney(s.assetsLost),
+      // OpenRA's EXPERIENCE (PlayerStatistics.Experience, the player's PlayerExperience), with the units' promotions.
       `${fmtInt(s.experience)} (${s.promotions} ${s.promotions === 1 ? 'promotion' : 'promotions'})`,
       s.isAi ? 'AI' : String(actionsPerMinute(s.orders, elapsed, tps)),
     ]),

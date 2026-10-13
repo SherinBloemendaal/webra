@@ -80,10 +80,19 @@ test('a player still in the game sees only its own and its allies countries; spe
   assert.equal(watcher.objective, null);
   assert.equal(faction(watcher, 1), 'Random (Russia)');
   assert.deepEqual(watcher.spectators, ['Eve']);
-  // Unknown lobby choices (a rejoin) never fall back to the drawn country for opponents.
-  const rejoined = skirmishStats({ stats, names: NAMES, localPlayer: 0, allied, lobbyFactions: [] });
-  assert.equal(faction(rejoined, 1), 'Unknown');
-  assert.equal(faction(rejoined, 2), 'France');
+  // Unknown lobby choices (online.js gameAbout passes null after a rejoin that saw no lobby,
+  // main.js gameAbout for loaded saves) never fall back to the drawn country for opponents.
+  for (const unknown of [null, undefined, []]) {
+    const rejoined = skirmishStats({ stats, names: NAMES, localPlayer: 0, allied, lobbyFactions: unknown });
+    assert.equal(faction(rejoined, 1), 'Unknown', `opponent with lobbyFactions ${JSON.stringify(unknown)}`);
+    assert.equal(faction(rejoined, 3), 'Unknown');
+    assert.equal(faction(rejoined, 0), 'England', 'its own country');
+    assert.equal(faction(rejoined, 2), 'France', 'an ally');
+  }
+  // Decided, or watching: the drawn countries.
+  const decided = skirmishStats({ stats: stats.map((r) => (r.player === 0 ? { ...r, defeated: true } : r)), names: NAMES, localPlayer: 0, allied, lobbyFactions: null });
+  assert.equal(faction(decided, 1), 'Russia');
+  assert.equal(faction(skirmishStats({ stats, names: NAMES, localPlayer: null, lobbyFactions: null }), 1), 'Russia');
   // Only score, country, team and win state: no economy or army figures leave the engine's row.
   const keys = new Set(live.groups.flatMap((g) => g.players.flatMap((p) => Object.keys(p))));
   assert.deepEqual([...keys].sort(), ['faction', 'name', 'player', 'score', 'state', 'team']);

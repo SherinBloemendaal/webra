@@ -1283,14 +1283,17 @@ lobby options or a mission's options as played, read only). Objectives is
 OpenRA's SKIRMISH_STATS (GameInfoStatsLogic) in a skirmish: the local
 player's "Destroy all opposition!" with In progress, Accomplished or Failed,
 then every player's score (`observer_stats` `experience`, OpenRA
-PlayerStatistics.Experience) sorted by score and grouped by team, the teams
+PlayerStatistics.Experience, the PlayerExperience trait) sorted by score and grouped by team, the teams
 with the most score first (headers only with more than one group), names
 with "(Won)" or "(Lost)", then the spectators. A player still in the game
 sees the real country only of itself and its allies; the others show the
 lobby's choice ("Random" for a random pick) until its own game is decided,
-like OpenRA's DisplayFaction. Saves and replays know only the drawn
-countries; a rejoin after a reload, which saw no lobby, shows "Unknown" for
-opponents. No other statistics reach a player still in the game: the full
+like OpenRA's DisplayFaction. Where the lobby's choices are not known
+(a rejoin after a reload, which saw no lobby; a loaded single player save,
+whose file keeps only the drawn countries, so OpenRA's "Random stays
+Random" cannot be restored), opponents show "Unknown" until the player's
+game is decided, never the drawn country. Replays and spectators see the
+drawn countries. No other statistics reach a player still in the game: the full
 statistics screen stays for spectators, defeated players and the end. In a
 mission Objectives is OpenRA's MISSION_OBJECTIVES (the mission status and
 the objectives, primary first, from `mission_state`). The page draws its
@@ -1322,9 +1325,16 @@ player, faction, team, isAi, cash, funds, earned, harvestedOre, harvestedGems,
 spent, repairSpent, sold, armyValue, unitsKilled, unitsLost, buildingsKilled,
 buildingsLost, assetsDestroyed, assetsLost, damageDealt, damageTaken,
 unitsBuilt, buildingsBuilt, aircraftBuilt, shipsBuilt, builtValue, experience,
-promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
+unitExperience, promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
 defeatedAt, won }]` for the non-neutral players (kills credited to the owner
-of the weapon that dealt the killing damage; `orders` counts the orders of
+of the weapon that dealt the killing damage; `experience` is OpenRA's
+PlayerStatistics.Experience, the player's PlayerExperience (a kill gives
+the victim's value times its PlayerExperienceModifier, 1 per 100 credits;
+repairs of an ally's structure and infiltrations add theirs; the time
+limit's tie breaker), shown by the game info scores, the observer panel's
+Experience column and the statistics screen; `unitExperience` is the
+veterancy experience the player's units gained, behind `promotions`;
+`orders` counts the orders of
 the order log, AI decisions are not orders; `score` is the value destroyed
 plus half the value built; not part of the state hash).
 `Game.observer_report()` adds per player `productionTicks` (per queue),

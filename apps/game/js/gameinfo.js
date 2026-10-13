@@ -62,7 +62,9 @@ export function infoTabs({ briefing } = {}) {
  * players); `names`: player names by engine index; `localPlayer`: this
  * screen's player, or null for spectators and replays; `allied(a, b)`;
  * `lobbyFactions`: what the lobby showed per player (the choice before a
- * random country was drawn; null where unknown); `spectators`: names.
+ * random country was drawn), or null when that is unknown (a rejoin that saw
+ * no lobby, a loaded save): then opponents show "Unknown" until the local
+ * player's game is decided, never the drawn country; `spectators`: names.
  */
 export function skirmishStats({ stats = [], names = [], localPlayer = null, allied = (a, b) => a === b, lobbyFactions = null, spectators = [] }) {
   const rows = (stats ?? []).filter((r) => Number.isInteger(r?.player));
@@ -72,7 +74,7 @@ export function skirmishStats({ stats = [], names = [], localPlayer = null, alli
   const revealAll = localPlayer === null || localState !== 'playing';
   const players = rows.map((r) => {
     const real = factionLabel(r.faction);
-    const chosen = lobbyFactions ? lobbyFactions[r.player] : r.faction;
+    const chosen = lobbyFactions?.[r.player] ?? null;
     const shown = chosen == null ? 'Unknown' : factionLabel(chosen);
     let faction;
     if (revealAll || allied(localPlayer, r.player)) faction = chosen == null || shown === real ? real : `${shown} (${real})`;

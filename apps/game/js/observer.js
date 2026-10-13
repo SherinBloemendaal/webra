@@ -73,8 +73,8 @@ export const PANELS = {
       ['Deaths', (s) => String(s.unitsLost + s.buildingsLost)],
       ['Destroyed', (s) => formatMoney(s.assetsDestroyed ?? 0)],
       ['Lost', (s) => formatMoney(s.assetsLost ?? 0)],
-      // Experience in value points, like the selection panel (100 per credit of the victims).
-      ['Experience', (s) => String(Math.round((s.experience ?? 0) / 100))],
+      // OpenRA PlayerStatistics.Experience (observer_stats `experience`: the player's PlayerExperience).
+      ['Experience', (s) => String(s.experience ?? 0)],
       ['APM', (s, x) => String(x.apm ?? 0)],
     ],
   },
