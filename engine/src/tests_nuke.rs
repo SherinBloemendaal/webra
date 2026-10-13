@@ -277,3 +277,39 @@ fn the_silo_opens_and_the_missile_rises_and_falls_with_its_sprites() {
     assert_eq!((x, s), (px(n.x), down));
     assert!((y - (px(n.y) - px(512))).abs() < 0.01, "one tick over the ground: {y}");
 }
+
+/// OpenRA's Beacon removes itself only for a positive duration (FlightDelay
+/// less BeaconRemoveAdvance): with an advance of FlightDelay or more the
+/// beacon stays, in WebRA as long as the missile flies.
+#[test]
+fn a_beacon_advance_past_the_flight_time_keeps_the_beacon_up() {
+    use crate::abilities::beacon_until;
+    assert_eq!(beacon_until(100, 400, 25), 475);
+    assert_eq!(beacon_until(100, 400, -10), 510);
+    assert_eq!(beacon_until(100, 400, 399), 101);
+    assert_eq!(beacon_until(100, 400, 400), u32::MAX);
+    assert_eq!(beacon_until(100, 400, 5000), u32::MAX);
+    let (mut w, silo, (tx, ty_)) = ready_silo();
+    let t = w.actors[silo].ty as usize;
+    for p in w.rules.actors[t].abilities.support_powers.as_mut().unwrap().iter_mut().filter(|p| p.key == KEY) {
+        p.beacon_remove_advance = p.flight_delay;
+    }
+    w.queue_order(Order::SupportPower { player: 0, key: KEY.into(), x: cell_center(tx), y: cell_center(ty_), x2: None, y2: None });
+    w.step();
+    let beacon = crate::render::SpriteIds::new(w.rules.actors.len()).abilities_base + 5.0;
+    let beacons = |w: &World| {
+        let view = crate::render::View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(0, 1.0, &view, &[], &mut sprites, &mut rects);
+        sprites.chunks(crate::render::SPRITE_FLOATS).filter(|c| c[3] == beacon).count()
+    };
+    let impact = w.abil.nukes[0].impact;
+    while w.tick + 1 < impact {
+        assert_eq!(beacons(&w), 1, "shown at {}", w.tick);
+        w.step();
+    }
+    assert_eq!(beacons(&w), 1);
+    w.step();
+    assert!(w.abil.nukes.is_empty());
+    assert_eq!(beacons(&w), 0, "gone with the missile");
+}

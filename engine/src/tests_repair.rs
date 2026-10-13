@@ -534,18 +534,20 @@ fn wrench_power_off_icon_and_darkening_show_on_structures() {
     assert_eq!((o.len(), r.len()), (1, 1));
     assert_eq!(r[0][4], 1.0, "the wrench in the repairing player's colour");
     assert!(r[0][0] < o[0][0], "side by side: wrench left, power off icon right");
-    // Off frames of the blink: nothing.
+    // Off frames of the power off icon's blink: the wrench alone, still at its side.
     while (w.tick / crate::repair::DECORATION_FRAME_TICKS).is_multiple_of(2) {
         w.step();
     }
-    assert!(sprites(&w, wrench).is_empty() && sprites(&w, off).is_empty());
+    assert!(sprites(&w, off).is_empty());
+    let r2 = sprites(&w, wrench);
+    assert_eq!((r2.len(), r2[0][0]), (1, r[0][0]), "the wrench does not blink (OpenRA loops allyrepair)");
 }
 
-/// Allies repairing one structure together: the wrench shows in the colour
-/// of each repairer in turn, one per blink cycle (OpenRA
-/// WithBuildingRepairDecoration: `allyrepair` in the player palette of
-/// `Repairers[shownPlayer]`, CycleRepairer after every animation), so every
-/// repairer's colour shows. Enemies who see the structure see no wrench
+/// Allies repairing one structure together: the wrench shows steadily in
+/// the colour of each repairer in turn, one per loop of the animation
+/// (OpenRA WithBuildingRepairDecoration: `allyrepair` looping in the player
+/// palette of `Repairers[shownPlayer]`, CycleRepairer after every loop), so
+/// every repairer's colour shows. Enemies who see the structure see no wrench
 /// (WithDecorationBase.ValidRelationships, default Ally).
 #[test]
 fn the_wrench_cycles_through_the_colours_of_every_repairer() {
@@ -571,14 +573,16 @@ fn the_wrench_cycles_through_the_colours_of_every_repairer() {
         assert!(found.len() <= 1, "one wrench at a time: {found:?}");
         found.first().copied()
     };
-    // Two blink cycles show both colours; within a cycle the colour holds.
+    // Every tick shows the wrench; within a loop the colour holds.
     let mut seen = Vec::new();
     for _ in 0..(4 * 2 * DECORATION_FRAME_TICKS) {
         w.step();
         // The enemy sees the whole map, the structure included.
         w.players[2].visible.iter_mut().for_each(|v| *v = 1);
         assert_eq!(colour(&w, 2), None, "no wrench for the enemy");
-        if let Some(c) = colour(&w, 0) {
+        let shown = colour(&w, 0);
+        assert!(shown.is_some(), "the wrench never blinks out");
+        if let Some(c) = shown {
             let cycle = w.tick / (2 * DECORATION_FRAME_TICKS);
             if seen.last().is_none_or(|&(k, _)| k != cycle) {
                 seen.push((cycle, c));

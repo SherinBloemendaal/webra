@@ -193,6 +193,10 @@ fn remembered_buildings_stand_still() {
     assert_eq!(pose_of(&w, powr as u32 * 2), Some((Pose::Still as u32, 0)));
 }
 
+/// The art's render settings (poses, the make animation lengths of
+/// Game.set_make_ticks, pose layers, original slots) are read by drawing
+/// only: two players with different art (original graphics, WebRA's, a
+/// texture pack, another tileset) keep the same simulation and state hash.
 #[test]
 fn poses_never_change_the_simulation() {
     let players = [PlayerSetup::new("england", Some(AiDifficulty::Hard)), PlayerSetup::new("russia", Some(AiDifficulty::Hard))];
@@ -204,8 +208,19 @@ fn poses_never_change_the_simulation() {
     for t in 0..1500 {
         plain.step();
         posed_world.step();
-        // One world draws every tick with poses switching on and off, the other never draws.
+        // One world draws every tick with poses switching on and off and the
+        // art's settings changing, the other never draws.
         posed_world.render_opts.poses = t % 3 != 0;
+        let n = posed_world.rules.actors.len();
+        posed_world.render_opts.make_ticks = match t % 4 {
+            0 => Vec::new(),
+            1 => vec![0; n],
+            2 => vec![20; n],
+            _ => (0..n as u32).map(|k| k % 90).collect(),
+        };
+        posed_world.render_opts.building_overlays =
+            (0..n as u32).map(|k| if t % 2 == 0 { 0 } else { posed(2 * k + 1, Pose::Still, 4) as u32 }).collect();
+        posed_world.render_opts.set_original_art(&(0..2 * n as u32).filter(|k| t % 5 == 0 && k % 3 == 0).collect::<Vec<_>>(), &[]);
         posed_world.build_render(0, 0.5, &view, &[], &mut s, &mut r);
         posed_world.build_render_records(1, &[], &mut recs, &mut extras, &mut rects);
         assert_eq!(plain.state_hash(), posed_world.state_hash(), "tick {t}");

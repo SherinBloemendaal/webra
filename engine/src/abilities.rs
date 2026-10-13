@@ -125,8 +125,22 @@ pub struct Nuke {
     pub camera_at: u32,
     pub camera_ticks: i32,
     /// Last tick the target beacon shows (DisplayBeacon: FlightDelay less
-    /// BeaconRemoveAdvance after the order).
+    /// BeaconRemoveAdvance after the order; `beacon_until`).
     pub beacon_until: u32,
+}
+
+/// Last tick the target beacon shows: `FlightDelay - BeaconRemoveAdvance`
+/// ticks after the order (OpenRA Beacon.Tick removes it when that duration
+/// has passed). OpenRA's Beacon only removes itself for a positive duration,
+/// so a BeaconRemoveAdvance of FlightDelay or more keeps it up: WebRA then
+/// shows it while the missile flies (the beacon belongs to the missile).
+pub(crate) fn beacon_until(fired: u32, flight: u32, remove_advance: i32) -> u32 {
+    let duration = flight as i64 - remove_advance as i64;
+    if duration <= 0 {
+        u32::MAX
+    } else {
+        (fired as i64 + duration).min(u32::MAX as i64) as u32
+    }
 }
 
 impl Nuke {
@@ -1381,7 +1395,7 @@ impl World {
             camera_range: info.camera_range,
             camera_at: (fired + flight + 1).saturating_sub(info.camera_spawn_advance.max(0) as u32),
             camera_ticks: info.camera_spawn_advance + info.camera_remove_delay - 1,
-            beacon_until: (fired + flight).saturating_sub(info.beacon_remove_advance.max(0) as u32),
+            beacon_until: beacon_until(fired, flight, info.beacon_remove_advance),
         });
         true
     }

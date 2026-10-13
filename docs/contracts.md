@@ -2017,7 +2017,9 @@ target and falls as fast, and goes off `flight_delay` ticks after leaving;
 target opens `flight_delay - camera_spawn_advance + 1` ticks after the
 order for `camera_spawn_advance + camera_remove_delay` ticks, and the
 target beacon shows until `flight_delay - beacon_remove_advance` ticks
-after it; drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
+after it (OpenRA's Beacon only removes itself for a positive duration: with
+an advance of `flight_delay` or more it stays, in WebRA while the missile
+flies); drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
 `down` with the original graphics), `GpsPower` launches by itself when
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
@@ -2156,12 +2158,14 @@ GetSellValue, CustomSellValue or the cost), the step is multiplied by
 `bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
 insufficient funds event per player, repairers who are no longer allied or
 playing drop out, a full structure ends the repair. The wrench over a
-structure being repaired blinks in the colour of each repairer in turn, one
-per blink cycle (OpenRA WithBuildingRepairDecoration: `allyrepair` in the
-player palette, CycleRepairer; always WebRA's team coloured wrench, Red
-Alert's own wrench has no team colours), next to the power off icon when
-both show; like every OpenRA decoration only the owner, allies and
-spectators see them. Powered off, a structure
+structure being repaired shows in the colour of each repairer in turn
+(OpenRA WithBuildingRepairDecoration loops `allyrepair`, Tick 160, in the
+player palette and takes the next repairer after each loop, CycleRepairer):
+WebRA's wrench is one team coloured picture (Red Alert's own wrench has no
+team colours), shown steadily, the colour changing every 8 ticks (WebRA
+counts a loop as two frames of 160 ms). The power off icon blinks, one
+frame on and one off, next to the wrench when both show; like every OpenRA
+decoration only the owner, allies and spectators see them. Powered off, a structure
 adds nothing to the power drain and `is_powered_down` is true (defences hold
 fire, radar, gap generator and detection stop, support powers stop
 charging, the sprite stands still and is darkened like low power). Both are
@@ -2756,7 +2760,14 @@ damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
 (structure placed during the game, `age` = ticks since then, while its make
 animation plays: `Game.set_make_ticks(ticks)`, one value per actor type,
 the atlas's `makeTicks` from the body's make pose, 0 for art without one;
-up to 127 for a type it does not name), 5
+up to 127 for a type it does not name; a render setting like the others:
+only drawing reads it, so players with different art keep the same
+simulation and state hash, `tests_poses.rs`
+`poses_never_change_the_simulation`. OpenRA's `build-incomplete` condition
+also gates traits of the structure while it plays (attacks, selling,
+capture, demolition, instant repair, cash delivery, transforming); WebRA
+does not model that: Red Alert's make sequences are all `Length: *`, so
+their frame counts live only in the player's own files), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
 remembered structure under fog), 8 damaged and still, 9 and 10 aux idle and
 aux move (a second overlay in the same slot: the Chinook's rear rotor on the

@@ -184,8 +184,10 @@ impl World {
 /// (apps/game/js/art/decorations.js DECORATION_SPECIALS).
 pub const DECORATION_WRENCH: f32 = 0.0;
 pub const DECORATION_POWER_OFF: f32 = 1.0;
-/// Ticks per frame of the blinking `allyrepair` and `poweroff` animations
-/// (Tick 160 ms at 40 ms per tick); a cycle is on for one frame, off for one.
+/// Ticks per frame of the `allyrepair` and `poweroff` animations (Tick 160
+/// ms at 40 ms per tick). WebRA counts a loop of either as two frames: the
+/// wrench changes colour after each loop, the power off icon shows for one
+/// frame and not the next.
 pub const DECORATION_FRAME_TICKS: u32 = 4;
 /// Distance of the two icons from the centre when both show (OpenRA Offsets 10 and -10).
 pub const DECORATION_SPREAD: f32 = 10.0;
@@ -193,15 +195,17 @@ pub const DECORATION_SPREAD: f32 = 10.0;
 impl World {
     /// The wrench of a structure being repaired, in the colour of each
     /// repairer in turn, and the power off icon of a switched off one, at its
-    /// centre (OpenRA WithBuildingRepairDecoration and WithDecoration@POWERDOWN:
-    /// blinking, side by side when both show). Like every OpenRA decoration
+    /// centre, side by side when both show. OpenRA WithBuildingRepairDecoration
+    /// loops `allyrepair` (Tick 160) and switches to the next repairer's
+    /// player palette after each loop (CycleRepairer); WebRA's wrench is one
+    /// picture, so it shows steadily and takes the next repairer's colour
+    /// every loop of two frames. The power off icon (WithDecoration@POWERDOWN)
+    /// blinks, one frame on and one off. Like every OpenRA decoration
     /// (WithDecorationBase.ValidRelationships, default Ally) only the owner,
     /// allies and spectators see them, where the structure is not fogged.
     pub(crate) fn render_building_decorations(&self, player: u8, sink: &mut crate::instances::Sink, base: f32, sprites: &mut Vec<f32>) {
         let frame = self.tick / DECORATION_FRAME_TICKS;
-        if frame % 2 == 1 {
-            return;
-        }
+        let power_off_shows = frame.is_multiple_of(2);
         for (i, a) in self.actors.iter().enumerate() {
             if !a.alive || a.kind != Kind::Building || (!a.repair_active && !a.powered_off) {
                 continue;
@@ -217,14 +221,17 @@ impl World {
                 continue;
             }
             let wrench = a.repair_active && !a.repairers.is_empty();
+            if !wrench && !power_off_shows {
+                continue;
+            }
             let spread = if wrench && a.powered_off { DECORATION_SPREAD } else { 0.0 };
             if wrench {
-                // One repairer per blink cycle (OpenRA CycleRepairer after each animation).
+                // One repairer per loop (OpenRA CycleRepairer after each animation).
                 let who = a.repairers[(frame / 2) as usize % a.repairers.len()];
                 let r = crate::instances::SpriteRec::at(x, y, 32.0).look(base + DECORATION_WRENCH, who as f32, 1.0, 1.0, 0.0);
                 sink.sprite(sprites, r.offset(-spread, 0.0));
             }
-            if a.powered_off {
+            if a.powered_off && power_off_shows {
                 let r = crate::instances::SpriteRec::at(x, y, 32.0).look(base + DECORATION_POWER_OFF, a.owner as f32, 1.0, 1.0, 0.0);
                 sink.sprite(sprites, r.offset(spread, 0.0));
             }
