@@ -893,6 +893,8 @@ CRATE_VALID_WATER = 'Water'
 STARTING_INNER_RADIUS = 2
 STARTING_OUTER_RADIUS = 4
 STARTING_BASE_FACING = 512
+UNREVEALED_TERRAIN = 'Unrevealed Terrain'
+TOOLTIP_PREFIX = {'ally': 'Ally', 'enemy': 'Enemy'}
 TIME_LIMIT_OPTIONS = [0, 10, 20, 30, 40, 60, 90]
 
 
@@ -933,7 +935,15 @@ def world_rules(src, ids_lower):
                   'default': int(tl.get('TimeLimitDefault', 0)),
                   'warnings': [m for m, _ in warnings],
                   'notifications': [n for _, n in warnings]}
-    return {'crates': crates, 'starting_units': starting, 'time_limit': time_limit}
+    # The battlefield tooltip's texts (engine/src/tooltip.rs): the resource
+    # names of the ResourceRenderer, and OpenRA's common strings
+    # (mods/common/fluent/common.ftl label-unrevealed-terrain, rules.ftl
+    # label-tooltip-prefix .ally and .enemy; TooltipInfo has no NeutralPrefix).
+    base = src.to_json(src.load('rules', ['world'])['^BaseWorld'][1])
+    rr = base['ResourceRenderer']['ResourceTypes']
+    tooltips = {'unrevealed': UNREVEALED_TERRAIN, 'ally_prefix': TOOLTIP_PREFIX['ally'], 'enemy_prefix': TOOLTIP_PREFIX['enemy'],
+                'ore': src.tr(rr['Ore']['Name']), 'gems': src.tr(rr['Gems']['Name'])}
+    return {'crates': crates, 'starting_units': starting, 'time_limit': time_limit, 'tooltips': tooltips}
 
 
 # OpenRA bot modules (mods/ra/rules/ai.yaml, data/source/rules/ai.yaml) with the
@@ -1346,6 +1356,101 @@ def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
     }
 
 
+# OpenRA PlayerRelationship flags (Ally 1, Neutral 2, Enemy 4), as the
+# tooltip's GenericVisibility mask.
+RELATIONSHIP_BITS = {'None': 0, 'Ally': 1, 'Neutral': 2, 'Enemy': 4}
+
+
+def relationship_mask(v):
+    """A PlayerRelationship list (FieldLoader parses enums ignoring case) as bits."""
+    names = {k.lower(): bit for k, bit in RELATIONSHIP_BITS.items()}
+    return sum(names[x.lower()] for x in tokens(v))
+
+
+def tooltip_info(src, t):
+    """OpenRA Tooltip (or the spy's DisguiseTooltip, a TooltipInfo) for the
+    battlefield tooltip (engine/src/tooltip.rs): the generic name and who sees
+    it (GenericVisibility, default None), whether a relationship prefix goes
+    before it (GenericStancePrefix, default true) and whether the owner row
+    shows (ShowOwnerRow, default true). The name is the actor's `name`. None
+    for actors without one (EditorOnlyTooltip: mines, cameras, proxies)."""
+    tips = [v if isinstance(v, dict) else {} for v in {**trait(t, 'Tooltip'), **trait(t, 'DisguiseTooltip')}.values()]
+    if not tips:
+        return None
+    # Tooltip@SUMMER / @WINTER (haystacks, igloos): the one `name` comes from (extra_actor).
+    tip = next((v for v in tips if not v.get('RequiresCondition', '').strip() or v['RequiresCondition'].startswith('!')), tips[0])
+    return {'generic_name': src.tr(tip.get('GenericName')) or '',
+            'generic_visibility': relationship_mask(tip.get('GenericVisibility', 'None')),
+            'generic_prefix': str(tip.get('GenericStancePrefix', 'true')).lower() == 'true',
+            'show_owner': str(tip.get('ShowOwnerRow', 'true')).lower() == 'true'}
+
+
+# OpenRA's range circle traits (OpenRA.Mods.Common/Traits/Render: RenderRangeCircle,
+# RenderDetectionCircle, RenderShroudCircle, RenderJammerCircle, WithRangeCircle):
+# kind and default colour (Color.FromArgb(128, Yellow, LimeGreen, Cyan, Red,
+# White)); all draw a Width 1 line over a BorderWidth 3 border of 96 alpha black.
+RANGE_CIRCLES = {'RenderRangeCircle': ('range', [255, 255, 0, 128]),
+                 'RenderDetectionCircle': ('detection', [50, 205, 50, 128]),
+                 'RenderShroudCircle': ('shroud', [0, 255, 255, 128]),
+                 'RenderJammerCircle': ('jammer', [255, 0, 0, 128]),
+                 'WithRangeCircle': ('fixed', [255, 255, 255, 128])}
+CIRCLE_BORDER = [0, 0, 0, 96]
+
+
+def color_rgba(v):
+    """An OpenRA colour (RRGGBB or RRGGBBAA hex) as [r, g, b, a]."""
+    v = str(v).strip()
+    if not re.fullmatch(r'[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?', v):
+        raise SystemExit(f'unsupported colour {v!r}')
+    return [int(v[i:i + 2], 16) for i in (0, 2, 4)] + [int(v[6:8], 16) if len(v) == 8 else 255]
+
+
+def range_circles(t, aid, ids_lower):
+    """The range circles of an actor (engine/src/range_circles.rs): drawn
+    around the selected actor for its owner and allies, and while a structure
+    with one is placed. `range` is the radius in world units (RenderRangeCircle:
+    its FallbackRange, the engine takes the longest weapon); `group` the
+    RangeCircleType or WithRangeCircle Type (the circles of other actors shown
+    while placing); `placement` whether it shows while placing
+    (IPlaceBuildingDecorationInfo, enabled by default); `passengers` the
+    passenger types whose PassengerConditions enable it (WithRangeCircle with
+    RequiresCondition)."""
+    out = []
+    for name, (kind, default) in RANGE_CIRCLES.items():
+        for key, v in trait(t, name).items():
+            v = v if isinstance(v, dict) else {}
+            unknown = set(v) - {'Color', 'Width', 'BorderColor', 'BorderWidth', 'RangeCircleType', 'FallbackRange', 'Type', 'Range',
+                                'RequiresCondition'}
+            if unknown:
+                raise SystemExit(f'{aid}.{key}: unsupported {sorted(unknown)}')
+            c = {'kind': kind, 'group': v.get('RangeCircleType') or v.get('Type') or '', 'range': 0,
+                 'color': color_rgba(v['Color']) if 'Color' in v else default,
+                 'border': color_rgba(v['BorderColor']) if 'BorderColor' in v else CIRCLE_BORDER,
+                 'width': float(v.get('Width', 1)), 'border_width': float(v.get('BorderWidth', 3)),
+                 'placement': kind != 'detection', 'passengers': []}
+            cond = v.get('RequiresCondition', '').strip()
+            if cond:
+                # PassengerConditions (Cargo): the passenger types that grant it.
+                pc = first(t, 'Cargo').get('PassengerConditions') or {}
+                c['passengers'] = sorted(ids_lower[p.lower()] for p, g in pc.items() if g == cond)
+                if not c['passengers']:
+                    raise SystemExit(f'{aid}.{key}: unsupported RequiresCondition {cond}')
+                c['placement'] = False
+            if kind == 'range':
+                c['range'] = wdist(v.get('FallbackRange', 0))
+            elif kind == 'fixed':
+                c['range'] = wdist(v.get('Range', 0))
+            else:
+                src_trait = {'detection': 'DetectCloaked', 'shroud': 'CreatesShroud', 'jammer': 'JamsMissiles'}[kind]
+                parts = [p if isinstance(p, dict) else {} for p in trait(t, src_trait).values()]
+                if any(p.get('RequiresCondition', '!').strip()[:1] != '!' for p in parts):
+                    raise SystemExit(f'{aid}.{key}: {src_trait} with a RequiresCondition that is off by default')
+                # DetectCloakedInfo.Range defaults to 5c0; CreatesShroud and JamsMissiles need one.
+                c['range'] = max((wdist(p.get('Range', '5c0' if kind == 'detection' else 0)) for p in parts), default=0)
+            out.append(c)
+    return out
+
+
 def tooltip_descriptions(a):
     """OpenRA TooltipDescription@ally and @other of a world actor (tech
     buildings): the text owners and their allies see, and the text everyone
@@ -1468,6 +1573,9 @@ def main():
             'world': {**world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, aid in WORLD_ACTORS), **tooltip_descriptions(a)},
         }
         e['fire_delays'], e['targets_allies'] = armament_info(t)
+        # The battlefield tooltip and the range circles (engine/src/tooltip.rs, range_circles.rs).
+        e['tooltip'] = tooltip_info(src, t)
+        e['range_circles'] = range_circles(t, aid, ids_lower)
         if e['world'].get('indestructible'):
             e['hp'] = 1  # no Health trait: never damaged (the engine needs a positive value)
         # Only what differs from the engine's defaults (neutral.rs WorldTraits):

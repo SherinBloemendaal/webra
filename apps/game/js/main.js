@@ -89,6 +89,7 @@ import { CampaignProgress, findMission, nextMission } from './campaign/progress.
 import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
 import { TargetLines, withTargetLines } from './targetlines.js';
+import { WorldTooltip } from './worldtooltip.js';
 
 const PLAYER = 0;
 
@@ -1339,6 +1340,17 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   powerTimers = new PowerTimers($('hud-row'));
   // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
   commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys, spectator: !!viewer });
+  // The battlefield tooltip (js/worldtooltip.js): name, owner and more of what
+  // the resting mouse is over, seen with the eyes of the view on screen.
+  const worldTip = new WorldTooltip({
+    input,
+    game: ui,
+    view: () => view.player,
+    player,
+    nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
+    colorOf: (owner) => TEAM_COLORS[owner] ?? [1, 1, 1],
+    blocked: () => !!document.querySelector('dialog[open]'),
+  });
   // Spectators and replays give no orders: no power bar, no command bar.
   if (viewer) {
     powerBar.root.hidden = true;
@@ -2003,6 +2015,10 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const renderStart = performance.now();
     const uiRects = input.uiRects();
     commandBar.frame();
+    worldTip.frame(now);
+    // The structure being placed shows its range circles (engine range_circles.rs).
+    const placing = input.placementState();
+    ui.set_placing(placing?.actor ?? '', placing?.cx ?? 0, placing?.cy ?? 0);
     // GPU path: the simulation's rects come from the instance pass, these are the UI's.
     const records = f.instances === 'gpu' ? f.records() : null;
     const simRects = f.instances === 'gpu' ? NO_RECTS : f.rects();

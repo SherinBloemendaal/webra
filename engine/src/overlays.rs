@@ -464,7 +464,7 @@ impl World {
             }
             let Some((from, to)) = self.rally_line(i) else { continue };
             let c = team_color(self.actors[i].owner, 1.0, 1.0);
-            lines.extend_from_slice(&[from.0, from.1, to.0, to.1, c[0], c[1], c[2], c[3]]);
+            crate::paths::push_line(lines, from, to, c, 1.0);
         }
         debug_assert_eq!(lines.len() % LINE_FLOATS, 0);
     }

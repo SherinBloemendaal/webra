@@ -230,6 +230,7 @@ export class RemoteGame extends StaticFacts {
     this.cache = new QueryCache(now);
     this.selected = new Uint32Array(0);
     this.hover = NONE;
+    this.placing = '';
     this.table = null;
     this.tick = info.tick;
     this.pendingAudio = null;
@@ -252,6 +253,14 @@ export class RemoteGame extends StaticFacts {
     if (id === this.hover) return;
     this.hover = id;
     this.link.post({ t: 'call', method: 'set_hover', args: [id] });
+  }
+
+  /** The structure being placed (actor id, top-left cell; '' for none): its range circles. */
+  set_placing(actor, cx, cy) {
+    const key = actor ? `${actor},${cx},${cy}` : '';
+    if (key === this.placing) return;
+    this.placing = key;
+    this.link.post({ t: 'call', method: 'set_placing', args: [actor ?? '', cx, cy] });
   }
 
   /** Control groups for the numbers on selection boxes: `ids[k]` is in group `groups[k]`. */

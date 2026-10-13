@@ -10,7 +10,8 @@ import { GpuInstances } from './crowd-gpu.js';
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
 const HEAT_FLOATS = 4;
-const LINE_FLOATS = 8;
+// Line instances: [x0, y0, x1, y1, r, g, b, a, width] (engine/src/paths.rs LINE_FLOATS).
+const LINE_FLOATS = 9;
 // shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock, weather (env, env2), art.
 const GLOBALS_BYTES = 352;
 const ANIM_OFFSET = 72;
@@ -154,8 +155,17 @@ export class Renderer {
     const heatInstance = { arrayStride: HEAT_FLOATS * 4, stepMode: 'instance', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x4' }] };
     this.heatPipeline = this.pipeline(heatSrc, this.rectLayout, [heatInstance], blend, 'heat');
     this.heatCapacity = 0;
-    // Lines (unit paths): same instance layout and bindings as rects.
-    this.linePipeline = this.pipeline(lineSrc, this.rectLayout, [instance(LINE_FLOATS * 4)], blend, 'lines');
+    // Lines (unit paths, rally and target lines, range circles): the rects' bindings, a width per instance.
+    const lineInstance = {
+      arrayStride: LINE_FLOATS * 4,
+      stepMode: 'instance',
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x4' },
+        { shaderLocation: 1, offset: 16, format: 'float32x4' },
+        { shaderLocation: 2, offset: 32, format: 'float32' },
+      ],
+    };
+    this.linePipeline = this.pipeline(lineSrc, this.rectLayout, [lineInstance], blend, 'lines');
 
     // GPU instance pass: optional, the CPU path draws without it.
     this.instances = null;

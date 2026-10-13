@@ -131,7 +131,7 @@ export const HELP = Object.freeze({
   'controls.focus':
     'Like OpenRA, a key goes to the game unless the focused control uses it. Typing in a text field (the chat line, a save name) takes every key. A switch, slider or list keeps only the keys that work it (Space; the arrows, Home and End; Enter in a list), so the hotkeys keep working after a click on one. A button clicked with the mouse keeps no key; one reached with Tab keeps Tab and Enter.',
   'controls.selection':
-    "Select all (Q) picks your units on screen of OpenRA's highest selection priority: combat units first, then support units such as the MCV, harvesters, defences and other structures. Select by type (W) adds the units of the selected types on screen. Press either again for the whole map. A double click adds that type on screen.",
+    "Select all (Q) picks your units on screen of OpenRA's highest selection priority: combat units first, then support units such as the MCV, harvesters, defences and other structures. Select by type (W) adds the units of the selected types on screen. Press either again for the whole map. A double click adds that type on screen. Rest the mouse on the battlefield for a moment and a tooltip names what is there, like OpenRA: the unit or structure and its owner, a remembered structure under the fog, ore, or Unrevealed Terrain. Selected defences, detectors and gap generators show their range as a dashed circle, and placing a defence shows the circles of your defences of the same kind.",
 
   // ---- Audio (js/audio/panel.js in the game menu) --------------------------------------------
   'audio.master': 'Turns every sound up or down at once: effects, voices and music.',

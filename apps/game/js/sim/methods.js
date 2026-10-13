@@ -4,7 +4,7 @@
 //
 // - ORDERS change the game. They are sent to the worker in order and applied
 //   before its next step (in lockstep they only queue an order anyway).
-// - UI_STATE (selection, hover, control groups) changes what the worker draws: sent like
+// - UI_STATE (selection, hover, control groups, placement) changes what the worker draws: sent like
 //   orders, and mirrored on the main thread.
 // - QUERIES only read. On the main thread they answer synchronously from the
 //   last values the worker sent (each call registers the query, the worker
@@ -52,8 +52,8 @@ export const ORDERS = Object.freeze([
   'dev_experience',
 ]);
 
-/** Local view state: what is selected and hovered, and the control groups (drawn by the engine). */
-export const UI_STATE = Object.freeze(['set_selection', 'set_hover', 'set_control_groups']);
+/** Local view state: what is selected and hovered, the control groups and the structure being placed (drawn by the engine). */
+export const UI_STATE = Object.freeze(['set_selection', 'set_hover', 'set_control_groups', 'set_placing']);
 
 const EMPTY_U32 = () => new Uint32Array(0);
 const EMPTY_I32 = () => new Int32Array(0);
@@ -66,6 +66,8 @@ const EMPTY_F32 = () => new Float32Array(0);
  */
 export const QUERY_DEFAULTS = Object.freeze({
   pick: () => NONE,
+  // The battlefield tooltip (js/worldtooltip.js): JSON, 'null' for none.
+  world_tooltip: () => 'null',
   select_box: EMPTY_U32,
   select_at: () => NONE,
   select_all: EMPTY_U32,
@@ -157,6 +159,7 @@ export const QUERIES = Object.freeze(Object.keys(QUERY_DEFAULTS));
 export const FOLLOW_LATEST = Object.freeze(
   new Set([
     'pick',
+    'world_tooltip',
     'cursor_action',
     'can_guard',
     'can_attack_ground',

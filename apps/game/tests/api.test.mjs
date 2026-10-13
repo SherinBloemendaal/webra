@@ -171,11 +171,12 @@ test('unit paths: route lines for selected own units only', () => {
   ticks(game, 3);
   const n = game.build_paths(0, 1);
   assert.ok(n >= units.length, `segments: ${n}`);
-  const lines = new Float32Array(wasm.memory.buffer, game.path_ptr(), n * 8);
+  // 9 floats per segment: [x0, y0, x1, y1, r, g, b, a, width] (engine/src/paths.rs LINE_FLOATS).
+  const lines = new Float32Array(wasm.memory.buffer, game.path_ptr(), n * 9);
   assert.ok(lines.every(Number.isFinite));
   // Routes end on the centre of the goal cell, next to the clicked point.
   const ends = [];
-  for (let k = 0; k < n; k++) ends.push([lines[k * 8 + 2], lines[k * 8 + 3]]);
+  for (let k = 0; k < n; k++) ends.push([lines[k * 9 + 2], lines[k * 9 + 3]]);
   const near = ([x, y]) => Math.abs(x - 40 * 24) <= 36 && Math.abs(y - 40 * 24) <= 36 && (x - 12) % 24 === 0 && (y - 12) % 24 === 0;
   assert.ok(ends.some(near), 'a segment ends on the goal');
   assert.equal(game.build_paths(1, 1), 0, 'the other player sees none of our routes');
@@ -199,9 +200,10 @@ test('rally lines and control group numbers: local UI state drawn by the engine,
   assert.equal(game.build_lines(0, 1, false), 0);
   game.set_selection(Uint32Array.from([yard]));
   assert.equal(game.build_lines(0, 1, false), 1, 'the rally line of the selected structure');
-  const line = new Float32Array(wasm.memory.buffer, game.path_ptr(), 8);
+  const line = new Float32Array(wasm.memory.buffer, game.path_ptr(), 9);
   assert.ok(Math.abs(line[2] - (sx + 5 * 24)) < 1 && Math.abs(line[3] - (sy + 6 * 24)) < 1, 'it ends on the rally point');
   assert.equal(line[4], -1, 'in player 0\'s team colour (shaders/line.wgsl)');
+  assert.equal(line[8], 1, 'one line width');
   assert.equal(game.build_lines(1, 1, false), 0, 'not for the enemy');
   // Control groups change what is drawn only.
   const plates = () => {

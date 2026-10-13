@@ -30,6 +30,11 @@ impl Rect {
         Rect { x0: ax.min(bx), y0: ay.min(by), x1: ax.max(bx), y1: ay.max(by) }
     }
 
+    /// `(x0, y0, x1, y1)`.
+    pub(crate) fn corners(&self) -> (i32, i32, i32, i32) {
+        (self.x0, self.y0, self.x1, self.y1)
+    }
+
     fn overlaps(&self, o: &Rect) -> bool {
         self.x0 <= o.x1 && o.x0 <= self.x1 && self.y0 <= o.y1 && o.y0 <= self.y1
     }
@@ -156,7 +161,7 @@ impl World {
 
     /// Where actor `i` can be clicked: its `Selectable` bounds, else its
     /// footprint (structures) or one cell, around its position.
-    fn selection_bounds(&self, i: usize, info: &SelectionInfo) -> Rect {
+    pub(crate) fn selection_bounds(&self, i: usize, info: &SelectionInfo) -> Rect {
         let a = &self.actors[i];
         let (w, h, ox, oy) = match *info.bounds.as_slice() {
             [w, h, ox, oy] => (w, h, ox, oy),

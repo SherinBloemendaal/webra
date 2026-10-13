@@ -76,6 +76,12 @@ struct RawActor {
     death: Option<RawDeath>,
     infiltrate_types: Vec<String>,
     disguisable: bool,
+    /// OpenRA Tooltip (tooltip.rs); null: none (EditorOnlyTooltip).
+    #[serde(default)]
+    tooltip: Option<TooltipInfo>,
+    /// Range circles (range_circles.rs).
+    #[serde(default)]
+    range_circles: Vec<RangeCircleInfo>,
     building: Option<RawBuilding>,
     unit: Option<UnitInfo>,
     /// The neutral world's traits (neutral.rs).
@@ -102,6 +108,63 @@ pub struct SelectionInfo {
     /// `Bounds` in world units: width, height and the x, y offset of their
     /// centre; empty: the footprint (structures) or one cell.
     pub bounds: Vec<i32>,
+}
+
+/// OpenRA `Tooltip` (and the spy's `DisguiseTooltip`): how the battlefield
+/// tooltip names an actor (tooltip.rs). The name is `ActorInfo::name`.
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct TooltipInfo {
+    /// GenericName: shown instead of the name to the relationships of `generic_visibility`.
+    pub generic_name: String,
+    /// GenericVisibility: `REL_*` bits.
+    pub generic_visibility: u8,
+    /// GenericStancePrefix: "Ally" or "Enemy" before the generic name.
+    pub generic_prefix: bool,
+    /// ShowOwnerRow: the owner's flag and name under the name.
+    pub show_owner: bool,
+}
+
+/// OpenRA `PlayerRelationship` flags, as in `TooltipInfo::generic_visibility`.
+pub const REL_ALLY: u8 = 1;
+pub const REL_NEUTRAL: u8 = 2;
+pub const REL_ENEMY: u8 = 4;
+
+/// Which OpenRA trait draws a range circle (range_circles.rs).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CircleKind {
+    /// RenderRangeCircle: the longest weapon range (`range`: FallbackRange).
+    Range,
+    /// RenderDetectionCircle: the DetectCloaked range.
+    Detection,
+    /// RenderShroudCircle: the CreatesShroud range (gap generators).
+    Shroud,
+    /// RenderJammerCircle: the JamsMissiles range.
+    Jammer,
+    /// WithRangeCircle: a fixed range.
+    Fixed,
+}
+
+/// A range circle (range_circles.rs): drawn around the selected actor for its
+/// owner and allies, and while a structure with one is placed.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+pub struct RangeCircleInfo {
+    pub kind: CircleKind,
+    /// RangeCircleType (RenderRangeCircle) or Type (WithRangeCircle): placing
+    /// a structure shows the circles of the same group around other actors.
+    pub group: String,
+    /// Radius in world units (RenderRangeCircle: FallbackRange).
+    pub range: i32,
+    /// Line and border colours, RGBA 0..=255.
+    pub color: [u8; 4],
+    pub border: [u8; 4],
+    /// Line and border widths (OpenRA Width, BorderWidth).
+    pub width: f32,
+    pub border_width: f32,
+    /// Shown while placing the structure (IPlaceBuildingDecorationInfo, enabled by default).
+    pub placement: bool,
+    /// Shown only with one of these passengers inside (PassengerConditions); empty: always.
+    pub passengers: Vec<String>,
 }
 
 /// `SelectionInfo::modifiers` bits.
@@ -1063,6 +1126,10 @@ pub struct ActorInfo {
     pub infiltrate_types: Vec<String>,
     /// Targetable as Disguise: spies can take its looks.
     pub disguisable: bool,
+    /// OpenRA Tooltip (tooltip.rs); None: no battlefield tooltip.
+    pub tooltip: Option<TooltipInfo>,
+    /// Range circles (range_circles.rs).
+    pub range_circles: Vec<RangeCircleInfo>,
     pub building: Option<BuildingInfo>,
     pub unit: Option<UnitInfo>,
     /// Index of the actor this one deploys or undeploys into (MCV, FACT).
@@ -1409,6 +1476,18 @@ impl Rules {
             self.weapon_ref(&n("death_weapon"), w)?;
         }
         count(&n("turret_offsets"), a.turret_offsets.len(), 8)?;
+        if let Some(t) = &a.tooltip {
+            if t.generic_name.len() > 64 || t.generic_visibility & !(REL_ALLY | REL_NEUTRAL | REL_ENEMY) != 0 {
+                return Err(n("tooltip: generic_name at most 64 bytes, generic_visibility bits 1, 2 and 4"));
+            }
+        }
+        count(&n("range_circles"), a.range_circles.len(), 8)?;
+        for c in &a.range_circles {
+            within(&n("range_circles.range"), c.range, 0, 64 * CELLS)?;
+            if c.group.len() > 32 || c.passengers.len() > 8 || !(0.0..=8.0).contains(&c.width) || !(0.0..=8.0).contains(&c.border_width) {
+                return Err(n("range_circles: group at most 32 bytes, 8 passengers, widths 0 to 8"));
+            }
+        }
         if let Some(sel) = &a.selection {
             within(&n("selection.priority"), sel.priority, -1000, 1000)?;
             if sel.modifiers & !(SELECT_CTRL | SELECT_ALT) != 0 {
@@ -2098,6 +2177,8 @@ impl Rules {
                 death,
                 infiltrate_types: a.infiltrate_types,
                 disguisable: a.disguisable,
+                tooltip: a.tooltip,
+                range_circles: a.range_circles,
                 building,
                 unit: a.unit,
                 transforms_into,
