@@ -55,6 +55,8 @@ export class MissionView {
   /**
    * @param {{
    *   field: HTMLElement, hudButtons: HTMLElement,
+   *   panelBefore?: HTMLElement,  the objectives panel goes in front of it (the game's top-left HUD
+   *     column, index.html #hud-row) instead of floating over the field
    *   feed: import('../sim/proxy.js').MissionFeed,
    *   audio: object | null,
    *   centerOn(x: number, y: number): void,  world pixels
@@ -87,7 +89,9 @@ export class MissionView {
     this.floating = [];
     this.card = null;
     this.error = null;
-    o.field.append(this.panel, this.messages, this.text);
+    if (o.panelBefore) o.panelBefore.before(this.panel);
+    else o.field.append(this.panel);
+    o.field.append(this.messages, this.text);
     this.button = button('Objectives', 'hud-button', () => this.toggle());
     this.button.setAttribute('aria-controls', 'mission-panel');
     this.panel.id = 'mission-panel';

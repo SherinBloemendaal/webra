@@ -1246,7 +1246,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     reduced: () => motionReduced(settings.get('reduceMotion'), reducedMotion),
   });
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
-  powerBar = new PowerBar($('field'), {
+  powerBar = new PowerBar($('hud-row'), {
     ticksPerSecond: Game.ticks_per_second(),
     onSelect: (power) => input.startPowerTargeting(power),
     onInsufficientPower: (power) => audio?.insufficientPower(power),
@@ -1254,7 +1254,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     hotkeys,
   });
   // Superweapon countdowns (js/powertimers.js, OpenRA SupportPowerTimer): players only, like OpenRA's player widgets.
-  powerTimers = new PowerTimers($('field'));
+  powerTimers = new PowerTimers($('hud-row'));
   // Command bar (js/commandbar.js): orders, modes and fire stances for the selection.
   commandBar = new CommandBar($('field'), { game: ui, input, player, hotkeys, spectator: !!viewer });
   // Spectators and replays give no orders: no power bar, no command bar.
@@ -1267,6 +1267,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     ? new MissionView({
         field: $('field'),
         hudButtons: $('menu-button').parentElement,
+        panelBefore: $('hud-row'),
         feed: game.mission,
         audio,
         centerOn: (x, y) => input.centerOn(x, y),

@@ -44,8 +44,14 @@
     <div id="app" hidden>
       <main id="field">
         <canvas id="view"></canvas>
-        <div id="hud"></div>
-        <div id="weather" role="status" aria-live="polite" hidden></div>
+        <!-- The top-left HUD in one column, so nothing in it overlaps (css/style.css #hud-stack):
+             the status line, the weather badge, the mission objectives (js/campaign/view.js), then
+             the support power bar and the support power timers side by side (js/powers.js, js/powertimers.js). -->
+        <div id="hud-stack">
+          <div id="hud"></div>
+          <div id="weather" role="status" aria-live="polite" hidden></div>
+          <div id="hud-row"></div>
+        </div>
         <div class="hud-buttons">
           <!-- Phones: show or hide the build sidebar drawer (js/layout.js) -->
           <button id="sidebar-toggle" class="hud-button" type="button" aria-controls="sidebar" hidden>Map</button>

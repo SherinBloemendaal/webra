@@ -1,15 +1,19 @@
 /* Support power bar (js/powers.js): a column of buttons on the left edge of
-   the battlefield, under the HUD. Same gunmetal as the sidebar (theme.css). */
+   the battlefield, in the top-left HUD column under the status line and the
+   weather badge (#hud-row, css/style.css). Same gunmetal as the sidebar (theme.css). */
 
 #powers {
-  position: absolute;
-  left: calc(8 * var(--ui-px));
-  top: calc(34 * var(--ui-px));
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: calc(4 * var(--ui-px));
   width: calc(132 * var(--ui-px));
-  z-index: 5;
+  pointer-events: auto;
+}
+
+/* Without powers (or for spectators) it takes no room next to the timers. */
+#powers[hidden] {
+  display: none;
 }
 
 #powers .power {
@@ -111,18 +115,18 @@
 }
 
 /* Support power timers (js/powertimers.js, OpenRA SupportPowerTimer): the
-   superweapon countdowns right of the power bar, one line each in the
-   owner's colour (set inline) with OpenRA's one pixel contrast shadow, in
-   OpenRA's Bold font size (14) and line gap (5). Over the map, not clickable. */
+   superweapon countdowns right of the power bar (#hud-row, css/style.css),
+   or in its place when there is no bar, one line each in the owner's colour
+   (set from script) with OpenRA's one pixel contrast shadow, in OpenRA's
+   Bold font size (14) and line gap (5). Long lines end in an ellipsis rather
+   than leave the battlefield. Over the map, not clickable. */
 #power-timers {
-  position: absolute;
-  left: calc(148 * var(--ui-px));
-  top: calc(34 * var(--ui-px));
-  z-index: 5;
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: calc(5 * var(--ui-px));
-  max-width: calc(100% - calc(156 * var(--ui-px)));
+  min-width: 0;
+  max-width: 100%;
   font: 700 calc(14 * var(--ui-px)) / 1 var(--ui-font);
   pointer-events: none;
 }

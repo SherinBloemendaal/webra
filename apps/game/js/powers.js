@@ -26,7 +26,7 @@ export function powerTip(p, hotkey, ticksPerSecond) {
 
 export class PowerBar {
   /**
-   * @param {HTMLElement} parent element the bar is placed in (the battlefield)
+   * @param {HTMLElement} parent element the bar is placed in (the top-left HUD row, index.html #hud-row)
    * @param {{ ticksPerSecond: number, onSelect(power): void, onInsufficientPower?(power): void, onTargetLost?(): void, hotkeys?: import('./hotkeys.js').HotkeyRegistry }} hooks
    *   `hotkeys`: the registry, for the support power keys in the tooltips;
    *   `onInsufficientPower`: a power without a powered provider was clicked (OpenRA InsufficientPower)

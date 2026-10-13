@@ -63,7 +63,7 @@ export function timerLines(timers, { tick, tickMs, nameOf, colorOf }) {
 const css = (c) => `rgb(${c.slice(0, 3).map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(', ')})`;
 
 export class PowerTimers {
-  /** @param {HTMLElement} parent the battlefield (#field) */
+  /** @param {HTMLElement} parent the top-left HUD row, after the power bar (index.html #hud-row) */
   constructor(parent) {
     this.root = document.createElement('div');
     this.root.id = 'power-timers';

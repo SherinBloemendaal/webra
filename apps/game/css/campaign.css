@@ -449,3 +449,13 @@
   font: var(--ui-fs-xs) var(--ui-font);
   pointer-events: none;
 }
+
+/* In the game the objectives open in the top-left HUD column (index.html
+   #hud-stack), under the weather badge and above the support power row,
+   instead of over them. */
+#hud-stack > .mission-panel {
+  position: static;
+  width: min(380px, 100%);
+  max-height: 40vh;
+  pointer-events: auto;
+}

@@ -39,10 +39,33 @@ body {
   height: 100%;
 }
 
-#hud {
+/* The top-left HUD (index.html): one column that grows downwards, so the
+   status line, the weather badge, the objectives and the support power
+   row never overlap whatever their sizes. Clicks reach the map between them. */
+#hud-stack {
   position: absolute;
   left: calc(8 * var(--ui-px));
   top: calc(6 * var(--ui-px));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(6 * var(--ui-px));
+  max-width: calc(100% - calc(16 * var(--ui-px)));
+  pointer-events: none;
+}
+
+/* The support power bar and, right of it, the support power timers (css/powers.css). */
+#hud-row {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(8 * var(--ui-px));
+  max-width: 100%;
+  min-width: 0;
+}
+
+#hud {
+  max-width: 100%;
   padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(6, 8, 11, 0.72);
   border: 1px solid var(--ui-edge);
@@ -59,10 +82,7 @@ body {
 
 /* Biome and weather badge (js/weather-fx.js): what the sky does to the battle. */
 #weather {
-  position: absolute;
-  left: calc(8 * var(--ui-px));
-  top: calc(34 * var(--ui-px));
-  max-width: min(calc(360 * var(--ui-px)), 60vw);
+  max-width: min(calc(360 * var(--ui-px)), 60vw, 100%);
   padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(6, 8, 11, 0.72);
   border: 1px solid var(--ui-edge);

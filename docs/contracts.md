@@ -1897,15 +1897,19 @@ OpenRA default `None`, shows nobody, not even the owner) holds the owner's
 relationship to the viewer (`World::relationship`: the owner and its team are
 `ally`, hostile players `enemy`, the rest `neutral`). A negative viewer sees
 every power that shows to anyone. In Red Alert only `NukePower` and `GpsPower`
-show (to everyone); the missions soviet-13a (GPS: Ally), allies-10a and
-situation-critical (the enemy silo: Neutral, so hidden) override it. A power
+show (to everyone); the missions soviet-13a and soviet-13b (GPS: Ally),
+allies-10a and situation-critical (the enemy silo: Neutral, so hidden)
+override it. A power
 is listed from its first provider until its owner loses the last one, also
 while paused by low power or a power down (the clock stops, `ready` is
 false), not after a one-shot power fired (GPS), and never for a defeated or
 non-combatant owner. `ready` is OpenRA's `Ready`: charged and charging. Order:
 by player, then the owner's power bar order (palette order; OpenRA keeps the
 order the powers were first acquired in). The client shows one line per timer
-right of the power bar, "<player>'s <power>: m:ss" (mods/ra/fluent/ra.ftl
+right of the power bar (the top-left HUD column, index.html `#hud-stack`:
+the status line, the weather badge, the mission objectives when open, then
+the power bar and the timers side by side, all in one flow so none overlaps
+another at any size), "<player>'s <power>: m:ss" (mods/ra/fluent/ra.ftl
 `support-power-timer`, `WidgetUtils.FormatTime` without a leading minute zero
 at the game speed's tick length), Bold 14 with a one pixel contrast shadow,
 in the owner's colour (relationship colours when that setting is on), white
