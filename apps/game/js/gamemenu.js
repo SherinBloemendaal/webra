@@ -24,7 +24,7 @@
 // game hotkey fires; default actions (Tab between buttons, arrow keys on a
 // slider) still work.
 
-import { BROWSER_SUBSTITUTES, comboFromEvent, formatCombo, GROUP_ORDER, isMac } from './hotkeys.js';
+import { comboFromEvent, formatCombo, GROUP_ORDER, isMac, substituteFor } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
@@ -66,6 +66,8 @@ export const MENU_HELP_KEYS = Object.freeze([
   'mouseCaptureSpeed',
   'mouseCaptureRaw',
   'mouseCaptureEscMenu',
+  'mouseCaptureNotice',
+  'pauseWhenHidden',
   'errorReports',
 ]);
 
@@ -177,6 +179,8 @@ export const MENU_SETTINGS = Object.freeze([
   'mouseCaptureSpeed',
   'mouseCaptureRaw',
   'mouseCaptureEscMenu',
+  'mouseCaptureNotice',
+  'pauseWhenHidden',
 ]);
 
 /** What the Mouse capture section says. */
@@ -607,6 +611,8 @@ export class GameMenu {
     withHelp(fsRow, 'fullscreen', fsButton);
     list.append(fsRow);
     if (!fs.available()) list.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
+    // Single player in another tab or a minimised window (js/main.js): plays on unless this is on.
+    list.append(check('pauseWhenHidden', 'Pause when the game is hidden'));
 
     // ---- Scrolling and units ----
     const targetLines = choice('targetLines', 'Target lines', SCHEMA.targetLines.labels);
@@ -631,8 +637,9 @@ export class GameMenu {
     // ---- Mouse capture (js/mouselock.js; not without Pointer Lock or a mouse) ----
     if (this.opts.mouseCapture?.available()) {
       const keys = this.opts.hotkeys.bindingsFor('toggleMouseCapture');
-      const release = keys.length ? `${formatCombo(keys[0])} or Esc` : 'Esc';
-      const mode = choice('mouseCapture', 'Capture the mouse', { off: 'Off', fullscreen: 'In fullscreen', always: 'Always' }, `${release} releases it; a click into the game captures it again.`);
+      const release = keys.length ? `${formatCombo(keys[0])} releases it and the game plays on; Esc releases it too.` : 'Esc releases it.';
+      const mode = choice('mouseCapture', 'Capture the mouse', { off: 'Off', fullscreen: 'In fullscreen', always: 'Always' }, `${release} A click into the game captures it again.`);
+      const notice = choice('mouseCaptureNotice', 'Mouse captured notice', SCHEMA.mouseCaptureNotice.labels);
       list.append(
         el('h2', null, 'Mouse capture'),
         el('p', 'hint game-menu-explain', MOUSE_CAPTURE_HELP),
@@ -640,6 +647,7 @@ export class GameMenu {
         slider('mouseCaptureSpeed', 'Captured mouse speed'),
         check('mouseCaptureRaw', 'Raw mouse input'),
         check('mouseCaptureEscMenu', 'Esc also opens the menu'),
+        withHelp(notice, 'mouseCaptureNotice', notice.querySelector('[role="radiogroup"]')),
       );
     }
 
@@ -823,8 +831,8 @@ export class GameMenu {
         const keys = el('span', 'game-menu-keycap', waiting ? 'Press a key...' : a.keys.length ? a.keys.map((k) => formatCombo(k)).join(' / ') : 'Unbound');
         const changed = JSON.stringify(a.keys) !== JSON.stringify(a.defaults);
         const label = el('span', 'game-menu-key-label', a.label);
-        // Where WebRA's default differs from OpenRA's: the browser keeps OpenRA's key.
-        const sub = a.openra && BROWSER_SUBSTITUTES[a.openra];
+        // Where WebRA's default differs from OpenRA's: the browser keeps OpenRA's key, or WebRA uses it.
+        const sub = a.openra && substituteFor(a.openra);
         if (sub && OPENRA_HOTKEYS[a.openra]?.key) label.title = `OpenRA: ${formatCombo(OPENRA_HOTKEYS[a.openra].key)} (${sub.why}).`;
         if (a.context === 'chat-input') label.append(el('span', 'hint', ' (in the chat line)'));
         row.append(label, keys);

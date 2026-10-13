@@ -47,7 +47,8 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { missionObjectives, optionRows, skirmishStats } from './gameinfo.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
-import { MouseCapture, pointerLockAvailable } from './mouselock.js';
+import { DETACHED_ESC_TEXT, MouseCapture, pointerLockAvailable } from './mouselock.js';
+import { pausesWhenHidden, runsInBackground } from './background.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
@@ -1255,7 +1256,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
     selectionClick: () => audio?.click(),
     gameOver: () => flow.over,
-    onMenu: () => menu.open(),
+    // Esc with nothing to cancel. Not while the mouse is released with the
+    // release hotkey (js/mouselock.js isDetached): the game plays on until a
+    // click into it captures the mouse again; the Menu button still opens it.
+    onMenu: () => {
+      if (mouseCapture?.isDetached()) showToast(DETACHED_ESC_TEXT);
+      else menu.open();
+    },
   }, { spectator: !!viewer });
   input.watchAll = !!viewer && view.player === OBSERVER_VIEW;
   // Spectators and replays have no sidebar (and no sidebar drawer on phones).
@@ -1380,6 +1387,20 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     : null;
   // Above the replay controls at the bottom.
   if (replay) chat.root.classList.add('above-replay-bar');
+  // Touch screens have no Enter key: a Chat button in the HUD row opens the
+  // chat (online games, players and spectators; replays with chat). Shown on
+  // touch screens only (css/chat.css .hud-chat).
+  let chatButton = null;
+  if (onlineChat?.send || replayLines) {
+    chatButton = document.createElement('button');
+    chatButton.type = 'button';
+    chatButton.className = 'hud-button hud-chat';
+    chatButton.textContent = 'Chat';
+    chatButton.setAttribute('aria-label', 'Open the chat');
+    chatButton.dataset.noCapture = '';
+    chatButton.addEventListener('click', () => (chat.isOpen ? chat.close() : chat.open(false)));
+    $('menu-button').before(chatButton);
+  }
   // OpenRA MUTE_INDICATOR: "Audio Muted" while all sound is off.
   if (audio) {
     new MuteIndicator(document.querySelector('#field .hud-buttons') ?? $('field'), {
@@ -1461,10 +1482,23 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Whether the game's own sounds and lines wait: the player's pause or a
   // paused replay, not the end of game dialogs (js/audio/index.js holdsGameAudio).
   const holdsAudio = () => holdsGameAudio({ menu: menuPaused, debug: debugPaused, key: keyPaused, endDialog: flow.paused, replayPaused: !!(replay && !replay.playing) });
+  // A hidden page gets no animation frames. A local game that plays on while
+  // hidden (Settings > Pause when the game is hidden off) ticks on a timer
+  // of the simulation's own meanwhile (js/sim/core.js setBackground; in the
+  // worker browsers do not throttle it, on the main thread they do).
+  let background = false;
+  const gameKind = { stress: !!stress, online: !!online, replay: !!replay };
+  const syncBackground = () => {
+    const on = runsInBackground(gameKind, { hidden: document.hidden, paused });
+    if (on === background) return;
+    background = on;
+    host.command('background', [on]).catch(() => {});
+  };
   const updatePaused = () => {
     paused = menuPaused || debugPaused || keyPaused || flow.paused;
     // At once, not only per frame: a hidden tab gets no animation frames.
     audio?.setPaused(holdsAudio());
+    syncBackground();
   };
   const debug = new DebugMenu($('field'), {
     game,
@@ -1533,6 +1567,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   };
   if (viewer) mountObserver();
   if (replay && records) replayBar = new records.ReplayBar($('field'), replay);
+  // The replay bar wraps to more rows on phones: the chat above it follows its height (css/chat.css).
+  if (replayBar && typeof ResizeObserver === 'function') {
+    const bar = replayBar.root;
+    new ResizeObserver(() => $('field').style.setProperty('--replay-bar-height', `${bar.offsetHeight}px`)).observe(bar);
+  }
   const progress = records ? new records.ProgressOverlay($('field')) : null;
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
@@ -1759,6 +1798,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     debugButton: debug.button,
     cheats: debug.cheats,
     toggle: $('sidebar-toggle'),
+    chatButton,
+    isChatOpen: () => chat.isOpen,
     isMenuOpen: () => menu.isOpen,
     isCollapsed: () => layout.collapsed,
   });
@@ -1854,11 +1895,15 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Entering fullscreen captures the mouse (Settings: in fullscreen or always), leaving it lets go.
     mouseCapture?.fullscreenChanged(fs);
   });
-  // A single-player game opens the menu (and so pauses) when its tab is hidden.
-  // Online, the lockstep driver keeps up from network events meanwhile (it
-  // runs where the game runs, so it is told).
+  // A hidden page (another tab, a minimised window): a single-player game
+  // plays on (background ticks, syncBackground), or with Settings > Pause
+  // when the game is hidden on, the menu opens and so pauses it. Losing the
+  // focus alone (another app, another monitor) never opens the menu. Online,
+  // the lockstep driver keeps up from network events meanwhile (it runs where
+  // the game runs, so it is told).
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && !stress && !online && !replay) menu.open();
+    if (document.hidden && pausesWhenHidden(gameKind, settings.get('pauseWhenHidden'))) menu.open();
+    syncBackground();
     if (online) host.command('hidden', [document.hidden]).catch(() => {});
   });
   // The worker stopped (an engine error): the game cannot go on.

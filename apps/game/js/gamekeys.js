@@ -46,10 +46,13 @@ export const GAME_KEYS = Object.freeze([
   // OpenRA has no default key for its path lines; L is free in its set.
   { name: 'showUnitPaths', keys: ['L'], label: 'Show unit paths', group: 'Game Commands', contexts: ['player', 'spectator'] },
   { name: 'fullscreen', keys: ['Alt+Enter'], label: 'Fullscreen', group: 'Game Commands', contexts: ['player', 'spectator', 'menu'] },
-  // Mouse capture (js/mouselock.js): OpenRA has no key for it, and its Alt+E is
-  // bookmark 3, so Alt+M (Option+M on macOS); main.js registers it only where
-  // the browser has Pointer Lock.
-  { name: 'toggleMouseCapture', keys: ['Alt+M'], label: 'Capture or release the mouse', group: 'Game Commands', contexts: ['player', 'spectator'] },
+  // Mouse capture (js/mouselock.js): OpenRA has no key for it. Alt+E (Option+E
+  // on macOS) like cloud gaming services: while captured it releases the mouse
+  // and the game plays on (a click into the game captures it again); while
+  // released it captures. OpenRA's Alt+E (jump to bookmark 3) has no default
+  // key in WebRA for it (WEBRA_SUBSTITUTES in js/hotkeys.js). main.js
+  // registers it only where the browser has Pointer Lock.
+  { name: 'toggleMouseCapture', keys: ['Alt+E'], label: 'Release or capture the mouse', group: 'Game Commands', contexts: ['player', 'spectator'] },
   // Viewport: hide the interface (OpenRA DisableUserInterface, DisableAllUserInterface).
   { name: 'disableUserInterface', openra: 'DisableUserInterface' },
   { name: 'disableAllUserInterface', openra: 'DisableAllUserInterface' },

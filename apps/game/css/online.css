@@ -540,6 +540,17 @@
   .online-row-head {
     display: none;
   }
+
+  /* The session list's Join and Watch: a row of their own, side by side, easy to tap. */
+  .online-row > .online-cell:last-child {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+  }
+
+  .online-row > .online-cell:last-child > button {
+    flex: 1;
+  }
 }
 
 /* ---- Spectators (lobby) ------------------------------------------------------ */

@@ -399,6 +399,8 @@ const SETTINGS_SECTIONS = {
     mouseCaptureSpeed: num(0.25, 3),
     mouseCaptureRaw: boolean,
     mouseCaptureEscMenu: boolean,
+    mouseCaptureNotice: choice(['always', 'first', 'off']),
+    pauseWhenHidden: boolean,
   },
   audio: {
     enabled: boolean,

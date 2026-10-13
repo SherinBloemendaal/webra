@@ -173,8 +173,10 @@ test('other keyboard layouts and macOS Option: the key printed on it, or its pla
   assert.deepEqual(press(screen, hits, body, 'Z', { letter: 'Z' }).ran, ['sell']);
   // Option+A types "å" on a Mac: still the Attack anything stance (OpenRA Alt+A).
   assert.deepEqual(press(screen, hits, body, 'Alt+A', { letter: 'å' }).ran, ['stanceAttackAnything']);
-  // Option+E is a dead key on a Mac ("Dead"): still bookmark 3 (OpenRA Alt+E).
-  assert.deepEqual(press(screen, hits, body, 'Alt+E', { letter: 'Dead' }).ran, ['bookmarkJump3']);
+  // Option+E is a dead key on a Mac ("Dead"): still Alt+E, WebRA's release mouse key
+  // (OpenRA's bookmark 3 jump, which has no default key in WebRA: WEBRA_SUBSTITUTES).
+  assert.deepEqual(press(screen, hits, body, 'Alt+E', { letter: 'Dead' }).ran, ['toggleMouseCapture']);
+  assert.deepEqual(press(screen, hits, body, 'Alt+E', { letter: '´' }).ran, ['toggleMouseCapture']);
   // AZERTY: the key printed A (where QWERTY has Q) is A.
   const azerty = new FakeEvent('keydown', { code: 'KeyQ', key: 'a', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false });
   hits.length = 0;

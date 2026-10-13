@@ -50,6 +50,10 @@ export const KEYS = Object.freeze({
   mouseCaptureSpeed: ['game', 'mouseCaptureSpeed'],
   mouseCaptureRaw: ['game', 'mouseCaptureRaw'],
   mouseCaptureEscMenu: ['game', 'mouseCaptureEscMenu'],
+  // The "Mouse captured" notice: 'always', 'first' (the first few captures) or 'off'.
+  mouseCaptureNotice: ['game', 'mouseCaptureNotice'],
+  // Single player: whether a hidden page opens the menu (and so pauses); off, the game plays on.
+  pauseWhenHidden: ['game', 'pauseWhenHidden'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
   // "Send error reports" (js/telemetry/index.js follows it).
   errorReports: ['privacy', 'errorReports'],

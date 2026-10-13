@@ -58,6 +58,7 @@ export function touchControls() {
     ['Long press a sidebar card', 'Cancel one'],
     ['Placing a building', 'Tap or drag to move it, then Place (or Cancel)'],
     ['Menu, Build / Map', 'Game menu; show or hide the build sidebar on phones'],
+    ['Chat', 'Online games and replays with chat: open the chat'],
   ];
 }
 

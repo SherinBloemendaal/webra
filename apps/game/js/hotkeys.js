@@ -7,7 +7,8 @@
 //
 // Defaults are OpenRA's Red Alert hotkeys (js/openra-hotkeys.js, generated
 // from OpenRA's mods/common/hotkeys/*.yaml and mods/ra/hotkeys.yaml), except
-// where the browser keeps OpenRA's key for itself (BROWSER_SUBSTITUTES).
+// where the browser keeps OpenRA's key for itself (BROWSER_SUBSTITUTES) or
+// one of WebRA's own actions has it (WEBRA_SUBSTITUTES: Alt+E releases the mouse).
 // Actions name their OpenRA hotkey (`openra`), which gives them OpenRA's
 // description, contexts and section of the hotkey settings; README.md
 // (Controls) lists them all.
@@ -58,11 +59,28 @@ export const BROWSER_SUBSTITUTES = Object.freeze({
   ReplaySpeedMax: { key: null, why: 'F12 opens the browser developer tools' },
 });
 
-/** WebRA's default keys for an OpenRA hotkey: OpenRA's key, or its browser substitute. */
+/**
+ * OpenRA hotkeys whose default key one of WebRA's own actions has, and what
+ * they use instead (null: no default key; the player can bind one in the
+ * Controls page). docs and README.md list them.
+ */
+export const WEBRA_SUBSTITUTES = Object.freeze({
+  MapBookmarkRestore03: { key: null, why: 'Alt+E releases the captured mouse, as in cloud gaming services' },
+});
+
+/** Where WebRA's default for an OpenRA hotkey differs from OpenRA's: `{ key, why }`, or null. */
+export function substituteFor(name) {
+  if (Object.hasOwn(BROWSER_SUBSTITUTES, name)) return BROWSER_SUBSTITUTES[name];
+  if (Object.hasOwn(WEBRA_SUBSTITUTES, name)) return WEBRA_SUBSTITUTES[name];
+  return null;
+}
+
+/** WebRA's default keys for an OpenRA hotkey: OpenRA's key, or its substitute (substituteFor). */
 export function openraDefaults(name) {
   const h = OPENRA_HOTKEYS[name];
   if (!h) throw new Error(`Unknown OpenRA hotkey "${name}"`);
-  const key = Object.hasOwn(BROWSER_SUBSTITUTES, name) ? BROWSER_SUBSTITUTES[name].key : h.key;
+  const sub = substituteFor(name);
+  const key = sub ? sub.key : h.key;
   return key ? [key] : [];
 }
 
