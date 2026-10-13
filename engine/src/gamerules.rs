@@ -287,6 +287,10 @@ impl World {
             self.winner = Some(remaining[0]);
             self.game_over = true;
             self.note_game_end();
+            // OpenRA marks every remaining player's objective completed: one line each.
+            for &p in &remaining {
+                self.sound.push(SoundEventKind::PlayerWon, 0, 0, 0, p, 0);
+            }
         } else if playing > 1 && remaining.is_empty() {
             // Everyone lost at once: no winner, the game is still over.
             self.game_over = true;

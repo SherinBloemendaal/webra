@@ -282,6 +282,32 @@ fn short_game_needs_structures_and_the_mcv() {
 }
 
 #[test]
+fn the_last_side_standing_is_victorious_after_the_others_are_defeated() {
+    // Two allies against one: the loser's line first, then one victorious line per winner.
+    let mut w =
+        world(&[setup("england", 1), setup("germany", 1), setup("russia", 2)], GameOptions { short_game: true, ..GameOptions::default() });
+    w.sound.set_enabled(true);
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.actors[i].owner == 2 {
+            w.remove(i);
+        }
+    }
+    run(&mut w, 30);
+    assert!(w.game_over);
+    let all = w.sound.take();
+    let kinds: Vec<(i32, i32)> = all
+        .chunks(EVENT_STRIDE)
+        .filter(|e| e[0] == SoundEventKind::PlayerLost as i32 || e[0] == SoundEventKind::PlayerWon as i32)
+        .map(|e| (e[0], e[4]))
+        .collect();
+    let (lost, won) = (SoundEventKind::PlayerLost as i32, SoundEventKind::PlayerWon as i32);
+    assert_eq!(kinds, vec![(lost, 2), (won, 0), (won, 1)]);
+    // Nothing more once the game is over.
+    run(&mut w, 30);
+    assert!(events(&mut w, SoundEventKind::PlayerWon).is_empty());
+}
+
+#[test]
 fn a_defeated_players_walls_and_husks_go_to_the_neutral_player() {
     let mut w = world(&[setup("england", 0), setup("russia", 0)], GameOptions { crates: true, ..GameOptions::default() });
     let neutral = w.neutral_player().expect("crates bring the neutral player");

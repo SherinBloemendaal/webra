@@ -148,6 +148,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -351,6 +352,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -539,6 +541,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -731,6 +734,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -921,6 +925,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -1093,6 +1098,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -1308,6 +1314,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -1497,6 +1504,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -1716,6 +1724,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -1914,6 +1923,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -2106,6 +2116,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -2293,6 +2304,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -2581,6 +2593,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -2865,6 +2878,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -3059,6 +3073,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -3272,6 +3287,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -3541,6 +3557,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -3745,6 +3762,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -3948,6 +3966,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -4183,6 +4202,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -4409,6 +4429,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -4620,6 +4641,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -4742,6 +4764,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -4846,6 +4869,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -4949,6 +4973,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -5109,6 +5134,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -5300,6 +5326,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -5476,6 +5503,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -5654,6 +5682,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -5841,6 +5870,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -6026,6 +6056,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -6197,6 +6228,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -6353,6 +6385,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -6511,6 +6544,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -6669,6 +6703,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -6826,6 +6861,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -6984,6 +7020,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -7133,6 +7170,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -7289,6 +7327,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -7447,6 +7486,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -7605,6 +7645,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -7762,6 +7803,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -7909,6 +7951,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -8113,6 +8156,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "barracks.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -8309,6 +8362,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "barracks.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     15
    ],
@@ -8506,6 +8569,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "barracks.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0,
     0
@@ -8704,6 +8777,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "barracks.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     8
    ],
@@ -8912,6 +8995,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -9116,6 +9200,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "barracks.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -9301,6 +9395,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -9492,6 +9587,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -9701,6 +9797,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -9902,6 +9999,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -10103,6 +10201,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -10311,6 +10410,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -10508,6 +10608,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "barracks.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -10654,6 +10764,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -10773,6 +10884,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -10878,6 +10990,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -11047,6 +11160,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -11213,6 +11336,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -11373,6 +11506,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0,
     0
@@ -11533,6 +11676,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -11693,6 +11846,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -11853,6 +12016,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -12020,6 +12193,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0,
     0
@@ -12176,6 +12359,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -12331,6 +12524,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -12500,6 +12703,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -12610,6 +12814,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -12717,6 +12922,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -12871,6 +13077,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -12980,6 +13196,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -13139,6 +13356,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -13326,6 +13553,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "vehicles.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -13441,6 +13678,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -13585,6 +13823,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -13740,6 +13979,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0,
     0
@@ -13907,6 +14147,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     2
    ],
@@ -14066,6 +14307,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0,
     0,
@@ -14223,6 +14465,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0,
     0
@@ -14392,6 +14635,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     2,
     2
@@ -14550,6 +14794,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -14736,6 +14981,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "aircraft.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -14925,6 +15180,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "aircraft.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -15115,6 +15380,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "aircraft.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0,
     0
@@ -15304,6 +15579,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "aircraft.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -15485,6 +15770,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "aircraft.upgraded"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -15673,6 +15968,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "techlevel.infonly"
+     ]
+    }
+   ],
    "fire_delays": [
     0
    ],
@@ -15869,6 +16174,16 @@
     ],
     "levels": 1
    },
+   "production_overlays": [
+    {
+     "types": [
+      "Veterancy"
+     ],
+     "prerequisites": [
+      "techlevel.infonly"
+     ]
+    }
+   ],
    "fire_delays": [
     0,
     0
@@ -15994,6 +16309,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -16103,6 +16419,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -16205,6 +16522,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -16311,6 +16629,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -16384,6 +16703,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -16854,6 +17174,7 @@
     ]
    },
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -16931,6 +17252,7 @@
     ]
    },
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17009,6 +17331,7 @@
     ]
    },
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17079,6 +17402,7 @@
     "actions": []
    },
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17149,6 +17473,7 @@
     "actions": []
    },
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17263,6 +17588,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17380,6 +17706,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17498,6 +17825,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17615,6 +17943,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17732,6 +18061,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17849,6 +18179,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -17964,6 +18295,7 @@
    },
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -18031,6 +18363,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -18094,6 +18427,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -18157,6 +18491,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -18242,6 +18577,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -18341,6 +18677,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -18527,6 +18864,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -18712,6 +19050,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -18895,6 +19234,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -19078,6 +19418,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -19261,6 +19602,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -19444,6 +19786,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -19632,6 +19975,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -19817,6 +20161,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -20000,6 +20345,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -20183,6 +20529,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -20366,6 +20713,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": {
@@ -20554,6 +20902,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -20744,6 +21093,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [
     0
    ],
@@ -20894,6 +21244,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21036,6 +21387,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21178,6 +21530,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21320,6 +21673,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21463,6 +21817,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21585,6 +21940,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21704,6 +22060,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21823,6 +22180,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -21942,6 +22300,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22061,6 +22420,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22179,6 +22539,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22297,6 +22658,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22415,6 +22777,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22533,6 +22896,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22651,6 +23015,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22769,6 +23134,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22881,6 +23247,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -22991,6 +23358,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23101,6 +23469,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23211,6 +23580,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23321,6 +23691,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23431,6 +23802,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23541,6 +23913,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23657,6 +24030,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23767,6 +24141,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23879,6 +24254,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -23997,6 +24373,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24115,6 +24492,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24232,6 +24610,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24349,6 +24728,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24470,6 +24850,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24588,6 +24969,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24705,6 +25087,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24822,6 +25205,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -24939,6 +25323,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25056,6 +25441,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25173,6 +25559,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25290,6 +25677,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25407,6 +25795,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25524,6 +25913,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25641,6 +26031,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25758,6 +26149,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25875,6 +26267,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -25987,6 +26380,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26102,6 +26496,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26220,6 +26615,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26337,6 +26733,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26460,6 +26857,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26582,6 +26980,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26682,6 +27081,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26790,6 +27190,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26893,6 +27294,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -26995,6 +27397,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27101,6 +27504,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27207,6 +27611,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27313,6 +27718,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27410,6 +27816,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27592,6 +27999,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27767,6 +28175,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -27924,6 +28333,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -28081,6 +28491,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -28238,6 +28649,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -28399,6 +28811,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -28556,6 +28969,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -28713,6 +29127,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -28921,6 +29336,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29129,6 +29545,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29354,6 +29771,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29461,6 +29879,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29557,6 +29976,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29659,6 +30079,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29761,6 +30182,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29863,6 +30285,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -29964,6 +30387,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30066,6 +30490,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30168,6 +30593,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30270,6 +30696,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30367,6 +30794,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30467,6 +30895,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30569,6 +30998,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30671,6 +31101,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30773,6 +31204,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30875,6 +31307,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -30977,6 +31410,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31079,6 +31513,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31181,6 +31616,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31283,6 +31719,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31381,6 +31818,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31483,6 +31921,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31585,6 +32024,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31688,6 +32128,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31791,6 +32232,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31893,6 +32335,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -31995,6 +32438,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32097,6 +32541,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32198,6 +32643,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32300,6 +32746,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32402,6 +32849,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32504,6 +32952,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32601,6 +33050,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32701,6 +33151,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32803,6 +33254,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -32905,6 +33357,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33007,6 +33460,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33109,6 +33563,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33211,6 +33666,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33313,6 +33769,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33415,6 +33872,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33517,6 +33975,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33615,6 +34074,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33717,6 +34177,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33819,6 +34280,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -33922,6 +34384,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34025,6 +34488,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34121,6 +34585,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34217,6 +34682,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34313,6 +34779,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34409,6 +34876,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34505,6 +34973,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34601,6 +35070,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34697,6 +35167,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34793,6 +35264,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34889,6 +35361,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -34989,6 +35462,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35089,6 +35563,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35188,6 +35663,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35287,6 +35763,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35386,6 +35863,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35487,6 +35965,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35587,6 +36066,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35688,6 +36168,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35788,6 +36269,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35888,6 +36370,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -35989,6 +36472,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36089,6 +36573,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36185,6 +36670,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36281,6 +36767,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36378,6 +36865,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36475,6 +36963,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36577,6 +37066,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36686,6 +37176,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36788,6 +37279,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,
@@ -36890,6 +37382,7 @@
    "husk": null,
    "crate": null,
    "producible_level": null,
+   "production_overlays": [],
    "fire_delays": [],
    "targets_allies": false,
    "death": null,

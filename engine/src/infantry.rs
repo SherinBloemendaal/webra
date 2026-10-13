@@ -237,6 +237,25 @@ impl World {
         }
     }
 
+    /// OpenRA ProductionIconOverlayManager.IsOverlayActive: the overlay types
+    /// the cameo of `ty` shows for `player` now (WithProductionIconOverlay
+    /// with every prerequisite met: RA's veteran chevron once a spy
+    /// infiltrated the factory). Presentation only.
+    pub fn production_overlays(&self, player: u8, ty: u16) -> Vec<&str> {
+        let Some(p) = self.players.get(player as usize) else { return Vec::new() };
+        let mut out: Vec<&str> = Vec::new();
+        for o in &self.rules.actors[ty as usize].production_overlays {
+            if o.prerequisites.iter().all(|t| self.rules.token(t).is_some_and(|k| p.tokens[k as usize])) {
+                for t in &o.types {
+                    if !out.contains(&t.as_str()) {
+                        out.push(t);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Once per tick, before units act: delayed shots, C4, power outages,
     /// sonar pulses, the captures in progress and the presentation lists.
     pub(crate) fn tick_infantry_world(&mut self) {

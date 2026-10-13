@@ -884,6 +884,28 @@ def beacon_duration(src):
     return int(pb.get('Duration', 750)) if isinstance(pb, dict) else 750
 
 
+def overlay_manager_types(src):
+    """Types of the player's ProductionIconOverlayManager traits (player.yaml:
+    Veterancy, the iconchevrons veteran chevron on cameos)."""
+    defs = src.load('rules', ['player', 'world'])
+    traits = src.to_json(defs['Player'][1])
+    return {v['Type'] for k, v in traits.items() if k.split('@')[0] == 'ProductionIconOverlayManager' and isinstance(v, dict) and v.get('Type')}
+
+
+def production_overlays(t, manager_types):
+    """WithProductionIconOverlay traits: the overlay types of the cameo and the
+    prerequisites that switch them on (ProductionIconOverlayManager watches
+    them in the tech tree). Only types a manager draws (OpenRA rejects others)."""
+    out = []
+    for k, v in t.items():
+        if k.split('@')[0] != 'WithProductionIconOverlay' or not isinstance(v, dict):
+            continue
+        types = [x for x in tokens(v.get('Types')) if x in manager_types]
+        if types:
+            out.append({'types': types, 'prerequisites': tokens(v.get('Prerequisites'))})
+    return out
+
+
 # OpenRA defaults of the world traits below (CrateSpawnerInfo, StartingUnitsInfo,
 # TimeLimitManagerInfo) for fields RA's world.yaml leaves out.
 CRATE_SPAWNER_DEFAULTS = {'Minimum': 1, 'Maximum': 255, 'SpawnInterval': 4500, 'InitialSpawnDelay': 0, 'WaterChance': 20,
@@ -1383,6 +1405,7 @@ def main():
         return weapon_index(wname) if hurts(weapons[wl[wname.lower()]]) else None
 
     tilesets = load_tilesets(src)
+    overlay_types = overlay_manager_types(src)
     for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS:
         a = actors[aid]
         t = a['traits']
@@ -1456,6 +1479,8 @@ def main():
             'producible_level': {'prerequisites': tokens(t['ProducibleWithLevel'].get('Prerequisites')),
                                  'levels': int(t['ProducibleWithLevel'].get('InitialLevels', 1))}
             if isinstance(t.get('ProducibleWithLevel'), dict) else None,
+            # WithProductionIconOverlay: the cameo overlay (the veteran chevron) and its prerequisites.
+            'production_overlays': production_overlays(t, overlay_types),
             'fire_delays': [],
             'targets_allies': False,
             # WithDeathAnimation (infantry deaths per damage type, infantry.rs).
