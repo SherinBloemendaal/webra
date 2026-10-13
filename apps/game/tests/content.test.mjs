@@ -557,12 +557,12 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
       else assert.ok(s < POSE_STRIDE);
     });
     assert.ok(atlas.overlays[ACTORS.findIndex((a) => a.id === 'MSLO')] >= POSE_STRIDE, "WebRA's silo hatch");
-    // How long the make animations play (Game.set_make_ticks): the original
-    // power plant's 13 frames at 40 ms; WebRA's structures have none.
+    // Which structures' art plays a make animation (Game.set_make_art): the
+    // original power plant's; WebRA's structures fade in instead.
     const powr = ACTORS.findIndex((a) => a.id === 'POWR');
-    assert.equal(atlas.makeTicks[powr], 13);
-    assert.equal(atlas.makeTicks.filter((v) => v > 0).length, ACTORS.filter((a) => a.kind === 'building' && out.slots.get(2 * ACTORS.indexOf(a))?.poses[POSE.MAKE].mode === MODE.ONCE).length);
-    assert.ok(plain.makeTicks.every((v) => v === 0));
+    assert.ok(atlas.makeArt.includes(powr));
+    assert.deepEqual(atlas.makeArt, ACTORS.flatMap((a, t) => (a.kind === 'building' && out.slots.get(2 * t)?.poses[POSE.MAKE].mode === MODE.ONCE ? [t] : [])));
+    assert.deepEqual(plain.makeArt, []);
     assert.equal(atlas.overlays[ACTORS.findIndex((a) => a.id === 'POWR')], 0, 'the original power plant has no WebRA layer');
     assert.ok(plain.overlays[ACTORS.findIndex((a) => a.id === 'POWR')] > 0);
     // Slots without original art are WebRA sprites as before.
@@ -1657,4 +1657,23 @@ test('install: a movie larger than the limit is refused unread; a full storage s
   assert.equal(r2.added, 0);
   assert.equal(r2.errors.length, 1, r2.errors.join('; '));
   assert.match(r2.errors[0], /were not saved: This browser has no room left/);
+});
+
+test('the rules make times are one tick per frame of the make sequences OpenRA plays', () => {
+  // engine/rules.json building.make_ticks (tools/gen_rules.py MAKE_FRAMES):
+  // every make sequence WebRA maps is Length * (the file's frames) at 40 ms.
+  const rules = JSON.parse(read('../../../engine/rules.json'));
+  const made = rules.actors.filter((a) => a.building?.make_ticks > 0);
+  assert.ok(made.length >= 40, `${made.length} structures with a make animation`);
+  for (const a of made) {
+    const image = ACTOR_ART[a.id]?.image;
+    const make = image && SEQUENCES[image]?.make;
+    if (!make) continue; // OpenRA's own make file: WebRA art
+    assert.deepEqual([make.length, make.tick], [-1, 40], `${a.id}: every frame of ${make.file}, one per tick`);
+  }
+  const ticks = Object.fromEntries(made.map((a) => [a.id, a.building.make_ticks]));
+  assert.deepEqual([ticks.FACT, ticks.WEAP, ticks.POWR, ticks.FTUR, ticks.PROC, ticks.MSLO], [32, 15, 13, 28, 10, 15]);
+  // Fakes take their real structure's time; walls have none.
+  assert.equal(ticks.FPWR, ticks.POWR);
+  assert.equal(ticks.SBAG, undefined);
 });

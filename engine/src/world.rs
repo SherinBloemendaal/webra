@@ -196,6 +196,12 @@ pub struct Actor {
     /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
     /// of the state hash and nothing in the simulation depends on it.
     pub born: u32,
+    /// Last tick of a structure's make animation (OpenRA WithMakeAnimation's
+    /// `build-incomplete` condition, `World::build_incomplete`), 0 for none:
+    /// placed during the game it plays `building.make_ticks` ticks; map
+    /// actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
+    /// Simulation state (state hash).
+    pub make_until: u32,
     /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
     pub fx: crate::fx::ActorFx,
 
@@ -301,6 +307,7 @@ impl Actor {
             prone_ticks: 0,
             rank_heal_timer: 0,
             born: 0,
+            make_until: 0,
             fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
@@ -1577,6 +1584,13 @@ impl World {
         a.hp = info.hp;
         a.stance = self.initial_stance(ty, owner);
         a.born = self.tick;
+        // Placed during the game: the make animation, `build-incomplete` until
+        // it ends (from the tick after this one through `make_ticks` ticks,
+        // OpenRA revokes the condition at the end of the last frame's tick).
+        // Actors of the starting map (tick 0) skip it like OpenRA's map actors.
+        if self.tick > 0 && b.make_ticks > 0 {
+            a.make_until = self.tick + b.make_ticks;
+        }
         let footprint = b.footprint.clone();
         let free_actor = b.refinery.as_ref().map(|r| (r.free_actor, r.free_actor_offset)).filter(|_| free_actor);
         let crush = info.abilities.crushable.as_ref().map_or(0, crate::flowfield::crush_bits);
@@ -2683,6 +2697,8 @@ impl World {
                 }
                 mix(a.repair_ticks as i64);
                 mix(a.powered_off as i64);
+                // The make animation's build-incomplete condition.
+                mix(a.make_until as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);

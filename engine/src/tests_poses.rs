@@ -194,7 +194,7 @@ fn remembered_buildings_stand_still() {
 }
 
 /// The art's render settings (poses, the make animation lengths of
-/// Game.set_make_ticks, pose layers, original slots) are read by drawing
+/// Game.set_make_art, pose layers, original slots) are read by drawing
 /// only: two players with different art (original graphics, WebRA's, a
 /// texture pack, another tileset) keep the same simulation and state hash.
 #[test]
@@ -212,11 +212,10 @@ fn poses_never_change_the_simulation() {
         // art's settings changing, the other never draws.
         posed_world.render_opts.poses = t % 3 != 0;
         let n = posed_world.rules.actors.len();
-        posed_world.render_opts.make_ticks = match t % 4 {
+        posed_world.render_opts.make_art = match t % 3 {
             0 => Vec::new(),
-            1 => vec![0; n],
-            2 => vec![20; n],
-            _ => (0..n as u32).map(|k| k % 90).collect(),
+            1 => vec![true; n],
+            _ => (0..n).map(|k| k % 2 == 0).collect(),
         };
         posed_world.render_opts.building_overlays =
             (0..n as u32).map(|k| if t % 2 == 0 { 0 } else { posed(2 * k + 1, Pose::Still, 4) as u32 }).collect();
@@ -239,7 +238,7 @@ fn records_with_poses_match_the_cpu_path() {
     let h = w.spawn_unit(harv, 0, cell_center(14), cell_center(8), 300);
     w.actors[h].harv = HarvState::Harvesting;
     w.spawn_building(ty(&w, "WEAP"), 0, 20, 20).unwrap();
-    w.tick = 230;
+    w.tick = 210;
     w.update_vision();
     let (mut recs, mut extras, mut rect_recs) = (Vec::new(), Vec::new(), Vec::new());
     w.build_render_records(0, &[], &mut recs, &mut extras, &mut rect_recs);
@@ -330,32 +329,37 @@ fn structure_layers_show_when_the_make_animation_ends() {
     let mut table = vec![0u32; w.rules.actors.len()];
     table[weap as usize] = posed(layer, Pose::Still, 4) as u32;
     w.render_opts.building_overlays = table;
-    // A make animation of 20 ticks (the art's length, Game.set_make_ticks).
-    let mut make = vec![0u32; w.rules.actors.len()];
-    make[weap as usize] = 20;
-    w.render_opts.make_ticks = make;
+    // The War Factory's make animation: 15 frames (rules building.make_ticks).
+    assert_eq!(w.rules.actors[weap as usize].building.as_ref().unwrap().make_ticks, 15);
+    w.render_opts.make_art = vec![true; w.rules.actors.len()];
     w.players[0].power_gen = 100;
     w.tick = 500;
     w.spawn_building(weap, 0, 30, 30).unwrap();
     w.update_vision();
-    for age in [0, 10, 19] {
+    for age in [0, 10, 14] {
         w.tick = 500 + age;
         assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Make as u32, age)), "making, age {age}");
         assert_eq!(pose_of(&w, layer), None, "no roof while it is made");
     }
-    w.tick = 520;
+    w.tick = 515;
     assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Idle as u32, 0)), "built");
     assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)), "the roof and the shut door at once");
-    // Art without a make animation shows everything from the start.
-    w.render_opts.make_ticks[weap as usize] = 0;
-    w.tick = 1000;
-    w.spawn_building(weap, 0, 40, 30).unwrap();
-    w.update_vision();
-    let bodies: Vec<u32> = sprite_ids(&w).into_iter().map(unpack).filter(|&(s, _, _)| s == weap as u32 * 2).map(|(_, p, _)| p).collect();
-    assert_eq!(bodies, vec![Pose::Idle as u32; 2], "both factories built");
-    // Types past the table (or no table): the longest pose age, as before.
-    w.render_opts.make_ticks.clear();
-    assert_eq!(w.render_opts.make_ticks(weap), MAX_POSE_AGE);
+    // Art without a make animation fades the structure in over the same time.
+    let body_alpha = |w: &World| {
+        let view = View { x0: -100.0, y0: -100.0, x1: 64.0 * 24.0 + 100.0, y1: 64.0 * 24.0 + 100.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(0, 1.0, &view, &[], &mut sprites, &mut rects);
+        sprites.chunks(SPRITE_FLOATS).filter(|c| unpack(c[3]).0 == weap as u32 * 2).map(|c| c[6]).collect::<Vec<f32>>()
+    };
+    w.render_opts.make_art = Vec::new();
+    w.tick = 500;
+    let a0 = body_alpha(&w)[0];
+    w.tick = 507;
+    let a7 = body_alpha(&w)[0];
+    w.tick = 515;
+    let a15 = body_alpha(&w)[0];
+    assert!(a0 < a7 && a7 < a15 && (a15 - 1.0).abs() < 1e-6, "{a0} {a7} {a15}");
+    assert!((a0 - (crate::render::MAKE_FADE_FROM + (1.0 - crate::render::MAKE_FADE_FROM) / 15.0)).abs() < 1e-6);
 }
 
 #[test]

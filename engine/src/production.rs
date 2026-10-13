@@ -756,14 +756,21 @@ impl World {
 
     // ---- Selling, deploying ------------------------------------------------
 
+    /// Whether structure `b` can be sold now (OpenRA Sellable RequiresCondition
+    /// `!build-incomplete && !being-captured && !being-demolished`).
+    pub fn can_sell(&self, b: usize) -> bool {
+        let a = &self.actors[b];
+        a.alive && a.kind == Kind::Building && !self.make_gates(b).sell && !self.being_captured(b) && !self.being_demolished(b)
+    }
+
     /// Sell a structure: refund RefundPercent of its value, scaled by health (OpenRA Sellable).
     pub fn sell(&mut self, b: usize) -> bool {
         let a = &self.actors[b];
         if !a.alive || a.kind != Kind::Building {
             return false;
         }
-        // Sellable RequiresCondition !being-captured && !being-demolished (infantry.rs).
-        if self.being_captured(b) || self.being_demolished(b) {
+        // Sellable RequiresCondition !build-incomplete && !being-captured && !being-demolished (infantry.rs).
+        if !self.can_sell(b) {
             return false;
         }
         let info = &self.rules.actors[a.ty as usize];
@@ -807,8 +814,9 @@ impl World {
 
     /// Whether actor `i` can deploy (MCV) or pack up (Construction Yard) right now.
     pub fn can_deploy(&self, i: usize) -> bool {
-        // A Construction Yard being captured cannot pack up (Transforms PauseOnCondition being-captured).
-        if self.actors[i].kind == Kind::Building && self.being_captured(i) {
+        // A Construction Yard being captured or still being built cannot pack up
+        // (Transforms PauseOnCondition being-captured || build-incomplete).
+        if self.actors[i].kind == Kind::Building && (self.being_captured(i) || self.make_gates(i).transform) {
             return false;
         }
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };

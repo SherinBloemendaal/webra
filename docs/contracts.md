@@ -1925,6 +1925,30 @@ Alert's own fake cameo where it has one (dome, construction yard, naval
 yard, sub pen, war factory), else the real cameo with the same mark
 (ACTOR_ART `fakeMark`: the fakes whose cameo OpenRA drew itself).
 
+### Make animations (`engine/src/world.rs` `make_until`, `combat.rs` `build_incomplete`)
+
+OpenRA's WithMakeAnimation grants a structure the `build-incomplete`
+condition while its `make` sequence plays once, and Red Alert's rules
+switch traits off with it. In WebRA a structure that appears during the
+game (placed, an MCV deployed, a mission's `Actor.Create`) is being built
+from the tick after it appeared through `building.make_ticks` ticks
+(`make_until`, in the state hash; the structures of the starting map and a
+mission's SpawnActorOnDeath, OpenRA SkipMakeAnimsInit, skip it).
+Meanwhile its `building.make_gates` are off: `sell` (Sellable: no sell
+order, `sell_value` 0), `capture` (Capturable), `attack` (AttackTurreted,
+AttackTesla, AttackGarrisoned paused and Turreted off: it neither aims nor
+fires and keeps its target) and `transform` (the Construction Yard does not
+pack up). `make_ticks` is the frame count of the structure's make sequence
+at one frame per tick (every RA make sequence is `Length: *` at Tick 40);
+`tools/gen_rules.py` `MAKE_FRAMES` holds the counts with their sources,
+read once from Red Alert's files (and OpenRA's own `mods/ra/bits`, which
+override files of the same name) by `node tools/make-frames.mjs <files>`
+(it prints file names and frame counts only). The tileset variants have
+the same counts, so the time does not depend on the map. Not modelled:
+OpenRA's reverse make animation before a structure is sold or packs up,
+the ConyardChronoReturn of a chronoshifted MCV, and
+TransformsIntoTransforms (a pack-up order queued while being built).
+
 ### Pilots (`engine/src/plane.rs` `eject_pilot`)
 
 OpenRA EjectOnDeath (rules `abilities.eject_on_death {pilot, success_rate,
@@ -2598,7 +2622,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_ticks` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
@@ -2757,17 +2781,14 @@ PRIMARY tag and the crate pickup signs), always below 4096. Poses
 (`engine/src/render.rs` `Pose`, `js/content/sequences.js` `POSE`): 0 idle,
 1 move (the actor moved this tick), 2 attack (attacking and standing), 3
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
-(structure placed during the game, `age` = ticks since then, while its make
-animation plays: `Game.set_make_ticks(ticks)`, one value per actor type,
-the atlas's `makeTicks` from the body's make pose, 0 for art without one;
-up to 127 for a type it does not name; a render setting like the others:
-only drawing reads it, so players with different art keep the same
-simulation and state hash, `tests_poses.rs`
-`poses_never_change_the_simulation`. OpenRA's `build-incomplete` condition
-also gates traits of the structure while it plays (attacks, selling,
-capture, demolition, instant repair, cash delivery, transforming); WebRA
-does not model that: Red Alert's make sequences are all `Length: *`, so
-their frame counts live only in the player's own files), 5
+(structure placed during the game, `age` = ticks since then, while it is
+being built: the simulation's `make_until`, from the rules'
+`building.make_ticks`, the same for every player whatever their art; see
+"Make animations" below; `Game.set_make_art(types)` names the types whose
+art plays a make animation, the atlas's `makeArt`, and the others fade in
+from 25 percent over that time; a render setting: players with different
+art keep the same simulation and state hash, `tests_poses.rs`
+`poses_never_change_the_simulation`), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
 remembered structure under fog), 8 damaged and still, 9 and 10 aux idle and
 aux move (a second overlay in the same slot: the Chinook's rear rotor on the
@@ -2971,7 +2992,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (range circles, engine/src/range_circles.rs, rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_ticks` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |

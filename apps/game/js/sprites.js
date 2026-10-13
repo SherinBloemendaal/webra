@@ -939,17 +939,16 @@ export function buildAtlas(actors, opts = {}) {
     });
     deathTicks.push(...t.slice(0, 7), Math.max(t[7], t[8]));
   }
-  // How long each structure's make animation plays (Game.set_make_ticks):
-  // its body slot's make pose when that plays once, else none.
-  const makeTicks = new Uint32Array(actors.length);
+  // The structures whose body art plays a make animation (Game.set_make_art):
+  // the others fade in over the rules' make time.
+  const makeArt = [];
   for (let t = 0; t < actors.length; t++) {
-    const make = slots.get(2 * t)?.poses?.[POSE.MAKE];
-    if (actors[t].kind === 'building' && make?.mode === MODE.ONCE) makeTicks[t] = onceTicks(make);
+    if (actors[t].kind === 'building' && slots.get(2 * t)?.poses?.[POSE.MAKE]?.mode === MODE.ONCE) makeArt.push(t);
   }
   // Pose tables (sequence slots) need the engine's poses (Game.set_sprite_poses).
   const filter = opts.filter ?? 'linear';
   // `pixel`: the slots of WebRA's pixel art, which the engine draws like pre-rendered art (gameart.js applyGameArt).
-  return { color, mask, frames, overlays, deaths, deathTicks, makeTicks, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), width, height };
+  return { color, mask, frames, overlays, deaths, deathTicks, makeArt, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), width, height };
 }
 
 /**

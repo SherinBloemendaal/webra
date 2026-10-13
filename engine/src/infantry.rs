@@ -372,6 +372,10 @@ impl World {
         }
         let list = self.rules.actors[a.ty as usize].abilities.captures.as_ref()?;
         let cap = self.rules.actors[ta.ty as usize].abilities.capturable.as_ref()?;
+        // Capturable RequiresCondition !build-incomplete: not while it is being built.
+        if self.make_gates(t).capture {
+            return None;
+        }
         if self.relation(a.owner, ta.owner) & (RELATION_ENEMY | RELATION_NEUTRAL) == 0 {
             return None;
         }

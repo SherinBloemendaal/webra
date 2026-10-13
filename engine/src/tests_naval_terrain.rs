@@ -464,11 +464,13 @@ fn naval_bots_keep_every_ship_on_water() {
         w.state_hash()
     };
     let minutes = 25 * 60;
-    // Seed 2: the island bots of seed 3 now spend their money on a land war
-    // and build at most one ship in twelve minutes (with either movement
-    // model), too few to check fleets.
-    game(MapStyle::Islands, 2, 12 * minutes);
+    // Seed 6: the island bots of seeds 2 and 3 now spend their money on a
+    // land war and build no ship in twelve minutes (since structures wait
+    // for their make animation), too few to check fleets; seed 6 builds 4.
+    game(MapStyle::Islands, 6, 12 * minutes);
     let lakes = game(MapStyle::Lakes, 7, 12 * minutes);
-    game(MapStyle::Rivers, 3, 12 * minutes);
+    // Seed 7 (182 ford cells): the river bots of seed 3 build no ship in
+    // twelve minutes since structures wait for their make animation.
+    game(MapStyle::Rivers, 7, 12 * minutes);
     assert_eq!(game(MapStyle::Lakes, 7, 12 * minutes), lakes, "deterministic");
 }

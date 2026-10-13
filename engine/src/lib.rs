@@ -115,6 +115,8 @@ mod tests_instances;
 #[cfg(test)]
 mod tests_leftovers;
 #[cfg(test)]
+mod tests_make;
+#[cfg(test)]
 mod tests_mapsetup;
 #[cfg(test)]
 mod tests_minimap;
@@ -990,14 +992,21 @@ impl Game {
         self.world.render_opts.set_death_art(n, &types, &ticks);
     }
 
-    /// Per actor type, the ticks its make animation plays (apps/game/js/sprites.js
-    /// `buildAtlas` returns them as `makeTicks`; 0 for art without one): a
-    /// structure shows its make pose that long, then its body and the layers
-    /// drawn over it (the War Factory's roof and door, OpenRA
-    /// WithProductionDoorOverlay after WithMakeAnimation). Presentation only:
-    /// the state hash is the same either way.
-    pub fn set_make_ticks(&mut self, ticks: Vec<u32>) {
-        self.world.render_opts.make_ticks = ticks;
+    /// The actor types whose body art plays a make animation
+    /// (apps/game/js/sprites.js `buildAtlas` returns them as `makeArt`). How
+    /// long a structure is being built comes from the rules
+    /// (`building.make_ticks`); structures whose art has no make animation
+    /// fade in over that time instead. Presentation only: the state hash is
+    /// the same either way.
+    pub fn set_make_art(&mut self, types: Vec<u32>) {
+        let n = self.world.rules.actors.len();
+        let mut art = vec![false; n];
+        for t in types {
+            if let Some(v) = art.get_mut(t as usize) {
+                *v = true;
+            }
+        }
+        self.world.render_opts.make_art = art;
     }
 
     /// The sprite slots drawn from the original graphics and what they need
@@ -1318,7 +1327,7 @@ impl Game {
     pub fn sell_value(&self, player: u8, building: u32) -> i32 {
         let Some(b) = self.world.resolve(building) else { return 0 };
         let a = &self.world.actors[b];
-        if a.owner != player || a.kind != Kind::Building {
+        if a.owner != player || a.kind != Kind::Building || !self.world.can_sell(b) {
             return 0;
         }
         let info = &self.world.rules.actors[a.ty as usize];

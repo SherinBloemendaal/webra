@@ -681,6 +681,10 @@ struct RawBuilding {
     power_down: bool,
     #[serde(default)]
     fake_tag: bool,
+    #[serde(default)]
+    make_ticks: i32,
+    #[serde(default)]
+    make_gates: Vec<String>,
     value: i32,
     center_offset: Vec<i32>,
 }
@@ -1069,9 +1073,32 @@ pub struct BuildingInfo {
     /// A fake (OpenRA WithDecoration@fake): its owner and allies see the FAKE
     /// tag over it (infantry_render.rs).
     pub fake_tag: bool,
+    /// Ticks a structure placed during the game plays its make animation
+    /// (OpenRA WithMakeAnimation: the frames of its `make` sequence, one per
+    /// tick; tools/gen_rules.py MAKE_FRAMES), 0 for none. Meanwhile it is
+    /// `build-incomplete` (world.rs `build_incomplete`) and `make_gates`
+    /// are off.
+    pub make_ticks: u32,
+    pub make_gates: MakeGates,
     /// OpenRA GetSellValue: CustomSellValue or the cost; the base of the repair cost.
     pub value: i32,
     pub center_offset: (i32, i32),
+}
+
+/// What a structure's `build-incomplete` condition switches off (OpenRA's
+/// RequiresCondition / PauseOnCondition `!build-incomplete`; rules
+/// `building.make_gates`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MakeGates {
+    /// Sellable: no selling.
+    pub sell: bool,
+    /// Capturable: engineers cannot take it.
+    pub capture: bool,
+    /// AttackTurreted, AttackTesla, AttackGarrisoned (paused) and Turreted:
+    /// it neither turns its turret nor fires.
+    pub attack: bool,
+    /// Transforms: the Construction Yard does not pack up.
+    pub transform: bool,
 }
 
 impl BuildingInfo {
@@ -2153,6 +2180,23 @@ impl Rules {
                         repairable: b.repairable,
                         power_down: b.power_down,
                         fake_tag: b.fake_tag,
+                        make_ticks: u32::try_from(b.make_ticks)
+                            .ok()
+                            .filter(|&t| t <= TIMER as u32)
+                            .ok_or_else(|| n("building.make_ticks must be between 0 and 100000"))?,
+                        make_gates: {
+                            let mut g = MakeGates::default();
+                            for name in &b.make_gates {
+                                match name.as_str() {
+                                    "sell" => g.sell = true,
+                                    "capture" => g.capture = true,
+                                    "attack" => g.attack = true,
+                                    "transform" => g.transform = true,
+                                    _ => return Err(n("building.make_gates: unknown gate (sell, capture, attack, transform)")),
+                                }
+                            }
+                            g
+                        },
                         value: b.value,
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
                     })

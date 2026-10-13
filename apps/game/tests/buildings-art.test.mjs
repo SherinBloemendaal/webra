@@ -321,7 +321,7 @@ test('the silo hatch is a working layer the engine plays once for a launch, at r
   const sizes = [];
   globalThis.document = stubDocument(sizes);
   try {
-    const { frames, overlays, makeTicks } = buildAtlas(actors);
+    const { frames, overlays, makeArt } = buildAtlas(actors);
     // The working layers' frames come after the animated layers' frames.
     const listLength = spriteList(actors).length;
     const anims = new Set(animationPlan(actors, listLength).map((p) => p.key));
@@ -344,8 +344,8 @@ test('the silo hatch is a working layer the engine plays once for a launch, at r
       // The silo plays the same 7 frames at 80 ms as OpenRA's active sequence: 14 ticks.
       assert.equal(onceTicks({ length, fps }), 14);
     }
-    // WebRA's vector structures have no make animation: the engine shows them built at once.
-    actors.forEach((a, t) => assert.equal(makeTicks[t], 0, a.id));
+    // WebRA's vector structures have no make animation: they fade in over the rules' make time.
+    assert.deepEqual(makeArt, []);
   } finally {
     delete globalThis.document;
   }

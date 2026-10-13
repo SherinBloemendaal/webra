@@ -176,8 +176,10 @@ fn ai_vs_ai_game_runs_and_fights() {
     // games sooner, soldiers taking cover drag others out (5 to 26 minutes).
     // Map styles (mapgen) make richer, more varied maps on top of that.
     // OpenRA's Normal AI attacks with squads of 40 or more (ai_bots.rs):
-    // this game ends after 33 minutes.
-    for _ in 0..(25 * 60 * 45) {
+    // this game ended after 33 minutes; with structures paused while their
+    // make animation plays (build-incomplete) it ends after 46 (seeds 10 to
+    // 19 end after 8 to 46 minutes, 16 to 49 without it).
+    for _ in 0..(25 * 60 * 50) {
         w.step();
         max_units = max_units.max(w.actors.iter().filter(|a| a.alive && a.kind != Kind::Building).count());
         if w.winner.is_some() {
@@ -187,7 +189,7 @@ fn ai_vs_ai_game_runs_and_fights() {
     let killed: u32 = w.losses.iter().sum();
     assert!(max_units >= 10, "armies were built: {max_units}");
     assert!(killed >= 5, "fighting happened: {killed} dead");
-    assert!(w.winner.is_some(), "one AI destroyed the other within 45 minutes");
+    assert!(w.winner.is_some(), "one AI destroyed the other within 50 minutes");
 }
 
 #[test]
@@ -467,6 +469,11 @@ fn mcv_deploys_and_the_yard_packs_up_again() {
     let fact =
         (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == fact_t).expect("yard deployed");
     assert!(w.has_producer(0, QueueType::Building));
+    // The yard packs up once its make animation ended (Transforms PauseOnCondition build-incomplete).
+    assert!(!w.can_deploy(fact));
+    while w.build_incomplete(fact) {
+        w.step();
+    }
     let r = w.make_ref(fact);
     w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
     run(&mut w, 1);

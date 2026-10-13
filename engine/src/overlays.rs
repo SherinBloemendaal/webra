@@ -89,12 +89,11 @@ pub struct RenderOptions {
     /// crushed) and its longest idle animation (0: none), so a body stays
     /// until its sequence ended and an idle animation is not cut short.
     pub infantry_ticks: Vec<[u32; 8]>,
-    /// Per actor type: ticks its structure's make animation plays (OpenRA
-    /// WithMakeAnimation: the `build-incomplete` condition lasts that long,
-    /// then the body and the layers that require `!build-incomplete`, the
-    /// War Factory's roof and door, show). 0: no make animation. Empty (or a
-    /// type past its end): unknown, the make pose lasts `MAX_POSE_AGE`.
-    pub make_ticks: Vec<u32>,
+    /// Per actor type: whether its body art plays a make animation (the
+    /// original graphics, texture packs). The make pose lasts the rules'
+    /// `building.make_ticks` either way; art without one fades the structure
+    /// in meanwhile (render.rs). Empty: none has.
+    pub make_art: Vec<bool>,
 }
 
 impl RenderOptions {
@@ -132,7 +131,7 @@ impl Default for RenderOptions {
             fire_frames: [None; 3],
             death_art: Vec::new(),
             infantry_ticks: Vec::new(),
-            make_ticks: Vec::new(),
+            make_art: Vec::new(),
         }
     }
 }
@@ -222,10 +221,9 @@ impl RenderOptions {
         self.level_stages.iter().find(|o| o.0 == ty).map(|o| o.1)
     }
 
-    /// Ticks a structure of type `ty` shows its make pose after it appeared
-    /// (`make_ticks`, at most `MAX_POSE_AGE`).
-    pub fn make_ticks(&self, ty: u16) -> u32 {
-        self.make_ticks.get(ty as usize).map_or(crate::render::MAX_POSE_AGE, |&t| t.min(crate::render::MAX_POSE_AGE))
+    /// Whether type `ty`'s body art plays a make animation (`make_art`).
+    pub fn has_make_art(&self, ty: u16) -> bool {
+        self.make_art.get(ty as usize).copied().unwrap_or(false)
     }
 
     /// The control group of actor ref `r`, if it is in one.
