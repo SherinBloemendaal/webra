@@ -38,8 +38,8 @@ export class MapDoc {
     this.redoStack = [];
     this.tx = null;
     /**
-     * Counts the changes: it moves on whenever a transaction closes, undo or
-     * redo apply, or a map is loaded. Every change happens inside a
+     * Counts the changes: it moves on whenever a transaction that changed
+     * something closes or rolls back, undo or redo apply, or a map is loaded. Every change happens inside a
      * transaction, so outside one an equal version means the same document
      * (what `snapshot` and the editor's caches rely on).
      */
@@ -217,7 +217,6 @@ export class MapDoc {
     const tx = this.tx;
     if (!tx) return;
     this.tx = null;
-    this.version++;
     const entry = { label: tx.label, kind: 'edit', coalesceKey: tx.coalesceKey, time: Date.now() };
     let changed = false;
     if (tx.cells.size) {
@@ -251,7 +250,9 @@ export class MapDoc {
         changed = true;
       }
     }
+    // Nothing changed (an actor clicked, not moved): the same document, the same version.
     if (!changed) return;
+    this.version++;
     const top = this.undoStack[this.undoStack.length - 1];
     // Same kind of change: properties only (typing in a field), or objects only (dragging a slider of the selection).
     const part = (e) => (e.cells ? null : e.meta && !e.objects ? 'meta' : e.objects && !e.meta ? 'objects' : null);

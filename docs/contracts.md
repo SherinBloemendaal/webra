@@ -587,7 +587,8 @@ generated map or a given `.oramap`; `apps/game/tests/editor-perf.test.mjs`
 guards it by counting reads, not by the clock.
 
 - One document version (`MapDoc.version`): it moves on when a transaction
-  closes or rolls back, on undo, redo and load. Every change happens inside a
+  that changed something closes, on rollback, undo, redo and load (a click
+  that changes nothing keeps it). Every change happens inside a
   transaction, so outside one an equal version is the same document.
   `MapDoc.snapshot()` is the map object and its JSON text made once per
   version (frozen; `toMap()` for a copy to change), shared by the engine

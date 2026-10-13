@@ -141,6 +141,11 @@ test('actor ids match case-insensitively, also after the catalog gains ids', () 
   assert.equal(catalogEntry(catalog, 'e1'), undefined);
   catalog.E1 = CATALOG.E1;
   assert.equal(catalogEntry(catalog, 'e1'), CATALOG.E1);
+  // As many ids as before, but other ones: found again by their new ids.
+  delete catalog.E1;
+  catalog.E2 = CATALOG.E2;
+  assert.equal(catalogEntry(catalog, 'e1'), undefined);
+  assert.equal(catalogEntry(catalog, 'e2'), CATALOG.E2);
 });
 
 test('the frame reads the actors once for refused structures, then not again until the map changes', () => {
@@ -184,6 +189,30 @@ test('quick fixes check every actor against one index', () => {
   const found = fixes.filter((f) => /^actor-(ground|overlap)-/.test(f.key)).map((f) => f.key);
   const offMap = new Set(fixes.filter((f) => f.key.startsWith('actor-out-')).map((f) => f.key.slice('actor-out-'.length)));
   assert.deepEqual(found, [...plain.keys()].filter((k) => !offMap.has(k.split('-').at(-1))));
+});
+
+test('a gesture that changes nothing (an actor clicked, not moved) keeps the version and the caches', () => {
+  const doc = busyMap(96, 300);
+  const state = { ...STATE(), tool: 'select' };
+  const ctl = new Controller(doc, VIEW(96, 96), CATALOG, state, { status() {}, hover() {}, selectionChanged() {} });
+  ctl.scene();
+  const unit = doc.actors.find((a) => catalogEntry(CATALOG, a.type) && catalogEntry(CATALOG, a.type).kind !== 'building' && doc.inside(a.x, a.y));
+  const version = doc.version;
+  const snapshot = doc.snapshot();
+  let changes = 0;
+  doc.onChange(() => changes++);
+  const counter = countActorReads(doc);
+  ctl.down({ x: unit.x, y: unit.y }, { button: 0 });
+  ctl.up({ x: unit.x, y: unit.y }, { button: 0 });
+  assert.ok(ctl.selection.size >= 1, 'the click selected');
+  assert.equal(doc.canUndo, true, 'the strewn actors are the only step');
+  assert.equal(doc.undoStack.length, 1);
+  assert.equal(doc.version, version);
+  assert.equal(changes, 0);
+  assert.equal(doc.snapshot(), snapshot);
+  counter.reads = 0;
+  ctl.scene();
+  assert.ok(counter.reads <= ctl.selection.size, `${counter.reads} reads: the refused structures were kept`);
 });
 
 // ---- The shape preview --------------------------------------------------------------------

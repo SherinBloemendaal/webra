@@ -84,8 +84,9 @@ export class Minimap {
     this.dirty = true;
     this.doc = null;
     // Any button (left, right, middle; a finger) moves the view there and a
-    // drag keeps moving it, like the game's radar does with every button
-    // but the one that gives orders (js/minimap.js). One pointer at a time.
+    // drag keeps moving it: the editor gives no orders, so every button
+    // only moves the view. One pointer at a time; other buttons (back,
+    // forward) do nothing.
     let dragging = null;
     const jump = (e) => {
       const p = this.toWorld(e);
