@@ -266,6 +266,7 @@ test('server messages round trip through encodeServer / parseServerMessage', () 
     { t: S2C.CHAT, from: 1, name: 'Host', text: 'gl hf' },
     { t: S2C.CHAT, from: null, name: 'Server', text: 'Host left' },
     { t: S2C.CHAT, from: 2, name: 'Guest', text: 'rush left', team: true },
+    { t: S2C.CHAT, from: 3, name: 'Watcher', text: 'nice', team: true, spectators: true },
     {
       t: S2C.START,
       seed: OPTIONS.seed,
@@ -304,6 +305,8 @@ test('server message validation catches inconsistent data', () => {
     false,
   );
   assert.equal(parseServerMessage('{"t":"hello"}').ok, false);
+  // Spectator chat is team chat of the spectators' side.
+  assert.equal(parseServerMessage(JSON.stringify({ t: 'chat', from: 3, name: 'W', text: 'x', spectators: true })).ok, false);
 });
 
 test('cheat orders: strict shapes, recognised as cheats', () => {

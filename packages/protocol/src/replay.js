@@ -141,17 +141,18 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
     fail('a save must end with the state hash of its last tick');
   }
   // The chat of an online game's replay, as the recording client received it:
-  // [tick, player (-1: a spectator), name, text, team (1: team chat)]. Saves never carry chat.
+  // [tick, player (-1: a spectator), name, text, channel (0 all chat, 1 team
+  // chat, 2 the spectators' team chat)]. Saves never carry chat.
   if (v.chat !== undefined) {
     if (out.kind !== 'replay' || out.mode !== 'online') fail('only replays of online games carry chat');
     if (!Array.isArray(v.chat) || v.chat.length > REPLAY_CHAT_MAX) fail(`chat must be a list of at most ${REPLAY_CHAT_MAX} lines`);
     last = -1;
     out.chat = v.chat.map((c, i) => {
-      if (!Array.isArray(c) || c.length !== 5) fail(`chat[${i}] must be [tick, player, name, text, team]`);
+      if (!Array.isArray(c) || c.length !== 5) fail(`chat[${i}] must be [tick, player, name, text, channel]`);
       const tick = int(c[0], 0, out.ticks, `chat[${i}] tick`);
       if (tick < last) fail('chat ticks must not decrease');
       last = tick;
-      return [tick, int(c[1], -1, players - 1, `chat[${i}] player`), validName(c[2], `chat[${i}] name`), text(c[3], 1, CHAT_MAX, `chat[${i}] text`), int(c[4], 0, 1, `chat[${i}] team`)];
+      return [tick, int(c[1], -1, players - 1, `chat[${i}] player`), validName(c[2], `chat[${i}] name`), text(c[3], 1, CHAT_MAX, `chat[${i}] text`), int(c[4], 0, 2, `chat[${i}] channel`)];
     });
   }
   return out;
