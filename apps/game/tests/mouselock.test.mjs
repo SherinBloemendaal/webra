@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { installDom, uninstallDom, FakeEvent, FakeElement, memoryStorage } from './dom-fixtures.mjs';
 import { createRegistry, specOf, defaultValues } from '../js/registry.js';
 import { createSettings } from '../js/settings.js';
-import { HotkeyRegistry, openraDefaults, WEBRA_SUBSTITUTES } from '../js/hotkeys.js';
+import { formatCombo, HotkeyRegistry, openraDefaults, RELEASE_MOUSE_KEYS, releaseMouseKey, WEBRA_SUBSTITUTES } from '../js/hotkeys.js';
 import { GAME_KEYS, registerGameKeys } from '../js/gamekeys.js';
 import { OPENRA_HOTKEYS } from '../js/openra-hotkeys.js';
 import { CURSORS } from '../js/cursors.js';
@@ -196,6 +196,13 @@ function lockAt(p, x = 100, y = 100) {
   assert.equal(p.capture.state, 'locked');
 }
 
+/** The release key of this platform (RELEASE_MOUSE_KEYS), as the keydown a keyboard sends: Option+E on macOS is a dead key, its code is still KeyE. */
+const RELEASE = releaseMouseKey();
+const pressRelease = (p, key = 'Dead') =>
+  p.hotkeys.handle({ type: 'keydown', key, code: 'KeyE', altKey: true, shiftKey: RELEASE.includes('Shift'), target: doc.body, preventDefault() {} });
+/** The notice with the default key (the test pages format keys the Windows / Linux way). */
+const NOTICE = `Mouse captured. Press ${formatCombo(RELEASE, false)} to release.`;
+
 /** A real mouse move while locked; a first one after locking that jumps (Chromium) is skipped. */
 const move = (p, dx, dy, mods = {}) => p.real('mousemove', { movementX: dx, movementY: dy, ...mods });
 
@@ -235,38 +242,43 @@ test('settings: capture in fullscreen by default, speed 1, the first Esc only re
   assert.deepEqual(validateSettingsDocument({ extra: { mouseCaptureHints: 2 } }).extra, { mouseCaptureHints: 2 });
 });
 
-test('hotkey: Alt+E (Option+E) releases and captures, listed and rebindable; OpenRA bookmark 3 gives way', () => {
+test('hotkey: Option+E on macOS, Alt+Shift+E on Windows and Linux; releases and captures, listed and rebindable', () => {
+  assert.deepEqual(RELEASE_MOUSE_KEYS, { mac: 'Alt+E', other: 'Alt+Shift+E' });
+  assert.equal(releaseMouseKey(true), 'Alt+E', "macOS: Option+E, like cloud gaming services");
+  assert.equal(releaseMouseKey(false), 'Alt+Shift+E', 'Windows and Linux: Alt+E opens the browser menu, Ctrl+Alt+E is AltGr+E');
+  assert.equal(formatCombo(releaseMouseKey(true), true), 'Option+E');
+  assert.ok(!Object.values(OPENRA_HOTKEYS).some((h) => h.key === 'Alt+Shift+E'), 'no OpenRA hotkey has Alt+Shift+E');
+  // OpenRA's Alt+E (jump to bookmark 3) gives way on macOS only.
+  assert.equal(OPENRA_HOTKEYS.MapBookmarkRestore03.key, 'Alt+E');
+  assert.equal(WEBRA_SUBSTITUTES.MapBookmarkRestore03.macOnly, true);
+  assert.deepEqual(openraDefaults('MapBookmarkRestore03', true), [], 'macOS: no default key, bindable in Controls');
+  assert.deepEqual(openraDefaults('MapBookmarkRestore03', false), ['Alt+E'], "Windows and Linux: OpenRA's key");
   const entry = GAME_KEYS.find((e) => e.name === CAPTURE_ACTION);
-  assert.deepEqual(entry.keys, ['Alt+E']);
-  assert.equal(OPENRA_HOTKEYS.MapBookmarkRestore03.key, 'Alt+E', "OpenRA's jump to bookmark 3");
-  assert.deepEqual(WEBRA_SUBSTITUTES.MapBookmarkRestore03, { key: null, why: 'Alt+E releases the captured mouse, as in cloud gaming services' });
-  assert.deepEqual(openraDefaults('MapBookmarkRestore03'), [], 'no default key in WebRA: bindable in Controls');
-  assert.ok(!GAME_KEYS.some((e) => e !== entry && (e.keys ?? []).includes('Alt+E')));
+  assert.deepEqual(entry.keys, [RELEASE]);
+  assert.ok(!GAME_KEYS.some((e) => e !== entry && (e.keys ?? []).includes(RELEASE)));
   const p = page({ fullscreen: false });
   const listed = p.hotkeys.list().find((a) => a.name === CAPTURE_ACTION);
-  assert.deepEqual(listed.keys, ['Alt+E']);
+  assert.deepEqual(listed.keys, [RELEASE]);
   assert.equal(listed.label, 'Release or capture the mouse');
   assert.equal(listed.group, 'Game Commands');
-  // Option+E on a Mac is a dead key ("Dead", or the accent it makes); the key code is still E.
-  const press = (key = 'Dead') => p.hotkeys.handle({ type: 'keydown', key, code: 'KeyE', altKey: true, target: doc.body, preventDefault() {} });
-  assert.equal(press(), true);
+  assert.equal(pressRelease(p), true);
   assert.equal(p.requests.length, 1, 'released: captures, even outside fullscreen (the press is the player asking)');
   p.grant();
   assert.equal(p.capture.state, 'locked');
-  press('\u00b4');
+  pressRelease(p, '\u00b4');
   assert.equal(p.capture.state, 'off', 'captured: releases');
   assert.equal(p.exits(), 1);
   assert.equal(p.capture.lastRelease, 'hotkey');
   // Rebindable like every hotkey.
   assert.equal(p.hotkeys.rebind(CAPTURE_ACTION, 'Ctrl+Shift+M').ok, true);
   assert.equal(p.hotkeys.actionFor('Ctrl+Shift+M'), CAPTURE_ACTION);
-  assert.equal(p.hotkeys.actionFor('Alt+E'), null);
+  assert.equal(p.hotkeys.actionFor(RELEASE), null);
 });
 
 test('detached: the release hotkey opens no menu, Esc opens none until a click captures again, then Esc works as usual', () => {
   const p = page();
   lockAt(p);
-  const hotkey = () => p.hotkeys.handle({ type: 'keydown', key: 'Dead', code: 'KeyE', altKey: true, target: doc.body, preventDefault() {} });
+  const hotkey = () => pressRelease(p);
   const esc = () => p.real('keydown', { key: 'Escape' }, doc.body);
   hotkey();
   p.flush();
@@ -382,7 +394,7 @@ test('notice: names the bound key every capture by default; the first 3 times, o
   };
   for (let i = 0; i < HINT_LIMIT + 2; i++) capture();
   assert.equal(p.hints.length, HINT_LIMIT + 2, 'every time');
-  assert.ok(p.hints.every((h) => h === 'Mouse captured. Press Alt+E to release.'));
+  assert.ok(p.hints.every((h) => h === NOTICE));
   assert.equal(p.settings.get('mouseCaptureHints'), HINT_LIMIT, 'counted only as far as "first" needs (no settings write per capture)');
   // The key the player bound.
   p.hotkeys.rebind(CAPTURE_ACTION, 'Alt+M');
@@ -434,6 +446,7 @@ test('helpers: availability, speed, clamping, cursor art and the hint text', () 
   assert.deepEqual(cursorArt(CURSORS.sellBlocked), parseCursor(CURSORS.sellBlocked));
   assert.equal(hintText('Alt+E', false), 'Mouse captured. Press Alt+E to release.');
   assert.equal(hintText('Alt+E', true), 'Mouse captured. Press Option+E to release.', 'the macOS name');
+  assert.equal(hintText('Alt+Shift+E', false), 'Mouse captured. Press Alt+Shift+E to release.');
   assert.equal(hintText('Ctrl+Shift+M', true), 'Mouse captured. Press Cmd+Shift+M to release.');
   assert.equal(hintText(null, true), 'Mouse captured. Press Esc to release.');
 });
@@ -451,7 +464,7 @@ test('capture: in fullscreen by default; a click into the game asks for the plai
   p.grant();
   assert.equal(p.capture.state, 'locked');
   assert.equal(p.capture.raw, false);
-  assert.deepEqual(p.hints, ['Mouse captured. Press Alt+E to release.']);
+  assert.deepEqual(p.hints, [NOTICE]);
   assert.equal(p.settings.get('mouseCaptureHints'), 1);
   // Leaving fullscreen lets go; clicks there do not capture.
   p.setFullscreen(false);

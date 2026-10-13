@@ -162,7 +162,7 @@ export const GROUPS = deepFreeze({
         options: ['off', 'fullscreen', 'always'],
         labels: { off: 'Off', fullscreen: 'In fullscreen', always: 'Always (click into the game)' },
         label: 'Capture the mouse',
-        help: 'Keeps the pointer inside the game. The release hotkey (Alt+E) or Esc releases it.',
+        help: 'Keeps the pointer inside the game. The release hotkey (Option+E on a Mac, Alt+Shift+E elsewhere) or Esc releases it.',
       },
       // Unadjusted movement (raw mouse counts) with WebRA's own acceleration curve, where the browser has it (js/mouselock.js).
       mouseCaptureRaw: {
@@ -178,7 +178,7 @@ export const GROUPS = deepFreeze({
         label: 'Esc also opens the menu while the mouse is captured',
         help: 'Off: the first Esc only releases the mouse, the next one opens the menu.',
       },
-      // The "Mouse captured. Press Alt+E to release." notice (js/mouselock.js): every capture, the first few, or never.
+      // The "Mouse captured. Press Option+E to release." notice (js/mouselock.js): every capture, the first few, or never.
       mouseCaptureNotice: {
         type: 'choice',
         default: 'always',

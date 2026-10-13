@@ -398,11 +398,11 @@ export class SimCore {
    */
   setBackground(on) {
     const local = !!this.game && !this.driver && !this.replay;
-    if (!on || !local || this.failure) {
+    // After an error in a background tick the game cannot go on (the tick may
+    // be half applied): the error stays, every later step throws it.
+    if (!on || !local || this.failure || this.backgroundError) {
       if (this.background) this.timers.clearInterval(this.background.id);
       this.background = null;
-    /** What stopped background ticks (the next step throws it). */
-    this.backgroundError = null;
       return false;
     }
     if (this.background) return true;
@@ -416,9 +416,10 @@ export class SimCore {
       try {
         this.idle(dt);
       } catch (err) {
-        // The game stopped (an engine error, reported by `guard`): the next step says so.
-        this.setBackground(false);
+        // The game stopped (an engine error is reported by `guard`; any other
+        // error too, by the worker or host when the next step throws it).
         this.backgroundError ??= err;
+        this.setBackground(false);
       }
     }, this.tickMs);
     return true;

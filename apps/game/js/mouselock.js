@@ -37,7 +37,8 @@
 // Esc; clicks in that time just act. Losing the lock to another window
 // (alt-tab, a click on another monitor) never opens the menu.
 //
-// The release hotkey (Alt+E, Option+E on macOS; js/gamekeys.js), like cloud
+// The release hotkey (Option+E on macOS, Alt+Shift+E elsewhere: js/hotkeys.js
+// RELEASE_MOUSE_KEYS; js/gamekeys.js), like cloud
 // gaming services: while captured it lets go without the menu, so the game
 // plays on (single player is not paused) while the player uses another
 // monitor or app. The game is then "detached" (isDetached): Esc cancels a

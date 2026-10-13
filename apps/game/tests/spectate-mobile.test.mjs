@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { installDom, uninstallDom, click } from './dom-fixtures.mjs';
 import { ObserverPanel, COMBINED_VIEW, OBSERVER_VIEW } from '../js/observer.js';
 import { chatIntroLine } from '../js/online.js';
-import { TOUCH_TARGET } from '../js/layout.js';
+import { touchUi } from '../js/touch.js';
 import { chatTip } from '../js/hudtips.js';
 
 const read = (path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
@@ -45,13 +45,33 @@ const RULES = rules(CSS);
 /** Declarations of the rules with exactly this selector. */
 const exact = (selector) => RULES.filter(([sel]) => sel === selector);
 
-test('touch screens: the observer panel starts below the 44 px HUD buttons and scrolls on short screens', () => {
+/**
+ * The CSS length `expr` (calc, max, px and var(--ui-px)) in px at UI scale
+ * `scale`, with `percent` for 100% (the battlefield's height).
+ */
+function cssPx(expr, scale, percent = 800) {
+  const js = expr
+    .replace(/var\(--ui-px\)/g, `(${scale})`)
+    .replace(/(\d+(?:\.\d+)?)px/g, '$1')
+    .replace(/(\d+(?:\.\d+)?)%/g, `($1 * ${percent} / 100)`)
+    .replace(/calc\(/g, '(')
+    .replace(/max\(/g, 'Math.max(');
+  assert.match(js, /^[\d\s.+\-*/()Mathmax,]+$/, `only arithmetic in ${expr}`);
+  return Function(`return ${js}`)();
+}
+
+test('touch screens: the observer panel starts below the 44 px HUD buttons at every UI scale and scrolls on short screens', () => {
   const [[, panel]] = exact('body.touch .observer-panel');
-  // The HUD buttons sit 6 px from the top and are TOUCH_TARGET px high there.
-  const top = Number(/calc\((\d+) \* var\(--ui-px\)\)/.exec(panel.top)?.[1]);
-  assert.ok(top >= 6 + TOUCH_TARGET, `top ${panel.top} clears the Menu button`);
+  const buttons = RULES.find(([s]) => s === '.hud-buttons')[1];
+  const button = exact('body.touch .hud-button')[0][1];
+  for (const scale of [0.5, 0.85, 1, 1.5]) {
+    // The HUD buttons' bottom: their row's top plus the touch height and the borders (1 px each).
+    const bottom = cssPx(buttons.top, scale) + cssPx(button['min-height'], scale) + 2;
+    const top = cssPx(panel.top, scale);
+    assert.ok(top >= bottom + 2, `scale ${scale}: panel top ${top} px clears the Menu button's bottom ${bottom} px`);
+    assert.equal(cssPx(panel['max-height'], scale) + top <= 800, true, `scale ${scale}: the panel ends above the bottom`);
+  }
   assert.equal(panel['overflow-y'], 'auto');
-  assert.match(panel['max-height'], /100% -/);
   // The view buttons and the panel picker are touch targets.
   for (const sel of ['.observer-view', '.observer-toggle', '.replay-bar button']) {
     const coarse = RULES.find(([s, , q]) => s === sel && q === '(pointer: coarse)');
@@ -103,6 +123,14 @@ test('touch screens get a Chat button (no Enter key); the chat says how to open 
   const main = read('../js/main.js');
   assert.match(main, /chatButton\.className = 'hud-button hud-chat'/);
   assert.match(main, /if \(onlineChat\?\.send \|\| replayLines\)/, 'online games (players and spectators) and replays with chat');
+  // One test for the button (body.touch, set by js/touch.js from touchUi) and the line's wording.
+  assert.match(read('../js/online.js'), /touch: touchUi\(\)/);
+  assert.match(read('../js/touch.js'), /if \(touchUi\(\)\) this\.markTouchUi\(\);/);
+  const body = (on) => ({ body: { classList: { contains: (c) => on && c === 'touch' } } });
+  const media = (coarse) => ({ matchMedia: () => ({ matches: coarse }) });
+  assert.equal(touchUi(body(false), media(true)), true, 'a touch screen');
+  assert.equal(touchUi(body(true), media(false)), true, 'a laptop touched once');
+  assert.equal(touchUi(body(false), media(false)), false, 'mouse and keyboard');
   assert.equal(chatIntroLine({ spectator: true, list: 'Ann, Bo', touch: true }), 'Watching: Ann, Bo. Tap Chat to chat.');
   assert.equal(chatIntroLine({ spectator: true, list: 'Ann, Bo' }), 'Watching: Ann, Bo. Press Enter to chat.');
   assert.equal(chatIntroLine({ list: 'Ann, Bo', teamChat: true }), 'Online game: Ann, Bo. Press Enter to chat with your team, Shift+Enter with everyone.');

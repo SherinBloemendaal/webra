@@ -80,6 +80,7 @@ import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
 import { hasTeamChat } from './chatkeys.js';
+import { touchUi } from './touch.js';
 import { chatPrefix, TextLog } from './chatlog.js';
 import { mapLibrary } from './maplibrary.js';
 import { formatTicks } from './replay.js';
@@ -2329,7 +2330,7 @@ export class OnlineUI {
       bind: ({ colorOf, defeated }) => Object.assign(this.chatPeople, { colorOf, defeated }),
     };
     const list = names.join(', ');
-    this.gameLine(chatIntroLine({ spectator, list, teamChat, touch: !!globalThis.matchMedia?.('(pointer: coarse)').matches }));
+    this.gameLine(chatIntroLine({ spectator, list, teamChat, touch: touchUi() }));
     if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
     setInterval(() => {
       if (this.driver) this.waitLine.hidden = !(this.driver.stalledMs > 600 && !this.driver.stopped);

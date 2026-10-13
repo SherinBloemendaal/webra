@@ -32,6 +32,16 @@ const CARD_SLOP = 10;
  * Buttons of the touch action bar. `toggle` buttons show a pressed state;
  * `hotkey` runs that registered action.
  */
+/**
+ * Whether the page shows the touch UI (body.touch: the action bar, 44 px
+ * targets, the Chat button): a touch screen as the main pointer, or a touch
+ * seen already. One test for everything that depends on it (js/online.js
+ * names the Chat button only where it shows).
+ */
+export function touchUi(doc = globalThis.document, win = globalThis) {
+  return !!doc?.body?.classList.contains('touch') || !!win.matchMedia?.('(pointer: coarse)').matches;
+}
+
 export const TOUCH_BAR = [
   { id: 'queue', label: 'Add', title: 'Like holding Shift: taps and boxes add to the selection, modes stay active, the sidebar queues 5', toggle: true },
   { id: 'attackMove', label: 'A-Move', title: 'Attack move: tap the destination', toggle: true, needsUnits: true },
@@ -114,7 +124,7 @@ export class TouchControls {
     window.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'mouse' && this.input.mouse.touch) this.input.mouse.touch = false;
     });
-    if (globalThis.matchMedia?.('(pointer: coarse)').matches) this.markTouchUi();
+    if (touchUi()) this.markTouchUi();
   }
 
   /** Show the touch UI (action bar, larger targets) from the first touch on. */

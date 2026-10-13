@@ -754,6 +754,31 @@ test('a hidden local game plays on with background ticks: same world as frames, 
   assert.equal(game.tick_count(), before);
 });
 
+test('an error in a background tick stops the game for good: the next step throws it, showing the page does not clear it', () => {
+  let t = 0;
+  const timers = new Map();
+  let nextId = 1;
+  const fake = { setInterval: (fn) => (timers.set(nextId, fn), nextId++), clearInterval: (id) => timers.delete(id) };
+  const core = new SimCore({ Game, memory: () => wasm.memory, now: () => t, timers: fake });
+  core.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  assert.equal(core.command('background', [true]), true);
+  // A bug in the driver (not an engine panic) halfway through a background tick.
+  const boom = new Error('driver bug');
+  core.local.tick = () => {
+    throw boom;
+  };
+  t += TICK_MS;
+  for (const fn of [...timers.values()]) fn();
+  assert.equal(timers.size, 0, 'the timer stopped');
+  // The page shows again: js/main.js sends background [false] before the first frame.
+  assert.equal(core.command('background', [false]), false);
+  assert.throws(() => core.step({ dt: TICK_MS, view: 0, rect: [0, 0, 1536, 1536] }), /driver bug/);
+  // Hidden again: no new timer over a game that may hold a half applied tick.
+  assert.equal(core.command('background', [true]), false);
+  assert.equal(timers.size, 0);
+  assert.throws(() => core.step({ dt: TICK_MS, view: 0, rect: [0, 0, 1536, 1536] }), /driver bug/);
+});
+
 test('background ticks: only local games; the worker ticks on its own timer; disposing the direct host stops it', async () => {
   const replayCore = new SimCore({ Game, memory: () => wasm.memory, timers: { setInterval: () => assert.fail('no timer for a replay'), clearInterval() {} } });
   const r = await parseReplay(directHashes(60).replay);

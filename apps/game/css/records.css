@@ -446,8 +446,9 @@
    below them (it covered the Menu button), and it scrolls instead of running
    off a short screen. */
 body.touch .observer-panel {
-  top: calc(56 * var(--ui-px));
-  max-height: calc(100% - calc(64 * var(--ui-px)));
+  /* The HUD buttons' bottom (top 6 * ui-px, at least 44 px high at any UI scale) plus a gap. */
+  top: calc(6 * var(--ui-px) + max(44px, 44 * var(--ui-px)) + 6px);
+  max-height: calc(100% - (6 * var(--ui-px) + max(44px, 44 * var(--ui-px)) + 14px));
   overflow-y: auto;
   overscroll-behavior: contain;
 }

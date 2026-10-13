@@ -8,7 +8,8 @@
 // Defaults are OpenRA's Red Alert hotkeys (js/openra-hotkeys.js, generated
 // from OpenRA's mods/common/hotkeys/*.yaml and mods/ra/hotkeys.yaml), except
 // where the browser keeps OpenRA's key for itself (BROWSER_SUBSTITUTES) or
-// one of WebRA's own actions has it (WEBRA_SUBSTITUTES: Alt+E releases the mouse).
+// one of WebRA's own actions has it (WEBRA_SUBSTITUTES: on macOS Option+E
+// releases the mouse).
 // Actions name their OpenRA hotkey (`openra`), which gives them OpenRA's
 // description, contexts and section of the hotkey settings; README.md
 // (Controls) lists them all.
@@ -60,26 +61,43 @@ export const BROWSER_SUBSTITUTES = Object.freeze({
 });
 
 /**
+ * The release mouse key (js/mouselock.js, js/gamekeys.js), per platform:
+ * Option+E on macOS, like cloud gaming services (the owner's choice; Option
+ * opens no browser menu there). On Windows and Linux Alt+E opens Chrome's and
+ * Edge's menu and Firefox's Edit menu, which a page cannot reliably hold
+ * back, and Ctrl+Alt+E is AltGr+E (the euro sign on many European layouts),
+ * so it is Alt+Shift+E there: no browser reserves it (Chrome, Edge and
+ * Firefox's published shortcut lists) and no OpenRA hotkey has it.
+ */
+export const RELEASE_MOUSE_KEYS = Object.freeze({ mac: 'Alt+E', other: 'Alt+Shift+E' });
+
+/** The release mouse key's default on this platform (RELEASE_MOUSE_KEYS). */
+export function releaseMouseKey(mac = isMac()) {
+  return mac ? RELEASE_MOUSE_KEYS.mac : RELEASE_MOUSE_KEYS.other;
+}
+
+/**
  * OpenRA hotkeys whose default key one of WebRA's own actions has, and what
  * they use instead (null: no default key; the player can bind one in the
- * Controls page). docs and README.md list them.
+ * Controls page); `macOnly`: only where that action has the key (macOS).
+ * docs and README.md list them.
  */
 export const WEBRA_SUBSTITUTES = Object.freeze({
-  MapBookmarkRestore03: { key: null, why: 'Alt+E releases the captured mouse, as in cloud gaming services' },
+  MapBookmarkRestore03: { key: null, why: 'Option+E releases the captured mouse, as in cloud gaming services', macOnly: true },
 });
 
-/** Where WebRA's default for an OpenRA hotkey differs from OpenRA's: `{ key, why }`, or null. */
-export function substituteFor(name) {
+/** Where WebRA's default for an OpenRA hotkey differs from OpenRA's on this platform: `{ key, why }`, or null. */
+export function substituteFor(name, mac = isMac()) {
   if (Object.hasOwn(BROWSER_SUBSTITUTES, name)) return BROWSER_SUBSTITUTES[name];
-  if (Object.hasOwn(WEBRA_SUBSTITUTES, name)) return WEBRA_SUBSTITUTES[name];
-  return null;
+  const own = Object.hasOwn(WEBRA_SUBSTITUTES, name) ? WEBRA_SUBSTITUTES[name] : null;
+  return own && (mac || !own.macOnly) ? own : null;
 }
 
 /** WebRA's default keys for an OpenRA hotkey: OpenRA's key, or its substitute (substituteFor). */
-export function openraDefaults(name) {
+export function openraDefaults(name, mac = isMac()) {
   const h = OPENRA_HOTKEYS[name];
   if (!h) throw new Error(`Unknown OpenRA hotkey "${name}"`);
-  const sub = substituteFor(name);
+  const sub = substituteFor(name, mac);
   const key = sub ? sub.key : h.key;
   return key ? [key] : [];
 }
