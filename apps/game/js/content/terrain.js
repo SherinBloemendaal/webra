@@ -282,18 +282,65 @@ const colorDiff = (a, b) => {
  * A tile's distance from what its cell wants: the wetness of its regions and
  * edges against `want`, and the colours along the edges it shares with the
  * tiles already chosen (`seams[side]`: that neighbour's tile, or null).
+ * Every term is zero or more, so once the sum passes `limit` the tile cannot
+ * win any more: the sum so far is returned (above `limit`). `cached[side]`
+ * (SeamCache `of` the neighbour on that side, with `k` the tile's index in
+ * the cache) keeps the terms of a pair of tiles, which do not depend on the
+ * cell; the sum is the same either way.
  */
-function fitScore(tile, want, seams) {
+function fitScore(tile, want, seams, limit = Infinity, cached = null, k = 0) {
   const info = tile.info;
   let s = 0;
-  for (let k = 0; k < 9; k++) s += REGION_WEIGHT[k] * Math.abs(info.regions[k] - want.regions[k]);
+  for (let r = 0; r < 9; r++) s += REGION_WEIGHT[r] * Math.abs(info.regions[r] - want.regions[r]);
+  if (s > limit) return s;
   for (let side = 0; side < 4; side++) {
     const n = seams[side];
     const opposite = (side + 2) % 4;
-    s += SEAM_WEIGHT * meanDiff(info.edges[side], n?.info ? n.info.edges[opposite] : want.edges[side]);
-    if (n?.colors && tile.colors) s += COLOR_WEIGHT * colorDiff(tile.colors[side], n.colors[opposite]);
+    const pair = cached?.[side] ?? null;
+    if (n?.info) {
+      let v = pair ? pair.edge[side][k] : NaN;
+      if (Number.isNaN(v)) {
+        v = meanDiff(info.edges[side], n.info.edges[opposite]);
+        if (pair) pair.edge[side][k] = v;
+      }
+      s += SEAM_WEIGHT * v;
+    } else {
+      s += SEAM_WEIGHT * meanDiff(info.edges[side], want.edges[side]);
+    }
+    if (n?.colors && tile.colors) {
+      let v = pair ? pair.color[side][k] : NaN;
+      if (Number.isNaN(v)) {
+        v = colorDiff(tile.colors[side], n.colors[opposite]);
+        if (pair) pair.color[side][k] = v;
+      }
+      s += COLOR_WEIGHT * v;
+    }
+    if (s > limit) return s;
   }
   return s;
+}
+
+/**
+ * The seam terms of fitScore per pair of tiles (one of `count` beach tiles
+ * and a neighbour's tile) and side, worked out once: a map has thousands of
+ * coast cells but only a few hundred tiles meet there.
+ */
+class SeamCache {
+  constructor(count) {
+    this.count = count;
+    this.pairs = new Map();
+  }
+
+  /** The terms against neighbour `n`: `{ edge, color }`, per side one value per tile (NaN until worked out). */
+  of(n) {
+    let p = this.pairs.get(n);
+    if (!p) {
+      const row = () => new Float64Array(this.count).fill(NaN);
+      p = { edge: [row(), row(), row(), row()], color: [row(), row(), row(), row()] };
+      this.pairs.set(n, p);
+    }
+    return p;
+  }
 }
 
 /**
@@ -366,6 +413,9 @@ export function planTerrain(terrain, w, h, pools) {
   placeTemplates((x, y) => wetRock[y * w + x] === 1, multi('water-rock'), 17);
 
   const ground = pools.clear;
+  // Beach candidates for land cells: their tile must not look like water in the middle.
+  const landShore = pools.shore.filter((tile) => !(tile.info.regions[4] > LAND_CENTRE));
+  const seamCache = new SeamCache(landShore.length);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
@@ -395,10 +445,11 @@ export function planTerrain(terrain, w, h, pools) {
       const seams = SIDES.map(([dx, dy]) => (dx > 0 || dy > 0 || !inMap(x + dx, y + dy) ? null : picks[(y + dy) * w + x + dx]));
       let best = fitScore(picks[i], want, seams);
       const near = [];
-      for (const tile of pools.shore) {
-        // The cell is land: its tile must not look like water in the middle.
-        if (tile.info.regions[4] > LAND_CENTRE) continue;
-        const s = fitScore(tile, want, seams);
+      const cached = seams.map((n) => (n ? seamCache.of(n) : null));
+      for (let k = 0; k < landShore.length; k++) {
+        const tile = landShore[k];
+        // A tile scoring above best + TIE is never kept (and never the best): its score may stop early.
+        const s = fitScore(tile, want, seams, best + TIE, cached, k);
         if (s < best - TIE) {
           best = s;
           near.length = 0;
@@ -567,13 +618,14 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
   const index = new Map();
   const nextIndex = () => terrainTileIndex(order.length);
   const tiles = [];
-  const place = (key, rgba) => {
+  // `pixels()` makes the tile's RGBA: only for a key not placed before (most cells share their tile).
+  const place = (key, pixels) => {
     if (index.has(key)) return index.get(key);
     const k = nextIndex();
     if (k >= SMUDGE_TILE_BASE) return null;
     order.push(key);
     index.set(key, k);
-    tiles.push([k, rgba]);
+    tiles.push([k, pixels()]);
     return k;
   };
   // Tree tiles: a few trees, halved, on the first plain ground tile.
@@ -586,7 +638,7 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
     if (!f || !f.width) continue;
     const small = halve(f.data, f.width, f.height);
     const base = indexedTile(ground.data, ORIGINAL_TILE, ORIGINAL_TILE, lookup, ORIGINAL_TILE);
-    const k = place(`tree:${name}`, indexedTile(small.data, small.width, small.height, lookup, ORIGINAL_TILE, base));
+    const k = place(`tree:${name}`, () => indexedTile(small.data, small.width, small.height, lookup, ORIGINAL_TILE, base));
     if (k !== null) treeTiles.push(k);
   }
   const cells = new Uint8Array(w * h * 4);
@@ -601,7 +653,7 @@ export function originalTerrain(getFile, tileset, terrain, w, h) {
       const plain = isWaterType(drawnAs(terrain[i * 4])) ? pools.water[0] : pools.clear[0];
       for (const t of [own, plain]) {
         if (!t) continue;
-        k = place(t.key, indexedTile(t.data, ORIGINAL_TILE, ORIGINAL_TILE, lookup, ORIGINAL_TILE, null, rotation));
+        k = place(t.key, () => indexedTile(t.data, ORIGINAL_TILE, ORIGINAL_TILE, lookup, ORIGINAL_TILE, null, rotation));
         if (k !== null) break;
         report.overflow++;
       }
