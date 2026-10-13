@@ -106,7 +106,6 @@
 #audio-button,
 #audio-panel,
 #music-panel,
-#content-button,
 #content-panel,
 #release-notes {
   --ui-px: calc(1px * var(--ui-scale));
@@ -129,7 +128,6 @@
   #audio-button,
   #audio-panel,
   #music-panel,
-  #content-button,
   #content-panel,
   #release-notes {
     --ctl-size: max(16px, calc(16 * var(--ui-px)));

@@ -87,6 +87,8 @@ import { SaveStore } from './saves.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 import { aiName, spawnMarkers } from './lobby-state.js';
 import { SpawnMarkers } from './spawnpick.js';
+import { planBulk } from './lobby-bulk.js';
+import { BulkBar } from './lobby-bulkbar.js';
 import { battlefieldSpawns, generatedMapPlayers } from '../protocol/spawns.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
@@ -176,6 +178,7 @@ export const ONLINE_HELP_KEYS = [
   'handicap',
   'spawn',
   'spectators',
+  'bulk',
 ];
 /** What a member's map state says in the lobby (protocol MAP_STATES). */
 const MAP_STATE_TEXT = { installed: 'Has map', missing: 'No map', declined: 'Declined map' };
@@ -975,6 +978,15 @@ export class OnlineUI {
       this.slotHead.append(c);
     }
     this.spectatorTip = infoTip('spectators', { label: 'Spectators' });
+    // The host's bulk edit (js/lobby-bulkbar.js): one `slots` message the server checks change by change.
+    this.bulk = new BulkBar({
+      context: 'online',
+      selectClass: 'online-select',
+      buttonClass: 'online-btn',
+      onApply: (id, selected) => this.applyBulk(id, selected),
+    });
+    const bulkBox = el('div', 'online-bulk');
+    bulkBox.append(this.bulk.toggleBox, this.bulk.root);
 
     const chat = el('section', 'online-panel online-chat');
     this.chatLog = el('div', 'online-chat-log');
@@ -992,7 +1004,7 @@ export class OnlineUI {
     const body = el('div', 'online-lobby-body');
     this.spectatorBox = el('section', 'online-panel online-spectator-box');
     const left = el('div', 'online-col');
-    left.append(this.slotBox, this.spectatorBox, this.optionBox);
+    left.append(bulkBox, this.slotBox, this.spectatorBox, this.optionBox);
     const right = el('div', 'online-col');
     right.append(this.mapBox, chat);
     body.append(left, right);
@@ -1166,12 +1178,40 @@ export class OnlineUI {
     box.append(controls);
   }
 
+  /** The slots as js/lobby-bulk.js sees them: the lobby map's locks and which one is you. */
+  bulkSlots() {
+    const setup = this.state.map?.setup ?? null;
+    return this.state.slots.map((s, i) => ({
+      ...s,
+      you: s.type === 'human' && s.client === this.state.you,
+      locked: setup && !this.state.resume ? ['team', 'faction', 'color', 'type'].filter((part) => slotLocked(setup, i, part)) : [],
+    }));
+  }
+
+  /** Host: apply bulk action `id` to the selected slots (all when none is) with one `slots` message. */
+  applyBulk(id, selected) {
+    const mission = this.state.mission ? coopMission(this.state.mission.id) : null;
+    const plan = planBulk(this.bulkSlots(), id, {
+      context: 'online',
+      selected,
+      colorCount: COLOR_COUNT,
+      teamMax: TEAM_MAX,
+      mission: !!mission,
+      missionPlaces: mission ? mission.players.length : Infinity,
+    });
+    if (plan.error || !plan.changes.length) return plan;
+    this.send({ t: 'slots', changes: plan.changes });
+    return plan;
+  }
+
   renderSlots() {
     const box = this.slotBox;
     box.textContent = '';
     box.append(this.slotHead);
     const host = this.isHost;
     const mine = this.mySlot();
+    const playingCount = this.state.slots.filter((x) => x.type === 'human' || x.type === 'ai').length;
+    this.bulk?.begin(this.state.slots.length, { available: host && !this.state.resume, mission: !!this.state.mission, teamMax: TEAM_MAX, players: playingCount });
     this.state.slots.forEach((slot, i) => {
       const row = el('div', `online-slot online-slot-${slot.type}`);
       row.setAttribute('role', 'row');
@@ -1179,8 +1219,10 @@ export class OnlineUI {
       // A co-op mission's places are its playable players (Allies1, Allies2): faction, colour and team are the mission's.
       const mission = this.state.mission ? coopMission(this.state.mission.id) : null;
       who.append(el('span', 'online-badge', mission && i < mission.players.length ? mission.players[i] : `P${i + 1}`));
-      // A resumed save keeps its saved slots.
-      const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
+      this.bulk?.decorate(row, who, i, `slot ${i + 1}`);
+      // A resumed save keeps its saved slots. The host edits AI slots and,
+      // like OpenRA's host, the other players' faction, colour, team, handicap and start.
+      const editable = !this.state.resume && ((slot.type === 'human' && (i === mine || host)) || (slot.type === 'ai' && host));
       if (mission && slot.type === 'human') {
         who.append(el('span', 'online-player-name', slot.name));
         if (slot.account) who.append(accountMark());
@@ -1294,6 +1336,7 @@ export class OnlineUI {
       row.append(action);
       box.append(row);
     });
+    this.bulk?.sync();
   }
 
   /** Send the options with `patch` applied (host only; the server checks). */
@@ -1481,6 +1524,12 @@ export class OnlineUI {
     source.addEventListener('change', () => this.pickMap(source.value));
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
+    // Back to the generated map, with the seed and size the options kept (like Generated map in the list).
+    if (st.map || st.mission) {
+      const unload = button(st.mission ? 'Leave mission' : 'Unload map', null, () => this.pickMap('generated'));
+      unload.title = 'Go back to the generated map and its seed';
+      controls.append(unload);
+    }
     if (!st.map && !st.mission) {
       const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) =>
         this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }),

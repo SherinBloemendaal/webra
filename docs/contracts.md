@@ -925,7 +925,8 @@ Client to server:
 | t | Fields | When |
 |---|--------|------|
 | `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
-| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions") | lobby |
+| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions"; another player's faction, colour, team, handicap and spawn: host only, like OpenRA) | lobby |
+| `slots` | `changes: [{ slot, ...the fields of slot }]` (host only; 1 to 8 changes, each slot once, each changing something; see "Bulk edit") | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
 | `resume` | | rejoining player, after catching up |
@@ -1041,14 +1042,74 @@ and online lobbies (`apps/game/js/spawnpick.js`):
   save keeps the saved ones.
 - Online: the client sends `slot { slot, spawn }` (null: automatic). The
   server (`apps/server/src/room.js`) checks it: your own slot (a change of
-  your own makes you not ready), the host for AI slots (everyone not
-  ready, like other host changes) or `spawn: null` alone for another
-  person's slot; the spawn on the battlefield (`map.players` spawns, or one
+  your own makes you not ready), the host for AI slots and other people's
+  slots (OpenRA's Spawn command: "only the host can change other client's
+  info"; everyone not ready, like other host changes), and `spawn: null`
+  alone for another person's slot only makes that person not ready (OpenRA
+  `clear_spawn`); the spawn on the battlefield (`map.players` spawns, or one
   per player); not picked by another slot; never with `type` and never in
   a mission or a resumed save. Lobby slots carry `spawn` when picked; the
   start message's players carry it to the engine. Like OpenRA a ready player
   could not change its spawn; WebRA lets every own change through and makes
   the player not ready, as for faction or colour.
+
+### Bulk edit
+
+The skirmish and online lobbies edit many slots at once
+(`apps/game/js/lobby-bulk.js` plans, `lobby-bulkbar.js` is the bar),
+beyond OpenRA's slot admin dropdown and its `assign_teams` command
+(`LobbyCommands.cs AssignTeams`):
+
+- **Bulk edit** (a toggle by the slots) shows a checkbox in every row.
+  Selection works like a file manager, by slot index: a click on a row
+  (not on one of its controls) selects that row alone, Ctrl or Cmd adds or
+  removes it, and both set the anchor; Shift selects every row from the
+  anchor to the clicked one, up or down, in place of the selection (with
+  Ctrl or Cmd, or on a checkbox, the range takes the clicked row's new
+  state, like Shift on checkbox lists). The anchor stays for Shift. "All"
+  selects or clears every row. The selection survives lobby updates and
+  forgets rows that are gone; turning bulk edit off clears it.
+- One grouped action list and Apply (Enter in the list applies). With no
+  row selected an action applies to every slot it can change; slots the
+  map locks (map format version 2) keep the locked part. Actions: team
+  presets (free for all; humans vs AI, OpenRA's "Humans vs Bots"; split
+  into 2 to 4 teams in slot order, OpenRA's `assigned * teams / count + 1`;
+  alternating teams; put on one team), AI (fill empty slots with a bot
+  type, Normal difficulty: online the open slots, in skirmish the closed
+  ones and, with nothing selected, new rows up to the map's spawns; set
+  the bot type or difficulty of AI slots; remove the AI: online the slots
+  open, in skirmish they close and at least two players must stay),
+  factions (any choice of the faction list, or "Shuffle countries" which
+  picks a country per slot now), shuffled colours (unique: the targets
+  share the colours no other slot holds; skirmish closed rows keep
+  theirs), handicap (0 to 90 %), start positions back to automatic, and
+  slots (make open or closed slots Normal AI; online also remove selected
+  players, open or close AI and empty slots; never your own slot).
+- Skirmish: the plan is applied all or nothing (`applyBulk`), checked for
+  unique colours, two to the map's spawns of players and your own slot.
+- Online: only the host has bulk edit (not while resuming a save; in a
+  co-op mission only the slot actions, within the mission's places). It
+  sends one `slots` message. The server (`room.js setSlots`) applies each
+  change exactly as the host's `slot` message (types, AI settings, other
+  people's settings, spawns, the mission's places), checks the colours
+  once all changes are in (a shuffle swaps them), then the map's locks
+  like `slot`; any refusal puts every slot back. Everyone is no longer
+  ready, removed players are kicked like the slot admin's, and the lobby
+  goes out once. Added in protocol 6 without a version bump (a new
+  message only the host sends; sessions pair identical builds).
+
+### Unloading a map
+
+The skirmish lobby's **Unload map** (next to Load map file, while a map
+file or `.oramap` is installed) goes back to the generated map with the
+size, style, biome, tech buildings and seed it had before: they are kept
+while a map file is in use. The file is forgotten as the lobby's map (it
+stays in the map library); the slots stay as they are, and the spawn
+picks clear with the battlefield as on every map change. The seed field
+and New seed show only for a generated map. Online, the host's **Unload
+map** (a shared or community map) or **Leave mission** (a co-op mission)
+sends `map: null`, like Generated map in the map list: the lobby's
+options, seed included, were kept.
 
 ### Reconnecting
 

@@ -274,11 +274,21 @@ export function mountAudioPanel(button, panel, audio, opts = {}) {
         }
       : undefined,
   });
+  // The focus goes back to what opened the dialog: this button, or the
+  // start screen's More, Sound and music entry (js/startmenu.js).
+  let opener = null;
   function open(on) {
+    if (on === !panel.hidden) return;
     panel.hidden = !on;
     button.setAttribute('aria-expanded', String(on));
-    if (on) close.focus();
-    else button.focus();
+    if (on) {
+      opener = document.activeElement;
+      close.focus();
+    } else {
+      const back = opener instanceof HTMLElement && opener !== document.body && opener.isConnected ? opener : button;
+      opener = null;
+      back.focus();
+    }
   }
   button.hidden = false;
   button.addEventListener('click', () => open(panel.hidden));

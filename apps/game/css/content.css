@@ -1,35 +1,8 @@
 /* Original content button and dialog (js/content/panel.js). Shares the look
    of the sound dialog (css/audio.css). */
 
-#content-button {
-  position: fixed;
-  left: calc(8 * var(--ui-px));
-  bottom: calc(52 * var(--ui-px));
-  z-index: 60;
-  padding: calc(3 * var(--ui-px)) calc(10 * var(--ui-px));
-  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
-  color: var(--ui-text);
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
-  font: 700 var(--ui-fs-s) / 1.5 var(--ui-font);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-#content-button:hover {
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
-}
-
-#content-button:active {
-  box-shadow: var(--ui-bevel-in);
-}
-
-/* In a game the menu (Esc) has an Original content entry. */
-#app:not([hidden]) ~ #content-button {
-  display: none;
-}
+/* The Original content entry is in the start screen's More list
+   (css/startmenu.css); in a game the menu (Esc) has one. */
 
 #content-panel {
   position: fixed;
@@ -93,14 +66,6 @@
 
 .content-preview h3 {
   margin: 0;
-}
-
-/* Touch screens: the Sound button below grows to 44 px. */
-@media (pointer: coarse), (max-width: 600px) {
-  #content-button {
-    bottom: calc(max(calc(24 * var(--ui-px)), env(safe-area-inset-bottom)) + calc(52 * var(--ui-px)));
-    min-height: max(44px, calc(44 * var(--ui-px)));
-  }
 }
 
 /* Install steps (dialog and start screen notice). */
@@ -354,7 +319,7 @@
   display: none;
 }
 
-/* The lobby button shows the installed state. */
+/* The main menu entry shows the installed state. */
 #content-button[data-state='complete']::before {
   content: '\2713 ';
   color: var(--ui-ok);

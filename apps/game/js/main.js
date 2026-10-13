@@ -36,6 +36,7 @@ import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
+import { mountStartMenu } from './startmenu.js';
 import { aiName, COLOR_NAMES } from './lobby-state.js';
 import { AudioSystem, holdsGameAudio } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
@@ -155,7 +156,7 @@ async function boot() {
   setupContent();
   if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content });
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
-  const lobby = new Lobby($('menu'), {
+  const lobby = new Lobby($('skirmish'), {
     colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
     colorNames: COLOR_NAMES,
     mapPreview: (seed, size) => Game.map_preview(seed, size),
@@ -179,8 +180,17 @@ async function boot() {
     lens: newMapLens,
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
-    onCampaign: () => campaign?.open(),
+  });
+  // The start screen's main menu (js/startmenu.js): Play, saved games, account and More.
+  mountStartMenu($('start-nav'), {
+    onSkirmish: () => {
+      campaign?.close();
+      $('skirmish').scrollIntoView?.({ block: 'start' });
+      $('lobby-title')?.focus?.();
+    },
+    onSound: audioPanel ? () => audioPanel.open() : undefined,
     onReleaseNotes: () => releaseNotes.open(),
+    onStress: () => lobby.openStress(),
   });
   if (!gpuError) {
     try {
@@ -286,7 +296,7 @@ function setupAudio() {
     audio = new AudioSystem();
     // The music player opens from the Sound dialog (start screen and in games) and the game menu.
     const musicPanel = mountMusicPanel($('music-panel'), audio, { onContent: () => contentPanel?.open() });
-    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open(), onMusicPlayer: () => musicPanel.open($('audio-button')) });
+    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open(), onMusicPlayer: () => musicPanel.open(document.activeElement) });
   } catch (err) {
     // The game stays playable without sound.
     console.warn('Sound is unavailable:', err);
@@ -632,6 +642,10 @@ async function missionFile(id, hash) {
 function setupCampaign(lobby, gpuError) {
   const root = $('campaign-root');
   if (!root || !wasm) return;
+  // The main menu's Campaign entry (index.html #start-nav).
+  const entry = $('campaign-button');
+  entry.hidden = false;
+  entry.addEventListener('click', () => campaign?.open());
   campaign = new CampaignMenu(root, {
     index: missionIndex,
     lens: newMapLens,
