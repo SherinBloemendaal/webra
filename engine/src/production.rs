@@ -495,49 +495,39 @@ impl World {
         }
     }
 
+    /// OpenRA ClassicProductionQueue.BuildUnit: the finished unit leaves the
+    /// primary structure, else the first other one whose exit it can use
+    /// (OpenRA: the newest first). One being captured has its exits shut
+    /// (Exit RequiresCondition !being-captured, infantry.rs). False while
+    /// every producer's exits are blocked: the item stays done and tries
+    /// again next tick.
     fn spawn_produced(&mut self, player: u8, ty: u16) -> bool {
-        // The primary structure first (primary.rs, OpenRA ClassicProductionQueue);
-        // one being captured has its exits shut (Exit RequiresCondition !being-captured, infantry.rs).
-        let producers: Vec<usize> = self.producers_of(player, ty).into_iter().filter(|&b| !self.being_captured(b)).collect();
-        let Some(&b) = producers.iter().find(|&&b| self.actors[b].primary).or(producers.first()) else { return false };
-        self.produce_at(b, player, ty).is_some()
+        let mut producers: Vec<usize> = self.producers_of(player, ty).into_iter().filter(|&b| !self.being_captured(b)).collect();
+        // Stable: the primary one first, the others in actor order.
+        producers.sort_by_key(|&b| !self.actors[b].primary);
+        producers.into_iter().any(|b| self.produce_at(b, player, ty).is_some())
     }
 
-    /// A unit of type `ty` for `player` leaves structure `b` (at its least
-    /// crowded exit, toward its rally point). None when it cannot get out
-    /// (a ship yard with every exit blocked). Missions use it directly
-    /// (OpenRA Production.Produce, `actor.Produce`).
+    /// A unit of type `ty` for `player` leaves structure `b` (OpenRA
+    /// Production.Produce, `actor.Produce` of missions): by the exit
+    /// `select_exit` picks, toward the rally point. None when it cannot get
+    /// out (every exit blocked, a ship yard without open water next to it).
     pub(crate) fn produce_at(&mut self, b: usize, player: u8, ty: u16) -> Option<usize> {
-        let (bcx, bcy, rally) = (self.actors[b].cx, self.actors[b].cy, self.actors[b].rally);
-        let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
-        let exits = binfo.exits.clone();
-        let height = binfo.height;
-        let width = binfo.width;
-        // Pick the exit with the fewest units on it; among those, the one
-        // nearest the rally point (so mirrored bases use mirrored exits).
-        let mut best: Option<((usize, i64), (i32, i32))> = None;
-        for &(ex, ey) in &exits {
-            let (cx, cy) = (bcx + ex, bcy + ey);
-            if !self.map.contains(cx, cy) {
-                continue;
-            }
-            let n = self.units_in_cell(self.map.idx(cx, cy)).len();
-            let to_rally = rally.map_or(0, |(rx, ry)| crate::math::dist_sq(cell_center(cx), cell_center(cy), rx, ry));
-            if best.is_none_or(|(bk, _)| (n, to_rally) < bk) {
-                best = Some(((n, to_rally), (cx, cy)));
-            }
-        }
-        let (mut ex, mut ey) = match best {
-            Some((_, c)) => c,
-            None => (bcx + width / 2, (bcy + height).min(self.map.height - 1)),
+        let (bcy, rally) = (self.actors[b].cy, self.actors[b].rally);
+        let height = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap().height;
+        let (ex, ey, facing) = if self.is_water_type(ty) {
+            // Ships launch onto open water next to the yard (naval.rs); they wait while every exit is blocked.
+            self.naval_spawn_cell(b)?
+        } else {
+            let (ex, ey) = self.select_exit(b, player, ty)?;
+            (ex, ey, 512)
         };
-        let mut facing = 512;
-        // Ships launch onto open water next to the yard (naval.rs); they wait while every exit is blocked.
-        if self.is_water_type(ty) {
-            let (cx, cy, f) = self.naval_spawn_cell(b)?;
-            (ex, ey, facing) = (cx, cy, f);
-        }
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        // OpenRA LocationInit(exit): the unit holds its exit cell from the
+        // tick it is made, so the next one waits until it has driven off.
+        if self.cell_moves() && self.occupies_cells(u) {
+            self.place_on_cell(u);
+        }
         let (ux, uy) = (self.actors[u].x, self.actors[u].y);
         // OpenRA INotifyProduction: the factory's door opens for it (doors.rs).
         self.door_unit_produced(b, u);
@@ -554,11 +544,105 @@ impl World {
         if self.is_harvester(u) {
             return Some(u);
         }
-        let (rx, ry) = rally.unwrap_or((cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))));
+        let (rx, ry) = match rally {
+            Some(r) => r,
+            // OpenRA: without a rally point the unit stays on its exit cell
+            // (RallyPointInit [exit]); the next one to come out asks it to make
+            // way, helicopters stay on their pad. Ships, and ground units in
+            // the WebRA movement model (whose crowd would jam the door, see
+            // `exit_free_for`), drive on to a cell below the structure.
+            None if self.rules.actors[ty as usize].kind == Kind::Aircraft || (self.cell_moves() && !self.is_water_type(ty)) => {
+                return Some(u)
+            }
+            None => (cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))),
+        };
         self.order_move(&[u], rx, ry, false);
         // OpenRA LeaveProductionActivity: MoveTo(rally point, 1) (movement/cellmove.rs).
         self.actors[u].mv.order_near = 1;
         Some(u)
+    }
+
+    /// OpenRA Production.SelectExit with CanUseExit: the exits by priority
+    /// (ExitInfo.Priority, highest first), then nearest the rally point (the
+    /// default one below the structure when none is set; OpenRA shuffles
+    /// those), and the first a unit of `ty` can enter. Each exit looked at
+    /// first tells the friendly units on it that they are in the way (idle
+    /// ones step aside, movement/cellmove.rs). Aircraft (helipads,
+    /// airfields) are not held up by units. None while every exit is blocked.
+    fn select_exit(&mut self, b: usize, player: u8, ty: u16) -> Option<(i32, i32)> {
+        let (bcx, bcy) = (self.actors[b].cx, self.actors[b].cy);
+        let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
+        let (width, height) = (binfo.width, binfo.height);
+        let (rx, ry) =
+            self.actors[b].rally.unwrap_or((bcx * CELL + width * CELL / 2, cell_center((bcy + height + 1).min(self.map.height - 1))));
+        let mut exits: Vec<(i32, i64, i32, i32)> = binfo
+            .exits
+            .iter()
+            .enumerate()
+            .map(|(k, &(ex, ey))| (binfo.exit_priority.get(k).copied().unwrap_or(1), 0, bcx + ex, bcy + ey))
+            .filter(|&(_, _, cx, cy)| self.map.contains(cx, cy))
+            .map(|(p, _, cx, cy)| (p, crate::math::dist_sq(cell_center(cx), cell_center(cy), rx, ry), cx, cy))
+            .collect();
+        if exits.is_empty() {
+            // A structure without exits: below its middle.
+            return Some((bcx + width / 2, (bcy + height).min(self.map.height - 1)));
+        }
+        // Stable: equal exits keep their order.
+        exits.sort_by_key(|&(p, d, _, _)| (std::cmp::Reverse(p), d));
+        let ground = self.rules.actors[ty as usize].kind != Kind::Aircraft;
+        if !ground {
+            return exits.first().map(|&(_, _, cx, cy)| (cx, cy));
+        }
+        let nudger = self.map.idx(bcx.clamp(0, self.map.width - 1), bcy.clamp(0, self.map.height - 1)) as u32;
+        for (_, _, cx, cy) in exits {
+            let cell = self.map.idx(cx, cy) as u32;
+            self.notify_blockers_at(cell, player, nudger);
+            if self.exit_free_for(player, ty, cell) {
+                return Some((cx, cy));
+            }
+        }
+        None
+    }
+
+    /// OpenRA MobileInfo.CanEnterCell for a unit of type `ty` of `player`
+    /// that is not made yet, under BlockedByActor.All: the terrain lets it
+    /// in, and nobody holds the cell that it could not run over (infantry:
+    /// a sub-cell is free). In the WebRA movement model units hold no cells:
+    /// there only units standing idle in the cell (when the tick began)
+    /// keep it, as crowd separation pushes the ones on the move apart (a
+    /// door that waited for those would jam behind the crowd that the
+    /// model's arrival rule gathers in front of it).
+    fn exit_free_for(&self, player: u8, ty: u16, cell: u32) -> bool {
+        let ci = cell as usize;
+        if self.pass_of_type(ty as usize).blocked[ci] {
+            return false;
+        }
+        let shares = self.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].shares_cell);
+        if self.cell_moves() {
+            let held: Vec<crate::movement::occupancy::Occupant> =
+                self.occupancy.at(cell).iter().copied().filter(|o| self.occupies_cells(o.actor as usize)).collect();
+            if shares {
+                return held.iter().all(|o| o.sub != crate::movement::occupancy::FULL_CELL)
+                    && (1..crate::movement::occupancy::SUB_CELL_OFFSETS.len() as u8).any(|s| held.iter().all(|o| o.sub != s));
+            }
+            return held.iter().all(|o| self.crushable_by_type(o.actor as usize, ty, player));
+        }
+        // WebRA model: only units standing idle in the cell keep it; ones on
+        // the move are pushed apart by the crowd separation (soft.rs).
+        let standing: Vec<usize> = self
+            .units_in_cell(ci)
+            .iter()
+            .map(|&u| u as usize)
+            .filter(|&u| {
+                let a = &self.actors[u];
+                a.alive && a.kind != Kind::Aircraft && !a.air.parachute && a.activity == Activity::Idle
+            })
+            .collect();
+        if shares {
+            return standing.len() < crate::movement::occupancy::SUB_CELL_OFFSETS.len() - 1
+                && standing.iter().all(|&u| self.shares_cell(u));
+        }
+        standing.iter().all(|&u| self.crushable_by_type(u, ty, player))
     }
 
     // ---- Placement ---------------------------------------------------------

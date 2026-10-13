@@ -24,6 +24,9 @@ pub const MAX_EVENTS: usize = 2048;
 pub const MAX_COMBAT_EVENTS: usize = 1536;
 /// Ticks between two "insufficient funds" events of one player.
 pub const FUNDS_EVENT_INTERVAL: u32 = 25;
+/// Ticks between two "route blocked" events of one player (a jammed group
+/// stops unit by unit: one event for it).
+pub const ROUTE_BLOCKED_INTERVAL: u32 = 250;
 /// A structure that was hit within this many ticks does not report again
 /// (one "under attack" event per burst of fire, not per bullet).
 pub const DAMAGE_EVENT_QUIET_TICKS: u32 = 50;
@@ -172,6 +175,11 @@ pub enum SoundEventKind {
     /// `owner` won (OpenRA ConquestVictoryConditions.OnPlayerWon: the
     /// "player is victorious" line), one event per winning player.
     PlayerWon = 47,
+    /// A move order of `owner`'s unit ended short of its goal because the
+    /// way stayed blocked (movement/cellmove.rs `note_route_blocked`), at the
+    /// unit; a = actor type. WebRA addition (OpenRA gives no feedback), at
+    /// most once per `ROUTE_BLOCKED_INTERVAL` per player.
+    RouteBlocked = 48,
 }
 
 /// `owner` of events every player hears (time limit warnings).
@@ -258,6 +266,8 @@ pub struct SoundEvents {
     dropped: u32,
     /// Last tick each player got an insufficient-funds event.
     funds_at: Vec<Option<u32>>,
+    /// Last tick each player got a route-blocked event.
+    route_blocked_at: Vec<Option<u32>>,
     /// Paratrooper drops already announced: (owner, power_ref, launch tick).
     arrivals: Vec<(u8, i32, u32)>,
     /// Queues whose finished unit was reported blocked: (player, queue index).
@@ -312,6 +322,22 @@ impl SoundEvents {
         }
         self.funds_at[p] = Some(tick);
         self.push(SoundEventKind::InsufficientFunds, ty as i32, 0, 0, owner, 0);
+    }
+
+    /// RouteBlocked, at most once per `ROUTE_BLOCKED_INTERVAL` per player.
+    pub fn push_route_blocked(&mut self, tick: u32, owner: u8, ty: u16, x: i32, y: i32) {
+        if !self.enabled {
+            return;
+        }
+        let p = owner as usize;
+        if self.route_blocked_at.len() <= p {
+            self.route_blocked_at.resize(p + 1, None);
+        }
+        if self.route_blocked_at[p].is_some_and(|t| tick < t + ROUTE_BLOCKED_INTERVAL) {
+            return;
+        }
+        self.route_blocked_at[p] = Some(tick);
+        self.push(SoundEventKind::RouteBlocked, ty as i32, x, y, owner, 0);
     }
 
     /// ReinforcementsArrived for the first plane of a paratrooper drop

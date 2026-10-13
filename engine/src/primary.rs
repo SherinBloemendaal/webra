@@ -7,9 +7,10 @@
 //! more; making one primary drops that mark from the owner's other
 //! structures that produce any of its production types. New units leave
 //! the primary structure (production.rs `spawn_produced`), else the first
-//! that can make them. The client hears it as the "Primary building
-//! selected" notification (`SoundEventKind::PrimaryBuildingSelected`) and draws the
-//! PRIMARY tag over the selected structure.
+//! other one that can make them and has a free exit. The client hears it
+//! as the "Primary building selected" notification
+//! (`SoundEventKind::PrimaryBuildingSelected`) and draws the PRIMARY tag
+//! over the selected structure.
 //!
 //! WebRA's rally order has no force flag, so a forced rally point does not
 //! make a structure primary as it does in OpenRA (RallyPoint.IsForceSet).

@@ -10,7 +10,7 @@
 //! that other code placed, `World::occupancy_begin_tick`) and kept current
 //! as units step during the tick.
 
-use crate::movement::MovementModel;
+use crate::movement::{MoveResult, MovementModel};
 use crate::rules::Kind;
 use crate::world::{cell_center, World, NONE};
 
@@ -23,6 +23,9 @@ pub const DEFAULT_SUB_CELL: u8 = 3;
 /// -256 like the right ones at 256 (OpenRA: -299), so that no side of a
 /// mirrored map stands nearer its enemies.
 pub const SUB_CELL_OFFSETS: [(i32, i32); 6] = [(0, 0), (-256, -256), (256, -256), (0, 0), (-256, 256), (256, 256)];
+
+/// Cells of a queue of waiting units `World::cell_is_evacuating` follows at most.
+const QUEUE_DEPTH: usize = 64;
 
 /// OpenRA BlockedByActor: which units count as blocking a cell.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -199,13 +202,17 @@ impl World {
     /// OpenRA Crushable.CrushableBy: unit `o` is run over by unit `i`
     /// (soldiers and civilians under an enemy's tracked vehicle).
     pub(crate) fn crushable_by(&self, o: usize, i: usize) -> bool {
+        self.crushable_by_type(o, self.actors[i].ty, self.actors[i].owner)
+    }
+
+    /// `crushable_by` for a unit of type `ty` of `owner` that is not in the
+    /// world yet (a unit about to leave its factory, production.rs).
+    pub(crate) fn crushable_by_type(&self, o: usize, ty: u16, owner: u8) -> bool {
+        let info = &self.rules.actors[ty as usize];
         self.actors[o].kind == Kind::Infantry
-            && self.actors[i].kind == Kind::Vehicle
-            && !self.are_allies(self.actors[i].owner, self.actors[o].owner)
-            && self.rules.actors[self.actors[i].ty as usize]
-                .unit
-                .as_ref()
-                .is_some_and(|u| self.rules.locomotors[u.locomotor].crushes_infantry)
+            && info.kind == Kind::Vehicle
+            && !self.are_allies(owner, self.actors[o].owner)
+            && info.unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].crushes_infantry)
     }
 
     /// OpenRA Locomotor.IsBlockedBy: whether occupant `o` keeps unit `i` out
@@ -332,7 +339,9 @@ impl World {
         for a in self.actors.iter_mut() {
             a.mv.moving = a.alive && a.moved;
             if !a.mv.stepped {
+                // Not driven last tick: no longer turning or waiting in a queue.
                 a.mv.turning = false;
+                a.mv.waiting_for = NONE;
             }
             a.mv.stepped = false;
         }
@@ -397,13 +406,68 @@ impl World {
         overlaps(o.sub, sub) && !self.crushable_by(i, j) && !self.crushable_by(j, i)
     }
 
-    /// Whether every unit holding `cell` is on its way out (OpenRA
-    /// Move.CellIsEvacuating: moving, or turning to move).
-    pub(crate) fn cell_is_evacuating(&self, cell: u32, i: usize) -> bool {
-        self.others_at(cell, i).all(|o| {
-            let m = &self.actors[o.actor as usize].mv;
-            self.is_movable(o.actor as usize) && (m.moving || m.turning)
-        })
+    /// Whether every unit holding `cell` is on its way out, so that unit
+    /// `i` waiting for it should wait on (OpenRA Move.CellIsEvacuating:
+    /// moving, or turning to move).
+    ///
+    /// WebRA addition, with `follow_queue`: also when the holders wait in
+    /// turn for a cell further on that clears in the same way, and that
+    /// queue runs through a narrow passage (`narrow_cell`: a bridge, a gap
+    /// one cell wide). OpenRA counts only units moving or turning in this
+    /// tick, so a unit behind a column on a bridge that makes way one unit
+    /// after another (each nudged one asking the next), or at the back of a
+    /// group filing over it, gives up when WaitAverage runs out although
+    /// the way is clearing. A queue that leads back to `i`, runs in a
+    /// circle, is longer than `QUEUE_DEPTH` cells or ends at a unit that
+    /// does not move is not clearing, so units facing each other still give
+    /// up; in the open (a crowd shuffling around its goal) OpenRA's rule
+    /// alone holds, so such a crowd settles as fast as in OpenRA. The caller
+    /// stops following queues after a while (`QUEUE_PATIENCE`).
+    pub(crate) fn cell_is_evacuating(&self, cell: u32, i: usize, follow_queue: bool) -> bool {
+        let me = self.actors[i].mv.to;
+        let mut seen = vec![me, cell];
+        let mut c = cell;
+        let mut followed = false;
+        let mut narrow = false;
+        loop {
+            let mut next = NONE;
+            for o in self.others_at(c, i) {
+                let j = o.actor as usize;
+                let m = &self.actors[j].mv;
+                if !self.is_movable(j) {
+                    return false;
+                }
+                if m.moving || m.turning {
+                    continue;
+                }
+                if !follow_queue || m.result != MoveResult::InProgress || m.waiting_for == NONE || (next != NONE && next != m.waiting_for) {
+                    return false;
+                }
+                next = m.waiting_for;
+            }
+            if next == NONE {
+                // Everybody here is leaving (or nobody is left).
+                return !followed || narrow;
+            }
+            if seen.contains(&next) || seen.len() > QUEUE_DEPTH {
+                return false;
+            }
+            followed = true;
+            narrow = narrow || self.narrow_cell(i, c) || self.narrow_cell(i, next);
+            seen.push(next);
+            c = next;
+        }
+    }
+
+    /// Whether `cell` is part of a passage one cell wide for unit `i`: of
+    /// its four side neighbours only two opposite ones are open to it (a
+    /// bridge, a gap in a wall).
+    fn narrow_cell(&self, i: usize, cell: u32) -> bool {
+        let w = self.map.width;
+        let (x, y) = (cell as i32 % w, cell as i32 / w);
+        let open = |dx: i32, dy: i32| self.map.contains(x + dx, y + dy) && self.terrain_allows(i, self.map.idx(x + dx, y + dy) as u32);
+        let (n, s, e, west) = (open(0, -1), open(0, 1), open(1, 0), open(-1, 0));
+        (n && s && !e && !west) || (e && west && !n && !s)
     }
 
     /// The cell of point (x, y) as an index.

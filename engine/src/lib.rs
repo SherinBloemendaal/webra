@@ -103,6 +103,8 @@ mod tests_doors;
 #[cfg(test)]
 mod tests_editor;
 #[cfg(test)]
+mod tests_exits;
+#[cfg(test)]
 mod tests_fx;
 #[cfg(test)]
 mod tests_gamerules;
