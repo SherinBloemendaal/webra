@@ -473,6 +473,8 @@ body {
   font: 900 calc(34 * var(--ui-px))/1 var(--ui-font-display);
   letter-spacing: calc(2 * var(--ui-px));
   text-transform: uppercase;
+  /* A long word (a map name, a translated title) wraps instead of leaving the card. */
+  overflow-wrap: break-word;
   color: #f2f4f6;
   text-shadow:
     0 1px 0 rgba(255, 255, 255, 0.15),

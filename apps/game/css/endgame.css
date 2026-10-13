@@ -6,6 +6,15 @@
 
 .endgame-card {
   width: min(460px, 100%);
+  /* The title scales with the card (cqi) so the longest one, "Mission
+     accomplished", stays inside it at any UI scale. */
+  container-type: inline-size;
+}
+
+/* "ACCOMPLISHED" in Arial Black is about 10 em wide with the letter spacing,
+   so 8.5% of the card leaves room for the padding and the text shadow. */
+.endgame-card h1 {
+  font-size: min(calc(34 * var(--ui-px)), 8.5cqi);
 }
 
 .endgame-card[data-kind='defeat'] {
