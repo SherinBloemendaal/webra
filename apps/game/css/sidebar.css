@@ -474,6 +474,28 @@
   display: none;
 }
 
+/* The cameo overlay of OpenRA's ProductionIconOverlayManager (iconchevrons
+   veteran): a gold chevron at the top left while the unit comes out as a
+   veteran (a spy infiltrated its factory). WebRA's own shape. */
+#sidebar .sb-veteran {
+  position: absolute;
+  left: calc(2 * var(--ui-px));
+  top: calc(2 * var(--ui-px));
+  width: calc(11 * var(--ui-px));
+  height: calc(8 * var(--ui-px));
+  pointer-events: none;
+  background: #f2c94c;
+  clip-path: polygon(0 55%, 50% 0, 100% 55%, 100% 100%, 50% 45%, 0 100%);
+}
+
+#sidebar .sb-veteran[hidden] {
+  display: none;
+}
+
+#sidebar .sb-card.veteran .sb-slot {
+  left: calc(15 * var(--ui-px));
+}
+
 /* Build clock: a shade that the progress wipes away clockwise from 12. */
 #sidebar .sb-clock {
   position: absolute;

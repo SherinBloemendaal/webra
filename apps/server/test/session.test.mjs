@@ -369,6 +369,56 @@ test('team chat reaches the team only; spectators chat among themselves', async 
   for (const ws of [host, guest, w]) assertValid(ws);
 });
 
+test("a defeated player's team chat goes to the spectators, and it gets theirs", async () => {
+  const { s, host, guest, gw, watchers } = await started({ spectators: 1, start: false });
+  const w = watchers[0].ws;
+  const room = s.session.room;
+  const slotOf = (ws) => room.slots.findIndex((x) => x.type === 'human' && x.name === (ws === host ? 'Host' : 'Guest'));
+  await s.send(host, { t: 'slot', slot: slotOf(host), team: 1 });
+  await s.send(guest, { t: 'slot', slot: slotOf(guest), team: 1 });
+  // A bot on the other side.
+  const open = room.slots.findIndex((x) => x.type === 'open');
+  await s.send(host, { t: 'slot', slot: open, type: 'ai', difficulty: 'easy' });
+  await s.send(host, { t: 'slot', slot: open, team: 2 });
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  const st = host.last('start');
+  assert.ok(st, JSON.stringify([host.take('error'), guest.take('error')]));
+  const seats = st.players.filter((p) => p.client !== null).map((p) => ({ ws: p.name === 'Host' ? host : guest, seat: p.player }));
+  await play(s, seats, 0, 5);
+  for (const ws of [host, guest, w]) ws.take('chat');
+  await s.send(guest, { t: 'chat', text: 'before', team: true });
+  assert.deepEqual(host.take('chat').map((m) => m.spectators), [undefined], 'a living team mate gets team chat');
+  assert.equal(w.take('chat').length, 0);
+  guest.take('chat');
+  // OpenRA: once the engine defeated it, its team chat is the spectators' (UnitOrders, ExtraData uint.MaxValue).
+  await s.send(guest, { t: 'defeated' });
+  await s.send(guest, { t: 'chat', text: 'watching now', team: true });
+  assert.equal(host.take('chat').length, 0, 'the living team mate does not get it');
+  assert.deepEqual(w.take('chat').map((m) => [m.text, m.team, m.spectators]), [['watching now', true, true]], 'the spectators do, marked as theirs');
+  assert.equal(guest.take('chat').length, 1, 'the sender sees its line');
+  await s.send(w, { t: 'chat', text: 'welcome', team: true });
+  assert.equal(guest.take('chat').length, 1, 'a defeated player gets the spectators\' team chat');
+  assert.equal(w.take('chat').length, 1, 'the sending spectator sees its line');
+  assert.equal(host.take('chat').length, 0);
+  await s.send(host, { t: 'chat', text: 'alone now', team: true });
+  assert.equal(guest.take('chat').length, 0, "and no longer its old team's");
+  assert.equal(host.take('chat').length, 1);
+  await s.send(host, { t: 'chat', text: 'gg' });
+  assert.deepEqual([guest.take('chat').map((m) => m.text), w.take('chat').map((m) => m.text)], [['gg'], ['gg']], 'all chat still reaches everyone');
+  for (const ws of [host, guest, w]) assertValid(ws);
+  // A rejoin (the page reloads) keeps the defeat: the seat stays on the spectators' side.
+  await s.drop(guest);
+  const back = s.connect('guest2');
+  await s.send(back, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  assert.equal(back.take('welcome')[0].role, 'player');
+  await s.send(host, { t: 'chat', text: 'team only', team: true });
+  assert.equal(back.take('chat').length, 0);
+  await s.send(w, { t: 'chat', text: 'spectators', team: true });
+  assert.deepEqual(back.take('chat').map((m) => m.text), ['spectators']);
+  assertValid(back);
+});
+
 test('chat has its own rate limit and a flood closes the connection', async () => {
   const { s, host, guest, watchers } = await started({ spectators: 1 });
   const w = watchers[0].ws;

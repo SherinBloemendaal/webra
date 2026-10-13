@@ -1637,8 +1637,22 @@ export class Session extends DurableObject {
       this.broadcast({ t: S2C.CHAT, from: client, name, text: textValue });
       return;
     }
-    const side = this.room.chatTeamOf(client);
-    this.broadcast({ t: S2C.CHAT, from: client, name, text: textValue, team: true }, (to) => this.room.chatTeamOf(to) === side);
+    const side = this.chatSideOf(client);
+    const spectators = side === 'spectators' ? { spectators: true } : {};
+    this.broadcast({ t: S2C.CHAT, from: client, name, text: textValue, team: true, ...spectators }, (to) => this.chatSideOf(to) === side);
+  }
+
+  /**
+   * Whose team chat `client` shares (Room.chatTeamOf), except that a player
+   * the engine defeated (it reported `defeated`; it reports again after a
+   * rejoin) is on the spectators' side: OpenRA sends the team chat of a
+   * player with a win state to the spectators (ExtraData uint.MaxValue), and
+   * such a player gets the spectators' team chat, no longer its team's.
+   */
+  chatSideOf(client) {
+    const seat = this.room.seatOf(client);
+    if (seat >= 0 && this.lockstep?.defeated.has(seat)) return 'spectators';
+    return this.room.chatTeamOf(client);
   }
 
   broadcastLobby() {

@@ -59,6 +59,9 @@ export const MENU_HELP_KEYS = Object.freeze([
   'showUnitPaths',
   'targetLines',
   'playerStanceColors',
+  'hideReplayChat',
+  'uiFeedbackNotifications',
+  'gameEventNotifications',
   'mouseCapture',
   'mouseCaptureSpeed',
   'mouseCaptureRaw',
@@ -167,6 +170,9 @@ export const MENU_SETTINGS = Object.freeze([
   'targetLines',
   'healthBars',
   'playerStanceColors',
+  'hideReplayChat',
+  'uiFeedbackNotifications',
+  'gameEventNotifications',
   'mouseCapture',
   'mouseCaptureSpeed',
   'mouseCaptureRaw',
@@ -612,6 +618,14 @@ export class GameMenu {
       withHelp(targetLines, 'targetLines', targetLines.querySelector('[role="radiogroup"]')),
       choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       check('playerStanceColors', 'Relationship colours'),
+    );
+
+    // ---- Chat and notifications (OpenRA's Display settings: js/chatlog.js, js/notifications.js) ----
+    list.append(
+      el('h2', null, 'Chat and notifications'),
+      check('hideReplayChat', 'Hide chat in replays'),
+      check('uiFeedbackNotifications', 'Show UI feedback notifications'),
+      check('gameEventNotifications', 'Show game event notifications'),
     );
 
     // ---- Mouse capture (js/mouselock.js; not without Pointer Lock or a mouse) ----

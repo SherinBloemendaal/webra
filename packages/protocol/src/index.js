@@ -119,6 +119,7 @@ export {
   optionsDigest,
   parseReplay,
   replayHeader,
+  REPLAY_CHAT_MAX,
   REPLAY_FORMAT,
   REPLAY_HASH_INTERVAL,
   REPLAY_KINDS,

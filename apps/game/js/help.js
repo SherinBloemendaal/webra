@@ -108,6 +108,12 @@ export const HELP = Object.freeze({
   'settings.targetLines':
     'Lines from your selected units to what they were ordered to do, like OpenRA: green to where they move, red to what they attack or capture, orange for attack-moves and guarding, yellow for repairs and deliveries, with a dot at each target and queued waypoints after it. After orders: for a moment after an order or a selection, and while Shift is held. With Shift: only while Shift is held. Off: never.',
   'settings.playerStanceColors': 'Colours players by how they stand to you, like OpenRA: you green, allies yellow, enemies red. Spectators always see the players own colours.',
+  'settings.hideReplayChat':
+    "Like OpenRA: in a replay the players' chat lines stay out of the lines over the battlefield and play no sound; the chat history (Enter) still lists them. System lines always show.",
+  'settings.uiFeedbackNotifications':
+    'Like OpenRA: short text lines for UI events, such as "Selected 12 units across screen." after the select hotkeys. Off: no such lines.',
+  'settings.gameEventNotifications':
+    "Like OpenRA: the announcer's lines as text at the bottom of the battlefield (\"Unit ready.\", \"Construction complete.\"), also with the sound off. Off: no such lines; chat and system lines stay.",
   'settings.mouseCapture':
     'Locks the pointer to the game, like the locked cursor of desktop OpenRA, so it cannot slip onto another monitor and the screen edges always scroll. In fullscreen: when you enter fullscreen or click into the game there. Always: on every click into the game. Alt+M (Option+M on a Mac; rebindable in Controls) turns it off and on, Esc releases it; opening the menu, switching windows or leaving fullscreen releases it too. A click into the game captures it again.',
   'settings.mouseCaptureSpeed':

@@ -52,9 +52,11 @@ test('registry: every setting has a type, a label and a valid default', () => {
   assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), [
     'attackMoveTipSeen',
     'edgeScrollSpeed',
+    'gameEventNotifications',
     'gameScale',
     'graphics',
     'healthBars',
+    'hideReplayChat',
     'hotkeys',
     'keyScrollSpeed',
     'lowQuality',
@@ -67,6 +69,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     'reduceMotion',
     'showUnitPaths',
     'targetLines',
+    'uiFeedbackNotifications',
     'uiScale',
     'zoomFactor',
   ]);
@@ -227,8 +230,8 @@ test('registry: every old key migrates once, and the old keys are removed after 
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
   // Settings newer than every old key get their default too; the rest of the group is compared below.
-  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw], [1, false]);
-  for (const key of ['zoomFactor', 'mouseCaptureRaw']) delete v.game[key];
+  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw, v.game.hideReplayChat, v.game.uiFeedbackNotifications, v.game.gameEventNotifications], [1, false, false, true, true]);
+  for (const key of ['zoomFactor', 'mouseCaptureRaw', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications']) delete v.game[key];
 
   assert.deepEqual(
     v.game,
@@ -387,6 +390,8 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
     ['game', 'gameScale'],
     ['game', 'zoomFactor'],
     ['game', 'mouseCaptureRaw'],
+    ['game', 'hideReplayChat'],
+    ['game', 'gameEventNotifications'],
     ['audio', 'musicOn'],
     ['audio', 'musicShuffle'],
     ['audio', 'musicRepeat'],

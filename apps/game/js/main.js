@@ -51,6 +51,9 @@ import { MouseCapture, pointerLockAvailable } from './mouselock.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
+import { ReplayChat, TextLog } from './chatlog.js';
+import { ChatPanel } from './chatpanel.js';
+import { MuteIndicator } from './muteindicator.js';
 import { BattleFx, motionReduced } from './battlefx.js';
 import { AttackMoveTip, TipView } from './hints.js';
 import { importOramap } from './oramap/index.js';
@@ -72,7 +75,7 @@ import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
 import { cameoBacking, cameoPainter, powerIconArt, setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
-import { allOriginalNames } from './audio/catalog.js';
+import { allOriginalNames, TIME_LIMIT_LINES } from './audio/catalog.js';
 import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
@@ -529,7 +532,7 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null }) => {
           entry.hidden = true;
           // A co-op mission: its players and colours; the people under their names.
           const missionPlayers = mission ? host.game.info.mission.players : null;
@@ -540,7 +543,7 @@ function setupOnline(lobby, gpuError) {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            online: { driver, onQuit, spectator, rematch, save },
+            online: { driver, onQuit, spectator, rematch, save, chat },
             recorder,
             viewer: spectator ? roster : null,
             roster,
@@ -942,6 +945,8 @@ async function watchMissionReplay(replay, lobby) {
     player: 0,
     replay: new ReplayHandle(run.host, run.info.replayLength),
     viewer: replay.mode === 'online' ? coopRoster(players, replay.options.players) : missionRoster(players),
+    replayChat: replay.chat ?? null,
+    replayTeams: (replay.options.players ?? []).map((p) => p.team ?? 0),
     mission: { entry: m.entry, options: replay.mode === 'online' ? replay.mission.options : replay.options.options },
     about: gameAbout({
       mission: m.entry,
@@ -974,6 +979,8 @@ async function watchReplay(replay, lobby) {
     replay: new ReplayHandle(run.host, run.info.replayLength),
     viewer: viewerPlayers(replay.options.players),
     about: gameAbout({ map: replay.map ?? null, options: replay.options }),
+    replayChat: replay.chat ?? null,
+    replayTeams: replay.options.players.map((p) => p.team ?? 0),
   });
 }
 
@@ -1061,10 +1068,12 @@ function recorderOf({ host, info }) {
 // view switcher and stats. `roster` names and colours the players of any
 // game (statistics, the observer panel after a defeat); `restart` is the
 // js/restart.js record of a single player game (null: no restart).
+// `replayChat` (with `replayTeams`, the players' teams) is the chat of an
+// online game's replay (js/chatlog.js ReplayChat).
 // `mission` (`{ entry, options }`: its index entry, or null when the index no
 // longer lists it, and its options) marks a campaign mission (js/campaign).
 // `about` (gameAbout) is what the game menu's Game info tells about the game.
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null, about = null }) {
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null, about = null, replayChat = null, replayTeams = [] }) {
   // The map lenses' art and tiles are not needed while a game runs.
   lensArt?.release();
   const game = host.game;
@@ -1242,7 +1251,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onCancelPlace: placementEnded,
     onMode: (mode) => sidebar?.setMode(mode),
     lastEvent: () => pings.last(),
-    feedback: (text) => notices?.push(text),
+    feedback: (text) => notices?.push(text, 'feedback'),
     // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
     selectionClick: () => audio?.click(),
     gameOver: () => flow.over,
@@ -1301,8 +1310,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
   touch.bindSidebar($('sidebar'), (id) => sidebar.onCardCancel(id));
-  // Announcer lines as text at the bottom of the battlefield (shown with sound off too).
-  notices = new NotificationView($('field'));
+  // Announcer lines as text at the bottom of the battlefield (shown with sound
+  // off too), and the UI's feedback lines: OpenRA's transient lines, each
+  // pool switched off by its setting (TextNotificationPoolFilters).
+  notices = new NotificationView($('field'), {
+    enabled: (pool) => !!settings.get(pool === 'feedback' ? 'uiFeedbackNotifications' : 'gameEventNotifications'),
+  });
   if (!viewer) {
     const tipView = new TipView($('field'));
     attackMoveTip = new AttackMoveTip({
@@ -1316,10 +1329,20 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       show: (text) => tipView.show(text),
     });
   }
-  audio?.onAnnounce((key) => notices.announce(key));
+  // The time limit's warnings are system lines of the chat log (js/battlefx.js), not transient lines.
+  audio?.onAnnounce((key) => {
+    if (!TIME_LIMIT_LINES.includes(key)) notices.announce(key);
+  });
   // Floating cash, camera shake, the nuke flash, game lines and the time limit
   // clock of the lobby options and big warheads (js/battlefx.js, presentation only).
   const cssColor = (c) => `rgb(${(c ?? [1, 1, 1]).slice(0, 3).map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(', ')})`;
+  // The game's chat and system lines (js/chatlog.js; the panel is made below).
+  const onlineChat = online?.chat ?? null;
+  const chatLog = onlineChat?.log ?? new TextLog();
+  chatLog.replay = !!replay;
+  chatLog.hideReplayChat = () => !!settings.get('hideReplayChat');
+  /** Players who lost: chat says "(Dead)" after their name. */
+  const lost = new Set();
   const battle = new BattleFx({
     field: $('field'),
     rules,
@@ -1327,9 +1350,43 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     allied: (owner) => !!viewer || allies(player, owner),
     colorOf: (owner) => cssColor(TEAM_COLORS[owner]),
     nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
-    line: (text) => notices.push(text),
+    line: (text) => chatLog.system(text),
     reduced: () => motionReduced(settings.get('reduceMotion'), reducedMotion),
+    onLost: (owner) => lost.add(owner),
   });
+  // Chat and system lines (js/chatlog.js) and the chat panel (js/chatpanel.js)
+  // of every game: online games bring their lines and chat line (js/online.js),
+  // elsewhere it holds the system lines with the chat line off, like OpenRA's
+  // single player and replays.
+  onlineChat?.bind({ colorOf: (p) => cssColor(TEAM_COLORS[p]), defeated: (p) => lost.has(p) });
+  const chat = new ChatPanel($('field'), {
+    log: chatLog,
+    hotkeys,
+    send: onlineChat?.send ?? null,
+    teamChat: !!onlineChat?.teamChat,
+    spectator: !!onlineChat?.spectator,
+    names: onlineChat?.names ?? [],
+    mutable: onlineChat?.mutable ?? (() => []),
+    // OpenRA ChatLineSound (ChatLine) for every chat, system and mission line.
+    sound: () => audio?.chatLine(),
+    // The TIME label: wall clock time means nothing in a replay (OpenRA leaves it out there).
+    withTime: !replay,
+    maxLength: onlineChat?.maxLength,
+  });
+  if (onlineChat?.bars) chat.extras.append(onlineChat.bars);
+  // An online game's replay: its chat as the replay passes it (js/chatlog.js ReplayChat).
+  const replayLines = replay && replayChat?.length
+    ? new ReplayChat(replayChat, chatLog, { teamOf: (p) => replayTeams[p] ?? 0, colorOf: (p) => cssColor(TEAM_COLORS[p]), dead: (p) => lost.has(p) })
+    : null;
+  // Above the replay controls at the bottom.
+  if (replay) chat.root.classList.add('above-replay-bar');
+  // OpenRA MUTE_INDICATOR: "Audio Muted" while all sound is off.
+  if (audio) {
+    new MuteIndicator(document.querySelector('#field .hud-buttons') ?? $('field'), {
+      muted: () => audio.prefs.get().enabled === false,
+      subscribe: (fn) => audio.prefs.subscribe(fn),
+    });
+  }
   // Support power bar (js/powers.js): pick a ready power, then a target on the map.
   powerBar = new PowerBar($('hud-row'), {
     ticksPerSecond: Game.ticks_per_second(),
@@ -1380,6 +1437,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         tickMs,
         // The engine's local player of this screen (co-op online: this client's seat).
         localPlayer: player,
+        // Media.DisplayMessage: mission lines of the chat log (OpenRA AddMissionLine).
+        missionLine: (prefix, text, color) => chatLog.mission(prefix, text, color),
         // The original movies, when the player installed them (js/content/movies.js); else a card.
         movies: content
           ? createMoviePlayer({
@@ -1478,7 +1537,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
-  window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, replay, recorder };
+  window.webra = { game, host, input, sidebar, powerBar, commandBar, minimap, renderer, wasm, rules, debug, touch, layout, notices, chat, replay, recorder };
   // Game scale (game menu, Settings; js/scale.js): the view's base zoom. Auto
   // follows the window and the render resolution, so those changes pick again.
   // The view starts at the zoom the player last used (game.zoomFactor, a
@@ -1754,10 +1813,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         const i = HEALTH_BAR_CYCLE.indexOf(settings.get('healthBars'));
         settings.set('healthBars', HEALTH_BAR_CYCLE[(i + 1) % HEALTH_BAR_CYCLE.length]);
       },
+      // OpenRA MuteHotkeyLogic: a feedback line; MUTE_INDICATOR stays while muted.
       toggleMute: audio
         ? () => {
             const muted = audio.toggleMute();
-            showToast(muted ? 'Audio muted' : 'Audio unmuted');
+            notices?.push(muted ? 'Audio muted.' : 'Audio unmuted.', 'feedback');
           }
         : undefined,
       togglePlayerStanceColor: () => settings.set('playerStanceColors', !settings.get('playerStanceColors')),
@@ -1981,6 +2041,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       simMs = f.simMs;
       online?.driver.update(status.online);
       replay?.update(status.replay);
+      if (replay) replayLines?.advance(replay.ticks, !!status.busy || replay.seeking);
       recorder?.update(status.recorderFull);
       if (status.loadError && !leaving) {
         leaving = true;
@@ -2076,6 +2137,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       const json = game.player_json(player);
       const state = json ? JSON.parse(json) : null;
       if (state && !watching()) {
+        // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game stands still.
+        sidebar.setPaused(paused);
         sidebar.update(state);
         powerBar.update(state.powers ?? []);
         powerTimers.update(
@@ -2109,6 +2172,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
         if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
+      }
+      // OpenRA IngameChatLogic: a defeated player's team chat goes to the
+      // spectators (the server routes it, js/chatpanel.js labels it); nobody
+      // has team chat once the game is over.
+      if (onlineChat) {
+        const out = !viewer && lost.has(player);
+        chat.setTeamChat(!flow.over && (out || onlineChat.teamChat), !!onlineChat.spectator || out);
       }
     }
     requestAnimationFrame(frame);

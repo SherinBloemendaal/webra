@@ -71,6 +71,8 @@ struct RawActor {
     gives_experience: Option<GivesExperienceInfo>,
     take_cover: Option<RawTakeCover>,
     producible_level: Option<ProducibleLevel>,
+    #[serde(default)]
+    production_overlays: Vec<ProductionOverlay>,
     fire_delays: Vec<i32>,
     targets_allies: bool,
     death: Option<RawDeath>,
@@ -177,6 +179,15 @@ pub const SELECT_ALT: u8 = 2;
 pub struct ProducibleLevel {
     pub prerequisites: Vec<String>,
     pub levels: i32,
+}
+
+/// OpenRA `WithProductionIconOverlay`: the cameo shows the overlays of
+/// `types` (a `ProductionIconOverlayManager` of the player draws each: RA's
+/// Veterancy chevron) while the owner has every prerequisite.
+#[derive(Deserialize, Clone)]
+pub struct ProductionOverlay {
+    pub types: Vec<String>,
+    pub prerequisites: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1119,6 +1130,8 @@ pub struct ActorInfo {
     pub take_cover: Option<TakeCoverInfo>,
     /// ProducibleWithLevel (infantry.rs).
     pub producible_level: Option<ProducibleLevel>,
+    /// WithProductionIconOverlay (World::production_overlays).
+    pub production_overlays: Vec<ProductionOverlay>,
     /// Armament.FireDelay per weapon slot (ticks from firing to the shot).
     pub fire_delays: Vec<i32>,
     /// Armament.TargetRelationships Ally: the weapons heal or repair friends (Medic, Mechanic).
@@ -1786,6 +1799,11 @@ impl Rules {
             count(&n("producible_level.prerequisites"), p.prerequisites.len(), 16)?;
             within(&n("producible_level.levels"), p.levels, 0, MAX_LEVELS as i32)?;
         }
+        count(&n("production_overlays"), a.production_overlays.len(), 4)?;
+        for o in &a.production_overlays {
+            count(&n("production_overlays.types"), o.types.len(), 4)?;
+            count(&n("production_overlays.prerequisites"), o.prerequisites.len(), 16)?;
+        }
         if a.fire_delays.len() > crate::world::MAX_WEAPONS {
             return Err(n("fire_delays: more delays than weapon slots"));
         }
@@ -1960,7 +1978,8 @@ impl Rules {
                 (tokens.len() - 1) as u16
             }
         };
-        // Prerequisites only proxies provide and ProducibleWithLevel asks for (infantry.rs).
+        // Prerequisites only proxies provide and ProducibleWithLevel and
+        // WithProductionIconOverlay ask for (infantry.rs).
         for a in &raw.actors {
             for t in a
                 .abilities
@@ -1968,6 +1987,7 @@ impl Rules {
                 .iter()
                 .flat_map(|p| p.provides.iter())
                 .chain(a.producible_level.iter().flat_map(|p| p.prerequisites.iter()))
+                .chain(a.production_overlays.iter().flat_map(|o| o.prerequisites.iter()))
             {
                 intern(t);
             }
@@ -2175,6 +2195,7 @@ impl Rules {
                 gives_experience: a.gives_experience,
                 take_cover,
                 producible_level: a.producible_level,
+                production_overlays: a.production_overlays,
                 fire_delays: a.fire_delays,
                 targets_allies: a.targets_allies,
                 death,

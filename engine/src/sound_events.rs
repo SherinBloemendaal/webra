@@ -169,6 +169,9 @@ pub enum SoundEventKind {
     /// one event at each end; a = actor type, b = 1 for a chrono tank's own
     /// jump (PortableChrono), 0 for the Chronosphere and the return (Chronoshiftable).
     Teleported = 46,
+    /// `owner` won (OpenRA ConquestVictoryConditions.OnPlayerWon: the
+    /// "player is victorious" line), one event per winning player.
+    PlayerWon = 47,
 }
 
 /// `owner` of events every player hears (time limit warnings).

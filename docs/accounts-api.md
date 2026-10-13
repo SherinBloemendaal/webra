@@ -790,6 +790,9 @@ Serialized size at most 32 KiB.
     "zoomFactor": 1,               // number 1/3..8/3 (the player's last zoom over the base zoom; ZOOM_FACTOR_LIMITS)
     "healthBars": "off",           // "off" | "damaged" | "all"
     "playerStanceColors": false,   // relationship colours (OpenRA TogglePlayerStanceColor)
+    "hideReplayChat": false,       // OpenRA HideReplayChat: replay chat only in the chat history
+    "uiFeedbackNotifications": true, // OpenRA TextNotificationPoolFilters Feedback
+    "gameEventNotifications": true,  // OpenRA TextNotificationPoolFilters Transients
     "graphics": "webra",           // "webra" | "original"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
     "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)

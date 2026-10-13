@@ -337,6 +337,10 @@ export class SimCore {
         return { text, ticks, full: this.recorder.full };
       }
       // An online save at the agreed save point (`save` message `saved`).
+      // A chat line the online game received (Recorder.noteChat), at the tick the game is at.
+      case 'noteChat':
+        this.recorder?.noteChat(this.game.tick_count(), ...args);
+        return true;
       case 'encodeOnlineSave': {
         const [ticks, hash, id] = args;
         if (!this.recorder) throw new Error('This game is not recorded.');

@@ -136,6 +136,10 @@ export const GROUPS = deepFreeze({
       },
       // OpenRA UsePlayerStanceColors: you green, allies yellow, enemies red, neutrals tan.
       playerStanceColors: { type: 'boolean', default: false, label: 'Relationship colours', help: 'Colour players by relationship instead of their own colour.' },
+      // OpenRA Settings.Game.HideReplayChat and TextNotificationPoolFilters (js/chatlog.js, js/notifications.js).
+      hideReplayChat: { type: 'boolean', default: false, label: 'Hide chat in replays', help: "The players' chat stays in the chat history only." },
+      uiFeedbackNotifications: { type: 'boolean', default: true, label: 'Show UI feedback notifications', help: 'Text lines for UI events.' },
+      gameEventNotifications: { type: 'boolean', default: true, label: 'Show game event notifications', help: 'Text lines for game events.' },
       graphics: {
         type: 'choice',
         default: 'webra',

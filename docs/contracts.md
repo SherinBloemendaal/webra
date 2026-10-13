@@ -955,9 +955,14 @@ a save: `{ id, title, createdAt, ticks, waiting: [names] }`; `mission?` while
 the lobby plays a co-op mission: `{ id, hash, options }`, also in `start`), `rematch {state, by, accepted,
 waiting, msLeft?, reason?}` (see "Rematch"), `save {state, ...}` and
 `start.resume?: { ticks, hash }` (see "Online saves"), `chat
-{from, text, team?}` (with `team: true` the line went to the sender's team
-only: the players of its non-zero team, the sender alone without a team, the
-spectators among themselves; OpenRA's team chat), `start {seed, options, map, players, delay}`, `frame {tick,
+{from, text, team?, spectators?}` (with `team: true` the line went to the
+sender's team only: the players of its non-zero team, the sender alone
+without a team, the spectators among themselves; OpenRA's team chat. A player
+that reported `defeated` is on the spectators' side from then on, also after
+a rejoin: its team chat goes to the spectators and the other defeated
+players, and it gets theirs, no longer its old team's, like OpenRA sending a
+player with a win state's team chat as ExtraData uint.MaxValue; such lines
+carry `spectators: true`), `start {seed, options, map, players, delay}`, `frame {tick,
 orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
@@ -1249,8 +1254,8 @@ skips them. A defeated player may keep watching: its client switches to the
 observer view, keeps running lockstep (empty `orders` every tick, `hash`
 as before, the same stall rules) and sends `defeated` once (again after a
 reconnect). The server keeps the seat but drops its orders from then on,
-also ones already waiting for a frame and after a rejoin. A seat cannot
-undo it; a spectator sending `defeated` gets `bad_state`. Online games never
+also ones already waiting for a frame and after a rejoin, and its team chat
+joins the spectators' (see `chat`). A seat cannot undo it; a spectator sending `defeated` gets `bad_state`. Online games never
 pause for the end-game dialog.
 
 Surrender (OpenRA IngameMenuLogic SURRENDER and its "Surrender" order,
@@ -1849,7 +1854,14 @@ for 50 ticks after the last hit. rules.json carries the values per actor
 warhead (`damage_types`); modded maps can tune them within
 `Rules::validate`'s bounds. `Game.actor_json` reports `rank` (0 rookie),
 `maxRank`, `xp` and `nextXp` (value points: $100 of kills is 100) and
-`prone`. Sprites: a ranked unit gets a rank decoration
+`prone`. The sidebar cameo of a unit that will come out with a level shows
+OpenRA's ProductionIconOverlayManager chevron (player.yaml Type Veterancy,
+iconchevrons veteran, an OpenRA-made sprite, so it is WebRA's own shape in
+both art sets) at its top left: rules.json `production_overlays` (per actor,
+`WithProductionIconOverlay` `types` and `prerequisites`, only types the
+player's managers draw) and `player_json` `buildable[].overlays` (the types
+whose prerequisites the player has, `World::production_overlays`;
+presentation only). Sprites: a ranked unit gets a rank decoration
 (`SpriteIds::veterancy_base` + 0..2 chevrons, + 3 elite,
 apps/game/js/art/veterancy.js); infantry have no turret, so their sprite
 `2t + 1` is the prone pose.
@@ -2203,7 +2215,11 @@ ChargeDelay ticks after deploying: MadTank.ChargeSound; 1 as it detonates:
 DetonationSound and its DetonationWeapon's impact), 46 Teleported (one
 event at each end of a teleport, OpenRA Teleport's ChronoshiftSound; b: 1 for
 a chrono tank's own jump, PortableChrono, 0 for the Chronosphere, its way
-back and the missions' chronoshifts, Chronoshiftable). Kinds 32 to 36
+back and the missions' chronoshifts, Chronoshiftable), 40 PlayerLost and 47
+PlayerWon (owner: the player; one PlayerWon per player of the last side
+standing, after the losers' PlayerLost, like OpenRA ConquestVictoryConditions
+marking each remaining ally's objective; js/battlefx.js writes "X is
+defeated." and "X is victorious." as system lines). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.
@@ -2333,6 +2349,75 @@ Width 1 line of the colour, at a fixed width on screen at every zoom
 WebRA's pillbox fires its garrison's weapon itself, so its circle is that
 weapon's range rather than its passengers'.
 
+### Chat, system lines and the HUD (`apps/game/js/chatlog.js`, `chatpanel.js`, `gametimer.js`, `muteindicator.js`)
+
+Every game (skirmish, missions, online games, spectators, replays) has
+OpenRA's in-game chat panel (mods/common/chrome/ingame-chat.yaml,
+IngameChatLogic, TextNotificationsManager):
+
+- `TextLog` keeps every chat, system and mission line of the game. System
+  lines (OpenRA AddSystemLine) carry the prefix "Battlefield Control" and are
+  yellow (SYSTEM_LINE_TEMPLATE FFFF00): the time limit's warnings ("5 minutes
+  remaining.") and its end, "X is defeated.", "X is victorious." and WebRA's
+  online lines (connection, saves, rematch). Mission lines are the scripts'
+  `Media.DisplayMessage` (AddMissionLine, js/campaign/view.js `missionLine`).
+  Chat lines carry the sender's name in the player's colour with OpenRA
+  UnitOrders' marks (`chatPrefix`): " (Dead)", " (Spectator)", " (Ally)" in
+  all chat, "[Team] name", in replays "[Team N] name", and "[Spectators] name"
+  for the spectators' team chat (the server's `spectators` mark: spectators
+  and defeated players). A defeated player's Team mode talks to the
+  spectators; once the game is over nobody has team chat (OpenRA
+  IngameChatLogic).
+- The overlay (CHAT_OVERLAY, TextNotificationsDisplayWidget) shows the newest
+  8 lines while the panel is closed; each leaves after 10 s (DisplayDurationMs
+  10000; WebRA's old online overlay kept 15 s). WebRA's connection lines that
+  need the player's attention ("Connection lost") stay until newer lines push
+  them out. Each new line plays ChatLine (ChatLineSound).
+- OpenTeamChat (Enter) and OpenGeneralChat (Shift+Enter) open the panel in
+  every game: the scrollback with every line (CHAT_SCROLLPANEL), the mode
+  button (Team / All, ToggleChatMode Shift+Tab), the chat line (Tab completes
+  a name) and the close button. Where nobody can be talked to (single player,
+  missions, replays) the line is off and Enter or Esc closes the panel, like
+  OpenRA. Esc closes the open panel wherever the focus is (also after a click
+  on the battlefield), before it can cancel a mode or open the game menu;
+  with the panel closed Esc is the game's as before. Up and Down in the chat line recall sent lines (CommandHistory: 50,
+  newest first, a repeat moves to the front). OpenRA keeps only chat commands
+  (`/...`) there; WebRA has no chat commands, so it keeps the sent lines.
+- The scrollback shows each line's local time (TIME label, HH:MM), as
+  OpenRA's chat in the game menu does (OpenRA's in-game panel and replays show
+  none; WebRA has no separate menu chat, so the panel shows it, except in
+  replays).
+- Mute (OpenRA TextNotificationsManager.MutedPlayers, GameInfoStatsLogic's
+  MUTE checkbox): the open panel lists the other people of an online game
+  (players and spectators, not bots or yourself) with a Mute / Unmute toggle.
+  A muted person's new lines are dropped from the overlay and the scrollback
+  and play no sound; the replay still records them. The API for other panels
+  (the game info player list): `window.webra.chat.log` (a `TextLog`)
+  `isMuted(client)`, `setMuted(client, on)`, `toggleMuted(client)` (the MUTE
+  checkbox's OnClick, returns the new state) and `onMute(fn(client, muted))`;
+  `ChatPanel.mutable()` lists who can be muted (`{ client, name }`).
+- "Hide chat in replays" (game menu, Settings; OpenRA HideReplayChat): in a
+  replay the players' chat stays in the scrollback but leaves the overlay and
+  plays no sound.
+- The transient lines at the bottom (js/notifications.js, OpenRA's
+  TRANSIENT_LINE_TEMPLATE: the announcer's lines and UI feedback such as
+  "Selected 12 units across screen." and "Audio muted.") have OpenRA's two
+  filters (TextNotificationPoolFilters): "Show UI feedback notifications"
+  (Feedback) and "Show game event notifications" (Transients).
+
+The game clock (OpenRA GameTimerLogic): the sidebar clock shows "Paused"
+instead of the time every other second while a local game is paused (the
+game menu, the Pause key, the debug menu; RA's clock has no status label).
+The replay bar's time is the observer timer: its tooltip says "N% complete"
+and a status beside it blinks "Paused", "Max Speed" (8x, the highest) or "N%
+Speed" while the replay is paused or not at 1x. Online spectators have no
+timer in WebRA's observer panel.
+
+"Audio Muted" (OpenRA MUTE_INDICATOR, MuteIndicatorLogic) shows with a muted
+speaker in the HUD button row for as long as all sound is off (ToggleMute or
+the audio settings), in every game; ToggleMute itself writes "Audio muted." or
+"Audio unmuted." as a feedback line (MuteHotkeyLogic).
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
@@ -2399,7 +2484,8 @@ about options added since; files of the running build are validated in full:
   "frames": [[12, [[0, [{ "o": "move", ... }]]]]],  // non-empty frames, tick < ticks, increasing
   "hashes": [[250, "0123456789abcdef"]],           // state hash after N ticks, every 250 ticks
   "online": { "id": "0123456789abcdef" },          // online saves only: the server's record (section 4)
-  "mission": { "id": "allies-01", "hash": "<sha256>" } // missions only (section 9)
+  "mission": { "id": "allies-01", "hash": "<sha256>" }, // missions only (section 9)
+  "chat": [[40, 0, "Alice", "glhf", 0]]            // online replays only, optional (below)
 }
 ```
 
@@ -2419,6 +2505,13 @@ or save of a co-op mission (`mode: "online"`) keeps the game options and
 adds `mission: { id, hash, options }` (section 9, "Co-op online"): a
 mission of `COOP_MISSIONS` with this version's file, every player a person.
 
+- Chat: a replay of an online game keeps the chat its recording client
+  received (OpenRA replays hold the Chat orders): `[tick, player, name,
+  text, channel]`, `player` the sender's seat or -1 for a spectator,
+  `channel` 0 all chat, 1 team chat, 2 the spectators' team chat (only the
+  team chat of the recording client's own side reaches it), at most 5000 lines in tick order. The viewer shows
+  each line as the replay passes its tick (not while seeking); saves never
+  carry chat.
 - Limits: 32 MiB, eight hours of game time, orders and options as strict as
   the network messages, frame players within the options, map canonical and
   matching its hash. A modded map shows the modded-map warning first.

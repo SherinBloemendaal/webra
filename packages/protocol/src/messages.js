@@ -530,7 +530,8 @@ const SERVER = {
     return out;
   },
   [S2C.CHAT](m) {
-    object(m, ['t', 'from', 'name', 'text', 'team'], 'chat');
+    // `spectators`: team chat of the spectators' side (spectators and defeated players; OpenRA ExtraData uint.MaxValue).
+    object(m, ['t', 'from', 'name', 'text', 'team', 'spectators'], 'chat');
     const out = {
       t: S2C.CHAT,
       from: m.from === null ? null : validClientId(m.from, 'from'),
@@ -538,6 +539,10 @@ const SERVER = {
       text: text(m.text, 1, CHAT_MAX, 'text'),
     };
     if (has(m, 'team') && bool(m.team, 'team')) out.team = true;
+    if (has(m, 'spectators') && bool(m.spectators, 'spectators')) {
+      if (!out.team) fail('chat.spectators is team chat');
+      out.spectators = true;
+    }
     return out;
   },
   [S2C.START](m) {

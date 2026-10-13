@@ -479,6 +479,11 @@ export class RecorderHandle {
     return this.host.command('encode', [kind]);
   }
 
+  /** Keep a received chat line in the replay: the sender's player (-1 a spectator), name, text, channel (0 all, 1 team, 2 spectators). */
+  noteChat(player, name, text, channel) {
+    this.host.command('noteChat', [player, name, text, channel]).catch(() => {});
+  }
+
   /** The online save file at the agreed save point (`ticks`, `hash`, the server's record `id`). */
   encodeOnlineSave(ticks, hash, id) {
     return this.host.command('encodeOnlineSave', [ticks, hash, id]);

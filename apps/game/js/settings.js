@@ -23,6 +23,11 @@ export const KEYS = Object.freeze({
   healthBars: ['game', 'healthBars'],
   // OpenRA's relationship colours (TogglePlayerStanceColor): js/main.js.
   playerStanceColors: ['game', 'playerStanceColors'],
+  // OpenRA HideReplayChat (js/chatlog.js) and the text notification filters
+  // (TextNotificationPoolFilters Feedback and Transients, js/notifications.js).
+  hideReplayChat: ['game', 'hideReplayChat'],
+  uiFeedbackNotifications: ['game', 'uiFeedbackNotifications'],
+  gameEventNotifications: ['game', 'gameEventNotifications'],
   pixelRatioCap: ['game', 'pixelRatioCap'],
   lowQuality: ['game', 'lowQuality'],
   // Camera shake and flashes (js/battlefx.js): 'auto', 'on' or 'off'.

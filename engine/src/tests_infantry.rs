@@ -232,9 +232,15 @@ fn spy_in_a_barracks_makes_the_owners_infantry_veterans() {
     let barr = building(&mut w, "BARR", 1, 30, 30);
     building(&mut w, "TENT", 0, 10, 10);
     let spy = unit(&mut w, "SPY.England", 0, 30, 36);
+    let e1_ty = ty(&w, "E1");
+    assert!(w.production_overlays(0, e1_ty).is_empty(), "no chevron before the spy is in");
     smart(&mut w, 0, &[spy], barr);
     run(&mut w, 200);
     assert!(w.players[0].proxies.contains(&ty(&w, "barracks.upgraded")), "the proxy goes to the spy's owner");
+    // WithProductionIconOverlay: the cameo shows the Veterancy chevron, only for the spy's owner.
+    assert_eq!(w.production_overlays(0, e1_ty), vec!["Veterancy"]);
+    assert!(w.production_overlays(1, e1_ty).is_empty());
+    assert!(w.production_overlays(0, ty(&w, "1TNK")).is_empty(), "vehicles need a spy in the war factory");
     let e1 = unit(&mut w, "E1", 0, 12, 18);
     assert_eq!(w.actors[e1].rank, 1, "ProducibleWithLevel barracks.upgraded");
     let e1b = unit(&mut w, "E1", 1, 40, 40);
