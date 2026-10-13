@@ -310,6 +310,10 @@
   color: #ffd27a;
 }
 
+.observer-icon-paused .observer-icon-text {
+  color: #ff5a4a;
+}
+
 /* Counts: how many tabs build it (top centre), or how many units (army: top right). */
 .observer-icon-count {
   top: 2px;

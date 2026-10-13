@@ -332,7 +332,9 @@ export class ObserverPanel {
     this.dropLayout();
     const heads = panel.columns ? panel.columns.map(([h]) => h) : [panel.heading];
     const cols = heads.length;
-    const head = el('div', 'observer-row observer-row-head');
+    // The icon panels' head shares their rows' column template (name, one wide cell of icons).
+    const rowClass = panel.icons ? 'observer-row observer-row-icons' : 'observer-row';
+    const head = el('div', `${rowClass} observer-row-head`);
     head.setAttribute('role', 'row');
     head.style.setProperty('--cols', String(cols));
     head.append(el('span', 'observer-cell observer-name', 'Player'), ...heads.map((h) => el('span', 'observer-cell', h)));
@@ -350,7 +352,7 @@ export class ObserverPanel {
       }
       for (const s of group.stats) {
         const p = this.players[s.player];
-        const row = el('div', panel.icons ? 'observer-row observer-row-icons' : 'observer-row');
+        const row = el('div', rowClass);
         row.setAttribute('role', 'row');
         row.style.setProperty('--cols', String(cols));
         const name = el('span', 'observer-cell observer-name');

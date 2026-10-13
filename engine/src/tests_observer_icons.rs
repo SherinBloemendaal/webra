@@ -216,6 +216,29 @@ fn observer_production_lists_support_powers_with_their_icons_and_charge() {
 }
 
 #[test]
+fn a_charged_power_is_ready_only_with_a_powered_provider() {
+    let mut w = flat_world();
+    for k in 0..3 {
+        let p = ty(&w, "APWR");
+        w.spawn_building(p, 1, 30 + k * 3, 30);
+    }
+    let silo = ty(&w, "MSLO");
+    w.spawn_building(silo, 1, 20, 20).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    w.step();
+    w.powers.players[1][0].remaining = 0;
+    w.powers.players[1][0].charging = true;
+    assert_eq!(production(&w, 1)["powers"][0]["ready"], true);
+    // Every provider without power (OpenRA Active false): charged, but not Ready.
+    w.powers.players[1][0].charging = false;
+    let p = production(&w, 1);
+    assert_eq!(p["powers"][0]["ready"], false);
+    assert_eq!(p["powers"][0]["charging"], false);
+    assert_eq!(p["powers"][0]["remainingTicks"], 0);
+}
+
+#[test]
 fn observer_queries_leave_the_state_hash_alone() {
     let mut w = flat_world();
     unit(&mut w, "1TNK", 0, 5, 5);

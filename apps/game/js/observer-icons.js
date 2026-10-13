@@ -69,8 +69,10 @@ export function productionIcons(prod, actorsById, ticksPerSecond = 25) {
 /**
  * The support power icons of a player (OpenRA ObserverSupportPowerIconsWidget):
  * every power it has in palette order, the charge clock, and "Ready" or
- * the time left (also while paused without power, like OpenRA, where only
- * powers without a provider show "ON HOLD" and those are left out).
+ * the time left. Ready is OpenRA's SupportPowerInstance.Ready: charged and
+ * Active, that is with a powered provider; a power whose providers are all
+ * without power (`paused`) shows its time left in red, 00:00 once charged
+ * (OpenRA's "ON HOLD" is for powers without a provider, which it leaves out).
  * @param {{ powers?: { key: string, icon: string, name: string, description: string, progress: number, ready: boolean, charging: boolean, remainingTicks: number, totalTicks: number }[] } | null} prod
  */
 export function powerIcons(prod, ticksPerSecond = 25) {
@@ -78,7 +80,8 @@ export function powerIcons(prod, ticksPerSecond = 25) {
     key: p.key,
     power: p,
     progress: p.ready ? 1 : Math.max(0, Math.min(1, p.progress)),
-    text: p.ready ? 'Ready' : iconTime(p.remainingTicks, ticksPerSecond),
+    paused: !p.charging,
+    text: p.ready && p.charging ? 'Ready' : iconTime(p.remainingTicks, ticksPerSecond),
   }));
 }
 
@@ -115,7 +118,7 @@ export function powerIconTip(icon, ticksPerSecond = 25) {
         kind: 'time',
         label: 'charge time',
         text,
-        bad: !p.ready && !p.charging,
+        bad: !p.charging,
       },
     ],
     desc: p.description || '',
@@ -238,6 +241,11 @@ export class IconStrip {
       rec.text.textContent = text;
       rec.root.classList.toggle('observer-icon-ready', text === 'Ready');
       rec.root.classList.toggle('observer-icon-hold', text === 'On hold');
+    }
+    if (last.paused !== !!icon.paused) {
+      last.paused = !!icon.paused;
+      // A support power without a powered provider: its time in red, like OpenRA's tooltip.
+      rec.root.classList.toggle('observer-icon-paused', last.paused);
     }
     if (last.count !== count) {
       last.count = count;

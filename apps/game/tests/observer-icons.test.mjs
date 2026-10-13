@@ -125,7 +125,7 @@ test('production icons group one type built in several tabs: ready first, then t
   assert.equal(withReady[1].count, 3);
 });
 
-test('support power icons: Ready or the time left, also while paused', () => {
+test('support power icons: Ready only when charged with a powered provider, else the time left', () => {
   const prod = {
     powers: [
       {
@@ -161,17 +161,33 @@ test('support power icons: Ready or the time left, also while paused', () => {
         remainingTicks: 50,
         totalTicks: 100,
       },
+      // Charged, but every provider is without power: not Ready in OpenRA (Active is false).
+      {
+        key: 'IronCurtain',
+        icon: 'invuln',
+        name: 'Iron Curtain',
+        description: 'Shield.',
+        progress: 1,
+        ready: false,
+        charging: false,
+        remainingTicks: 0,
+        totalTicks: 100,
+      },
     ],
   };
   const icons = powerIcons(prod);
   assert.deepEqual(
-    icons.map((i) => [i.key, i.text, i.progress]),
+    icons.map((i) => [i.key, i.text, i.progress, i.paused]),
     [
-      ['NukePower', '00:10', 0.25],
-      ['GpsPower', 'Ready', 1],
-      ['Chrono', '00:02', 0.5],
+      ['NukePower', '00:10', 0.25, false],
+      ['GpsPower', 'Ready', 1, false],
+      ['Chrono', '00:02', 0.5, true],
+      ['IronCurtain', '00:00', 1, true],
     ],
   );
+  // Even if a client got ready without charging, it is not Ready.
+  assert.equal(powerIcons({ powers: [{ ...prod.powers[3], ready: true }] })[0].text, '00:00');
+  assert.equal(powerIconTip(icons[3]).stats[0].bad, true, 'red like OpenRA');
   const tip = powerIconTip(icons[0]);
   assert.equal(tip.title, 'Atom Bomb');
   assert.equal(tip.desc, 'Boom.');
@@ -336,6 +352,12 @@ test('production panel: a strip of icons per player, painted once and reused', (
     const extra = (player) => (player === 0 ? { production: prod } : { production: { queues: [] } });
     p.update(stats, 10, extra);
     assert.equal(p.table.querySelectorAll('.observer-team').length, 0, 'no teams, no headers');
+    // The head lines up with the icon rows: the same column template class.
+    const head = p.table.querySelector('.observer-row-head');
+    const rows = p.table.querySelectorAll('.observer-row').filter((r) => r !== head);
+    assert.equal(rows.length, 2);
+    for (const r of [head, ...rows]) assert.ok(r.classList.contains('observer-row-icons'), r.className);
+    assert.equal(head.querySelectorAll('.observer-cell').length, 2, 'Player and the panel heading');
     const strip = p.table.querySelectorAll('.observer-icons')[0];
     const icons = strip.querySelectorAll('.observer-icon');
     assert.equal(icons.length, 2);
@@ -362,6 +384,19 @@ test('production panel: a strip of icons per player, painted once and reused', (
     assert.equal(painted.length, 3, 'only the new dog was painted');
     p.repaintIcons();
     assert.equal(painted.length, 5);
+  } finally {
+    p.remove();
+    uninstallDom();
+  }
+});
+
+test('a column panel head and rows do not use the icon template', () => {
+  const { p } = panel({ panel: 'combat' });
+  try {
+    p.update(statsOf([[0, 0, 'england']]), 10);
+    const rows = p.table.querySelectorAll('.observer-row');
+    assert.equal(rows.length, 2);
+    for (const r of rows) assert.ok(!r.classList.contains('observer-row-icons'), r.className);
   } finally {
     p.remove();
     uninstallDom();

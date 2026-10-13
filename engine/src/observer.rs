@@ -522,7 +522,8 @@ impl World {
                     "name": info.name,
                     "description": info.description,
                     "progress": (inst.total - inst.remaining) as f32 / inst.total.max(1) as f32,
-                    "ready": inst.ready(),
+                    // OpenRA SupportPowerInstance.Ready: charged and Active (a powered provider; powers.rs fires only then).
+                    "ready": inst.ready() && inst.charging,
                     "charging": inst.charging,
                     "remainingTicks": inst.remaining.max(0),
                     "totalTicks": inst.total,

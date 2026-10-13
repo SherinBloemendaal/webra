@@ -1328,8 +1328,11 @@ is still to go, and the time left (FormatTime: seconds rounded up), "Ready"
 or "On hold"; production icons group the current items of all tabs by type
 (the count shows when several tabs build it, which Red Alert's one tab per
 type never does) in tab and palette order, ready first, then building, then
-on hold; support powers show "Ready" or the time left, also while paused
-without power (OpenRA's "ON HOLD" is for powers it leaves out); army icons
+on hold; support powers show "Ready" (OpenRA SupportPowerInstance.Ready:
+charged and Active, with a powered provider; `observer_production` `ready`
+means the same) or the time left, in red while every provider is without
+power (00:00 in red once charged, as OpenRA draws it; its "ON HOLD" is for
+powers without a provider, which it leaves out); army icons
 show the unit count. Each icon has OpenRA's tooltip: production (name, cost
 red when the player cannot pay, build time red under low power, power, the
 description; no hotkey or click hints for spectators), support power (name,
