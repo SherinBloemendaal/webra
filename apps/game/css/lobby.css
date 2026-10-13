@@ -1291,3 +1291,66 @@
   outline: 1px solid var(--ui-accent);
   outline-offset: -1px;
 }
+
+/* ---- Generating a map (js/mappreview.js) ---------------------------------------- */
+
+/* The preview while a generated map is made: dimmed, with a line saying so. */
+#menu .lobby-preview-loading,
+#online-root .online-preview-loading {
+  position: absolute;
+  inset: 4px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--ui-text);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+#menu .lobby-preview-loading[hidden] {
+  display: none;
+}
+
+/* New seed while busy: the die turns (skirmish), a ring turns (online);
+   both stand still with Reduce motion (the setting or the browser's). */
+#menu .lobby-dice.is-busy .lobby-die {
+  animation: lobby-busy-spin 0.9s linear infinite;
+}
+
+#online-root .online-dice.is-busy::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: lobby-busy-spin 0.9s linear infinite;
+}
+
+#menu .lobby-dice.is-busy,
+#online-root .online-dice.is-busy {
+  cursor: progress;
+}
+
+#menu .lobby-dice.is-still .lobby-die,
+#online-root .online-dice.is-still::before {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #menu .lobby-dice.is-busy .lobby-die,
+  #online-root .online-dice.is-busy::before {
+    animation: none;
+  }
+}
+
+@keyframes lobby-busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

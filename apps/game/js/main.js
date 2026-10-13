@@ -37,6 +37,7 @@ import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
 import { mountStartMenu } from './startmenu.js';
+import { GeneratedPreviews, previewBackend } from './mappreview.js';
 import { aiName, COLOR_NAMES } from './lobby-state.js';
 import { AudioSystem, holdsGameAudio } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
@@ -138,6 +139,13 @@ const playAccess = new PlayAccess({ onLost: playAccessLost });
 let uiScale = null;
 /** The map lens's art (js/maplens): the game's art for the magnifiers over map previews, or null without the engine. */
 let lensArt = null;
+/** The lobby previews of generated maps (js/mappreview.js), or null without the engine. */
+let previews = null;
+
+/** "Reduce motion" (the setting, or the browser's). */
+function motionIsReduced() {
+  return motionReduced(settings.get('reduceMotion'), !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+}
 
 async function boot() {
   // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
@@ -156,6 +164,8 @@ async function boot() {
   setupContent();
   if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content });
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
+  // Generated maps for the lobby previews, made in a worker (js/mappreview.js).
+  previews = wasm ? new GeneratedPreviews({ backend: previewBackend({ Game, module: wasmModule }) }) : null;
   const lobby = new Lobby($('skirmish'), {
     colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
     colorNames: COLOR_NAMES,
@@ -178,6 +188,8 @@ async function boot() {
         }),
     },
     lens: newMapLens,
+    previews,
+    reducedMotion: motionIsReduced,
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
   });
@@ -523,6 +535,8 @@ function setupOnline(lobby, gpuError) {
       ui = mountOnline(root, {
         Game,
         lens: newMapLens,
+        previews,
+        reducedMotion: motionIsReduced,
         version: version(),
         createGame: createOnlineGame,
         colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),

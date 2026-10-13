@@ -198,6 +198,9 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   `Game.map_preview_players(seed, size, players)` and
   `Game.map_preview_styled(seed, size, players, style, biome)` (RGBA per
   cell in the biome's colours, spawns in player colours);
+  `Game.map_spawns_styled(seed, size, players, style)` the spawns
+  `generated_map_styled` places, flat `[x0, y0, x1, y1, ...]`, from the
+  map alone (no actors, no map file: the lobby previews);
   `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
   name what `random` picks.
 - Map editor (presentation only, never ticked): `Game.editor_preview(mapJson)`
@@ -1120,6 +1123,34 @@ the lobby keeps its own seed for the generated map. Online, the host's **Unload
 map** (a shared or community map) or **Leave mission** (a co-op mission)
 sends `map: null`, like Generated map in the map list: the lobby's
 options, seed included, were kept.
+
+### Lobby previews of generated maps
+
+The skirmish and online lobbies make the preview and the start positions of
+a generated map in a worker (`apps/game/js/mappreview.js`,
+`mappreview-worker.js`), given the engine module the page compiled; the
+main thread only draws the bytes. Without workers, or when the worker
+cannot load, the same work runs on the page after a timeout (so the loading
+state paints first). One generation runs at a time and the latest wins: a
+newer request replaces the one waiting (it never starts) and a running one
+it overtakes is kept in a small cache but not drawn. The spawns come from
+`Game.map_spawns_styled` instead of a whole generated map file.
+
+While a map is made, New seed shows a loader (disabled, `aria-busy`, its die
+or ring turns unless Reduce motion, the setting or the browser's, is on),
+the preview is dimmed with "Generating the map...", its start markers are
+gone (they would name places on the old map) and Start game waits. Online
+the host's New seed stays busy from the click until the lobby has the new
+seed and its map is made. The map lens still reads its map only when the
+pointer first rests on the preview.
+
+Main thread time of one New seed (Node 26, Apple Silicon, `node` timing of
+the engine calls; the browser's draw of the preview bytes comes on top in
+both): before, the preview, the full map file for the spawns and the caption
+took 49 ms (96 x 96) and 60 ms (160 x 160) for the first seed of a page, and
+10 to 17 ms on average (up to 45 ms) after that; now only the caption is
+left on the main thread (under 0.1 ms), and the worker takes 8 ms and 16 ms
+for a first seed, 2.4 to 7.5 ms after that.
 
 ### Reconnecting
 

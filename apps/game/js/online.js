@@ -89,6 +89,7 @@ import { aiName, spawnMarkers } from './lobby-state.js';
 import { SpawnMarkers } from './spawnpick.js';
 import { planBulk } from './lobby-bulk.js';
 import { BulkBar } from './lobby-bulkbar.js';
+import { StalePreview, previewKey } from './mappreview.js';
 import { battlefieldSpawns, generatedMapPlayers } from '../protocol/spawns.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
@@ -853,6 +854,7 @@ export class OnlineUI {
   }
 
   onServerError(m) {
+    this.seedPending = null;
     // A refused bulk edit is reported in the bulk bar, where it was applied.
     if (this.bulkWait && !this.inGame) return this.settleBulk({ error: m.message });
     const refusal = onlineRefusal(m.code, m.message);
@@ -1055,6 +1057,8 @@ export class OnlineUI {
     });
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
+    // The host's New seed arrived (its loader then waits for the map only).
+    if (m.options?.seed === this.seedPending) this.seedPending = null;
     this.renderLobby();
     this.settleBulk({ slots: m.slots });
   }
@@ -1099,7 +1103,8 @@ export class OnlineUI {
     const waiting = this.state.slots.filter((s) => s.type === 'human' && s.client !== this.state.hostId && !s.ready).length;
     // Who still lacks the lobby's map (players and spectators; the server checks this too).
     const lacking = this.lackingMap();
-    this.startBtn.disabled = waiting > 0 || !mapReady || lacking.length > 0;
+    // A generated map still being made (renderMap): Start game waits for it.
+    this.startBtn.disabled = waiting > 0 || !mapReady || lacking.length > 0 || !!this.previewBusy;
     this.barStatus.textContent = !mapReady
       ? this.mapStatus.text || 'Waiting for the map.'
       : lacking.length > 0
@@ -1471,6 +1476,7 @@ export class OnlineUI {
   renderMap() {
     const box = this.mapBox;
     const st = this.state;
+    this.previewBusy = false;
     box.textContent = '';
     box.append(el('h2', 'online-panel-title', 'Battlefield'));
     // A marker with focus keeps it across the lobby update.
@@ -1508,7 +1514,18 @@ export class OnlineUI {
       const G = this.ctx.Game;
       const look = G.resolved_style ? `, ${LABELS.mapStyle[G.resolved_style(o.seed, o.mapStyle)]}, ${LABELS.biome[G.resolved_biome(o.seed, o.biome)]}` : '';
       caption.textContent = `Generated, ${LABELS.mapSize[o.mapSize]} ${o.mapSize} x ${o.mapSize}${look}, seed ${o.seed}`;
-      this.drawPreview(canvas, () => G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
+      const req = this.generatedRequest();
+      const got = this.ctx.previews?.get(req) ?? null;
+      if (this.ctx.previews && !got && this.previewFailed !== previewKey(req)) {
+        // Made off the main thread: the preview says so and Start game waits (renderLobby).
+        this.previewBusy = true;
+        frame.classList.add('is-busy');
+        frame.setAttribute('aria-busy', 'true');
+        frame.append(el('div', 'online-preview-loading', 'Generating the map...'));
+        this.awaitPreview(req);
+      } else {
+        this.drawPreview(canvas, () => got?.rgba ?? G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
+      }
       const gen = { seed: o.seed, size: o.mapSize, players, style: o.mapStyle, biome: o.biome, tech: o.techBuildings ?? 'standard' };
       this.lens?.setSource(`gen:${gen.seed}/${gen.size}/${gen.players}/${gen.style}/${gen.biome}/${gen.tech}`, (art) => art.generatedSteps(gen), { width: gen.size, height: gen.size });
     }
@@ -1577,7 +1594,22 @@ export class OnlineUI {
         if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.send({ t: 'options', options: { ...st.options, seed: n } });
         else seed.value = String(st.options.seed);
       });
-      seedRow.append(seed, button('New seed', null, () => this.send({ t: 'options', options: { ...st.options, seed: randomSeed() } })));
+      const dice = button('New seed', 'online-dice', () => {
+        // The loader shows until the lobby has the new seed and its map is made.
+        this.seedPending = randomSeed();
+        busy(dice);
+        this.send({ t: 'options', options: { ...st.options, seed: this.seedPending } });
+      });
+      const busy = (b) => {
+        b.disabled = true;
+        b.setAttribute('aria-busy', 'true');
+        b.classList.add('is-busy');
+        b.classList.toggle('is-still', !!this.ctx.reducedMotion?.());
+        b.textContent = 'Generating...';
+      };
+      if (this.previewBusy || Number.isInteger(this.seedPending)) busy(dice);
+      else dice.setAttribute('aria-busy', 'false');
+      seedRow.append(seed, dice);
       controls.append(field('Map size', size, 'mapSize'), field('Seed', seedRow, 'seed', seed));
     }
     const file = el('input');
@@ -1695,11 +1727,18 @@ export class OnlineUI {
     } else {
       const o = st.options;
       const G = this.ctx.Game;
-      if (!G?.generated_map_styled) return [];
       // One spawn per player of the generated map, counted as the server counts them.
       const n = battlefieldSpawns({ players });
-      // The style shapes the map (the biome only paints it).
-      field = { key: `gen:${o.seed}/${o.mapSize}/${n}/${o.mapStyle}`, width: o.mapSize, height: o.mapSize, cells: () => JSON.parse(G.generated_map_styled(o.seed, o.mapSize, n, o.mapStyle, 'temperate')).spawns };
+      if (this.ctx.previews) {
+        // Made off the main thread (renderMap asks for it): no markers until it is ready.
+        const got = this.ctx.previews.get(this.generatedRequest());
+        if (!got) return [];
+        field = { key: `gen:${previewKey(this.generatedRequest())}`, width: o.mapSize, height: o.mapSize, cells: () => got.spawns };
+      } else {
+        if (!G?.generated_map_styled) return [];
+        // The style shapes the map (the biome only paints it).
+        field = { key: `gen:${o.seed}/${o.mapSize}/${n}/${o.mapStyle}`, width: o.mapSize, height: o.mapSize, cells: () => JSON.parse(G.generated_map_styled(o.seed, o.mapSize, n, o.mapStyle, 'temperate')).spawns };
+      }
     }
     if (this.spawnCells?.key !== field.key) {
       let cells = [];
@@ -1717,6 +1756,32 @@ export class OnlineUI {
       mapSource: st.map ? 'file' : 'random',
     };
     return spawnMarkers(this.spawnCells.cells, field.width, field.height, lobbyState);
+  }
+
+  /** The lobby's generated map as a js/mappreview.js request. */
+  generatedRequest() {
+    const o = this.state.options;
+    const players = generatedMapPlayers(this.state.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
+    return { seed: o.seed, size: o.mapSize, players, style: o.mapStyle, biome: o.biome };
+  }
+
+  /**
+   * Make the lobby's generated map off the main thread and render the lobby
+   * again once it is ready, unless the lobby moved on (latest wins).
+   */
+  awaitPreview(req) {
+    const key = previewKey(req);
+    this.ctx.previews.request(req).then(
+      () => {
+        if (this.slotBox && !this.state.map && !this.state.mission && previewKey(this.generatedRequest()) === key) this.renderLobby();
+      },
+      (err) => {
+        if (err instanceof StalePreview) return;
+        console.error('Map preview failed:', err);
+        this.previewFailed = key;
+        if (this.slotBox) this.renderLobby();
+      },
+    );
   }
 
   /** Whether this member can pick spawns now: a player or the host, in a skirmish lobby that is not a resumed save, with the map at hand. */

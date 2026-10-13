@@ -76,6 +76,7 @@ import { mapLibrary } from './maplibrary.js';
 import { attachTooltip } from './ui/tooltip.js';
 import { applyBulk, planBulk } from './lobby-bulk.js';
 import { BulkBar } from './lobby-bulkbar.js';
+import { StalePreview, previewKey } from './mappreview.js';
 
 // Game option rows: the key in options (also its help text in js/help.js),
 // its label and choices. Map style, biome, tech buildings and weather are the
@@ -381,6 +382,8 @@ export class Lobby {
    *   },
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   lens?: () => import('./maplens/lens.js').MapLens,  a magnifier over the preview (js/maplens)
+   *   previews?: import('./mappreview.js').GeneratedPreviews,  generated maps made off the main thread
+   *   reducedMotion?: () => boolean,  the "Reduce motion" setting (the loader then stands still)
    *   onStart: (options: object) => void,
    *   onStress: (opts: {seed: number, units: number}) => void,
    * }} config `maps` gives player-count previews and map files; without it
@@ -393,6 +396,10 @@ export class Lobby {
     this.maps = config.maps || null;
     this.legacyPreview = config.mapPreview || null;
     this.lens = config.lens?.() ?? null;
+    this.previews = config.previews ?? null;
+    this.reducedMotion = config.reducedMotion ?? null;
+    /** A generated map is being made (js/mappreview.js): New seed and Start game wait. */
+    this.previewBusy = false;
     this.onStart = config.onStart;
     this.onStress = config.onStress;
     this.blocked = false;
@@ -729,8 +736,12 @@ export class Lobby {
     this.ctx = this.canvas.getContext('2d');
     this.markers = el('div', 'lobby-markers');
     this.previewFail = el('div', 'lobby-preview-fail', 'Preview unavailable');
+    // While a generated map is made: the preview says so (setPreviewBusy).
+    this.previewLoading = el('div', 'lobby-preview-loading', 'Generating the map...');
+    this.previewLoading.hidden = true;
+    this.previewFrame$ = frame;
     this.previewFail.hidden = true;
-    frame.append(this.canvas, this.markers, this.previewFail);
+    frame.append(this.canvas, this.markers, this.previewFail, this.previewLoading);
     this.lens?.attach(frame, this.canvas);
     // The start positions: click one to start there (js/spawnpick.js).
     this.spawnLayer = new SpawnMarkers(this.markers, { lens: this.lens, onPick: (a) => this.pickSpawn(a) });
@@ -801,6 +812,8 @@ export class Lobby {
     die.setAttribute('aria-hidden', 'true');
     this.diceBtn.append(die, el('span', 'lobby-dice-text', 'New seed'));
     this.diceBtn.addEventListener('click', () => {
+      // The loader shows at once; the map is made off the main thread (drawPreview).
+      if (this.previews) this.setPreviewBusy(true);
       this.state.seed = randomSeed();
       this.renderSeed();
       this.renderCaption();
@@ -1500,8 +1513,54 @@ export class Lobby {
   /** Show why the game cannot start (or a one-off message), and gate the start button. */
   renderProblem(message) {
     const problem = startProblem(this.state, this.mapFileStatus());
-    this.problemText.textContent = message || problem || '';
-    if (!this.blocked) this.startBtn.disabled = Boolean(problem);
+    this.problemText.textContent = message || problem || (this.previewBusy ? 'Generating the map...' : '');
+    if (!this.blocked) this.startBtn.disabled = Boolean(problem) || this.previewBusy;
+  }
+
+  /**
+   * A generated map is being made, or is ready: the New seed button shows a
+   * loader (disabled, aria-busy; the die turns unless motion is reduced),
+   * the preview says it is generating and Start game waits.
+   */
+  setPreviewBusy(on) {
+    if (this.previewBusy === on) return;
+    this.previewBusy = on;
+    const still = on && !!this.reducedMotion?.();
+    this.diceBtn.disabled = on;
+    this.diceBtn.setAttribute('aria-busy', String(on));
+    this.diceBtn.classList.toggle('is-busy', on);
+    this.diceBtn.classList.toggle('is-still', still);
+    this.diceBtn.querySelector('.lobby-dice-text').textContent = on ? 'Generating...' : 'New seed';
+    this.previewFrame$.classList.toggle('is-busy', on);
+    this.previewFrame$.setAttribute('aria-busy', String(on));
+    this.previewLoading.hidden = !on;
+    this.renderProblem();
+  }
+
+  /**
+   * Make the generated map of `req` (js/mappreview.js), then draw it, unless
+   * the lobby moved on to another one meanwhile (latest wins).
+   */
+  awaitPreview(req) {
+    const key = previewKey(req);
+    this.previewWant = key;
+    this.setPreviewBusy(true);
+    // The markers of the last map would name places on another map: none until it is ready.
+    this.renderMarkers([], this.canvas.width, this.canvas.height);
+    this.previews.request(req).then(
+      () => {
+        if (this.previewWant === key) this.drawPreview();
+      },
+      (err) => {
+        if (err instanceof StalePreview || this.previewWant !== key) return;
+        console.error('Lobby map preview failed:', err);
+        this.previewWant = null;
+        this.setPreviewBusy(false);
+        this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.previewFail.hidden = false;
+        this.lens?.clearSource();
+      },
+    );
   }
 
   renderCaption() {
@@ -1549,7 +1608,17 @@ export class Lobby {
         spawns = this.mapFile.info.spawnCells;
       } else {
         width = height = this.state.mapSize;
-        if (this.maps) {
+        if (this.previews) {
+          // Made off the main thread; drawn when ready (awaitPreview).
+          const req = { seed: this.state.seed, size: width, players: n, style: this.state.mapStyle, biome: this.state.biome };
+          const got = this.previews.get(req);
+          if (!got) {
+            this.awaitPreview(req);
+            return;
+          }
+          data = got.rgba;
+          spawns = got.spawns;
+        } else if (this.maps) {
           data = this.maps.preview(this.state.seed, width, n, this.state.mapStyle, this.state.biome);
           spawns = this.generatedSpawns(this.state.seed, width, n, this.state.mapStyle);
         } else {
@@ -1566,7 +1635,11 @@ export class Lobby {
       // Copy: the source may be a view into wasm memory that can move.
       this.ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
       this.previewFail.hidden = true;
+      this.previewWant = null;
+      this.setPreviewBusy(false);
     } catch (err) {
+      this.previewWant = null;
+      this.setPreviewBusy(false);
       console.error('Lobby map preview failed:', err);
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.previewFail.hidden = false;
