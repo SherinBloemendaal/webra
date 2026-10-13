@@ -387,6 +387,11 @@ export class Minimap {
       });
   }
 
+  /** A button or finger is down on the radar (js/input.js holds edge scrolling meanwhile). */
+  isPressed() {
+    return !!this.press;
+  }
+
   /** Move the camera to the press's spot; it follows the pointer from then on while it is down. */
   pan(press) {
     press.panning = true;

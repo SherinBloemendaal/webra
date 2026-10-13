@@ -2271,6 +2271,28 @@ installed). Touch: a tap with units selected or a mode on gives the order
 (`TouchControls.radarTap`, with Add and Force); a drag, or any touch with
 nothing to order, moves the camera.
 
+Edge scrolling is client side too (`js/input.js` `edgeDirection`,
+`edgeScrollAllowed`; OpenRA `ViewportControllerWidget.CheckForDirections`).
+The zone is measured against the window, not the battlefield canvas: the
+mouse's window position comes from every mouse event on the page
+(`Input.windowMouse`), so the edge scrolls whatever is under it, the
+sidebar, radar, HUD buttons and chat included, and clicks there still work.
+The zone is `EDGE` (12) CSS px on each side (OpenRA's
+`ViewportEdgeScrollMargin` is 5: a browser window that is not maximised lets
+the mouse leave, and a quick move skips a narrow zone). While it scrolls the
+whole page shows the scroll arrow (`html.edge-scroll`, css/style.css); OpenRA
+keeps the widget's own cursor off the battlefield, WebRA follows Red Alert
+there. It holds while the speed setting is 0, the mouse is outside the
+window (browsers report no position there, so leaving the window, even
+through an edge, stops it; a maximised or fullscreen window has its edge at
+the screen's, and mouse capture keeps the pointer inside), the window has no
+input focus (as OpenRA), for a touch, while the game menu, end of game,
+statistics or a modal dialog is open, during a box selection, repair box,
+middle button pan or radar drag, while a text field has the focus (the chat
+line), and while the mouse is released with the release hotkey
+(`MouseCapture.isDetached`, where it exists). The map editor has no edge
+scrolling.
+
 Command bar (engine/src/commands.rs, apps/game/js/commandbar.js): orders
 `{"o": "attack_ground", player, ids, x, y}` (force-fire on the ground until
 told otherwise; weapons need the `Ground` target type, or `Water` on water;
