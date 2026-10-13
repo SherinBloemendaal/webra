@@ -82,7 +82,8 @@ export const QUERY_DEFAULTS = Object.freeze({
   can_attack_actor: () => false,
   // Whether a plain move passes visible enemies (the attack-move tip, js/hints.js).
   move_hint: () => false,
-  sell_value: () => 0,
+  // The refund, or -1 while it cannot be sold.
+  sell_value: () => -1,
   // Sidebar modes and the hotkeys that cycle through actors (js/input.js).
   repair_cursor: () => 0,
   repair_unit_target: EMPTY_F32,

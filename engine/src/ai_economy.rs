@@ -211,7 +211,7 @@ fn needs_refinery(w: &World, player: u8) -> bool {
 }
 
 /// The structure to sell first, or None when only the essentials are left.
-fn surplus_structure(w: &World, player: u8) -> Option<usize> {
+pub(crate) fn surplus_structure(w: &World, player: u8) -> Option<usize> {
     let buildings = own_buildings(w, player);
     let info = |b: usize| &w.rules.actors[w.actors[b].ty as usize];
     let has_units = |kind: Kind| w.actors.iter().any(|a| a.alive && a.owner == player && a.kind == kind);
@@ -249,6 +249,8 @@ fn surplus_structure(w: &World, player: u8) -> Option<usize> {
     let mut best: Option<(u32, i32, usize)> = None;
     for &b in &buildings {
         let Some(r) = rank(b) else { continue };
+        // What the sale pays (CustomSellValue, health); None while it cannot be sold.
+        let Some(refund) = w.sell_refund(b) else { continue };
         // Power plants only while the rest keeps enough power.
         if r == 3 {
             let p = &w.players[player as usize];
@@ -257,8 +259,8 @@ fn surplus_structure(w: &World, player: u8) -> Option<usize> {
                 continue;
             }
         }
-        // Dearest first within a rank (more money back).
-        let key = (r, -info(b).cost, b);
+        // Most money back first within a rank.
+        let key = (r, -refund, b);
         if best.is_none_or(|bk| key < bk) {
             best = Some(key);
         }

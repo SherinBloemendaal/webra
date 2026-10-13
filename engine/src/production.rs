@@ -756,26 +756,37 @@ impl World {
 
     // ---- Selling, deploying ------------------------------------------------
 
-    /// Sell a structure: refund RefundPercent of its value, scaled by health (OpenRA Sellable).
-    pub fn sell(&mut self, b: usize) -> bool {
+    /// What selling structure `b` would pay now, or None while it cannot be
+    /// sold. OpenRA Sell activity and Sellable.TooltipText: RefundPercent of
+    /// the sell value (CustomSellValue, else the cost), scaled by health,
+    /// rounded down; walls (CustomSellValue 0) sell for nothing.
+    pub fn sell_refund(&self, b: usize) -> Option<i32> {
         let a = &self.actors[b];
         if !a.alive || a.kind != Kind::Building {
-            return false;
+            return None;
         }
         // Sellable RequiresCondition !being-captured && !being-demolished (infantry.rs).
         if self.being_captured(b) || self.being_demolished(b) {
-            return false;
+            return None;
         }
         let info = &self.rules.actors[a.ty as usize];
-        let percent = info.building.as_ref().unwrap().sell_refund;
+        // No Sellable trait (or a mission's -Sellable): RefundPercent 0 (gen_rules.py).
+        let percent = info.building.as_ref()?.sell_refund;
         if percent <= 0 {
-            return false;
+            return None;
         }
-        let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
+        let max_hp = info.hp.max(1) as i64;
+        Some((info.sell_value() as i64 * percent as i64 * a.hp as i64 / (100 * max_hp)) as i32)
+    }
+
+    /// Sell a structure: pay `sell_refund` (OpenRA Sellable, Sell activity).
+    pub fn sell(&mut self, b: usize) -> bool {
+        let Some(refund) = self.sell_refund(b) else { return false };
+        let a = &self.actors[b];
         let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
         self.refund(owner, refund);
         self.note_sold(owner, refund);
-        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, refund);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
         self.spawn_sell_survivors(b);

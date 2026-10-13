@@ -381,7 +381,7 @@ function fakeGame(actors) {
     deploy_state: () => 0,
     ability_deploy_state: () => 0,
     has_minelayer: () => false,
-    sell_value: () => 0,
+    sell_value: () => -1,
     cursor_action: (_p, _ids, x, y) => {
       const hit = entries().find(([, a]) => Math.hypot(a.x - x, a.y - y) < 12);
       return hit && hit[1].owner !== 0 ? ACTION.ATTACK : ACTION.MOVE;

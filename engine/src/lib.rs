@@ -155,6 +155,8 @@ mod tests_security;
 #[cfg(test)]
 mod tests_selection;
 #[cfg(test)]
+mod tests_sell;
+#[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
 mod tests_sound_eva;
@@ -1304,16 +1306,15 @@ impl Game {
         self.submit(Order::Sell { player, building });
     }
 
-    /// Refund a structure would give right now (0 if it cannot be sold).
+    /// Refund selling an own structure would give right now, or -1 while
+    /// `player` cannot sell it (the sell cursor and the "Refund: $" tooltip
+    /// line, OpenRA Sellable). Walls sell for 0.
     pub fn sell_value(&self, player: u8, building: u32) -> i32 {
-        let Some(b) = self.world.resolve(building) else { return 0 };
-        let a = &self.world.actors[b];
-        if a.owner != player || a.kind != Kind::Building {
-            return 0;
+        let Some(b) = self.world.resolve(building) else { return -1 };
+        if self.world.actors[b].owner != player {
+            return -1;
         }
-        let info = &self.world.rules.actors[a.ty as usize];
-        let pct = info.building.as_ref().unwrap().sell_refund;
-        (info.cost as i64 * pct as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32
+        self.world.sell_refund(b).unwrap_or(-1)
     }
 
     // ---- Sidebar buttons: repair, power down, beacon (repair.rs, beacons.rs) -----------

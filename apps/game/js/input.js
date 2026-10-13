@@ -439,7 +439,8 @@ export class Input {
     const hit = await this.ask.pick(this.player, w.x, w.y);
     if (hit === NONE) return;
     if (mode === 'sell') {
-      if ((await this.ask.sell_value(this.player, hit)) <= 0) return;
+      // -1: it cannot be sold (walls can, for $0).
+      if ((await this.ask.sell_value(this.player, hit)) < 0) return;
       this.game.sell(this.player, hit);
       this.flashOrder(w, ACTION.HARVEST);
     } else if (mode === 'repair') {
@@ -461,7 +462,7 @@ export class Input {
     if (this.mode === 'beacon') return true;
     const hit = this.game.pick(this.player, w.x, w.y);
     if (hit === NONE) return false;
-    if (this.mode === 'sell') return this.game.sell_value(this.player, hit) > 0;
+    if (this.mode === 'sell') return this.game.sell_value(this.player, hit) >= 0;
     if (this.mode === 'repair') return this.game.repair_cursor(this.player, hit) > 0;
     if (this.mode === 'powerDown') return !!this.game.can_power_down(this.player, hit);
     return false;

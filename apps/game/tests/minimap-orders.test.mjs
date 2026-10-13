@@ -113,7 +113,7 @@ function fakeGame(actors) {
     can_attack_ground: () => true,
     can_attack_actor: () => true,
     can_guard: () => false,
-    sell_value: (_p, id) => (actors[id]?.building && actors[id].owner === 0 ? 100 : 0),
+    sell_value: (_p, id) => (actors[id]?.building && actors[id].owner === 0 ? 100 : -1),
     cursor_action: (_p, _ids, x, y) => {
       const hit = at(x, y);
       if (hit && hit[1].owner !== 0) return ACTION.ATTACK;

@@ -481,13 +481,15 @@ export function viewOnly(game, blocked = () => true) {
     'power_down',
     'place_beacon',
   ]);
-  const zero = new Set(['cursor_action', 'deploy_state', 'ability_deploy_state', 'sell_value', 'repair_cursor', 'can_power_down']);
+  const zero = new Set(['cursor_action', 'deploy_state', 'ability_deploy_state', 'repair_cursor', 'can_power_down']);
   return new Proxy(game, {
     get(target, prop) {
       if (blocked()) {
         // Every order_* method (move, attack ground, guard, scatter, waypoints, ...) and the rest above.
         if (orders.has(prop) || (typeof prop === 'string' && prop.startsWith('order_'))) return () => undefined;
         if (zero.has(prop)) return () => 0;
+        // Nothing can be sold (-1: no sell cursor, no refund line).
+        if (prop === 'sell_value') return () => -1;
       }
       const v = Reflect.get(target, prop, target);
       return typeof v === 'function' ? v.bind(target) : v;

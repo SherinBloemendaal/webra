@@ -57,7 +57,7 @@ fn step_cost(w: &World, i: usize, hp: i32) -> i32 {
     let info = &w.rules.actors[w.actors[i].ty as usize];
     let b = info.building.as_ref().unwrap();
     let r = b.repairable.as_ref().unwrap();
-    ((hp as i64 * r.percent as i64 * b.value as i64) / (info.hp as i64 * 100)).max(1) as i32
+    ((hp as i64 * r.percent as i64 * info.sell_value() as i64) / (info.hp as i64 * 100)).max(1) as i32
 }
 
 fn events(w: &mut World, kind: SoundEventKind) -> Vec<[i32; EVENT_STRIDE]> {
@@ -75,8 +75,8 @@ fn red_alert_repair_numbers() {
     assert_eq!(r.bonuses, vec![100, 150, 175, 200, 220, 240, 260, 280, 300]);
     // Walls have no repair button; the refinery's value is its CustomSellValue.
     assert!(w.rules.actors[ty(&w, "SBAG") as usize].building.as_ref().unwrap().repairable.is_none());
-    assert_eq!(w.rules.actors[ty(&w, "PROC") as usize].building.as_ref().unwrap().value, 300);
-    assert_eq!(w.rules.actors[ty(&w, "TSLA") as usize].building.as_ref().unwrap().value, w.rules.actors[ty(&w, "TSLA") as usize].cost);
+    assert_eq!(w.rules.actors[ty(&w, "PROC") as usize].sell_value(), 300);
+    assert_eq!(w.rules.actors[ty(&w, "TSLA") as usize].sell_value(), w.rules.actors[ty(&w, "TSLA") as usize].cost);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn repair_heals_a_step_every_interval_and_charges_per_step() {
     w.step();
     // The first step comes at once, then one every interval + 1 ticks (OpenRA counts down to 0).
     let cost = step_cost(&w, b, 700);
-    assert_eq!(cost, 700 * 20 * w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().value / (max * 100));
+    assert_eq!(cost, 700 * 20 * w.rules.actors[w.actors[b].ty as usize].sell_value() / (max * 100));
     assert_eq!(w.actors[b].hp, max / 2 + 700);
     assert_eq!(w.players[0].funds(), 10_000 - cost);
     assert!(w.actors[b].repair_active);
@@ -120,7 +120,7 @@ fn a_full_repair_costs_about_the_repair_percent_of_the_value_and_then_stops() {
     run(&mut w, 25 * 70);
     assert_eq!(w.actors[b].hp, max);
     assert_eq!(w.players[0].funds(), 10_000 - bill);
-    let value = w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().value;
+    let value = w.rules.actors[w.actors[b].ty as usize].sell_value();
     assert!(bill * 100 >= value * 18 && bill * 100 <= value * 21, "{bill} is about 20% of {value}");
     assert!(w.actors[b].repairers.is_empty() && !w.actors[b].repair_active, "repairing ended");
     // Nothing more is charged.
