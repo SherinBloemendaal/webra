@@ -268,9 +268,20 @@ export function footprintOf(info) {
 export function catalogEntry(catalog, type) {
   if (catalog[type]) return catalog[type];
   const lower = String(type).toLowerCase();
-  const key = Object.keys(catalog).find((k) => k.toLowerCase() === lower);
+  // The ids by their lower case (the first id wins, as a search in key order
+  // finds it), made once per catalog and again when its ids change.
+  const keys = Object.keys(catalog);
+  let byLower = LOWER_IDS.get(catalog);
+  if (!byLower || byLower.count !== keys.length) {
+    byLower = { count: keys.length, ids: new Map() };
+    for (const k of keys) if (!byLower.ids.has(k.toLowerCase())) byLower.ids.set(k.toLowerCase(), k);
+    LOWER_IDS.set(catalog, byLower);
+  }
+  const key = byLower.ids.get(lower);
   return key === undefined ? undefined : catalog[key];
 }
+
+const LOWER_IDS = new WeakMap();
 
 // ---- Validation -------------------------------------------------------------------
 

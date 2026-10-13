@@ -28,6 +28,13 @@ export class MapDoc {
     this.undoStack = [];
     this.redoStack = [];
     this.tx = null;
+    /**
+     * Counts the changes: it moves on whenever a transaction closes, undo or
+     * redo apply, or a map is loaded. Every change happens inside a
+     * transaction, so outside one an equal version means the same document
+     * (what the editor's caches rely on).
+     */
+    this.version = 0;
     this.load(map);
   }
 
@@ -36,6 +43,7 @@ export class MapDoc {
   /** Replace the whole document without touching history (used by undo of a replace). */
   load(map) {
     const { terrain, ore, gems } = decodeLayers(map);
+    this.version++;
     this.width = map.width;
     this.height = map.height;
     this.terrain = terrain;
@@ -179,6 +187,7 @@ export class MapDoc {
     const tx = this.tx;
     if (!tx) return;
     this.tx = null;
+    this.version++;
     const entry = { label: tx.label, kind: 'edit', coalesceKey: tx.coalesceKey, time: Date.now() };
     let changed = false;
     if (tx.cells.size) {
@@ -232,6 +241,7 @@ export class MapDoc {
     const tx = this.tx;
     if (!tx) return;
     this.tx = null;
+    this.version++;
     for (const [i, [t, o, g]] of tx.cells) {
       this.terrain[i] = t;
       this.ore[i] = o;
@@ -283,6 +293,7 @@ export class MapDoc {
   }
 
   apply(e, side) {
+    this.version++;
     if (e.kind === 'replace') {
       this.load(e[side]);
       this.emit({ cells: true, objects: true, meta: true, resized: true });

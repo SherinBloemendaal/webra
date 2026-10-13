@@ -153,40 +153,93 @@ export function actorCells(a, catalog) {
 }
 
 /**
+ * Who stands where, for many placement checks against the same actors:
+ * per cell index (doc.idx, so cells off the map count where the plain
+ * check counts them) how many structure cells (footprint kind 1) and how
+ * many other actors are there. Built in one pass over the actors; `add`
+ * and `remove` keep it in step with actors placed or taken away, so a
+ * check costs the actor's footprint instead of every actor on the map.
+ */
+export class Occupancy {
+  /** `ignore`: a set of actors left out (the ones being moved). */
+  constructor(doc, catalog, ignore = null) {
+    this.doc = doc;
+    this.catalog = catalog;
+    this.occupied = new Map();
+    this.units = new Map();
+    for (const a of doc.actors) if (!ignore?.has(a)) this.add(a);
+  }
+
+  add(a) {
+    this.mark(a, 1);
+  }
+
+  remove(a) {
+    this.mark(a, -1);
+  }
+
+  mark(a, d) {
+    const info = catalogEntry(this.catalog, a.type);
+    if (info?.kind === 'building') {
+      for (const [dx, dy, c] of footprintOf(info)) if (c === 1) bump(this.occupied, this.doc.idx(a.x + dx, a.y + dy), d);
+    } else {
+      bump(this.units, this.doc.idx(a.x, a.y), d);
+    }
+  }
+
+  /**
+   * placementProblem against these actors; `without` is one more actor
+   * to leave out (an actor checked where it stands).
+   */
+  problem(type, x, y, without = null) {
+    if (!without) return this.check(type, x, y);
+    this.remove(without);
+    try {
+      return this.check(type, x, y);
+    } finally {
+      this.add(without);
+    }
+  }
+
+  check(type, x, y) {
+    const { doc, catalog } = this;
+    const info = catalogEntry(catalog, type);
+    if (!info) return 'unknown actor';
+    const occupied = (i) => (this.occupied.get(i) ?? 0) > 0;
+    const unit = (i) => (this.units.get(i) ?? 0) > 0;
+    for (const [dx, dy, c] of footprintOf(info)) {
+      const cx = x + dx;
+      const cy = y + dy;
+      if (!doc.inside(cx, cy)) return 'outside the map';
+      const i = doc.idx(cx, cy);
+      const t = doc.terrain[i];
+      // A bridge brings its own terrain (stampBridge) and takes no cell.
+      if (c === 3) continue;
+      if (!canOccupy(info, c, t)) return groundFor(info) === TERRAIN.WATER ? 'needs water' : info.kind === 'building' && c === 1 ? 'needs clear ground' : 'needs passable ground';
+      if (info.kind === 'building' && c === 1) {
+        if (occupied(i) || unit(i)) return 'overlaps another actor';
+      } else {
+        if (occupied(i) || (info.kind !== 'building' && unit(i))) return 'overlaps another actor';
+      }
+    }
+    return null;
+  }
+}
+
+function bump(map, i, d) {
+  const n = (map.get(i) ?? 0) + d;
+  if (n) map.set(i, n);
+  else map.delete(i);
+}
+
+/**
  * Why an actor cannot go at (x, y), or null when it can. `ignore` is a set of
- * actors to leave out of the overlap test (the ones being moved).
+ * actors to leave out of the overlap test (the ones being moved). Many
+ * checks against the same actors share one Occupancy instead.
  */
 export function placementProblem(doc, catalog, type, x, y, ignore = null) {
-  const info = catalogEntry(catalog, type);
-  if (!info) return 'unknown actor';
-  const cells = footprintOf(info);
-  const occupied = new Set();
-  const units = new Set();
-  for (const a of doc.actors) {
-    if (ignore?.has(a)) continue;
-    const ai = catalogEntry(catalog, a.type);
-    if (ai?.kind === 'building') {
-      for (const [cx, cy, c] of actorCells(a, catalog)) if (c === 1) occupied.add(doc.idx(cx, cy));
-    } else {
-      units.add(doc.idx(a.x, a.y));
-    }
-  }
-  for (const [dx, dy, c] of cells) {
-    const cx = x + dx;
-    const cy = y + dy;
-    if (!doc.inside(cx, cy)) return 'outside the map';
-    const i = doc.idx(cx, cy);
-    const t = doc.terrain[i];
-    // A bridge brings its own terrain (stampBridge) and takes no cell.
-    if (c === 3) continue;
-    if (!canOccupy(info, c, t)) return groundFor(info) === TERRAIN.WATER ? 'needs water' : info.kind === 'building' && c === 1 ? 'needs clear ground' : 'needs passable ground';
-    if (info.kind === 'building' && c === 1) {
-      if (occupied.has(i) || units.has(i)) return 'overlaps another actor';
-    } else {
-      if (occupied.has(i) || (info.kind !== 'building' && units.has(i))) return 'overlaps another actor';
-    }
-  }
-  return null;
+  if (!catalogEntry(catalog, type)) return 'unknown actor';
+  return new Occupancy(doc, catalog, ignore).check(type, x, y);
 }
 
 /**
@@ -197,8 +250,9 @@ export function placeActor(doc, catalog, { type, owner, x, y, facing }, symmetry
   const info = catalogEntry(catalog, type);
   const [fw, fh] = actorSize(info);
   const added = [];
+  const occupancy = new Occupancy(doc, catalog);
   for (const p of symmetricPositions(symmetry, x, y, doc.width, doc.height, fw, fh)) {
-    if (placementProblem(doc, catalog, type, p.x, p.y)) continue;
+    if (occupancy.problem(type, p.x, p.y)) continue;
     doc.touchObjects();
     const a = {
       type,
@@ -208,6 +262,7 @@ export function placeActor(doc, catalog, { type, owner, x, y, facing }, symmetry
       facing: info.kind === 'building' ? 0 : transformFacing(p.t, facing),
     };
     doc.actors.push(a);
+    occupancy.add(a);
     added.push(a);
     stampBridge(doc, info, p.x, p.y);
   }
@@ -329,7 +384,8 @@ export function thickLineCells(x0, y0, x1, y1, size) {
   const out = [];
   for (const [lx, ly] of lineCells(x0, y0, x1, y1)) {
     for (const [x, y] of brushCells(lx, ly, size)) {
-      const key = `${x},${y}`;
+      // A number per cell (maps are at most a few hundred cells wide; the line may leave the map).
+      const key = (y + 0x8000) * 0x10000 + (x + 0x8000);
       if (seen.has(key)) continue;
       seen.add(key);
       out.push([x, y]);
@@ -491,6 +547,7 @@ function applyRegionTransform(tr, x, y, w, h, fw, fh) {
  */
 export function pasteRegion(doc, catalog, clip, x, y, symmetry, layers = { terrain: true, resources: true, actors: true }) {
   const result = { cells: 0, actors: 0, skipped: 0 };
+  const occupancy = layers.actors ? new Occupancy(doc, catalog) : null;
   for (const p of symmetricPositions(symmetry, x, y, doc.width, doc.height, clip.w, clip.h)) {
     const c = regionUnder(clip, catalog, p.t);
     for (let cy = 0; cy < c.h; cy++) {
@@ -509,13 +566,15 @@ export function pasteRegion(doc, catalog, clip, x, y, symmetry, layers = { terra
     for (const a of c.actors) {
       const ax = p.x + a.dx;
       const ay = p.y + a.dy;
-      if (placementProblem(doc, catalog, a.type, ax, ay)) {
+      if (occupancy.problem(a.type, ax, ay)) {
         result.skipped++;
         continue;
       }
       doc.touchObjects();
       const { dx: _dx, dy: _dy, ...rest } = a;
-      doc.actors.push({ ...rest, owner: mirroredOwner(p.t, a.owner, doc.spawns, doc.width, doc.height), x: ax, y: ay });
+      const placed = { ...rest, owner: mirroredOwner(p.t, a.owner, doc.spawns, doc.width, doc.height), x: ax, y: ay };
+      doc.actors.push(placed);
+      occupancy.add(placed);
       result.actors++;
     }
   }
