@@ -1797,6 +1797,7 @@ impl World {
         for side in 0..2u8 {
             let (sx, sy) = spawns[side as usize];
             let mut placed = Vec::new();
+            let mut cells = 0usize;
             let mut r: i32 = 0;
             'outer: loop {
                 for dy in -r..=r {
@@ -1808,10 +1809,17 @@ impl World {
                         if !w.map.contains(cx, cy) || w.pass.blocked[w.map.idx(cx, cy)] {
                             continue;
                         }
-                        // Two units per cell: one tank or a pair of soldiers.
-                        for k in 0..2 {
-                            let ty = types[(placed.len() + k) % types.len()];
-                            let off = if k == 0 { -256 } else { 256 };
+                        // One tank or a pair of soldiers per cell, the cells
+                        // taking turns through the mix. (A tank and a soldier
+                        // squeezed into every cell, as this once placed them,
+                        // left the whole army crowded under the OpenRA
+                        // movement model: movement/cellmove.rs `cell_idle`.)
+                        let ty = types[cells % types.len()];
+                        cells += 1;
+                        let soldiers =
+                            w.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| w.rules.locomotors[u.locomotor].shares_cell);
+                        let offsets: &[i32] = if soldiers { &[-256, 256] } else { &[0] };
+                        for &off in offsets {
                             let u = w.spawn_unit(ty, side, cx * CELL + 512 + off, cy * CELL + 512, if side == 0 { 384 } else { 896 });
                             placed.push(u);
                             if placed.len() >= per_side {

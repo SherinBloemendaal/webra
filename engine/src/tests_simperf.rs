@@ -347,3 +347,23 @@ fn vision_marks_the_cells_of_every_sight_circle() {
     }
 }
 
+#[test]
+fn the_stress_test_puts_one_tank_or_two_soldiers_in_a_cell() {
+    let mut w = World::new_stress(3, 2000, 100);
+    let units: Vec<usize> = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].is_unit()).collect();
+    assert_eq!(units.len(), 2000);
+    let mut cells = std::collections::BTreeMap::<(i32, i32), (usize, usize)>::new();
+    for &i in &units {
+        let e = cells.entry(w.cell_of(w.actors[i].x, w.actors[i].y)).or_default();
+        if w.actors[i].kind == Kind::Infantry {
+            e.0 += 1;
+        } else {
+            e.1 += 1;
+        }
+    }
+    assert!(cells.values().all(|&(soldiers, tanks)| (soldiers <= 2 && tanks == 0) || (soldiers == 0 && tanks == 1)), "{cells:?}");
+    let tanks = units.iter().filter(|&&i| w.actors[i].kind == Kind::Vehicle).count();
+    assert!(tanks > 400 && tanks < 1000, "the mix holds tanks and soldiers: {tanks} tanks");
+    w.step();
+    assert!(units.iter().all(|&i| !w.actors[i].mv.crowded), "nobody squeezed into a cell it may not share");
+}
