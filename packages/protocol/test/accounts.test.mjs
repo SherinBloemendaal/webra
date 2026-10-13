@@ -18,6 +18,7 @@ import {
   validNewPassword,
   validUsername,
   validateSettingsDocument,
+  PERF_CAPTURE_SECONDS,
   ZOOM_FACTOR_LIMITS,
   UI_SCALE_LIMITS,
   GAME_SCALE_LIMITS,
@@ -86,6 +87,11 @@ test('settings document: every section optional, strict keys, free-form extra wi
   throwsField(() => validateSettingsDocument({ extra: { 'bad key': 1 } }), 'settings.extra');
   throwsField(() => validateSettingsDocument({ extra: { a: Array(65).fill(0) } }), 'settings.extra.a');
   throwsField(() => validateSettingsDocument({ lobby: { color: 8 } }), 'settings.lobby.color');
+  // The performance capture: one of its lengths, and the start-of-game switch.
+  for (const seconds of PERF_CAPTURE_SECONDS) assert.deepEqual(validateSettingsDocument({ debug: { perfCaptureSeconds: seconds } }), { debug: { perfCaptureSeconds: seconds } });
+  for (const bad of [5, 45, 121, '30', 30.5, null]) throwsField(() => validateSettingsDocument({ debug: { perfCaptureSeconds: bad } }), 'settings.debug.perfCaptureSeconds');
+  assert.deepEqual(validateSettingsDocument({ debug: { perfCaptureStart: true } }), { debug: { perfCaptureStart: true } });
+  throwsField(() => validateSettingsDocument({ debug: { perfCaptureStart: 'yes' } }), 'settings.debug.perfCaptureStart');
   throwsField(() => validateSettingsDocument({ game: { hotkeys: { a: ['Ctrl A'] } } }), 'settings.game.hotkeys.a[0]');
   throwsField(() => validateSettingsDocument({ content: { packs: [{ id: 'x\u0007', enabled: true }] } }), 'settings.content.packs[0].id');
   const many = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`a${i}`, []]));
