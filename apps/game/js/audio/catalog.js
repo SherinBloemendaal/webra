@@ -448,6 +448,9 @@ export const PLAYER_LINES = Object.freeze({
   gameSaved: speechKey(WORLD_NOTIFICATIONS.startGame?.saved),
 });
 
+/** EVA keys of every time limit warning: their text is a system line of the chat log, not a transient line. */
+export const TIME_LIMIT_LINES = Object.freeze(Object.values(WORLD_NOTIFICATIONS.timeLimitWarnings ?? {}).map(speechKey).filter(Boolean));
+
 /** Time limit warning speech for `minutes` left (OpenRA TimeLimitWarnings), or null. */
 export function timeLimitLine(minutes) {
   return speechKey(WORLD_NOTIFICATIONS.timeLimitWarnings?.[minutes]);

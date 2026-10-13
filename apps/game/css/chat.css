@@ -1,0 +1,176 @@
+/* In-game chat (js/chatpanel.js, OpenRA ingame-chat.yaml): the overlay of
+   recent lines, and the chat panel with the scrollback, the mode button, the
+   chat line and the mute toggles. The audio mute indicator (js/muteindicator.js)
+   sits in the HUD button row. */
+
+.chat-panel {
+  --ui-px: calc(1px * var(--ui-scale, 1));
+  position: absolute;
+  left: calc(8 * var(--ui-px));
+  bottom: calc(28 * var(--ui-px));
+  z-index: 20;
+  width: min(calc(550 * var(--ui-px)), calc(100% - 16px));
+  display: grid;
+  gap: 4px;
+  pointer-events: none;
+  font: 600 var(--ui-fs-s, 12px) / 1.4 var(--ui-font, system-ui, sans-serif);
+}
+
+.chat-panel.above-replay-bar {
+  bottom: calc(96 * var(--ui-px));
+}
+
+.chat-extras {
+  display: grid;
+  gap: 4px;
+}
+
+.chat-extras:empty {
+  display: none;
+}
+
+.chat-extras .online-game {
+  position: static;
+  width: auto;
+}
+
+.chat-overlay {
+  display: grid;
+  gap: 2px;
+}
+
+.chat-overlay[hidden],
+.chat-chrome[hidden],
+.chat-mute[hidden] {
+  display: none;
+}
+
+.chat-line {
+  overflow-wrap: anywhere;
+  color: #ffffff;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+
+.chat-overlay .chat-line {
+  justify-self: start;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+}
+
+.chat-time {
+  display: inline-block;
+  min-width: 3.4em;
+  color: #c8ccd2;
+}
+
+.chat-prefix {
+  margin-right: 0.35em;
+}
+
+.chat-chrome {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(6, 8, 11, 0.82);
+  border: 1px solid var(--ui-edge, rgba(255, 255, 255, 0.2));
+  border-radius: var(--ui-radius, 3px);
+  box-shadow: var(--ui-bevel, none);
+  pointer-events: auto;
+}
+
+.chat-history {
+  height: calc(164 * var(--ui-px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 3px 4px;
+  outline: none;
+}
+
+/* Lines sit at the bottom while there are few (OpenRA Align: Bottom). */
+.chat-history > .chat-line:first-child {
+  margin-top: auto;
+}
+
+.chat-input-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px;
+}
+
+.chat-mode,
+.chat-close,
+.chat-mute-button {
+  min-width: 3.4em;
+  padding: 2px 8px;
+  font: inherit;
+  color: #e6e4d6;
+  background: rgba(40, 46, 54, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.chat-close {
+  min-width: 0;
+}
+
+.chat-mode:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.chat-mute {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: #c8ccd2;
+}
+
+.chat-mute-button[aria-pressed='true'] {
+  color: #ffd27a;
+  border-color: #ffd27a;
+}
+
+/* ---- Audio Muted (OpenRA MUTE_INDICATOR) ---------------------------------------- */
+
+.mute-indicator {
+  display: flex;
+  align-items: center;
+  gap: calc(4 * var(--ui-px, 1px));
+  padding: 0 calc(4 * var(--ui-px, 1px));
+  color: #f2f4f6;
+  font: 600 var(--ui-fs-s, 12px) / 1.6 var(--ui-font, system-ui, sans-serif);
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
+  pointer-events: none;
+}
+
+.mute-indicator[hidden] {
+  display: none;
+}
+
+.mute-indicator .ui-icon {
+  width: calc(16 * var(--ui-px, 1px));
+  height: calc(16 * var(--ui-px, 1px));
+  fill: currentColor;
+}
+
+@media (pointer: coarse) {
+  .chat-mode,
+  .chat-close,
+  .chat-mute-button {
+    min-height: 44px;
+  }
+}

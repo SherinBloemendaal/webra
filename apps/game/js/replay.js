@@ -14,6 +14,7 @@ import { packOrders, splitOrders } from './net.js';
 import {
   coopMission,
   encodeReplay,
+  REPLAY_CHAT_MAX,
   REPLAY_FORMAT,
   REPLAY_HASH_INTERVAL,
   REPLAY_MAX_BYTES,
@@ -109,6 +110,8 @@ export class Recorder {
     this.start = { mode, options, map, mapHash, player, engine, title, createdAt, mission };
     this.frames = frames.slice();
     this.hashes = hashes.slice();
+    /** Online chat as received: [tick, player (-1 spectator), name, text, team (0 or 1)] (replays only). */
+    this.chat = [];
     this.bytes = (map ? map.length : 0) + JSON.stringify(frames).length;
     /** Too large or too long to keep recording (the game goes on). */
     this.full = false;
@@ -125,6 +128,16 @@ export class Recorder {
     }
     this.bytes += size;
     this.frames.push([tick, orders]);
+  }
+
+  /** A chat line received at `tick` (online games: OpenRA replays hold the Chat orders). */
+  noteChat(tick, player, name, text, team) {
+    if (this.full || this.start.mode !== 'online' || this.chat.length >= REPLAY_CHAT_MAX) return;
+    const line = [tick, player ?? -1, name, text, team ? 1 : 0];
+    const size = JSON.stringify(line).length + 2;
+    if (this.bytes + size > REPLAY_MAX_BYTES - 64 * 1024) return;
+    this.bytes += size;
+    this.chat.push(line);
   }
 
   noteHash(ticks, hash) {
@@ -158,6 +171,8 @@ export class Recorder {
       frames: this.frames.filter(([t]) => t < ticksKept),
       hashes,
       ...(this.start.mission ? { mission: this.start.mission } : {}),
+      // Saves never keep chat; a replay keeps what was said up to its end.
+      ...(kind === 'replay' && this.chat.some(([t]) => t <= ticksKept) ? { chat: this.chat.filter(([t]) => t <= ticksKept) } : {}),
     };
   }
 

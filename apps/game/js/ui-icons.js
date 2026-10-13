@@ -47,6 +47,8 @@ export const ICON_PATHS = {
   beacon: 'M7 1h2v5.5h2.6L8 10.2L4.4 6.5H7ZM2 12.6c0-.9 2.7-1.6 6-1.6s6 .7 6 1.6s-2.7 1.6-6 1.6s-6-.7-6-1.6ZM4.4 12.6c0 .3 1.6.6 3.6.6s3.6-.3 3.6-.6s-1.6-.6-3.6-.6s-3.6.3-3.6.6Z',
   repair: 'M10.5 1a4.5 4.5 0 0 0-4.2 6.1L1.4 12a1.6 1.6 0 0 0 2.3 2.3l4.9-4.9a4.5 4.5 0 0 0 6.2-5.8l-2.6 2.6l-2.1-.5l-.5-2.1l2.6-2.6A4.5 4.5 0 0 0 10.5 1Z',
   powerDown: 'M7 1h2v7H7ZM4.3 3.2l1.2 1.6a4.5 4.5 0 1 0 5 0l1.2-1.6a6.5 6.5 0 1 1-7.4 0Z',
+  // OpenRA's MUTE_INDICATOR (sidebar-bits indicator-muted): a speaker, crossed out.
+  mute: 'M1 5.5h3L8 2v12l-4-3.5H1ZM10 5.4l1.1-1.1L12.7 6l1.7-1.7l1.1 1.1L13.8 7l1.7 1.7l-1.1 1.1L12.7 8.1l-1.6 1.7L10 8.7L11.6 7Z',
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

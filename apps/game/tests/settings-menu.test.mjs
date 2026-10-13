@@ -99,10 +99,12 @@ function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = 
 
 const $ = (root, sel) => root.querySelector(sel);
 
-test('settings page: display, scrolling, mouse capture and audio sections, with the scale help', () => {
+test('settings page: display, scrolling, chat, mouse capture and audio sections, with the scale help', () => {
   const { root } = setup();
   const titles = root.querySelectorAll('h2').map((h) => h.textContent);
-  assert.deepEqual(titles.slice(0, 4), ['Display', 'Scrolling and units', 'Mouse capture', 'Audio']);
+  assert.deepEqual(titles.slice(0, 5), ['Display', 'Scrolling and units', 'Chat and notifications', 'Mouse capture', 'Audio']);
+  // OpenRA's HideReplayChat and TextNotificationPoolFilters.
+  for (const id of ['#game-menu-hideReplayChat', '#game-menu-uiFeedbackNotifications', '#game-menu-gameEventNotifications']) assert.ok($(root, id), id);
   assert.ok(textOf(root).includes(DISPLAY_HELP), 'the three ways the picture changes are explained');
   for (const id of ['#game-menu-uiScale', '#game-menu-gameScale']) assert.ok($(root, id), id);
   assert.ok(root.querySelector('.game-menu-scroll'), 'the page scrolls inside the card');

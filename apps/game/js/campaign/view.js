@@ -65,6 +65,8 @@ export class MissionView {
    *   movies?: { has(file: string): boolean, play(file: string, parent: HTMLElement): Promise<string>, stop(): void } | null,
    *     the original movies the player installed (content/movies.js createMoviePlayer); without one, or when it fails, a card
    *   onRestart(): void, onLeave(): void,
+   *   missionLine?(prefix: string, text: string, color: string): void,  the game's chat log (js/chatlog.js,
+   *     OpenRA AddMissionLine); without it the messages show in this view's own lines
    *   now?(): number,  milliseconds of the page clock (message lines fade on it, like OpenRA's text notifications)
    *   gameNow?(): number,  milliseconds of the simulation clock (js/simclock.js): floating texts count game ticks, so they stand still while the game is paused
    * }} o
@@ -197,6 +199,10 @@ export class MissionView {
   }
 
   message(prefix, text, color) {
+    if (this.o.missionLine) {
+      this.o.missionLine(prefix ?? '', text, cssHex(color));
+      return;
+    }
     const line = el('div', 'mission-message');
     const who = el('span', null, prefix ? `${prefix}: ` : '');
     who.style.color = cssHex(color);

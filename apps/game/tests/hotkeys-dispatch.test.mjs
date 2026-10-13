@@ -277,7 +277,7 @@ test('a click on the button that has the keyboard focus gives Tab and Enter back
 test('modifiers held in a text field count for the cursors, its keys stay out of the hotkeys', async () => {
   const screen = await gameScreen();
   const hits = recordHandlers(screen.hotkeys);
-  const chat = focusFrom(control(screen.doc, 'input', { type: 'text', class: 'online-game-chat' }), true);
+  const chat = focusFrom(control(screen.doc, 'input', { type: 'text', class: 'chat-input' }), true);
   for (const key of ['Control', 'Alt', 'Shift', 'Meta']) {
     chat.dispatchEvent(new FakeEvent('keydown', { key, code: `${key}Left`, cancelable: true }));
     assert.ok(screen.input.keys.has(key), `${key} held`);

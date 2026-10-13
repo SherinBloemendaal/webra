@@ -273,6 +273,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.replay-status {
+  min-width: 7em;
+  color: #ffd27a;
+  font-variant-numeric: tabular-nums;
+}
+
 .replay-note {
   flex-basis: 100%;
   color: #e8a23a;

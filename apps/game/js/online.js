@@ -79,8 +79,8 @@ import { switchInput } from './ui/controls.js';
 import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
-import { hotkeys } from './hotkeys.js';
-import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from './chatkeys.js';
+import { hasTeamChat } from './chatkeys.js';
+import { chatPrefix, TextLog } from './chatlog.js';
 import { mapLibrary } from './maplibrary.js';
 import { formatTicks } from './replay.js';
 import { SaveStore } from './saves.js';
@@ -397,7 +397,8 @@ export class OnlineUI {
    *   Game: any, version: string, colors: number[][], colorNames: string[],
    *   createGame: (o: { spec: object, conn: Connection, onCaughtUp: () => void, onCheck: (ok: boolean, tick: number) => void })
    *     => Promise<{ host: any, game: any, driver: any, recorder: any }>,  the simulation with its LockstepDriver (js/main.js, js/sim)
-   *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
+   *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void, chat: object }) => void,
+   *     `chat`: the game's lines and chat line for js/chatpanel.js (buildGameOverlay's chatHandle)
    *   onBack: () => void,
    *   missionText?: (id: string, hash: string) => Promise<string>,  a co-op mission's file, checked against its hash (js/main.js)
    *   missionInfo?: (id: string) => Promise<object | null>,  its campaign index entry (briefing, option labels)
@@ -414,6 +415,9 @@ export class OnlineUI {
     this.name = loadName();
     this.conn = null;
     this.state = null;
+    /** The in-game lines (js/chatlog.js) and what main.js tells them about the players. */
+    this.textLog = null;
+    this.chatPeople = { colorOf: () => null, defeated: () => false };
     this.installed = new Map();
     this.mapStatus = { hash: null, text: '', ok: true };
     /** The host's notice for a shared map file of an older format version ({ hash, text } or null). */
@@ -753,7 +757,7 @@ export class OnlineUI {
     const conn = new Connection(id);
     conn
       .on('lobby', (m) => this.onLobby(m))
-      .on('chat', (m) => this.chatLine(m.name, m.text, m.from === null, !!m.team))
+      .on('chat', (m) => (this.inGame ? this.gameChat(m) : this.chatLine(m.name, m.text, m.from === null, !!m.team)))
       .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true, false, 'left'))
       .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
@@ -1998,6 +2002,7 @@ export class OnlineUI {
     this.simHost = host;
     this.recorder = recorder;
     this.mySeat = me ? me.player : null;
+    this.startOptions = m.options;
     // Messages that arrived while the game was being set up.
     const pending = this.pendingNet;
     this.pendingNet = null;
@@ -2020,6 +2025,7 @@ export class OnlineUI {
       },
       rematch: this.rematchHandle(),
       save: this.saveHandle(),
+      chat: this.chatHandle,
     });
     if (m.resume) this.gameLine(`Resuming the saved game after ${formatTicks(m.resume.ticks)}: catching up...`, true);
   }
@@ -2261,71 +2267,18 @@ export class OnlineUI {
   }
 
   /**
-   * The in-game log and chat line. OpenRA's chat keys (js/chatkeys.js): Enter
-   * opens team chat (all chat without a team mate), Shift+Enter all chat;
-   * in the line Shift+Tab switches between them, Tab completes a name, Enter
-   * sends, Esc closes.
+   * The in-game lines (js/chatlog.js TextLog) and the online game's own bars
+   * (waiting for players, save and rematch proposals). js/main.js draws the
+   * lines and the chat line with js/chatpanel.js (the chat handle of
+   * onStartGame) and puts these bars above them.
    */
   buildGameOverlay(players, cheats = false, spectator = false, teamChat = false) {
     const field2 = document.getElementById('field') || document.body;
     const box = el('div', 'online-game');
     box.id = 'online-game';
-    this.gameLog = el('div', 'online-game-log');
-    this.gameLog.setAttribute('aria-live', 'polite');
+    this.textLog = new TextLog();
     this.waitLine = el('div', 'online-game-wait', 'Waiting for players...');
     this.waitLine.hidden = true;
-    const chatInput = el('input', 'online-input online-game-chat');
-    chatInput.maxLength = CHAT_MAX;
-    chatInput.hidden = true;
-    const names = players.map((p) => p.name).filter(Boolean);
-    let mode = 'all';
-    let completion = null;
-    const setMode = (m) => {
-      mode = m;
-      chatInput.placeholder = `${mode === 'team' ? (spectator ? 'Spectators' : 'Team') : 'All'}: Enter sends, Shift+Tab switches, Esc closes`;
-      chatInput.setAttribute('aria-label', mode === 'team' ? 'Team chat' : 'Chat to all');
-    };
-    const close = () => {
-      chatInput.value = '';
-      chatInput.hidden = true;
-      chatInput.blur();
-    };
-    const open = (wantTeam) => {
-      setMode(chatMode(wantTeam, teamChat));
-      chatInput.hidden = false;
-      chatInput.focus();
-    };
-    chatInput.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Escape') {
-        close();
-      } else if (e.key === 'Enter') {
-        if (chatInput.value.trim()) this.send({ t: 'chat', text: chatInput.value, ...(mode === 'team' ? { team: true } : {}) });
-        close();
-      } else if (e.key === 'Tab') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          // OpenRA ToggleChatMode: only when there is a team to talk to.
-          if (teamChat) setMode(mode === 'team' ? 'all' : 'team');
-          return;
-        }
-        // OpenRA Autocomplete: player names.
-        const r = completeName(chatInput.value, names, completion);
-        if (r) {
-          completion = r.state;
-          chatInput.value = r.text;
-        }
-        return;
-      }
-      completion = null;
-    });
-    // Enter and Shift+Enter open the chat line (not while a button has focus:
-    // Enter presses it); the chat line's own keys are listed in the Controls
-    // page and fixed, like OpenRA's Readonly chat-input keys.
-    const handlers = { openTeamChat: () => open(true), openGeneralChat: () => open(false) };
-    for (const h of CHAT_HOTKEYS) {
-      hotkeys.registerAction(h.name, undefined, handlers[h.name] ?? (() => {}), { openra: h.openra, inControls: false, listOnly: h.listOnly });
-    }
     this.startPlayers = players;
     this.rematchBar = el('div', 'online-game-rematch');
     this.rematchBar.setAttribute('role', 'status');
@@ -2333,8 +2286,21 @@ export class OnlineUI {
     this.saveBar = el('div', 'online-game-rematch online-game-save');
     this.saveBar.setAttribute('role', 'status');
     this.saveBar.hidden = true;
-    box.append(this.gameLog, this.waitLine, this.rematchBar, this.saveBar, chatInput);
+    box.append(this.waitLine, this.rematchBar, this.saveBar);
     field2.append(box);
+    const names = players.map((p) => p.name).filter(Boolean);
+    this.chatHandle = {
+      log: this.textLog,
+      send: (textValue, team) => this.send({ t: 'chat', text: textValue, ...(team ? { team: true } : {}) }),
+      teamChat,
+      spectator,
+      names,
+      maxLength: CHAT_MAX,
+      bars: box,
+      mutable: () => this.mutablePeople(),
+      // js/main.js tells the chat lines the players' colours and who lost.
+      bind: ({ colorOf, defeated }) => Object.assign(this.chatPeople, { colorOf, defeated }),
+    };
     const list = names.join(', ');
     this.gameLine(spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`);
     if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
@@ -2343,14 +2309,39 @@ export class OnlineUI {
     }, 250);
   }
 
+  /** A system line of the game (OpenRA AddSystemLine); `important` lines stay on the overlay. */
   gameLine(textValue, important = false) {
-    if (!this.gameLog) return;
-    // OpenRA IngameChatLogic: chat, system and mission lines play ChatLine.
-    this.ctx.sounds?.chatLine();
-    const line = el('div', important ? 'online-game-line online-game-important' : 'online-game-line', textValue);
-    this.gameLog.append(line);
-    while (this.gameLog.childElementCount > 8) this.gameLog.firstElementChild.remove();
-    if (!important) setTimeout(() => line.remove(), 15_000);
+    this.textLog?.system(textValue, { important });
+  }
+
+  /** A chat message in a game, with OpenRA UnitOrders' prefix and the sender's colour. */
+  gameChat(m) {
+    if (!this.textLog) return;
+    if (m.from === null) {
+      this.textLog.system(m.text, { prefix: m.name });
+      return;
+    }
+    const seat = this.startPlayers?.find((p) => p.client === m.from) ?? null;
+    // The replay keeps what was said (OpenRA replays hold the Chat orders), muted or not.
+    this.recorder?.noteChat?.(seat ? seat.player : -1, m.name, m.text, !!m.team);
+    const teams = this.startOptions?.players ?? [];
+    const myTeam = this.mySeat === null || this.mySeat === undefined ? 0 : (teams[this.mySeat]?.team ?? 0);
+    const prefix = chatPrefix({
+      name: m.name,
+      team: !!m.team,
+      spectator: !seat,
+      dead: !!seat && this.chatPeople.defeated(seat.player),
+      ally: !!seat && m.from !== this.state?.you && myTeam > 0 && teams[seat.player]?.team === myTeam,
+    });
+    this.textLog.chat(m.from, prefix, m.text, seat ? this.chatPeople.colorOf(seat.player) : null);
+  }
+
+  /** The other people in the game whose chat can be muted: players and spectators, not bots or this client. */
+  mutablePeople() {
+    const you = this.state?.you;
+    const players = (this.startPlayers ?? []).filter((p) => p.client !== null && p.client !== you).map((p) => ({ client: p.client, name: p.name }));
+    const watching = (this.state?.spectators ?? []).filter((s) => s.client !== you).map((s) => ({ client: s.client, name: s.name }));
+    return [...players, ...watching];
   }
 }
 

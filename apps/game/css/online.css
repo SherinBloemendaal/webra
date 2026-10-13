@@ -518,29 +518,13 @@
   pointer-events: none;
 }
 
-.online-game-log {
-  display: grid;
-  gap: 2px;
-}
-
-.online-game-line,
 .online-game-wait {
   justify-self: start;
   padding: 2px 8px;
   background: rgba(0, 0, 0, 0.55);
   border-radius: 2px;
-  color: #e6e4d6;
-  overflow-wrap: anywhere;
-}
-
-.online-game-important,
-.online-game-wait {
   color: #ffd27a;
-}
-
-.online-game-chat {
-  pointer-events: auto;
-  width: 100%;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 760px) {

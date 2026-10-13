@@ -9,9 +9,10 @@
 //   the spot);
 // - camera shake (OpenRA ScreenShaker: ShakeScreen warheads, ShakeOnDeath)
 //   and the nuke's white flash (FlashEffect warhead);
-// - message lines: time limit warnings come with the announcer
-//   (js/audio/director.js), the end of the time limit and a player's defeat
-//   are text only;
+// - system lines of the chat log (OpenRA AddSystemLine, js/chatlog.js): the
+//   time limit's warnings (the announcer speaks them, js/audio/director.js)
+//   and its end, "X is defeated." and "X is victorious."
+//   (ConquestVictoryConditions);
 // - the time limit countdown at the top of the battlefield.
 //
 // Presentation only: nothing here goes back to the simulation. The
@@ -21,6 +22,7 @@
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const FX = Object.freeze({
+  TIME_LIMIT_WARNING: 35,
   CRATE_COLLECTED: 36,
   BOUNTY: 38,
   TIME_LIMIT_EXPIRED: 39,
@@ -28,6 +30,7 @@ export const FX = Object.freeze({
   SCREEN_SHAKE: 41,
   FLASH: 42,
   CASH_TICK: 44,
+  PLAYER_WON: 47,
 });
 /** sound_events.rs crate_action_code of GiveCashCrateAction. */
 const GIVE_CASH = 1;
@@ -156,11 +159,12 @@ export class BattleFx {
    * @param {(owner: number) => boolean} o.allied whether a player is the viewer or an ally
    * @param {(owner: number) => string} o.colorOf CSS colour of a player
    * @param {(owner: number) => string} o.nameOf a player's name
-   * @param {(text: string) => void} o.line a message line (js/notifications.js)
+   * @param {(text: string) => void} o.line a system line of the chat log (js/chatlog.js)
    * @param {() => boolean} o.reduced reduce motion now
+   * @param {(owner: number) => void} [o.onLost] a player lost (the chat's "(Dead)" mark)
    */
-  constructor({ field, rules, pxPerWorld, allied, colorOf, nameOf, line, reduced }) {
-    Object.assign(this, { rules, pxPerWorld, allied, colorOf, nameOf, line, reduced });
+  constructor({ field, rules, pxPerWorld, allied, colorOf, nameOf, line, reduced, onLost = () => {} }) {
+    Object.assign(this, { rules, pxPerWorld, allied, colorOf, nameOf, line, reduced, onLost });
     this.shake = new ShakeState();
     this.flash = new FlashState();
     this.texts = new FloatingTexts();
@@ -210,12 +214,19 @@ export class BattleFx {
         case FX.CASH_TICK:
           if (visible(x * k, y * k)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));
           break;
+        case FX.TIME_LIMIT_WARNING:
+          // OpenRA TimeLimitManager.Notification "{0} minute{1} remaining." (the announcer speaks it).
+          this.line(`${a} minute${a > 1 ? 's' : ''} remaining.`);
+          break;
         case FX.TIME_LIMIT_EXPIRED:
-          // Warnings speak and write through the announcer (js/audio/director.js); the end is a line only.
           this.line('Time limit has expired.');
           break;
         case FX.PLAYER_LOST:
+          this.onLost(owner);
           this.line(`${this.nameOf(owner)} is defeated.`);
+          break;
+        case FX.PLAYER_WON:
+          this.line(`${this.nameOf(owner)} is victorious.`);
           break;
         case FX.SCREEN_SHAKE:
           this.shake.add(tick, a, x, y, b, [owner & 15, owner >> 4]);

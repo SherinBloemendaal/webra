@@ -16,6 +16,7 @@ import { formatCombo } from './hotkeys.js';
 import { attachTooltip } from './ui/tooltip.js';
 import { menuKeys } from './hudtips.js';
 import { CashCounter } from './cashcounter.js';
+import { blinkOn, clockText } from './gametimer.js';
 import {
   BuildEta,
   cancelEndsPlacement,
@@ -86,6 +87,10 @@ export class Sidebar {
     this.playerId = playerId;
     this.callbacks = callbacks;
     this.ticksPerSecond = options.ticksPerSecond || 25;
+    // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game is paused (setPaused).
+    this.now = options.now ?? (() => Date.now());
+    this.clockStart = this.now();
+    this.paused = false;
     this.hotkeys = options.hotkeys ?? null;
     this.teamRgb = TEAM_COLORS[playerId % TEAM_COLORS.length];
     /** Production takes this percentage of its time while power is low (the tooltips' build time). */
@@ -324,7 +329,12 @@ export class Sidebar {
     const req = el('span', 'sb-req');
     req.setAttribute('aria-hidden', 'true');
     req.hidden = true;
-    btn.append(canvas, clock, eta, count, ready, hold, slot, req, name);
+    // OpenRA ProductionIconOverlayManager (player.yaml Type Veterancy, iconchevrons
+    // veteran): a chevron at the cameo's top left while the unit comes out with a level.
+    const veteran = el('span', 'sb-veteran');
+    veteran.setAttribute('aria-hidden', 'true');
+    veteran.hidden = true;
+    btn.append(canvas, veteran, clock, eta, count, ready, hold, slot, req, name);
     this.paintIcon(canvas, actor, btn);
 
     // shiftLatched: the touch action bar's Add toggle stands in for Shift.
@@ -361,6 +371,8 @@ export class Sidebar {
       count,
       slot,
       req,
+      veteran,
+      overlays: '',
       reqText: '',
       slotText: '',
       label: '',
@@ -538,12 +550,23 @@ export class Sidebar {
 
   // ---- Per-tick update ---------------------------------------------------
 
+  /** The game is paused (the menu, the Pause key, the debug menu): the clock blinks "Paused". */
+  setPaused(paused) {
+    this.paused = !!paused;
+    this.updateClock();
+  }
+
+  updateClock() {
+    const time = formatClock((this.state?.tick ?? 0) / this.ticksPerSecond);
+    setText(this.clockEl, clockText(time, this.paused, blinkOn(this.now(), this.clockStart)));
+  }
+
   /** @param {object} state parsed player_json() */
   update(state) {
     this.state = state;
     this.updateCredits(state);
     this.updatePower(state);
-    setText(this.clockEl, formatClock((state.tick ?? 0) / this.ticksPerSecond));
+    this.updateClock();
 
     // Summarise queues: per id, the number queued and the head item.
     const { perId, activity: tabActivity, ready: tabReady } = summarizeQueues(state.queues);
@@ -670,6 +693,7 @@ export class Sidebar {
     else if (c.paused) label += ', on hold';
     else if (c.building) label += c.etaText ? `, building, ${c.etaText} left` : ', building';
     if (c.queued > 1) label += `, ${c.queued} queued`;
+    if (c.overlays.split(' ').includes('Veterancy')) label += ', produced as a veteran';
     if (c.label !== label) {
       c.label = label;
       c.btn.setAttribute('aria-label', label);
@@ -678,6 +702,14 @@ export class Sidebar {
 
   /** What is still missing ("Needs Service Depot" / "Soviet only"), and the numpad slot. */
   updateRequirements(c, b, index) {
+    // The cameo overlays (engine World::production_overlays).
+    const overlays = (b.overlays ?? []).join(' ');
+    if (c.overlays !== overlays) {
+      c.overlays = overlays;
+      const veteran = (b.overlays ?? []).includes('Veterancy');
+      c.veteran.hidden = !veteran;
+      c.btn.classList.toggle('veteran', veteran);
+    }
     c.requires = b.requires || [];
     c.exclusive = b.exclusive || null;
     // The label names the first way to unlock each requirement; the tooltip lists all.

@@ -3,6 +3,12 @@
 // the battlefield, like Red Alert and OpenRA. A repeated line does not stack:
 // it counts up ("Unit ready. (6)") and stays a little longer. Lines fade out.
 //
+// These are OpenRA's transient lines (TRANSIENT_LINE_TEMPLATE): the
+// announcer's ("Transients") and the UI's feedback ("Feedback"), each pool
+// switched off by its setting like OpenRA's TextNotificationPoolFilters
+// (game menu, Settings). Chat and system lines are the chat log's
+// (js/chatlog.js).
+//
 // NotificationQueue is the timing and merging logic, without a DOM, so it is
 // unit tested (tests/notifications.test.mjs); NotificationView draws it.
 
@@ -97,10 +103,12 @@ export class NotificationQueue {
 export class NotificationView {
   /**
    * @param {HTMLElement} parent the battlefield (#field)
-   * @param {{ now?: () => number, queue?: NotificationQueue }} [o]
+   * @param {{ now?: () => number, queue?: NotificationQueue, enabled?: (pool: 'transients' | 'feedback') => boolean }} [o]
+   *   `enabled`: whether a pool's lines are shown (OpenRA TextNotificationPoolFilters)
    */
-  constructor(parent, { now = () => performance.now() / 1000, queue = new NotificationQueue() } = {}) {
+  constructor(parent, { now = () => performance.now() / 1000, queue = new NotificationQueue(), enabled = () => true } = {}) {
     this.now = now;
+    this.enabled = enabled;
     this.queue = queue;
     this.root = document.createElement('div');
     this.root.id = 'notices';
@@ -114,9 +122,9 @@ export class NotificationView {
     this.frame = 0;
   }
 
-  /** Show a line of text. */
-  push(text) {
-    if (!text) return;
+  /** Show a line of text of `pool`: 'transients' (game events) or 'feedback' (UI feedback). */
+  push(text, pool = 'transients') {
+    if (!text || !this.enabled(pool)) return;
     this.queue.push(text, this.now());
     this.live.textContent = text;
     this.render();

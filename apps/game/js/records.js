@@ -11,6 +11,7 @@ import { formatTicks, recordFileName, REPLAY_SPEEDS } from './replay.js';
 import { downloadText, pickFile, readFileText, SaveStore } from './saves.js';
 import { MODDED_WARNING, parseReplay } from './protocol.js';
 import { styleSlider, syncSliderFill } from './ui/controls.js';
+import { blinkOn, completeText, replayStatus } from './gametimer.js';
 
 export { ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 
@@ -233,8 +234,11 @@ export function recordActions({ recorder, ready = () => true, stress = false, st
 
 /** Replay viewer controls: play / pause, speed, seek bar, time. */
 export class ReplayBar {
-  constructor(parent, controller) {
+  /** `now`: wall clock in ms (the status blinks every other second, OpenRA GameTimerLogic). */
+  constructor(parent, controller, { now = () => Date.now() } = {}) {
     this.c = controller;
+    this.now = now;
+    this.start = now();
     this.root = el('div', 'replay-bar');
     this.root.setAttribute('role', 'toolbar');
     this.root.setAttribute('aria-label', 'Replay');
@@ -267,11 +271,14 @@ export class ReplayBar {
       this.update();
     });
     this.time = el('span', 'replay-time');
+    // GAME_TIMER_STATUS: "Paused", "Max Speed" or "N% Speed", blinking.
+    this.status = el('span', 'replay-status');
+    this.status.setAttribute('aria-hidden', 'true');
     this.note = el('span', 'replay-note');
     this.note.setAttribute('role', 'status');
     const speeds = el('span', 'replay-speeds');
     speeds.append(...this.speeds.map(([, b]) => b));
-    this.root.append(this.play, speeds, this.seek, this.time, this.note);
+    this.root.append(this.play, speeds, this.seek, this.time, this.status, this.note);
     parent.append(this.root);
     this.dragging = false;
     this.update();
@@ -292,6 +299,12 @@ export class ReplayBar {
       syncSliderFill(this.seek);
       this.time.textContent = `${formatTicks(c.ticks)} / ${formatTicks(c.length)}`;
     }
+    // The observer timer's tooltip (OpenRA label-replay-complete).
+    const complete = completeText(c.ticks, c.length);
+    if (complete && this.time.title !== complete) this.time.title = complete;
+    const status = c.ended ? null : replayStatus({ playing: c.playing, speed: c.speed, maxSpeed: REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1] });
+    const shown = status && blinkOn(this.now(), this.start) ? status : '';
+    if (this.status.textContent !== shown) this.status.textContent = shown;
     this.note.textContent =
       c.diverged !== null ? `This replay no longer matches the game from ${formatTicks(c.diverged)} on.` : c.ended ? 'End of the replay.' : '';
   }

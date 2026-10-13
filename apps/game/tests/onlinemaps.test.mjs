@@ -322,11 +322,16 @@ test('online lobby: maps of a newer format or no longer compatible are refused w
 
 // ---- Rematch ----------------------------------------------------------------------------------------
 
+/** The game's lines as text: "Battlefield Control:line" each. */
+const logText = (ui) => ui.textLog.lines.map((l) => `${l.prefix}:${l.text}`).join('\n');
+
 async function inGame({ host }) {
   const ctx = await mountLobby({ host });
   const { ui } = ctx;
   ui.inGame = true;
-  ui.gameLog = document.createElement('div');
+  // The game's lines (js/chatlog.js; js/chatpanel.js draws them).
+  const { TextLog } = await import('../js/chatlog.js');
+  ui.textLog = new TextLog();
   ui.rematchBar = document.createElement('div');
   ui.startPlayers = [
     { player: 0, slot: 0, client: 1, name: 'Host', type: 'human' },
@@ -349,7 +354,7 @@ test('rematch: the host proposes, a player accepts or declines from the overlay,
     ui.onRematch({ t: 'rematch', state: 'open', by: 1, accepted: [1], waiting: [2], msLeft: 60000 });
     assert.equal(handle.action(), 'accept');
     assert.equal(handle.label(), 'Accept rematch');
-    assert.match(textOf(ui.gameLog), /Host proposes a rematch with the same settings/);
+    assert.match(logText(ui), /Host proposes a rematch with the same settings/);
     assert.match(textOf(ui.rematchBar), /Host proposes a rematch/);
     const [accept, decline] = ui.rematchBar.querySelectorAll('button');
     assert.deepEqual([accept.textContent, decline.textContent], ['Accept', 'Decline']);
@@ -385,7 +390,7 @@ test('rematch: the host proposes and may withdraw; a decline is reported', async
     click(ui.rematchBar.querySelectorAll('button').find((b) => b.textContent === 'Withdraw'));
     assert.deepEqual(sent.at(-1), { t: 'rematch', accept: false });
     ui.onRematch({ t: 'rematch', state: 'cancelled', by: null, accepted: [], waiting: [], reason: 'declined' });
-    assert.match(textOf(ui.gameLog), /No rematch: a player declined/);
+    assert.match(logText(ui), /No rematch: a player declined/);
     assert.equal(ui.rematchBar.hidden, true);
     assert.equal(handle.action(), 'propose');
   } finally {
@@ -482,6 +487,36 @@ test('an online save file: the frames before the save point, its hash and the re
   assert.throws(() => skirmish.encodeOnlineSave(26, 'ab', '0123456789abcdef'), /online/);
 });
 
+test('an online replay keeps the chat as received; saves and other games keep none', async () => {
+  const { parseReplay, REPLAY_CHAT_MAX } = await import('../protocol/index.js');
+  const rec = await onlineRecorder();
+  rec.noteChat(5, 0, 'Host', 'glhf', false);
+  rec.noteChat(12, -1, 'Watcher', 'nice', true);
+  rec.noteChat(40, 1, 'Guest', 'later', false);
+  const r = await parseReplay(rec.encode('replay', 30));
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(r.replay.chat, [
+    [5, 0, 'Host', 'glhf', 0],
+    [12, -1, 'Watcher', 'nice', 1],
+  ]);
+  const save = await parseReplay(rec.encodeOnlineSave(26, 'abcd', '0123456789abcdef'));
+  assert.equal(save.replay.chat, undefined, 'saves never carry chat');
+  const { Recorder } = await import('../js/replay.js');
+  const skirmish = new Recorder({ mode: 'skirmish', options: SAVE_OPTIONS, map: null, mapHash: null, player: 0, engine: '1.0.0', title: 'x' });
+  skirmish.noteChat(1, 0, 'Host', 'nobody hears', false);
+  assert.equal(skirmish.build('replay', 10).chat, undefined);
+  // The file is checked strictly.
+  const text = JSON.parse(rec.encode('replay', 30));
+  const bad = async (chat) => (await parseReplay(JSON.stringify({ ...text, chat }))).ok;
+  assert.equal(await bad([[5, 2, 'Host', 'x', 0]]), false, 'no such player');
+  assert.equal(await bad([[31, 0, 'Host', 'x', 0]]), false, 'after the end');
+  assert.equal(await bad([[5, 0, 'Host', '', 0]]), false, 'empty text');
+  assert.equal(await bad([[5, 0, 'Host', 'x', 2]]), false, 'team is 0 or 1');
+  assert.equal(await bad([[9, 0, 'Host', 'x', 0], [5, 0, 'Host', 'y', 0]]), false, 'in tick order');
+  assert.equal(await bad(Array.from({ length: REPLAY_CHAT_MAX + 1 }, () => [1, 0, 'Host', 'x', 0])), false);
+  assert.equal(await bad([[5, 0, 'Host', 'x', 0]]), true);
+});
+
 test('saving online: a player accepts in the overlay; the saved file is kept in this browser only for players', async () => {
   const { SaveStore, MemoryBackend } = await import('../js/saves.js');
   const { ui, sent } = await inGame({ host: false });
@@ -505,13 +540,13 @@ test('saving online: a player accepts in the overlay; the saved file is kept in 
     await ui.onSave({ t: 'save', state: 'saved', id: '0123456789abcdef', ticks: 26, hash: 'abcd' });
     const rows = await ui.saves.list();
     assert.deepEqual(rows.map((x) => [x.mode, x.online, x.ticks]), [['online', '0123456789abcdef', 26]]);
-    assert.match(textOf(ui.gameLog), /Game saved/);
+    assert.match(logText(ui), /Game saved/);
     // A spectator keeps nothing (it cannot resume a game it did not play).
     ui.mySeat = null;
     await ui.onSave({ t: 'save', state: 'saved', id: '0123456789abcdef', ticks: 26, hash: 'abcd' });
     assert.equal((await ui.saves.list()).length, 1);
     await ui.onSave({ t: 'save', state: 'cancelled', reason: 'desync' });
-    assert.match(textOf(ui.gameLog), /games differ/);
+    assert.match(logText(ui), /games differ/);
   } finally {
     uninstallDom();
   }
