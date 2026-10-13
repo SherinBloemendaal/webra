@@ -1462,6 +1462,17 @@ def tooltip_descriptions(a):
     return {'ally_description': (tips.get('ally') or '').strip(), 'other_description': (tips.get('other') or '').strip()}
 
 
+def custom_sell_value(t):
+    """OpenRA CustomSellValue.Value of resolved traits `t` (0 when the node
+    gives none: the field's default in CustomSellValue.cs), or None without
+    the trait (GetSellValue then counts the cost)."""
+    if 'CustomSellValue' not in t:
+        return None
+    node = t['CustomSellValue']
+    value = node.get('Value', '') if isinstance(node, dict) else ''
+    return int(value) if value != '' else 0
+
+
 def main():
     actors = {a['id']: a for a in json.load(open(os.path.join(DATA, 'actors.json')))}
     src = load_source_rules()
@@ -1503,7 +1514,7 @@ def main():
             'cost': a['cost'],
             # OpenRA CustomSellValue (GetSellValue: this, else the cost): what selling,
             # repairing and kill bounties count instead of the cost (pillboxes, refineries, walls).
-            **({'custom_sell_value': int(t['CustomSellValue']['Value'])} if isinstance(t.get('CustomSellValue'), dict) else {}),
+            **({'custom_sell_value': csv} if (csv := custom_sell_value(t)) is not None else {}),
             'build_ticks': a['cost'] * int(a['buildDurationModifier'] or BUILD_DURATION_MODIFIER) // 100
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],

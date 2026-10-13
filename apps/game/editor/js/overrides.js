@@ -6,7 +6,9 @@
 //
 // Rules match the engine (engine/src/rules.rs apply_overrides): ids match
 // case-insensitively, only existing fields, same JSON type, integers only, and
-// id/name/kind/queue cannot change. Merge semantics: objects merge
+// id/name/kind/queue cannot change. One exception: any actor may get a
+// `custom_sell_value` (OpenRA CustomSellValue), and null takes a built-in one
+// away (OpenRA `-CustomSellValue`: the cost counts again). Merge semantics: objects merge
 // recursively; arrays and scalars replace the built-in value wholesale (so
 // overriding one warhead's damage means sending the whole `warheads` array).
 
@@ -14,6 +16,10 @@
 const IDENTITY = { actors: 'id', weapons: 'name' };
 /** Fields the engine never lets a map change (they decide which code runs). */
 const LOCKED = new Set(['kind', 'queue']);
+/** OpenRA CustomSellValue: optional on every actor (engine rules.rs `set_custom_sell_value`). */
+export const SELL_VALUE = 'custom_sell_value';
+/** The engine's bound on a sell value (rules.rs validate_actor). */
+const MAX_SELL_VALUE = 1_000_000;
 
 /** Find a built-in entry; ids match case-insensitively, like the engine. */
 export function findEntry(base, section, id) {
@@ -93,6 +99,15 @@ function checkValue(path, value, base, errors) {
   }
 }
 
+/** A sell value: null (no CustomSellValue) or a whole number 0..1,000,000. */
+function checkSellValue(path, v, errors) {
+  if (v === null) return;
+  if (typeof v !== 'number' || !Number.isFinite(v)) errors.push(`${path}: expected a number or null, got ${typeName(v)}`);
+  else if (!Number.isInteger(v)) errors.push(`${path}: expected an integer, got ${v}`);
+  else if (v < 0) errors.push(`${path}: must not be negative`);
+  else if (v > MAX_SELL_VALUE) errors.push(`${path}: must be at most ${MAX_SELL_VALUE}`);
+}
+
 /**
  * Validate a `rules` overrides object. `base` is `{ actors: {id: obj}, weapons: {name: obj} }`.
  * Returns a list of error strings (empty when valid). `null` is valid (no overrides).
@@ -126,6 +141,10 @@ export function validateOverrides(rules, base) {
           errors.push(`${path}.${k}: cannot be overridden`);
           continue;
         }
+        if (section === 'actors' && k === SELL_VALUE) {
+          checkSellValue(`${path}.${k}`, v, errors);
+          continue;
+        }
         checkValue(`${path}.${k}`, v, builtIn[k], errors);
       }
       if (fields.hp !== undefined && typeof fields.hp === 'number' && fields.hp < 1) {
@@ -136,12 +155,13 @@ export function validateOverrides(rules, base) {
   return errors;
 }
 
-/** Deep merge: objects recurse, everything else replaces. Returns a new value. */
+/** Deep merge: objects recurse, everything else replaces; a null sell value removes it. Returns a new value. */
 export function deepMerge(base, over) {
   if (!isObject(base) || !isObject(over)) return structuredCloneJson(over);
   const out = structuredCloneJson(base);
   for (const [k, v] of Object.entries(over)) {
-    out[k] = k in out ? deepMerge(out[k], v) : structuredCloneJson(v);
+    if (k === SELL_VALUE && v === null) delete out[k];
+    else out[k] = k in out ? deepMerge(out[k], v) : structuredCloneJson(v);
   }
   return out;
 }

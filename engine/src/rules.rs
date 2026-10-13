@@ -2457,13 +2457,39 @@ fn apply_overrides(base: &mut serde_json::Value, overrides: &serde_json::Value) 
                 .iter_mut()
                 .find(|e| e[key_field].as_str().is_some_and(|v| v.eq_ignore_ascii_case(id)))
                 .ok_or_else(|| format!("rules.{section}: unknown id {}", truncate(id)))?;
-            merge(target, patch, &format!("{section}.{}", truncate(id)), key_field)?;
+            let path = format!("{section}.{}", truncate(id));
+            if section == "actors" {
+                if let Some(v) = patch.get("custom_sell_value") {
+                    // OpenRA CustomSellValue may be given to any actor, and null takes a
+                    // built-in one away (`-CustomSellValue`: the cost counts again).
+                    set_custom_sell_value(target, v, &path)?;
+                    let mut rest = patch.clone();
+                    rest.as_object_mut().expect("has a key, so an object").remove("custom_sell_value");
+                    merge(target, &rest, &path, key_field)?;
+                    continue;
+                }
+            }
+            merge(target, patch, &path, key_field)?;
         }
     }
     for k in o.keys() {
         if k != "actors" && k != "weapons" {
             return Err(format!("rules: unknown section {}", truncate(k)));
         }
+    }
+    fn set_custom_sell_value(target: &mut Value, v: &Value, path: &str) -> Result<(), String> {
+        let t = target.as_object_mut().ok_or_else(|| format!("{path}: expected an object"))?;
+        match v {
+            Value::Null => {
+                t.remove("custom_sell_value");
+            }
+            Value::Number(n) if n.is_i64() || n.is_u64() => {
+                t.insert("custom_sell_value".into(), v.clone());
+            }
+            Value::Number(_) => return Err(format!("{path}.custom_sell_value: numbers must be integers")),
+            _ => return Err(format!("{path}.custom_sell_value: wrong type")),
+        }
+        Ok(())
     }
     fn merge(target: &mut Value, patch: &Value, path: &str, key_field: &str) -> Result<(), String> {
         let (Some(t), Some(p)) = (target.as_object_mut(), patch.as_object()) else {

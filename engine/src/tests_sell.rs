@@ -116,3 +116,32 @@ fn map_rules_change_the_refund_like_openra() {
     w.actors[b].hp /= 2;
     assert_eq!(sell(&mut w, b), 750, "RefundPercent 100 of 1500 at half health");
 }
+
+#[test]
+fn map_rules_can_give_any_actor_a_sell_value_or_take_a_built_in_one_away() {
+    let mut w = world();
+    w.rules = Rules::load_with(Some(&serde_json::json!({ "actors": {
+        // CustomSellValue on an actor that has none ...
+        "POWR": { "custom_sell_value": 50, "hp": 50_000 },
+        "1TNK": { "custom_sell_value": 0 },
+        // ... and OpenRA's -CustomSellValue: the cost counts again.
+        "pbox": { "custom_sell_value": null },
+    } })))
+    .expect("overrides load");
+    assert_eq!(w.rules.actors[ty(&w, "1TNK") as usize].sell_value(), 0, "a unit's bounty value");
+    assert_eq!(w.rules.actors[ty(&w, "PBOX") as usize].custom_sell_value, None);
+    let b = building(&mut w, "POWR", 4);
+    assert_eq!(sell(&mut w, b), 25, "50% of the map's 50, and the other fields still apply");
+    assert_eq!(w.rules.actors[ty(&w, "POWR") as usize].hp, 50_000);
+    let b = building(&mut w, "PBOX", 4);
+    assert_eq!(sell(&mut w, b), 300, "50% of the 600 it costs");
+    for bad in [
+        serde_json::json!({ "actors": { "POWR": { "custom_sell_value": -1 } } }),
+        serde_json::json!({ "actors": { "POWR": { "custom_sell_value": 1.5 } } }),
+        serde_json::json!({ "actors": { "POWR": { "custom_sell_value": "400" } } }),
+        serde_json::json!({ "actors": { "POWR": { "custom_sell_value": 2_000_000 } } }),
+        serde_json::json!({ "weapons": { "25mm": { "custom_sell_value": 1 } } }),
+    ] {
+        assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
+    }
+}

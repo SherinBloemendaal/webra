@@ -1413,8 +1413,23 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   js/battlefx.js floats as "+$n" for the seller and its allies when it is
   above 0 (Sell ShowTicks); the statistics' `sold` adds it up. The broke
   AI sells the structure that pays the most first within a rank.
-  Differences: the refund is paid at once (OpenRA pays it when the reverse
-  make animation has played), and RefundPercent 0 means "not sellable".
+  Map rules overrides may give any actor `custom_sell_value` (a whole
+  number 0 to 1,000,000), and `null` takes a built-in one away like
+  OpenRA's `-CustomSellValue` (the cost counts again); the editor's rules
+  tab and its raw JSON view accept the same (editor/js/overrides.js). A
+  CustomSellValue node without a Value counts 0 (the field's default in
+  CustomSellValue.cs; OpenRA's FieldLoader.Require would refuse it).
+  Known difference (timing): WebRA sells within the tick the order runs: it
+  pays the refund at the health the structure has then, to its owner then,
+  spawns the crew (SpawnActorsOnSell), raises Sold and removes the
+  structure at once. OpenRA's Sellable.Sell cancels the activity, plays the
+  sell sounds, calls INotifySold.Selling and, unless SkipMakeAnimation,
+  plays the make animation backwards first; only then does the Sell
+  activity (not interruptible) compute the refund from the health at that
+  moment (damage taken meanwhile lowers it), pay the PlayerResources of the
+  owner it captured when the order was given, call INotifySold.Sold (the
+  crew comes out then), speak the notification and dispose of the actor.
+  RefundPercent 0 also means "not sellable" here.
 
 ## 5. Domains for units
 
