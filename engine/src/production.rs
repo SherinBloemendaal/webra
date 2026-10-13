@@ -130,6 +130,17 @@ impl World {
         }
     }
 
+    /// Whether actor type `ty` belongs to this game at all (the sidebar's and
+    /// the observers' lists): not one that is never built (`~disabled`), and
+    /// in a mission none of WebRA's own actors (`global-skirmish`, which
+    /// missions never grant).
+    pub fn in_game_mode(&self, ty: u16) -> bool {
+        self.rules.actors[ty as usize].prerequisites.iter().all(|pr| {
+            let name = self.rules.tokens[pr.token as usize].as_str();
+            name != crate::rules::TOKEN_DISABLED && !(self.mission_on && !pr.negate && name == GLOBAL_SKIRMISH)
+        })
+    }
+
     pub fn availability(&self, player: u8, ty: u16) -> Availability {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
@@ -137,7 +148,8 @@ impl World {
         // except the marker of actors that are never buildable.
         if p.dev.all_tech {
             let never =
-                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED)
+                    || !self.in_game_mode(ty);
             return Availability { visible: !never, enabled: !never };
         }
         let mut visible = true;

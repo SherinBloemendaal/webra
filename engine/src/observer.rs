@@ -480,7 +480,7 @@ impl World {
 
     /// Whether a type can be built at all (OpenRA Buildable): its icon shows in the observer panels.
     fn has_build_icon(&self, ty: u16) -> bool {
-        !self.rules.actors[ty as usize].prerequisites.iter().any(|pr| self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED)
+        self.in_game_mode(ty)
     }
 
     /// The observer's production and support power icons of one player

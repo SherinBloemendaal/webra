@@ -854,8 +854,9 @@ thunderstorm can come (desert, snow, weather off): it is cheap and the
 tooltip and badge say what it does. Campaign and co-op missions keep
 OpenRA's rules: its prerequisite `~global-skirmish` is a WebRA token the
 engine grants every player outside missions (production.rs
-`GLOBAL_SKIRMISH`), and tools/gen_missions.py leaves WebRA's actors out of
-the mission rules. A dashed yellow
+`GLOBAL_SKIRMISH`; `World::in_game_mode` keeps it out of a mission's
+sidebar and observer lists altogether), and tools/gen_missions.py leaves
+WebRA's actors out of the mission rules. A dashed yellow
 `WithRangeCircle` (Type LightningRod, 6 cells) shows when selected and
 around other rods while placing one. Art: WebRA's own pixel art
 (`tools/gen_pixel_art.py`: idle, damaged, a 12 frame make animation and a
@@ -867,7 +868,8 @@ while one of its plants is unprotected; it places each where it covers the
 most of its unprotected plants. Through a blackout from lightning its base
 builder counts the power its intact plants will make again
 (`ai_lightning::power_gen`), so it does not buy power plants it does not
-need; a spy's or a mission's outage counts as low power, as for OpenRA's
+need, switch structures off (power down module) or sell plants it would
+otherwise keep; a spy's or a mission's outage counts as low power, as for OpenRA's
 bots (PowerManager.ExcessPower drops while AffectedByPowerOutage disables
 the plants' Power trait).
 

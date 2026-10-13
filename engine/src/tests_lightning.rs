@@ -401,11 +401,24 @@ fn no_mission_offers_the_lightning_rod() {
             assert!(!w.can_start(p, rod), "{id}: player {p} can build a Lightning Rod");
             assert!(!w.availability(p, rod).visible, "{id}: player {p} sees the Lightning Rod");
         }
+        // What the client reads: no card in any sidebar tab (not even greyed out), no observer icon.
+        let players = w.players.len() as u8;
+        let g = crate::Game::wrap(w);
+        for p in 0..players {
+            let json: serde_json::Value = serde_json::from_str(&g.player_json(p)).expect("player json");
+            let listed = json["buildable"].as_array().expect("buildable");
+            assert!(!listed.is_empty(), "{id}: player {p} lists something");
+            assert!(listed.iter().all(|b| b["id"] != "LROD"), "{id}: player {p} lists the Lightning Rod");
+            assert!(!g.world.observer_production_json(p).to_string().contains("\"LROD\""), "{id}: observer icon");
+        }
     }
     let mut w = world();
     building(&mut w, "POWR", 0, 10, 10);
     w.refresh_tokens();
     assert!(w.can_start(0, ty(&w, "LROD")), "skirmish players build it");
+    let g = crate::Game::wrap(w);
+    let json: serde_json::Value = serde_json::from_str(&g.player_json(0)).expect("player json");
+    assert!(json["buildable"].as_array().unwrap().iter().any(|b| b["id"] == "LROD" && b["enabled"] == true));
 }
 
 /// What the bot queues in its Building queue over `ticks`, by id.
@@ -449,4 +462,35 @@ fn bots_look_through_a_lightning_blackout_but_not_a_spys() {
     assert!(!w.lightning_blackout(0));
     let seen = queued_buildings(&mut w, 500);
     assert!(seen.first().is_some_and(|id| id == "POWR" || id == "APWR"), "{seen:?}");
+}
+
+#[test]
+fn bots_keep_their_structures_on_through_a_lightning_blackout() {
+    // A radar dome the bot would switch off on low power (PowerDownBotModule).
+    let setup = |mode| {
+        let mut w = ai_world(Biome::Temperate, mode);
+        put(&mut w, "DOME", 0, 10, 10);
+        w.refresh_tokens();
+        w.update_power();
+        w
+    };
+    let off = |w: &World| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.powered_off).count();
+    let mut w = setup(WeatherMode::Full);
+    w.tick += 1;
+    w.strike_lightning(strike(60, 60, 0, 0));
+    w.tick -= 1;
+    for _ in 0..OUTAGE_TICKS {
+        w.step();
+        assert_eq!(off(&w), 0, "nothing switched off while the plants stand intact");
+    }
+    // A spy's outage: switched off, as OpenRA's bots do.
+    let mut w = setup(WeatherMode::Off);
+    w.inf.outage.resize(w.players.len(), (0, 0));
+    w.inf.outage[0] = (500, 500);
+    let mut most = 0;
+    for _ in 0..500 {
+        w.step();
+        most = most.max(off(&w));
+    }
+    assert!(most > 0, "the bot switches structures off in a spy's outage");
 }

@@ -251,9 +251,9 @@ fn surplus_structure(w: &World, player: u8) -> Option<usize> {
         let Some(r) = rank(b) else { continue };
         // Power plants only while the rest keeps enough power.
         if r == 3 {
-            let p = &w.players[player as usize];
             let power = info(b).building.as_ref().map_or(0, |x| x.power);
-            if p.power_gen - power < p.power_use {
+            // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
+            if crate::ai_lightning::power_gen(w, player) - power < w.players[player as usize].power_use {
                 continue;
             }
         }

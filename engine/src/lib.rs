@@ -1583,7 +1583,7 @@ impl Game {
         // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
         let factories = w.factories(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
-            .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
+            .filter(|&t| w.in_game_mode(t as u16))
             .map(|t| {
                 let reqs = w.requirements(player, t as u16);
                 json!({
