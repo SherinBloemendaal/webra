@@ -748,6 +748,13 @@ pub enum Order {
         player: u8,
         building: u32,
     },
+    /// WebRA bulk repair: start repairing every listed own damaged structure
+    /// that is not being repaired, or stop all when every one of them is
+    /// (the Repair button with structures selected, a box in repair mode; repair.rs).
+    RepairBuildings {
+        player: u8,
+        ids: Vec<u32>,
+    },
     /// Switch an own structure off or on again (the sidebar's Power down
     /// button, OpenRA ToggleConditionOnOrder; repair.rs).
     PowerDown {
@@ -821,6 +828,7 @@ impl Order {
             | Order::Waypoint { player, .. }
             | Order::SetStance { player, .. }
             | Order::RepairBuilding { player, .. }
+            | Order::RepairBuildings { player, .. }
             | Order::PowerDown { player, .. }
             | Order::PlaceBeacon { player, .. }
             | Order::Surrender { player }
@@ -856,6 +864,7 @@ impl Order {
             | Order::Waypoint { player, .. }
             | Order::SetStance { player, .. }
             | Order::RepairBuilding { player, .. }
+            | Order::RepairBuildings { player, .. }
             | Order::PowerDown { player, .. }
             | Order::PlaceBeacon { player, .. }
             | Order::Surrender { player }
@@ -883,6 +892,7 @@ impl Order {
             | Order::Scatter { ids, .. }
             | Order::Waypoint { ids, .. }
             | Order::SetStance { ids, .. }
+            | Order::RepairBuildings { ids, .. }
             | Order::DevKill { ids, .. }
             | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
@@ -922,6 +932,7 @@ impl Order {
             | Order::Sell { .. }
             | Order::SupportPower { .. }
             | Order::RepairBuilding { .. }
+            | Order::RepairBuildings { .. }
             | Order::PowerDown { .. }
             | Order::PlaceBeacon { .. }
             | Order::Surrender { .. }
@@ -2188,6 +2199,7 @@ impl World {
                         self.toggle_repair(player, b);
                     }
                 }
+                Order::RepairBuildings { player, ids } => self.toggle_repair_group(player, &ids),
                 Order::PowerDown { player, building } => {
                     if let Some(b) = self.resolve(building) {
                         self.toggle_power_down(player, b);

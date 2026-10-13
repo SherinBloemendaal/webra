@@ -157,6 +157,8 @@ const ORDER_SCHEMA = {
   // buttons (start or stop repairing a structure, switch one off or on) and
   // map beacons for allies.
   repair_building: { building: u32 },
+  // WebRA bulk repair: toggle the sender's own damaged structures among `ids` as a group.
+  repair_buildings: { ids: idList },
   power_down: { building: u32 },
   place_beacon: { x: i32, y: i32 },
   // engine/src/gamerules.rs: the in-game menu's Surrender (OpenRA's

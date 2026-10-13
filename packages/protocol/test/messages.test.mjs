@@ -180,6 +180,7 @@ test('orders and hash', () => {
     ...STANCES.map((stance) => ({ o: 'set_stance', player: 1, ids: [4], stance })),
     // Sidebar buttons (engine/src/repair.rs, beacons.rs).
     { o: 'repair_building', player: 1, building: 4 },
+    { o: 'repair_buildings', player: 1, ids: [4, 9, 0xffffffff] },
     { o: 'power_down', player: 1, building: 0xffffffff },
     { o: 'place_beacon', player: 1, x: -24, y: 2 ** 31 - 1 },
     // The in-game menu's Surrender (engine/src/gamerules.rs).
@@ -219,6 +220,10 @@ test('orders and hash', () => {
   bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_building', player: 0 }] }, /required/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_building', player: 0, building: -1 }] }, /integer/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'power_down', player: 0, building: 1, ids: [1] }] }, /unknown field/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_buildings', player: 0 }] }, /required/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_buildings', player: 0, ids: 4 }] }, /at most/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_buildings', player: 0, ids: [-1] }] }, /integer/);
+  bad({ t: 'orders', tick: 3, orders: [{ o: 'repair_buildings', player: 0, ids: [1], building: 1 }] }, /unknown field/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'power_down', player: 0, building: 1.5 }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'place_beacon', player: 0, x: 0 }] }, /required/);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'place_beacon', player: 0, x: 0, y: 2 ** 31 }] }, /integer/);

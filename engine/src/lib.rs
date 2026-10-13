@@ -1333,6 +1333,29 @@ impl Game {
         self.submit(Order::RepairBuilding { player, building });
     }
 
+    /// WebRA bulk repair: start repairing the listed own damaged structures,
+    /// or stop all of them when every one is being repaired already
+    /// (`World::toggle_repair_group`).
+    pub fn repair_buildings(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::RepairBuildings { player, ids });
+    }
+
+    /// The own damaged repairable structures among `ids` (the selection) that
+    /// the Repair button toggles together; empty when it opens repair mode.
+    pub fn repair_targets(&self, player: u8, ids: Vec<u32>) -> Vec<u32> {
+        let w = &self.world;
+        w.bulk_repair_targets(player, &ids).into_iter().map(|i| w.make_ref(i)).collect()
+    }
+
+    /// The own damaged repairable structures whose selection bounds touch the
+    /// world-pixel box (a drag in repair mode), in actor order.
+    pub fn repair_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+        let w = &self.world;
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        let ids: Vec<u32> = w.selectable_actors(&[player], Some(area), None).into_iter().map(|i| w.make_ref(i)).collect();
+        w.bulk_repair_targets(player, &ids).into_iter().map(|i| w.make_ref(i)).collect()
+    }
+
     /// Switch an own structure off, or on again.
     pub fn power_down(&mut self, player: u8, building: u32) {
         self.submit(Order::PowerDown { player, building });

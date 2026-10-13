@@ -394,6 +394,12 @@ function fakeGame(actors) {
       return Uint32Array.from(entries().filter(([, a]) => owners.includes(a.owner) && types.includes(a.type) && inRect(a, x0, y0, x1, y1)).map(([i]) => i));
     },
     placement_preview: (_p, _id, cx, cy) => Int32Array.from([cx, cy, cx >= 0 && cy >= 0 ? 1 : 0]),
+    // Repair mode: own damaged structures (bulk repair, engine repair_box).
+    repair_cursor: (_p, id) => (actors[id]?.owner === 0 && actors[id].building && actors[id].damaged ? 1 : 0),
+    repair_box: (_p, x0, y0, x1, y1) =>
+      Uint32Array.from(entries().filter(([, a]) => a.owner === 0 && a.building && a.damaged && inRect(a, x0, y0, x1, y1)).map(([id]) => id)),
+    repair_building: rec('repair_building'),
+    repair_buildings: rec('repair_buildings'),
     order_smart: rec('order_smart'),
     order_move: rec('order_move'),
     order_attack: rec('order_attack'),
@@ -606,6 +612,35 @@ test('touch: attack move from the bar, then tap the destination (drag: aim and r
   await p.up(1, 360, 330);
   assert.deepEqual(game.calls.at(-1), ['order_move', 0, [1], 360, 330, true]);
   assert.equal(input.attackMove, false);
+});
+
+test('touch: in repair mode a drag repairs the damaged own structures in the box, a tap one', async () => {
+  const BASE = {
+    1: { owner: 0, type: 'powr', building: true, damaged: true, x: 100, y: 100 },
+    2: { owner: 0, type: 'powr', building: true, damaged: true, x: 160, y: 100 },
+    3: { owner: 0, type: 'powr', building: true, damaged: false, x: 130, y: 140 },
+    4: { owner: 0, type: 'powr', building: true, damaged: true, x: 600, y: 400 },
+  };
+  const { input, game, p } = await setup(BASE);
+  input.setMode('repair');
+  await p.down(1, 80, 80);
+  await p.move(1, 150, 120);
+  assert.ok(input.repairDrag && !input.drag, 'a repair box, not a selection box');
+  await p.move(1, 200, 160);
+  await p.up(1, 200, 160);
+  assert.deepEqual(game.calls.at(-1), ['repair_buildings', 0, [1, 2]]);
+  assert.equal(input.mode, 'repair', 'the mode stays on');
+  await p.tap(600, 400);
+  assert.deepEqual(game.calls.at(-1), ['repair_building', 0, 4]);
+  // A second finger cancels the box: nothing is repaired.
+  const n = game.calls.length;
+  await p.down(1, 80, 80);
+  await p.move(1, 200, 160);
+  await p.down(2, 500, 500);
+  assert.equal(input.repairDrag, null);
+  await p.up(1, 200, 160);
+  await p.up(2, 500, 500);
+  assert.equal(game.calls.length, n);
 });
 
 test('touch: placement shows the footprint mid-view, tap and drag move it, Place builds', async () => {
