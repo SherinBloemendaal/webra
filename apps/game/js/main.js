@@ -44,6 +44,7 @@ import { CURSORS, setCursorArt, tickCursors } from './cursors.js';
 import { hotkeys, formatCombo } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
+import { missionObjectives, optionRows, skirmishStats } from './gameinfo.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { MouseCapture, pointerLockAvailable } from './mouselock.js';
 import { DebugMenu } from './debug.js';
@@ -525,7 +526,7 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null }) => {
           entry.hidden = true;
           // A co-op mission: its players and colours; the people under their names.
           const missionPlayers = mission ? host.game.info.mission.players : null;
@@ -541,6 +542,7 @@ function setupOnline(lobby, gpuError) {
             viewer: spectator ? roster : null,
             roster,
             mission: mission ? { entry: null, options: mission.options } : null,
+            about: onlineAbout(about, options, mission),
           });
         },
       });
@@ -708,6 +710,7 @@ async function startMission(entry, chosen, gameSpeed, lobby) {
     roster: missionRoster(players),
     restart: missionRecord(entry.id, options.options, speed),
     mission: { entry, options: options.options },
+    about: gameAbout({ mission: entry, missionText: text, missionValues: options.options, options }),
   });
 }
 
@@ -831,7 +834,16 @@ async function startSkirmish(options, lobby) {
   const run = await launch({ kind: 'skirmish', options: engineOptions, map: canonicalMap, player, recorder: recording, tickMs }, lobby, 'Could not start the game');
   if (!run) return;
   applyColors(playing);
-  start(run.host, { stress: false, tickMs, player, recorder: recorderOf(run), roster: viewerPlayers(playing), restart: restartOf(options) });
+  start(run.host, {
+    stress: false,
+    tickMs,
+    player,
+    recorder: recorderOf(run),
+    roster: viewerPlayers(playing),
+    restart: restartOf(options),
+    // The countries as chosen in the lobby: an opponent's random pick stays "Random" in the game info.
+    about: gameAbout({ map: canonicalMap, options: resolved, lobbyFactions: rest.players.filter((p) => p.type !== 'closed').map((p) => p.faction) }),
+  });
 }
 
 /** "England vs 2 opponents" style title for a recorded skirmish. */
@@ -878,6 +890,7 @@ async function loadSave(replay, lobby) {
     // Restart plays the saved game again from its start, with its settings.
     restart: restartOf({ ...replay.options, map: replay.map ?? null }),
     fromSave: true,
+    about: gameAbout({ map: replay.map ?? null, options: replay.options }),
   });
 }
 
@@ -903,6 +916,7 @@ async function loadMissionSave(replay, lobby) {
     restart: missionRecord(replay.mission.id, replay.options.options, replay.options.gameSpeed),
     fromSave: true,
     mission: { entry: m.entry, options: replay.options.options },
+    about: gameAbout({ mission: m.entry, missionText: m.text, missionValues: replay.options.options, options: replay.options }),
   });
 }
 
@@ -926,6 +940,12 @@ async function watchMissionReplay(replay, lobby) {
     replay: new ReplayHandle(run.host, run.info.replayLength),
     viewer: replay.mode === 'online' ? coopRoster(players, replay.options.players) : missionRoster(players),
     mission: { entry: m.entry, options: replay.mode === 'online' ? replay.mission.options : replay.options.options },
+    about: gameAbout({
+      mission: m.entry,
+      missionText: m.text,
+      missionValues: replay.mode === 'online' ? replay.mission.options : replay.options.options,
+      options: replay.options,
+    }),
   });
 }
 
@@ -950,6 +970,7 @@ async function watchReplay(replay, lobby) {
     player: 0,
     replay: new ReplayHandle(run.host, run.info.replayLength),
     viewer: viewerPlayers(replay.options.players),
+    about: gameAbout({ map: replay.map ?? null, options: replay.options }),
   });
 }
 
@@ -959,6 +980,65 @@ async function startStress(seed, units, lobby) {
   const size = Math.max(96, Math.ceil(Math.sqrt(n) * 2.2));
   const run = await launch({ kind: 'stress', seed: seed >>> 0, units: n, size, tickMs: SPEEDS.normal }, lobby, 'Could not start the stress test');
   if (run) start(run.host, { stress: true, tickMs: SPEEDS.normal });
+}
+
+/**
+ * What the game menu's Game info tells about a game (js/gameinfo.js):
+ * `map` the map file JSON (null: a generated map), `options` the game
+ * options, `mission` a mission's index entry (null when the index no longer
+ * lists it) with `missionText` its file and `missionValues` its options,
+ * `lobbyFactions` the countries as the lobby showed them (null: only the
+ * drawn ones are known, as in saves and replays), `spectators()` the names
+ * of who watches. The preview is made when the Briefing tab is drawn.
+ */
+function gameAbout({ map = null, options = null, mission = null, missionText = null, missionValues = null, lobbyFactions = null, spectators = () => [] }) {
+  let file = null;
+  try {
+    file = map ? JSON.parse(map) : null;
+  } catch {
+    file = null;
+  }
+  const preview = () => {
+    try {
+      if (missionText) return { rgba: Game.mission_preview(missionText), width: JSON.parse(missionText).map.width };
+      if (map) return { rgba: Game.map_file_preview(map), width: file.width };
+    } catch {
+      // No preview: the briefing shows without it.
+    }
+    return null;
+  };
+  // OpenRA's Briefing tab: a mission's briefing; WebRA map files carry theirs as the description.
+  const text = (missionText ? mission?.briefing : file?.description) ?? '';
+  const title = missionText ? (mission?.title ?? 'Mission') : (file?.name ?? 'Generated map');
+  return {
+    title,
+    briefing: text.trim() ? { title, author: missionText ? null : (file?.author ?? null), text: text.trim(), preview } : null,
+    options: missionText
+      ? { missionOptions: mission?.options ?? {}, missionValues: missionValues ?? {}, gameSpeed: options?.gameSpeed ?? null }
+      : { options, generated: !map },
+    lobbyFactions,
+    spectators,
+  };
+}
+
+/** gameAbout of an online game (js/online.js `gameAbout`); a co-op mission's entry comes from the index once it is loaded. */
+function onlineAbout(about, options, mission) {
+  const lobbyFactions = about?.lobbyFactions ?? null;
+  const spectators = about?.spectators ?? (() => []);
+  const people = () => (options?.players ?? []).filter((p) => p.type === 'human').length + spectators().length;
+  if (!mission) return { ...gameAbout({ map: about?.mapText ?? null, options, lobbyFactions, spectators }), people };
+  const out = gameAbout({ mission: null, missionText: null, options, lobbyFactions, spectators });
+  out.title = 'Mission';
+  // OpenRA isSinglePlayer: one client that is not a bot, spectators included.
+  out.people = people;
+  out.options = { missionOptions: {}, missionValues: mission.options ?? {}, gameSpeed: options?.gameSpeed ?? null };
+  Promise.all([missionIndex(), missionFile(mission.id, mission.hash)])
+    .then(([index, text]) => {
+      const entry = findMission(index, mission.id)?.mission ?? null;
+      Object.assign(out, gameAbout({ mission: entry, missionText: text, missionValues: mission.options ?? {}, options, lobbyFactions, spectators }));
+    })
+    .catch(() => {});
+  return out;
 }
 
 /** The game menu's handle on the recorder that runs with the simulation, or null. */
@@ -979,7 +1059,8 @@ function recorderOf({ host, info }) {
 // js/restart.js record of a single player game (null: no restart).
 // `mission` (`{ entry, options }`: its index entry, or null when the index no
 // longer lists it, and its options) marks a campaign mission (js/campaign).
-function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null }) {
+// `about` (gameAbout) is what the game menu's Game info tells about the game.
+function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null, about = null }) {
   // The map lenses' art and tiles are not needed while a game runs.
   lensArt?.release();
   const game = host.game;
@@ -1484,6 +1565,56 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         },
       })
     : null;
+  // The game menu's Game info (js/gameinfo.js): the scores come from the
+  // engine's statistics (asked again each time the page is drawn), only what
+  // OpenRA's GameInfoStatsLogic shows a player still in the game.
+  let infoStats = null;
+  const askInfoStats = () => {
+    const json = game.observer_stats();
+    if (json) infoStats = JSON.parse(json);
+  };
+  let previewOf = null;
+  let preview = null;
+  const briefingPreview = () => {
+    if (previewOf !== about.briefing) {
+      previewOf = about.briefing;
+      preview = about.briefing?.preview() ?? null;
+    }
+    return preview;
+  };
+  const gameInfo =
+    stress || !about
+      ? undefined
+      : () => {
+          askInfoStats();
+          return {
+            title: about.title,
+            briefing: about.briefing ? { ...about.briefing, preview: briefingPreview() } : null,
+            options: optionRows(about.options),
+            objectives: mission
+              ? missionObjectives(missionView?.state ?? null, { defeated: !viewer && flow.phase === 'lost', won: !viewer && flow.phase === 'won' })
+              : skirmishStats({
+                  stats: infoStats ?? [],
+                  names: players.map((p) => p.name),
+                  localPlayer: viewer ? null : player,
+                  allied: (a, b) => allies(a, b),
+                  lobbyFactions: about.lobbyFactions,
+                  spectators: about.spectators(),
+                }),
+          };
+        };
+  // OpenRA IngameMenuLogic.CreateSurrenderButton: a player of an online game
+  // with more than one person (not single player), never a spectator or a
+  // replay; enabled until its game is decided and while a mission's script
+  // runs. The order goes through lockstep like any other (engine gamerules.rs).
+  const surrender =
+    online && !online.spectator && !replay
+      ? {
+          shown: () => (about?.people?.() ?? 1) > 1,
+          enabled: () => !watching() && flow.phase === 'playing' && !flow.over && !missionView?.state?.error,
+          run: () => game.surrender(player),
+        }
+      : undefined;
   const menu = new GameMenu($('game-menu'), {
     online: !!online || !!replay,
     replay: !!replay,
@@ -1495,6 +1626,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onChange: (open, isPaused) => {
       input.setSuspended(open);
       if (open) {
+        // Fresh scores for the Game info page.
+        if (gameInfo) askInfoStats();
         // The menu needs the OS cursor (sliders, lists): the mouse is let go.
         mouseCapture?.setBlocked(true);
         touch.reset();
@@ -1520,6 +1653,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     onStats: statsScreen ? openStats : undefined,
     // Live statistics of the other players would give a player still in the game away.
     statsAvailable: () => watching() || flow.over,
+    gameInfo,
+    surrender,
     onLeave: leave,
     onExit: exit,
   });

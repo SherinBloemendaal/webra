@@ -213,6 +213,104 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Game info (js/gameinfo.js): OpenRA's GAME_INFO_PANEL tabs; the tabs and
+   the score table look like the statistics screen's (css/endgame.css). */
+.game-info-panel {
+  padding-top: calc(10 * var(--ui-px));
+}
+
+.game-info-status {
+  margin: 0 0 calc(4 * var(--ui-px));
+  font-weight: 700;
+}
+
+.game-info-state-won {
+  color: var(--ui-ok);
+}
+
+.game-info-state-lost {
+  color: var(--ui-bad);
+}
+
+.game-info-objectives {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.game-info-objective {
+  display: flex;
+  align-items: baseline;
+  gap: calc(8 * var(--ui-px));
+  margin: calc(6 * var(--ui-px)) 0;
+}
+
+.game-info-objective-type {
+  color: var(--ui-muted);
+}
+
+.game-info-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: calc(16 * var(--ui-px));
+  height: calc(16 * var(--ui-px));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.game-info-mark-completed,
+.game-info-mark-won {
+  color: var(--ui-ok);
+}
+
+.game-info-mark-failed,
+.game-info-mark-lost {
+  color: var(--ui-bad);
+}
+
+.game-info-players tr.game-info-team th,
+.game-info-players tr.game-info-team td {
+  color: var(--ui-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.game-info-players tr[data-state='lost'] {
+  opacity: 0.6;
+}
+
+.game-info-preview {
+  display: block;
+  width: min(100%, calc(240 * var(--ui-px)));
+  margin: 0 auto calc(8 * var(--ui-px));
+  image-rendering: pixelated;
+  border: 1px solid var(--ui-edge);
+}
+
+.game-info-briefing p {
+  white-space: pre-line;
+}
+
+.game-info-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: calc(4 * var(--ui-px)) calc(12 * var(--ui-px));
+  margin: 0;
+}
+
+.game-info-options dd {
+  margin: 0;
+  text-align: right;
+  color: var(--ui-text);
+}
+
+.game-info-options dd.game-info-off {
+  color: var(--ui-muted);
+}
+
 /* Settings: section titles, the scale rows (slider, value, Auto, Reset) and the Audio section. */
 .game-menu-card .game-menu-scroll h2:first-child {
   margin-top: calc(4 * var(--ui-px));

@@ -397,7 +397,7 @@ export class OnlineUI {
    *   Game: any, version: string, colors: number[][], colorNames: string[],
    *   createGame: (o: { spec: object, conn: Connection, onCaughtUp: () => void, onCheck: (ok: boolean, tick: number) => void })
    *     => Promise<{ host: any, game: any, driver: any, recorder: any }>,  the simulation with its LockstepDriver (js/main.js, js/sim)
-   *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void }) => void,
+   *   onStartGame: (start: { host: any, game: any, player: number, driver: any, options: object, recorder: any, spectator: boolean, onQuit: () => void, about: object }) => void,
    *   onBack: () => void,
    *   missionText?: (id: string, hash: string) => Promise<string>,  a co-op mission's file, checked against its hash (js/main.js)
    *   missionInfo?: (id: string) => Promise<object | null>,  its campaign index entry (briefing, option labels)
@@ -2020,6 +2020,7 @@ export class OnlineUI {
       },
       rematch: this.rematchHandle(),
       save: this.saveHandle(),
+      about: this.gameAbout(m, mapText),
     });
     if (m.resume) this.gameLine(`Resuming the saved game after ${formatTicks(m.resume.ticks)}: catching up...`, true);
   }
@@ -2128,6 +2129,23 @@ export class OnlineUI {
       bar.append(el('span', 'online-muted', ` Waiting for ${sv.waiting.map((c) => this.clientName(c)).join(', ')}.`));
     }
     if (sv.by === this.state.you) bar.append(button('Withdraw', null, () => this.answerSave(false)));
+  }
+
+  /**
+   * What the game menu's Game info shows of this game (js/gameinfo.js): the
+   * map (its lobby details and file), the countries as the lobby showed them
+   * (a random pick stays "Random" for opponents; null after joining a running
+   * game, which saw no lobby) and the spectators now.
+   */
+  gameAbout(m, mapText) {
+    const st = this.state;
+    const ui = this;
+    return {
+      map: m.map ?? null,
+      mapText: mapText ?? null,
+      lobbyFactions: st.lobbySeen ? st.slots.filter((s) => s.type === 'human' || s.type === 'ai').map((s) => s.faction) : null,
+      spectators: () => (ui.state?.spectators ?? []).map((x) => x.name),
+    };
   }
 
   // ---- Rematch ------------------------------------------------------------------------

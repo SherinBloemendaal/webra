@@ -119,6 +119,12 @@ export const HELP = Object.freeze({
   'settings.mouseCaptureEscMenu':
     'Off: with the mouse captured, the first Esc only releases it and the next Esc opens the menu. On: one Esc releases the mouse and also cancels the current mode or opens the menu.',
 
+  // ---- Game menu pages (js/gamemenu.js MENU_PAGE_HELP_KEYS) ---------------------------------
+  'menu.gameInfo':
+    "The game's map, objectives and options, like OpenRA's game info. Objectives shows your mission and every player's score (experience from kills and repairs), the teams with the most score first; opponents keep the country the lobby showed until your game is decided. Briefing shows the mission briefing or the map's description, Options the lobby options this game is played with.",
+  'menu.surrender':
+    'Online games with more than one person, like OpenRA: you lose at once, your units and structures are destroyed and everyone sees you defeated. You can stay and watch the rest of the game as a spectator. Single player games have Leave and Restart instead.',
+
   // ---- Controls page notes (js/gamemenu.js CONTROLS_HELP_KEYS) --------------------------------
   'controls.keys':
     "The keys are OpenRA's Red Alert defaults, except where the browser keeps OpenRA's key: Shift+Tab is the next facility (Ctrl+Tab switches tabs), Alt+Shift+Q and Alt+Shift+W record bookmarks 1 and 2 (Ctrl+Q and Ctrl+W quit and close), and F11 and F12 have nothing (full screen and developer tools). Some browsers keep Ctrl/Cmd + number for switching tabs. WebRA holds those keys back while the game has focus where the browser allows it; in fullscreen (Chrome, Edge) the digit row and Esc are locked to the game. On macOS, Ctrl + number works as well as Cmd + number.",
