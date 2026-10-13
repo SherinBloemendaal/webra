@@ -63,7 +63,7 @@
      "id": "allies-03a",
      "title": "03a: Dead End",
      "file": "allies-03a.json",
-     "sha256": "3436e3cd13f430d48fd3caca56780ea4240af7db49e1b2bad80aac4e69531262",
+     "sha256": "90a3d3fddde034d874cf3ca8de5ff041c8bc38272fdc0da08ff1af011c3e9f00",
      "faction": "allies",
      "briefing": "LANDCOM 16 HQS.\nTOP SECRET.\nTO: FIELD COMMANDER A9\n\nINTELLIGENCE RECON SHOWS HEAVY\nSOVIET MOVEMENT IN YOUR AREA.\nNEARBY BRIDGES ARE KEY TO SOVIET\nADVANCEMENT. DESTROY ALL BRIDGES\nASAP. TANYA WILL ASSIST. KEEP HER\nALIVE AT ALL COSTS.\n\nCONFIRMATION CODE 1612.\n\nTRANSMISSION ENDS.",
      "options": {
@@ -96,7 +96,7 @@
      "id": "allies-03b",
      "title": "03b: Dead End",
      "file": "allies-03b.json",
-     "sha256": "814843b9456cdb1e42bfce2645bda26aed798417f4c0680a08f73905c931848e",
+     "sha256": "5f3a31f18f5dd86a6dfa9f22d04b335f99030aa9219a9fba021e04b3382f2bfc",
      "faction": "allies",
      "briefing": "LANDCOM 16 HQS.\nTOP SECRET.\nTO: FIELD COMMANDER A9\n\nINTELLIGENCE RECON SHOWS HEAVY\nSOVIET MOVEMENT IN YOUR AREA.\nNEARBY BRIDGES ARE KEY TO SOVIET\nADVANCEMENT. DESTROY ALL BRIDGES\nASAP. TANYA WILL ASSIST. KEEP HER\nALIVE AT ALL COSTS.\n\nCONFIRMATION CODE 1612.\n\nTRANSMISSION ENDS.",
      "options": {
@@ -129,7 +129,7 @@
      "id": "allies-04",
      "title": "04: Ten to One",
      "file": "allies-04.json",
-     "sha256": "2535264a78bf253b63b749cee7b16fce52b16d62d37e7f0408eb1e58e815a6de",
+     "sha256": "1216840f18135a115fa34bbba5e81f17e48e1bf53b880f3994c2d3392f8b1aa5",
      "faction": "allies",
      "briefing": "Soviet forces are trying to retake the pass you cleared for our convoys.\n\nDon't let this happen. Hold the pass and prevent the Soviets from taking this vital area.\n\nDestroy all Soviet units and buildings in this region.",
      "options": {
@@ -167,7 +167,7 @@
      "id": "allies-05a",
      "title": "05a: Tanya's Tale",
      "file": "allies-05a.json",
-     "sha256": "49c75f43be97d3595de160374def65ff307b7498f124a3df91b5137989be82a7",
+     "sha256": "2b83e600c9e9709113e7afa16b8e71775e0f439b8291f99ad4367fc8d6d6eea1",
      "faction": "allies",
      "briefing": "Rescue Tanya.\n\nOnce disguised, your spy can move past any enemy unit, except dogs, without being detected. Direct him into the weapons factory located at a nearby Soviet base where he can hijack a truck and free Tanya.\n\nWith Tanya's help, take out the air defenses on the island so a Chinook can arrive to rescue her.\n\nThen destroy all remaining Soviet buildings and units.",
      "options": {
@@ -205,7 +205,7 @@
      "id": "allies-05b",
      "title": "05b: Tanya's Tale",
      "file": "allies-05b.json",
-     "sha256": "b58d498b5a375521f13ad122f0ef955a214343daba07c01dd5013fb6aa0ebae3",
+     "sha256": "8f01b5e5bc473b4c1467542c056fa16a32a72e0513029ad202cf59127c5d0c36",
      "faction": "allies",
      "briefing": "Rescue Tanya.\n\nOnce disguised, your spy can move past any enemy unit, except dogs, without being detected. Direct him into the weapons factory located at a nearby Soviet base where he can hijack a truck and free Tanya.\n\nWith Tanya's help, take out the air defenses on the island so a Chinook can arrive to rescue her.\n\nThen destroy all remaining Soviet buildings and units.",
      "options": {
@@ -239,7 +239,7 @@
      "id": "allies-05c",
      "title": "05c: Tanya's Tale",
      "file": "allies-05c.json",
-     "sha256": "51faf0d517c98f1478c4e4b1e90a1bbb2f5789cafcec3dbee80741fad0266b6d",
+     "sha256": "f499256de8df6c7a70381ead3c2c148f2ead83ba8c599a959eecea3b5aefe99d",
      "faction": "allies",
      "briefing": "Rescue Tanya.\n\nOnce disguised, your spy can move past any enemy unit, except dogs, without being detected. Direct him into the weapons factory located at a nearby Soviet base where he can hijack a truck and free Tanya.\n\nWith Tanya's help, take out the air defenses on the island so a Chinook can arrive to rescue her.\n\nThen destroy all remaining Soviet buildings and units.",
      "options": {
@@ -273,7 +273,7 @@
      "id": "allies-06a",
      "title": "06a: Cripple Iron Curtain Research",
      "file": "allies-06a.json",
-     "sha256": "111df233eced196918514b3a69b1f7e52d5241ac86e7af539188af27207ff34e",
+     "sha256": "bed2907451611c997521e4fc6b3def36f764e2502c4734239b6bc8f02430161b",
      "faction": "allies",
      "briefing": "Priority one is to establish a base and get your spy into one of the Soviet Tech Centers across the gulf.\nData on the Iron Curtain is in there and we need it.\n\nOnce you get the data, complete your mission...\nWipe out everything.",
      "options": {
@@ -307,7 +307,7 @@
      "id": "allies-06b",
      "title": "06b: Cripple Iron Curtain Research",
      "file": "allies-06b.json",
-     "sha256": "fb08d5a8e129bf505f52c8ddaadd667bdb58b8b9f66970b5d8460405bed766cc",
+     "sha256": "5223b91a417d3cfca1f0c28fee17ed0985fa699ef2f60d31ed09c769833dc009",
      "faction": "allies",
      "briefing": "Priority one is to establish a base and get your spy into one of the Soviet Tech Centers across the gulf.\nData on the Iron Curtain is in there and we need it.\n\nOnce you get the data, complete your mission...\nWipe out everything.",
      "options": {
@@ -341,7 +341,7 @@
      "id": "allies-07",
      "title": "07: Sunken Treasure",
      "file": "allies-07.json",
-     "sha256": "3ffefa77a3ed8601c2d47aa08136c88ac61e6c648f6d142ce5723a69ad86270f",
+     "sha256": "a1e26fb4c812d32639f0a9713b3bbca13eacc18897e1fa4f674e250ff4a6c2e7",
      "faction": "allies",
      "briefing": "LANDCOM 16 HQS.\nTOP SECRET.\nTO: FIELD COMMANDER A9\n\nINTERCEPTION OF SOVIET COMMUNIQUE INDICATES THAT THEIR IRON CURTAIN RESEARCH WAS SET BACK BY ESPIONAGE. EXCELLENT WORK, COMMANDER!\n\nCOMMUNIQUE WAS TRACED BACK TO A SECRET SOVIET BASE IN BORNHOLM. INVESTIGATE POSSIBLE CONNECTION WITH IRON CURTAIN RESEARCH. CAPTURE RADAR CENTER AND DESTROY SUB PRODUCTION CAPABILITY.\n\nCONFIRMATION CODE 1138.\n\nTRANSMISSION ENDS.",
      "options": {
@@ -374,7 +374,7 @@
      "id": "allies-08a",
      "title": "08a: Protect the Chronosphere",
      "file": "allies-08a.json",
-     "sha256": "00e5af6e0ab87990cfcbcd681ac82cb4375f1ad7643c05a296e5d4e22410b157",
+     "sha256": "7db4e8fe84b861863031265e48e12a0decae0ada45fb1161e3d912928d13b1c7",
      "faction": "allies",
      "briefing": "Our latest technology, the Chronosphere, is housed in this research station. The timer represents the appointed time for the completion of a vital experiment. The Soviets have learned of this and are moving in.\n\nProtect the Chronosphere and the Advanced-Tech research center. Make sure the base is fully powered at the appointed time. If not, all will be lost!",
      "options": {
@@ -408,7 +408,7 @@
      "id": "allies-08b",
      "title": "08b: Protect the Chronosphere",
      "file": "allies-08b.json",
-     "sha256": "a2c7418a182af4ebc8274884315558cfda00658593ddb5c4fc55aa14d31b9185",
+     "sha256": "f93bd1fd95a4f14b599e7e211bf1938747997cd32bbe330bb7e965e15c515aa4",
      "faction": "allies",
      "briefing": "Our latest technology, the Chronosphere, is housed in this research station. The timer represents the appointed time for the completion of a vital experiment. The Soviets have learned of this and are moving in.\n\nProtect the Chronosphere and the Advanced-Tech research center. Make sure the base is fully powered at the appointed time. If not, all will be lost!",
      "options": {
@@ -442,7 +442,7 @@
      "id": "allies-09a",
      "title": "09a: Evacuate Kosygin",
      "file": "allies-09a.json",
-     "sha256": "b4d9df96f91e1ff3d8ad0afce4383f9cb3f77dcbc6782cf65ab82c4a311007bb",
+     "sha256": "d67c3bba9b9dc48b5acdf4bbf729c3353bdb25c1efd3b9fb5e857d92daa85d51",
      "faction": "allies",
      "briefing": "One of Stalin's top atomic strategists, Vladimir Kosygin, wishes to defect. His knowledge of Stalin's atomic strategies is invaluable to us. We will extract him from the Riga compound where he is stationed.\n\nUse a spy to infiltrate the Soviet command center and contact Kosygin. Once he is out of the building, guide him back to your base any way you can.",
      "options": {
@@ -471,7 +471,7 @@
      "id": "allies-10a",
      "title": "10a: Suspicion",
      "file": "allies-10a.json",
-     "sha256": "d87696949640bde719aa7047405ff298ed7bd219f10d47cf4e2084ffc8364a18",
+     "sha256": "069b903107c90ce09c8b82bd22b0034c3ccbd640a710e95c675ea6ccdf6bcbcc",
      "faction": "allies",
      "briefing": "Kosygin has indicated that this is the site of Stalin's main atomic weapons plant. Use extreme care in approaching the Soviet base -- we don't know if any atomic bombs are armed. Take the facility offline and destroy any atomic weapons that exist.",
      "options": {
@@ -556,7 +556,7 @@
      "id": "soviet-01",
      "title": "01: Lesson in Blood",
      "file": "soviet-01.json",
-     "sha256": "1b1c3f41b0f730b87a233d99fe0b354ee0b8bacb7a86a713360d0c313a78358c",
+     "sha256": "cc03cc6c89ab0b9e404a073d8cd339e5d771ed08f5a83f00417718ca10e223dc",
      "faction": "soviet",
      "briefing": "A pitiful excuse for resistance has barricaded itself in this village.\n\nStalin has decided to make an example of them. Kill them all and destroy their homes. You will have Yak aircraft to use to teach these rebels a lesson.",
      "options": {},
@@ -572,7 +572,7 @@
      "id": "soviet-02a",
      "title": "02a: The Thin Red Line",
      "file": "soviet-02a.json",
-     "sha256": "29b6e9b7ac205e1fbeadb6f750cbc12abb8bb664ee8905260f6ba5445dbabbf1",
+     "sha256": "84dc8e691e6b2ca0ba9fd239d096bdb41833d2a6592f2abf4e7db53a0f781c55",
      "faction": "soviet",
      "briefing": "Tomorrow, the attack on Germany begins, but today, we must protect our facility from Allied attacks.\n\nKeep the Command Center intact at all costs, and destroy any Allied fortifications you might find.",
      "options": {},
@@ -587,7 +587,7 @@
      "id": "soviet-02b",
      "title": "02b: The Thin Red Line",
      "file": "soviet-02b.json",
-     "sha256": "3fa42c245bdb09d5f281b8562bcb30ab9dee8ab343878ca9178317da382068a5",
+     "sha256": "0dbcdbec805f38e9a2b4ce79d7407ad8557618dff1617879f16b15fb9ebe2783",
      "faction": "soviet",
      "briefing": "Tomorrow, the attack on Germany begins, but today, we must protect our facility from Allied attacks.\n\nKeep the Command Center intact at all costs, and destroy any Allied fortifications you might find.",
      "options": {},
@@ -602,7 +602,7 @@
      "id": "soviet-03",
      "title": "03: Covert cleanup",
      "file": "soviet-03.json",
-     "sha256": "a414ecb9cad496ee0cf5c62792776c64e8b51dc973284344aa2e0efcdcb36443",
+     "sha256": "31c37acccde159f96c57455130d979e7d787c81c93facbffd387acd8b4959c2d",
      "faction": "soviet",
      "briefing": "A spy who compromised the security of a northern sarin gas site has been traced back to Lund, Sweden, by Nadia's intelligence groups.\n\nHe has been marked for death and a squad of Soviet troops has been dispatched to to hunt him down.",
      "options": {
@@ -636,7 +636,7 @@
      "id": "soviet-04a",
      "title": "04a: Behind the Lines",
      "file": "soviet-04a.json",
-     "sha256": "b2e20b32aada5db48bff548a47e6076b3d5bf229f656c7d81de98cb912aab87e",
+     "sha256": "7baadb49e06c8c1cc4d4414762d73a8bec34cdc9a3de55bc05ef03da92b00617",
      "faction": "soviet",
      "briefing": "The Allied base in this region is proving to be problematic.\n\nYour mission is to take it out, so that we can move forces through this area.\n\nAs long as they have communications they will be able to call upon heavy reinforcements.\n\nDestroy their communications, and the Allies should be easy to remove.",
      "options": {
@@ -670,7 +670,7 @@
      "id": "soviet-04b",
      "title": "04b: Behind the Lines",
      "file": "soviet-04b.json",
-     "sha256": "3420aa79ff6d1b45dbd30beca335b8fced797de1cbc6458df7bd8782c0b92d57",
+     "sha256": "e865807e10ece758e8850da2b64b37bac71a543912a537f764965deec0e75a45",
      "faction": "soviet",
      "briefing": "The Allied base in this region is proving to be problematic.\n\nYour mission is to take it out, so that we can move forces through this area.\n\nAs long as they have communications they will be able to call upon heavy reinforcements.\n\nDestroy their communications, and the Allies should be easy to remove.",
      "options": {
@@ -704,7 +704,7 @@
      "id": "soviet-05",
      "title": "05: Distant Thunder",
      "file": "soviet-05.json",
-     "sha256": "a0a82451a345690978c6efb0586e24dbb85e5a83b47c91b9c19c531588097156",
+     "sha256": "abb4b5f13a2a2d5f29e0f286082793e2301fa64a96c17f8f1f54ed625531e861",
      "faction": "soviet",
      "briefing": "Khalkis island contains a large quantity of ore that we need.\n\nThe Allies are well aware of our plans, and intend to establish their own base there. See to it that they fail.\n\nAdditionally, capture their radar center so we can track Allied activity in the area.",
      "options": {
@@ -738,7 +738,7 @@
      "id": "soviet-06a",
      "title": "06a: Bridge over the River Grotzny",
      "file": "soviet-06a.json",
-     "sha256": "23bd7915f271512c512fee80c795514534ada59038b99a3f8ef2c592bdc92ea6",
+     "sha256": "eebee9fba070b8f29c02528fb466f7e851c7fc37a42f7ba02c47a722452d1186",
      "faction": "soviet",
      "briefing": "There is a special cargo that needs to be transported to a nearby Soviet base in the northeast.\n\nMake sure the trucks reach their destination intact. Along the way, there is a bridge which the Allies have likely destroyed.\n\nUse the Naval options at your disposal. Our attack subs will make short work of any Allied boats you discover.",
      "options": {
@@ -772,7 +772,7 @@
      "id": "soviet-06b",
      "title": "06b: Bridge over the River VizchGoi",
      "file": "soviet-06b.json",
-     "sha256": "68500f51f45dfee8020c4de0f0436ab7364bf5f04c4bbc6baaed1f8d24b8f016",
+     "sha256": "6bf53b039bd3888ab4d85831336786c478f7ef3463d0e98c36eec6f6a6463f05",
      "faction": "soviet",
      "briefing": "There is a special cargo that needs to be transported to a nearby Soviet base in the northeast.\n\nMake sure the trucks reach their destination intact. Along the way, there is a bridge which the Allies have likely destroyed.\n\nUse the Naval options at your disposal. Our attack subs will make short work of any Allied boats you discover.",
      "options": {
@@ -840,7 +840,7 @@
      "id": "soviet-08a",
      "title": "08a: Investigate Elba Island",
      "file": "soviet-08a.json",
-     "sha256": "b0d7a1273a584a4bbe4aedada6e0b7f58f4070d411a3e91d88b2b728abb0643d",
+     "sha256": "2625836de9a706f27aea5adcd7ec40c34bb1db19a11185608bde1f5af6d67e4a",
      "faction": "soviet",
      "briefing": "We have detected Allied activity on Elba island. The Allies plan to use this island to stage an attack on the Soviet Empire.\n\nYou must ensure that the island ceases to be under Allied control. Destroy all Allied units on and around the island.\n\nThe local population has been aiding the Allies as well. There is only one punishment for helping the enemy - Death.",
      "options": {
@@ -874,7 +874,7 @@
      "id": "soviet-08b",
      "title": "08b: Investigate Elba Island",
      "file": "soviet-08b.json",
-     "sha256": "e9b68b73347122d2a17d643ea14d0994e66ca4c0b9bc40823b8972cd3666ab2a",
+     "sha256": "90f41dc53fc728dcd60d5d78a820e98c3a0c1dbb5762e1a87c33de340b07ec82",
      "faction": "soviet",
      "briefing": "We have detected Allied activity on Elba island. The Allies plan to use this island to stage an attack on the Soviet Empire.\n\nYou must ensure that the island ceases to be under Allied control. Destroy all Allied units on and around the island.\n\nThe local population has been aiding the Allies as well. There is only one punishment for helping the enemy - Death.",
      "options": {
@@ -908,7 +908,7 @@
      "id": "soviet-09",
      "title": "09: Liability Elimination",
      "file": "soviet-09.json",
-     "sha256": "38ceeb3ebf93f5def47b168306f31c366837cba8e28887392853746b9f82c8e5",
+     "sha256": "99f7b32c436fca0e504f9d97f7477b2d32e7a65385d1a3ba65d8ae8ed2a9e688",
      "faction": "soviet",
      "briefing": "The Allied forces have intercepted and destroyed a convoy that carried parts for our secret weapon. One truck remains, but they have captured that last truck and its cargo.\n\nThis is not acceptable! You are to destroy that truck before the Allies leave the area with it.",
      "options": {
@@ -942,7 +942,7 @@
      "id": "soviet-10",
      "title": "10: Overseer",
      "file": "soviet-10.json",
-     "sha256": "a4e1006e72341ae9e171d6cc5446e45cbab8a7f2f40d3c4c04ae669cf185f42c",
+     "sha256": "e9c960e64188b1b1cb922c7cb81b8e072944d65ddc0bb130dd5d33167829bdca",
      "faction": "soviet",
      "briefing": "You must defend a Soviet convoy that is moving through Allied occupied territory. Using the new MIG jet and a compliment of Yaks, get the convoy through the area intact.\n\nBe careful -- your resources for this mission are very limited. If at least one truck makes it through to the other side, the mission will be a success.",
      "options": {
@@ -976,7 +976,7 @@
      "id": "soviet-11a",
      "title": "11a: Sunk Costs",
      "file": "soviet-11a.json",
-     "sha256": "885ffe70aaf286713fab9ed8ac9b65bef6ac417f5bc2f4499549e4fc4175b92a",
+     "sha256": "fdccaecb1712041444ba6c3ee58dc9a7e591f16850a1f72847d1cafd32ce420f",
      "faction": "soviet",
      "briefing": "Intelligence indicates that a large portion of the Allied Naval Fleet will stop for refueling at a base in this area. Destroy the fleet and the base. Beware the long range of their cruisers.",
      "options": {
@@ -1010,7 +1010,7 @@
      "id": "soviet-11b",
      "title": "11b: Sunk Costs",
      "file": "soviet-11b.json",
-     "sha256": "49e59acee735941fff928a81c39d41e5857420757384ccbe997650e60e376d67",
+     "sha256": "dfe4ccd59affac0a42d995646241becd87ac7ccd836e07ed855f1e76f86349b4",
      "faction": "soviet",
      "briefing": "Intelligence indicates that a large portion of the Allied Naval Fleet will stop for refueling at a base in this area. Destroy the fleet and the base. Beware the long range of their cruisers.",
      "options": {
@@ -1044,7 +1044,7 @@
      "id": "soviet-13a",
      "title": "13a: Capture the Chronosphere",
      "file": "soviet-13a.json",
-     "sha256": "b80e3554e314171d9e71ac3fb2d6f826186f2dc5236ac08c45e98e3d5b790e44",
+     "sha256": "1e3970ddf5d557d9def07e445e2cde0bf1482d4c0650ad815ccd63da64204012",
      "faction": "soviet",
      "briefing": "We have another chance to capture the Chronosphere. Take out the Radar Domes to sever their link with the Chronosphere. Then capture it!",
      "options": {
@@ -1078,7 +1078,7 @@
      "id": "soviet-13b",
      "title": "13b: Capture the Chronosphere",
      "file": "soviet-13b.json",
-     "sha256": "e4e139b2d88f635c677bab2cd936fd29445aa3c8af70658d2a2cefe1ffcbf261",
+     "sha256": "2b53b3848d1455d5a04b3f6578cca41e70a2cc966b97274953421d632fe94d65",
      "faction": "soviet",
      "briefing": "We have another chance to capture the Chronosphere. Take out the Radar Domes to sever their link with the Chronosphere. Then capture it!",
      "options": {
@@ -1208,7 +1208,7 @@
      "id": "fall-of-greece-1-personal-war",
      "title": "Fall of Greece 1: Personal War",
      "file": "fall-of-greece-1-personal-war.json",
-     "sha256": "89e0216c449e99420ee31f47eafab0568ceffb5771d4ec4163ebd632029d36e7",
+     "sha256": "6d10b55c19d7f5d0a55bb09c274c451b5235a364f9ea2264f29b1080e60373ae",
      "faction": "allies",
      "briefing": "With the fighting fast approaching Athens, Stavros insists on surveying the damage in his hometown in Greece.\n\nYou must escort Stavros through the town to a nearby friendly outpost. Once you reach it, evacuate him to safety.\n\nIf anything should happen, get Stavros to safety by any means necessary. He must be kept alive.",
      "options": {
@@ -1236,7 +1236,7 @@
      "id": "fall-of-greece-2-evacuation",
      "title": "Fall of Greece 2: Evacuation",
      "file": "fall-of-greece-2-evacuation.json",
-     "sha256": "b130b6b1ad9af3b34c9a2cd04d5e31dfb4ac738150dcb692282e5f5a284976d9",
+     "sha256": "036a9f629d05c6bbfaaccb0a175b6f56751db8850102382ef5422ba1b7662443",
      "faction": "allies",
      "briefing": "Soviet forces are advancing into rural Athens, threatening the civilian population. Evacuate civilians from each of the four towns to the island in the northeast.\n\nThe civilians are hiding in the town churches, and will only come out once when you enter the town. Get in, get them out, and get them to the island.\n\nThe civilians are your primary objective - removing the Soviet threat is optional.",
      "options": {
@@ -1300,7 +1300,7 @@
      "id": "siberian-conflict-3-wasteland",
      "title": "Siberian Conflict 3: Wasteland",
      "file": "siberian-conflict-3-wasteland.json",
-     "sha256": "44b190b9206602888333ed29e530d67529df7c60cf151130e38861d08384a7cd",
+     "sha256": "9cf2886034821e48929e9096260f1bfcad6b06b7d2c31bec41a38096e19b274e",
      "faction": "allies",
      "briefing": "The last of the Soviet Siberian forces have ventured into the icy wastelands, where they have established a base. Destroy their stronghold so our Allied forces can advance unimpeded on their march to Moscow.\n\nThe mission is complete when all Soviet forces and structures are destroyed.",
      "options": {
@@ -1337,7 +1337,7 @@
      "id": "mousetrap",
      "title": "Mousetrap",
      "file": "mousetrap.json",
-     "sha256": "29c6be2a2fda4cd7bad2f8023fa84e834915ec723572c65e7188b530870da65f",
+     "sha256": "0968915e5c262495059f7f6f4799a85ea3ae30b38e42945420be807c6914fe82",
      "faction": "soviet",
      "briefing": "A longtime thorn in our side, the Greek commander Stavros, has finally been cornered. He has taken refuge in an underground bunker full of his Chronosphere technology. Prove to him that no Allied tricks can stop the wrath of the Soviet Union. Track him down, and eliminate him.\n\nReturn with results -- we do not want to hear of his escape... only the creative manner of his demise.\n\nWe have provided you with engineers that, given the opportunity, can use Chronosphere technology. Do not squander them.",
      "options": {
@@ -1366,7 +1366,7 @@
      "id": "proving-grounds",
      "title": "Proving Grounds",
      "file": "proving-grounds.json",
-     "sha256": "28ae9f0351e883d628c39dd2cb896ef1e90212c37e6166183a42d5fc447d3717",
+     "sha256": "e3163706e53eebfa6022960ee30cad21902b3d363e1654e0b111498c024bd286",
      "faction": "soviet",
      "briefing": "Information on our new Advanced Tactical Submarine was leaked to the Allies and they have invaded our territory, determined to stop us. You must destroy them.\n\nRegain control of our bases as they are revealed by the signal flares. Do not let any Allied attacks stop you.\n\nWe have received word that a detachment of cruisers is on its way here. Once you recover the sub pen, use the new ATS to prevent the cruisers from destroying our operation.",
      "options": {
@@ -1398,7 +1398,7 @@
      "id": "soviet-soldier-volkov-n-chitzkoi",
      "title": "Soviet Soldier Volkov & Chitzkoi",
      "file": "soviet-soldier-volkov-n-chitzkoi.json",
-     "sha256": "b3b11cb42d1bbce5f1e8dfb3fc8683c2f1febfe844e23404358d869593d5a8b1",
+     "sha256": "a5521da863dae3a2da48bfc7f24e42079a014d06226a287a23e9890bc7675214",
      "faction": "soviet",
      "briefing": "The Allies have stolen a new armor plating from us. With it, they can make structures nearly invulnerable. Their processing plant must be destroyed.\n\nFor this critical mission, we are allowing you access to Soldier Volkov. Use him and his cybernetic dog to sabotage the Allied control center, allowing our units in the southeast access to the alloy facility.\n\nThe mission is a success when Volkov destroys the control center, and our units destroy the alloy facility.",
      "options": {
@@ -1430,7 +1430,7 @@
      "id": "top-o-the-world",
      "title": "Top o' the World",
      "file": "top-o-the-world.json",
-     "sha256": "6fd16f3d2f5e451dd0fdc3fcb9268ee499f5d0d08086d23d9766b2a019c34964",
+     "sha256": "8743be230675bd2cec2afb7b749dded7d4d7d33cd57ab23f53a95fbe41413fd1",
      "faction": "soviet",
      "briefing": "A critical cargo held in this supply truck must reach the waystation atop the mountain. The way is blocked by Allied squads, but do not let that deter you -- the cargo must reach its destination.\n\nThe onset of nightfall has brought sub-zero temperatures with it. The Allies are prepared for these conditions -- our units are not. The life expectancy of your troops in these extremes is limited. Infantry may last 12 minutes, while vehicles could last for up to 36 minutes. You have little time. Go.",
      "options": {
@@ -1467,7 +1467,7 @@
      "id": "in-the-nick-of-time",
      "title": "In the Nick of Time",
      "file": "in-the-nick-of-time.json",
-     "sha256": "84c1264667b4721ed2cc3648a658096d02535f6e9bb202494f11930f83656c74",
+     "sha256": "3f40dc26e08a4c842ff801e1c0b7c8459e5678f9eff9fb27673bde79115a5d13",
      "faction": "allies",
      "briefing": "The situation is critical! The Soviets have taken over a small research base in the north. During the conflict, a chronosphere was badly damaged. We fear it could explode.\n\nInside the base is a group of scientists that were captured during the takeover. They must be rescued before the chronosphere explodes. Fight your way back into the base and retrieve them.\n\nBe careful -- there is only one way in and out of the base, a lone bridge. It must be protected to ensure evacuation.",
      "options": {},
@@ -1480,7 +1480,7 @@
      "id": "production-disruption",
      "title": "Production Disruption",
      "file": "production-disruption.json",
-     "sha256": "70034b9fcf29559f0723aa00e41a716ca608ed44b3727d090ee93e42d132adf0",
+     "sha256": "119203b240c1097745c925126eeb2ae6d7f18b5f0b5450eddb8c4eeb66ae51d8",
      "faction": "allies",
      "briefing": "The Soviets are constructing a new class of submarine capable of launching sea-to-ground missiles. We don't need to tell you the devastation these could cause.\n\nTake a small squad of troops and infiltrate their power grid. Once it's down, reinforcements will follow. Then, head north to destroy the sub pen and prevent further construction of these submarines.\n\nIf any are built, they must not escape!",
      "options": {
@@ -1525,7 +1525,7 @@
      "id": "negotiations",
      "title": "Negotiations",
      "file": "negotiations.json",
-     "sha256": "c29dc7555c31bf22744c994577edc81fbee89cd95beb9f1a1d8fd293cf2a38cd",
+     "sha256": "1669de372f071a49ba1c1e3a86c6a2a0edfef345a0e930cbb175fb73a87a073a",
      "faction": "allies",
      "briefing": "A Soviet force has holed up in a small town, threatening to kill a hostage every few minutes until their demands are met. We do not negotiate with terrorists -- explain this to them.\n\nLocate the hostages, free as many of them as you can, and get them safely to a nearby abandoned church. Once done, return to your drop-off point, signal for reinforcements, and finish off the Soviet forces.",
      "options": {
@@ -1562,7 +1562,7 @@
      "id": "shock-therapy",
      "title": "Shock Therapy",
      "file": "shock-therapy.json",
-     "sha256": "72863238e5ea7249b68fc30152fee2ce56f1cca0629830c12f3c21b60951b7b2",
+     "sha256": "03024028ef3490feedfe4fc162a2dd0a8bef290a3c0342339638461f5ebf280e",
      "faction": "soviet",
      "briefing": "A small border town has been voicing support for the Allied cause. These people are no longer Soviets, but enemies to our great empire. As enemies, they must be destroyed.\n\nTake Stalin's elite shock troopers and demonstrate the iron might of the Soviet army. No doubt, the rabble will seek help from the meagre Allied prescence in the area.\n\nWhatever pathetic support they can muster, it will not be enough. Crush them -- let nothing stand in your way.",
      "options": {},
@@ -1575,7 +1575,7 @@
      "id": "situation-critical",
      "title": "Situation Critical",
      "file": "situation-critical.json",
-     "sha256": "af288c286d11acfdb5558d133b64f1783b072c985047be90a11009a3ae8b2a31",
+     "sha256": "2e2b644e1bb7299f927377546b110d285c9ebe63b7f5465d5f33f46cc51c4126",
      "faction": "soviet",
      "briefing": "A radical faction of our forces has stolen a biological weapon, threatening to use it on Allied emplacements. Since the weapon is highly unstable, it could destroy us all if released.\n\nThe facility must be destroyed, but the weapon must be neutralized first. Destroy the island's defenses, then use Volkov to assist our scientist in reaching the bio-research center. If either are killed before the weapon is neutralized, the mission is a failure.\n\nOnce the scientist completes his mission, destroy the base.",
      "options": {},
@@ -1593,7 +1593,7 @@
      "id": "evacuation",
      "title": "Evacuation",
      "file": "evacuation.json",
-     "sha256": "3406aa0350863fec3d160e46ac809dec8a50f7f0cb9c09aefd734d153b10be17",
+     "sha256": "f1a3cf8224658683d0714c9a83b507ca6226649d9c0a7d770c7d43850115f474",
      "faction": "allies",
      "briefing": "One of our outposts is under heavy attack from a nearby Soviet base. Einstein, Tanya and many of our forces were evacuated by helicopter, but were shot down on the other side of the river. Fortunately they survived the crash, but are now stranded in enemy territory and must fight their way out. The air defenses must be eliminated before another Search & Rescue helicopter can arrive.\n\nMeanwhile, those left at the base need to fend off Soviet attacks.",
      "options": {
@@ -1622,7 +1622,7 @@
      "id": "exodus",
      "title": "Exodus",
      "file": "exodus.json",
-     "sha256": "750360dd62c4d092fe486e5bcf7f2362457ae2cc27367ae859820057e8c56423",
+     "sha256": "f51c7e4e251d6a49aff3b742703d2977352a3d33b77b91b01132dec6cc04c415",
      "faction": "allies",
      "briefing": "We are being flanked from both sides. Evacuate before the remaining Allied forces in the area are wiped out. Einstein has recently developed a technology which allows us to obscure units from the enemy. Pull out at least one prototype mobile gap generator intact.",
      "options": {
@@ -1688,7 +1688,7 @@
      "id": "intervention",
      "title": "Intervention",
      "file": "intervention.json",
-     "sha256": "e78712be4a352d849755bed48e0dd5dac2ed065d9778c29012cb083fcc5e39e9",
+     "sha256": "bd6b3d30bc535275183c0f0b2978b54d035ea72aba91e0e5fc6ba6c02f7ec4d5",
      "faction": "allies",
      "briefing": "The Soviet Air Force is conducting air raids on a civilian village.\n\nWe must do everything in our power to stop them!\n\nYour job is to establish a base on the mainland ASAP. We can prevent the village's destruction by capturing the enemy's Air Force Headquarters. The enemy base is heavily guarded. You won't have time to build a force big enough to overpower the Soviet defenses. Find a way to sneak in!\n\nGood luck, Commander!",
      "options": {
@@ -1717,7 +1717,7 @@
      "id": "survival01",
      "title": "Survival 01",
      "file": "survival01.json",
-     "sha256": "9fe923004aa58934d6d0db14608709b20208d312c089811cb00b44d55df0c15f",
+     "sha256": "9923214aed009930a9a833a299c1cfc9061e9a041adc138d9bdfd059d2466720",
      "faction": "allies",
      "briefing": "LANDCOM 66 HQS.\nTOP SECRET.\nTO: FIELD COMMANDER A34\n\nSOVIETS HAVE LAUNCHED HEAVY ATTACKS ON OUR POSITION.\n SURVIVE AND HOLD THE BASE UNTIL OUR FRENCH ALLIES ARRIVE.\n\nCONFIRMATION CODE 5593.\n\nTRANSMISSION ENDS.",
      "options": {
@@ -1746,7 +1746,7 @@
      "id": "survival02",
      "title": "Survival 02",
      "file": "survival02.json",
-     "sha256": "9ffbcd4c4cbcfa86bd489124fcf5db7e351950553ca17556ca9531bdd96e7fbd",
+     "sha256": "954bbf152f4313869cbde34b5c74cfc872b1cac064f8cfc5bf89f88eeb54854c",
      "faction": "allies",
      "briefing": "INCOMING REPORT:\n\nCommander! The Soviets have rendered our forces useless...\nReports indicate Soviet reinforcements are coming to finish us off... The situation looks bleak...",
      "options": {},

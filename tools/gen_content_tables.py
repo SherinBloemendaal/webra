@@ -1394,6 +1394,18 @@ def main():
         actors.append({'id': key, 'source': source, 'kind': kind, 'turret': False, 'harvester': False, '_wall': False, 'bridge': False})
     render = render_data(rules)
     art, used = actor_art(actors, seqs)
+    # Support power icons (SupportPowerInfo.Icon, sequences of the "icon"
+    # image): the observer's support power panel (js/content/cameos.js
+    # originalPowerIconPixels).
+    for a in rules['actors']:
+        for power in (a.get('abilities') or {}).get('support_powers') or []:
+            name = power.get('icon')
+            if not name:
+                continue
+            rec = normalize('icon', name, seqs.get('icon', {}))
+            if rec is None:
+                raise SystemExit(f"{a['id']} {power['key']}: no sequence icon.{name}")
+            used.setdefault('icon', {})[name] = rec
     specials, explosion_art = special_art(seqs, used, render['explosions'])
     facts = render_facts(actors, seqs)
     for a in actors:

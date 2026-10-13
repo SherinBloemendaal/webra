@@ -1235,6 +1235,14 @@ def bridge_info(t, ids_lower, tilesets, weapon_index):
     }
 
 
+def stats_override(t, ids_lower):
+    """UpdatesPlayerStatistics.OverrideActor (the paratroopers' E1R1 and E3R1
+    count as E1 and E3 in the observer's army panel), or None."""
+    u = t.get('UpdatesPlayerStatistics')
+    override = u.get('OverrideActor') if isinstance(u, dict) else None
+    return ids_lower[override.lower()] if override else None
+
+
 def hospital_heal(t):
     """ChangesHealth switched on by a prerequisite (RA's ^Infantry: owning a
     Hospital, `hosp`, heals damaged infantry): GrantConditionOnPrerequisite ->
@@ -1328,6 +1336,10 @@ def world_info(t, kind, weapon_index, damaging, ids_lower, tilesets, neutral):
         'damage_explosions': explosions,
         'cash_on_capture': int(gives.get('Amount', 0)),
         'cash_trickler': trickle,
+        # UpdatesDerrickCount: counted in the observer's Derricks column (oil derricks).
+        'derrick': 'UpdatesDerrickCount' in t,
+        # UpdatesPlayerStatistics.OverrideActor: the observer's army panel counts it as that type.
+        'stats_actor': stats_override(t, ids_lower),
         'hospital_heal': hospital_heal(t) if kind == 'infantry' else None,
         'scaredy_cat': scared,
         'wanders': wanders,
@@ -1661,6 +1673,8 @@ def main():
                          'duration': int(v.get('Duration', 0)), 'range': int(ints(v.get('Range', '1'))[0]) if v.get('Range') and 'c' not in v.get('Range') else wdist(v.get('Range')) // 1024 if v.get('Range') else 1,
                          'max_distance': int(v.get('MaxDistance', 0) or 0),
                          'palette_order': int(v.get('SupportPowerPaletteOrder', 0) or 0),
+                         # SupportPowerInfo.Icon: its sequence of the `icon` image (observer icons, installed content).
+                         'icon': v.get('Icon', ''),
                          # SupportPowerInfo.OrderName (default: the Info class name + "Order"); the
                          # AI's SupportPowerBotModule decisions name powers by it (ai_support.rs).
                          'order_name': v.get('OrderName', base + 'InfoOrder')}

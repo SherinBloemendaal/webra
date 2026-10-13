@@ -504,6 +504,9 @@ pub struct SupportPowerInfo {
     /// SupportPowerPaletteOrder: position in the support power bar.
     #[serde(default)]
     pub palette_order: i32,
+    /// SupportPowerInfo.Icon: its picture (sequence of OpenRA's `icon` image) in the observer's support power icons.
+    #[serde(default)]
+    pub icon: String,
     /// OrderName: how the AI's SupportPowerBotModule decisions name the power (ai_support.rs).
     #[serde(default)]
     pub order_name: String,

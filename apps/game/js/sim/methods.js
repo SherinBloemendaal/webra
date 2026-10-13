@@ -100,6 +100,8 @@ export const QUERY_DEFAULTS = Object.freeze({
   // Asked every UI tick; null until the first answer (the caller waits for it).
   player_json: () => null,
   observer_stats: () => null,
+  // The observer's production and support power icons, per player (js/observer-icons.js).
+  observer_production: () => null,
   // The end-game statistics (asked with `ask.observer_report()` when the statistics screen opens or refreshes).
   observer_report: () => null,
   radar_state: () => 0,

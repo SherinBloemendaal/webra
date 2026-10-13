@@ -3,7 +3,13 @@
 // observer statistics panels (OpenRA's ObserverStatsLogic: basic, economy,
 // production, support powers, combat, army and the two graphs; picked with
 // F1..F7 or the panel menu). Stats come from the engine (`Game.observer_stats`,
-// engine/src/observer.rs) and each player's `player_json`.
+// engine/src/observer.rs); the production, support power and army panels
+// are rows of icons (js/observer-icons.js) from `Game.observer_production`
+// and `Game.army_counts`. Players are grouped by team with a header row per
+// team, and each row starts with the player's faction flag (OpenRA
+// ObserverStatsLogic TEAM_TEMPLATE and FLAG).
+
+import { armyIcons, armyIconTip, IconStrip, powerIcons, powerIconTip, productionIcons, productionIconTip } from './observer-icons.js';
 
 export const OBSERVER_VIEW = 255;
 /** Income is the money earned over the last minute of game time. */
@@ -58,9 +64,11 @@ export const COMBINED_VIEW = 254;
 /**
  * The statistics panels of OpenRA's observer (ObserverStatsLogic), picked
  * with the statistics hotkeys (F1..F7) or the panel menu: per panel, its
- * table columns, `[heading, (stats, extra) => text]`, or a graph. `extra`
- * holds the client's own numbers for the player: income per minute, the
- * player's `player_json` (production, powers), harvesters and army counts.
+ * table columns, `[heading, (stats, extra) => text]`, a row of icons per
+ * player (`icons`: js/observer-icons.js, under the heading `heading`), or a
+ * graph. `extra` holds the client's own numbers for the player: income per
+ * minute, actions per minute, harvesters, and what `ObserverPanel.needs`
+ * asked for.
  */
 export const PANELS = {
   none: { label: 'No statistics' },
@@ -86,16 +94,12 @@ export const PANELS = {
       ['Earned', (s) => formatMoney(s.earned)],
       ['Spent', (s) => formatMoney(s.spent ?? 0)],
       ['Harvesters', (s, x) => String(x.harvesters ?? 0)],
+      // OpenRA DERRICKS: the oil derricks the player owns (UpdatesDerrickCount).
+      ['Derricks', (s) => String(s.derricks ?? 0)],
     ],
   },
-  production: {
-    label: 'Production',
-    columns: [['In production', (s, x) => productionText(x.state)]],
-  },
-  supportPowers: {
-    label: 'Support powers',
-    columns: [['Support powers', (s, x) => powersText(x.state)]],
-  },
+  production: { label: 'Production', heading: 'Production', icons: 'production' },
+  supportPowers: { label: 'Support powers', heading: 'Support powers', icons: 'powers' },
   combat: {
     label: 'Combat',
     columns: [
@@ -106,12 +110,11 @@ export const PANELS = {
       ['Structures killed', (s) => String(s.buildingsKilled)],
       ['Structures lost', (s) => String(s.buildingsLost)],
       ['Army value', (s) => formatMoney(s.armyValue)],
+      // OpenRA VISION: the share of the map the player sees now (Shroud.RevealedCells).
+      ['Vision', (s) => `${s.vision ?? 0}%`],
     ],
   },
-  army: {
-    label: 'Army',
-    columns: [['Army', (s, x) => armyText(x.army)]],
-  },
+  army: { label: 'Army', heading: 'Army', icons: 'army' },
   graph: { label: 'Earnings graph', graph: 'earned' },
   armyGraph: { label: 'Army value graph', graph: 'armyValue' },
 };
@@ -119,29 +122,21 @@ export const PANELS = {
 /** Panel names in the order of the statistics hotkeys. */
 export const PANEL_ORDER = Object.keys(PANELS);
 
-/** "Heavy Tank 40%, Rifle Infantry" for a player_json's queues: each tab's current item. */
-export function productionText(state) {
-  const items = (state?.queues ?? []).map((q) => q[0]).filter(Boolean);
-  if (!items.length) return '-';
-  return items.map((it) => (it.done ? `${it.name ?? it.id} ready` : `${it.name ?? it.id} ${Math.floor((it.progress ?? 0) * 100)}%`)).join(', ');
-}
-
-/** "Nuke 2:10, Spy Plane ready" for a player_json's support powers. */
-export function powersText(state) {
-  const powers = state?.powers ?? [];
-  if (!powers.length) return '-';
-  return powers.map((p) => `${p.name} ${p.ready ? 'ready' : formatClock(p.remainingTicks / 25)}`).join(', ');
-}
-
-/** "5 Rifle Infantry, 2 Heavy Tank" from [[name, count], ...]. */
-export function armyText(army) {
-  if (!army?.length) return '-';
-  return army.map(([name, n]) => `${n} ${name}`).join(', ');
-}
-
-function formatClock(seconds) {
-  const s = Math.max(0, Math.ceil(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+/**
+ * Players grouped by team for the statistics rows (OpenRA ObserverStatsLogic:
+ * teams in ascending order, a header per team unless nobody has a team):
+ * `[{ team, label, stats: [...] }]`, `label` null when there are no teams.
+ */
+export function teamGroups(stats) {
+  const groups = new Map();
+  for (const s of stats) {
+    const team = s.team ?? 0;
+    if (!groups.has(team)) groups.set(team, []);
+    groups.get(team).push(s);
+  }
+  const keys = [...groups.keys()].sort((a, b) => a - b);
+  const hasTeams = !(keys.length === 1 && keys[0] === 0);
+  return keys.map((team) => ({ team, label: hasTeams ? (team > 0 ? `Team ${team}` : 'No team') : null, stats: groups.get(team) }));
 }
 
 /** Samples of a number per player over time, for the graph panels. */
@@ -172,14 +167,37 @@ export class History {
 export class ObserverPanel {
   /**
    * @param {HTMLElement} parent
-   * @param {{ players: { name: string, color: number[] }[], view: number, onView(view: number): void, onStats?(): void, panel?: string }} opts
+   * @param {{
+   *   players: { name: string, color: number[] }[],
+   *   view: number,
+   *   onView(view: number): void,
+   *   onStats?(): void,
+   *   panel?: string,
+   *   actors?: object[],
+   *   ticksPerSecond?: number,
+   *   lowPowerModifier?: number,
+   *   paintCameo?(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): void,
+   *   paintPower?(canvas: HTMLCanvasElement, icon: string): void,
+   *   iconBacking?: { width: number, height: number },
+   * }} opts
    *   `onStats`: a Statistics button that opens the full statistics screen (js/stats.js);
-   *   `panel`: the statistics panel shown first (PANELS)
+   *   `panel`: the statistics panel shown first (PANELS);
+   *   `actors`: rules_json actors (rules order), for the icon panels;
+   *   `paintCameo` / `paintPower`: draw an icon's picture (js/cameo.js), at `iconBacking` pixels
    */
-  constructor(parent, { players, view = OBSERVER_VIEW, onView, onStats = null, panel = 'basic' }) {
+  constructor(parent, { players, view = OBSERVER_VIEW, onView, onStats = null, panel = 'basic', actors = [], ticksPerSecond = 25, lowPowerModifier = 100, paintCameo = () => {}, paintPower = () => {}, iconBacking }) {
     this.players = players;
     this.onView = onView;
     this.view = view;
+    this.actors = actors;
+    this.actorsById = new Map(actors.map((a) => [a.id, a]));
+    this.ticksPerSecond = ticksPerSecond;
+    this.lowPowerModifier = lowPowerModifier;
+    this.paintCameo = paintCameo;
+    this.paintPower = paintPower;
+    this.iconBacking = iconBacking;
+    /** The rows on screen: rebuilt when the panel or the players change, otherwise only their text is updated. */
+    this.layout = null;
     this.income = new IncomeTracker();
     this.earned = new History();
     this.army = new History();
@@ -242,20 +260,20 @@ export class ObserverPanel {
     this.panel = name;
     this.select.value = name;
     const p = PANELS[name];
-    this.table.hidden = !p.columns;
+    this.table.hidden = !p.columns && !p.icons;
     this.graph.hidden = !p.graph;
     this.graph.setAttribute('aria-label', p.label);
     if (this.last) this.update(...this.last);
   }
 
-  /** What the panel needs from the game besides `observer_stats`: 'state' (player_json), 'harvesters', 'army', or nothing. */
+  /** What the panel needs from the game besides `observer_stats`: 'production' (observer_production), 'harvesters', 'army' (army_counts), or nothing. */
   needs() {
-    return { production: 'state', supportPowers: 'state', economy: 'harvesters', army: 'army' }[this.panel] ?? null;
+    return { production: 'production', supportPowers: 'production', economy: 'harvesters', army: 'army' }[this.panel] ?? null;
   }
 
   /**
    * Redraw from `Game.observer_stats()` (parsed) at `tick`. `extra(player)`
-   * gives what `needs()` asked for: `{ state, harvesters, army }`.
+   * gives what `needs()` asked for: `{ production, harvesters, army }`.
    */
   update(stats, tick, extra = () => ({})) {
     this.last = [stats, tick, extra];
@@ -272,27 +290,116 @@ export class ObserverPanel {
       this.drawGraph(panel.graph === 'earned' ? this.earned : this.army);
       return;
     }
-    if (!panel.columns) return;
-    const cols = panel.columns;
-    const rows = [];
+    if (!panel.columns && !panel.icons) return;
+    const shown = stats.filter((s) => this.players[s.player]);
+    const layout = this.ensureLayout(panel, shown);
+    for (const s of shown) {
+      const row = layout.rows.get(s.player);
+      const x = { income: incomes.get(s.player) ?? 0, apm: apm(s), ...extra(s.player) };
+      if (row.defeated !== !!s.defeated) {
+        row.defeated = !!s.defeated;
+        row.el.classList.toggle('observer-defeated', row.defeated);
+      }
+      if (panel.columns) {
+        panel.columns.forEach(([, f], i) => {
+          const text = f(s, x);
+          if (row.texts[i] !== text) {
+            row.texts[i] = text;
+            row.cells[i].textContent = text;
+          }
+        });
+      } else {
+        row.data = x;
+        row.strip.update(this.icons(panel.icons, x));
+      }
+    }
+  }
+
+  /** The icons of one player's row: `x` is its `extra`. */
+  icons(kind, x) {
+    if (kind === 'production') return productionIcons(x.production, this.actorsById, this.ticksPerSecond);
+    if (kind === 'powers') return powerIcons(x.production, this.ticksPerSecond);
+    return armyIcons(x.army, this.actors);
+  }
+
+  /**
+   * The table's rows for this panel and these players: kept while neither
+   * changes, so an update only writes the cells whose text changed.
+   */
+  ensureLayout(panel, stats) {
+    const key = `${this.panel}|${stats.map((s) => `${s.player}:${s.team ?? 0}:${s.faction ?? ''}`).join(',')}`;
+    if (this.layout?.key === key) return this.layout;
+    this.dropLayout();
+    const heads = panel.columns ? panel.columns.map(([h]) => h) : [panel.heading];
+    const cols = heads.length;
     const head = el('div', 'observer-row observer-row-head');
     head.setAttribute('role', 'row');
-    head.style.setProperty('--cols', String(cols.length));
-    head.append(el('span', 'observer-cell observer-name', 'Player'), ...cols.map(([h]) => el('span', 'observer-cell', h)));
-    rows.push(head);
-    for (const s of stats) {
-      const p = this.players[s.player];
-      if (!p) continue;
-      const x = { income: incomes.get(s.player) ?? 0, apm: apm(s), ...extra(s.player) };
-      const row = el('div', s.defeated ? 'observer-row observer-defeated' : 'observer-row');
-      row.setAttribute('role', 'row');
-      row.style.setProperty('--cols', String(cols.length));
-      const name = el('span', 'observer-cell observer-name', p.name);
-      name.style.setProperty('--player-color', rgbCss(p.color));
-      row.append(name, ...cols.map(([, f]) => el('span', 'observer-cell', f(s, x))));
-      rows.push(row);
+    head.style.setProperty('--cols', String(cols));
+    head.append(el('span', 'observer-cell observer-name', 'Player'), ...heads.map((h) => el('span', 'observer-cell', h)));
+    const elements = [head];
+    const rows = new Map();
+    for (const group of teamGroups(stats)) {
+      if (group.label) {
+        // OpenRA TEAM_TEMPLATE: the team's name over its players.
+        const t = el('div', 'observer-row observer-team');
+        t.setAttribute('role', 'row');
+        const label = el('span', 'observer-cell observer-team-name', group.label);
+        label.setAttribute('role', 'rowheader');
+        t.append(label);
+        elements.push(t);
+      }
+      for (const s of group.stats) {
+        const p = this.players[s.player];
+        const row = el('div', panel.icons ? 'observer-row observer-row-icons' : 'observer-row');
+        row.setAttribute('role', 'row');
+        row.style.setProperty('--cols', String(cols));
+        const name = el('span', 'observer-cell observer-name');
+        name.style.setProperty('--player-color', rgbCss(p.color));
+        // OpenRA FLAG: the player's faction flag before the name.
+        const flag = el('span', 'observer-flag');
+        flag.dataset.faction = s.faction ?? '';
+        flag.setAttribute('aria-hidden', 'true');
+        name.append(flag, el('span', 'observer-player', p.name));
+        name.title = p.name;
+        row.append(name);
+        const rec = { el: row, defeated: false, cells: [], texts: [], strip: null, data: null };
+        if (panel.columns) {
+          rec.cells = panel.columns.map(() => el('span', 'observer-cell'));
+          row.append(...rec.cells);
+        } else {
+          rec.strip = this.makeStrip(panel.icons, p, rec);
+          const cell = el('span', 'observer-cell observer-icon-cell');
+          cell.append(rec.strip.root);
+          row.append(cell);
+        }
+        rows.set(s.player, rec);
+        elements.push(row);
+      }
     }
-    this.table.replaceChildren(...rows);
+    this.table.replaceChildren(...elements);
+    this.layout = { key, rows };
+    return this.layout;
+  }
+
+  /** The icon strip of one player's row. */
+  makeStrip(kind, player, rec) {
+    const tps = this.ticksPerSecond;
+    const paint = kind === 'powers' ? (canvas, icon) => this.paintPower(canvas, icon.power.icon) : (canvas, icon) => this.paintCameo(canvas, icon.actor, player.color);
+    let tip = (icon) => armyIconTip(icon);
+    if (kind === 'production') tip = (icon) => productionIconTip(icon, rec.data?.production, { ticksPerSecond: tps, lowPowerModifier: this.lowPowerModifier });
+    else if (kind === 'powers') tip = (icon) => powerIconTip(icon, tps);
+    return new IconStrip({ kind, paint, tip, backing: this.iconBacking });
+  }
+
+  /** Forget the rows (their tooltips too). */
+  dropLayout() {
+    for (const row of this.layout?.rows.values() ?? []) row.strip?.remove();
+    this.layout = null;
+  }
+
+  /** Paint the icons again (installed content changed: js/cameo.js has new pictures). */
+  repaintIcons() {
+    for (const row of this.layout?.rows.values() ?? []) row.strip?.repaint();
   }
 
   /** A line per player of `history` (OpenRA's statistics graphs), in their colours. */
@@ -334,6 +441,7 @@ export class ObserverPanel {
   }
 
   remove() {
+    this.dropLayout();
     this.root.remove();
   }
 }

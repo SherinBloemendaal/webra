@@ -6,6 +6,9 @@ import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES } from './tables.js';
 import { decodeSprite } from './shp.js';
 import { decodePalette, paletteLookup } from './palette.js';
 
+/** Cameo source names of support power icons: `icon:<SupportPowerInfo.Icon>`. */
+export const POWER_ICON_PREFIX = 'icon:';
+
 /**
  * RGBA pixels of an actor's original cameo: `{ width, height, rgba, labelled }`
  * or null. Cameos keep their own colours (OpenRA draws them with the chrome
@@ -13,9 +16,24 @@ import { decodePalette, paletteLookup } from './palette.js';
  * (`labelled`), so the sidebar leaves out its own label.
  */
 export function originalCameoPixels(actorId, getFile) {
-  const entry = ACTOR_ART[String(actorId)] ?? ACTOR_ART[String(actorId).toUpperCase()];
+  const id = String(actorId);
+  // Support power icons (js/cameo.js powerIconArt): OpenRA's "icon" image.
+  if (id.startsWith(POWER_ICON_PREFIX)) return originalPowerIconPixels(id.slice(POWER_ICON_PREFIX.length), getFile);
+  const entry = ACTOR_ART[id] ?? ACTOR_ART[id.toUpperCase()];
   if (!entry?.cameo) return null;
-  const def = SEQUENCES[entry.image]?.[entry.cameo];
+  return iconPixels(SEQUENCES[entry.image]?.[entry.cameo], getFile);
+}
+
+/**
+ * RGBA pixels of a support power's original icon (SupportPowerInfo.Icon, a
+ * sequence of OpenRA's "icon" image, hires.mix), like `originalCameoPixels`.
+ */
+export function originalPowerIconPixels(icon, getFile) {
+  return iconPixels(SEQUENCES.icon?.[String(icon)], getFile);
+}
+
+function iconPixels(def, getFile) {
+  if (!def) return null;
   const pal = getFile(ACTOR_PALETTE);
   const bytes = def && getFile(def.file);
   if (!pal || !bytes) return null;

@@ -9,6 +9,7 @@
 //   the original cameo from their own Red Alert files), set with setCameoArt.
 
 import { drawIcon, getCameo } from './sprites.js';
+import { drawPowerIcon } from './art/powericons.js';
 
 /** Cameo pictures from installed content, or null: `(typeName, width, height) => canvas | null`. */
 let contentArt = null;
@@ -85,3 +86,26 @@ export function createCameoPainter({ art = cameoArt, fallback = drawIcon, backdr
 
 /** The painter the sidebar uses. */
 export const cameoPainter = createCameoPainter();
+
+const powerIconCache = new Map();
+
+/**
+ * The picture of a support power icon (SupportPowerInfo.Icon, rules
+ * `icon`), for the observer's support power panel: installed content first
+ * (the cameo source answers `icon:<name>`, js/content/cameos.js), then
+ * WebRA's own (art/powericons.js), cached per size.
+ */
+export function powerIconArt(icon, width, height) {
+  const content = contentArt?.(`icon:${icon}`, width, height);
+  if (content) return content;
+  const key = `${icon}|${width}x${height}`;
+  let canvas = powerIconCache.get(key);
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    drawPowerIcon(canvas.getContext('2d'), icon, width, height);
+    powerIconCache.set(key, canvas);
+  }
+  return canvas;
+}

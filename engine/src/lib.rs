@@ -127,6 +127,8 @@ mod tests_neutral;
 #[cfg(test)]
 mod tests_nuke;
 #[cfg(test)]
+mod tests_observer_icons;
+#[cfg(test)]
 mod tests_original_art;
 #[cfg(test)]
 mod tests_overlays;
@@ -1378,16 +1380,10 @@ impl Game {
     /// The player's army by type for the observer's army panel (OpenRA
     /// ObserverArmyIcons): flat `[actor type index, count, ...]`, the units
     /// that count for the army value (observer.rs: no harvesters, no support
-    /// aircraft), in rules order.
+    /// aircraft) under their OverrideActor type, buildable types only, in
+    /// production tab and palette order (`World::army_counts`).
     pub fn army_counts(&self, player: u8) -> Vec<u32> {
-        let w = &self.world;
-        let mut counts = vec![0u32; w.rules.actors.len()];
-        for (i, a) in w.actors.iter().enumerate() {
-            if a.alive && a.owner == player && a.is_unit() && a.hp > 0 && !w.is_harvester(i) && !w.is_support_aircraft(i) {
-                counts[a.ty as usize] += 1;
-            }
-        }
-        counts.iter().enumerate().filter(|(_, &n)| n > 0).flat_map(|(t, &n)| [t as u32, n]).collect()
+        self.world.army_counts(player).into_iter().flat_map(|(t, n)| [u32::from(t), n]).collect()
     }
 
     /// Deploy selected MCVs / pack up a selected Construction Yard / unload selected transports.
@@ -1534,6 +1530,7 @@ impl Game {
                 json!({
                     "key": inst.key,
                     "kind": info.kind,
+                    "icon": info.icon,
                     "name": info.name,
                     "description": info.description,
                     "progress": (inst.total - inst.remaining) as f32 / inst.total.max(1) as f32,
