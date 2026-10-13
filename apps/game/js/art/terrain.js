@@ -588,6 +588,9 @@ export function terrainSeed(terrain) {
   return h >>> 0;
 }
 
+/** Which neighbours have kind bit `k`: north 1, east 2, south 4, west 8. */
+const sides = (k, north, east, south, west) => (north & k ? 1 : 0) | (east & k ? 2 : 0) | (south & k ? 4 : 0) | (west & k ? 8 : 0);
+
 /**
  * Per-cell tile layer for the shader, RGBA per cell: R tile index, G decal
  * (0 none, 1 + decal index), B water depth (0 at the shore to 255 four or more
@@ -596,43 +599,65 @@ export function terrainSeed(terrain) {
  * gems, A 255). Decals follow `seed`, so every player sees the same map.
  */
 export function cellTiles(terrain, w, h, seed = 0) {
-  const out = new Uint8Array(w * h * 4);
-  const type = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : terrain[(y * w + x) * 4]);
-  // Rivers look like water, and so does the river under a bridge's deck (the
-  // bridge actor draws the deck, art/world.js); walls of the tilesets like rock.
-  const wet = (t) => t === T.WATER || t === T.FORD || t === T.RIVER || t === T.BRIDGE || t === -1;
-  const isRock = (t) => t === T.ROCK || t === T.WALL || t === -1;
-  const isRoad = (t) => t === T.ROAD || t === T.BRIDGE;
+  const n = w * h;
+  const out = new Uint8Array(n * 4);
+  // What a terrain type counts as for its neighbours. Rivers look like water,
+  // and so does the river under a bridge's deck (the bridge actor draws the
+  // deck, art/world.js); walls of the tilesets like rock. Off the map counts
+  // as water and rock.
+  const WET = 1;
+  const ROCKY = 2;
+  const ROADY = 4;
+  const OFF = WET | ROCKY;
+  const kind = new Uint8Array(256);
+  for (const t of [T.WATER, T.FORD, T.RIVER, T.BRIDGE]) kind[t] |= WET;
+  for (const t of [T.ROCK, T.WALL]) kind[t] |= ROCKY;
+  for (const t of [T.ROAD, T.BRIDGE]) kind[t] |= ROADY;
+  const kinds = new Uint8Array(n);
+  for (let i = 0; i < n; i++) kinds[i] = kind[terrain[i * 4]];
   // Water depth: steps to the nearest land cell (breadth first), capped at 4.
-  const depth = new Uint8Array(w * h).fill(255);
-  const queue = [];
-  for (let i = 0; i < w * h; i++) {
-    if (!wet(terrain[i * 4])) {
+  const depth = new Uint8Array(n).fill(255);
+  const queue = new Int32Array(n);
+  let tail = 0;
+  for (let i = 0; i < n; i++) {
+    if (!(kinds[i] & WET)) {
       depth[i] = 0;
-      queue.push(i);
+      queue[tail++] = i;
     }
   }
-  for (let q = 0; q < queue.length; q++) {
+  for (let q = 0; q < tail; q++) {
     const i = queue[q];
-    if (depth[i] >= 4) continue;
+    const d = depth[i] + 1;
+    if (d > 4) continue;
     const x = i % w;
     const y = (i - x) / w;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      const j = ny * w + nx;
-      if (depth[j] > depth[i] + 1) {
-        depth[j] = depth[i] + 1;
-        queue.push(j);
-      }
+    // East, west, south, north.
+    if (x + 1 < w && depth[i + 1] > d) {
+      depth[i + 1] = d;
+      queue[tail++] = i + 1;
+    }
+    if (x > 0 && depth[i - 1] > d) {
+      depth[i - 1] = d;
+      queue[tail++] = i - 1;
+    }
+    if (y + 1 < h && depth[i + w] > d) {
+      depth[i + w] = d;
+      queue[tail++] = i + w;
+    }
+    if (y > 0 && depth[i - w] > d) {
+      depth[i - w] = d;
+      queue[tail++] = i - w;
     }
   }
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
-      const t = type(x, y);
-      const n4 = (pred) => (pred(type(x, y - 1)) ? 1 : 0) | (pred(type(x + 1, y)) ? 2 : 0) | (pred(type(x, y + 1)) ? 4 : 0) | (pred(type(x - 1, y)) ? 8 : 0);
+      const t = terrain[i * 4];
+      const north = y > 0 ? kinds[i - w] : OFF;
+      const east = x + 1 < w ? kinds[i + 1] : OFF;
+      const south = y + 1 < h ? kinds[i + w] : OFF;
+      const west = x > 0 ? kinds[i - 1] : OFF;
+      const n4 = (k) => sides(k, north, east, south, west);
       const v = Math.floor(hash3(x, y, seed) * 4);
       let tile;
       let decalIndex = 0;
@@ -643,15 +668,15 @@ export function cellTiles(terrain, w, h, seed = 0) {
           break;
         case T.ROCK:
         case T.WALL:
-          tile = TILES.ROCK + n4(isRock);
+          tile = TILES.ROCK + n4(ROCKY);
           break;
         case T.WATER:
         case T.RIVER:
         case T.BRIDGE:
-          tile = TILES.WATER + n4(wet);
+          tile = TILES.WATER + n4(WET);
           break;
         case T.ROAD:
-          tile = TILES.ROAD + n4(isRoad);
+          tile = TILES.ROAD + n4(ROADY);
           break;
         case T.BEACH:
           tile = TILES.BEACH + v;
@@ -660,7 +685,7 @@ export function cellTiles(terrain, w, h, seed = 0) {
           tile = TILES.TREE + v;
           break;
         case T.FORD:
-          tile = TILES.FORD + n4(wet);
+          tile = TILES.FORD + n4(WET);
           break;
         default: {
           tile = TILES.CLEAR + v;
@@ -672,11 +697,12 @@ export function cellTiles(terrain, w, h, seed = 0) {
           }
         }
       }
+      // Rock (or a wall) to the north, west and north-west casts a shadow; rock itself takes none.
       const shadowBits =
-        t === T.ROCK ? 0 : (isRock(type(x, y - 1)) && y > 0 ? SHADOW.N : 0) | (isRock(type(x - 1, y)) && x > 0 ? SHADOW.W : 0) | (isRock(type(x - 1, y - 1)) && x > 0 && y > 0 ? SHADOW.NW : 0);
+        t === T.ROCK ? 0 : (y > 0 && north & ROCKY ? SHADOW.N : 0) | (x > 0 && west & ROCKY ? SHADOW.W : 0) | (x > 0 && y > 0 && kinds[i - w - 1] & ROCKY ? SHADOW.NW : 0);
       out[i * 4] = tile;
       out[i * 4 + 1] = decalIndex;
-      out[i * 4 + 2] = wet(t) && t !== -1 ? Math.min(255, depth[i] * 64) : 0;
+      out[i * 4 + 2] = kinds[i] & WET ? Math.min(255, depth[i] * 64) : 0;
       out[i * 4 + 3] = shadowBits;
     }
   }
