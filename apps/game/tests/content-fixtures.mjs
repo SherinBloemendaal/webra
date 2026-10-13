@@ -542,9 +542,15 @@ export function beachTile(k) {
   });
 }
 
-export function syntheticTheater() {
+/**
+ * The synthetic theater of `tileset` (content/tables.js TERRAIN: TEMPERAT by
+ * default, SNOW or DESERT): its open water uses the tileset's rotating
+ * palette range.
+ */
+export function syntheticTheater(tileset = 'TEMPERAT') {
   const files = new Map();
-  const info = TERRAIN.TEMPERAT;
+  const info = TERRAIN[tileset];
+  const water = (x, y) => info.rotation[0] + ((x + 2 * y) % info.rotation[1]);
   files.set(info.palette, buildPal());
   for (const [img, width, height, role, cells] of info.templates) {
     const name = info.images[img];
@@ -552,11 +558,13 @@ export function syntheticTheater() {
     const count = Math.max(...cells) + 1;
     const tiles = Array.from({ length: count }, (_, k) => {
       if (!cells.includes(k)) return null;
-      if (role === 'water') return tilePx(WATERPX);
+      if (role === 'water') return tilePx(water);
       if (role === 'clear') return tilePx((x, y) => GROUND(x + k, y));
       if (role === 'rough' || role === 'rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : GROUND(x, y)));
-      if (role === 'water-rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : WATERPX(x, y)));
+      if (role === 'water-rock') return tilePx((x, y) => ((x - 12) ** 2 + (y - 12) ** 2 < 30 ? 60 : water(x, y)));
       if (name === 'sh04.tem') return beachTile(k);
+      // Other theaters' beaches run from sand to water at different heights (TEMPERAT keeps its sand tiles and sh04).
+      if (role === 'shore' && tileset !== 'TEMPERAT') return tilePx((x, y) => (y + ((k * 5) % 13) >= 18 ? water(x, y) : SAND(x, y)));
       return tilePx(SAND);
     });
     files.set(name, buildTmpRa(24, 24, tiles));

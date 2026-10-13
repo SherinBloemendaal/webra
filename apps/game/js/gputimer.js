@@ -12,12 +12,22 @@
 //   queue.submit(...); timing?.submitted();
 //
 // Readback buffers come from a small pool: when all are in flight, that
-// frame has no GPU time (never a stall).
+// frame has no GPU time (never a stall). A failed readback (a lost device)
+// turns timestamps off for good and frees their buffers.
 
 /** Readback buffers in flight at most. */
 export const GPU_TIMER_POOL = 4;
 
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/** Destroy a GPU object if there is one (and it can be). */
+function destroy(obj) {
+  try {
+    obj?.destroy?.();
+  } catch {
+    // Already gone with the device.
+  }
+}
 
 export class GpuTimer {
   /**
@@ -39,9 +49,10 @@ export class GpuTimer {
     this.failed = null;
   }
 
-  /** Make the query set and resolve buffer once timestamps are first used. */
+  /** Make the query set and resolve buffer once timestamps are first used; false once they are off. */
   setup() {
-    if (this.querySet || !this.timestamps) return !!this.querySet;
+    if (!this.timestamps) return false;
+    if (this.querySet) return true;
     try {
       this.querySet = this.device.createQuerySet({ type: 'timestamp', count: 2 });
       this.resolveBuffer = this.device.createBuffer({ size: 16, usage: this.usage.QUERY_RESOLVE | this.usage.COPY_SRC });
@@ -52,9 +63,27 @@ export class GpuTimer {
     }
   }
 
+  /**
+   * Stop timestamps for good (a failed readback, a lost device): the query
+   * set and every buffer are destroyed; readbacks still in flight are
+   * destroyed when they settle (`retire`). Submit-to-done times go on.
+   */
   disable(err) {
+    this.failed ??= String(err?.message ?? err);
+    if (!this.timestamps && !this.querySet) return;
     this.timestamps = false;
-    this.failed = String(err?.message ?? err);
+    for (const b of this.free) destroy(b);
+    this.free = [];
+    destroy(this.querySet);
+    destroy(this.resolveBuffer);
+    this.querySet = null;
+    this.resolveBuffer = null;
+  }
+
+  /** A readback buffer is done: back to the pool while timestamps are on, else destroyed. */
+  retire(buffer) {
+    if (this.timestamps) this.free.push(buffer);
+    else destroy(buffer);
   }
 
   readback() {
@@ -90,11 +119,15 @@ export class GpuTimer {
           .then(() => {
             const [start, end] = new BigUint64Array(stamps.getMappedRange());
             stamps.unmap();
-            this.free.push(stamps);
+            const on = this.timestamps;
+            this.retire(stamps);
             // Nanoseconds; some GPUs report a start after the end when the pass was split.
-            if (end > start) frame.gpu?.(Number(end - start) / 1e6);
+            if (on && end > start) frame.gpu?.(Number(end - start) / 1e6);
           })
-          .catch((err) => this.disable(err));
+          .catch((err) => {
+            this.disable(err);
+            this.retire(stamps);
+          });
       },
     };
     return timing;

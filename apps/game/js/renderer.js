@@ -89,7 +89,10 @@ export class Renderer {
     this.maxTextureSize = device.limits?.maxTextureDimension2D ?? 8192;
     // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
     this.pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
-    device.lost.then((info) => console.error('WebGPU device lost:', info.message));
+    device.lost.then((info) => {
+      console.error('WebGPU device lost:', info.message);
+      this.timer.disable(`device lost: ${info.message}`);
+    });
     /** The adapter the device came from (Renderer.create), for gpuInfo(). */
     this.adapter = null;
     /** GPU frame timing for the performance capture; `measure` is set for the frames it times. */

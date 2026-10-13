@@ -1,0 +1,46 @@
+// Tile terrain (js/content/terrain.js originalTerrain) picks the same tiles
+// as before it was made faster (the seam cache, the early stop of a tile's
+// score and tile pixels made once per tile): digests of the cells, the
+// atlas and the report taken with the code of commit 44a2036, on synthetic
+// terrain and synthetic theaters (no EA files). No engine build needed.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { originalTerrain } from '../js/content/terrain.js';
+import { syntheticTheater } from './content-fixtures.mjs';
+
+/** Deterministic land and water with coasts, rough, rock and a road: a map's terrain bytes. */
+function syntheticTerrain(w, h) {
+  const t = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const d = Math.hypot(x - w / 2, y - h / 2) + 4 * Math.sin(x / 3) + 3 * Math.cos(y / 4);
+      let v = d < w / 3 ? 0 : 3;
+      if (v === 0 && (x * 7 + y * 13) % 29 === 0) v = 2;
+      if (v === 0 && (x * 5 + y * 3) % 23 === 0) v = 1;
+      if (v === 0 && Math.abs(x - y) < 1) v = 6;
+      t[i] = v;
+      t[i + 3] = 255;
+    }
+  }
+  return t;
+}
+
+const digest = (r) => createHash('sha256').update(r.cells).update(r.atlas.data).update(JSON.stringify(r.report)).digest('hex').slice(0, 16);
+
+/** Digests from before the speed-ups, per theater. */
+const GOLDEN = { TEMPERAT: 'b655b04cdcdf2349', SNOW: '90eb5010d858e5bf', DESERT: 'de301653876208b1' };
+
+for (const [tileset, golden] of Object.entries(GOLDEN)) {
+  test(`tile terrain picks the same tiles as before it got faster (${tileset})`, () => {
+    const files = syntheticTheater(tileset);
+    const w = 72;
+    const h = 64;
+    const r = originalTerrain((n) => files.get(n) ?? null, tileset, syntheticTerrain(w, h), w, h);
+    assert.ok(r, 'the synthetic theater is complete');
+    assert.ok(r.report.coast > 100, 'the map has a coast to fit');
+    assert.ok(r.report.beach > 0, 'beach tiles were fitted');
+    assert.equal(digest(r), golden);
+  });
+}

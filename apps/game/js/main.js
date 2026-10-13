@@ -787,12 +787,44 @@ let starting = false;
 let perfGame = null;
 const perf = new PerfRecorder({ context: () => perfContext(), onDone: (_file, _text, capture) => perfDone(capture) });
 
-/** A game is being launched: its start is traced, and recorded when the setting asks for it. */
+/** Whether the next game's first frame starts the start-of-game capture ("Record the start of every game"). */
+let perfAutoPending = false;
+
+/**
+ * A game is being launched: its start is traced (spans until its first
+ * frame). A capture still running for the previous game ends first, with that
+ * game's facts. With "Record the start of every game" a capture starts at the
+ * new game's first frame (`perfFirstFrame`), so a slow load never uses up its
+ * 60 seconds; the start's spans are in its file either way.
+ */
 function perfLaunch() {
+  if (perf.recording) perf.stop('restarted');
   perfTrace.beginStartup();
   perfGame = null;
-  if (settings.get('perfCaptureStart')) perf.start({ seconds: START_CAPTURE_SECONDS, reason: 'start' });
+  perfAutoPending = !!settings.get('perfCaptureStart');
 }
+
+/** The game's first frame: the start-of-game capture begins. */
+function perfFirstFrame() {
+  if (!perfAutoPending) return;
+  perfAutoPending = false;
+  perf.start({ seconds: START_CAPTURE_SECONDS, reason: 'start' });
+}
+
+/**
+ * The page is about to reload or leave (leave, restart, rematch, next
+ * mission, exit): a running capture ends with what it recorded, and a
+ * capture not downloaded yet downloads now. Resolves after a moment when
+ * there was one, so the browser takes the download before the page goes.
+ */
+function perfBeforeLeaving() {
+  if (perf.recording) perf.stop('left');
+  if (!perf.last || perf.last.saved) return Promise.resolve();
+  perfDownload();
+  return new Promise((resolve) => setTimeout(resolve, PERF_LEAVE_DELAY_MS));
+}
+/** How long the page waits after a download it started on leaving. */
+const PERF_LEAVE_DELAY_MS = 500;
 
 /** Start a capture of the chosen length, or stop the running one (its file downloads). */
 function perfToggle() {
@@ -806,12 +838,19 @@ function perfToggle() {
 }
 
 function perfDownload() {
-  if (perf.last) saveText(perf.last.name, perf.last.text);
+  if (!perf.last) return;
+  saveText(perf.last.name, perf.last.text);
+  perf.last.saved = true;
 }
 
-/** A capture ended: one the player started (or stopped) downloads; the start-of-game one waits in the debug menu. */
+/**
+ * A capture ended: one the player started (or stopped) downloads; the
+ * start-of-game one waits in the debug menu (and downloads when the player
+ * leaves the game: perfBeforeLeaving, which also handles captures ended by leaving).
+ */
 function perfDone(capture) {
-  if (capture.reason === 'manual' || capture.endReason === 'stopped') {
+  if (capture.endReason === 'left') return;
+  if (capture.reason === 'manual' || capture.endReason === 'stopped' || capture.endReason === 'restarted') {
     perfDownload();
     showToast(`Performance capture saved as ${perf.last.name}.`);
   } else {
@@ -1659,6 +1698,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     await audio?.leave();
     // Out of a mission: back to the campaign screen, at that mission.
     if (mission?.entry && !replay) saveRestart(campaignRecord(mission.entry.id), sessionStore());
+    await perfBeforeLeaving();
     location.reload();
   };
   // Restart (js/restart.js): a replay plays again from 0 here; a single player
@@ -1668,8 +1708,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // proposes it, every player accepts, and the page reloads into the lobby.
   const rematch = online?.rematch ?? null;
   if (rematch) {
-    rematch.onLobby = () => {
+    rematch.onLobby = async () => {
       leaving = true;
+      await perfBeforeLeaving();
       location.reload();
     };
   }
@@ -1685,12 +1726,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         flow.reset();
       }
     : restart && !online && !stress
-      ? () => {
+      ? async () => {
           if (!saveRestart(restart, sessionStore())) {
             showToast('Could not restart: this browser does not let the page keep the settings.');
             return;
           }
           leaving = true;
+          await perfBeforeLeaving();
           location.reload();
         }
       : null;
@@ -1698,6 +1740,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     leaving = true;
     online?.onQuit();
     await audio?.leave();
+    await perfBeforeLeaving();
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
@@ -2041,7 +2084,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       return;
     }
     leaving = true;
-    location.reload();
+    perfBeforeLeaving().then(() => location.reload());
   };
   // A rematch proposal changes what the end of game screens offer.
   rematch?.subscribe(() => {
@@ -2078,6 +2121,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
 
   function frame(now) {
     const frameStart = performance.now();
+    perfFirstFrame();
     const rawDt = now - last;
     const dt = Math.min(rawDt, 250);
     last = now;
@@ -2138,7 +2182,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (status.loadError && !leaving) {
         leaving = true;
         showToast(status.loadError);
-        setTimeout(() => location.reload(), 4000);
+        setTimeout(() => perfBeforeLeaving().then(() => location.reload()), 4000);
       }
       if (f.terrain) {
         renderer.uploadTerrain(f.terrain);
@@ -2299,10 +2343,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
           drawMs,
           // What the simulation reported with the newest frame (nothing new: no ticks).
           workerMs: fresh ? f.simFrameMs : 0,
+          workerStepMs: fresh ? (f.stepMs ?? 0) : 0,
           ticks: fresh ? f.ticks : 0,
-          tickMaxMs: fresh ? f.tickMaxMs : 0,
+          tickMaxMs: fresh ? (f.tickMaxMs ?? 0) : 0,
           buildMs: fresh ? f.buildMs : 0,
-          queryMs: fresh ? f.queryMs : 0,
+          queryMs: fresh ? (f.queryMs ?? 0) : 0,
           roundTripMs: fresh ? (host.roundTripMs ?? 0) : 0,
           uploadKB: uploadBytes / 1024,
           sprites: f.spriteCount ?? 0,

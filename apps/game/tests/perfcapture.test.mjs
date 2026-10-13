@@ -1,11 +1,9 @@
 // Performance capture (js/perfcapture.js, js/gputimer.js, docs/contracts.md
 // section 10): bounded buffers, the file's schema and export, the summary,
 // the start trace, long task watching, GPU timing with a fake device, the
-// simulation's step timings, and tile terrain that stays the same while it
-// got faster. Synthetic data only. Run after `npm run build:wasm`.
+// simulation's step timings. Synthetic data only. Run after `npm run build:wasm`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
@@ -35,9 +33,7 @@ import {
 import { GPU_TIMER_POOL, GpuTimer } from '../js/gputimer.js';
 import { captureStatus } from '../js/debug.js';
 import { SimCore } from '../js/sim/core.js';
-import { originalTerrain } from '../js/content/terrain.js';
 import { createSettings } from '../js/settings.js';
-import { syntheticTheater } from './content-fixtures.mjs';
 import { SKIRMISH } from './sim-fixtures.mjs';
 
 const wasm = initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
@@ -465,50 +461,98 @@ test('GPU timer: timestamps around the render pass, read back later, a bounded p
   assert.ok(got.some((g) => g[0] === 'plain'));
 });
 
+test('GPU timer: a failed readback turns timestamps off for good and frees their buffers', async () => {
+  const destroyed = [];
+  const made = [];
+  let fail = false;
+  const device = {
+    features: new Set(['timestamp-query']),
+    createQuerySet: () => ({ destroy: () => destroyed.push('querySet') }),
+    createBuffer: (d) => {
+      const buf = {
+        id: made.length,
+        size: d.size,
+        mapAsync: () => (fail ? Promise.reject(new Error('device lost')) : Promise.resolve()),
+        getMappedRange: () => new BigUint64Array([0n, 2_000_000n]).buffer,
+        unmap: () => {},
+        destroy: () => destroyed.push(buf.id),
+      };
+      made.push(buf);
+      return buf;
+    },
+    queue: { onSubmittedWorkDone: () => Promise.resolve() },
+  };
+  const timer = new GpuTimer(device, { usage: USAGE, mapMode: MAP, now: () => 0 });
+  const enc = { resolveQuerySet: () => {}, copyBufferToBuffer: () => {} };
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  // One good frame: its readback goes back to the pool.
+  const got = [];
+  let tm = timer.begin({ gpu: (ms) => got.push(ms) });
+  tm.resolve(enc);
+  tm.submitted();
+  await settle();
+  assert.deepEqual(got, [2]);
+  assert.equal(timer.free.length, 1);
+  // Two frames in flight, then the readbacks fail (the device went away).
+  fail = true;
+  const frames = [timer.begin({ gpu: () => got.push('late') }), timer.begin({ gpu: () => got.push('late') })];
+  assert.ok(frames.every((f) => f.pass.timestampWrites));
+  for (const f of frames) {
+    f.resolve(enc);
+    f.submitted();
+  }
+  await settle();
+  assert.equal(timer.timestamps, false);
+  assert.match(timer.failed, /device lost/);
+  assert.equal(timer.free.length, 0, 'nothing kept in the pool');
+  assert.ok(destroyed.includes('querySet'));
+  for (const b of made) assert.ok(destroyed.includes(b.id), `buffer ${b.id} destroyed`);
+  // Later frames write no timestamps and make no buffers.
+  const before = made.length;
+  tm = timer.begin({ gpu: () => got.push('after') });
+  assert.deepEqual(tm.pass, {});
+  tm.resolve({ resolveQuerySet: () => assert.fail('no queries'), copyBufferToBuffer: () => assert.fail('no copy') });
+  tm.submitted();
+  await settle();
+  assert.equal(made.length, before);
+  assert.deepEqual(got, [2]);
+  // A readback that succeeds after timestamps went off is destroyed, not reused.
+  const late = new GpuTimer({ ...device, createBuffer: device.createBuffer }, { usage: USAGE, mapMode: MAP, now: () => 0 });
+  fail = false;
+  const f = late.begin({ gpu: () => got.push('stale') });
+  f.resolve(enc);
+  f.submitted();
+  late.disable('device lost: test');
+  await settle();
+  assert.equal(late.free.length, 0);
+  assert.deepEqual(got, [2], 'no GPU time from a timer that was turned off');
+});
+
+test('the capture length setting takes only the lengths the menu offers', () => {
+  const s = createSettings(null);
+  assert.equal(s.get('perfCaptureSeconds'), 30);
+  assert.deepEqual([...CAPTURE_SECONDS], [10, 30, 60, 120]);
+  for (const n of CAPTURE_SECONDS) assert.equal(s.set('perfCaptureSeconds', n), n);
+  assert.equal(s.set('perfCaptureSeconds', 5), 30, 'not a menu length: the default');
+  assert.equal(s.get('perfCaptureStart'), false);
+});
+
 test('the simulation reports its tick, query and step times, and actors only for a capture', () => {
   const core = new SimCore({ Game, memory: () => wasm.memory });
   const info = core.start({ kind: 'skirmish', options: SKIRMISH, map: null, player: 0, recorder: null, tickMs: 40 });
   assert.ok(info.timings.createMs >= 0);
   assert.ok(info.terrain instanceof Uint8Array);
   assert.equal(info.terrain.length, info.mapWidth * info.mapHeight * 4, 'the start terrain for the art before the first frame');
+  // Without a capture: no extra clock reads, no capture timings.
   const plain = core.step({ dt: 100, view: 0, rect: [0, 0, 800, 600], instances: 'cpu' });
   assert.equal(plain.ticks, 2);
-  assert.ok(plain.tickMaxMs > 0 && plain.tickMaxMs <= plain.simFrameMs);
-  assert.ok(plain.stepMs >= plain.simFrameMs);
-  assert.ok(plain.queryMs >= 0);
-  assert.equal(plain.actors, null);
-  const perf = core.step({ dt: 40, view: 0, rect: [0, 0, 800, 600], instances: 'cpu', perf: true, queries: [['p', 'player_json', [0]]] });
+  assert.ok(plain.simFrameMs > 0, 'the debug panel time stays');
+  assert.deepEqual([plain.tickMaxMs, plain.queryMs, plain.stepMs, plain.actors], [null, null, null, null]);
+  const perf = core.step({ dt: 80, view: 0, rect: [0, 0, 800, 600], instances: 'cpu', perf: true, queries: [['p', 'player_json', [0]]] });
+  assert.equal(perf.ticks, 2);
+  assert.ok(perf.tickMaxMs > 0 && perf.tickMaxMs <= perf.simFrameMs);
+  assert.ok(perf.stepMs >= perf.simFrameMs);
+  assert.ok(perf.queryMs >= 0);
   assert.ok(perf.actors > 0);
   assert.equal(perf.answers[0][0], 'p');
 });
-
-/** Deterministic land and water with coasts, rough and rock: a synthetic map's terrain bytes. */
-function syntheticTerrain(w, h) {
-  const t = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      const d = Math.hypot(x - w / 2, y - h / 2) + 4 * Math.sin(x / 3) + 3 * Math.cos(y / 4);
-      let v = d < w / 3 ? 0 : 3;
-      if (v === 0 && (x * 7 + y * 13) % 29 === 0) v = 2;
-      if (v === 0 && (x * 5 + y * 3) % 23 === 0) v = 1;
-      if (v === 0 && Math.abs(x - y) < 1) v = 6;
-      t[i] = v;
-      t[i + 3] = 255;
-    }
-  }
-  return t;
-}
-
-test('tile terrain picks the same tiles as before it got faster (coast fitting, tile pixels made once)', () => {
-  const files = syntheticTheater();
-  const w = 72;
-  const h = 64;
-  const r = originalTerrain((n) => files.get(n) ?? null, 'TEMPERAT', syntheticTerrain(w, h), w, h);
-  const digest = createHash('sha256').update(r.cells).update(r.atlas.data).update(JSON.stringify(r.report)).digest('hex').slice(0, 16);
-  assert.ok(r.report.coast > 100, 'the map has a coast to fit');
-  // The digest of the same call before the seam cache and the early stop (commit 44a2036).
-  assert.equal(digest, GOLDEN_TERRAIN);
-});
-
-const GOLDEN_TERRAIN = 'b655b04cdcdf2349';

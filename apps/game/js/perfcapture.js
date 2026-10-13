@@ -36,6 +36,8 @@
 // growing. The pure parts (buffers, summary, export) have no DOM and are
 // unit tested (apps/game/tests/perfcapture.test.mjs).
 
+import { PERF_CAPTURE_SECONDS } from '../protocol/accounts.js';
+
 /** File format name and version (docs/contracts.md section 10). */
 export const PERF_FORMAT = 'webra-perf';
 export const PERF_VERSION = 1;
@@ -50,6 +52,7 @@ export const FRAME_FIELDS = Object.freeze([
   'gpuMs', // GPU time of the frame's render pass (timestamp queries), or null
   'gpuDoneMs', // from the frame's submit until the GPU finished it
   'workerMs', // simulation time of the newest frame (ticks, in the worker when there is one)
+  'workerStepMs', // the whole simulation step of the newest frame (ticks, queries, render data)
   'ticks', // ticks the newest simulation frame ran
   'tickMaxMs', // the slowest of those ticks
   'buildMs', // the simulation's render data build (sprites or GPU records)
@@ -69,9 +72,9 @@ export const MAX_FRAMES = 30000;
 export const MAX_EVENTS = 4000;
 /** Most spans of a game's start kept. */
 export const MAX_STARTUP = 64;
-/** Capture lengths the debug menu offers (seconds) and the longest. */
-export const CAPTURE_SECONDS = Object.freeze([10, 30, 60, 120]);
-export const MAX_CAPTURE_SECONDS = 120;
+/** Capture lengths the debug menu offers (seconds; the setting takes only these) and the longest. */
+export const CAPTURE_SECONDS = PERF_CAPTURE_SECONDS;
+export const MAX_CAPTURE_SECONDS = Math.max(...PERF_CAPTURE_SECONDS);
 /** How long the start-of-game capture runs (setting perfCaptureStart). */
 export const START_CAPTURE_SECONDS = 60;
 /** How often the JS heap is sampled during a capture. */
@@ -395,7 +398,7 @@ export function summarize({ frames, count, events = [], startup = [], durationMs
         .slice(0, 4)
         .map((e) => `${e.kind === 'span' ? '' : `${e.kind} `}${e.name} ${round(e.ms)} ms`);
       const row = { t: round(end), frameMs: round(frameMs[i]) };
-      for (const f of ['workMs', 'stepMs', 'drawMs', 'gpuMs', 'gpuDoneMs', 'workerMs', 'ticks', 'tickMaxMs', 'roundTripMs', 'tick']) {
+      for (const f of ['workMs', 'stepMs', 'drawMs', 'gpuMs', 'gpuDoneMs', 'workerMs', 'workerStepMs', 'ticks', 'tickMaxMs', 'roundTripMs', 'tick']) {
         const v = frames[f]?.[i];
         if (typeof v === 'number') row[f] = round(v);
       }
@@ -423,6 +426,7 @@ export function summarize({ frames, count, events = [], startup = [], durationMs
     gpuMs: stats(col('gpuMs')),
     gpuDoneMs: stats(col('gpuDoneMs')),
     workerMs: stats(col('workerMs')),
+    workerStepMs: stats(col('workerStepMs')),
     tickMaxMs: stats(col('tickMaxMs')),
     roundTripMs: stats(col('roundTripMs')),
     longTasks: { count: longTasks.length, totalMs: round(sum(longTasks.map((e) => e.ms))) },
