@@ -246,14 +246,15 @@ fn surplus_structure(w: &World, player: u8) -> Option<usize> {
         // Tech centers, radar, service depot, second factories.
         Some(2)
     };
+    // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
+    let power_gen = crate::ai_lightning::power_gen(w, player);
     let mut best: Option<(u32, i32, usize)> = None;
     for &b in &buildings {
         let Some(r) = rank(b) else { continue };
         // Power plants only while the rest keeps enough power.
         if r == 3 {
             let power = info(b).building.as_ref().map_or(0, |x| x.power);
-            // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
-            if crate::ai_lightning::power_gen(w, player) - power < w.players[player as usize].power_use {
+            if power_gen - power < w.players[player as usize].power_use {
                 continue;
             }
         }

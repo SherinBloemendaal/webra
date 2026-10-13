@@ -865,11 +865,11 @@ cameo). The skirmish AI builds rods only while thunderstorms can strike
 strike, once it owns two power plants and has three times the rod's cost,
 one rod per three plants and at most three, and only
 while one of its plants is unprotected; it places each where it covers the
-most of its unprotected plants. Through a blackout from lightning its base
-builder counts the power its intact plants will make again
-(`ai_lightning::power_gen`), so it does not buy power plants it does not
-need, switch structures off (power down module) or sell plants it would
-otherwise keep; a spy's or a mission's outage counts as low power, as for OpenRA's
+most of its unprotected plants. Through a blackout from lightning the bot
+counts the power its intact plants will make again
+(`ai_lightning::power_gen`). It buys no extra power plants. It switches no
+structures off (power down module). It sells no plants it would otherwise
+keep. A spy's or a mission's outage counts as low power, as for OpenRA's
 bots (PowerManager.ExcessPower drops while AffectedByPowerOutage disables
 the plants' Power trait).
 

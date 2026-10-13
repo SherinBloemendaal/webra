@@ -145,11 +145,9 @@ impl World {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
         // Debug menu "all tech" (debug.rs): every prerequisite counts as met,
-        // except the marker of actors that are never buildable.
+        // except for actors outside this game (never buildable, or WebRA's in a mission).
         if p.dev.all_tech {
-            let never =
-                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED)
-                    || !self.in_game_mode(ty);
+            let never = !self.in_game_mode(ty);
             return Availability { visible: !never, enabled: !never };
         }
         let mut visible = true;
