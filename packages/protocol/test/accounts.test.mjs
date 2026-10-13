@@ -134,6 +134,13 @@ test('settings document: the remembered zoom factor and raw mouse input', () => 
   for (const bad of ['yes', 1, null]) throwsField(() => validateSettingsDocument({ game: { mouseCaptureRaw: bad } }), 'settings.game.mouseCaptureRaw');
 });
 
+test('settings document: the mouse captured notice and pausing a hidden game', () => {
+  for (const mode of ['always', 'first', 'off']) assert.deepEqual(validateSettingsDocument({ game: { mouseCaptureNotice: mode } }), { game: { mouseCaptureNotice: mode } });
+  for (const bad of ['never', true, 3, null]) throwsField(() => validateSettingsDocument({ game: { mouseCaptureNotice: bad } }), 'settings.game.mouseCaptureNotice');
+  for (const ok of [true, false]) assert.deepEqual(validateSettingsDocument({ game: { pauseWhenHidden: ok } }), { game: { pauseWhenHidden: ok } });
+  for (const bad of ['yes', 1, null]) throwsField(() => validateSettingsDocument({ game: { pauseWhenHidden: bad } }), 'settings.game.pauseWhenHidden');
+});
+
 test('site settings: merge, validation, stored values over defaults', () => {
   const next = mergeSiteSettings(DEFAULT_SITE_SETTINGS, { login: { discord: false }, motd: '  Hello\r\nworld  ' });
   assert.equal(next.login.discord, false);

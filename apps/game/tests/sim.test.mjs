@@ -11,6 +11,7 @@ import { initSync, Game, version } from '../pkg/webra_sim.js';
 import { chooseSimMode } from '../js/sim/modes.js';
 import { BufferPool, capacityFor, SharedFrames } from '../js/sim/framebuffer.js';
 import { createSimHost, DirectHost } from '../js/sim/host.js';
+import { BACKGROUND_MAX_MS, SimCore } from '../js/sim/core.js';
 import { DriverHandle, EXPIRE_MS, LIVE_MS, QueryCache, ReplayHandle } from '../js/sim/proxy.js';
 import { actorInfo, COMPOSITES, NONE, queryKey, tableInfo } from '../js/sim/methods.js';
 import { LocalDriver, Recorder, ReplayController } from '../js/replay.js';
@@ -682,6 +683,124 @@ test('a paused local game stands still: no ticks, no sound events, orders wait, 
   assert.equal(ref.tick_count(), END);
   assert.equal(await host.command('stateHash'), ref.state_hash(), 'the pause left no trace in the simulation');
   host.dispose();
+});
+
+test('a hidden local game plays on with background ticks: same world as frames, its sounds dropped, stopped on pause', () => {
+  // Fake timers and clock: the test runs the background timer by hand.
+  let t = 0;
+  const timers = new Map();
+  let nextId = 1;
+  const fake = {
+    setInterval: (fn, ms) => {
+      timers.set(nextId, { fn, ms });
+      return nextId++;
+    },
+    clearInterval: (id) => timers.delete(id),
+  };
+  const wake = (ms) => {
+    t += ms;
+    for (const { fn } of [...timers.values()]) fn();
+  };
+  const core = new SimCore({ Game, memory: () => wasm.memory, now: () => t, timers: fake });
+  core.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  const game = core.game;
+  game.set_audio_events(true);
+  // Reference: the same game ticked frame by frame.
+  const ref = Game.from_options(JSON.stringify(OPTIONS));
+  const refDriver = new LocalDriver(ref, { player: 0 });
+  const step = (dt = TICK_MS) => core.step({ dt, view: 0, rect: [0, 0, 1536, 1536], audio: true });
+  for (let i = 0; i < 50; i++) {
+    step();
+    refDriver.tick();
+  }
+  // The page is hidden: no more steps, the timer ticks at the game's pace.
+  assert.equal(core.command('background', [true]), true);
+  assert.equal(timers.size, 1);
+  assert.equal([...timers.values()][0].ms, TICK_MS);
+  assert.equal(core.command('background', [true]), true, 'asking again starts no second timer');
+  assert.equal(timers.size, 1);
+  for (let i = 0; i < 200; i++) {
+    const tick = game.tick_count();
+    scriptedOrders(tick, game, units(game, 0));
+    scriptedOrders(tick, ref, units(ref, 0));
+    wake(TICK_MS);
+    refDriver.tick();
+  }
+  assert.equal(game.tick_count(), 250);
+  assert.equal(game.state_hash(), ref.state_hash(), 'ticks without frames are the same ticks');
+  // A throttled timer (once a second, Chrome's hidden main thread): one wake runs that second.
+  wake(1000);
+  for (let i = 0; i < 1000 / TICK_MS; i++) refDriver.tick();
+  assert.equal(game.tick_count(), 275);
+  assert.equal(game.state_hash(), ref.state_hash());
+  // A longer gap (a suspended page) runs BACKGROUND_MAX_MS of it and drops the rest: no burst.
+  wake(60_000);
+  assert.equal(game.tick_count(), 275 + BACKGROUND_MAX_MS / TICK_MS);
+  for (let i = 0; i < BACKGROUND_MAX_MS / TICK_MS; i++) refDriver.tick();
+  // Shown again: the first frame brings no pile of sounds from the hidden time.
+  assert.equal(core.command('background', [false]), false);
+  assert.equal(timers.size, 0);
+  const shown = step(0);
+  assert.equal(shown.ticks, 0);
+  assert.equal(shown.audio, null, 'sounds of the hidden time were dropped');
+  step();
+  refDriver.tick();
+  assert.equal(game.state_hash(), ref.state_hash(), 'and the game goes on from there');
+  // Paused (the menu, Pause, the debug menu): js/main.js stops the timer, nothing ticks.
+  const before = game.tick_count();
+  core.command('background', [true]);
+  core.command('background', [false]);
+  wake(5000);
+  assert.equal(game.tick_count(), before);
+});
+
+test('an error in a background tick stops the game for good: the next step throws it, showing the page does not clear it', () => {
+  let t = 0;
+  const timers = new Map();
+  let nextId = 1;
+  const fake = { setInterval: (fn) => (timers.set(nextId, fn), nextId++), clearInterval: (id) => timers.delete(id) };
+  const core = new SimCore({ Game, memory: () => wasm.memory, now: () => t, timers: fake });
+  core.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  assert.equal(core.command('background', [true]), true);
+  // A bug in the driver (not an engine panic) halfway through a background tick.
+  const boom = new Error('driver bug');
+  core.local.tick = () => {
+    throw boom;
+  };
+  t += TICK_MS;
+  for (const fn of [...timers.values()]) fn();
+  assert.equal(timers.size, 0, 'the timer stopped');
+  // The page shows again: js/main.js sends background [false] before the first frame.
+  assert.equal(core.command('background', [false]), false);
+  assert.throws(() => core.step({ dt: TICK_MS, view: 0, rect: [0, 0, 1536, 1536] }), /driver bug/);
+  // Hidden again: no new timer over a game that may hold a half applied tick.
+  assert.equal(core.command('background', [true]), false);
+  assert.equal(timers.size, 0);
+  assert.throws(() => core.step({ dt: TICK_MS, view: 0, rect: [0, 0, 1536, 1536] }), /driver bug/);
+});
+
+test('background ticks: only local games; the worker ticks on its own timer; disposing the direct host stops it', async () => {
+  const replayCore = new SimCore({ Game, memory: () => wasm.memory, timers: { setInterval: () => assert.fail('no timer for a replay'), clearInterval() {} } });
+  const r = await parseReplay(directHashes(60).replay);
+  replayCore.start({ kind: 'replay', replay: r.replay, tickMs: TICK_MS });
+  assert.equal(replayCore.command('background', [true]), false, 'a replay stands still while hidden');
+  // A worker game: no steps, yet it ticks.
+  const host = await newHost('transfer');
+  await host.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  assert.equal(await host.command('background', [true]), true);
+  for (let i = 0; i < 2000 && (await host.command('tick')) < 5; i++) await new Promise((res) => setTimeout(res, 5));
+  assert.ok((await host.command('tick')) >= 5, 'ticked without a step');
+  assert.equal(await host.command('background', [false]), false);
+  const stopped = await host.command('tick');
+  await new Promise((r) => setTimeout(r, TICK_MS * 4));
+  assert.equal(await host.command('tick'), stopped, 'stopped');
+  host.dispose();
+  // Direct mode: the timer is on this thread and ends with the host.
+  const direct = await newHost('direct');
+  await direct.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  assert.equal(await direct.command('background', [true]), true);
+  direct.dispose();
+  assert.equal(direct.core.background, null);
 });
 
 test('replay controller state is mirrored for the replay bar', () => {

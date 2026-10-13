@@ -1,5 +1,5 @@
 // Tooltips of the HUD buttons at the top right of the battlefield (Debug,
-// Build / Map on phones, Menu), with the shared tooltip (js/ui/tooltip.js)
+// Chat on touch screens, Build / Map on phones, Menu), with the shared tooltip (js/ui/tooltip.js)
 // and the keys bound to them now (js/hotkeys.js).
 
 import { boundKey } from './hotkeys.js';
@@ -34,12 +34,21 @@ export function sidebarToggleTip(collapsed) {
     : { title: 'Hide the build sidebar', desc: 'Back to the whole battlefield.' };
 }
 
+/** Tooltip of the touch screens' Chat button (online games and replays with chat). */
+export function chatTip(hotkeys, open) {
+  const keys = [boundKey(hotkeys, 'openTeamChat'), boundKey(hotkeys, 'openGeneralChat')].filter(Boolean).join(', ');
+  return open
+    ? { title: 'Close the chat', hotkey: keys || null, desc: 'Back to the lines over the battlefield.' }
+    : { title: 'Chat', hotkey: keys || null, desc: 'The chat line and every line of the game so far.' };
+}
+
 /**
- * Attach the tooltips. `isMenuOpen()` and `isCollapsed()` read the state the
- * buttons show. Returns a function that removes them.
+ * Attach the tooltips. `isMenuOpen()`, `isCollapsed()` and `isChatOpen()`
+ * read the state the buttons show. Returns a function that removes them.
  */
-export function attachHudTooltips({ hotkeys, menuButton, debugButton = null, cheats = false, toggle = null, isMenuOpen, isCollapsed }) {
+export function attachHudTooltips({ hotkeys, menuButton, debugButton = null, cheats = false, toggle = null, chatButton = null, isChatOpen = () => false, isMenuOpen, isCollapsed }) {
   const tips = [attachTooltip(menuButton, () => menuTip(hotkeys, isMenuOpen()), { side: 'bottom' })];
+  if (chatButton) tips.push(attachTooltip(chatButton, () => chatTip(hotkeys, isChatOpen()), { side: 'bottom' }));
   if (debugButton) tips.push(attachTooltip(debugButton, () => debugTip(hotkeys, cheats), { side: 'bottom' }));
   if (toggle) tips.push(attachTooltip(toggle, () => sidebarToggleTip(isCollapsed()), { side: 'bottom' }));
   const off = hotkeys.onChange(() => tips.forEach((t) => t.refresh()));

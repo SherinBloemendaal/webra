@@ -13,6 +13,7 @@
 //                        (per frame: instances; `instances: 'gpu'`: tick-rate
 //                        records for the GPU instance pass, only when they change)
 //   command(name, args)  network, replay, recorder and debug controls
+//                        (`background`: a hidden local game ticks on a timer, see below)
 // Events (network sends, caught up, hash check) go out through `emit`.
 
 import { LockstepDriver } from '../net.js';
@@ -26,6 +27,16 @@ import { C2S } from '../protocol.js';
 const LINE_FLOATS = 9;
 
 const MAX_TICKS_PER_FRAME = 8;
+
+/**
+ * A hidden page gets no animation frames, so no `step`. A local game that
+ * goes on while hidden (Settings > Pause when the game is hidden off) ticks
+ * on a timer of its own meanwhile (`command('background', [true])`). One
+ * wake runs at most this much game time: a browser that throttles the timer
+ * to once a second still keeps up, a longer gap is dropped (the game falls
+ * behind wall time instead of freezing the page with a burst).
+ */
+export const BACKGROUND_MAX_MS = 1000;
 
 /** How many of the newest state hashes an error report gets. */
 const REPORT_HASHES = 4;
@@ -41,10 +52,17 @@ export class SimCore {
    *   onFailure?: (err: Error) => void }} o
    *   `engine`: the wasm module's `version` and `take_panic` exports, for
    *   errors that say what the engine did (js/sim/engine-error.js);
-   *   `onFailure`: called once with the engine error that stops the game
+   *   `onFailure`: called once with the engine error that stops the game;
+   *   `timers`: setInterval / clearInterval for background ticks
    */
-  constructor({ Game, memory, emit = () => {}, now = null, engine = null, onFailure = null }) {
+  constructor({ Game, memory, emit = () => {}, now = null, engine = null, onFailure = null, timers = null }) {
     this.Game = Game;
+    /** setInterval / clearInterval for background ticks (tests pass their own). */
+    this.timers = timers ?? { setInterval: (fn, ms) => setInterval(fn, ms), clearInterval: (id) => clearInterval(id) };
+    /** The background timer of a hidden local game: `{ id, last }`, or null. */
+    this.background = null;
+    /** What stopped background ticks (the next step throws it). */
+    this.backgroundError = null;
     this.memory = memory;
     this.emit = emit;
     this.engine = engine;
@@ -328,6 +346,9 @@ export class SimCore {
       case 'hidden':
         this.hidden = !!args[0];
         return null;
+      // A hidden local game that is not paused: tick on a timer until the page shows again.
+      case 'background':
+        return this.setBackground(!!args[0]);
       // Replays (ReplayController).
       case 'seek':
         this.replay?.seek(args[0]);
@@ -383,6 +404,70 @@ export class SimCore {
     }
   }
 
+  // ---- Background ticks ----------------------------------------------------------------------
+
+  /**
+   * Start (true) or stop (false) ticking on a timer: the main thread asks
+   * while its page is hidden and a local game (skirmish, mission, a loaded
+   * save; not online, a replay or a save still loading) is not paused.
+   * Returns whether the timer runs.
+   */
+  setBackground(on) {
+    const local = !!this.game && !this.driver && !this.replay;
+    // After an error in a background tick the game cannot go on (the tick may
+    // be half applied): the error stays, every later step throws it.
+    if (!on || !local || this.failure || this.backgroundError) {
+      if (this.background) this.timers.clearInterval(this.background.id);
+      this.background = null;
+      return false;
+    }
+    if (this.background) return true;
+    const bg = { id: 0, last: this.now() };
+    this.background = bg;
+    bg.id = this.timers.setInterval(() => {
+      if (this.background !== bg) return;
+      const now = this.now();
+      const dt = now - bg.last;
+      bg.last = now;
+      try {
+        this.idle(dt);
+      } catch (err) {
+        // The game stopped (an engine error is reported by `guard`; any other
+        // error too, by the worker or host when the next step throws it).
+        this.backgroundError ??= err;
+        this.setBackground(false);
+      }
+    }, this.tickMs);
+    return true;
+  }
+
+  /**
+   * Advance a local game by `dt` milliseconds of wall time without building
+   * a frame (background ticks). Its sounds are dropped: a hidden game plays
+   * none, and none pile up for when it shows again. Mission events wait for
+   * the next frame. Returns the ticks run.
+   */
+  idle(dt) {
+    return this.guard(() => {
+      if (!this.game || this.driver || this.replay || this.busy()) return 0;
+      const tickMs = this.tickMs;
+      this.acc += Math.min(Math.max(0, Number(dt) || 0), BACKGROUND_MAX_MS);
+      const max = Math.ceil(BACKGROUND_MAX_MS / tickMs);
+      let ticks = 0;
+      while (this.acc >= tickMs && ticks < max) {
+        if (this.local) this.local.tick();
+        else this.game.tick();
+        this.acc -= tickMs;
+        ticks++;
+      }
+      if (ticks > 0) {
+        this.game.take_audio_events();
+        this.tableDirty = true;
+      }
+      return ticks;
+    });
+  }
+
   // ---- Step ---------------------------------------------------------------------------------
 
   /** Fast-forwarding (loading a save, catching up online, seeking a replay): no sound, no input. */
@@ -413,6 +498,7 @@ export class SimCore {
    *   the next call into the game; js/sim/worker.js copies them out)
    */
   step(req) {
+    if (this.backgroundError) throw this.backgroundError;
     // The performance capture's timings (`req.perf`) cost a few clock reads: only while it records.
     const perf = !!req.perf;
     const stepStart = perf ? this.now() : 0;

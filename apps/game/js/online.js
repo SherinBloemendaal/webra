@@ -80,6 +80,7 @@ import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
 import { hasTeamChat } from './chatkeys.js';
+import { touchUi } from './touch.js';
 import { chatPrefix, TextLog } from './chatlog.js';
 import { mapLibrary } from './maplibrary.js';
 import { formatTicks } from './replay.js';
@@ -390,6 +391,15 @@ export function confirmModdedMap(mapName) {
     row.append(button('Decline', null, () => close(false)), button('Accept and install', 'online-btn-danger', () => close(true)));
     body.append(row);
   }).then((v) => v === true);
+}
+
+/**
+ * The first line of an online game's chat: who plays, and how to chat
+ * (Enter, Shift+Enter; on touch screens the HUD's Chat button, js/main.js).
+ */
+export function chatIntroLine({ spectator = false, list = '', teamChat = false, touch = false }) {
+  if (touch) return `${spectator ? 'Watching' : 'Online game'}: ${list}. Tap Chat to chat.`;
+  return spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`;
 }
 
 // ---- Online UI -------------------------------------------------------------------
@@ -2467,7 +2477,7 @@ export class OnlineUI {
       bind: ({ colorOf, defeated }) => Object.assign(this.chatPeople, { colorOf, defeated }),
     };
     const list = names.join(', ');
-    this.gameLine(spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`);
+    this.gameLine(chatIntroLine({ spectator, list, teamChat, touch: touchUi() }));
     if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
     setInterval(() => {
       if (this.driver) this.waitLine.hidden = !(this.driver.stalledMs > 600 && !this.driver.stopped);

@@ -10,6 +10,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { OPENRA_HOTKEYS, HOTKEY_GROUPS } from '../js/openra-hotkeys.js';
 import {
   BROWSER_SUBSTITUTES,
+  WEBRA_SUBSTITUTES,
+  substituteFor,
   HotkeyRegistry,
   KEYMAP_VERSION,
   KEYMAP_VERSION_KEY,
@@ -157,7 +159,7 @@ test("the defaults are OpenRA's, except where the browser keeps the key, and not
     for (const a of hotkeys.list()) {
       if (a.openra) {
         const ora = OPENRA_HOTKEYS[a.openra].key;
-        const expected = BROWSER_SUBSTITUTES[a.openra] ? BROWSER_SUBSTITUTES[a.openra].key : ora;
+        const expected = substituteFor(a.openra) ? substituteFor(a.openra).key : ora;
         assert.deepEqual(a.defaults, expected ? [expected] : [], `${a.name} (${a.openra})`);
         assert.equal(a.label, OPENRA_HOTKEYS[a.openra].description);
         assert.equal(a.group, groupOfTypes(OPENRA_HOTKEYS[a.openra].types));

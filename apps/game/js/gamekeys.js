@@ -14,6 +14,7 @@
 // are OpenRA's (js/openra-hotkeys.js) unless `keys` says otherwise.
 
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
+import { releaseMouseKey } from './hotkeys.js';
 
 const PRODUCTION_TABS = [
   ['productionTabBuildings', 'ProductionTypeBuilding'],
@@ -48,10 +49,15 @@ export const GAME_KEYS = Object.freeze([
   // OpenRA has no default key for its path lines; L is free in its set.
   { name: 'showUnitPaths', keys: ['L'], label: 'Show unit paths', group: 'Game Commands', contexts: ['player', 'spectator'] },
   { name: 'fullscreen', keys: ['Alt+Enter'], label: 'Fullscreen', group: 'Game Commands', contexts: ['player', 'spectator', 'menu'] },
-  // Mouse capture (js/mouselock.js): OpenRA has no key for it, and its Alt+E is
-  // bookmark 3, so Alt+M (Option+M on macOS); main.js registers it only where
-  // the browser has Pointer Lock.
-  { name: 'toggleMouseCapture', keys: ['Alt+M'], label: 'Capture or release the mouse', group: 'Game Commands', contexts: ['player', 'spectator'] },
+  // Mouse capture (js/mouselock.js): OpenRA has no key for it. Option+E on
+  // macOS like cloud gaming services, Alt+Shift+E on Windows and Linux
+  // (RELEASE_MOUSE_KEYS in js/hotkeys.js: Alt+E is a browser menu key there):
+  // while captured it releases the mouse and the game plays on (a click into
+  // the game captures it again); while released it captures. On macOS
+  // OpenRA's Alt+E (jump to bookmark 3) has no default key for it
+  // (WEBRA_SUBSTITUTES). main.js registers it only where the browser has
+  // Pointer Lock.
+  { name: 'toggleMouseCapture', keys: [releaseMouseKey()], label: 'Release or capture the mouse', group: 'Game Commands', contexts: ['player', 'spectator'] },
   // Viewport: hide the interface (OpenRA DisableUserInterface, DisableAllUserInterface).
   { name: 'disableUserInterface', openra: 'DisableUserInterface' },
   { name: 'disableAllUserInterface', openra: 'DisableAllUserInterface' },
