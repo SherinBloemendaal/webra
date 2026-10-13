@@ -29,7 +29,8 @@ export class BulkBar {
    *   context: 'skirmish' | 'online',
    *   selectClass: string,
    *   buttonClass: string,
-   *   onApply: (id: string, selected: number[]) => { summary?: string, error?: string },
+   *   onApply: (id: string, selected: number[]) => { summary?: string, error?: string, pending?: boolean },
+   *   note?: string,  a line under the actions (what they cannot change)
    * }} o
    */
   constructor(o) {
@@ -99,7 +100,9 @@ export class BulkBar {
 
     this.status = el('p', 'bulk-status');
     this.status.setAttribute('role', 'status');
-    this.root.append(head, act, this.status);
+    this.root.append(head, act);
+    if (o.note) this.root.append(el('p', 'bulk-note', o.note));
+    this.root.append(this.status);
   }
 
   /** Turn bulk editing on or off (off forgets the selection). */
@@ -201,7 +204,14 @@ export class BulkBar {
     const id = this.select.value;
     if (!id || !this.active) return;
     const out = this.o.onApply(id, this.selection.list()) ?? {};
-    this.status.textContent = out.error ?? out.summary ?? '';
-    this.status.classList.toggle('bulk-error', Boolean(out.error));
+    // Online the server answers later (report): until then the bar says so.
+    if (out.pending) this.report('Sent to the server...');
+    else this.report(out.error ?? out.summary ?? '', Boolean(out.error));
+  }
+
+  /** Show how an action went (the online lobby, once the server answered). */
+  report(text, error = false) {
+    this.status.textContent = text;
+    this.status.classList.toggle('bulk-error', error);
   }
 }

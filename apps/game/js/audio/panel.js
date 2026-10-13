@@ -274,24 +274,25 @@ export function mountAudioPanel(button, panel, audio, opts = {}) {
         }
       : undefined,
   });
-  // The focus goes back to what opened the dialog: this button, or the
-  // start screen's More, Sound and music entry (js/startmenu.js).
+  // The focus goes back to what opened the dialog, named by the caller (a
+  // click does not focus a button in Safari and Firefox on macOS): this
+  // button, or the start screen's More, Sound and music entry (js/startmenu.js).
   let opener = null;
-  function open(on) {
+  function open(on, from = null) {
     if (on === !panel.hidden) return;
     panel.hidden = !on;
     button.setAttribute('aria-expanded', String(on));
     if (on) {
-      opener = document.activeElement;
+      opener = from ?? (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
       close.focus();
     } else {
-      const back = opener instanceof HTMLElement && opener !== document.body && opener.isConnected ? opener : button;
+      const back = opener instanceof HTMLElement && opener.isConnected ? opener : button;
       opener = null;
       back.focus();
     }
   }
   button.hidden = false;
-  button.addEventListener('click', () => open(panel.hidden));
+  button.addEventListener('click', () => open(panel.hidden, button));
   close.addEventListener('click', () => open(false));
   panel.addEventListener('pointerdown', (e) => {
     if (e.target === panel) open(false);
@@ -301,5 +302,8 @@ export function mountAudioPanel(button, panel, audio, opts = {}) {
     if (e.key === 'Escape') open(false);
     e.stopPropagation();
   });
-  return { open: () => open(true) };
+  return {
+    /** Open the dialog; the focus returns to `from` (default: the Sound button) when it closes. */
+    open: (from = null) => open(true, from),
+  };
 }

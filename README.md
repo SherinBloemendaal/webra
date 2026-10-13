@@ -48,9 +48,9 @@ Play it at **[webra.sherin.dev/play](https://webra.sherin.dev/play/)** (site: [w
 - [x] **Crates** like OpenRA's Red Alert: dropped by a Badger or appearing on land and water, picked up by any ground unit or ship for cash, a unit (MCV when you have no base), veterancy, healing, cloaking, invulnerability, map reveal or hide, a napalm or explosive trap, and more, with OpenRA's weights and shares; a destroyed Supply Truck leaves a money crate
 - [x] **Time limit** with a countdown at the top of the battlefield and announcer warnings; when it runs out the player (or team) with the most experience wins. **Short game** ends a player's game when its structures are gone; **kill bounties** pay a part of each kill's value with a floating cash text; a **handicap** lowers a player's firepower, armour and build speed
 - [x] Stress test mode (tens of thousands of units; main menu, More, Stress test)
-- [x] **Start screen** with one main menu bar over the skirmish setup: Skirmish, Play online and Campaign first, then Load game and Replays, then the account and a More list (Original content, Sound and music, Release notes, Stress test); keyboard accessible, in rows on phones
-- [x] **Bulk edit** of lobby slots, beyond OpenRA's slot admin, in the skirmish and online lobbies: tick rows or click them (Ctrl or Cmd toggles one, Shift selects a range), then apply team presets (free for all, humans vs AI, Team 1 vs Team 2 and other splits in slot order like OpenRA's assign teams, alternating teams, one team), AI type and difficulty, fill empty slots with an AI or remove the AI, factions or shuffled countries, shuffled colours, handicap, start positions back to automatic, and opening, closing or freeing slots; with nothing ticked an action changes every slot it can. Online only the host can, with one message the server checks change by change (all or nothing)
-- [x] **Unload map**: a map file or `.oramap` in the skirmish lobby (or a shared map or co-op mission online) goes back to the generated map with the seed and generator settings it had before; the seed and New seed only show for a generated map
+- [x] **Start screen** with one main menu bar over the skirmish setup: Skirmish, Play online and Campaign first, then Load game and Replays, then the account and a More list (Original content, Sound and music, Release notes, Stress test); keyboard accessible, in rows on phones. The online and campaign screens keep their Original content and Sound buttons
+- [x] **Bulk edit** of lobby slots, beyond OpenRA's slot admin, in the skirmish and online lobbies: tick rows or click them (Ctrl or Cmd toggles one, Shift selects a range), then apply team presets (free for all, humans vs AI, Team 1 vs Team 2 and other splits in slot order like OpenRA's assign teams, alternating teams, one team), AI type and difficulty, fill empty slots with an AI or remove the AI, factions or shuffled countries, shuffled colours, handicap, start positions back to automatic, and opening, closing or freeing slots; with nothing ticked an action changes every slot it can. Online only the host can, with one message the server checks change by change (all or nothing); like OpenRA's lobby the host sets other players' team, handicap and start, while faction and colour stay each player's own
+- [x] **Unload map**: a map file or `.oramap` in the skirmish lobby (or a shared map or co-op mission online) goes back to the generated map with the seed and generator settings it had before; the seed and New seed only show for a generated map, and each game on a map file gets a new random seed (kept in its replay and saves)
 
 ### Content (all Red Alert ground, naval and air units and structures, from OpenRA's rules)
 - [x] Every building and defence: power plants, refinery, silo, barracks, kennel, war factory, service depot, radar dome, helipad, airfield, naval yard, sub pen, tech centers, walls, pillboxes, turret, flame tower, Tesla Coil, AA gun, SAM site, gap generator, France's decoys (the fake Sub Pen and the wire, barbed wire and wooden fences only on maps, as in OpenRA)
@@ -128,8 +128,9 @@ Electronic Arts, who released Red Alert as freeware in 2008. Like OpenRA,
 WebRA can use them when you install them; the game plays the same without
 them (WebRA's own art and synthesized sounds).
 
-- **Open the Original content dialog** (main menu, More, Original content,
-  or Original content in the game menu). It shows what is installed and what is missing. The start
+- **Open the Original content dialog** (main menu, More, Original content;
+  the Original content button on the online and campaign screens; or
+  Original content in the game menu). It shows what is installed and what is missing. The start
   screen shows how to install it until something is installed or you
   dismiss the notice (remembered with your settings).
 - **One click (selected accounts):** "Install everything" installs the

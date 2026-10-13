@@ -50,7 +50,7 @@
             <button id="start-more-button" class="start-item" type="button" aria-expanded="false" aria-controls="start-more-list">More</button>
             <div id="start-more-list" class="start-more-list" role="group" aria-label="More" hidden>
               <!-- Original content (graphics and sounds from the player's own copy) and texture packs (js/content/panel.js) -->
-              <button id="content-button" class="start-more-item" type="button" title="Original Red Alert graphics and sounds, texture packs" aria-haspopup="dialog" aria-expanded="false" hidden>Original content</button>
+              <button id="start-content" class="start-more-item" type="button" title="Original Red Alert graphics and sounds, texture packs" aria-haspopup="dialog" aria-expanded="false" hidden>Original content</button>
               <button id="start-sound" class="start-more-item" type="button" aria-haspopup="dialog" hidden>Sound and music</button>
               <button id="start-notes" class="start-more-item" type="button" aria-haspopup="dialog" hidden>Release notes</button>
               <button id="start-stress" class="start-more-item" type="button" title="Spawn many units to measure performance">Stress test</button>
@@ -107,7 +107,9 @@
     <!-- Music player (js/audio/musicplayer.js), opened from the Sound dialog -->
     <section id="music-panel" hidden></section>
 
-    <!-- The Original content dialog, opened from the main menu's More list and the game menu -->
+    <!-- Original content (graphics and sounds from the player's own copy) and texture packs (js/content/panel.js):
+         the corner button on the online and campaign screens; the start screen has it in More, a game in its menu -->
+    <button id="content-button" type="button" title="Original Red Alert graphics and sounds, texture packs" aria-haspopup="dialog" aria-expanded="false" hidden>Original content</button>
     <section id="content-panel" hidden></section>
 
     <!-- Release notes and "What's new" (js/releasenotes-dialog.js) -->

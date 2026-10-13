@@ -188,7 +188,9 @@ async function boot() {
       $('skirmish').scrollIntoView?.({ block: 'start' });
       $('lobby-title')?.focus?.();
     },
-    onSound: audioPanel ? () => audioPanel.open() : undefined,
+    // The dialogs give the focus back to the entry that opened them.
+    onContent: contentPanel ? (entry) => contentPanel.open(entry) : undefined,
+    onSound: audioPanel ? (entry) => audioPanel.open(entry) : undefined,
     onReleaseNotes: () => releaseNotes.open(),
     onStress: () => lobby.openStress(),
   });
@@ -377,6 +379,7 @@ function setupContent() {
     };
     content = new ContentSystem({ settings, known });
     contentPanel = mountContentPanel($('content-button'), $('content-panel'), content, audio, {
+      entries: [$('start-content')],
       actorNames: new Map(actors.map((a) => [String(a.id).toUpperCase(), a.name ?? a.id])),
       autoInstall: canAutoInstall(account?.user ?? null),
     });

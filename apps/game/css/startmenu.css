@@ -202,10 +202,23 @@
   text-align: left;
 }
 
-/* The start screen has Sound and music in More; the corner button stays
-   for the game, the online screen and the campaign. */
-#menu:not([hidden]) ~ #campaign-root[hidden] ~ #audio-button {
+/* The start screen has Sound and music and Original content in More; the
+   corner buttons stay for the online screen and the campaign (and Sound
+   for the game, whose menu has Original content). */
+#menu:not([hidden]) ~ #campaign-root[hidden] ~ #audio-button,
+#menu:not([hidden]) ~ #campaign-root[hidden] ~ #content-button {
   display: none;
+}
+
+/* The installed state on the More entry, like the corner button (css/content.css). */
+#start-content[data-state='complete']::before {
+  content: '\2713 ';
+  color: var(--ui-ok);
+}
+
+#start-content[data-state='partial']::before {
+  content: '! ';
+  color: var(--ui-warn);
 }
 
 @media (pointer: coarse) {

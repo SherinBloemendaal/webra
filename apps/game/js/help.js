@@ -26,7 +26,7 @@ export const HELP = Object.freeze({
     'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first. Maps made for an older WebRA are upgraded automatically; save them in the map editor to keep the upgrade. Unload map goes back to the generated map with the size, style, biome and seed it had before; the map stays in your map library.',
   onlineMap:
     'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.',
-  seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',
+  seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again. A map file needs no seed: each game on one gets a new seed for crates, the AI and the weather (replays and saves keep it).',
 
   // ---- World -----------------------------------------------------------------------
   mapStyle:
@@ -69,7 +69,7 @@ export const HELP = Object.freeze({
 
   // ---- Players -----------------------------------------------------------------------
   player: `Your name, or who plays in a slot: you (moves you there), an AI or Closed (nobody plays there). ${AI}`,
-  playerOnline: `Who plays in each slot. The host opens and closes slots, adds AI players and picks their bot type and difficulty. ${AI}`,
+  playerOnline: `Who plays in each slot. The host opens and closes slots, sets up AI players and sets the others' team, handicap and start. ${AI}`,
   color: 'Every player has their own colour. Picking a colour another player has swaps the two.',
   colorOnline: 'Every player needs their own colour; a colour in use cannot be picked.',
   faction:
@@ -80,7 +80,7 @@ export const HELP = Object.freeze({
   spawn:
     'Where the player starts. Automatic shows where the lobby puts the player now (it moves when someone picks that position). Pick a position here, or click a marker on the map preview: a free one is yours (the host places its AI players there first, then itself), clicking your own frees it again, a position another player picked is taken. Right-click (or Delete on a marked position) frees it; the host can free anyone\'s. On a generated map the map itself changes with the seed, size, style and number of players, and so the picks are cleared.',
   bulk:
-    'Bulk edit changes many slots at once. Tick rows, or click a row: Ctrl (Cmd on a Mac) adds or removes one, Shift selects every row from the last one you clicked down or up to this one. Then pick an action and Apply: team presets (free for all, humans vs AI, split or alternate into teams, or one team), AI type and difficulty, fill empty slots with AI or remove the AI, factions (or shuffled countries), shuffled colors, handicap, start positions and opening or closing slots. With nothing selected an action changes every slot it can. Slots the map locks keep their setting. Online only the host can, and the server checks every change.',
+    'Bulk edit changes many slots at once. Tick rows, or click a row: Ctrl (Cmd on a Mac) adds or removes one, Shift selects every row from the last one you clicked down or up to this one. Then pick an action and Apply: team presets (free for all, humans vs AI, split or alternate into teams, or one team), AI type and difficulty, fill empty slots with AI or remove the AI, factions (or shuffled countries), shuffled colors, handicap, start positions and opening or closing slots. With nothing selected an action changes every slot it can. Slots the map locks keep their setting. Online only the host can, and the server checks every change; factions and colors then change only for the host\'s own slot and the AI slots, as every player picks their own.',
   spectators:
     'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators. While watching, the statistics panel (F1 to F7, or its list) shows each player by team with its flag: cash, economy (with oil derricks), what each one is building, its support powers and army as icons, combat (with how much of the map it sees) and graphs. Point at an icon for its details.',
 

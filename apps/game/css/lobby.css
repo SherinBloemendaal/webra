@@ -1237,6 +1237,13 @@
   font-size: 12.5px;
 }
 
+#menu .bulk-note,
+#online-root .bulk-note {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
 #menu .bulk-status:empty,
 #online-root .bulk-status:empty {
   display: none;

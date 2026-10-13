@@ -853,6 +853,8 @@ export class OnlineUI {
   }
 
   onServerError(m) {
+    // A refused bulk edit is reported in the bulk bar, where it was applied.
+    if (this.bulkWait && !this.inGame) return this.settleBulk({ error: m.message });
     const refusal = onlineRefusal(m.code, m.message);
     if (this.inGame) this.gameLine(`Server: ${refusal?.text ?? m.message}`, !!refusal);
     else if (refusal) this.setError(refusal.text, { signIn: refusal.signIn && !this.account?.user });
@@ -984,6 +986,7 @@ export class OnlineUI {
       selectClass: 'online-select',
       buttonClass: 'online-btn',
       onApply: (id, selected) => this.applyBulk(id, selected),
+      note: 'Factions and colors change only for your own slot and the AI slots: every player picks their own, like in OpenRA.',
     });
     const bulkBox = el('div', 'online-bulk');
     bulkBox.append(this.bulk.toggleBox, this.bulk.root);
@@ -1053,6 +1056,7 @@ export class OnlineUI {
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
     this.renderLobby();
+    this.settleBulk({ slots: m.slots });
   }
 
   /**
@@ -1200,8 +1204,35 @@ export class OnlineUI {
       missionPlaces: mission ? mission.players.length : Infinity,
     });
     if (plan.error || !plan.changes.length) return plan;
+    // The bar reports once the lobby shows the changes, or the refusal (settleBulk).
+    this.bulkWait = { changes: plan.changes, summary: plan.summary };
     this.send({ t: 'slots', changes: plan.changes });
-    return plan;
+    return { pending: true };
+  }
+
+  /**
+   * A lobby update or a server error after a bulk edit: report it in the bar.
+   * A lobby that does not show the changes yet (another member's change the
+   * server handled first) keeps waiting.
+   */
+  settleBulk({ slots = null, error = null }) {
+    const wait = this.bulkWait;
+    if (!wait || !this.bulk) return;
+    if (error) {
+      this.bulkWait = null;
+      this.bulk.report(`Refused: ${error}`, true);
+      return;
+    }
+    const shows = (c) =>
+      Object.entries(c).every(([k, v]) => {
+        const s = slots[c.slot];
+        if (k === 'slot') return true;
+        if (k === 'spawn') return v === null ? s?.spawn === undefined : s?.spawn === v;
+        return s?.[k] === v;
+      });
+    if (!wait.changes.every(shows)) return;
+    this.bulkWait = null;
+    this.bulk.report(wait.summary);
   }
 
   renderSlots() {
@@ -1220,9 +1251,11 @@ export class OnlineUI {
       const mission = this.state.mission ? coopMission(this.state.mission.id) : null;
       who.append(el('span', 'online-badge', mission && i < mission.players.length ? mission.players[i] : `P${i + 1}`));
       this.bulk?.decorate(row, who, i, `slot ${i + 1}`);
-      // A resumed save keeps its saved slots. The host edits AI slots and,
-      // like OpenRA's host, the other players' faction, colour, team, handicap and start.
-      const editable = !this.state.resume && ((slot.type === 'human' && (i === mine || host)) || (slot.type === 'ai' && host));
+      // A resumed save keeps its saved slots. Your own slot and (host) the AI
+      // slots are yours to edit; like OpenRA's lobby, the host also sets
+      // another player's team, handicap and start, not its faction or colour.
+      const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
+      const hostSets = editable || (!this.state.resume && host && slot.type === 'human');
       if (mission && slot.type === 'human') {
         who.append(el('span', 'online-player-name', slot.name));
         if (slot.account) who.append(accountMark());
@@ -1273,7 +1306,7 @@ export class OnlineUI {
           slot.team,
           (v) => this.send({ t: 'slot', slot: i, team: Number(v) }),
         );
-        team.disabled = !editable || locked('team');
+        team.disabled = !hostSets || locked('team');
         if (locked('team')) team.title = 'Locked by the map';
         team.setAttribute('aria-label', `Player ${i + 1} team`);
         describedBy(team, this.columnTips.team);
@@ -1283,7 +1316,7 @@ export class OnlineUI {
           slot.handicap ?? 0,
           (v) => this.send({ t: 'slot', slot: i, handicap: Number(v) }),
         );
-        handicap.disabled = !editable;
+        handicap.disabled = !hostSets;
         handicap.setAttribute('aria-label', `Player ${i + 1} handicap`);
         describedBy(handicap, this.columnTips.handicap);
         // Start position (OpenRA's spawn dropdown): automatic, or a spawn no other slot picked.
@@ -1294,7 +1327,7 @@ export class OnlineUI {
           Number.isInteger(slot.spawn) && markers.some((m) => m.index === slot.spawn) ? slot.spawn : 'auto',
           (v) => this.send({ t: 'slot', slot: i, spawn: v === 'auto' ? null : Number(v) }),
         );
-        spawn.disabled = !editable || !this.spawnsEnabled();
+        spawn.disabled = !hostSets || !this.spawnsEnabled();
         spawn.setAttribute('aria-label', `Player ${i + 1} start position`);
         describedBy(spawn, this.columnTips.spawn);
         const cells = [faction, color, [team, handicap, spawn]].map((c) => {

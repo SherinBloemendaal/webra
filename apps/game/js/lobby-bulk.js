@@ -5,6 +5,10 @@
 // clicked one, top to bottom) and applies one action to them; with nothing
 // selected an action applies to every slot it can change.
 //
+// Online the host changes another player's team, handicap and start
+// position (and removes players), but not its faction or colour: OpenRA's
+// lobby shows those read only for the host too (LobbyLogic).
+//
 // Pure: planBulk turns an action into per-slot changes ({ slot, ...fields },
 // the fields of the protocol's `slot` message). The skirmish lobby applies
 // them with applyBulk; the online lobby sends them as one `slots` message
@@ -211,6 +215,9 @@ export function planBulk(slots, id, opts) {
   };
   const [kind, arg, arg2] = id.split(':');
   const editable = (part) => rows.filter((i) => playing(slots[i]) && !locked(slots[i], part));
+  // Online the host sets faction and colour only for its own slot and the
+  // AI slots: OpenRA's lobby leaves another player's read only.
+  const own = (part) => editable(part).filter((i) => !online || slots[i].type === 'ai' || slots[i].you);
 
   switch (kind) {
     case 'teams': {
@@ -231,7 +238,7 @@ export function planBulk(slots, id, opts) {
       return result((n) => `${plural(n, 'slot')} put on ${team ? `Team ${team}` : 'no team'}.`);
     }
     case 'faction': {
-      for (const i of editable('faction')) {
+      for (const i of own('faction')) {
         const faction = arg === 'shuffle' ? PLAYABLE_FACTIONS[Math.floor(rng() * PLAYABLE_FACTIONS.length)] : arg;
         if (slots[i].faction !== faction) set(i, { faction });
       }
@@ -241,7 +248,7 @@ export function planBulk(slots, id, opts) {
       // Colours stay unique: the targets share the colours no other slot
       // holds (skirmish closed rows keep theirs too) and their own.
       const holds = (s) => (online ? playing(s) : true) && Number.isInteger(s.color);
-      const targets = editable('color');
+      const targets = own('color');
       const others = new Set(slots.filter((s, i) => holds(s) && !targets.includes(i)).map((s) => s.color));
       const pool = shuffled(
         Array.from({ length: colorCount }, (_, c) => c).filter((c) => !others.has(c)),

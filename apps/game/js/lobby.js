@@ -884,7 +884,9 @@ export class Lobby {
       this.techField,
       this.field('Weather', this.weatherSelect, 'weather'),
     );
-    // The seed makes the generated map: a map file has no use for it, so it hides with the other generator fields.
+    // The seed makes the generated map, so it hides with the other generator
+    // fields while a map file is in use; a game on a map file gets a new
+    // seed of its own for its random events (start).
     this.seedField = this.field('Seed', seedRow, 'seed', this.seedInput);
     fields.append(this.sizeField, this.fileField, world, this.seedField);
 
@@ -1650,7 +1652,8 @@ export class Lobby {
 
   start() {
     if (this.blocked || this.startBtn.disabled) return;
-    if (!this.commitSeed()) return;
+    // The seed field shows (and counts) only for a generated map.
+    if (this.state.mapSource !== 'file' && !this.commitSeed()) return;
     const human = this.slotRows.find((r) => r.name);
     if (human) {
       const slot = this.slotRows.indexOf(human);
@@ -1664,6 +1667,11 @@ export class Lobby {
     }
     this.closePickers(null);
     const options = this.getOptions();
+    // A map file: the engine still draws crates, random factions, the AI and
+    // the weather from the seed, and the hidden generator seed must not
+    // decide them game after game. Each start gets a new one (the replay,
+    // saves and Restart keep it); the lobby keeps its seed for the generated map.
+    if (this.state.mapSource === 'file') options.seed = randomSeed();
     this.persist();
     this.onStart(options);
   }

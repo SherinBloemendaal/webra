@@ -925,7 +925,7 @@ Client to server:
 | t | Fields | When |
 |---|--------|------|
 | `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
-| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions"; another player's faction, colour, team, handicap and spawn: host only, like OpenRA) | lobby |
+| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions"; another player's team, handicap and spawn: host only, as OpenRA's lobby offers; another player's faction and colour: never) | lobby |
 | `slots` | `changes: [{ slot, ...the fields of slot }]` (host only; 1 to 8 changes, each slot once, each changing something; see "Bulk edit") | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
@@ -1043,10 +1043,13 @@ and online lobbies (`apps/game/js/spawnpick.js`):
 - Online: the client sends `slot { slot, spawn }` (null: automatic). The
   server (`apps/server/src/room.js`) checks it: your own slot (a change of
   your own makes you not ready), the host for AI slots and other people's
-  slots (OpenRA's Spawn command: "only the host can change other client's
-  info"; everyone not ready, like other host changes), and `spawn: null`
-  alone for another person's slot only makes that person not ready (OpenRA
-  `clear_spawn`); the spawn on the battlefield (`map.players` spawns, or one
+  team, handicap and spawn (everyone not ready, like other host changes),
+  and `spawn: null` alone for another person's slot only makes that person
+  not ready (OpenRA `clear_spawn`). OpenRA's server would also take the
+  host's faction and colour for another client (LobbyCommands.cs), but its
+  lobby (LobbyLogic, a player who is not you) offers the host only team,
+  handicap, spawn and the slot admin; WebRA's server accepts that same set
+  and refuses the rest; the spawn on the battlefield (`map.players` spawns, or one
   per player); not picked by another slot; never with `type` and never in
   a mission or a resumed save. Lobby slots carry `spawn` when picked; the
   start message's players carry it to the engine. Like OpenRA a ready player
@@ -1082,7 +1085,8 @@ beyond OpenRA's slot admin dropdown and its `assign_teams` command
   factions (any choice of the faction list, or "Shuffle countries" which
   picks a country per slot now), shuffled colours (unique: the targets
   share the colours no other slot holds; skirmish closed rows keep
-  theirs), handicap (0 to 90 %), start positions back to automatic, and
+  theirs; online both only for the host's own slot and the AI slots, as
+  the bar says, since another player's faction and colour are its own), handicap (0 to 90 %), start positions back to automatic, and
   slots (make open or closed slots Normal AI; online also remove selected
   players, open or close AI and empty slots; never your own slot).
 - Skirmish: the plan is applied all or nothing (`applyBulk`), checked for
@@ -1095,7 +1099,8 @@ beyond OpenRA's slot admin dropdown and its `assign_teams` command
   once all changes are in (a shuffle swaps them), then the map's locks
   like `slot`; any refusal puts every slot back. Everyone is no longer
   ready, removed players are kicked like the slot admin's, and the lobby
-  goes out once. Added in protocol 6 without a version bump (a new
+  goes out once. The bar says "Sent to the server..." until a lobby update
+  shows every change (then the summary), or the server's refusal. Added in protocol 6 without a version bump (a new
   message only the host sends; sessions pair identical builds).
 
 ### Unloading a map
@@ -1106,7 +1111,12 @@ size, style, biome, tech buildings and seed it had before: they are kept
 while a map file is in use. The file is forgotten as the lobby's map (it
 stays in the map library); the slots stay as they are, and the spawn
 picks clear with the battlefield as on every map change. The seed field
-and New seed show only for a generated map. Online, the host's **Unload
+and New seed show only for a generated map. A game on a map file still
+draws its random events from the seed (crates, random factions, the AI,
+the weather), so each start on a map file gets a new random seed (the
+skirmish lobby picks it at Start, the server at `start` for a lobby map);
+the game's options carry it, so replays, saves and Restart keep it, and
+the lobby keeps its own seed for the generated map. Online, the host's **Unload
 map** (a shared or community map) or **Leave mission** (a co-op mission)
 sends `map: null`, like Generated map in the map list: the lobby's
 options, seed included, were kept.

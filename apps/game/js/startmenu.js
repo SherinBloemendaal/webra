@@ -8,7 +8,7 @@
 //
 // More is a disclosure: the button toggles the list (aria-expanded), Escape
 // closes it and returns focus to the button, and so do a click outside and
-// Tab leaving it; ArrowDown on the button opens it at the first entry, the
+// Tab leaving it (Escape on the More button too); ArrowDown on the button opens it at the first entry, the
 // arrows, Home and End move within it. Entries without a handler stay hidden.
 
 /** The dialogs the More entries open (index.html). */
@@ -18,9 +18,10 @@ const DIALOGS = '#audio-panel, #music-panel, #content-panel, #release-notes';
  * @param {HTMLElement} nav the #start-nav element
  * @param {{
  *   onSkirmish?: () => void,  show the skirmish lobby (close what covers it)
- *   onSound?: () => void,
- *   onReleaseNotes?: () => void,
- *   onStress?: () => void,
+ *   onContent?: (entry: HTMLElement) => void,
+ *   onSound?: (entry: HTMLElement) => void,
+ *   onReleaseNotes?: (entry: HTMLElement) => void,
+ *   onStress?: (entry: HTMLElement) => void,
  * }} handlers
  */
 export function mountStartMenu(nav, handlers = {}) {
@@ -49,6 +50,13 @@ export function mountStartMenu(nav, handlers = {}) {
 
   moreButton.addEventListener('click', () => setOpen(list.hidden));
   moreButton.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (list.hidden) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+      return;
+    }
     if (e.key !== 'ArrowDown') return;
     e.preventDefault();
     setOpen(true);
@@ -80,8 +88,15 @@ export function mountStartMenu(nav, handlers = {}) {
     const b = byId(id);
     if (!b) return;
     b.hidden = !handler;
-    if (handler) b.addEventListener('click', () => handler());
+    // The entry goes to the handler: a dialog it opens returns the focus there.
+    // Focused first: a click does not focus a button in Safari and Firefox on macOS.
+    if (handler)
+      b.addEventListener('click', () => {
+        b.focus();
+        handler(b);
+      });
   };
+  wire('start-content', handlers.onContent);
   wire('start-sound', handlers.onSound);
   wire('start-notes', handlers.onReleaseNotes);
   wire('start-stress', handlers.onStress);

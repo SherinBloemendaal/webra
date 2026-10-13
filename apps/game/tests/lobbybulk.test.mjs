@@ -98,6 +98,14 @@ test('colors: shuffled colours stay unique, also against slots that keep theirs;
   for (const c of factions.changes) assert.ok(['england', 'france', 'germany', 'russia', 'ukraine'].includes(c.faction));
   assert.ok(!factions.changes.some((c) => c.slot === 3), 'not the closed row');
   assert.deepEqual(planBulk(slots, 'faction:randomsoviet', { context: 'skirmish', selected: [1] }).changes, [{ slot: 1, faction: 'randomsoviet' }]);
+  // Online the host sets faction and colour for its own slot and the AI slots only (OpenRA's lobby).
+  const online = [human({ you: true, color: 0, faction: 'england' }), human({ color: 1, faction: 'england' }), ai({ color: 2 })];
+  assert.deepEqual(planBulk(online, 'faction:russia', { context: 'online' }).changes.map((c) => c.slot), [0, 2]);
+  for (let seed = 1; seed < 10; seed++) {
+    const plan = planBulk(online, 'colors:shuffle', { context: 'online', colorCount: 8, rng: rng(seed) });
+    assert.ok(plan.changes.every((c) => c.slot !== 1 && c.color !== 1), 'the other player keeps its colour, and nobody takes it');
+  }
+  assert.deepEqual(planBulk(online, 'team:2', { context: 'online' }).changes.map((c) => c.slot), [0, 1, 2], 'teams include the other player');
 });
 
 test('AI: bot and difficulty for AI slots only, fill and remove; online slot actions never touch your own slot', () => {
@@ -260,6 +268,15 @@ test('skirmish lobby: a loaded map hides the seed and the generator fields; Unlo
   assert.equal(lobby.unloadBtn.hidden, false);
   assert.equal(lobby.loadBtn.textContent, 'Load another map');
   assert.doesNotMatch(lobby.caption.textContent, /seed/);
+  // Each game on the map file gets a new seed; the lobby keeps the generator's.
+  const starts = [];
+  lobby.onStart = (o) => starts.push(o);
+  lobby.start();
+  lobby.start();
+  assert.equal(starts.length, 2);
+  assert.ok(starts.every((o) => Number.isInteger(o.seed) && o.seed !== 1234), 'not the hidden seed');
+  assert.notEqual(starts[0].seed, starts[1].seed, 'a new one each start');
+  assert.equal(lobby.state.seed, 1234);
   lobby.unloadBtn.click();
   assert.equal(lobby.mapFile, null);
   assert.equal(lobby.state.mapSource, 'random');
@@ -356,6 +373,24 @@ test('online lobby: the host applies a bulk action with one slots message; anoth
   select.dispatchEvent(new FakeEvent('change'));
   ui.root.querySelector('.bulk-apply').click();
   assert.deepEqual(sent.at(-1), { t: 'slots', changes: [{ slot: 0, team: 1 }, { slot: 1, team: 1 }, { slot: 2, team: 2 }] });
+  // The bar waits for the server: an update without the changes (another member's) keeps it waiting.
+  const status = () => ui.root.querySelector('.bulk-status');
+  assert.equal(status().textContent, 'Sent to the server...');
+  ui.onLobby({ slots: SLOTS(), options: ui.state.options, map: null, hostId: 1, spectators: [], maxSpectators: 2 });
+  assert.equal(status().textContent, 'Sent to the server...');
+  const done = SLOTS();
+  done[0].team = 1;
+  done[1].team = 1;
+  done[2].team = 2;
+  ui.onLobby({ slots: done, options: ui.state.options, map: null, hostId: 1, spectators: [], maxSpectators: 2 });
+  assert.equal(status().textContent, 'Teams set: 3 slots changed.');
+  // A refusal shows in the bar instead.
+  select.value = 'team:3';
+  ui.root.querySelector('.bulk-apply').click();
+  ui.onServerError({ code: 'forbidden', message: 'This map locks slot 2 to team 2.' });
+  assert.equal(status().textContent, 'Refused: This map locks slot 2 to team 2.');
+  assert.ok(status().classList.contains('bulk-error'));
+  assert.match(ui.root.querySelector('.bulk-note').textContent, /own slot and the AI slots/);
   select.value = 'fill:turtle';
   ui.root.querySelector('.bulk-apply').click();
   assert.deepEqual(sent.at(-1), { t: 'slots', changes: [{ slot: 3, type: 'ai', bot: 'turtle', difficulty: 'normal' }] });
@@ -363,9 +398,12 @@ test('online lobby: the host applies a bulk action with one slots message; anoth
   ui.state.slots = SLOTS();
   ui.renderLobby();
   assert.deepEqual(ui.bulk.selection.list(), [0, 1, 2, 3]);
-  // The host edits the other player's faction and team in its row too (OpenRA).
+  // The host sets the other player's team, handicap and start in its row, not its faction or colour (OpenRA's lobby).
   const guestRow = ui.root.querySelectorAll('.online-slot')[2];
   assert.equal(labelled(guestRow, 'Player 2 team').disabled, false);
+  assert.equal(labelled(guestRow, 'Player 2 handicap').disabled, false);
+  assert.equal(labelled(guestRow, 'Player 2 faction').disabled, true);
+  assert.equal(labelled(guestRow, 'Player 2 color').disabled, true);
 
   uninstallDom();
   const guest = await onlineLobby({ you: 2, slots: SLOTS() });
@@ -419,7 +457,7 @@ test('main menu: More opens and closes with the keyboard and a click outside; en
   nav.append(more);
   doc.body.append(nav);
   const calls = [];
-  const menu = mountStartMenu(nav, { onSound: () => calls.push('sound'), onStress: () => calls.push('stress') });
+  const menu = mountStartMenu(nav, { onSound: () => calls.push('sound'), onStress: (entry) => calls.push(entry === stress ? 'stress' : 'other') });
   assert.equal(notes.hidden, true, 'no release notes handler');
   assert.equal(sound.hidden, false);
   button.click();
@@ -436,9 +474,20 @@ test('main menu: More opens and closes with the keyboard and a click outside; en
   assert.equal(doc.activeElement, sound);
   stress.click();
   assert.deepEqual(calls, ['stress']);
+  assert.equal(doc.activeElement, stress, 'the entry takes the focus (Safari leaves it on the page)');
   list.dispatchEvent(new FakeEvent('keydown', { key: 'Escape', cancelable: true }));
   assert.equal(menu.open, false);
   assert.equal(doc.activeElement, button, 'Escape returns to More');
+  // Escape on the More button itself closes the list too.
+  button.click();
+  assert.equal(menu.open, true);
+  button.focus();
+  const esc = new FakeEvent('keydown', { key: 'Escape', cancelable: true });
+  button.dispatchEvent(esc);
+  assert.equal(menu.open, false);
+  assert.equal(esc.defaultPrevented, true);
+  button.dispatchEvent(new FakeEvent('keydown', { key: 'Escape', cancelable: true }));
+  assert.equal(menu.open, false, 'a closed list stays closed');
   button.click();
   const outside = doc.createElement('div');
   doc.body.append(outside);
