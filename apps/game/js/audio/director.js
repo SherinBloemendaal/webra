@@ -99,6 +99,8 @@ export const EV = {
   MAD_TANK: 45,
   /** OpenRA Teleport, at each end: `b` 1 a chrono tank's own jump (PortableChrono), 0 Chronoshiftable. */
   TELEPORTED: 46,
+  /** WebRA addition: a move order ended short because the way stayed blocked, at the unit (to its owner). */
+  ROUTE_BLOCKED: 48,
 };
 
 /** The order behind a smart order's action code (js/cursors.js ACTION), for its voice line. */
@@ -532,6 +534,9 @@ export class Director {
           break;
         case EV.PRODUCTION_BLOCKED:
           if (own) this.announce(queueLine(this.actor(a).queue ?? 0, 'blocked'));
+          break;
+        case EV.ROUTE_BLOCKED:
+          if (own) this.announce('routeBlocked');
           break;
         case EV.UNIT_REPAIR_STARTED:
         case EV.UNIT_REPAIRED:

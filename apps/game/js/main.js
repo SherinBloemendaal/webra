@@ -1207,6 +1207,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const watchedPlayer = () => (view.player === OBSERVER_VIEW || view.player === COMBINED_VIEW ? null : view.player);
   const pings = new RadarPings({
     visible: (owner) => watchedPlayer() !== null && allies(watchedPlayer(), owner),
+    own: (owner) => watchedPlayer() === owner,
     color: (owner) => TEAM_COLORS[owner] ?? [1, 1, 1],
     pxPerWorld: rules.pxPerCell / Game.world_units_per_cell(),
     tickMs,

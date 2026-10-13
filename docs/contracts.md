@@ -1445,6 +1445,31 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   player's current factories (BuildTimeSpeedReduction), before the low power
   slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
   sidebar's production tooltip shows both (OpenRA ProductionTooltipLogic).
+- Leaving the factory (OpenRA Production.Produce, SelectExit, CanUseExit;
+  ClassicProductionQueue.BuildUnit): a finished unit tries the primary
+  structure, then the others that make it (OpenRA: the newest first; WebRA:
+  in actor order). A structure's exits are tried by `exit_priority` (OpenRA
+  ExitInfo.Priority, highest first: the Kennel's down-left exit), then
+  nearest the rally point (without one, nearest a point below the structure;
+  OpenRA shuffles them). Each exit tried first tells the friendly units on
+  it that they are in the way (idle ones step aside, see the movement
+  models), and the unit leaves by the first exit cell it can enter now:
+  nobody holds it that it could not run over, infantry need a free
+  sub-cell. The new unit holds its exit cell at once (OpenRA LocationInit),
+  so the next one waits until it has driven off: units come out one at a
+  time, also with the debug menu's instant build, and never stack. While
+  every exit of every producer is blocked (an enemy, a unit that does not
+  move, a husk) the item stays finished, the queue says so once
+  (ProductionBlocked) and tries again every tick. Ships launch onto open
+  water next to the yard (`naval_spawn_cell`); aircraft are never held up.
+  Without a rally point a unit stays on its exit cell (OpenRA), until the
+  next one asks it to make way; in the WebRA movement model ground units
+  and ships drive on to a cell below the structure instead, and only units
+  standing idle on an exit block it (that model's crowd separation spreads
+  the ones on the move; waiting for those would jam the door behind the
+  crowd its arrival rule gathers in front of it). Differences: units appear
+  on the exit cell instead of inside the structure at the Exit's
+  SpawnOffset, and the Exit's Facing is not used.
 
 ## 5. Domains for units
 
@@ -1529,14 +1554,39 @@ diagonal step never cuts a blocked corner.
   as close (player and AI move orders: 8 cells, OpenRA's `Move` order; a
   rally point 1); an enemy or a unit that cannot move ends the move; else
   the unit tells the blockers (idle allies step aside to a random free
-  neighbouring cell, OpenRA Nudge; busy ones are marked as blocking), waits
-  up to the locomotor's `WaitAverage` (40 ticks), and then searches a way
-  around every unit. Without one it backs out of the way if others wait for
-  it, else the move ends. A move that ended short is over for move orders;
-  other activities (repairs, docking, attacks) try again after 20 to 30
-  ticks (OpenRA MoveCooldownHelper). As in OpenRA, a unit kept waiting
-  behind units that do not move gives up once its destination is taken,
-  so a long column may leave a straggler.
+  neighbouring cell, else toward a neighbouring idle ally that is asked in
+  turn, OpenRA Nudge and GetAdjacentCell; busy ones are marked as
+  blocking), waits up to the locomotor's `WaitAverage` (40 ticks), and
+  then, unless the blockers are leaving, searches a way around every unit.
+  Without one it backs out of the way if others wait for it, else the move
+  ends. A move that ended short is over for move orders; other activities
+  (repairs, docking, attacks) try again after 20 to 30 ticks (OpenRA
+  MoveCooldownHelper).
+- Leaving blockers (OpenRA Move.CellIsEvacuating counts units moving or
+  turning in this tick). WebRA addition: in a passage one cell wide (a cell
+  with only two opposite side neighbours open: a bridge, a gap in a wall)
+  the holders also count as leaving when they wait in turn for a cell
+  further on whose holders leave in the same way (each waiting unit
+  remembers the cell it waits for, `Motion::waiting_for`): the queue ahead
+  is moving. So a tank behind a column of idle tanks on a bridge waits
+  while the column makes way one tank after another, and a group filing
+  over a bridge leaves no stragglers, where OpenRA's units give up once a
+  nudge chain or a queue takes longer than `WaitAverage` (in OpenRA, and in
+  WebRA before, behind six or more tanks). A queue that leads back to the
+  waiting unit, runs in a circle, is longer than 64 cells or ends at a unit
+  that does not move does not count, so units facing each other on a bridge
+  still wait, search, give up and stand still; a unit follows queues for at
+  most 160 ticks without a step (`QUEUE_PATIENCE`); and in the open (a crowd
+  around its goal) only OpenRA's rule holds, so crowds settle as in OpenRA.
+- Feedback (WebRA addition; OpenRA has none: its move cursor only shows
+  terrain that cannot be reached when the order is given): a move order
+  that ends short because the way stayed blocked, farther from its goal
+  than it may stop short (8 cells), sends the owner the audio event 48
+  RouteBlocked at the unit, at most once every 250 ticks per player
+  (`ROUTE_BLOCKED_INTERVAL`); the WebRA model sends it when a move gives up
+  as blocked for good more than 8 cells (of path) out. The client shows
+  the line "Route blocked." (at most every 10 seconds) and a yellow radar
+  ping at the unit for the player who gave the order (Space jumps there).
 - Half way into a cell a moving unit already looks at the cell after it
   (MoveFirstHalf.OnComplete): a route that a new structure cut is searched
   again while it drives on.
@@ -1551,8 +1601,8 @@ diagonal step never cuts a blocked corner.
   Ore trucks dock the same way; an empty truck that finds no ore leaves the
   dock for a cell near four cells below it (Harvester.UnblockCell), and a
   refinery's free truck belongs to that refinery.
-- A unit that other code placed (unloaded, teleported, landed from a leap,
-  produced on a crowded exit) takes the cell it stands on; when it may not
+- A unit that other code placed (unloaded, teleported, landed from a leap)
+  takes the cell it stands on; when it may not
   share it, it steps off once idle.
 - Differences from OpenRA: no arcs between cells; a vehicle turns while it
   drives when the next cell is at most 45 degrees off its heading and on
@@ -2219,7 +2269,9 @@ back and the missions' chronoshifts, Chronoshiftable), 40 PlayerLost and 47
 PlayerWon (owner: the player; one PlayerWon per player of the last side
 standing, after the losers' PlayerLost, like OpenRA ConquestVictoryConditions
 marking each remaining ally's objective; js/battlefx.js writes "X is
-defeated." and "X is victorious." as system lines). Kinds 32 to 36
+defeated." and "X is victorious." as system lines), 48 RouteBlocked (a: the
+unit's type, at the unit; WebRA addition, see the movement models: the line
+"Route blocked." and a radar ping for its owner). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.

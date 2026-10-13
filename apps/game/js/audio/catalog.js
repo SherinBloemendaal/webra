@@ -398,6 +398,8 @@ export function spokenText(name) {
  * speech, like "Unit promoted." next to the LevelUp sound).
  */
 export const EVA = {};
+/** Seconds between two of the same text-only line (default 0.2). */
+const TEXT_COOLDOWNS = { allyUnderAttack: 30, routeBlocked: 10 };
 for (const [name, file] of Object.entries(SPEECH)) {
   const [text, chime, cooldown] = SPEECH_LINES[name] ?? [spokenText(name), 'eva_info', 1];
   EVA[evaKey(name)] = { name, text, chime, originals: file ? [fileName(file)] : [], cooldown, openra: true };
@@ -407,8 +409,10 @@ for (const [key, text] of Object.entries({
   allyUnderAttack: PLAYER_NOTIFICATIONS.baseAttack?.allyText ?? 'Our ally is under attack.',
   // GainsExperience LevelUpTextNotification, next to the LevelUp sound.
   unitPromoted: 'Unit promoted.',
+  // WebRA addition (engine RouteBlocked): a move order stopped short, the way stayed blocked.
+  routeBlocked: 'Route blocked.',
 })) {
-  EVA[key] = { name: null, text, chime: null, originals: [], cooldown: key === 'allyUnderAttack' ? 30 : 0.2, textOnly: true };
+  EVA[key] = { name: null, text, chime: null, originals: [], cooldown: TEXT_COOLDOWNS[key] ?? 0.2, textOnly: true };
 }
 
 /** The EVA key of an OpenRA speech notification name, or null when there is no such line. */

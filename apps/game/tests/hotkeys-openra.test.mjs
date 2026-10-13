@@ -23,7 +23,7 @@ import { createRegistry } from '../js/registry.js';
 import { GAME_KEYS, keyContexts, registerGameKeys } from '../js/gamekeys.js';
 import { COMMAND_HOTKEYS } from '../js/commandbar.js';
 import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from '../js/chatkeys.js';
-import { RadarPings, STRUCTURE_INTERVAL_MS, UNIT_INTERVAL_MS, PING_TICKS, FROM_RADIUS, TO_RADIUS } from '../js/radarpings.js';
+import { RadarPings, STRUCTURE_INTERVAL_MS, UNIT_INTERVAL_MS, PING_TICKS, FROM_RADIUS, TO_RADIUS, ROUTE_BLOCKED_TICKS } from '../js/radarpings.js';
 import { EV, STRIDE } from '../js/audio/director.js';
 import { POWER_KINDS } from '../js/audio/catalog.js';
 import { History, PANELS, PANEL_ORDER } from '../js/observer.js';
@@ -518,6 +518,16 @@ test('radar pings: own and allied attacks (throttled), beacons and superweapons;
   assert.equal(pings.active(1000 + PING_TICKS * 40).some((p) => p.x === 50 && p.y === 100), false);
   assert.equal(RadarPings.triangle(0, 0, 10, 0).length, 3);
   assert.equal(STRIDE, 6);
+});
+
+test('radar pings: a blocked route pings for its owner alone (WebRA addition)', () => {
+  const pings = new RadarPings({ visible: (o) => o === 0 || o === 2, own: (o) => o === 0, color: (o) => [o, 0, 0], pxPerWorld: 0.5, tickMs: 40 });
+  pings.onEvents(event(EV.ROUTE_BLOCKED, 1, 100, 200, 2), 1000);
+  assert.equal(pings.last(), null, "an ally's blocked route is not ours");
+  pings.onEvents(event(EV.ROUTE_BLOCKED, 1, 100, 200, 0), 1000);
+  assert.deepEqual(pings.last(), { x: 50, y: 100 });
+  assert.deepEqual(pings.active(1000)[0].color, [1, 1, 0], 'yellow');
+  assert.equal(pings.active(1000 + ROUTE_BLOCKED_TICKS * 40).length, 0, 'gone after its time');
 });
 
 test('the sidebar mode sounds and announcements', async () => {
