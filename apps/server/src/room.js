@@ -7,8 +7,8 @@
 // Rules:
 // - a joining player takes the first open slot with the first free colour;
 // - players edit their own slot (faction, colour, team) or move to an open slot;
-// - the host also edits AI slots and other players' faction, colour, team,
-//   handicap and spawn (OpenRA: only the host changes other clients' info),
+// - the host also edits AI slots and other players' team, handicap and spawn
+//   (OpenRA's lobby: faction and colour stay the player's own),
 //   and sets any other slot to ai / open / closed (doing that to a human's
 //   slot kicks that player);
 // - the host's bulk edit (`slots`, setSlots) is a list of such changes,
@@ -89,6 +89,7 @@ import {
   MIN_PLAYERS,
   ORDER_DELAY,
   RANDOM_FACTIONS,
+  SEED_MAX,
   REMATCH_COOLDOWN_MS,
   REMATCH_RETURN_MS,
   REMATCH_VOTE_MS,
@@ -678,12 +679,15 @@ export class Room {
       return { kicked: null };
     }
 
-    // OpenRA LobbyCommands: "Only the host can change other client's info"
-    // (faction, team, handicap, spawn, colour); a host change makes everyone
-    // not ready, like its other changes.
+    // The host sets another player's team, handicap and spawn: what OpenRA's
+    // lobby offers the host for another player (LobbyLogic, a player who is
+    // not you: team, handicap and spawn dropdowns; faction and colour are
+    // read only, though OpenRA's server would take them). A host change
+    // makes everyone not ready, like its other changes.
     if (cur.type === 'human' && host) {
       if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
       if (msg.bot !== undefined) fail('Humans have no bot type.');
+      if (msg.faction !== undefined || msg.color !== undefined) fail("Players pick their own faction and colour.", 'forbidden');
       this.applySettings(target, msg, batch);
       this.resetReady();
       return { kicked: null };
@@ -966,10 +970,14 @@ export class Room {
     this.saving = null;
     this.seats = seats;
     this.seatStates = seats.map((c) => (c === null ? null : { state: 'active', until: 0, record: null }));
+    // A map file has no use for the generator's seed (the lobby hides it), so
+    // each game on one gets a new seed for its random events (crates, the
+    // AI, weather); the lobby keeps its seed for the generated map.
+    const seed = this.map ? pick(SEED_MAX + 1) : this.options.seed;
     this.startMsg = {
-      seed: this.options.seed,
+      seed,
       // A co-op mission has no debug menu (the engine refuses cheats there too).
-      options: { ...this.options, ...(this.mission ? { cheats: false } : {}), players },
+      options: { ...this.options, seed, ...(this.mission ? { cheats: false } : {}), players },
       map: this.map,
       players: startPlayers,
       delay: ORDER_DELAY,

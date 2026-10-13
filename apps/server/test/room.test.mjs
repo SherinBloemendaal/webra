@@ -717,21 +717,49 @@ test('bulk edit: the host changes several slots at once, players included (OpenR
   room.setSlot(host, { slot: 2, type: 'ai' });
   room.setReady(guest, true, null);
   const before = room.slots.map((s) => s.color);
-  // Humans vs AI, a colour swap between the host and the guest, the AI's bot.
+  // Humans vs AI, a colour swap between the host and its AI, the AI's bot, the guest's handicap.
   const { kicked } = room.setSlots(host, [
-    { slot: 0, team: 1, color: before[1] },
-    { slot: 1, team: 1, color: before[0], faction: 'russia', handicap: 10 },
-    { slot: 2, team: 2, bot: 'turtle', difficulty: 'hard' },
+    { slot: 0, team: 1, color: before[2] },
+    { slot: 1, team: 1, handicap: 10 },
+    { slot: 2, team: 2, color: before[0], bot: 'turtle', difficulty: 'hard', faction: 'russia' },
     { slot: 3, type: 'ai', bot: 'naval' },
   ]);
   assert.deepEqual(kicked, []);
   assert.deepEqual(room.slots.map((s) => s.team), [1, 1, 2, 0]);
-  assert.deepEqual([room.slots[0].color, room.slots[1].color], [before[1], before[0]], 'a swap is fine once all changes are in');
-  assert.equal(room.slots[1].faction, 'russia');
+  assert.deepEqual([room.slots[0].color, room.slots[2].color], [before[2], before[0]], 'a swap is fine once all changes are in');
+  assert.equal(room.slots[2].faction, 'russia');
   assert.equal(room.slots[1].handicap, 10);
   assert.deepEqual([room.slots[2].bot, room.slots[2].difficulty, room.slots[3].type, room.slots[3].bot], ['turtle', 'hard', 'ai', 'naval']);
   assert.equal(room.slots[1].ready, false, 'a host change makes everyone not ready');
   assert.equal(new Set(room.slots.map((s) => s.color)).size, 4);
+});
+
+test("the host sets another player's team, handicap and spawn, never its faction or colour (OpenRA's lobby)", () => {
+  const { room, host, guest } = lobby(4);
+  room.setSlot(host, { slot: 1, team: 2, handicap: 25 });
+  assert.deepEqual([room.slots[1].team, room.slots[1].handicap], [2, 25]);
+  throwsRoom(() => room.setSlot(host, { slot: 1, faction: 'russia' }), 'forbidden');
+  throwsRoom(() => room.setSlot(host, { slot: 1, color: 5 }), 'forbidden');
+  throwsRoom(() => room.setSlots(host, [{ slot: 0, team: 1 }, { slot: 1, color: 5 }]), 'forbidden');
+  assert.equal(room.slots[0].team, 0, 'nothing of the refused batch stays');
+  room.setSlot(guest, { slot: 1, faction: 'russia', color: 5 });
+  assert.equal(room.slots[1].faction, 'russia', 'the player itself can');
+});
+
+test('a game on a map file gets a new seed; the lobby keeps its seed for the generated map', () => {
+  const { room, host, guest } = lobby(4);
+  room.setMap(host, MAP4);
+  room.setMapState(guest, MAP4.hash, 'installed');
+  room.setReady(guest, true, MAP4.hash);
+  const lobbySeed = room.options.seed;
+  const start = room.start(host, (n) => (n === 0x80000000 ? 4242 : 0));
+  assert.equal(start.seed, 4242);
+  assert.equal(start.options.seed, 4242, 'the engine gets the same seed');
+  assert.equal(room.options.seed, lobbySeed);
+  // A generated map plays the lobby's seed (it makes the map).
+  const gen = lobby(4);
+  gen.room.setReady(gen.guest, true, null);
+  assert.equal(gen.room.start(gen.host, () => 0).seed, gen.room.options.seed);
 });
 
 test('bulk edit: host only, all or nothing, each change checked like a slot message', () => {
