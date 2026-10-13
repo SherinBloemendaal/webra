@@ -2935,6 +2935,107 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).
 
+### Simulation performance (`engine/examples/sim_bench.rs`, `engine/src/profile.rs`)
+
+The simulation is one integer-only tick on one thread; this section is how
+it is measured, where its time goes with very large armies, what keeps it
+fast without changing a result, and why it does not use more cores yet.
+
+**Measuring.** `cargo run -p webra-sim --release --example sim_bench --
+<units> <ticks> [seed] [--window N] [--hashes FILE]` steps the lobby's stress
+test (`World::new_stress`: two armies of soldiers, light and heavy tanks,
+one tank or a pair of soldiers per cell, that attack-move across an open
+map into each other) and prints the average and worst tick per window, the
+units alive, flow fields and route searches, a digest of the state hashes
+(every 25 ticks, outside the timed ticks), the final state hash and the
+peak resident memory. With `--features profile` (and `--sections` per
+window) it also prints the time of each system: `profile::scope` timers in
+`World::step` and the hot functions, which compile to nothing without the
+feature (the game never builds it). `node tools/sim-tick-bench.mjs <units>
+<ticks>` runs the same scenario on the game's wasm build in node and prints
+the same final state hash as the native run.
+
+**Where the time goes**, 20,000 units over 1,500 ticks, native, before and
+after the changes below (identical state hashes):
+
+| System | Squeezed layout, before | after | Stress test, before | after |
+|--------|------------------------:|------:|--------------------:|------:|
+| Whole tick (average) | 37.6 ms | 28.9 ms | 29.0 ms | 18.1 ms |
+| Idle upkeep (crowded units looking for a free cell) | 15.2 ms | 11.7 ms | 0.2 ms | 0.2 ms |
+| Cell moves | 8.3 ms | 7.3 ms | 18.3 ms | 11.0 ms |
+| of which route searches | 1.2 ms | 1.1 ms | 14.8 ms | 7.9 ms |
+| Target scans | 4.3 ms | 1.4 ms | 5.3 ms | 1.8 ms |
+| Vision | 2.4 ms | 1.4 ms | 1.2 ms | 0.7 ms |
+| Tick start (unit hash, occupancy) | 1.5 ms | 1.3 ms | 0.9 ms | 1.1 ms |
+
+The squeezed layout is the stress test as it was placed before: a tank and
+a soldier in every cell (the type index skipped every other entry of its
+mix), which leaves the whole army crowded under the OpenRA movement model,
+and every idle crowded unit searched ten rings of cells for a free one on
+every tick. The stress test now places one tank or a pair of soldiers per
+cell. There the route searches dominate, and nearly all of them fall in the
+first tick, when every unit of both armies starts its move: 34,500 searches
+expanding 37 million cells at 20,000 units, 6 to 10 s native (on a busy
+machine) and 7 s in wasm for that one tick (17 s in wasm before). Flow fields (the HUD's count
+is the fields computed since the start, not the fields kept) cost about
+2 % of a tick. The worker's render build (`build_render` with the whole map
+in view) is 1.9 ms per frame at 20,000 units in wasm; the GPU instance path
+builds once per tick instead (section 8, Instance paths).
+
+**What is faster, with the same results.** Each change answers exactly what
+the code answered before; `engine/src/tests_simperf.rs` compares each with
+its plain definition on crowds of both sides, and the state hashes of the
+stress test (2,000 to 20,000 units, 1,500 ticks, every 25 ticks), the
+ai_vs_ai games and the native against the wasm build are identical.
+
+- Occupancy queries (movement/occupancy.rs `free_sub_cell`,
+  `can_enter_cell`, `available_sub_cell`) read a cell's holders once and
+  keep the sub-cells they take as bits, instead of one pass over the
+  holders per sub-cell.
+- A route search (movement/search.rs) asks each cell's can-enter answer
+  and terrain cost once (a search reaches a cell from up to eight
+  neighbours, and nothing moves while it runs), keeps a cell's bookkeeping
+  in one record and reuses its open list.
+- The unit hash (world.rs `rebuild_hash`) keeps the owners of each cell's
+  units as bits, and target scans (combat.rs `scan_for_target`) skip cells
+  without enemies. An owner change or a freed actor slot voids the bits
+  until the next rebuild (scans then look at every cell).
+- Vision (vision.rs) adds each sight circle as row spans to a difference
+  array per player instead of writing every cell of every circle.
+
+**Several cores.** The game page is already cross-origin isolated (COOP
+`same-origin`, COEP `require-corp`, docs/security.md), so
+`SharedArrayBuffer` is there; what is missing is a threaded wasm build and
+work that can run side by side without changing a result.
+
+- Toolchain: wasm threads with wasm-bindgen need the `atomics` and
+  `bulk-memory` target features and a standard library built with them,
+  which only a nightly Rust can do (`-Z build-std`; `wasm-bindgen-rayon`
+  needs the same). The project builds on stable Rust, so this is a
+  decision of its own: a pinned nightly for the wasm build.
+- What could run in parallel unchanged: vision, the unit hash and
+  occupancy rebuild, flow field computations. Together they are under a
+  tenth of a tick (table above), so even with many cores a tick would get
+  at most about 10 % faster. Every unit's activity, movement and target
+  scan runs one unit after another and sees the moves of the units before
+  it (OpenRA's order), which is most of the tick; running them side by side
+  changes what happens.
+- The one large parallel win in sight is the first tick of a huge move
+  order: route searches could run on all cores against the occupancy at the
+  start of the tick, each recording the cells it read, and the sequential
+  pass would take a result only when none of those cells changed before
+  that unit's turn (else it searches again itself). The results stay those
+  of the sequential search, whatever the core count. This needs the
+  threaded build above plus a record of every change to the occupancy
+  table and to the units holding cells.
+- Without isolation or threads (Safari before 15.2, an embed without COEP)
+  the game would keep the single-threaded build it uses now. Moving the
+  render build to another worker or flow fields to separate workers was
+  measured and is not worth it: the render build is about 2 ms per frame
+  with the whole map in view, flow fields about 2 % of a tick, and both
+  would need the world's state in the other worker (a shared, threaded
+  wasm memory again).
+
 ## 9. Campaign missions (`engine/src/mission`, `engine/src/lua`, `apps/game/js/campaign`)
 
 OpenRA's Red Alert missions (`mods/ra/missions.yaml`: the Allied and Soviet
