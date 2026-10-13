@@ -115,4 +115,13 @@ test('orders the engine emits pass protocol validation and round-trip into apply
   const r = parseClientMessage(JSON.stringify({ t: 'orders', tick: 3, orders }));
   assert.ok(r.ok, r.message);
   assert.equal(game.apply_frame(JSON.stringify([[0, valid]])), orders.length);
+  // The game menu's Surrender goes the same way: validated, relayed, applied (engine/src/gamerules.rs).
+  game.surrender(0);
+  const giveUp = JSON.parse(game.take_orders());
+  assert.deepEqual(giveUp, [{ o: 'surrender', player: 0 }]);
+  assert.deepEqual(validOrders(giveUp), giveUp);
+  assert.equal(game.apply_frame(JSON.stringify([[0, giveUp]])), 1);
+  game.tick();
+  assert.equal(JSON.parse(game.player_json(0)).defeated, true, 'the player lost');
+  assert.equal(game.apply_frame(JSON.stringify([[0, giveUp]])), 0, 'a defeated player gives no more orders');
 });

@@ -336,6 +336,9 @@ pub struct Mission {
     pub(crate) low_power_quiet: BTreeSet<u8>,
     /// Granted actor conditions: handle to (token, condition, end tick or 0).
     pub(crate) conditions: BTreeMap<u32, Vec<(i32, String, u32)>>,
+    /// Players whose Surrender order came this tick (`Order::Surrender`):
+    /// the mission's tick fails their open objectives (OpenRA ForceDefeat).
+    pub(crate) surrenders: Vec<u8>,
 }
 
 impl Mission {

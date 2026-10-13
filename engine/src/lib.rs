@@ -155,6 +155,8 @@ mod tests_sound_eva;
 #[cfg(test)]
 mod tests_stats;
 #[cfg(test)]
+mod tests_surrender;
+#[cfg(test)]
 mod tests_target_lines;
 #[cfg(test)]
 mod tests_terrain;
@@ -1264,6 +1266,11 @@ impl Game {
     /// Switch an own structure off, or on again.
     pub fn power_down(&mut self, player: u8, building: u32) {
         self.submit(Order::PowerDown { player, building });
+    }
+
+    /// Surrender: the player loses (OpenRA's in-game menu Surrender; World::surrender).
+    pub fn surrender(&mut self, player: u8) {
+        self.submit(Order::Surrender { player });
     }
 
     /// Place the player's beacon at a world-pixel position (replaces their previous one).

@@ -760,6 +760,12 @@ pub enum Order {
         x: i32,
         y: i32,
     },
+    /// Give up: the player loses at once (OpenRA's in-game menu Surrender,
+    /// the "Surrender" order MissionObjectives.ResolveOrder turns into
+    /// ForceDefeat; gamerules.rs `surrender`).
+    Surrender {
+        player: u8,
+    },
     /// Debug menu: switch one of the player's cheat flags (debug.rs). Ignored
     /// unless the game has the cheats option.
     DevFlag {
@@ -817,6 +823,7 @@ impl Order {
             | Order::RepairBuilding { player, .. }
             | Order::PowerDown { player, .. }
             | Order::PlaceBeacon { player, .. }
+            | Order::Surrender { player }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
             | Order::DevKill { player, .. }
@@ -851,6 +858,7 @@ impl Order {
             | Order::RepairBuilding { player, .. }
             | Order::PowerDown { player, .. }
             | Order::PlaceBeacon { player, .. }
+            | Order::Surrender { player }
             | Order::DevFlag { player, .. }
             | Order::DevCash { player }
             | Order::DevKill { player, .. }
@@ -916,6 +924,7 @@ impl Order {
             | Order::RepairBuilding { .. }
             | Order::PowerDown { .. }
             | Order::PlaceBeacon { .. }
+            | Order::Surrender { .. }
             | Order::DevFlag { .. }
             | Order::DevCash { .. }
             | Order::DevKill { .. }
@@ -2185,6 +2194,7 @@ impl World {
                     }
                 }
                 Order::PlaceBeacon { player, x, y } => self.place_beacon(player, x, y),
+                Order::Surrender { player } => self.surrender(player),
                 // Cheats (debug.rs): each handler ignores them unless the game has the cheats option.
                 Order::DevFlag { player, flag, on } => self.dev_set_flag(player, flag, on),
                 Order::DevCash { player } => self.dev_give_cash(player),

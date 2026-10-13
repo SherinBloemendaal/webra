@@ -1,9 +1,12 @@
-// In-game menu (Esc): Resume, Settings, Controls (hotkeys, rebindable),
-// Fullscreen, Release notes, Leave to lobby, Exit, plus the game's record
-// actions (save the game, download the replay; js/records.js), Restart
-// (single player and replays, after a confirm step) and Statistics (once the
-// local player watches: spectators, replays, after a defeat or at the end).
-// Phones get the same menu from the HUD's Menu button.
+// In-game menu (Esc): Resume, Game info (OpenRA's GAME_INFO_PANEL with its
+// Objectives, Briefing and Options tabs; js/gameinfo.js), Settings, Controls
+// (hotkeys, rebindable), Fullscreen, Release notes, Surrender (OpenRA
+// IngameMenuLogic: games with more than one person, after a confirm step),
+// Leave to lobby, Exit, plus the game's record actions (save the game,
+// download the replay; js/records.js), Restart (single player and replays,
+// after a confirm step) and Statistics (once the local player watches:
+// spectators, replays, after a defeat or at the end). Phones get the same
+// menu from the HUD's Menu button.
 //
 // The Music page is the music player (js/audio/musicplayer.js), like OpenRA's
 // in-game menu Music button.
@@ -30,9 +33,13 @@ import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf
 import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
-import { closeOpenTip, labelWithHelp } from './infotip.js';
+import { closeOpenTip, infoTip, labelWithHelp, openTip } from './infotip.js';
 import { helpText } from './help.js';
 import { configured as reportsConfigured } from './telemetry/index.js';
+import { renderGameInfo } from './gameinfo.js';
+
+/** How often the open Game info page shows the scores again (ms). */
+export const GAME_INFO_REFRESH_MS = 1000;
 
 /**
  * Settings of the Settings page with a "?" (tests check each one has help
@@ -58,6 +65,9 @@ export const MENU_HELP_KEYS = Object.freeze([
   'mouseCaptureEscMenu',
   'errorReports',
 ]);
+
+/** The "?" beside the titles of the Game info and Surrender pages (js/help.js). */
+export const MENU_PAGE_HELP_KEYS = Object.freeze(['menu.gameInfo', 'menu.surrender']);
 
 /** The notes under the Controls page's list (js/help.js `controls.<key>`). */
 export const CONTROLS_HELP_KEYS = Object.freeze(['keys', 'focus', 'selection']);
@@ -209,6 +219,11 @@ export class GameMenu {
    *     Restart (asks first); online the rematch (js/online.js): shown while `available()`, with its own label and text
    *   onStats?(): void,  the statistics screen (js/stats.js)
    *   statsAvailable?(): boolean,  whether Statistics shows now (not for a player still in the game)
+   *   gameInfo?(): { title: string, objectives: object | null, briefing: object | null, options: object },
+   *     what the Game info page shows now (js/gameinfo.js models)
+   *   surrender?: { shown(): boolean, enabled(): boolean, run(): void },
+   *     OpenRA's Surrender: shown in games with more than one person for a player of the game,
+   *     enabled while its game is undecided; run() gives the order
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -221,6 +236,7 @@ export class GameMenu {
     this.capture = null; // action name waiting for a new key
     this.pageOffs = []; // what the open page follows, stopped when it goes (unmountPage)
     this.pinnedScale = undefined; // the menu's own UI scale while the UI scale slider moves
+    this.infoTab = 'objectives'; // the Game info page's open tab
     this.card = el('div', 'menu-card game-menu-card');
     this.card.setAttribute('role', 'dialog');
     this.card.setAttribute('aria-modal', 'true');
@@ -333,6 +349,8 @@ export class GameMenu {
     // Re-rendering the same page (after a rebind) keeps its scroll position and focus.
     const same = this.rendered === this.view;
     const scroll = same ? (c.querySelector('.game-menu-scroll')?.scrollTop ?? 0) : 0;
+    // A page drawn again (the Game info scores) keeps the focused control.
+    const focusId = same && c.contains(document.activeElement) ? document.activeElement.id : '';
     this.rendered = this.view;
     this.unmountPage();
     c.replaceChildren();
@@ -341,6 +359,8 @@ export class GameMenu {
     else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
+    else if (this.view === 'surrender') this.renderSurrender(c);
+    else if (this.view === 'info') this.renderInfo(c);
     else this.renderMain(c);
     if (this.message) {
       const m = el('p', 'hint game-menu-message', this.message);
@@ -349,6 +369,7 @@ export class GameMenu {
     }
     const list = c.querySelector('.game-menu-scroll');
     if (list) list.scrollTop = scroll;
+    if (focusId) c.querySelector(`#${focusId}`)?.focus({ preventScroll: true });
     if (!same || !c.contains(document.activeElement)) (c.querySelector('button.primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
   }
 
@@ -365,6 +386,7 @@ export class GameMenu {
     const stats = this.opts.onStats && (this.opts.statsAvailable?.() ?? true);
     c.append(
       button('Resume', 'primary', () => this.close()),
+      ...(this.opts.gameInfo ? [button('Game info', null, () => this.show('info'))] : []),
       ...(stats ? [button('Statistics', null, () => this.opts.onStats())] : []),
       ...actions,
       button('Settings', null, () => this.show('settings')),
@@ -374,6 +396,7 @@ export class GameMenu {
       button('Controls and hotkeys', null, () => this.show('controls')),
       button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
       ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
+      ...this.surrenderButton(),
       ...(this.restartShown() ? [button(this.restartLabel(), null, () => this.show('restart'))] : []),
       button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
       button('Exit', null, () => this.show('exit')),
@@ -415,6 +438,54 @@ export class GameMenu {
       button(kind === 'exit' ? 'Exit' : 'Leave', 'primary', () => (kind === 'exit' ? this.opts.onExit() : this.opts.onLeave())),
       button('Back', null, () => this.show('main')),
     );
+  }
+
+  /** OpenRA IngameMenuLogic.CreateSurrenderButton: shown for a player of a game with more than one person, disabled once its game is decided. */
+  surrenderButton() {
+    const s = this.opts.surrender;
+    if (!s?.shown()) return [];
+    const b = button('Surrender', null, () => this.show('surrender'));
+    b.disabled = !s.enabled();
+    return [b];
+  }
+
+  /** The surrender dialog (dialog-surrender): the player loses at once and may stay to watch. */
+  renderSurrender(c) {
+    const title = el('h1', null, 'Surrender');
+    title.append(infoTip('menu.surrender', { label: 'Surrender' }).root);
+    c.append(
+      title,
+      el('p', 'tagline', 'Are you sure you want to surrender? You lose at once; you can stay and watch the rest of the game.'),
+      button('Surrender', 'primary', () => {
+        const s = this.opts.surrender;
+        this.close();
+        if (s?.enabled()) s.run();
+      }),
+      button('Stay', null, () => this.show('main')),
+    );
+  }
+
+  /** Game info (OpenRA GAME_INFO_PANEL): the tabs, drawn again every second while open (scores). */
+  renderInfo(c) {
+    const view = this.opts.gameInfo?.();
+    if (!view) {
+      this.view = 'main';
+      this.renderMain(c);
+      return;
+    }
+    this.infoTab = renderGameInfo(c, view, this.infoTab, (id, focus) => {
+      this.infoTab = id;
+      this.render();
+      if (focus) c.querySelector(`#game-info-tab-${id}`)?.focus({ preventScroll: true });
+    });
+    c.querySelector('h1')?.append(infoTip('menu.gameInfo', { label: 'Game info' }).root);
+    c.append(button('Back', 'primary', () => this.show('main')));
+    const timer = setInterval(() => {
+      // Not while its help tip is open: drawing again would close it.
+      if (this.isOpen && this.view === 'info' && !openTip()) this.render();
+    }, GAME_INFO_REFRESH_MS);
+    timer.unref?.();
+    this.pageOffs.push(() => clearInterval(timer));
   }
 
   /** Whether the menu offers Restart (or the rematch) now. */

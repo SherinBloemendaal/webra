@@ -37,6 +37,8 @@ export const ORDERS = Object.freeze([
   'repair_building',
   'power_down',
   'place_beacon',
+  // The game menu's Surrender (engine/src/gamerules.rs).
+  'surrender',
   'deploy',
   'activate_power',
   'set_rally',

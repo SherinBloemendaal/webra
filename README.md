@@ -197,7 +197,7 @@ them (WebRA's own art and synthesized sounds).
 - [x] GPU compute for very large crowds: the simulation sends tick-rate instance records and a WebGPU compute pass interpolates, culls and compacts them every frame into an indirect draw (CPU path as the fallback and, until the pass has been seen working in browsers, the default: try it with `?instances=gpu`), see [Determinism and performance](#determinism-and-performance)
 - [x] Loading OpenRA `.oramap` maps
 - [x] The Red Alert campaign and expansion missions with OpenRA's Lua scripts
-- [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen
+- [x] In-game menu (Esc) with settings and rebindable hotkeys (OpenRA defaults), fullscreen, and OpenRA's **game info** (objectives with every player's score by team, the briefing, the lobby options as played) and **Surrender** in online games
 - [x] Mobile/touch controls
 
 ## Architecture
@@ -307,7 +307,7 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 
 ## Controls
 
-Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, OpenRA's target lines from selected units to their targets, health bars, relationship colours, render resolution and low quality, fullscreen, mouse capture) and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
+Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu** on phones) for the game menu: settings (scroll speeds, unit paths, OpenRA's target lines from selected units to their targets, health bars, relationship colours, render resolution and low quality, fullscreen, mouse capture) the game info (OpenRA's objectives and score panel, the briefing and the options the game is played with), Surrender in online games with more than one person, and the full list of controls, grouped like OpenRA's hotkey settings, where every hotkey can be rebound (saved in the browser and synced with your account). The defaults are **OpenRA's Red Alert hotkeys** (`mods/common/hotkeys/*.yaml` and `mods/ra/hotkeys.yaml`, generated into `apps/game/js/openra-hotkeys.js` by `tools/gen_hotkeys.py`), except where the browser keeps OpenRA's key (see the notes below). Want B for buildings, W for weapons and S for sell? Rebind them in Controls; the key moves from the action that had it.
 
 | Input | Action |
 |-------|--------|

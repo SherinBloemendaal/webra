@@ -428,6 +428,35 @@ fn player_experience_comes_from_kills_and_repairs_for_allies() {
     assert_eq!(w.players[0].experience - before, xp as i64);
 }
 
+/// The statistics' `experience` (game info scores, the observer panel, the
+/// statistics screen) is OpenRA's PlayerStatistics.Experience, the
+/// PlayerExperience trait: 1 point per 100 credits of a kill and an ally's
+/// repair, not the veterancy experience of the player's units.
+#[test]
+fn observer_experience_is_the_players_openra_experience() {
+    let players = [setup("england", 1), setup("russia", 0), setup("germany", 1)];
+    let mut w = world(&players, GameOptions::default());
+    let row = |w: &World, p: usize| w.observer_stats_json()[p].clone();
+    assert_eq!(row(&w, 0)["experience"], 0);
+    let shooter = unit(&mut w, "1TNK", 0, 20, 20);
+    let victim = unit(&mut w, "STNK", 1, 22, 22);
+    assert_eq!(w.rules.actors[ty(&w, "STNK") as usize].cost, 1000);
+    let source = w.make_ref(shooter);
+    w.award_kill(victim, source);
+    assert_eq!(row(&w, 0)["experience"], 10, "a 1000 credit kill gives 10");
+    assert!(row(&w, 0)["unitExperience"].as_i64().unwrap() >= 1000, "the tank's own veterancy experience is separate");
+    // Repairing an ally's structure to full counts too.
+    let powr = ty(&w, "POWR");
+    let b = w.spawn_building(powr, 2, 30, 30).unwrap();
+    w.actors[b].hp -= 100;
+    w.toggle_repair(0, b);
+    run(&mut w, 60);
+    let xp = w.rules.actors[powr as usize].building.as_ref().unwrap().repairable.as_ref().unwrap().player_experience as i64;
+    assert!(xp > 0);
+    assert_eq!(row(&w, 0)["experience"], 10 + xp);
+    assert_eq!(row(&w, 0)["experience"], w.players[0].experience);
+}
+
 // ---- Ally build radius ---------------------------------------------------------------------------------
 
 #[test]

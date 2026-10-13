@@ -1253,6 +1253,55 @@ also ones already waiting for a frame and after a rejoin. A seat cannot
 undo it; a spectator sending `defeated` gets `bad_state`. Online games never
 pause for the end-game dialog.
 
+Surrender (OpenRA IngameMenuLogic SURRENDER and its "Surrender" order,
+which MissionObjectives.ResolveOrder answers with ForceDefeat) is the order
+`{ "o": "surrender", "player" }` (`Order::Surrender`, `Game.surrender(p)`;
+protocol 6, no version bump: sessions pair identical builds). It goes
+through lockstep like every order: the server validates it (no fields
+besides `player`), stamps the sender's seat and relays it in a frame, so
+every peer and replay applies it on the same tick. In a skirmish the player
+loses at once (gamerules.rs `surrender`: OwnerLostAction, the PlayerLost
+event with the "Mission failed" line, `defeatedAt`), and the game ends when
+the players left are on one side; in a mission (co-op online) the mission's
+tick fails the player's open objectives with their script triggers, which
+loses it. A player that already lost, the neutral player and a decided game
+ignore it. From then on it is a defeated player as above: the client sends
+`defeated`, watches as a spectator or leaves. The game menu offers it like
+OpenRA: only to a player (never a spectator or a replay) of an online game
+with more than one person (OpenRA's `isSinglePlayer`: one client that is not
+a bot, spectators included), after a confirm step ("Surrender" or "Stay"),
+disabled once the player's game is decided or a mission's script stopped.
+Single player games (skirmish against AI players, campaign missions) have
+no Surrender, as in OpenRA; leaving an online game still keeps the seat
+playing on as described above.
+
+Game info (the game menu's Game info page, `js/gameinfo.js`; OpenRA
+GAME_INFO_PANEL, GameInfoLogic): the map's title over the tabs Objectives,
+Briefing (only with a mission briefing or a map file description: OpenRA's
+MissionData.Briefing; the map preview, author and text) and Options (the
+lobby options or a mission's options as played, read only). Objectives is
+OpenRA's SKIRMISH_STATS (GameInfoStatsLogic) in a skirmish: the local
+player's "Destroy all opposition!" with In progress, Accomplished or Failed,
+then every player's score (`observer_stats` `experience`, OpenRA
+PlayerStatistics.Experience, the PlayerExperience trait) sorted by score and grouped by team, the teams
+with the most score first (headers only with more than one group), names
+with "(Won)" or "(Lost)", then the spectators. A player still in the game
+sees the real country only of itself and its allies; the others show the
+lobby's choice ("Random" for a random pick) until its own game is decided,
+like OpenRA's DisplayFaction. Where the lobby's choices are not known
+(a rejoin after a reload, which saw no lobby; a loaded single player save,
+whose file keeps only the drawn countries, so OpenRA's "Random stays
+Random" cannot be restored), opponents show "Unknown" until the player's
+game is decided, never the drawn country. Replays and spectators see the
+drawn countries. No other statistics reach a player still in the game: the full
+statistics screen stays for spectators, defeated players and the end. In a
+mission Objectives is OpenRA's MISSION_OBJECTIVES (the mission status and
+the objectives, primary first, from `mission_state`). The page draws its
+scores again every second while it is open. Not ported: OpenRA's Debug and
+Chat tabs (WebRA's debug menu and chat are elsewhere), the per player Mute
+and Kick buttons (WebRA has no in-game kick), and the "(Gone)" suffix of a
+player who disconnected.
+
 Engine side (landed): `Game.set_lockstep(true)` makes order methods queue into
 an outbox; `Game.take_orders()` returns them as a JSON array of order objects
 (`{"o": "move", ...}`, see `Order` in engine/src/world.rs); 
@@ -1276,9 +1325,16 @@ player, faction, team, isAi, cash, funds, earned, harvestedOre, harvestedGems,
 spent, repairSpent, sold, armyValue, unitsKilled, unitsLost, buildingsKilled,
 buildingsLost, assetsDestroyed, assetsLost, damageDealt, damageTaken,
 unitsBuilt, buildingsBuilt, aircraftBuilt, shipsBuilt, builtValue, experience,
-promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
+unitExperience, promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
 defeatedAt, won }]` for the non-neutral players (kills credited to the owner
-of the weapon that dealt the killing damage; `orders` counts the orders of
+of the weapon that dealt the killing damage; `experience` is OpenRA's
+PlayerStatistics.Experience, the player's PlayerExperience (a kill gives
+the victim's value times its PlayerExperienceModifier, 1 per 100 credits;
+repairs of an ally's structure and infiltrations add theirs; the time
+limit's tie breaker), shown by the game info scores, the observer panel's
+Experience column and the statistics screen; `unitExperience` is the
+veterancy experience the player's units gained, behind `promotions`;
+`orders` counts the orders of
 the order log, AI decisions are not orders; `score` is the value destroyed
 plus half the value built; not part of the state hash).
 `Game.observer_report()` adds per player `productionTicks` (per queue),
@@ -2671,7 +2727,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
+| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
 | `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |

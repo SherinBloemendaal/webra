@@ -396,3 +396,18 @@ test('a defeated seat keeps playing in step, but its orders never reach a frame'
   assert.deepEqual(ls.submit(1, at, [stop([9], 1)]), [{ tick: at, orders: [] }]);
   assert.throws(() => ls.defeat(5), LockstepError, 'only seats of the game');
 });
+
+test('a surrender is relayed to every peer like any order, stamped with the sender, then the seat is defeated', () => {
+  // The game menu's Surrender (engine/src/gamerules.rs): an order of the frame, so every peer applies it on the same tick.
+  const ls = new Lockstep({ players: [0, 1, 2], delay: 3 });
+  ls.initialFrames();
+  ls.submit(0, 3, []);
+  ls.submit(2, 3, []);
+  // Player 1 names player 0 inside its order: the stamp wins, only the sender gives up.
+  assert.deepEqual(ls.submit(1, 3, [{ o: 'surrender', player: 0 }]), [{ tick: 3, orders: [[1, [{ o: 'surrender', player: 1 }]]] }]);
+  // Its engine defeated it on tick 3: the client reports it and its seat sends only empty orders from then on.
+  assert.equal(ls.defeat(1), true);
+  ls.submit(0, 4, []);
+  ls.submit(2, 4, []);
+  assert.deepEqual(ls.submit(1, 4, [{ o: 'surrender', player: 1 }]), [{ tick: 4, orders: [] }]);
+});

@@ -208,6 +208,7 @@ impl World {
             low_power_quiet: Default::default(),
             player_actors: BTreeMap::new(),
             conditions: BTreeMap::new(),
+            surrenders: Vec::new(),
             humans: humans.len(),
             local_player: chosen.local_player,
         };
