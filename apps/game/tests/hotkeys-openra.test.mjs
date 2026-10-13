@@ -548,6 +548,26 @@ test('a box dragged in sell mode sells the structures in it after a confirmation
   await flush();
   assert.deepEqual(asked, [{ count: 3, refund: 600, at: { x: 300, y: 200 } }], 'the count and the total refund');
   assert.deepEqual(game.sell_buildings.calls, [], 'cancelled: nothing sold');
+  // Esc (the mode ends) while the refunds are asked for: no question is left open, nothing sold.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await Promise.resolve();
+  input.cancelMode();
+  await flush();
+  await flush();
+  assert.equal(asked.length, 1, 'no question after the mode ended');
+  input.setMode('sell');
+  // A newer box while the first one's refunds come: only the newer one asks.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  mouse('onMouseDown', 700, 500);
+  await flush();
+  await flush();
+  assert.equal(asked.length, 1, 'the first box was dropped');
+  mouse('onMouseUp', 700, 500);
+  await flush();
   ok = true;
   mouse('onMouseDown', 10, 10);
   mouse('onMouseMove', 300, 200);
@@ -599,15 +619,19 @@ test('the box chooser: keys, Enter, Esc and a press outside answer it', async ()
       addEventListener: (t, f) => (el.handlers[t] = f),
       remove: () => (el.removed = true),
       contains: (x) => x === el || el.children.some((c) => c === x || c.contains?.(x)),
-      focus: () => (focused = el),
+      focus: () => (focused = doc.activeElement = el),
     };
     return el;
   };
   let focused = null;
   const parent = make('main');
-  const doc = { createElement: make };
+  const doc = { createElement: make, activeElement: null };
   const chooser = new BoxChooser(parent, { doc, win });
-  const key = (k) => listeners.get('keydown')({ key: k, stopImmediatePropagation() {}, preventDefault() {} });
+  const key = (k, shiftKey = false) => {
+    const e = { key: k, shiftKey, prevented: false, stopImmediatePropagation() {}, preventDefault: () => (e.prevented = true) };
+    listeners.get('keydown')(e);
+    return e;
+  };
   let p = chooser.chooseRepair({ options: ['buildings', 'combat', 'all'], last: 'combat', at: { x: 5, y: 5 } });
   const buttons = parent.children[0].children[1].children;
   assert.equal(buttons.length, 3);
@@ -620,9 +644,34 @@ test('the box chooser: keys, Enter, Esc and a press outside answer it', async ()
   assert.equal(focused, parent.children[1].children[1].children[2], 'All when the last choice is not offered');
   key('o');
   assert.equal(await p, 'harvesters', 'letters pick too');
-  p = chooser.chooseRepair({ options: ['buildings', 'all'], last: 'all' });
+  p = chooser.chooseRepair({ options: ['buildings', 'combat', 'all'], last: 'all' });
+  const trap = parent.children.at(-1).children[1].children;
+  assert.equal(focused, trap[2]);
+  assert.ok(key('Tab').prevented, 'Tab stays in the chooser');
+  assert.equal(focused, trap[0], 'Tab from the last button goes to the first');
+  key('Tab', true);
+  assert.equal(focused, trap[2], 'Shift+Tab from the first to the last');
+  key('Tab', true);
+  assert.equal(focused, trap[1]);
+  assert.equal(key('Enter').prevented, false, 'Enter is left to the focused choice (the browser clicks it)');
   key('Escape');
   assert.equal(await p, null);
+  // The sale: Cancel has the focus, Enter (the chat key) cancels even with Sell focused, 1 does nothing.
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  const sale = parent.children.at(-1).children[1].children;
+  assert.equal(focused, sale[1], 'Cancel has the focus');
+  key('1');
+  assert.equal(chooser.open, true, 'no number key sells');
+  key('Tab');
+  assert.equal(focused, sale[0]);
+  assert.ok(key('Enter').prevented, 'Enter does not click the focused Sell');
+  assert.equal(await p, false, 'Enter cancels the sale');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  key('y');
+  assert.equal(await p, true, 'Y sells');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  key('n');
+  assert.equal(await p, false, 'N keeps them');
   p = chooser.confirmSell({ count: 2, refund: 300 });
   listeners.get('pointerdown')({ target: parent });
   assert.equal(await p, false, 'a press outside cancels');

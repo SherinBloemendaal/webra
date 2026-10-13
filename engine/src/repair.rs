@@ -319,10 +319,16 @@ impl RepairCategory {
 }
 
 impl World {
-    /// The own structure that repairs own damaged unit `i`: the nearest one
-    /// (service depot for vehicles and helicopters, naval yard or sub pen for
-    /// ships; OpenRA Repairable(Near).RepairActors and FindRepairBuilding,
-    /// which prefers the player's own), ties to the lower index.
+    /// The structure that repairs own damaged unit `i`: the player's nearest
+    /// one of the unit's repair actors (service depot for vehicles and
+    /// helicopters, naval yard or sub pen for ships; OpenRA
+    /// Repairable(Near).RepairActors), ties to the lower index. OpenRA's
+    /// FindRepairBuilding also takes allied structures with RepairsUnits,
+    /// the player's own first, then the nearest (the unit's owner pays, the
+    /// ally gains PlayerExperience). WebRA repairs units at own structures
+    /// only, in the click path (smart order, helicopters) and here alike: the
+    /// depot pad, helicopter landing and payment code only serve the owner's
+    /// units, and allied depots would need all three plus the experience.
     pub fn repair_facility_for(&self, player: u8, i: usize) -> Option<usize> {
         let a = &self.actors[i];
         if !a.alive || !a.in_world() || a.owner != player || !a.is_unit() || a.hp >= self.rules.actors[a.ty as usize].hp {

@@ -5,10 +5,13 @@
 // where the drag ended, inside the battlefield, and answer with a promise.
 //
 // Mouse, keyboard and touch: the buttons are 44 px targets on touch screens;
-// the number keys (and each button's letter) pick, Enter takes the focused
-// button (the remembered choice, or Sell), Esc, a press outside, or the
-// mode ending cancel. While one is open it takes every key, so the game's
-// hotkeys and Esc's menu wait.
+// Tab and Shift+Tab cycle through the buttons only. The repair chooser: the
+// number keys and each choice's letter pick, Enter takes the focused choice
+// (the remembered one first). The sell confirmation: only a click on Sell or
+// its keys S and Y sell; Cancel has the focus, and Enter (also the chat key),
+// Esc, N and C cancel. Esc, a press outside, or the mode ending cancel
+// either. While one is open it takes every key, so the game's hotkeys, the
+// chat and Esc's menu wait.
 
 /** Labels and keys of the repair box choices, in the order offered. */
 export const REPAIR_CHOICES = Object.freeze([
@@ -61,6 +64,7 @@ export class BoxChooser {
       at,
       buttons: choices.map((c, i) => ({ value: c.key, label: c.label, keys: [String(i + 1), c.letter], focus: c.key === focus })),
       cancel: null,
+      enterTakesFocused: true,
     });
   }
 
@@ -71,10 +75,12 @@ export class BoxChooser {
       kind: 'sell',
       at,
       buttons: [
-        { value: true, label: 'Sell', keys: ['1', 'S'], focus: true, tone: 'danger' },
-        { value: false, label: 'Cancel', keys: ['2', 'C'] },
+        { value: true, label: 'Sell', keys: ['S', 'Y'], tone: 'danger' },
+        { value: false, label: 'Cancel', keys: ['N', 'C'], focus: true },
       ],
       cancel: false,
+      // Selling cannot be undone: Enter (also the chat key) cancels, even on a focused Sell.
+      enterTakesFocused: false,
     });
   }
 
@@ -83,7 +89,7 @@ export class BoxChooser {
     this.finish?.(this.cancelValue);
   }
 
-  show({ title, kind, at, buttons, cancel }) {
+  show({ title, kind, at, buttons, cancel, enterTakesFocused }) {
     this.cancel();
     const d = this.doc;
     const el = d.createElement('div');
@@ -99,6 +105,7 @@ export class BoxChooser {
     el.append(list);
     let focusBtn = null;
     const byKey = new Map();
+    const btns = [];
     this.cancelValue = cancel;
     const done = (value) => {
       if (this.el !== el) return;
@@ -120,6 +127,7 @@ export class BoxChooser {
       btn.append(key, ` ${b.label}`);
       btn.addEventListener('click', () => done(b.value));
       list.append(btn);
+      btns.push(btn);
       for (const k of b.keys) byKey.set(k.toLowerCase(), b.value);
       if (b.focus) focusBtn = btn;
     }
@@ -128,10 +136,18 @@ export class BoxChooser {
       if (e.key === 'Escape') {
         e.preventDefault();
         done(cancel);
+      } else if (e.key === 'Enter' && !enterTakesFocused) {
+        e.preventDefault();
+        done(cancel);
       } else if (e.key === 'Enter' || e.key === ' ') {
-        // The focused button (Tab moves it) takes Enter and Space itself.
+        // The focused button takes Enter and Space itself.
       } else if (e.key === 'Tab') {
-        // Focus moves between the buttons as usual.
+        // Focus trap: Tab and Shift+Tab cycle through the buttons only.
+        e.preventDefault();
+        const i = btns.indexOf(this.doc.activeElement);
+        const n = btns.length;
+        const next = i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n;
+        btns[next].focus();
       } else if (byKey.has(String(e.key).toLowerCase()) && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         done(byKey.get(String(e.key).toLowerCase()));

@@ -2140,7 +2140,10 @@ the sender that is alive, in the world, damaged and has repair structures at
 all, each once, goes to the nearest own structure that repairs it, ties to the
 lower actor index: OpenRA's Repair order, exactly what a smart order on that
 service depot or naval yard does with the unit selected (the state hash after
-both is the same); its waypoints and guarding end as with any new command;
+both is the same); difference from OpenRA: OpenRA's FindRepairBuilding and
+Repair order also use an ally's structure (own first, the unit's owner pays,
+the ally gains PlayerExperience), WebRA repairs units at own structures only,
+in the click path and in `repair_units` alike; its waypoints and guarding end as with any new command;
 units without such a structure now, infantry (no Repairable in Red Alert;
 they heal at a Hospital or by a medic), planes (OpenRA RA gives them
 `Repairable: fix`, but WebRA's planes only land on airfields, so they are left
@@ -2202,9 +2205,13 @@ press outside cancels, the mode ending closes it); the choice is remembered
 in the settings (`extra.repairBoxChoice`, default `all`), and Shift held at
 the press or release (touch: Add) skips the chooser with it (All when it is
 not present). A sell box sells at once when it holds one structure; more
-asks "Sell N structures for $X?" with the total of `sell_value` (Enter or
-Sell confirms, Esc, Cancel or a press outside cancels); no modifier skips
-that question, since a sale cannot be undone. There is no separate "repair
+asks "Sell N structures for $X?" with the total of `sell_value`; only a
+click on Sell or its keys S and Y sell, Cancel has the focus and Enter (also
+the chat key), Esc, N, C, Cancel or a press outside cancel; no modifier skips
+that question, since a sale cannot be undone. The answers of a box are
+dropped when the mode changes or a newer box starts while they come (no
+question is left open). Tab and Shift+Tab cycle within the chooser and the
+question while one is open. There is no separate "repair
 all damaged structures" hotkey: OpenRA's hotkey set has no such command to
 name it after, and a box in repair mode or selecting the base and pressing
 Repair does the same. Wasm for the hotkeys:

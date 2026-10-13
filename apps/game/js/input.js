@@ -192,6 +192,8 @@ export class Input {
     this.targeting = null;
     this.mineDrag = null; // Ctrl + drag with Minelayers selected: { sx, sy, ex, ey, units }
     this.modeDrag = null; // left button down in repair or sell mode: { mode, sx, sy, ex, ey, shift } (view px)
+    // Counts mode boxes and mode changes: a box whose answers come back after a newer box or another mode is dropped.
+    this.boxSeq = 0;
     this.bind();
     this.unregister = this.registerHotkeys();
     // The remembered zoom changed elsewhere (Defaults in the game menu, another tab, the account): the view follows.
@@ -457,6 +459,7 @@ export class Input {
     if (next === this.mode) return;
     this.mode = next;
     this.modeDrag = null;
+    this.boxSeq++;
     // A box chooser or confirmation of the mode that ended goes too.
     this.hooks.cancelBoxChoice?.();
     this.hooks.onMode?.(this.mode);
@@ -513,16 +516,17 @@ export class Input {
    * more than one kind (Shift, `shift`: the last choice without asking).
    */
   async boxRepair(a, b, { shift = false, at = null } = {}) {
+    const current = this.boxCurrent('repair');
     const groups = parseRepairGroups(await this.ask.repair_box_json(this.player, a.x, a.y, b.x, b.y));
     const kinds = repairKinds(groups);
-    if (!kinds.length || this.mode !== 'repair') return;
+    if (!kinds.length || !current()) return;
     const last = this.settings.get('repairBoxChoice');
     let choice;
     if (kinds.length === 1) choice = kinds[0];
     else if (shift || !this.hooks.chooseRepair) choice = kinds.includes(last) ? last : 'all';
     else {
       choice = await this.hooks.chooseRepair({ options: [...kinds, 'all'], last, at });
-      if (!choice || this.mode !== 'repair') return;
+      if (!choice || !current()) return;
       this.settings.set('repairBoxChoice', choice);
     }
     this.repairGroups(groups, choice);
@@ -535,15 +539,24 @@ export class Input {
    * with their total refund (no modifier skips it: selling cannot be undone).
    */
   async boxSell(a, b, { at = null } = {}) {
+    const current = this.boxCurrent('sell');
     const ids = Array.from(await this.ask.sell_box(this.player, a.x, a.y, b.x, b.y));
-    if (!ids.length || this.mode !== 'sell') return;
+    if (!ids.length || !current()) return;
     if (ids.length > 1) {
       const values = await Promise.all(ids.map((id) => this.ask.sell_value(this.player, id)));
+      // Esc, a right click or another box while the values came: no question left behind.
+      if (!current()) return;
       const refund = values.reduce((sum, v) => sum + v, 0);
-      if (!(await this.hooks.confirmSell?.({ count: ids.length, refund, at }))) return;
+      if (!(await this.hooks.confirmSell?.({ count: ids.length, refund, at })) || !current()) return;
     }
     this.game.sell_buildings(this.player, Uint32Array.from(ids));
     this.flashOrder({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ACTION.HARVEST);
+  }
+
+  /** Whether the box released now in `mode` is still the current one later (no newer box, same mode). */
+  boxCurrent(mode) {
+    const seq = this.boxSeq;
+    return () => this.boxSeq === seq && this.mode === mode;
   }
 
   /** The repair or sell mode's drag box in world px ({ a, b }), or null while it is still a click. */
@@ -760,8 +773,10 @@ export class Input {
     }
     if (this.mode) {
       // Repair and sell mode on the battlefield: a click acts on one, a drag on a box (mouse up).
-      if ((this.mode === 'repair' || this.mode === 'sell') && at) this.modeDrag = { mode: this.mode, sx: at.x, sy: at.y, ex: at.x, ey: at.y, shift: !!e.shiftKey };
-      else this.modeClick(w);
+      if ((this.mode === 'repair' || this.mode === 'sell') && at) {
+        this.boxSeq++;
+        this.modeDrag = { mode: this.mode, sx: at.x, sy: at.y, ex: at.x, ey: at.y, shift: !!e.shiftKey };
+      } else this.modeClick(w);
       return true;
     }
     if (this.placing) {

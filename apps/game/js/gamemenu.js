@@ -103,7 +103,7 @@ export function fixedControls(mac = isMac()) {
     ['Drag in repair mode', 'Repair what is damaged in the box: choose structures, combat units, ore trucks, other units or all (structures that all repair already stop)'],
     ['Shift + drag in repair mode', 'The same with your last choice, without asking'],
     ['Repair key, own actors selected', 'Repair the selected damaged structures and send the selected damaged units to repair'],
-    ['Drag in sell mode', 'Sell your structures in the box, never a Construction Yard (more than one: confirm with Enter, Esc cancels)'],
+    ['Drag in sell mode', 'Sell your structures in the box, never a Construction Yard (more than one: click Sell or press S or Y; Enter or Esc cancels)'],
     ['Shift + production key', 'Build 5 (production slots, numpad)'],
   ];
 }
