@@ -608,7 +608,7 @@ body {
    the battlefield. */
 html.edge-scroll,
 html.edge-scroll * {
-  cursor: var(--edge-scroll-cursor) !important;
+  cursor: var(--edge-scroll-cursor, auto) !important;
 }
 
 /* Mouse capture (js/mouselock.js): while the pointer is locked the browser
