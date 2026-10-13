@@ -266,8 +266,9 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   The map is cut into tiles of 8 x 8 cells at 24 pixels per cell, drawn a
   few rows per animation frame within a 6 ms budget (the preview's pixels
   stand in until a tile is ready) and kept in an LRU cache of 64 tiles per
-  lens (the lowest zoom shows up to 25 at once); at most two sprite atlases are kept, and all of it is let go when a
-  game starts (`LensArt.release`). The lens starts at half the game's
+  lens (about 9 MB of tile canvases); one view needs at most 36 (below), so
+  drawing never evicts a tile the same view still needs. At most two sprite
+  atlases are kept, and all of it is let go when a game starts (`LensArt.release`). The lens starts at half the game's
   zoom (`LENS_START_FACTOR` of `baseZoom` at the player's game scale, at the
   render ratio a game uses: `gameScaleFor`), so it shows twice the map
   around the pointer; not at the zoom the player last used in a game
@@ -284,7 +285,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   mouse wheel zooms it only while it shows after the pointer moved over the
   preview, between `lensZoomLimits`: out to `LENS_MIN_ZOOM` (0.25 CSS px per
   world pixel at game scale 1, half the game's `MIN_ZOOM`: about 29 cells
-  across a 176 px lens), in to the game's `MAX_ZOOM`; while it shows the
+  across the 176 px lens of UI scale 1 at game scale 1), but never wider
+  than `LENS_MAX_VIEW_CELLS` (40) cells across: the lens's size follows the
+  UI scale (`--ui-px`) and the zoom the game scale, so at UI 1.3 and game
+  0.67 the plain limit would span 57 cells (81 tiles) and at UI 2 and game
+  0.5 even 117; with the cap one view is at most 6 x 6 tiles. In: to the
+  game's `MAX_ZOOM`. While it shows the
   wheel never reaches the page, also at a limit (Ctrl + wheel would zoom
   the browser page). Without the key the wheel scrolls the page. The same
   rule on every preview with a lens (lobbies, campaign, the editor's

@@ -23,7 +23,7 @@ import { buildTerrainAtlas, cellTiles, terrainSeed, TILES } from '../js/art/terr
 import { MODE, POSE, packSprite } from '../js/content/sequences.js';
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, baseZoom, gameScaleFor, zoomLimits } from '../js/scale.js';
 import { CELL_PX, TerrainRaster, frameQuad, hash2, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
-import { HOLD_CLICK_MS, HOLD_MS, LENS_MIN_ZOOM, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensHint, lensPlacement, lensZoomLimits, magnifyHeld, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
+import { HOLD_CLICK_MS, HOLD_MS, LENS_MAX_VIEW_CELLS, LENS_MIN_ZOOM, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensHint, lensPlacement, lensZoomLimits, magnifyHeld, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
 import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, runSteps, teamColors } from '../js/maplens/source.js';
 import { createMap, encodeBase64, TERRAIN } from '../editor/js/mapformat.js';
 
@@ -315,7 +315,7 @@ function fakeContext(canvas) {
 }
 
 /** A page: a fake DOM with canvases, a window with a manual frame clock and timers, and a preview to put a lens on. */
-function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width: 200, height: 120 }, objectFit = 'fill', idleCallbacks = false } = {}) {
+function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width: 200, height: 120 }, objectFit = 'fill', idleCallbacks = false, lensSize = 176 } = {}) {
   const doc = installDom();
   const create = doc.createElement.bind(doc);
   const placed = [];
@@ -329,7 +329,7 @@ function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width
       const props = {};
       el.style = { setProperty: (k, v) => ((props[k] = v), placed.push([k, v])), props };
     }
-    el.getBoundingClientRect = () => ({ left: 0, top: 0, right: 176, bottom: 176, width: 176, height: 176 });
+    el.getBoundingClientRect = () => ({ left: 0, top: 0, right: lensSize, bottom: lensSize, width: lensSize, height: lensSize });
     return el;
   };
   const frames = [];
@@ -585,9 +585,72 @@ test('lensZoomLimits: out to LENS_MIN_ZOOM, in to the game\'s MAX_ZOOM, both wit
   assert.equal(LENS_MIN_ZOOM, MIN_ZOOM / 2);
   assert.ok(LENS_MIN_ZOOM < DEFAULT_ZOOM * LENS_START_FACTOR, 'the start leaves room to zoom out');
   // A 176 px lens at the lowest zoom: about 29 cells across, within the tile cache (64 tiles of 8 x 8 cells).
+  assert.deepEqual(lensZoomLimits(1, 176), { min: LENS_MIN_ZOOM, max: MAX_ZOOM });
   const cells = 176 / LENS_MIN_ZOOM / CELL_PX;
   assert.ok(cells > 29 && cells < 30, `${cells} cells`);
-  assert.ok((Math.ceil(cells / TILE_CELLS) + 1) ** 2 <= 64);
+});
+
+test('lensZoomLimits: a lens never spans more than LENS_MAX_VIEW_CELLS, whatever the UI and game scales', () => {
+  // [UI scale (the lens's size), game scale (the zoom)]
+  for (const [ui, game] of [[1, 1], [1.3, 2 / 3], [2, 0.5], [2, 0.25], [0.75, 2], [1, 0.5]]) {
+    const size = 176 * ui;
+    const { min, max } = lensZoomLimits(game, size);
+    assert.ok(min <= max);
+    assert.ok(min >= LENS_MIN_ZOOM * game - 1e-12, 'never below the plain limit');
+    const across = size / min / CELL_PX;
+    assert.ok(across <= LENS_MAX_VIEW_CELLS + 1e-9, `UI ${ui} / game ${game}: ${across.toFixed(1)} cells across`);
+    // Wherever it is on a 160 map, one view needs at most 36 tiles, inside the default cache of 64.
+    let most = 0;
+    for (let c = 0; c <= 160; c += 1.37) most = Math.max(most, tilesFor({ x: c, y: (c * 7) % 160 }, across, across, 160, 160).length);
+    assert.ok(most <= 36, `UI ${ui} / game ${game}: ${most} tiles`);
+  }
+  // Without the cap: UI 1.3 / game 0.67 spans 57 cells, UI 2 / game 0.5 117.
+  assert.ok((176 * 1.3) / (LENS_MIN_ZOOM * (2 / 3)) / CELL_PX > 57);
+  assert.ok((176 * 2) / (LENS_MIN_ZOOM * 0.5) / CELL_PX > 117);
+});
+
+for (const [ui, game] of [[2, 0.5], [1.3, 2 / 3]]) {
+  test(`UI ${ui} / game ${game.toFixed(2)} on a 160 map, zoomed all the way out: the tiles of a view stay cached (no churn)`, () => {
+    const p = page({ mapW: 160, mapH: 160, previewRect: { left: 0, top: 0, width: 640, height: 640 }, lensSize: 176 * ui });
+    const { lens } = lensOn(p, { gameScale: () => game, budgetMs: 1000 });
+    lens.setSource('m', () => syntheticMap(160, 160), { width: 160, height: 160 });
+    let made = 0;
+    const set = lens.tiles.set.bind(lens.tiles);
+    lens.tiles.set = (k, v) => (made++, set(k, v));
+    p.frame.dispatchEvent(pointer('pointermove', 321, 317));
+    for (let i = 0; i < 300; i++) p.frame.dispatchEvent(new FakeEvent('wheel', { deltaY: 100, deltaMode: 0, clientX: 321, clientY: 317 }));
+    assert.equal(lens.zoom(), lensZoomLimits(game, 176 * ui).min, 'at the lowest zoom');
+    p.runFrames(50);
+    assert.equal(p.frames.length, 0, 'every tile of the view is drawn: no frame keeps asking for more');
+    const drawn = made;
+    assert.ok(drawn <= 36 && lens.tiles.size === drawn, `${drawn} tiles for the view`);
+    // Frames over the same view only copy tiles: none is made again.
+    for (let i = 0; i < 20; i++) {
+      p.frame.dispatchEvent(pointer('pointermove', 321 + (i % 2), 317));
+      p.runFrames(1);
+    }
+    assert.equal(made, drawn, 'no tile evicted and drawn again');
+    assert.ok([...lens.tiles.map.values()].every((t) => t.done && t.img === null));
+  });
+}
+
+test('while the lens shows, a click that opens the context menu (macOS Ctrl + click) opens nothing', () => {
+  const p = page();
+  const { lens } = lensOn(p, { mac: true });
+  lens.setSource('a', () => syntheticMap(), { width: 20, height: 12 });
+  const menu = () => {
+    const e = new FakeEvent('contextmenu', { button: 0, ctrlKey: true, clientX: 150, clientY: 130 });
+    p.frame.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130, { ctrlKey: false }));
+  assert.equal(lens.visible, false);
+  assert.equal(menu(), false, 'a plain preview keeps the browser menu');
+  p.frame.dispatchEvent(pointer('pointermove', 151, 130, { ctrlKey: true }));
+  assert.equal(lens.visible, true);
+  assert.equal(menu(), true);
+  p.win.dispatch('keyup', { key: 'Control', ctrlKey: false });
+  assert.equal(menu(), false);
 });
 
 test('the magnify key: Ctrl everywhere, Cmd too on macOS; the hint says which', () => {

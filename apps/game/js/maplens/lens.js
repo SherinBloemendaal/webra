@@ -29,8 +29,11 @@
 //   while the lens is for looking over a map before playing it, and a
 //   player who zooms in to play would get a lens that shows less of the map.
 //   It zooms out further than a game (LENS_MIN_ZOOM, half the game's
-//   MIN_ZOOM: about 29 cells across at game scale 1) to look over a larger
-//   part of the map, and in as far as a game.
+//   MIN_ZOOM: about 29 cells across a 176 px lens at game scale 1) to look
+//   over a larger part of the map, and in as far as a game; never so far
+//   that the lens spans more than LENS_MAX_VIEW_CELLS cells (the lens's size
+//   follows the UI scale, the zoom the game scale), so one view always fits
+//   the tile cache.
 // - Purely decorative: aria-hidden, never focused, no keyboard handling
 //   (the preview and its markers keep their labels; keyboard focus on a
 //   marker rings it in the lens while it shows). It shows and hides at
@@ -79,8 +82,24 @@ export const LENS_START_FACTOR = 0.5;
  */
 export const LENS_MIN_ZOOM = 0.25;
 
-/** The lens's zoom limits at a game scale: out to LENS_MIN_ZOOM, in as far as a game. */
-export const lensZoomLimits = (scale) => ({ min: LENS_MIN_ZOOM * scale, max: zoomLimits(scale).max });
+/**
+ * The most cells a lens spans at its lowest zoom. One view then needs at
+ * most (LENS_MAX_VIEW_CELLS / TILE_CELLS + 1)^2 = 36 tiles, well inside the
+ * default tile cache (64), so drawing never evicts a tile the same view
+ * still needs.
+ */
+export const LENS_MAX_VIEW_CELLS = 40;
+
+/**
+ * The lens's zoom limits at game scale `scale` for a lens `size` CSS px
+ * wide: out to LENS_MIN_ZOOM, but never wider than LENS_MAX_VIEW_CELLS
+ * cells across; in as far as a game.
+ */
+export const lensZoomLimits = (scale, size = 0) => {
+  const max = zoomLimits(scale).max;
+  const min = Math.max(LENS_MIN_ZOOM * scale, size > 0 ? size / (LENS_MAX_VIEW_CELLS * CELL_PX) : 0);
+  return { min: Math.min(min, max), max };
+};
 
 /** Whether an event's modifiers hold the magnify key: Ctrl, or on macOS Cmd or Ctrl. */
 export const magnifyHeld = (e, mac = isMac()) => !!(e?.ctrlKey || (mac && e?.metaKey));
@@ -365,7 +384,9 @@ export class MapLens {
     // While the lens shows under a finger the page must not scroll, and a
     // long press must not open the context menu or the text selection.
     on('touchmove', (e) => this.touch?.shown && e.cancelable && e.preventDefault(), { passive: false });
-    on('contextmenu', (e) => this.touch && e.preventDefault());
+    // Nor while the lens shows: on macOS Ctrl + click (Ctrl magnifies) is
+    // the context menu's click. The start markers handle their own first.
+    on('contextmenu', (e) => (this.touch || this.visible) && e.preventDefault());
     on('wheel', (e) => this.wheel(e), { passive: false });
     target.classList?.add('map-lens-target');
     if (mouse) {
@@ -640,7 +661,7 @@ export class MapLens {
     e.preventDefault();
     const scale = this.gameScale();
     const zoom = this.zoom();
-    const next = wheelZoom(zoom, e.deltaY, e.deltaMode, lensZoomLimits(scale));
+    const next = wheelZoom(zoom, e.deltaY, e.deltaMode, lensZoomLimits(scale, this.size));
     if (Math.abs(next - zoom) < 1e-9) return;
     this.factor = next / baseZoom(scale);
     this.requestFrame();
@@ -649,7 +670,7 @@ export class MapLens {
   /** CSS px per world pixel in the lens. */
   zoom() {
     const scale = this.gameScale();
-    const { min, max } = lensZoomLimits(scale);
+    const { min, max } = lensZoomLimits(scale, this.size);
     return clamp(baseZoom(scale) * this.factor, min, max);
   }
 
