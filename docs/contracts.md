@@ -2566,11 +2566,11 @@ Main thread to worker:
 | `t` | Fields | Answer |
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
-| `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
+| `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours, `terrain`: the terrain bytes at the start, so the terrain art and the minimap are made before the first frame (frames carry terrain only when it changed later), `timings { createMs, infoMs }`: the engine's time to make the game, for the performance capture, section 10) |
 | `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
-| `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
+| `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances, perf }`, `recycle` | `frame` |
 
 Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
 for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
@@ -2614,7 +2614,12 @@ and heat shimmer instances (`heatCount`, 4 floats each,
 `instances: 'gpu'` (below) it carries tick-rate records and fog instead of
 sprites, rects and fog, only when they changed, plus `instances`, `buildMs`
 (time spent building render data this step) and `renderBytes` (render data
-handed over this step). In a mission it also carries `mission { state,
+handed over this step). Every frame also carries its timings for the
+debug panel and the performance capture (section 10): `simFrameMs` (the
+ticks), `tickMaxMs` (the slowest tick of the step; under the lockstep driver
+and in replays, which tick inside, the mean of the step's ticks), `queryMs`
+(the query answers) and `stepMs` (the whole step in the simulation), and
+`actors` (actors alive) when `req.perf` is set, else null. In a mission it also carries `mission { state,
 events }`: `Game.mission_state()` text when a tick ran (else null) and the
 `Game.take_mission_events()` text of the step (null when empty or busy); the
 handles keep the newest state and queue the events (`MissionFeed`).
@@ -3158,3 +3163,101 @@ clock, and resolves `play` with `played`, `skipped` (click, Esc, Space,
 Enter, `stop`, or another movie), `missing` or `failed`. Presentation only:
 the mission goes on while a movie plays (the engine calls the script's
 callback on the next tick).
+
+## 10. Performance capture (`apps/game/js/perfcapture.js`)
+
+A recording of where a game's time went, saved as a JSON file the player
+sends with a report of a slow game. Started from the debug menu ("Record
+performance", for 10, 30, 60 or 120 seconds: debug setting
+`perfCaptureSeconds`), with `recordPerformance` (Alt+P; again: stop and save),
+or for the first 60 seconds of every game, from its launch, with the debug
+setting `perfCaptureStart` ("Record the start of every game", also on the game
+menu's Settings page). A capture the player started or stopped downloads when
+it ends; the start-of-game capture waits in the debug menu ("Download last
+capture"). Nothing is sent anywhere by the game.
+
+File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
+
+```jsonc
+{
+  "format": "webra-perf", "version": 1,
+  "summary": {                     // first, for a person reading the file
+    "durationMs": 30012, "frames": 1790, "fps": 59.6,
+    "frameMs": { "avg": 16.8, "p50": 16.7, "p95": 18.1, "max": 812.4 },
+    "hitches": { "over50ms": 3, "over100ms": 2, "over250ms": 1 },
+    "worstFrames": [               // the 10 slowest frames and what overlapped them
+      { "t": 1210.5, "frameMs": 812.4, "workMs": 790.1, "stepMs": 0.4, "drawMs": 2.1, "workerMs": 1.2, "ticks": 1, "tickMaxMs": 1.2, "roundTripMs": 6.3, "tick": 3,
+        "during": ["longtask self 795 ms", "terrain.tiles 701 ms"] }
+    ],
+    "time": {                      // where the time went
+      "mainThreadMs": 6100.2, "mainThreadShare": 0.2,
+      "stepMs": { "avg": .., "p50": .., "p95": .., "max": .. },   // also drawMs, gpuMs, gpuDoneMs, workerMs, tickMaxMs, roundTripMs (null: never measured)
+      "longTasks": { "count": 2, "totalMs": 900 }, "longAnimationFrames": { "count": 4, "totalMs": 1100 },
+      "gcHints": { "count": 3, "freedMB": 40 },
+      "spans": [{ "name": "terrain.tiles", "count": 1, "totalMs": 701, "maxMs": 701 }]   // the 12 largest by total
+    },
+    "startup": { "firstFrameMs": 2410, "slowest": [{ "name": "atlas.sprites", "ms": 640 }] },
+    "findings": ["The game took 2410 ms from launch to its first frame; ..."]   // plain sentences
+  },
+  "privacy": "...",                // what the file holds and leaves out (PRIVACY_NOTE)
+  "capture": { "reason": "manual", "requestedSeconds": 30, "durationMs": 30012, "frames": 1790,
+               "endReason": "time", "maxFrames": 30000, "droppedEvents": 0 },   // reason manual | start; endReason time | full | stopped | restarted
+  "build": { "version": "0.13.0" },
+  "environment": { "userAgent": "...", "brands": ["Chromium 140"], "mobile": false, "platform": "macOS", "cores": 8, "deviceMemoryGB": 8,
+                   "devicePixelRatio": 2, "viewport": { "width": 1512, "height": 860 }, "screen": { .. }, "crossOriginIsolated": true,
+                   "observers": ["longtask", "long-animation-frame"], "jsHeapLimitMB": 4096,
+                   "gpu": { "vendor": "apple", "architecture": "metal-3", "device": "", "description": "", "fallbackAdapter": false,
+                            "timestamps": true, "timestampError": null, "maxTextureSize": 16384, "format": "bgra8unorm", "instances": "available" },
+                   "sim": { "mode": "shared", "reason": "..." } },
+  "settings": { "pixelRatioCap": 2, "lowQuality": false, "reduceMotion": "auto", "uiScale": "auto", "gameScale": "auto", "graphics": "original",
+                "healthBars": "off", "showUnitPaths": false, "targetLines": "automatic", "originalContent": true, "instancesParam": null,
+                "instances": { "path": "cpu", "reason": "...", "cpuForced": false } },
+  "game": { "mode": "skirmish", "title": "Example map", "generatedMap": false, "mapWidth": 96, "mapHeight": 96, "biome": "temperate",
+            "players": 2, "ais": 1, "spectating": false, "tickMs": 40, "gameSpeed": "normal",
+            "options": { "seed": 1, "startingCash": 10000, "players": [{ "type": "human", "faction": "england", "team": 0, "difficulty": null, "bot": null }] } },
+  "startup": { "spans": [{ "name": "sim.start", "t": 120.4, "ms": 61.2, "detail": { "kind": "skirmish", "engineMs": 43.8 } }], "dropped": 0 },
+  "frameFields": ["t", "frameMs", "workMs", "stepMs", "drawMs", "gpuMs", "gpuDoneMs", "workerMs", "ticks", "tickMaxMs", "buildMs",
+                  "queryMs", "roundTripMs", "uploadKB", "sprites", "tick", "actors", "heapMB", "wasmMB"],
+  "frames": { "t": [16.7, 33.4], "frameMs": [16.7, 16.7], "...": [] },   // one array per field, frame order, 2 decimals, null: none
+  "events": [{ "t": 1220.1, "kind": "span", "name": "terrain.tiles", "ms": 701.2, "detail": { "source": "original", "tiles": 557 } }]
+}
+```
+
+- Times are milliseconds; `t` of frames and events counts from the capture's
+  start (frames: when the frame began), `t` of startup spans from the game's
+  launch. A frame's stall lies between `t - frameMs` and `t`.
+- Frame fields: `frameMs` the time since the previous animation frame,
+  `workMs` the game's own frame callback on the main thread, of which
+  `stepMs` (handing the step to the simulation; in main thread mode the ticks
+  themselves) and `drawMs` (encoding the WebGPU frame); `gpuMs` the render
+  pass on the GPU (timestamp queries, where the adapter has `timestamp-query`),
+  `gpuDoneMs` from the frame's submit until the GPU finished it; `workerMs`,
+  `ticks`, `tickMaxMs`, `buildMs`, `queryMs` from the newest simulation frame
+  (0 when no new one came: section 8), `roundTripMs` a step's way to the worker
+  and back, `uploadKB` texture and buffer writes of the frame, `sprites` the
+  CPU path's sprites, `tick`, `actors`, `heapMB` the used JS heap (Chrome's
+  `performance.memory`, every 250 ms, else null) and `wasmMB` the engine's
+  memory.
+- Event kinds: `span` (heavy work, `perfTrace.span`: `content.load`,
+  `sim.host`, `sim.start`, `rules.parse`, `atlas.sprites`, `upload.sprites`,
+  `terrain.tiles`, `atlas.terrain`, `terrain.cells`, `upload.terrain-atlas`,
+  `audio.attach`, `audio.synth`, `audio.decode`, `audio.decode-pack`,
+  `game.setup`, `first-frame`), `longtask` and `loaf` (PerformanceObserver
+  `longtask` and `long-animation-frame` where the browser has them; a `loaf`
+  has `blockingMs`, `renderMs`, `layoutMs` and up to five `scripts { ms,
+  invoker, source, fn, layoutMs }`), `gc-hint` (the heap dropped by 1 MB or
+  more between samples: `freedMB`).
+- The start of every game is traced (spans from the launch to the first drawn
+  frame, at most 64), whether or not a capture runs, and goes into every
+  capture of that game.
+- Bounds: one capture at a time, at most 120 s, 30000 frames (a fuller capture
+  ends with `endReason: "full"`) and 4000 events (`droppedEvents` counts the
+  rest); the frame columns are preallocated.
+- Privacy: no player names (`options.players` keeps type, faction, team and
+  AI only), chat, account, map contents, IP address or location. Script
+  addresses are cut to their path on the game's site; other origins are
+  `other origin`, browser extensions `extension`. The user agent, the GPU
+  adapter facts the browser reports, screen size and the map's title are in
+  it.
+- Off, the capture costs one check per span and the per-frame upload counter;
+  `step` asks for `actors` only while recording.
