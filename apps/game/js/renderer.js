@@ -6,6 +6,8 @@
 // (js/art/terrain.js) and weather particles are generated on the GPU.
 
 import { GpuInstances } from './crowd-gpu.js';
+import { GpuTimer } from './gputimer.js';
+import { perfTrace } from './perfcapture.js';
 
 const SPRITE_FLOATS = 8;
 const RECT_FLOATS = 8;
@@ -56,8 +58,16 @@ export class Renderer {
     if (!navigator.gpu) throw new Error('WebGPU is not available in this browser.');
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter) throw new Error('No WebGPU adapter found.');
-    const device = await adapter.requestDevice();
+    // Timestamp queries time the render pass for the performance capture (js/gputimer.js).
+    const features = adapter.features?.has?.('timestamp-query') ? ['timestamp-query'] : [];
+    let device;
+    try {
+      device = await adapter.requestDevice({ requiredFeatures: features });
+    } catch {
+      device = await adapter.requestDevice();
+    }
     const r = new Renderer(canvas, device);
+    r.adapter = adapter;
     await r.init();
     return r;
   }
@@ -80,6 +90,37 @@ export class Renderer {
     // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
     this.pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
     device.lost.then((info) => console.error('WebGPU device lost:', info.message));
+    /** The adapter the device came from (Renderer.create), for gpuInfo(). */
+    this.adapter = null;
+    /** GPU frame timing for the performance capture; `measure` is set for the frames it times. */
+    this.timer = new GpuTimer(device);
+    this.measure = null;
+    /** Bytes written to textures and buffers since the game loop last took them (takeUploadBytes). */
+    this.uploadBytes = 0;
+  }
+
+  /** The GPU and its limits, for the performance capture (no identifiers beyond what the browser reports as adapter info). */
+  gpuInfo() {
+    const info = this.adapter?.info ?? null;
+    return {
+      vendor: info?.vendor ?? null,
+      architecture: info?.architecture ?? null,
+      device: info?.device ?? null,
+      description: info?.description ?? null,
+      fallbackAdapter: this.adapter?.isFallbackAdapter ?? info?.isFallbackAdapter ?? null,
+      timestamps: this.timer.timestamps,
+      timestampError: this.timer.failed,
+      maxTextureSize: this.maxTextureSize,
+      format: this.format,
+      instances: this.instances ? 'available' : this.instancesReason,
+    };
+  }
+
+  /** Upload bytes since the last call (js/main.js, per frame for the capture). */
+  takeUploadBytes() {
+    const n = this.uploadBytes;
+    this.uploadBytes = 0;
+    return n;
   }
 
   async init() {
@@ -208,6 +249,10 @@ export class Renderer {
    * 'nearest' for pixel art, 'linear' (default) for WebRA's own art.
    */
   setAtlas(atlas) {
+    perfTrace.span('upload.sprites', () => this.uploadAtlas(atlas), () => ({ width: atlas.color.width, height: atlas.color.height }));
+  }
+
+  uploadAtlas(atlas) {
     const d = this.device;
     this.atlasTex?.destroy();
     this.maskTex?.destroy();
@@ -225,6 +270,7 @@ export class Renderer {
     this.maskTex = make(atlas.mask);
     this.frames = d.createBuffer({ size: atlas.frames.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     d.queue.writeBuffer(this.frames, 0, atlas.frames);
+    this.uploadBytes += (atlas.color.width * atlas.color.height + atlas.mask.width * atlas.mask.height) * 4 + atlas.frames.byteLength;
     const filter = atlas.filter === 'nearest' ? 'nearest' : 'linear';
     const sampler = d.createSampler({ magFilter: filter, minFilter: filter });
     this.spriteGroup = d.createBindGroup({
@@ -262,12 +308,17 @@ export class Renderer {
    * for the shader and `filter: 'nearest'`).
    */
   setTerrainAtlas(atlas) {
+    perfTrace.span('upload.terrain-atlas', () => this.uploadTerrainAtlas(atlas), () => ({ width: atlas.width, height: atlas.height }));
+  }
+
+  uploadTerrainAtlas(atlas) {
     const d = this.device;
     this.terrainFlags = atlas.flags ?? 0;
     this.terrainSampler = atlas.filter === 'nearest' ? this.nearestSampler : this.linearSampler;
     this.terrainAtlasTex?.destroy();
     this.terrainAtlasTex = d.createTexture({ size: [atlas.width, atlas.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     d.queue.writeTexture({ texture: this.terrainAtlasTex }, atlas.data, { bytesPerRow: atlas.width * 4 }, [atlas.width, atlas.height]);
+    this.uploadBytes += atlas.width * atlas.height * 4;
     this.bindTerrain();
   }
 
@@ -287,14 +338,17 @@ export class Renderer {
   /** Per-cell tile layer (js/art/terrain.js cellTiles), RGBA per cell. */
   uploadCells(bytes) {
     this.device.queue.writeTexture({ texture: this.cellTex }, bytes, { bytesPerRow: this.mapW * 4 }, [this.mapW, this.mapH]);
+    this.uploadBytes += bytes.byteLength;
   }
 
   uploadTerrain(bytes) {
     this.device.queue.writeTexture({ texture: this.terrainTex }, bytes, { bytesPerRow: this.mapW * 4 }, [this.mapW, this.mapH]);
+    this.uploadBytes += bytes.byteLength;
   }
 
   uploadFog(bytes) {
     this.device.queue.writeTexture({ texture: this.fogTex }, bytes, { bytesPerRow: this.mapW }, [this.mapW, this.mapH]);
+    this.uploadBytes += bytes.byteLength;
   }
 
   ensureBuffer(kind, count, floats) {
@@ -351,12 +405,15 @@ export class Renderer {
         this.heatBuffer = d.createBuffer({ size: this.heatCapacity * HEAT_FLOATS * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
       }
       d.queue.writeBuffer(this.heatBuffer, 0, fx.heat, 0, heatCount * HEAT_FLOATS);
+      this.uploadBytes += heatCount * HEAT_FLOATS * 4;
     }
 
     let inst = null;
     if (gpu && this.instances) {
       try {
-        this.instances.upload(gpu.records);
+        const r = gpu.records;
+        if (r && r.gen !== this.instances.gen) this.uploadBytes += r.sprites.byteLength + r.extras.byteLength + r.rects.byteLength;
+        this.instances.upload(r);
         inst = this.instances;
       } catch (err) {
         this.disableInstances(String(err?.message ?? err));
@@ -375,12 +432,16 @@ export class Renderer {
       this.ensureBuffer('line', lineCount, LINE_FLOATS);
       d.queue.writeBuffer(this.lineBuffer, 0, lines, 0, lineCount * LINE_FLOATS);
     }
+    this.uploadBytes += GLOBALS_BYTES + (spriteCount * SPRITE_FLOATS + rectCount * RECT_FLOATS + lineCount * LINE_FLOATS) * 4;
 
     const enc = d.createCommandEncoder();
     // Interpolate, cull and compact the records for this frame.
     inst?.encode(enc, gpu.alpha, gpu.view);
+    // The performance capture times this frame (js/gputimer.js).
+    const timing = this.measure ? this.timer.begin(this.measure) : null;
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+      ...timing?.pass,
     });
     pass.setBindGroup(0, this.globalsGroup);
 
@@ -445,6 +506,8 @@ export class Renderer {
       pass.draw(6, rectCount);
     }
     pass.end();
+    timing?.resolve(enc);
     d.queue.submit([enc.finish()]);
+    timing?.submitted();
   }
 }

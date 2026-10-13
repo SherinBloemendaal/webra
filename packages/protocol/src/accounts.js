@@ -416,7 +416,15 @@ const SETTINGS_SECTIONS = {
     musicRepeat: choice(MUSIC_REPEAT_MODES),
   },
   content: { packs },
-  debug: Object.fromEntries(['cells', 'footprints', 'flow', 'combat', 'tags', 'health', 'stats', 'graph', 'cpuInstances'].map((k) => [k, boolean])),
+  debug: {
+    ...Object.fromEntries(['cells', 'footprints', 'flow', 'combat', 'tags', 'health', 'stats', 'graph', 'cpuInstances'].map((k) => [k, boolean])),
+    // The performance capture (apps/game/js/perfcapture.js).
+    perfCaptureSeconds: (v, f) => {
+      if (!Number.isInteger(v) || v < 5 || v > 120) bad(f, 'Must be an integer from 5 to 120.');
+      return v;
+    },
+    perfCaptureStart: boolean,
+  },
   lobby: {
     name: (v, f) => wrapText(f, () => text(v, 1, Math.min(20, NAME_MAX), 'name')),
     faction: choice(FACTIONS),

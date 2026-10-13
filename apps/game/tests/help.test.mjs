@@ -18,6 +18,7 @@ const { ONLINE_HELP_KEYS } = await import('../js/online.js');
 const { MENU_HELP_KEYS, CONTROLS_HELP_KEYS, MENU_PAGE_HELP_KEYS } = await import('../js/gamemenu.js');
 const { AUDIO_HELP_KEYS } = await import('../js/audio/panel.js');
 const { CAMPAIGN_HELP_KEYS } = await import('../js/campaign/menu.js');
+const { DEBUG_HELP_KEYS } = await import('../js/debug.js');
 
 test('every lobby option, online option and menu setting has a help text', () => {
   const used = new Set([
@@ -28,6 +29,7 @@ test('every lobby option, online option and menu setting has a help text', () =>
     ...MENU_PAGE_HELP_KEYS,
     ...AUDIO_HELP_KEYS.map((k) => `audio.${k}`),
     ...CAMPAIGN_HELP_KEYS,
+    ...DEBUG_HELP_KEYS,
   ]);
   for (const key of used) {
     assert.ok(Object.hasOwn(HELP, key), `no help text for ${key}`);

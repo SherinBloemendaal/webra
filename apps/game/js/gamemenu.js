@@ -66,6 +66,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'mouseCaptureSpeed',
   'mouseCaptureRaw',
   'mouseCaptureEscMenu',
+  'perfCaptureStart',
   'errorReports',
 ]);
 
@@ -653,6 +654,9 @@ export class GameMenu {
     } else {
       list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
     }
+
+    // ---- Performance capture (js/perfcapture.js; recording now and downloads are in the debug menu) ----
+    list.append(el('h2', null, 'Performance'), check('perfCaptureStart', 'Record the start of every game'));
 
     // ---- Privacy (js/telemetry: error reports). Not reset by Defaults: switching reports back on is the player's call. ----
     // The switch is kept even when this build reports nothing (it is synced and applies once reports are turned on).

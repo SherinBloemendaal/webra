@@ -225,11 +225,19 @@ export const GROUPS = deepFreeze({
   },
   debug: {
     label: 'Debug views',
-    description: 'Local overlays of the debug menu.',
+    description: 'Local overlays of the debug menu and its performance capture.',
     scope: 'game',
     settings: {
       ...Object.fromEntries(VIEWS.map((v) => [v.key, { type: 'boolean', default: false, label: v.label }])),
       cpuInstances: { type: 'boolean', default: false, label: 'Force the CPU instance path' },
+      // The performance capture (js/perfcapture.js): its length, and recording the start of every game.
+      perfCaptureSeconds: { type: 'integer', default: 30, min: 5, max: 120, label: 'Performance capture length (seconds)' },
+      perfCaptureStart: {
+        type: 'boolean',
+        default: false,
+        label: 'Record the start of every game',
+        help: 'Records the first 60 seconds of every game as a performance capture, ready to download from the debug menu.',
+      },
     },
   },
   lobby: {
