@@ -37,8 +37,6 @@ pub enum Task {
     None,
     /// Minelayer working through `ActorAbility::minefield`.
     LayMines,
-    /// Minelayer driving to a rearm pad (Service Depot) to reload.
-    Rearm,
     /// Supply truck driving into an own or allied structure.
     DeliverCash,
     /// MAD tank deployed: thumping, then detonating. Cannot be cancelled.
@@ -464,7 +462,6 @@ impl World {
         match self.actors[i].ab.task {
             Task::None => self.actors[i].activity = Activity::Idle,
             Task::LayMines => self.tick_lay_mines(i),
-            Task::Rearm => self.tick_rearm(i),
             Task::DeliverCash => self.tick_deliver_cash(i),
             Task::MadDeploy => self.tick_mad_tank(i),
         }
@@ -612,6 +609,9 @@ impl World {
         best.map(|(_, j)| j)
     }
 
+    /// Out of mines with cells left to mine: to the nearest rearm structure
+    /// (the Service Depot), in its line like a unit sent there for repair
+    /// (service.rs), then back to the minefield (`resume_minefield`).
     fn go_rearm(&mut self, i: usize) {
         let Some(b) = self.rearm_building(i) else {
             // Nowhere to reload: keep the remaining minefield for a later order.
@@ -620,46 +620,34 @@ impl World {
             return;
         };
         let field = std::mem::take(&mut self.actors[i].ab.minefield);
-        self.start_task(i, Task::Rearm);
+        self.release_dock(i);
         let r = self.make_ref(b);
-        let pad = self.repair_pad_cell(b);
         let a = &mut self.actors[i];
+        a.ab.task = Task::None;
         a.ab.minefield = field;
-        a.ab.target = r;
-        a.goal = pad;
+        a.activity = Activity::Repair;
+        a.depot = r;
+        a.repair_timer = 0;
+        a.target = NONE;
+        a.attack_move = false;
+        a.group_size = 1;
+        a.best_dist = i32::MAX;
+        a.stuck_ticks = 0;
+        a.svc = crate::service::ServiceState { depot: r, resume_mines: true, ..Default::default() };
     }
 
-    fn tick_rearm(&mut self, i: usize) {
-        let Some(b) = self.resolve(self.actors[i].ab.target) else {
-            self.actors[i].ab.task = Task::None;
-            self.actors[i].activity = Activity::Idle;
-            return;
-        };
-        let max = self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.as_ref().map_or(0, |m| m.ammo);
-        if self.actors[i].ab.ammo >= max {
-            // Full again: back to the minefield, if any is left.
-            if self.actors[i].ab.minefield.is_empty() {
-                self.actors[i].ab.task = Task::None;
-                self.actors[i].activity = Activity::Idle;
-            } else {
-                let field = std::mem::take(&mut self.actors[i].ab.minefield);
-                self.start_task(i, Task::LayMines);
-                let a = &mut self.actors[i];
-                a.ab.minefield = field;
-                a.ab.mine_cell = NONE;
-            }
-            return;
+    /// A minelayer done at the Service Depot with cells left to mine goes
+    /// back to work on them. True when it does.
+    pub(crate) fn resume_minefield(&mut self, i: usize) -> bool {
+        if self.actors[i].ab.minefield.is_empty() || self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.is_none() {
+            return false;
         }
-        let pad = self.repair_pad_cell(b);
-        if self.on_cell(i, pad) {
-            return; // rearm_on_pad reloads
-        }
-        if self.stuck_toward(i, pad) {
-            self.actors[i].ab.task = Task::None;
-            self.actors[i].activity = Activity::Idle;
-            return;
-        }
-        self.move_toward(i, pad);
+        let field = std::mem::take(&mut self.actors[i].ab.minefield);
+        self.start_task(i, Task::LayMines);
+        let a = &mut self.actors[i];
+        a.ab.minefield = field;
+        a.ab.mine_cell = NONE;
+        true
     }
 
     /// Minelayers standing still on an own rearm pad reload one mine per ReloadDelay.

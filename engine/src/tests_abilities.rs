@@ -155,7 +155,8 @@ fn empty_minelayer_rearms_at_the_service_depot_and_finishes_the_field() {
     w.queue_order(Order::LayMines { player: 0, ids, x0: 18, y0: 34, x1: 19, y1: 34 });
     run(&mut w, 25 * 10);
     assert_eq!(mines(&w, 0).len(), 1, "one mine, then out of ammo");
-    assert!(matches!(w.actors[ml].ab.task, Task::Rearm | Task::LayMines));
+    // Off to the depot's line to reload (service.rs), or already back at work.
+    assert!(w.actors[ml].activity == crate::world::Activity::Repair || w.actors[ml].ab.task == Task::LayMines);
     run(&mut w, 25 * 40);
     assert_eq!(mines(&w, 0).len(), 2, "rearmed at the depot and came back for the second cell");
     assert_eq!(w.actors[ml].ab.ammo, 4, "reloaded to 5 (50 ticks per mine), then laid one");

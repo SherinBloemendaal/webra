@@ -14,8 +14,9 @@
 //!   machine.
 //! - Ground units wait on a cell of their own around the depot (`pick_slot`):
 //!   the nearest ring outside the footprint first, never on the four
-//!   corridors straight out of the pad (the way on and off it), never on a
-//!   cell another unit waits on or stands on. Helicopters hover over every
+//!   corridors straight out of the pad (the way on and off it) of any
+//!   depot, never in front of a structure's exit, never on a cell another
+//!   unit waits on or stands on. Helicopters hover over every
 //!   other cell of the rings from `AIR_FIRST_RING` out, planes circle the
 //!   depot.
 //! - When the pad is free the first unit in line is called (it reserves the
@@ -26,8 +27,12 @@
 //! - Done, it leaves for the depot's rally point when it has one (OpenRA
 //!   Resupply, `RallyPoint`); else ground units and helicopters move to the
 //!   nearest free spot next to the depot out of the corridors and waiting
-//!   cells (OpenRA moves them just off the pad), planes take off and circle
-//!   (OpenRA TakeOff, FlyIdle). Leaving frees the pad for the next in line.
+//!   cells (OpenRA moves them just off the pad), planes take off and fly
+//!   home to a free airfield (OpenRA: TakeOff, then FlyIdle circling over
+//!   the depot). Leaving frees the pad for the next in line.
+//! - A new repair order to the same depot keeps a unit's place (and the
+//!   pad, for the unit on it). Minelayers out of mines reload in the line
+//!   too, then go back to their minefield (abilities.rs).
 //! - A unit that no longer needs repair (healed by a mechanic, say) leaves
 //!   the line and stops. When the depot is destroyed, sold or captured,
 //!   everyone in its line stops where it is; aircraft on its pad take off.
@@ -52,27 +57,53 @@ const AIR_LAST_RING: i32 = 10;
 /// How far from the pad a repaired unit looks for a free spot.
 const PARK_SEARCH: i32 = 12;
 
+/// Ticks before a unit that found no waiting cell looks again.
+const SLOT_RETRY: u32 = 25;
+
 /// A unit's place in a service depot's line.
 #[derive(Clone, Copy, Debug)]
 pub struct ServiceState {
+    /// The depot (actor reference) the ticket and the waiting cell are for, or NONE.
+    pub depot: u32,
     /// Place in line: the tick it joined in the high half, its actor index in
     /// the low half; 0 while it is still on its way.
     pub ticket: u64,
     /// The cell it waits on (ground) or hovers over (helicopters), or NONE.
     pub slot: u32,
+    /// No waiting cell was free: the tick it looks again.
+    pub retry_at: u32,
+    /// A minelayer that came to reload: back to its minefield afterwards.
+    pub resume_mines: bool,
 }
 
 impl Default for ServiceState {
     fn default() -> Self {
-        ServiceState { ticket: 0, slot: NONE }
+        ServiceState { depot: NONE, ticket: 0, slot: NONE, retry_at: 0, resume_mines: false }
     }
 }
 
 impl ServiceState {
     pub fn mix(&self, mix: &mut impl FnMut(i64)) {
+        mix(self.depot as i64);
         mix(self.ticket as i64);
         mix(self.slot as i64);
+        mix(self.retry_at as i64);
+        mix(self.resume_mines as i64);
     }
+}
+
+/// Every unit in a service depot's line and every waiting cell taken,
+/// gathered at the first use in a tick (in actor order, so the same on
+/// every machine) and kept up to date as cells are taken during the tick.
+/// Derived from the actors' state; not part of the state hash.
+#[derive(Clone, Default)]
+pub struct ServiceIndex {
+    /// The tick it was gathered for, plus one (0: never).
+    tick: u32,
+    /// (depot reference, ticket, actor), sorted.
+    lines: Vec<(u32, u64, u32)>,
+    /// (cell, aircraft, actor) of the waiting cells taken, sorted.
+    claims: Vec<(u32, bool, u32)>,
 }
 
 impl World {
@@ -89,11 +120,86 @@ impl World {
         ok.then_some(d)
     }
 
+    /// Whether unit `j` is sent to the depot `dref` (on its way to it,
+    /// waiting, or on its pad).
+    fn serving_at(&self, j: usize, dref: u32) -> bool {
+        let a = &self.actors[j];
+        a.alive && a.activity == Activity::Repair && a.depot == dref
+    }
+
     /// The unit called to depot `d`'s pad (on its way or being served).
     pub(crate) fn pad_holder(&self, d: usize) -> Option<usize> {
         let u = self.resolve(self.actors[d].dock_user)?;
-        let a = &self.actors[u];
-        (a.alive && a.activity == Activity::Repair && a.depot == self.make_ref(d)).then_some(u)
+        self.serving_at(u, self.make_ref(d)).then_some(u)
+    }
+
+    /// Gather the lines and the waiting cells taken, once a tick (`ServiceIndex`).
+    pub(crate) fn refresh_service_index(&mut self) {
+        if self.svc_index.tick == self.tick.wrapping_add(1) {
+            return;
+        }
+        let mut idx = std::mem::take(&mut self.svc_index);
+        idx.tick = self.tick.wrapping_add(1);
+        idx.lines.clear();
+        idx.claims.clear();
+        for (j, a) in self.actors.iter().enumerate() {
+            if !a.alive || a.activity != Activity::Repair || a.svc.depot != a.depot {
+                continue;
+            }
+            if a.svc.ticket != 0 {
+                idx.lines.push((a.depot, a.svc.ticket, j as u32));
+            }
+            if a.svc.slot != NONE {
+                idx.claims.push((a.svc.slot, a.kind == Kind::Aircraft, j as u32));
+            }
+        }
+        idx.lines.sort_unstable();
+        idx.claims.sort_unstable();
+        self.svc_index = idx;
+    }
+
+    /// Unit `i` takes waiting cell `slot` (NONE: none free; it looks again later).
+    pub(crate) fn set_slot(&mut self, i: usize, slot: u32) {
+        let tick = self.tick;
+        let a = &mut self.actors[i];
+        a.svc.slot = slot;
+        if slot == NONE {
+            a.svc.retry_at = tick + SLOT_RETRY;
+            return;
+        }
+        let key = (slot, a.kind == Kind::Aircraft, i as u32);
+        let at = self.svc_index.claims.partition_point(|c| *c < key);
+        self.svc_index.claims.insert(at, key);
+    }
+
+    /// Whether unit `i` without a waiting cell may look for one now.
+    pub(crate) fn may_pick_slot(&self, i: usize) -> bool {
+        self.tick >= self.actors[i].svc.retry_at
+    }
+
+    /// The line state of unit `i` belongs to the depot it is sent to: a unit
+    /// sent elsewhere starts afresh there and gives up the old depot's pad.
+    pub(crate) fn sync_service(&mut self, i: usize) {
+        let (depot, old) = (self.actors[i].depot, self.actors[i].svc.depot);
+        if old == depot {
+            return;
+        }
+        if let Some(d) = self.resolve(old) {
+            if self.actors[d].dock_user == self.make_ref(i) {
+                self.actors[d].dock_user = NONE;
+            }
+        }
+        self.actors[i].svc = ServiceState { depot, ..Default::default() };
+    }
+
+    /// Unit `i` leaves its depot's line and gives up the pad.
+    fn leave_line(&mut self, i: usize) {
+        if let Some(d) = self.resolve(self.actors[i].svc.depot) {
+            if self.actors[d].dock_user == self.make_ref(i) {
+                self.actors[d].dock_user = NONE;
+            }
+        }
+        self.actors[i].svc = Default::default();
     }
 
     /// The cell in the middle of the pad of service depot `d`, where
@@ -151,27 +257,26 @@ impl World {
         }
     }
 
-    /// The first unit in depot `d`'s line (lowest ticket).
+    /// The first unit in depot `d`'s line (lowest ticket), from this tick's
+    /// index: a unit that joined during the tick comes next tick.
     fn next_in_line(&self, d: usize) -> Option<usize> {
         let dref = self.make_ref(d);
-        let mut best: Option<(u64, usize)> = None;
-        for (j, a) in self.actors.iter().enumerate() {
-            if a.alive
-                && a.activity == Activity::Repair
-                && a.depot == dref
-                && a.svc.ticket != 0
-                && best.is_none_or(|(t, _)| a.svc.ticket < t)
-            {
-                best = Some((a.svc.ticket, j));
-            }
-        }
-        best.map(|(_, j)| j)
+        let lines = &self.svc_index.lines;
+        let start = lines.partition_point(|l| l.0 < dref);
+        lines[start..].iter().take_while(|l| l.0 == dref).map(|l| l.2 as usize).find(|&j| {
+            let a = &self.actors[j];
+            self.serving_at(j, dref) && a.svc.depot == dref && a.svc.ticket != 0
+        })
     }
 
     /// Call unit `i` to depot `d`'s pad when it is free and `i` is first in
     /// line. True when `i` holds the pad now.
     pub(crate) fn call_to_pad(&mut self, i: usize, d: usize) -> bool {
-        if self.pad_holder(d).is_some() || self.next_in_line(d) != Some(i) {
+        if self.pad_holder(d).is_some() {
+            return false;
+        }
+        self.refresh_service_index();
+        if self.next_in_line(d) != Some(i) {
             return false;
         }
         self.actors[d].dock_user = self.make_ref(i);
@@ -186,6 +291,7 @@ impl World {
     /// Unit `i` leaves the line without being served (nothing to repair, the
     /// depot gone, the pad out of reach): it stops where it is.
     pub(crate) fn end_service(&mut self, i: usize) {
+        self.leave_line(i);
         self.release_dock(i);
         let a = &mut self.actors[i];
         a.activity = Activity::Idle;
@@ -203,6 +309,12 @@ impl World {
     /// The move frees the pad (`release_dock`).
     pub(crate) fn leave_depot(&mut self, i: usize, d: usize) {
         self.note_repaired(i, d);
+        let mines = self.actors[i].svc.resume_mines;
+        self.leave_line(i);
+        // A minelayer that came to reload goes back to its minefield (abilities.rs).
+        if mines && self.resume_minefield(i) {
+            return;
+        }
         if let Some((rx, ry)) = self.actors[d].rally {
             self.order_move(&[i], rx, ry, false);
             // OpenRA Resupply: MoveTo(rally point, 1).
@@ -280,15 +392,71 @@ impl World {
             && pass.component[c as usize] == pass.component[pad]
             && self.building_at[c as usize] == NONE
             && !self.in_corridor(d, c)
+            && !self.keep_clear(c)
             && !self.someone_stands_on(i, c)
+    }
+
+    /// Whether cell `c` must stay free for others: on a corridor straight
+    /// out of any service depot's pad (any owner's), or the exit cell of a
+    /// structure (where factories put out what they built) or the cell just
+    /// outside its footprint from there.
+    fn keep_clear(&self, c: u32) -> bool {
+        let w = self.map.width;
+        let (cx, cy) = (c as i32 % w, c as i32 / w);
+        for (sx, sy) in [(0, 1), (1, 0), (0, -1), (-1, 0)] {
+            for k in 1..=CORRIDOR + 1 {
+                let (x, y) = (cx + sx * k, cy + sy * k);
+                if !self.map.contains(x, y) {
+                    break;
+                }
+                let b = self.building_at[self.map.idx(x, y)];
+                if b == NONE {
+                    continue;
+                }
+                let b = b as usize;
+                let is_depot = self.actors[b].alive
+                    && self.rules.actors[self.actors[b].ty as usize].building.as_ref().is_some_and(|bi| bi.repairs.is_some());
+                if is_depot && self.in_corridor(b, c) {
+                    return true;
+                }
+            }
+        }
+        for oy in -1..=1 {
+            for ox in -1..=1 {
+                if !self.map.contains(cx + ox, cy + oy) {
+                    continue;
+                }
+                let b = self.building_at[self.map.idx(cx + ox, cy + oy)];
+                if b == NONE {
+                    continue;
+                }
+                let ba = &self.actors[b as usize];
+                let Some(bi) = self.rules.actors[ba.ty as usize].building.as_ref() else { continue };
+                let (rx, ry) = (cx - ba.cx, cy - ba.cy);
+                let out = |&(ex, ey): &(i32, i32)| {
+                    (rx, ry) == (ex, ey)
+                        || (ey == bi.height - 1 && (rx, ry) == (ex, bi.height))
+                        || (ey == 0 && (rx, ry) == (ex, -1))
+                        || (ex == 0 && (rx, ry) == (-1, ey))
+                        || (ex == bi.width - 1 && (rx, ry) == (bi.width, ey))
+                };
+                if ba.alive && bi.exits.iter().any(out) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Whether another unit in a service line waits on (or over) cell `c`.
     fn slot_taken(&self, i: usize, c: u32, air: bool) -> bool {
-        self.actors
-            .iter()
-            .enumerate()
-            .any(|(j, o)| j != i && o.alive && o.activity == Activity::Repair && o.svc.slot == c && (o.kind == Kind::Aircraft) == air)
+        let claims = &self.svc_index.claims;
+        let start = claims.partition_point(|k| (k.0, k.1) < (c, air));
+        claims[start..].iter().take_while(|k| (k.0, k.1) == (c, air)).any(|k| {
+            let j = k.2 as usize;
+            let o = &self.actors[j];
+            j != i && o.alive && o.activity == Activity::Repair && o.svc.slot == c
+        })
     }
 
     /// Cells of the ring at Chebyshev distance `r` around depot `d`'s pad, on the map.
@@ -354,7 +522,17 @@ impl World {
     fn park_cell(&mut self, i: usize, d: usize) -> u32 {
         // South first, then the diagonals and sides, north last.
         const ORDER: [(i32, i32); 8] = [(0, 1), (-1, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (1, -1), (0, -1)];
+        self.refresh_service_index();
         let air = self.actors[i].kind == Kind::Aircraft;
+        // Cells other units of its kind are on their way to.
+        let mut goals: Vec<u32> = self
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(j, o)| *j != i && o.alive && o.activity == Activity::Move && (o.kind == Kind::Aircraft) == air)
+            .map(|(_, o)| o.goal)
+            .collect();
+        goals.sort_unstable();
         let pad = self.repair_pad_cell(d) as i32;
         let w = self.map.width;
         let (px, py) = (pad % w, pad / w);
@@ -366,7 +544,7 @@ impl World {
         queue.push_back(start as u32);
         while let Some(c) = queue.pop_front() {
             let (dx, dy) = self.pad_offset(d, c);
-            if dx.abs().max(dy.abs()) >= SLOT_FIRST_RING && self.park_open(i, d, c, air) {
+            if dx.abs().max(dy.abs()) >= SLOT_FIRST_RING && self.park_open(i, d, c, air, &goals) {
                 return c;
             }
             let (cx, cy) = (c as i32 % w, c as i32 / w);
@@ -387,21 +565,12 @@ impl World {
     }
 
     /// Whether repaired unit `i` may park on cell `c` near depot `d`.
-    fn park_open(&self, i: usize, d: usize, c: u32, air: bool) -> bool {
-        if self.slot_taken(i, c, air) {
+    /// `goals`: the cells others of its kind are on their way to, sorted.
+    fn park_open(&self, i: usize, d: usize, c: u32, air: bool, goals: &[u32]) -> bool {
+        if self.slot_taken(i, c, air) || goals.binary_search(&c).is_ok() {
             return false;
         }
-        let ground = !air;
-        // Another unit already on its way there.
-        let claimed = self
-            .actors
-            .iter()
-            .enumerate()
-            .any(|(j, o)| j != i && o.alive && o.activity == Activity::Move && o.goal == c && (o.kind == Kind::Aircraft) == air);
-        if claimed {
-            return false;
-        }
-        if ground {
+        if !air {
             return self.ground_spot_open(i, d, c);
         }
         // Helicopters: every other cell (two hovering helicopters never
@@ -451,6 +620,7 @@ impl World {
             }
         }
         let Some(d) = depot else { return false };
+        self.refresh_service_index();
         let c = self.park_cell(i, d);
         let (x, y) = self.cell_point(c);
         self.order_move(&[i], x, y, false);
@@ -464,10 +634,12 @@ impl World {
     /// service depot; helicopters and planes have their own, helicopter.rs
     /// and plane.rs).
     pub(crate) fn tick_repair(&mut self, i: usize) {
+        self.sync_service(i);
         let Some(d) = self.service_depot(i) else {
             self.end_service(i);
             return;
         };
+        self.refresh_service_index();
         let pad = self.repair_pad_cell(d);
         if self.pad_holder(d) == Some(i) {
             self.service_on_pad(i, d, pad);
@@ -531,8 +703,11 @@ impl World {
         let slot = self.actors[i].svc.slot;
         let usable = slot != NONE && !self.someone_stands_on(i, slot) && self.building_at[slot as usize] == NONE;
         if !usable {
+            if !self.may_pick_slot(i) {
+                return; // none was free: wait here, look again later
+            }
             let s = self.pick_slot(i, d);
-            self.actors[i].svc.slot = s;
+            self.set_slot(i, s);
             if s == NONE {
                 return; // nowhere to go: wait here
             }
@@ -553,11 +728,8 @@ impl World {
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
             a.stall_ticks = 0;
-            if self.ground_spot_open(i, d, here) && !self.slot_taken(i, here, false) {
-                self.actors[i].svc.slot = here;
-            } else {
-                self.actors[i].svc.slot = NONE;
-            }
+            let s = if self.ground_spot_open(i, d, here) && !self.slot_taken(i, here, false) { here } else { NONE };
+            self.set_slot(i, s);
             return;
         }
         self.move_toward(i, slot);

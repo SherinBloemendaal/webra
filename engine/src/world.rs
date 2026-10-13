@@ -1005,6 +1005,8 @@ pub struct World {
     /// crowd separation, so it waits in a queue rather than being blocked for
     /// good (units.rs).
     pub(crate) jammed: Vec<bool>,
+    /// The service depots' lines, gathered once a tick (service.rs; derived, not hashed).
+    pub(crate) svc_index: crate::service::ServiceIndex,
     /// This tick's answers of `keep_goal_reachable` (units.rs): goal cell,
     /// connectivity label, passability (0 ground, 1 water, 2 landing
     /// craft), crush mask, and the cell found. A cut-off group asks the
@@ -1355,6 +1357,7 @@ impl World {
             hash_items: Vec::new(),
             terrain_dirty: true,
             jammed: Vec::new(),
+            svc_index: Default::default(),
             retarget_memo: Vec::new(),
             occupancy: Default::default(),
             search: Default::default(),
@@ -2219,13 +2222,18 @@ impl World {
                 self.actors[r].dock_user = NONE;
             }
         }
-        // The service depot's pad and line (service.rs).
-        if let Some(d) = self.resolve(self.actors[i].depot) {
-            if self.actors[d].dock_user == me {
-                self.actors[d].dock_user = NONE;
+        // The service depot's pad and line (service.rs): a unit given a new
+        // order while in a depot's line keeps its place and its hold on the
+        // pad until it ticks, so a new repair order to the same depot goes
+        // on where it was (OpenRA queues the new Resupply on the host).
+        if self.actors[i].activity != Activity::Repair {
+            if let Some(d) = self.resolve(self.actors[i].depot) {
+                if self.actors[d].dock_user == me {
+                    self.actors[d].dock_user = NONE;
+                }
             }
+            self.actors[i].svc = Default::default();
         }
-        self.actors[i].svc = Default::default();
         self.heli_cancel(i);
     }
 
@@ -2693,9 +2701,10 @@ impl World {
                 }
                 mix(a.repair_ticks as i64);
                 mix(a.powered_off as i64);
-                // The service depot's line (service.rs).
+                // The service depot's line and pad reservation (service.rs).
                 mix(a.repair_timer as i64);
                 a.svc.mix(&mut mix);
+                mix(a.dock_user as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);

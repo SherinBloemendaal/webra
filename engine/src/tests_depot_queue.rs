@@ -54,9 +54,11 @@ fn damaged(w: &mut World, id: &str, n: usize, x0: i32) -> Vec<usize> {
         .collect()
 }
 
+/// A smart order on the depot's left arm (its centre is the pad, where a
+/// unit being repaired would be clicked instead).
 fn send(w: &mut World, units: &[usize], fix: usize) {
     let ids = units.iter().map(|&u| w.make_ref(u)).collect();
-    let (x, y) = (w.actors[fix].x, w.actors[fix].y);
+    let (x, y) = (w.actors[fix].x - CELL, w.actors[fix].y);
     w.queue_order(Order::Smart { player: 0, ids, x, y });
 }
 
@@ -230,7 +232,7 @@ fn planes_land_on_the_depot_in_turn_and_fly_home_once_repaired() {
     let afld = w.spawn_building(ty(&w, "AFLD"), 0, 10, 30).unwrap();
     let planes = damaged(&mut w, "MIG", 10, 8);
     w.step();
-    let (x, y) = (w.actors[fix].x, w.actors[fix].y);
+    let (x, y) = (w.actors[fix].x - CELL, w.actors[fix].y);
     assert_eq!(w.smart_action(0, &planes, x, y), SmartAction::Repair, "planes repair at the service depot (OpenRA ^Plane Repairable)");
     send(&mut w, &planes, fix);
     let run = run_line(&mut w, &planes, 25 * 120);
@@ -413,4 +415,142 @@ fn the_line_is_deterministic() {
             .collect();
         assert_eq!(hashes[0], hashes[1], "{model:?}: same state hashes in both runs");
     }
+}
+
+#[test]
+fn a_plane_ordered_again_on_the_pad_keeps_it_and_nobody_else_is_called() {
+    let mut w = arena(MovementModel::WebRA);
+    let fix = depot(&mut w);
+    let planes = damaged(&mut w, "MIG", 3, 8);
+    send(&mut w, &planes, fix);
+    let on_pad = |w: &World| planes.iter().copied().find(|&p| w.actors[p].altitude == 0 && w.on_repair_pad(p));
+    for _ in 0..25 * 60 {
+        w.step();
+        if on_pad(&w).is_some_and(|p| w.actors[p].hp > max_hp(&w, p) / 2) {
+            break;
+        }
+    }
+    let p = on_pad(&w).expect("a plane is being repaired on the pad");
+    let ticket = w.actors[p].svc.ticket;
+    // Clicked onto the depot again while it is on the pad (at the top of
+    // the depot: the plane's own outline covers the arms next to the pad).
+    let (x, y) = (w.actors[fix].x, w.actors[fix].y - 1400);
+    assert_eq!(w.actor_at(0, x, y), Some(fix));
+    let ids = vec![w.make_ref(p)];
+    w.queue_order(Order::Smart { player: 0, ids, x, y });
+    let hp = w.actors[p].hp;
+    for _ in 0..25 * 3 {
+        w.step();
+        if w.actors[p].hp == max_hp(&w, p) {
+            break;
+        }
+        assert_eq!(w.actors[fix].dock_user, w.make_ref(p), "the plane keeps the pad");
+        for &o in &planes {
+            assert!(o == p || !w.on_repair_pad(o), "nobody else is called onto the occupied pad");
+        }
+    }
+    assert!(w.actors[p].hp > hp, "repaired on");
+    assert!(w.actors[p].hp == max_hp(&w, p) || w.actors[p].svc.ticket == ticket, "same place in line");
+    run_line(&mut w, &planes, 25 * 60);
+}
+
+#[test]
+fn ordering_a_unit_in_line_to_the_same_depot_again_keeps_its_place() {
+    for model in MovementModel::ALL {
+        let mut w = arena(model);
+        let fix = depot(&mut w);
+        let tanks = damaged(&mut w, "2TNK", 4, 8);
+        send(&mut w, &tanks, fix);
+        let mut holder = None;
+        for _ in 0..25 * 60 {
+            w.step();
+            holder = tanks.iter().copied().find(|&t| w.on_repair_pad(t) && w.actors[t].hp > max_hp(&w, t) / 2);
+            if holder.is_some() {
+                break;
+            }
+        }
+        let h = holder.expect("someone on the pad");
+        let waiting: Vec<usize> = tanks.iter().copied().filter(|&t| t != h && w.actors[t].svc.ticket != 0).collect();
+        assert!(!waiting.is_empty());
+        let tickets: Vec<u64> = waiting.iter().map(|&t| w.actors[t].svc.ticket).collect();
+        // Everyone (the one on the pad too) clicked onto the same depot again.
+        send(&mut w, &tanks, fix);
+        for _ in 0..25 * 2 {
+            w.step();
+            assert_eq!(w.actors[fix].dock_user, w.make_ref(h), "{model:?}: the one on the pad keeps it");
+        }
+        assert_eq!(tickets, waiting.iter().map(|&t| w.actors[t].svc.ticket).collect::<Vec<_>>(), "{model:?}: places kept");
+        run_line(&mut w, &tanks, 25 * 120);
+    }
+}
+
+#[test]
+fn two_depots_side_by_side_never_wait_in_each_others_way() {
+    for model in MovementModel::ALL {
+        let mut w = arena(model);
+        let a = w.spawn_building(ty(&w, "FIX"), 0, 24, 20).unwrap();
+        let b = w.spawn_building(ty(&w, "FIX"), 0, 30, 20).unwrap();
+        // A war factory whose exit faces the second depot's waiting cells.
+        let weap = w.spawn_building(ty(&w, "WEAP"), 0, 34, 15).unwrap();
+        let pads = [w.repair_pad_cell(a), w.repair_pad_cell(b)];
+        let mut left = damaged(&mut w, "2TNK", 6, 8);
+        let mut right = damaged(&mut w, "2TNK", 6, 44);
+        send(&mut w, &left, a);
+        send(&mut w, &right, b);
+        let wi = &w.rules.actors[w.actors[weap].ty as usize].building.as_ref().unwrap().clone();
+        let exit_front: Vec<(i32, i32)> = wi.exits.iter().map(|&(ex, ey)| (34 + ex, 15 + ey + 1)).collect();
+        let mut all = Vec::new();
+        all.append(&mut left);
+        all.append(&mut right);
+        for _ in 0..25 * 200 {
+            w.step();
+            for &u in &all {
+                let s = w.actors[u].svc.slot;
+                if s == crate::world::NONE || w.actors[u].activity != Activity::Repair {
+                    continue;
+                }
+                let (sx, sy) = (s as i32 % 64, s as i32 / 64);
+                for &p in &pads {
+                    let (dx, dy) = (sx - p as i32 % 64, sy - p as i32 / 64);
+                    assert!(!((dx == 0 || dy == 0) && dx.abs().max(dy.abs()) <= 3), "{model:?}: a waiting cell on a depot's corridor");
+                }
+                assert!(!exit_front.contains(&(sx, sy)), "{model:?}: a waiting cell in front of the factory exit");
+            }
+            if all.iter().all(|&u| w.actors[u].hp == max_hp(&w, u)) {
+                break;
+            }
+        }
+        assert!(all.iter().all(|&u| w.actors[u].hp == max_hp(&w, u)), "{model:?}: both lines were served");
+    }
+}
+
+#[test]
+fn a_minelayer_reloading_waits_in_the_line() {
+    let mut w = arena(MovementModel::OpenRA);
+    let fix = depot(&mut w);
+    let tanks = damaged(&mut w, "2TNK", 2, 26);
+    send(&mut w, &tanks, fix);
+    for _ in 0..25 * 10 {
+        w.step();
+    }
+    assert!(tanks.iter().any(|&t| w.on_repair_pad(t)), "a tank holds the pad");
+    let ml = w.spawn_unit(ty(&w, "MNLY"), 0, cell_center(20), cell_center(30), 0);
+    w.actors[ml].ab.ammo = 1;
+    let ids = vec![w.make_ref(ml)];
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 18, y0: 34, x1: 19, y1: 34 });
+    let mut joined = false;
+    for _ in 0..25 * 200 {
+        w.step();
+        if w.actors[ml].activity == Activity::Repair {
+            joined = true;
+            let holder = w.resolve(w.actors[fix].dock_user);
+            if holder != Some(ml) {
+                let (cx, cy) = w.cell_of(w.actors[ml].x, w.actors[ml].y);
+                assert_ne!((cx, cy), (31, 21), "not onto the pad while another unit holds it");
+            }
+        }
+    }
+    assert!(joined, "the minelayer went to reload in the depot's line");
+    let max = w.rules.actors[w.actors[ml].ty as usize].abilities.minelayer.as_ref().unwrap().ammo;
+    assert_eq!(w.actors[ml].ab.ammo, max - 1, "reloaded, then laid the second mine");
 }

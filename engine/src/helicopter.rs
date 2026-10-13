@@ -619,10 +619,12 @@ impl World {
     /// on the pad, get repaired, and leave for the rally point or a free spot
     /// nearby.
     fn tick_heli_repair(&mut self, i: usize) {
+        self.sync_service(i);
         let Some(d) = self.service_depot(i) else {
             self.end_service(i);
             return;
         };
+        self.refresh_service_index();
         let (x, y) = self.depot_point(d);
         if self.pad_holder(d) != Some(i) {
             if !self.needs_service(i, d) {
@@ -641,8 +643,9 @@ impl World {
             }
             if !self.call_to_pad(i, d) {
                 // Hover over the waiting cell (OpenRA waits WaitDistanceFromResupplyBase away).
-                if self.actors[i].svc.slot == NONE {
-                    self.actors[i].svc.slot = self.pick_slot(i, d);
+                if self.actors[i].svc.slot == NONE && self.may_pick_slot(i) {
+                    let s = self.pick_slot(i, d);
+                    self.set_slot(i, s);
                 }
                 if !self.heli_climb(i) {
                     return;

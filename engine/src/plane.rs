@@ -589,6 +589,7 @@ impl World {
     /// line and the pad is free, land on the pad, get repaired, then take off
     /// for the rally point, else home to an airfield.
     fn tick_plane_repair(&mut self, i: usize) {
+        self.sync_service(i);
         let f = self.flight(i);
         let depot = self.service_depot(i);
         let (px, py) = depot.map_or((0, 0), |d| self.repair_pad_point(d));
@@ -604,6 +605,16 @@ impl World {
             self.end_service(i);
             return;
         };
+        self.refresh_service_index();
+        if on_pad && self.pad_holder(d).is_none() {
+            // Still on the pad it held (a new order to this depot): hold it again.
+            self.actors[d].dock_user = self.make_ref(i);
+        }
+        if on_pad && self.pad_holder(d) != Some(i) {
+            // Someone else was called meanwhile: take off and wait in line.
+            self.take_off(i);
+            return;
+        }
         if on_pad {
             if self.needs_service(i, d) {
                 // The depot's repair animation (fx.rs, presentation only).

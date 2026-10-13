@@ -1609,7 +1609,10 @@ models, single player, skirmish and multiplayer:
 - Ground units wait on a cell of their own: the nearest ring around the
   pad from 2 cells out first (up to 8), there the cell nearest the unit,
   never on the four corridors straight out of the pad (3 cells; the way on
-  and off the pad), nor on a structure, nor where someone stands or waits.
+  and off the pad) of this or any other depot, nor on a structure's exit
+  cell or the cell in front of it, nor on a structure, nor where someone
+  stands or waits. A unit that finds no free cell waits where it is and
+  looks again a second later.
   Held up on the way to it they wait where they are when that is such a
   cell, else they take another. Helicopters hover over every other cell of
   the rings 4 to 10 cells out (OpenRA WaitDistanceFromResupplyBase 4c0);
@@ -1638,8 +1641,17 @@ models, single player, skirmish and multiplayer:
 - A unit that no longer needs anything (healed by a mechanic) leaves the
   line and stops. When the depot is destroyed, sold or captured, everyone
   in its line stops where it is and aircraft on it take off (OpenRA
-  Resupply with an invalid host). A new order takes a unit out of the line.
-- Tickets and waiting cells are part of the state hash. Measured on an open
+  Resupply with an invalid host). A new order takes a unit out of the line;
+  a new repair order to the same depot keeps its place, and the unit on
+  the pad keeps the pad (OpenRA queues the new Resupply on the same host;
+  like OpenRA it starts the repair steps afresh, StartRepairing included).
+- A minelayer out of mines with cells left to mine goes to reload in the
+  depot's line like any unit sent for repair, and back to the minefield
+  once full (OpenRA Rearmable, Resupply).
+- Tickets, waiting cells and the pad reservation are part of the state
+  hash. The lines and the waiting cells taken are gathered once a tick, so
+  the work per unit follows the length of its line, not the number of
+  actors. Measured on an open
   map (tests_depot_queue.rs): ten Heavy Tanks at a quarter of their hit
   points are repaired in about 140 seconds, ten Hinds in about 55, ten
   MiGs in about 56, one after another in the order they arrived.

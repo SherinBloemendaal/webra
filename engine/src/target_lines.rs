@@ -87,7 +87,6 @@ impl World {
             }),
             Activity::Ability => match a.ab.task {
                 crate::abilities::Task::LayMines if a.ab.mine_cell != NONE => Some((cell(a.ab.mine_cell), CRIMSON)),
-                crate::abilities::Task::Rearm => actor_at(a.ab.target).map(|p| (p, GREEN)),
                 crate::abilities::Task::DeliverCash => actor_at(a.ab.target).map(|p| (p, YELLOW)),
                 _ => None,
             },
