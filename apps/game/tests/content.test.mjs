@@ -267,8 +267,9 @@ test('the sequences table covers the engine actors and names only files it lists
   // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert body: WebRA's own pixel
   // art draws them, only their muzzle flash is Red Alert's. So does the neutral world art OpenRA drew itself (tools/gen_content_tables.py
   // NO_ORIGINAL: huts, ammo boxes, poles, the oil derrick, the desert and small
-  // bridges, ...); bridge huts are invisible.
-  const openraOnly = new Set(['FTRK', 'MH60',
+  // bridges, ...); bridge huts are invisible. WebRA's own actors (render-facts.js
+  // WEBRA_ACTORS: the Lightning Rod) have no original art either.
+  const openraOnly = new Set(['FTRK', 'MH60', 'LROD',
     'C11', 'OILB', 'RICE', 'RUSHOUSE', 'ASIANHUT', 'SNOWHUT', 'LHUS', 'WINDMILL', 'RAILMINE', 'CTFLAG', 'AMMOBOX1', 'AMMOBOX2',
     'AMMOBOX3', 'BRIDGE3', 'BRIDGE4', 'SBRIDGE1', 'SBRIDGE2', 'SBRIDGE3', 'SBRIDGE4', 'BRIDGEHUT', 'BRIDGEHUT.small', 'UTILPOL1', 'UTILPOL2', 'TANKTRAP1', 'TANKTRAP2', 'GMINE']);
   for (const a of BASE.actors) {
