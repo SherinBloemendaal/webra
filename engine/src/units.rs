@@ -867,6 +867,7 @@ impl World {
                     self.terrain_dirty = true;
                     // A cell mined out is clear ground again: routes over it cost less (flowfield.rs).
                     if !self.map.has_resource(c) {
+                        self.note_resource_flip(c, false);
                         self.pass.note_cost_change(c);
                         self.pass.refresh(&self.map);
                     }

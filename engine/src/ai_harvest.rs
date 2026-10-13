@@ -25,6 +25,8 @@ pub(crate) struct ResourceIndice {
     pub(crate) center: (i32, i32),
     pub(crate) resource_cells: i32,
     pub(crate) resource_center: (i32, i32),
+    /// Ore and gem mines in the square (ResourceCreatorLocs), whoever owns them.
+    pub(crate) creators: Vec<(i32, i32)>,
     pub(crate) refineries: i32,
     pub(crate) harvesters: i32,
     pub(crate) enemy_units: i32,
@@ -139,6 +141,9 @@ fn update_indice(w: &mut World, player: u8, cfg: &BotConfig, i: usize) {
         }
         if dist_sq(a.x, a.y, cx, cy) > rr * rr {
             continue;
+        }
+        if cfg.resource_creators.contains(&a.ty) {
+            ix.creators.push((a.cx, a.cy));
         }
         let base = cfg.enemy_base_buildings.contains(&a.ty);
         if w.are_enemies(player, a.owner) {

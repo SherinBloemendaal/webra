@@ -1001,6 +1001,11 @@ pub struct World {
     /// between reads them), not three times per actor. Never part of the
     /// state hash.
     pub(crate) placing_map_actors: bool,
+    /// Open cells holding ore or gems per ground connectivity label, as of
+    /// `reach_counts_labels` (the AI's reachable ore, ai_economy.rs; stale
+    /// at `u32::MAX`). Never part of the state hash.
+    pub(crate) reach_counts: Vec<u32>,
+    pub(crate) reach_counts_labels: u32,
     /// Actors destroyed so far, per owner.
     pub losses: Vec<u32>,
     pub pending: Vec<PendingImpact>,
@@ -1331,6 +1336,8 @@ impl World {
             circle_cache: Vec::new(),
             stress: false,
             placing_map_actors: false,
+            reach_counts: Vec::new(),
+            reach_counts_labels: u32::MAX,
             losses: Vec::new(),
             pending: Vec::new(),
             options: GameOptions::default(),
@@ -1817,6 +1824,7 @@ impl World {
 
     /// Rebuild every passability from the map (after replacing it wholesale; tests, harnesses).
     pub fn reset_passability(&mut self) {
+        self.resource_cells_changed();
         self.pass = Passability::new(&self.map);
         self.pass_water = Passability::water(&self.map);
         self.pass_landing = Passability::landing(&self.map);

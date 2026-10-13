@@ -397,6 +397,7 @@ impl World {
                 self.map.clear_resource(ci);
             }
         }
+        self.resource_cells_changed();
         self.update_world_terrain();
     }
 
@@ -835,6 +836,7 @@ impl World {
                 self.terrain_dirty = true;
                 // Ore on bare ground slows units: routes over it cost more (flowfield.rs).
                 if bare {
+                    self.note_resource_flip(ci, true);
                     self.pass.note_cost_change(ci);
                     self.pass.refresh(&self.map);
                 }

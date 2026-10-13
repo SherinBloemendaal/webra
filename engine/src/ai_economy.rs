@@ -60,8 +60,8 @@ fn is_army_unit(w: &World, i: usize) -> bool {
         && !w.ai.get(a.owner as usize).is_some_and(|st| st.cfg.excluded.contains(&a.ty))
 }
 
-/// Resource cells in the ground component of `player`'s base (what its ore trucks can reach).
-pub(crate) fn reachable_resources(w: &World, player: u8) -> usize {
+/// Ground connectivity labels of the open cells around `player`'s yard.
+fn base_components(w: &World, player: u8) -> Vec<u32> {
     // The base's own cells are under its structures: take the ground
     // components of the open cells around the yard (all of them: one of the
     // nearest may be a pocket between structures and cliffs).
@@ -78,7 +78,64 @@ pub(crate) fn reachable_resources(w: &World, player: u8) -> usize {
             }
         }
     }
+    comps
+}
+
+/// Resource cells in the ground component of `player`'s base (what its ore
+/// trucks can reach): the sum of `World::reach_counts` over the base's
+/// components, or a count over the map while those are stale (a structure
+/// the bot placed this tick relabelled the ground).
+pub(crate) fn reachable_resources(w: &World, player: u8) -> usize {
+    let comps = base_components(w, player);
+    if w.reach_counts_labels != w.pass.labels_version {
+        return count_in(w, &comps);
+    }
+    comps.iter().map(|&c| w.reach_counts[c as usize] as usize).sum()
+}
+
+/// `reachable_resources` counted over the map.
+#[cfg(test)]
+pub(crate) fn count_reachable_resources(w: &World, player: u8) -> usize {
+    count_in(w, &base_components(w, player))
+}
+
+fn count_in(w: &World, comps: &[u32]) -> usize {
     (0..w.map.cells()).filter(|&c| w.map.has_resource(c) && !w.pass.blocked[c] && comps.contains(&w.pass.component[c])).count()
+}
+
+impl World {
+    /// Count the open resource cells per ground label when the labels
+    /// changed since the last count (before the bots think, ai.rs). The
+    /// squads ask for the reachable ore every tick: counted over the map
+    /// each time, a 256 map with eight bots spent a fifth of its tick on it.
+    pub(crate) fn refresh_reach_counts(&mut self) {
+        if self.reach_counts_labels == self.pass.labels_version {
+            return;
+        }
+        let labels = self.pass.component.iter().copied().max().unwrap_or(0) as usize;
+        let mut counts = vec![0u32; labels + 1];
+        for c in 0..self.map.cells() {
+            if self.map.has_resource(c) && !self.pass.blocked[c] {
+                counts[self.pass.component[c] as usize] += 1;
+            }
+        }
+        self.reach_counts = counts;
+        self.reach_counts_labels = self.pass.labels_version;
+    }
+
+    /// Cell `ci` got its first bale (`gained`) or lost its last one.
+    pub(crate) fn note_resource_flip(&mut self, ci: usize, gained: bool) {
+        if self.reach_counts_labels != self.pass.labels_version || self.pass.blocked[ci] {
+            return;
+        }
+        let n = &mut self.reach_counts[self.pass.component[ci] as usize];
+        *n = if gained { *n + 1 } else { n.saturating_sub(1) };
+    }
+
+    /// Resource cells changed in bulk (the map replaced or edited): count again.
+    pub(crate) fn resource_cells_changed(&mut self) {
+        self.reach_counts_labels = u32::MAX;
+    }
 }
 
 fn own_buildings(w: &World, player: u8) -> Vec<usize> {

@@ -374,6 +374,8 @@ pub struct BotConfig {
     pub harvesters: Vec<u16>,
     pub harvester_refineries: Vec<u16>,
     pub enemy_base_buildings: Vec<u16>,
+    /// ResourceCreatorTypes (ore and gem mines).
+    pub resource_creators: Vec<u16>,
     pub mcvs: Vec<u16>,
     pub mcv_factories: Vec<u16>,
     pub power_down: Vec<u16>,
@@ -416,6 +418,7 @@ impl BotConfig {
             harvesters: types(rules, &info.harvester.harvester_types),
             harvester_refineries: types(rules, &info.harvester.refinery_types),
             enemy_base_buildings: info.resource_map.as_ref().map_or_else(Vec::new, |r| types(rules, &r.enemy_base_building_types)),
+            resource_creators: info.resource_map.as_ref().map_or_else(Vec::new, |r| types(rules, &r.resource_creator_types)),
             mcvs,
             mcv_factories,
             power_down: info.power_down.as_ref().map_or_else(Vec::new, |p| types(rules, &p.power_down_types)),
