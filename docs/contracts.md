@@ -2079,15 +2079,29 @@ and nothing hostile within range of an enemy jammer. Terrain and fog come
 from `terrain_ptr` and `fog_ptr`.
 
 Radar input is client side and adds no order kinds (OpenRA RadarWidget): a
-click on the radar is a click on that world spot (`Input.radarClick`), so
-it goes through the same order generators as the battlefield (support
+left click on the radar is a click on that world spot (`Input.radarClick`),
+so it goes through the same order generators as the battlefield (support
 powers, sidebar modes, ability targeting, the command bar, minefields,
 attack move, `order_smart`, rally points) and the same `ui` game handle
-(unit replies, target lines; spectators' handles drop orders). Left is the
-action button; the right button gives unit orders only. Clicks that are no
-order there (nothing selected, an own unit, deploy, placement, spectators)
-move the camera. The radar cursor is `Input.radarCursor` (the battlefield's
-cursor for that cell, in the original cursors' `-minimap` variant when
+(unit replies, target lines; spectators' handles drop orders). Buttons, as
+OpenRA's `RadarWidget.HandleMouseInput`: a press of the order generator's
+`ActionButton` fakes a click on the world there, any other button centres
+the view there and drags it while held (`isMinimapMoving`). OpenRA's
+ActionButton is left in its Classic mouse style and right in Modern;
+WebRA has only the Classic style (the battlefield orders with the left
+button, the right one cancels or deselects), so on the radar:
+- Left: the order the cursor shows for that spot (Shift, Ctrl, Alt and
+  the command bar as on the battlefield). A left click that is no order
+  there (nothing selected, an own unit, deploy, placement, spectators)
+  moves the camera and drags it while held (a WebRA addition: OpenRA's
+  Classic radar would select there); a left press that gave an order does
+  not drag.
+- Right and middle: move the camera there and drag it while held, never an
+  order, also with units selected or a sidebar mode, support power or
+  attack move on (they stay on). Back and forward buttons do nothing.
+
+The radar cursor is `Input.radarCursor` (the battlefield's cursor for a
+left click on that cell, in the original cursors' `-minimap` variant when
 installed). Touch: a tap with units selected or a mode on gives the order
 (`TouchControls.radarTap`, with Add and Force); a drag, or any touch with
 nothing to order, moves the camera.

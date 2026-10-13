@@ -94,8 +94,9 @@ export function fixedControls(mac = isMac()) {
     ['Right click', 'Cancel the current mode, or clear the selection'],
     ['Middle drag', 'Pan the map'],
     ['Radar: left click', 'With units selected: the order the cursor shows for that spot (Shift, Ctrl and Alt as on the map); otherwise move the camera'],
-    ['Radar: right click', 'Order the selected units there; otherwise move the camera'],
-    ['Radar: drag', 'Move the camera'],
+    // OpenRA RadarWidget: every button but the action button (left) moves the view.
+    ['Radar: right or middle click', 'Move the camera there (never an order)'],
+    ['Radar: drag', 'Move the camera (any button, unless the left press gave an order)'],
     ['Mouse wheel', 'Zoom'],
     ['Screen edges', 'Scroll the map'],
     [`${ctrl} + drag`, 'Lay a minefield (Minelayers selected)'],

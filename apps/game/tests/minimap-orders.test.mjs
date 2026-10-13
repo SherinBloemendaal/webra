@@ -206,16 +206,67 @@ async function setup({ spectator = false } = {}) {
   return { input, commandBar, touch, mm, raw, lines, replies, centers, p, orders };
 }
 
-test('radar: a right click with units selected moves them there, like a click on the battlefield', async () => {
+test('radar: a left click with units selected moves them there, like a click on the battlefield', async () => {
   const { input, p, orders, centers, lines, replies } = await setup();
   input.setSelection([1, 2]);
-  await p.click(40, 20, { button: 2 });
+  await p.click(40, 20);
   // 40, 20 radar px are 480, 240 world px.
   assert.deepEqual(orders(), [['order_smart', 0, [1, 2], 40 * PX, 20 * PX]]);
   assert.deepEqual(replies, [ACTION.MOVE], 'the unit reply of a move (js/audio smartOrder)');
   assert.deepEqual(lines, [[1, 2]], 'the ordered units show their target lines');
   assert.equal(input.orderFlash.action, ACTION.MOVE);
   assert.deepEqual(centers, [], 'an order does not move the camera');
+});
+
+test('radar: the right and middle buttons only move the camera, also with units selected, and follow a drag', async () => {
+  const { input, p, orders, centers, lines, replies } = await setup();
+  input.setSelection([1, 2]);
+  // Over the enemy tank and over open ground: no attack, no move.
+  await p.click(80, 40, { button: 2 });
+  await p.click(40, 20, { button: 2, shift: true });
+  await p.down(10, 10, { button: 1 });
+  await p.move(20, 30, { button: 1 });
+  await p.up(20, 30, { button: 1 });
+  await p.move(0, 0); // released: no more camera moves
+  assert.deepEqual(orders(), []);
+  assert.deepEqual(replies, []);
+  assert.deepEqual(lines, []);
+  assert.equal(input.orderFlash ?? null, null);
+  assert.deepEqual(input.selection, [1, 2], 'the selection stays');
+  assert.deepEqual(centers, [
+    [80 * PX, 40 * PX],
+    [40 * PX, 20 * PX],
+    [10 * PX, 10 * PX],
+    [20 * PX, 30 * PX],
+  ]);
+  // A right drag follows the pointer, and a left click afterwards still orders.
+  centers.length = 0;
+  await p.down(30, 30, { button: 2 });
+  await p.move(35, 40, { button: 2 });
+  await p.up(35, 40, { button: 2 });
+  assert.deepEqual(centers, [
+    [30 * PX, 30 * PX],
+    [35 * PX, 40 * PX],
+  ]);
+  await p.click(40, 20);
+  assert.deepEqual(orders(), [['order_smart', 0, [1, 2], 40 * PX, 20 * PX]]);
+});
+
+test('radar: a right click moves the camera with a sidebar mode or attack move on, and keeps it on', async () => {
+  const { input, p, orders, centers } = await setup();
+  input.setSelection([1]);
+  input.attackMove = true;
+  await p.click(60, 60, { button: 2 });
+  assert.equal(input.attackMove, true, 'attack move is not used up');
+  input.attackMove = false;
+  input.setMode('repair');
+  await p.click(300 / PX, 300 / PX, { button: 2 });
+  assert.equal(input.mode, 'repair', 'the mode stays on');
+  assert.deepEqual(orders(), []);
+  assert.deepEqual(centers, [
+    [60 * PX, 60 * PX],
+    [300, 300],
+  ]);
 });
 
 test('radar: the left button is the action button, as on the battlefield', async () => {
@@ -231,7 +282,7 @@ test('radar: the left button is the action button, as on the battlefield', async
 test('radar: Shift queues a waypoint, Ctrl force fires, Alt force moves (the command bar)', async () => {
   const { input, p, orders } = await setup();
   input.setSelection([1, 2]);
-  await p.click(10, 10, { button: 2, shift: true });
+  await p.click(10, 10, { shift: true });
   await p.click(20, 10, { shift: true });
   await p.click(30, 30, { ctrl: true });
   await p.click(80, 40, { ctrl: true });

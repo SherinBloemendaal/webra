@@ -219,7 +219,7 @@ export class TouchControls {
       this.update();
       return ordered;
     }
-    const ordered = await this.input.radarClick(w, { shift: this.queue }, 0);
+    const ordered = await this.input.radarClick(w, { shift: this.queue });
     this.update();
     return ordered;
   }
