@@ -61,6 +61,7 @@ mod plane;
 mod powers;
 mod primary;
 mod production;
+pub mod profile;
 pub mod range_circles;
 pub mod render;
 mod repair;

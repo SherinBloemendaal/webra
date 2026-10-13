@@ -40,6 +40,8 @@ pub struct Scratch {
     pub expanded: u64,
     /// Searches run so far.
     pub searches: u64,
+    /// Searches that gave up at `SEARCH_LIMIT`.
+    pub limited: u64,
 }
 
 impl Scratch {
@@ -79,6 +81,7 @@ impl World {
     /// next cell last (`dest` first). None when there is none (the
     /// destination itself is taken under `check`, or no way was found).
     pub(crate) fn find_path(&mut self, i: usize, dest: u32, check: Blocking) -> Option<Vec<u32>> {
+        let _section = crate::profile::scope(crate::profile::Section::RouteSearch);
         let from = self.actors[i].mv.to;
         if from == NONE || dest as usize >= self.map.cells() {
             return None;
@@ -155,6 +158,7 @@ impl World {
             }
             expanded += 1;
             if expanded > SEARCH_LIMIT {
+                s.limited += 1;
                 break;
             }
             let (x, y) = (c as i32 % w, c as i32 / w);

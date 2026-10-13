@@ -96,6 +96,7 @@ impl World {
     /// attack-moving) only defences count among the structures
     /// (AutoTargetPriority@DEFAULT has Defense but not Structure).
     pub(crate) fn scan_for_target(&self, i: usize, allow_move: bool) -> Option<usize> {
+        let _section = crate::profile::scope(crate::profile::Section::TargetScan);
         // Medics and mechanics look for friends to treat (infantry_combat.rs).
         if self.heals(i) {
             return self.scan_for_heal_target(i);

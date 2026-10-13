@@ -2564,6 +2564,7 @@ impl World {
         // The spectator view flag is render only (observer.rs).
         debug_assert!(!self.render_all, "render_all set while the simulation runs");
         self.tick += 1;
+        let mut section = crate::profile::scope(crate::profile::Section::TickStart);
         self.env.tick(self.tick, self.map.width, self.map.height);
         for a in self.actors.iter_mut() {
             a.px = a.x;
@@ -2578,10 +2579,12 @@ impl World {
             self.occupancy_begin_tick();
         }
         self.retarget_memo.clear();
+        section.next(crate::profile::Section::Orders);
         self.apply_orders();
         if self.tokens_dirty {
             self.refresh_tokens();
         }
+        section.next(crate::profile::Section::Economy);
         self.update_power();
         // Production doors (doors.rs, presentation only): the frame steps
         // before this tick's production, like OpenRA's door animation runs
@@ -2589,12 +2592,14 @@ impl World {
         self.tick_doors();
         // Landing craft doors (fx.rs, presentation only).
         self.tick_fx();
+        section.next(crate::profile::Section::Ai);
         for p in 0..self.players.len() {
             // Mission players follow their scripts, not the skirmish AI (mission/).
             if self.players[p].is_ai && !self.players[p].defeated && !self.scripted_player(p as u8) {
                 crate::ai::think(self, p as u8);
             }
         }
+        section.next(crate::profile::Section::Economy);
         for p in 0..self.players.len() {
             self.tick_production(p as u8);
             self.tick_powers(p as u8);
@@ -2611,10 +2616,14 @@ impl World {
         self.tick_husks();
         // Delayed shots, C4, outages, sonar pulses, captures (infantry.rs).
         self.tick_infantry_world();
+        section.next(crate::profile::Section::Units);
         self.tick_units();
+        section.next(crate::profile::Section::Projectiles);
         self.tick_projectiles();
         self.tick_crashes();
+        section.next(crate::profile::Section::Cleanup);
         self.cleanup_dead();
+        section.next(crate::profile::Section::Rest);
         // Husks, the hospital, oil derricks, ore mines (with the "Ore
         // regrowth" option), panics and bridge repairs (neutral.rs).
         self.tick_neutral();
@@ -2627,7 +2636,9 @@ impl World {
             self.refresh_tokens();
         }
         if self.tick.is_multiple_of(VISION_INTERVAL) {
+            section.next(crate::profile::Section::Vision);
             self.update_vision();
+            section.next(crate::profile::Section::Rest);
         }
         for e in self.effects.iter_mut() {
             e.ttl -= 1;
