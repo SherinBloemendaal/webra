@@ -348,6 +348,104 @@ test('repair, power down and sell modes stay on; a beacon ends its mode', async 
   assert.equal(input.modeTarget({ x: 500, y: 50 }), false);
 });
 
+// ---- Bulk repair (WebRA addition, js/input.js) --------------------------------------------
+
+/** Ids 1..3: own structures (3 undamaged), 4: an own tank, 5: an ally's structure. */
+function bulkRepairGame(over = {}) {
+  const actors = {
+    1: { owner: 0, building: true },
+    2: { owner: 0, building: true },
+    3: { owner: 0, building: true },
+    4: { owner: 0, building: false },
+    5: { owner: 1, building: true },
+  };
+  const damaged = new Set([1, 2]);
+  return fakeGame({
+    actor_json: (id) => (actors[id] ? JSON.stringify({ id, type: 'powr', ...actors[id], carrier: NONE }) : 'null'),
+    // The engine's answer: own damaged structures among the ids, in their order.
+    repair_targets: (p, ids) => Uint32Array.from(Array.from(ids).filter((id) => actors[id]?.owner === p && actors[id].building && damaged.has(id))),
+    // Structures 1 and 2 stand inside x < 400; nothing to repair elsewhere.
+    repair_box: (_p, x0, _y0, x1) => (Math.min(x0, x1) < 400 ? Uint32Array.from([1, 2]) : new Uint32Array(0)),
+    repair_buildings: (() => {
+      const calls = [];
+      const f = (...args) => calls.push(args.map((v) => (ArrayBuffer.isView(v) ? Array.from(v) : v)));
+      f.calls = calls;
+      return f;
+    })(),
+    ...over,
+  });
+}
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+const keyEvent = (code, k) => ({ code, key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {} });
+
+test('the Repair key with own structures selected repairs the damaged ones at once instead of opening the mode', async () => {
+  const modes = [];
+  const game = bulkRepairGame();
+  const { input, hotkeys } = await makeInput({ game, hooks: { onMode: (m) => modes.push(m) } });
+  input.setSelection([4, 3, 2, 5, 1]);
+  hotkeys.handle(keyEvent('KeyC', 'c'));
+  await flush();
+  assert.equal(input.mode, null, 'no repair mode');
+  assert.deepEqual(game.repair_buildings.calls, [[0, [2, 1]]], 'one order for the selected own damaged structures');
+  // The sidebar button goes the same way (main.js: onMode -> toggleMode).
+  input.toggleMode('repair');
+  await flush();
+  assert.equal(game.repair_buildings.calls.length, 2, 'pressed again: the engine stops them all when all repair');
+  // Only undamaged, allied or no structures selected: repair mode as before.
+  for (const sel of [[3], [5], [4], []]) {
+    input.setSelection(sel);
+    input.toggleMode('repair');
+    await flush();
+    assert.equal(input.mode, 'repair', `selection ${sel}`);
+    input.toggleMode('repair');
+    assert.equal(input.mode, null, 'the key again ends the mode');
+  }
+  assert.equal(game.repair_buildings.calls.length, 2);
+  assert.deepEqual(modes, ['repair', null, 'repair', null, 'repair', null, 'repair', null]);
+});
+
+test('a box dragged in repair mode repairs the structures in it; a short drag is a click', async () => {
+  const game = bulkRepairGame({ pick: (_p, x) => (x < 100 ? 1 : NONE), repair_cursor: (_p, id) => (id === 1 ? 1 : 0) });
+  const { input } = await makeInput({ game });
+  input.setMode('repair');
+  const mouse = (type, x, y) => input[type]({ button: 0, clientX: x, clientY: y, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} });
+  // A drag over the base: the yellow box and the repair cursor while it holds a structure.
+  mouse('onMouseDown', 10, 10);
+  assert.equal(input.drag, null, 'no selection box');
+  mouse('onMouseMove', 300, 200);
+  assert.equal(input.modeTarget({ x: 600, y: 600 }), true, 'the box holds structures to repair');
+  const rects = input.uiRects();
+  assert.ok(rects.length >= 40, 'the box is drawn');
+  assert.deepEqual(rects.slice(4, 7), [0.95, 0.79, 0.3], 'in the repair yellow');
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.deepEqual(game.repair_buildings.calls, [[0, [1, 2]]]);
+  assert.equal(input.repairDrag, null);
+  assert.equal(input.mode, 'repair', 'the mode stays on');
+  // A box with nothing to repair: the blocked cursor, no order.
+  mouse('onMouseDown', 500, 10);
+  mouse('onMouseMove', 700, 200);
+  assert.equal(input.modeTarget({ x: 50, y: 50 }), false, 'the box decides, not the actor under the mouse');
+  mouse('onMouseUp', 700, 200);
+  await flush();
+  assert.equal(game.repair_buildings.calls.length, 1);
+  // A click (less than 6 px of movement) repairs the one structure under it.
+  mouse('onMouseDown', 50, 50);
+  mouse('onMouseMove', 52, 51);
+  mouse('onMouseUp', 52, 51);
+  await flush();
+  assert.deepEqual(game.calls.filter((c) => c[0] === 'repair_building'), [['repair_building', 0, 1]]);
+  // Right click (or Esc) during a drag ends the mode and the box.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  input.setMode(null);
+  assert.equal(input.repairDrag, null);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.equal(game.repair_buildings.calls.length, 1);
+});
+
 // ---- Selection and camera hotkeys ---------------------------------------------------------
 
 test('cycling bases, harvesters and facilities selects the next one and centres on it', async () => {

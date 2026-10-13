@@ -99,6 +99,9 @@ export function fixedControls(mac = isMac()) {
     ['Mouse wheel', 'Zoom'],
     ['Screen edges', 'Scroll the map'],
     [`${ctrl} + drag`, 'Lay a minefield (Minelayers selected)'],
+    // WebRA bulk repair (js/input.js): a box in repair mode, or the Repair key with structures selected.
+    ['Drag in repair mode', 'Repair all your damaged structures in the box (all repairing already: stop them)'],
+    ['Repair key, structures selected', 'Repair all selected damaged structures at once (all repairing already: stop them)'],
     ['Shift + production key', 'Build 5 (production slots, numpad)'],
   ];
 }

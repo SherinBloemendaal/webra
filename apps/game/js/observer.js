@@ -478,6 +478,7 @@ export function viewOnly(game, blocked = () => true) {
     'dev_experience',
     'set_stance',
     'repair_building',
+    'repair_buildings',
     'power_down',
     'place_beacon',
   ]);

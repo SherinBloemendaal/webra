@@ -5,7 +5,8 @@
 //
 //   Tap                     select, or give the context order (move, attack, harvest, ...)
 //   Double tap              select every unit of that type on screen
-//   Drag                    box select (in a targeting mode: aim, then release to act)
+//   Drag                    box select (in a targeting mode: aim, then release to act;
+//                           in repair mode: repair the own damaged structures in the box)
 //   Two fingers             pan, pinch to zoom
 //   Long press              with units selected: force attack the actor under the finger,
 //                           or attack-move to the ground; otherwise cancel the mode or
@@ -47,7 +48,7 @@ export function touchControls() {
   return [
     ['Tap', 'Select, or give the order (move, attack, harvest, dock, repair)'],
     ['Double tap', 'Select all units of that type on screen'],
-    ['Drag', 'Box select; in a targeting mode, aim and release'],
+    ['Drag', 'Box select; in a targeting mode, aim and release; in repair mode, repair your damaged structures in the box'],
     ['Two-finger drag', 'Pan the map'],
     ['Pinch', 'Zoom'],
     ['Long press', 'Force attack the unit or building (units selected), attack-move to the ground, or cancel'],
@@ -297,6 +298,9 @@ export class TouchControls {
     if (i.power) {
       // Support power: the drag start is the target, the release sets the direction.
       this.dragKind = 'power';
+    } else if (i.mode === 'repair' && !this.force) {
+      // Repair mode: the drag is a bulk repair box, as with the mouse (js/input.js).
+      this.dragKind = 'box';
     } else if (this.modeActive()) {
       this.dragKind = 'aim';
       return;
@@ -333,7 +337,10 @@ export class TouchControls {
   }
 
   onDragCancel() {
-    if (this.dragKind === 'box') this.input.drag = null;
+    if (this.dragKind === 'box') {
+      this.input.drag = null;
+      this.input.repairDrag = null;
+    }
     if (this.dragKind === 'power') this.input.powerDrag = null;
     this.dragKind = null;
     this.footprint = null;

@@ -14,6 +14,12 @@
 // stay on until cancelled (right click, Esc, the button or key again); a
 // beacon is placed with one click.
 //
+// Bulk repair (a WebRA addition): with own structures selected, the Repair
+// button or key toggles repairing all selected damaged ones at once instead
+// of opening repair mode, and a box dragged in repair mode toggles those in
+// the box (engine Order::RepairBuildings: start all when any is not
+// repairing, else stop all).
+//
 // The game may run in a worker (js/sim): what is drawn each frame (cursor,
 // placement footprint) reads the game handle's synchronous answers, which are
 // one frame old there; what a click or key does asks fresh answers
@@ -46,6 +52,8 @@ const CELL = 24;
 const EDGE = 12; // px from the canvas edge that scrolls the view
 const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
+/** View px the mouse may move between down and up for a click, not a box. */
+const CLICK_SLOP = 6;
 /** Modifier keys (KeyboardEvent.key) the cursors follow in `keys`. */
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // Zoom limits at game scale 1 (js/scale.js); an Input's own limits follow its game scale (zoomLimits()).
@@ -155,6 +163,7 @@ export class Input {
     // or { kind: 'power', key, power, src } (src: Chronosphere source area, once picked).
     this.targeting = null;
     this.mineDrag = null; // Ctrl + drag with Minelayers selected: { sx, sy, ex, ey, units }
+    this.repairDrag = null; // left button down in repair mode: { sx, sy, ex, ey } (view px)
     this.bind();
     this.unregister = this.registerHotkeys();
     // The remembered zoom changed elsewhere (Defaults in the game menu, another tab, the account): the view follows.
@@ -419,12 +428,52 @@ export class Input {
     }
     if (next === this.mode) return;
     this.mode = next;
+    this.repairDrag = null;
     this.hooks.onMode?.(this.mode);
   }
 
-  /** The mode's button or hotkey: on, or off again when it is on. */
+  /**
+   * The mode's button or hotkey: on, or off again when it is on. Repair with
+   * own structures selected repairs them instead (`repairSelection`).
+   */
   toggleMode(mode) {
+    if (mode === 'repair' && this.mode !== 'repair' && this.selectedOwnBuildings().length) {
+      this.repairSelection();
+      return;
+    }
     this.setMode(this.mode === mode ? null : mode);
+  }
+
+  /** Selected structures that belong to the local player. */
+  selectedOwnBuildings() {
+    return this.selection.filter((id) => {
+      const info = this.info(id);
+      return info && info.owner === this.player && info.building;
+    });
+  }
+
+  /**
+   * Bulk repair of the selection: the own damaged structures selected start
+   * repairing, or all stop when all are repairing (engine
+   * `repair_buildings`). With none of them damaged, repair mode opens as usual.
+   */
+  async repairSelection() {
+    const ids = await this.ask.repair_targets(this.player, Uint32Array.from(this.selectedOwnBuildings()));
+    if (ids.length) this.game.repair_buildings(this.player, Uint32Array.from(ids));
+    else this.setMode('repair');
+  }
+
+  /** Bulk repair of the own damaged structures in the box from world point `a` to `b` (repair mode). */
+  async boxRepair(a, b) {
+    const ids = await this.ask.repair_box(this.player, a.x, a.y, b.x, b.y);
+    if (ids.length && this.mode === 'repair') this.game.repair_buildings(this.player, Uint32Array.from(ids));
+  }
+
+  /** The repair mode's drag box in world px ({ a, b }), or null while it is still a click. */
+  repairBox() {
+    const d = this.repairDrag;
+    if (!d || Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < CLICK_SLOP) return null;
+    return { a: this.toWorld(d.sx, d.sy), b: this.toWorld(d.ex, d.ey) };
   }
 
   /** A left click on the map in a sidebar mode. */
@@ -459,6 +508,9 @@ export class Input {
   /** Whether the current mode can act on what is at world point `w` (the cursor). */
   modeTarget(w) {
     if (this.mode === 'beacon') return true;
+    const box = this.mode === 'repair' ? this.repairBox() : null;
+    // Dragging a repair box: whether it holds a structure to repair.
+    if (box) return this.game.repair_box(this.player, box.a.x, box.a.y, box.b.x, box.b.y).length > 0;
     const hit = this.game.pick(this.player, w.x, w.y);
     if (hit === NONE) return false;
     if (this.mode === 'sell') return this.game.sell_value(this.player, hit) > 0;
@@ -629,7 +681,9 @@ export class Input {
       return true;
     }
     if (this.mode) {
-      this.modeClick(w);
+      // Repair mode on the battlefield: a click repairs one, a drag a box (mouse up).
+      if (this.mode === 'repair' && at) this.repairDrag = { sx: at.x, sy: at.y, ex: at.x, ey: at.y };
+      else this.modeClick(w);
       return true;
     }
     if (this.placing) {
@@ -725,6 +779,10 @@ export class Input {
       this.drag.ex = p.x;
       this.drag.ey = p.y;
     }
+    if (this.repairDrag) {
+      this.repairDrag.ex = p.x;
+      this.repairDrag.ey = p.y;
+    }
     if (this.mineDrag) {
       const w = this.toWorld(p.x, p.y);
       this.mineDrag.ex = w.x;
@@ -747,6 +805,15 @@ export class Input {
       this.layMines();
       return;
     }
+    if (e.button === 0 && this.repairDrag) {
+      this.onMouseMove(e);
+      const box = this.repairBox();
+      const d = this.repairDrag;
+      this.repairDrag = null;
+      if (box) this.boxRepair(box.a, box.b);
+      else this.modeClick(this.toWorld(d.sx, d.sy));
+      return;
+    }
     if (e.button === 0 && this.power && this.powerDrag) {
       const p = this.local(e);
       const t = this.powerDrag;
@@ -759,7 +826,7 @@ export class Input {
     this.drag = null;
     const a = this.toWorld(d.sx, d.sy);
     const b = this.toWorld(d.ex, d.ey);
-    if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < 6) {
+    if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < CLICK_SLOP) {
       this.finishClick(b, d);
       return;
     }
@@ -1204,6 +1271,7 @@ export class Input {
     this.drag = null;
     this.pan = null;
     this.mineDrag = null;
+    this.repairDrag = null;
     this.powerDrag = null;
     this.edgeScroll = null;
   }
@@ -1234,7 +1302,7 @@ export class Input {
     const edgeSpeed = this.settings.get('edgeScrollSpeed');
     let ex = 0;
     let ey = 0;
-    if (edgeSpeed > 0 && this.mouse.inside && !this.mouse.touch && !this.drag && !this.pan) {
+    if (edgeSpeed > 0 && this.mouse.inside && !this.mouse.touch && !this.drag && !this.repairDrag && !this.pan) {
       ({ dx: ex, dy: ey } = edgeDirection(this.mouse.x, this.mouse.y, this.canvas.clientWidth, this.canvas.clientHeight));
       if (ex || ey) this.edgeScroll = { dx: ex, dy: ey, blocked: scrollBlocked(ex, ey, this.camera, this.bounds()) };
     }
@@ -1336,21 +1404,24 @@ export class Input {
   uiRects() {
     const out = [];
     const push = (x, y, w, h, r, g, b, a) => out.push(x, y, w, h, r, g, b, a);
-    if (this.drag) {
-      const a = this.toWorld(this.drag.sx, this.drag.sy);
-      const b = this.toWorld(this.drag.ex, this.drag.ey);
+    // A drag box from world point a to b: an outline over a faint fill.
+    const box = (a, b, r, g, bl, fill) => {
       const x0 = Math.min(a.x, b.x);
       const y0 = Math.min(a.y, b.y);
       const w = Math.abs(b.x - a.x);
       const h = Math.abs(b.y - a.y);
       const t = 1 / this.camera.zoom;
-      // White outline over a faint fill, like OpenRA's selection box.
-      push(x0, y0, w, h, 1, 1, 1, 0.06);
-      push(x0, y0, w, t, 1, 1, 1, 0.9);
-      push(x0, y0 + h - t, w, t, 1, 1, 1, 0.9);
-      push(x0, y0, t, h, 1, 1, 1, 0.9);
-      push(x0 + w - t, y0, t, h, 1, 1, 1, 0.9);
-    }
+      push(x0, y0, w, h, r, g, bl, fill);
+      push(x0, y0, w, t, r, g, bl, 0.9);
+      push(x0, y0 + h - t, w, t, r, g, bl, 0.9);
+      push(x0, y0, t, h, r, g, bl, 0.9);
+      push(x0 + w - t, y0, t, h, r, g, bl, 0.9);
+    };
+    // White, like OpenRA's selection box.
+    if (this.drag) box(this.toWorld(this.drag.sx, this.drag.sy), this.toWorld(this.drag.ex, this.drag.ey), 1, 1, 1, 0.06);
+    // Bulk repair box: the repair cursor's yellow.
+    const repairBox = this.mode === 'repair' ? this.repairBox() : null;
+    if (repairBox) box(repairBox.a, repairBox.b, 0.95, 0.79, 0.3, 0.08);
     if (this.orderFlash && performance.now() < this.orderFlash.until) {
       const f = this.orderFlash;
       const t = (f.until - performance.now()) / 450;
