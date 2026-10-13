@@ -2137,6 +2137,64 @@ old defaults, or old defaults that only lost keys to other actions' user
 bindings, are dropped; everything else stays). Radar pings and the "last
 event" (Space) are client side (js/radarpings.js) from the audio events.
 
+### Battlefield tooltip and range circles (`engine/src/tooltip.rs`, `engine/src/range_circles.rs`)
+
+Both are local UI like `pick`: they read the world, never change it, and
+are not part of the state hash; they work the same in every mode.
+
+`Game.world_tooltip(view, x, y, ctrl, alt)` (world pixels; `view` a player,
+`observer_player()` or the combined spectator view) answers what OpenRA's
+ViewportControllerWidget puts in the WORLD_TOOLTIP, as JSON: `null` (off the
+map, nothing there), or `{ kind, label, id, owner, faction, extras }` with
+`kind` `unexplored` (shroud: not explored, or hidden by an enemy gap
+generator; "Unrevealed Terrain"), `actor` (`id` its actor id), `frozen` (a
+remembered structure under the fog, with the type and owner it was seen
+with) or `resource` (ore and gems: the ResourceRenderer name). Actors count
+as the render paths draw them for `view` (fogged and undetected cloaked
+enemies are not there); of those whose bounds hold the point
+(Selectable bounds, else the footprint or one cell) the highest selection
+priority less the pixel distance to the bounds' centre wins, actors that
+cannot be selected last (OpenRA WithHighestSelectionPriority). `label` is
+OpenRA's TooltipForPlayerStance: the name, or for the relationships in
+Tooltip.GenericVisibility the GenericName after "Ally" or "Enemy" (fakes:
+enemies read "Power Plant"); spectators get the name. A disguised spy
+carries its disguise's tooltip for everyone and the disguise's owner for
+all but its owner's allies (DisguiseTooltip). `owner` is the owner row's
+player: null without ShowOwnerRow and for non-combatants (the neutral
+player). `extras` are the TooltipDescription lines (tech buildings:
+@ally for the owner and allies, @other for the rest, none for spectators).
+Rules: `actors[].tooltip` (`generic_name`, `generic_visibility` bits Ally 1,
+Neutral 2, Enemy 4, `generic_prefix`, `show_owner`; null: no tooltip) and
+`world.tooltips` (texts), from tools/gen_rules.py. The client
+(js/worldtooltip.js) shows it 200 ms after the mouse last moved over the
+battlefield (TooltipContainerWidget), 20 px under the cursor, moved left at
+the right edge and above the cursor at the bottom; it adds the owner's name
+and colour, the faction flag (css flag chips) and, in sell mode,
+"Refund: $n" for the player's own structures (Sellable). Differences: a
+remembered structure's TooltipDescription follows the owner it was seen
+with (OpenRA reads the live actor's, which tells a capture under the fog);
+mouse bounds of actors without Selectable bounds are their footprint or one
+cell, not their sprite.
+
+Range circles (`actors[].range_circles`: `kind`, `group`, `range`, colours,
+widths, `placement`, `passengers`) follow OpenRA's RenderRangeCircle
+(^Defense: the longest weapon, FallbackRange 6c0 on the garrisons when
+placing, RangeCircleType `aa` on AGUN and SAM; yellow), RenderDetectionCircle
+(the DetectCloaked range of SS, MSUB, DD, PT, SPEN, SYRD and MNLY; lime
+green), RenderShroudCircle (CreatesShroud of GAP and MGG; cyan),
+RenderJammerCircle (JamsMissiles of MRJ; red) and WithRangeCircle (the MAD
+tank's 7c0 and the jammer's 18c0, the pillbox's 5c0 with a rocket soldier
+inside). `build_lines` draws them for the selected actors of the viewer and
+their allies (spectators: every combatant's), and with `set_placing` for the
+structure being placed at its footprint's centre plus the viewer's and
+allies' circles of the same group (RangeCircleType or WithRangeCircle Type;
+every shroud and jammer circle). Each circle is 32 straight dashes over
+facings 8i to 8i + 6, a BorderWidth 3 border of 96 alpha black under a
+Width 1 line of the colour, at a fixed width on screen at every zoom
+(shaders/line.wgsl; the line width is a line instance's ninth float).
+WebRA's pillbox fires its garrison's weapon itself, so its circle is that
+weapon's range rather than its passengers'.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
@@ -2278,7 +2336,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
@@ -2317,8 +2375,10 @@ replay position, recorder full), answers to the step's queries, sound events
 (none while busy), the actor table when it changed, terrain bytes when they
 changed, the sky (`weather`: `Game.weather_json()` text, for the weather
 renderer, lightning, thunder and the HUD badge), and the render data: sprites
-and rects (8 floats each), fog bytes of `view`, path lines when `paths` is
-set, and heat shimmer instances (`heatCount`, 4 floats each,
+and rects (8 floats each), fog bytes of `view`, lines (9 floats each:
+`[x0, y0, x1, y1, r, g, b, a, width]`, engine/src/paths.rs `push_line`:
+range circles, rally lines, path lines when `paths` is set, target lines),
+and heat shimmer instances (`heatCount`, 4 floats each,
 `Game.build_heat_fx` for `view` and `rect`; on both instance paths). With
 `instances: 'gpu'` (below) it carries tick-rate records and fog instead of
 sprites, rects and fog, only when they changed, plus `instances`, `buildMs`
@@ -2631,14 +2691,14 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | Methods | Used by | Across the boundary |
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
-| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
+| `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (range circles, engine/src/range_circles.rs, rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch | `call`, in order |
-| `set_selection`, `set_hover`, `set_control_groups` | input, command bar | `call`, mirrored on the main thread (`set_hover` only when it changes; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, never part of the state hash) |
+| `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the

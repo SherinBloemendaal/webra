@@ -225,6 +225,7 @@ fn starting_unit_sets_skip_types_webra_does_not_have() {
         serde_json::from_value(serde_json::json!({
             "crates": raw["world"]["crates"],
             "time_limit": raw["world"]["time_limit"],
+            "tooltips": raw["world"]["tooltips"],
             "starting_units": [{"class": "light", "factions": ["england"], "base_actor": "MCV",
                                 "support_actors": ["E1", "ZOMBIE", "E3"], "inner_radius": 3, "outer_radius": 5, "base_facing": 512}],
         }))

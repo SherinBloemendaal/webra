@@ -524,6 +524,17 @@ export class Input {
     }
   }
 
+  /**
+   * The structure being placed where the mouse is, for its range circles
+   * (engine range_circles.rs): `{ actor, cx, cy }`, or null when nothing is
+   * placed or the mouse is off the battlefield.
+   */
+  placementState() {
+    if (!this.placing || !this.mouse.inside) return null;
+    const w = this.toWorld(this.mouse.x, this.mouse.y);
+    return { actor: this.placing, ...this.placementCell(w.x, w.y) };
+  }
+
   placementCell(wx, wy) {
     const a = this.rules.actors.find((r) => r.id === this.placing);
     return { cx: Math.round(wx / CELL - a.width / 2), cy: Math.round(wy / CELL - a.height / 2) };

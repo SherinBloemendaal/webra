@@ -160,6 +160,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 4,
@@ -365,6 +372,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -553,6 +567,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -746,6 +767,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 4,
@@ -934,6 +962,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -1106,6 +1141,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -1321,6 +1363,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -1508,6 +1557,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -1729,6 +1785,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -1925,6 +1988,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -2119,6 +2189,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -2306,6 +2383,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -2594,6 +2678,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -2878,6 +2969,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -3072,6 +3170,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 10240,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 3,
     "height": 3,
@@ -3285,6 +3412,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 10240,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 3,
     "height": 3,
@@ -3554,6 +3710,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -3756,6 +3919,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -3959,6 +4129,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "shroud",
+     "group": "",
+     "range": 6144,
+     "color": [
+      0,
+      255,
+      255,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -4196,6 +4395,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -4422,6 +4628,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -4633,6 +4846,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -4754,6 +4974,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -4858,6 +5085,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -4961,6 +5195,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -5120,6 +5361,58 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "",
+     "range": 6144,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    },
+    {
+     "kind": "fixed",
+     "group": "",
+     "range": 5120,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": [
+      "E3"
+     ]
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -5311,6 +5604,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "",
+     "range": 6144,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -5489,6 +5811,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "",
+     "range": 0,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -5667,6 +6018,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "",
+     "range": 0,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -5854,6 +6234,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "",
+     "range": 0,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -6039,6 +6448,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "aa",
+     "range": 0,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 1,
     "height": 1,
@@ -6210,6 +6648,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "range",
+     "group": "aa",
+     "range": 0,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "building": {
     "width": 2,
     "height": 1,
@@ -6366,6 +6833,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Power Plant",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -6524,6 +6998,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Allied Barracks",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -6682,6 +7163,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Naval Yard",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -6839,6 +7327,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "War Factory",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -6997,6 +7492,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Radar Dome",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -7144,6 +7646,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Service Depot",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -7302,6 +7811,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Advanced Power Plant",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -7460,6 +7976,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Allied Tech Center",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -7618,6 +8141,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Chronosphere",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -7775,6 +8305,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Missile Silo",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -7920,6 +8457,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Construction Yard",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 4,
@@ -8161,6 +8705,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -8357,6 +8908,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 68,
     "turn_speed": 512,
@@ -8555,6 +9113,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -8752,6 +9317,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -8958,6 +9530,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -9164,6 +9743,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 68,
     "turn_speed": 512,
@@ -9349,6 +9935,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Dog",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 100,
     "turn_speed": 512,
@@ -9540,6 +10133,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 49,
     "turn_speed": 512,
@@ -9749,6 +10349,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 49,
     "turn_speed": 512,
@@ -9950,6 +10557,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -10151,6 +10765,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -10357,6 +10978,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 72,
     "turn_speed": 512,
@@ -10556,6 +11184,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -10665,6 +11300,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Harvester",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -10784,6 +11426,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 60,
     "turn_speed": 20,
@@ -10889,6 +11538,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -11060,6 +11716,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 164,
     "turn_speed": 40,
@@ -11226,6 +11889,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -11387,6 +12057,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 113,
     "turn_speed": 40,
@@ -11546,6 +12223,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -11706,6 +12390,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -11866,6 +12557,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 64,
     "turn_speed": 20,
@@ -12034,6 +12732,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 43,
     "turn_speed": 20,
@@ -12189,6 +12894,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -12344,6 +13056,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 72,
     "turn_speed": 8,
@@ -12511,6 +13230,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 5120,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 113,
     "turn_speed": 20,
@@ -12621,6 +13369,56 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "jammer",
+     "group": "",
+     "range": 5120,
+     "color": [
+      255,
+      0,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    },
+    {
+     "kind": "fixed",
+     "group": "jammer",
+     "range": 18432,
+     "color": [
+      0,
+      0,
+      255,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 68,
     "turn_speed": 20,
@@ -12728,6 +13526,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "shroud",
+     "group": "",
+     "range": 7168,
+     "color": [
+      0,
+      255,
+      255,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 72,
     "turn_speed": 20,
@@ -12884,6 +13711,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 92,
     "turn_speed": 20,
@@ -12993,6 +13827,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 67,
     "turn_speed": 20,
@@ -13152,6 +13993,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 86,
     "turn_speed": 20,
@@ -13339,6 +14187,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -13452,6 +14307,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Tank",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "fixed",
+     "group": "",
+     "range": 7168,
+     "color": [
+      255,
+      255,
+      0,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 46,
     "turn_speed": 20,
@@ -13596,6 +14480,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Ship",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 115,
     "turn_speed": 512,
@@ -13754,6 +14645,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Ship",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 4096,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 142,
     "turn_speed": 28,
@@ -13920,6 +14840,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Ship",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 5120,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 78,
     "turn_speed": 20,
@@ -14081,6 +15030,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Ship",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 4096,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 92,
     "turn_speed": 28,
@@ -14237,6 +15215,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Ship",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -14406,6 +15391,35 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Ship",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "detection",
+     "group": "",
+     "range": 4096,
+     "color": [
+      50,
+      205,
+      50,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": false,
+     "passengers": []
+    }
+   ],
    "unit": {
     "speed": 44,
     "turn_speed": 12,
@@ -14561,6 +15575,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Helicopter",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 128,
     "turn_speed": 20,
@@ -14749,6 +15770,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Helicopter",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -14938,6 +15966,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Helicopter",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 112,
     "turn_speed": 16,
@@ -15129,6 +16164,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Helicopter",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 149,
     "turn_speed": 16,
@@ -15317,6 +16359,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Plane",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 178,
     "turn_speed": 16,
@@ -15498,6 +16547,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Plane",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 223,
     "turn_speed": 16,
@@ -15721,6 +16777,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -15918,6 +16981,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -16003,6 +17073,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Plane",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 373,
     "turn_speed": 28,
@@ -16113,6 +17190,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Plane",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -16216,6 +17300,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Plane",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 180,
     "turn_speed": 20,
@@ -16320,7 +17411,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Mine",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "MINP",
@@ -16393,7 +17491,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Mine",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "CRATE",
@@ -16864,7 +17969,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Crate",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": []
   },
   {
    "id": "MONEYCRATE",
@@ -16941,7 +18053,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Crate",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": []
   },
   {
    "id": "HEALCRATE",
@@ -17019,7 +18138,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Crate",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": []
   },
   {
    "id": "WCRATE",
@@ -17089,7 +18215,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Crate",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": []
   },
   {
    "id": "SCRATE",
@@ -17159,7 +18292,14 @@
     "category": "System",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Crate",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": []
   },
   {
    "id": "2TNK.Husk",
@@ -17276,7 +18416,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "3TNK.Husk",
@@ -17393,7 +18540,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "4TNK.Husk",
@@ -17511,7 +18665,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "HARV.EmptyHusk",
@@ -17628,7 +18789,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "HARV.FullHusk",
@@ -17745,7 +18913,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "MCV.Husk",
@@ -17862,7 +19037,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "MGG.Husk",
@@ -17977,7 +19159,14 @@
     "category": "Husk",
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": {
+    "generic_name": "Destroyed Vehicle",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": []
   },
   {
    "id": "barracks.upgraded",
@@ -18040,7 +19229,9 @@
     "target": 0,
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": null,
+   "range_circles": []
   },
   {
    "id": "vehicles.upgraded",
@@ -18103,7 +19294,9 @@
     "target": 0,
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": null,
+   "range_circles": []
   },
   {
    "id": "aircraft.upgraded",
@@ -18166,7 +19359,9 @@
     "target": 0,
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": null,
+   "range_circles": []
   },
   {
    "id": "powerproxy.sonarpulse",
@@ -18251,7 +19446,9 @@
     "target": 0,
     "ally_description": "",
     "other_description": ""
-   }
+   },
+   "tooltip": null,
+   "range_circles": []
   },
   {
    "id": "SPEF",
@@ -18354,6 +19551,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Sub Pen",
+    "generic_visibility": 4,
+    "generic_prefix": false,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -18587,6 +19791,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -18770,6 +19981,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -18953,6 +20171,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -19136,6 +20361,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -19319,6 +20551,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -19502,6 +20741,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -19692,6 +20938,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -19875,6 +21128,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -20058,6 +21318,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -20241,6 +21508,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -20424,6 +21698,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -20614,6 +21895,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -20804,6 +22092,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Soldier",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "unit": {
     "speed": 54,
     "turn_speed": 512,
@@ -20905,6 +22200,13 @@
     "ally_description": "Provides buildable area.",
     "other_description": "Capture to give buildable area."
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -21048,6 +22350,13 @@
     "ally_description": "Provides infantry with self-healing.",
     "other_description": "Capture to enable self-healing for infantry."
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -21190,6 +22499,13 @@
     "ally_description": "Provides prerequisite for Bio-Lab units.",
     "other_description": "Capture to produce Bio-Lab units."
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -21332,6 +22648,13 @@
     "ally_description": "Provides range of vision.",
     "other_description": "Capture to give visual range."
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 3,
@@ -21481,6 +22804,13 @@
     "ally_description": "Provides additional funds.",
     "other_description": "Capture to receive additional funds."
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -21603,6 +22933,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -21722,6 +23059,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -21841,6 +23185,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -21960,6 +23311,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -22079,6 +23437,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -22197,6 +23562,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -22315,6 +23687,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -22433,6 +23812,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -22551,6 +23937,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -22669,6 +24062,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -22787,6 +24187,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -22897,6 +24304,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23007,6 +24421,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23117,6 +24538,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23227,6 +24655,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23337,6 +24772,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23447,6 +24889,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23557,6 +25006,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23673,6 +25129,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23779,6 +25242,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -23896,6 +25366,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -24014,6 +25491,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -24132,6 +25616,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -24249,6 +25740,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -24366,6 +25864,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -24487,6 +25992,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -24605,6 +26117,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -24722,6 +26241,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -24839,6 +26365,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -24956,6 +26489,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -25073,6 +26613,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -25190,6 +26737,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -25307,6 +26861,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -25424,6 +26985,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -25541,6 +27109,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -25658,6 +27233,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -25775,6 +27357,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -25892,6 +27481,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 5,
     "height": 2,
@@ -26002,6 +27598,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -26119,6 +27722,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 2,
@@ -26237,6 +27847,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -26354,6 +27971,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 2,
@@ -26477,6 +28101,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -26599,6 +28230,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -26695,6 +28333,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -26802,6 +28447,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -26904,6 +28556,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -27006,6 +28665,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -27112,6 +28778,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -27218,6 +28891,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -27324,6 +29004,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -27504,6 +29191,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 5,
     "height": 3,
@@ -27680,6 +29374,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 5,
     "height": 2,
@@ -27837,6 +29538,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 2,
@@ -27994,6 +29702,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 2,
@@ -28151,6 +29866,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -28311,6 +30033,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 3,
@@ -28469,6 +30198,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 2,
@@ -28626,6 +30362,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 2,
@@ -28833,6 +30576,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 3,
@@ -29041,6 +30791,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 5,
     "height": 3,
@@ -29260,6 +31017,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 2,
@@ -29367,6 +31131,8 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": null,
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -29474,6 +31240,8 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": null,
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -29575,6 +31343,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -29677,6 +31452,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -29779,6 +31561,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -29880,6 +31669,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -29982,6 +31778,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30084,6 +31887,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30186,6 +31996,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30284,6 +32101,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -30384,6 +32208,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -30485,6 +32316,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30587,6 +32425,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30689,6 +32534,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30791,6 +32643,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -30893,6 +32752,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -30995,6 +32861,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -31097,6 +32970,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -31199,6 +33079,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -31297,6 +33184,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -31399,6 +33293,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -31501,6 +33402,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -31603,6 +33511,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 3,
@@ -31706,6 +33621,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 3,
@@ -31809,6 +33731,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -31911,6 +33840,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32013,6 +33949,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32114,6 +34057,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32216,6 +34166,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32318,6 +34275,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32420,6 +34384,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32518,6 +34489,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -32618,6 +34596,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -32719,6 +34704,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32821,6 +34813,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -32923,6 +34922,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -33025,6 +35031,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -33127,6 +35140,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -33229,6 +35249,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -33331,6 +35358,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -33433,6 +35467,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -33531,6 +35572,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -33633,6 +35681,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -33735,6 +35790,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -33837,6 +35899,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 3,
@@ -33940,6 +36009,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 4,
     "height": 3,
@@ -34038,6 +36114,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34134,6 +36217,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34230,6 +36320,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34326,6 +36423,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34422,6 +36526,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34518,6 +36629,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34614,6 +36732,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34710,6 +36835,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34806,6 +36938,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -34905,6 +37044,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 2,
@@ -35005,6 +37151,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 2,
@@ -35105,6 +37258,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -35204,6 +37364,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -35303,6 +37470,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -35403,6 +37577,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -35504,6 +37685,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 1,
@@ -35604,6 +37792,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -35705,6 +37900,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -35805,6 +38007,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 2,
     "height": 1,
@@ -35905,6 +38114,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 3,
     "height": 2,
@@ -36006,6 +38222,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 5,
     "height": 1,
@@ -36102,6 +38325,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36198,6 +38428,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36295,6 +38532,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36392,6 +38636,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": false
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36494,6 +38745,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36596,6 +38854,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36698,6 +38963,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36800,6 +39072,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -36902,6 +39181,13 @@
     "ally_description": "",
     "other_description": ""
    },
+   "tooltip": {
+    "generic_name": "",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [],
    "building": {
     "width": 1,
     "height": 1,
@@ -41756,6 +44042,13 @@
     "WarningTwoMinutesRemaining",
     "WarningOneMinuteRemaining"
    ]
+  },
+  "tooltips": {
+   "unrevealed": "Unrevealed Terrain",
+   "ally_prefix": "Ally",
+   "enemy_prefix": "Enemy",
+   "ore": "Valuable Minerals",
+   "gems": "Valuable Minerals"
   }
  },
  "bots": [

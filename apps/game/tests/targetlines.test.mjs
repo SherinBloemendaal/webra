@@ -106,7 +106,7 @@ test('the engine draws a green line and a marker to where a unit moves, red to i
   const unit = units[0];
   const lines = () => {
     const n = game.build_lines(0, 1, false, Uint32Array.from([unit]));
-    return Array.from({ length: n }, (_, k) => Array.from(new Float32Array(wasm.memory.buffer, game.path_ptr() + k * 32, 8)));
+    return Array.from({ length: n }, (_, k) => Array.from(new Float32Array(wasm.memory.buffer, game.path_ptr() + k * 36, 9)));
   };
   game.set_selection(Uint32Array.from([unit]));
   assert.equal(lines().length, 0, 'idle: no line');
@@ -117,7 +117,8 @@ test('the engine draws a green line and a marker to where a unit moves, red to i
   const hash = game.state_hash();
   const [line, marker] = lines();
   assert.ok(line && marker, 'a line and its marker');
-  assert.deepEqual(line.slice(4).map((v) => Math.round(v * 255)), [0, 128, 0, 255], 'OpenRA Color.Green');
+  assert.deepEqual(line.slice(4, 8).map((v) => Math.round(v * 255)), [0, 128, 0, 255], 'OpenRA Color.Green');
+  assert.equal(line[8], 1, 'OpenRA LineWidth 1');
   assert.ok(Math.abs(line[2] - to[0]) <= 24 && Math.abs(line[3] - to[1]) <= 24, 'to the destination');
   assert.deepEqual([marker[0], marker[1]], [marker[2], marker[3]], 'the marker is a point (shaders/line.wgsl draws a square)');
   assert.equal(game.build_lines(0, 1, false, new Uint32Array()), 0, 'not shown: none');
@@ -131,5 +132,5 @@ test('the engine draws a green line and a marker to where a unit moves, red to i
   game.set_selection(Uint32Array.from([unit]));
   game.order_attack(0, Uint32Array.from([unit]), yard);
   game.tick();
-  assert.deepEqual(lines()[0].slice(4).map((v) => Math.round(v * 255)), [220, 20, 60, 255], 'OpenRA Color.Crimson');
+  assert.deepEqual(lines()[0].slice(4, 8).map((v) => Math.round(v * 255)), [220, 20, 60, 255], 'OpenRA Color.Crimson');
 });

@@ -8,13 +8,14 @@
 //! while Shift is held); this module only says where they go. It reads the
 //! world and never changes it, so it is not part of the state hash.
 //!
-//! Lines are the shared line buffer's 8 floats `[x0, y0, x1, y1, r, g, b, a]`
-//! (paths.rs `LINE_FLOATS`, world pixels). A marker is a segment of length
+//! Lines are the shared line buffer's segments (paths.rs `push_line`, world
+//! pixels, width 1). A marker is a segment of length
 //! zero, which shaders/line.wgsl draws as a small square (OpenRA's
 //! DrawTargetMarker).
 
 use crate::helicopter::HeliTask;
 use crate::infantry::EnterKind;
+use crate::paths::push_line;
 use crate::plane::Phase;
 use crate::render::px;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
@@ -126,8 +127,8 @@ impl World {
             let mut from = (px(a.px) + (px(a.x) - px(a.px)) * alpha, px(a.py) + (px(a.y) - px(a.py)) * alpha - lift);
             for ((x, y), c) in self.target_line_nodes(i) {
                 let to = (px(x), px(y));
-                lines.extend_from_slice(&[from.0, from.1, to.0, to.1, c[0], c[1], c[2], c[3]]);
-                lines.extend_from_slice(&[to.0, to.1, to.0, to.1, c[0], c[1], c[2], c[3]]);
+                push_line(lines, from, to, c, 1.0);
+                push_line(lines, to, to, c, 1.0);
                 from = to;
             }
         }

@@ -1,0 +1,59 @@
+/* The battlefield tooltip (js/worldtooltip.js), laid out like OpenRA's
+   WORLD_TOOLTIP (mods/common/chrome/tooltips.yaml): a "dialog4" panel like
+   the shared tooltip (css/tooltip.css), the name in bold (Label@LABEL X 7,
+   height 23), the owner row under it (Image@FLAG 32 x 16 at X 7, then
+   Label@OWNER in the owner's colour with a shadow at X 45) and the extra
+   lines (Label@EXTRA). Fixed to the page, placed by the script under the
+   cursor; it never takes the pointer. */
+
+#world-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 190;
+  width: max-content;
+  max-width: min(calc(360 * var(--ui-px)), calc(100vw - 12 * var(--ui-px)));
+  padding: calc(2 * var(--ui-px)) calc(7 * var(--ui-px)) calc(4 * var(--ui-px));
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(22, 24, 27, 0.97), rgba(10, 11, 13, 0.97));
+  border: 1px solid #6d7178;
+  outline: 1px solid var(--ui-edge);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 18px rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font: 700 var(--ui-fs-m) / calc(23 * var(--ui-px)) var(--ui-font);
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#world-tooltip[hidden],
+#world-tooltip [hidden] {
+  display: none;
+}
+
+.world-tooltip-owner {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--ui-px));
+  line-height: calc(21 * var(--ui-px));
+}
+
+.world-tooltip-flag {
+  flex: none;
+  width: calc(32 * var(--ui-px));
+  height: calc(16 * var(--ui-px));
+  background: #4a4f45;
+  border: 1px solid #000;
+}
+
+.world-tooltip-owner-name {
+  text-shadow: 1px 1px 0 #000;
+}
+
+.world-tooltip-extras {
+  line-height: 1.35;
+  white-space: pre-line;
+}

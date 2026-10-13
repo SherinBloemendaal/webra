@@ -392,6 +392,8 @@ Every order type has its own cursor (move, attack, attack-move, harvest, dock, r
 
 Every icon button (the command bar, the sidebar's buttons, tabs and cameos, the support powers, the HUD buttons) has a Red Alert style tooltip with its current key: hover it a moment, focus it with the keyboard, or long press it on a touch screen. The cameos show OpenRA's production tooltip: cost, build time, power, what is still missing and the description.
 
+The battlefield has OpenRA's world tooltip: rest the mouse a moment and it names the unit, structure or ore under it with the owner's flag and name, a remembered structure under the fog as it was last seen, or Unrevealed Terrain, as the player may know it (fogged and cloaked enemies stay hidden, a disguised spy shows its disguise). Selected defences, detectors, gap generators, the radar jammer and the MAD tank show OpenRA's dashed range circles, and placing a defence or gap generator shows the circles of your own and allied ones of the same kind.
+
 ### Touch (phones and tablets)
 
 Touch and pen input works next to the mouse and keyboard; the touch action bar appears at the bottom left of the battlefield on touch screens.

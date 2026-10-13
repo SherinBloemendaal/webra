@@ -1,7 +1,8 @@
 //! "Show unit paths" overlay: the planned route of selected own units as a
 //! few line segments from the unit along its flow field to its goal.
 //!
-//! Lines: 8 floats each `[x0, y0, x1, y1, r, g, b, a]` in world pixels. A
+//! Lines: 9 floats each `[x0, y0, x1, y1, r, g, b, a, width]` in world
+//! pixels (`push_line`; the width in OpenRA line widths, 1 for these). A
 //! route is cut into straight runs, so it has one segment per turn rather
 //! than one per cell. Building it only reads the flow fields the units
 //! already use (never computes one), so it cannot change the simulation.
@@ -11,7 +12,14 @@ use crate::render::px;
 use crate::rules::Domain;
 use crate::world::{cell_center, Activity, HarvState, World, NONE};
 
-pub const LINE_FLOATS: usize = 8;
+pub const LINE_FLOATS: usize = 9;
+
+/// Append a line segment `[x0, y0, x1, y1, r, g, b, a, width]` (world pixels;
+/// `width` in OpenRA line widths: 1 is the one of target lines) to the
+/// shared line buffer (shaders/line.wgsl).
+pub fn push_line(lines: &mut Vec<f32>, from: (f32, f32), to: (f32, f32), c: [f32; 4], width: f32) {
+    lines.extend_from_slice(&[from.0, from.1, to.0, to.1, c[0], c[1], c[2], c[3], width]);
+}
 /// Most segments drawn per unit; longer routes stop short.
 pub const MAX_SEGMENTS: usize = 64;
 
@@ -115,7 +123,7 @@ impl Route {
             return true;
         }
         let c = self.col;
-        lines.extend_from_slice(&[self.from.0, self.from.1, to.0, to.1, c[0], c[1], c[2], c[3]]);
+        push_line(lines, self.from, to, c, 1.0);
         self.from = to;
         self.segments += 1;
         self.segments < MAX_SEGMENTS

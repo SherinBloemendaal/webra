@@ -287,11 +287,24 @@ pub struct TimeLimitInfo {
     pub notifications: Vec<String>,
 }
 
+/// The battlefield tooltip's texts (tooltip.rs): OpenRA's
+/// label-unrevealed-terrain, label-tooltip-prefix (.ally, .enemy) and the
+/// ResourceRenderer's resource names.
+#[derive(Deserialize, Clone, Debug)]
+pub struct TooltipTexts {
+    pub unrevealed: String,
+    pub ally_prefix: String,
+    pub enemy_prefix: String,
+    pub ore: String,
+    pub gems: String,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub(crate) struct RawWorldRules {
     crates: RawCrateSpawner,
     starting_units: Vec<RawStartingUnits>,
     time_limit: TimeLimitInfo,
+    tooltips: TooltipTexts,
 }
 
 /// World actor rules of the lobby options.
@@ -300,6 +313,7 @@ pub struct WorldRules {
     pub crates: CrateSpawnerInfo,
     pub starting_units: Vec<StartingUnitsInfo>,
     pub time_limit: TimeLimitInfo,
+    pub tooltips: TooltipTexts,
 }
 
 /// The kinds of warhead that change no health.
@@ -588,7 +602,7 @@ pub(crate) fn resolve_world(raw: RawWorldRules, ids: &[String], factions: &[Stri
             base_facing: s.base_facing,
         });
     }
-    Ok(WorldRules { crates, starting_units, time_limit: raw.time_limit })
+    Ok(WorldRules { crates, starting_units, time_limit: raw.time_limit, tooltips: raw.tooltips })
 }
 
 /// Resolve the non-damage warheads of a weapon.

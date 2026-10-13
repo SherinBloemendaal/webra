@@ -61,6 +61,7 @@ mod plane;
 mod powers;
 mod primary;
 mod production;
+pub mod range_circles;
 pub mod render;
 mod repair;
 pub mod rng;
@@ -73,6 +74,7 @@ pub mod sound_events;
 #[cfg(any(test, feature = "stack-probe"))]
 pub mod stack_check;
 pub mod target_lines;
+pub mod tooltip;
 mod trig_table;
 mod units;
 mod veterancy;
@@ -139,6 +141,8 @@ mod tests_poses;
 #[cfg(test)]
 mod tests_production;
 #[cfg(test)]
+mod tests_range_circles;
+#[cfg(test)]
 mod tests_repair;
 #[cfg(test)]
 mod tests_replay;
@@ -156,6 +160,8 @@ mod tests_stats;
 mod tests_target_lines;
 #[cfg(test)]
 mod tests_terrain;
+#[cfg(test)]
+mod tests_tooltip;
 #[cfg(test)]
 mod tests_unreachable;
 #[cfg(test)]
@@ -215,6 +221,8 @@ pub struct Game {
     selection: Vec<u32>,
     /// Route lines of the selected units (paths.rs).
     paths: Vec<f32>,
+    /// The structure the local player is placing (range circles, range_circles.rs).
+    placing: Option<range_circles::Placing>,
     /// Tick-rate records for the GPU instance pass (instances.rs).
     sprite_records: Vec<f32>,
     sprite_extras: Vec<f32>,
@@ -404,6 +412,7 @@ impl Game {
             fx: Vec::new(),
             selection: Vec::new(),
             paths: Vec::new(),
+            placing: None,
             sprite_records: Vec::new(),
             sprite_extras: Vec::new(),
             rect_records: Vec::new(),
@@ -847,14 +856,16 @@ impl Game {
     /// Route lines of the selected units `player` owns ("Show unit paths"):
     /// a few straight segments per unit, from where it is drawn (`alpha` as in
     /// `build_render`) along its path to its destination. Returns the
-    /// segment count; read them through `path_ptr` (8 floats each:
-    /// `[x0, y0, x1, y1, r, g, b, a]`, world pixels).
+    /// segment count; read them through `path_ptr` (`paths::LINE_FLOATS`
+    /// floats each: `[x0, y0, x1, y1, r, g, b, a, width]`, world pixels).
     pub fn build_paths(&mut self, player: u8, alpha: f32) -> usize {
         self.world.build_paths(player, alpha.clamp(0.0, 1.0), &self.selection, &mut self.paths);
         self.paths.len() / paths::LINE_FLOATS
     }
 
-    /// Every line the map shows this frame: the rally lines of the selected
+    /// Every line the map shows this frame: the range circles of the
+    /// selected actors and of the structure being placed (range_circles.rs),
+    /// the rally lines of the selected
     /// structures (OpenRA RallyPointIndicator, overlays.rs), then, with
     /// `paths` ("Show unit paths"), the routes `build_paths` draws, then the
     /// target lines (OpenRA DrawLineToTarget, target_lines.rs) of the
@@ -870,6 +881,7 @@ impl Game {
             self.world.build_paths(player, alpha, &self.selection, &mut route);
         }
         self.paths.clear();
+        self.world.build_range_circles(player, alpha, &self.selection, self.placing, &mut self.paths);
         self.world.build_rally_lines(player, &self.selection, &mut self.paths);
         self.paths.extend_from_slice(&route);
         if let Some(ids) = target_lines.filter(|ids| !ids.is_empty()) {
@@ -894,6 +906,52 @@ impl Game {
     /// like the selection and the selection's targets (overlays.rs).
     pub fn set_hover(&mut self, id: u32) {
         self.world.render_opts.hover = id;
+    }
+
+    /// The structure the local player is placing (`actor` id, top-left cell
+    /// `cx`, `cy`; an unknown or empty id: none): its range circles and those
+    /// of the same group around the player's and allies' actors show
+    /// (range_circles.rs). Local UI state like the hover.
+    pub fn set_placing(&mut self, actor: &str, cx: i32, cy: i32) {
+        self.placing = self.world.rules.actors.iter().position(|a| a.id == actor).map(|ty| range_circles::Placing { ty, cx, cy });
+    }
+
+    /// The battlefield tooltip at a world-pixel point for `player`'s view
+    /// (`observer_player()` and the combined view too), as JSON (tooltip.rs):
+    /// `null` for none, else `{ kind: "unexplored" | "resource" | "actor" |
+    /// "frozen", label, id (actors: the actor id), owner (the owner row's
+    /// player or null), faction (the owner's), extras: [lines] }`. `ctrl`,
+    /// `alt`: the modifier keys held. Reads the world only.
+    pub fn world_tooltip(&mut self, player: u8, x: f32, y: f32, ctrl: bool, alt: bool) -> String {
+        let (x, y, mods) = (to_wu(x), to_wu(y), selection::Mods { ctrl, alt });
+        let tip = if player == combined::COMBINED {
+            self.world.with_combined_view(|w| w.world_tooltip(0, None, x, y, mods))
+        } else if (player as usize) >= self.world.players.len() {
+            // The spectator view (observer.rs): the whole map, every actor live.
+            self.world.render_all = true;
+            let tip = self.world.world_tooltip(0, None, x, y, mods);
+            self.world.render_all = false;
+            tip
+        } else {
+            self.world.world_tooltip(player, Some(player), x, y, mods)
+        };
+        let Some(t) = tip else { return "null".into() };
+        let w = &self.world;
+        let kind = match t.kind {
+            tooltip::TooltipKind::Unexplored => "unexplored",
+            tooltip::TooltipKind::Resource => "resource",
+            tooltip::TooltipKind::Actor => "actor",
+            tooltip::TooltipKind::Frozen => "frozen",
+        };
+        json!({
+            "kind": kind,
+            "label": t.label,
+            "id": t.actor.map(|i| w.make_ref(i)),
+            "owner": t.owner,
+            "faction": t.owner.and_then(|o| w.players.get(o as usize)).map(|p| w.rules.factions[p.faction].clone()),
+            "extras": t.extras,
+        })
+        .to_string()
     }
 
     /// Extra health bars: 0 selected and hovered only, 1 also damaged actors, 2 all actors.

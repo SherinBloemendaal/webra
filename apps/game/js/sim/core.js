@@ -22,6 +22,9 @@ import { COMPOSITES, isOrder, isQuery, isUiState } from './methods.js';
 import { engineError } from './engine-error.js';
 import { C2S } from '../protocol.js';
 
+/** Floats per line instance: `[x0, y0, x1, y1, r, g, b, a, width]` (engine/src/paths.rs LINE_FLOATS). */
+const LINE_FLOATS = 9;
+
 const MAX_TICKS_PER_FRAME = 8;
 
 /** How many of the newest state hashes an error report gets. */
@@ -494,10 +497,10 @@ export class SimCore {
       rectCount = g.rect_count();
       rects = { ptr: g.rect_ptr(), len: rectCount * 8 };
     }
-    // Rally lines of selected structures, the unit routes with "Show unit
-    // paths" and the target lines of the units js/targetlines.js shows.
+    // Range circles, rally lines of selected structures, the unit routes with
+    // "Show unit paths" and the target lines of the units js/targetlines.js shows.
     const lineCount = g.build_lines(req.view, alpha, !!req.paths, req.targetLines?.length ? Uint32Array.from(req.targetLines) : undefined);
-    const lines = { ptr: lineCount ? g.path_ptr() : 0, len: lineCount * 8 };
+    const lines = { ptr: lineCount ? g.path_ptr() : 0, len: lineCount * LINE_FLOATS };
     // Heat shimmer over hot vehicles in view (4 floats each) and the sky
     // (weather_json, a short string): on both instance paths.
     const [hx0, hy0, hx1, hy1] = req.rect;
