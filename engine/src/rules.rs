@@ -2320,6 +2320,10 @@ impl Rules {
         for t in TECH_LEVELS {
             have[self.token(&format!("techlevel.{t}")).unwrap() as usize] = true;
         }
+        // Granted in every skirmish and multiplayer game (production.rs refresh_tokens).
+        if let Some(t) = self.token(crate::production::GLOBAL_SKIRMISH) {
+            have[t as usize] = true;
+        }
         let mut ok = vec![false; self.actors.len()];
         // The Construction Yard is where every game starts.
         if let Some(fact) = self.actor_index("FACT") {

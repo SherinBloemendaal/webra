@@ -35,7 +35,7 @@ export function weatherInfo(state) {
   if (state.weather === 'heatwave') effects.push('Vehicles that keep driving or firing overheat: 25% slower and fire 25% slower until they cool down');
   // engine/src/lightning.rs: what a strike does; Lightning Rods ground it.
   if (state.weather === 'thunderstorm') {
-    effects.push('Lightning halves the health of what it strikes and knocks out the power of a struck power plant\'s owner for 15 s. Lightning Rods ground every strike within their range');
+    effects.push('Lightning halves the health of what it strikes; a struck power plant cuts its owner\'s power for 15 s and then makes half its power until repaired. Lightning Rods ground every strike within their range');
   }
   return { label, detail: effects.length ? effects.join('. ') + '.' : NO_EFFECT };
 }

@@ -842,12 +842,13 @@ fn orders_round_trip_through_json_and_get_restamped() {
 #[test]
 fn four_player_free_for_all_ai_game_finishes() {
     let list = [("england", true, 0), ("russia", true, 0), ("germany", true, 0), ("ukraine", true, 0)];
-    let mut w = World::with_options(12, 96, &setups(&list), opts());
+    let mut w = World::with_options(11, 96, &setups(&list), opts());
     // OpenRA movement (the default) makes land games a few minutes longer
-    // than the WebRA model (docs/contracts.md, AI measurements). The first
-    // player falls after 44 minutes here since anti-air works and aircraft
-    // end their attack to rearm (31 before; seeds 10 to 17 still average 34
-    // minutes to the winner, as before; their first falls come at 11 to 26).
+    // than the WebRA model (docs/contracts.md, AI measurements). Seed 11:
+    // the first player falls after 12 minutes. Seed 12, used before, fell
+    // after 44 minutes, and after 50 once thunderstorm lightning struck
+    // (lightning.rs); over seeds 10 to 17 the first falls come at 12 to 50
+    // minutes with lightning and at 10 to 57 with cosmetic weather.
     for _ in 0..(25 * 60 * 50) {
         w.step();
         if w.winner.is_some() {

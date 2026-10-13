@@ -154,7 +154,7 @@ Actors with no OpenRA counterpart, defined in `data/webra/rules.yaml` (OpenRA Mi
 
 | ID | Name | Side | Cost | HP | Armor | Power | Size | Tech | Requires | Weapons | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| LROD | Lightning Rod | Both | 300 | 300 | Heavy |  | 1x1 | low | anypower |  | Inherits `^Building` (sellable, repairable, capturable by engineers). WebRA trait `LightningRod` (Range 6c0): thunderstorm lightning that would land within range is grounded on it, and power plants within range are never picked as targets (`engine/src/lightning.rs`, docs/contracts.md "Biomes and weather"). `WithRangeCircle` Type LightningRod, 6c0, shown when selected and while placing. Needs no power. Build time 7.2 s. |
+| LROD | Lightning Rod | Both | 300 | 300 | Heavy |  | 1x1 | low | anypower (outside missions: `~global-skirmish`) |  | Inherits `^Building` (sellable, repairable, capturable by engineers). WebRA trait `LightningRod` (Range 6c0): thunderstorm lightning that would land within range is grounded on it, and power plants within range are never picked as targets (`engine/src/lightning.rs`, docs/contracts.md "Biomes and weather"). `WithRangeCircle` Type LightningRod, 6c0, shown when selected and while placing. Needs no power. Build time 7.2 s. |
 
 ## Weapons used by buildable actors (48)
 

@@ -31,6 +31,9 @@ fn title(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
+/// The prerequisite token of WebRA's own actors, granted outside missions (`refresh_tokens`).
+pub const GLOBAL_SKIRMISH: &str = "global-skirmish";
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Availability {
     /// Shown in the sidebar (all `~` prerequisites met).
@@ -43,9 +46,14 @@ impl World {
     pub(crate) fn refresh_tokens(&mut self) {
         self.tokens_dirty = false;
         // The lobby tech level grants techlevel.* tokens up to the chosen level.
-        let tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
+        let mut tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
             .filter_map(|l| self.rules.token(&format!("techlevel.{}", crate::rules::TECH_LEVELS[l])))
             .collect();
+        // WebRA's own actors (data/webra/rules.yaml) need `global-skirmish`:
+        // every game but the campaign and co-op missions, which keep OpenRA's rules.
+        if !self.mission_on {
+            tech.extend(self.rules.token(GLOBAL_SKIRMISH));
+        }
         for p in self.players.iter_mut() {
             p.tokens.iter_mut().for_each(|t| *t = false);
             for &t in &tech {

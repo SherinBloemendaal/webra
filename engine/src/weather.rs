@@ -183,6 +183,9 @@ pub struct Environment {
     pub flash: Option<(u32, i32, i32, StrikeKind)>,
     next_flash: u32,
     rng: Rng,
+    /// What each strike goes for (lightning.rs): a stream of its own, so the
+    /// weather cycle and the flashes are the same as without strike effects.
+    strike_rng: Rng,
 }
 
 impl Default for Environment {
@@ -196,7 +199,8 @@ impl Environment {
         let mut rng = Rng::new(seed ^ 0x5ca1_ab1e_0000_0005);
         // Clear skies for the opening: two to three minutes.
         let until = 120 * SECOND + rng.range(0, 60) as u32 * SECOND;
-        Environment { biome, mode, weather: Weather::Clear, since: 0, until, flash: None, next_flash: 0, rng }
+        let strike_rng = Rng::new(seed ^ 0x57e1_c0de_0000_0006);
+        Environment { biome, mode, weather: Weather::Clear, since: 0, until, flash: None, next_flash: 0, rng, strike_rng }
     }
 
     /// Gameplay effects apply (not cosmetic, not off).
@@ -236,10 +240,9 @@ impl Environment {
         if self.weather == Weather::Thunderstorm && tick >= self.next_flash {
             let x = self.rng.range(0, width.max(1)) * crate::math::CELL + crate::math::HALF_CELL;
             let y = self.rng.range(0, height.max(1)) * crate::math::CELL + crate::math::HALF_CELL;
-            // Every strike draws the same numbers in every mode, so the
-            // weather cycle is the same with `full` and `cosmetic`.
-            let roll = self.rng.range(0, 100);
-            let pick = self.rng.range(0, i32::MAX);
+            // From the strikes' own stream, the same numbers in every mode.
+            let roll = self.strike_rng.range(0, 100);
+            let pick = self.strike_rng.range(0, i32::MAX);
             self.flash = Some((tick, x, y, StrikeKind::Ground));
             self.next_flash = tick + (4 + self.rng.range(0, 9) as u32) * SECOND;
             return Some(Strike { x, y, roll, pick });

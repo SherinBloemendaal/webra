@@ -102,3 +102,27 @@ pub(crate) fn rod_location(w: &World, player: u8, ty: u16) -> Option<(i32, i32)>
     }
     best.map(|b| b.2)
 }
+
+/// The power `player`'s plants make for the base builder (ai_base.rs): the
+/// power meter, except during a blackout from lightning, when the bot counts
+/// what its intact plants make once the 15 s are over instead of buying
+/// power plants it does not need (and reaches the rod first). A spy's or a
+/// mission's outage counts as OpenRA's bots see it (PowerManager.ExcessPower
+/// drops while AffectedByPowerOutage disables the plants' Power trait).
+pub(crate) fn power_gen(w: &World, player: u8) -> i32 {
+    let p = &w.players[player as usize];
+    if !w.lightning_blackout(player) {
+        return p.power_gen;
+    }
+    let mut gen = p.power_gen;
+    for a in &w.actors {
+        if !a.alive || a.owner != player || a.kind != Kind::Building || a.powered_off || !w.outage_disabled_at(a) {
+            continue;
+        }
+        let info = &w.rules.actors[a.ty as usize];
+        if let Some(b) = info.building.as_ref().filter(|b| b.power > 0) {
+            gen += if b.power_scales_with_health { b.power * a.hp / info.hp.max(1) } else { b.power };
+        }
+    }
+    gen
+}

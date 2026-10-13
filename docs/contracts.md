@@ -801,10 +801,11 @@ Effects with `weather: full`:
 | Cooling | -5 per tick standing still without firing, -1 per tick otherwise outside a heat wave |
 
 **Lightning and the Lightning Rod** (WebRA additions, no OpenRA counterpart;
-`engine/src/lightning.rs`, `engine/src/ai_lightning.rs`). Each strike draws
-a random cell, a roll 0..99 and a pick from the weather's own stream, in
-every mode (so `full` and `cosmetic` share the cycle); with `full` the world
-resolves it:
+`engine/src/lightning.rs`, `engine/src/ai_lightning.rs`). Each strike's random cell comes from the
+weather's own stream as before; its roll 0..99 and pick come from a stream
+of their own (seeded from the game seed), so the weather cycle and the
+flashes are the same in every mode and as before strikes had effects. With
+`full` the world resolves it:
 
 1. Power plants attract lightning (tall structures): with a roll below 25
    the strike goes for a power plant (a structure with positive power: the
@@ -829,7 +830,10 @@ resolves it:
    PowerManager.TriggerPowerOutage: a longer running outage stays), with the
    low power effects that follow (defences, radar and the gap generator go
    dark, production slows down, the Low power line) and the owner's line
-   "Power plant struck by lightning. Power outage."
+   "Power plant struck by lightning. Power outage." Power plants make power
+   in proportion to their health (OpenRA ScalePowerWithHealth), so after
+   the outage a struck plant makes half of what it made before until it is
+   repaired.
 
 The flash (`weather_json().flash`, `[tick, x, y, kind]`) moves onto what the
 strike hit; kind 0 ground (or `cosmetic` weather), 1 grounded on a rod, 2 a
@@ -844,9 +848,14 @@ The Lightning Rod `LROD` (`data/webra/rules.yaml`, WebRA trait
 `building.lightning_rod`): Defense tab, both sides, prerequisite `anypower`
 (a power plant), tech level low, cost 300, build time 180 ticks, 300 HP,
 Heavy armour, 1x1 with a minibib, no power, sight 4 cells; inherits OpenRA
-`^Building` (sell, repair, engineer capture, make animation). It is always
-buildable, also where no thunderstorm can come (desert, snow, weather off):
-it is cheap and the tooltip and badge say what it does. A dashed yellow
+`^Building` (sell, repair, engineer capture, make animation). It is
+buildable in every skirmish and multiplayer game, also where no
+thunderstorm can come (desert, snow, weather off): it is cheap and the
+tooltip and badge say what it does. Campaign and co-op missions keep
+OpenRA's rules: its prerequisite `~global-skirmish` is a WebRA token the
+engine grants every player outside missions (production.rs
+`GLOBAL_SKIRMISH`), and tools/gen_missions.py leaves WebRA's actors out of
+the mission rules. A dashed yellow
 `WithRangeCircle` (Type LightningRod, 6 cells) shows when selected and
 around other rods while placing one. Art: WebRA's own pixel art
 (`tools/gen_pixel_art.py`: idle, damaged, a 12 frame make animation and a
@@ -855,7 +864,12 @@ cameo). The skirmish AI builds rods only while thunderstorms can strike
 strike, once it owns two power plants and has three times the rod's cost,
 one rod per three plants and at most three, and only
 while one of its plants is unprotected; it places each where it covers the
-most of its unprotected plants.
+most of its unprotected plants. Through a blackout from lightning its base
+builder counts the power its intact plants will make again
+(`ai_lightning::power_gen`), so it does not buy power plants it does not
+need; a spy's or a mission's outage counts as low power, as for OpenRA's
+bots (PowerManager.ExcessPower drops while AffectedByPowerOutage disables
+the plants' Power trait).
 
 The AI rests overheated vehicles until they cool down (they still defend).
 Long games can harvest every field a base reaches, so the AI also handles

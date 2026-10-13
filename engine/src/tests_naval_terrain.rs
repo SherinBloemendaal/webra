@@ -467,10 +467,8 @@ fn naval_bots_keep_every_ship_on_water() {
     // Seed 2: the island bots of seed 3 now spend their money on a land war
     // and build at most one ship in twelve minutes (with either movement
     // model), too few to check fleets.
-    // Lakes seed 5 (seed 7 until thunderstorm lightning started to strike,
-    // lightning.rs: its bots now build no ship in twelve minutes).
     game(MapStyle::Islands, 2, 12 * minutes);
-    let lakes = game(MapStyle::Lakes, 5, 12 * minutes);
+    let lakes = game(MapStyle::Lakes, 7, 12 * minutes);
     game(MapStyle::Rivers, 3, 12 * minutes);
-    assert_eq!(game(MapStyle::Lakes, 5, 12 * minutes), lakes, "deterministic");
+    assert_eq!(game(MapStyle::Lakes, 7, 12 * minutes), lakes, "deterministic");
 }

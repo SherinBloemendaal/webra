@@ -2,8 +2,9 @@
 //! counterpart; docs/contracts.md "Biomes and weather").
 //!
 //! A thunderstorm (weather.rs) throws a strike every 4 to 12 s. The weather's
-//! own random stream picks a random cell and two numbers for each strike, in
-//! every weather mode; with `weather: full` the world resolves it here:
+//! own random stream picks a random cell and the strikes' own stream two
+//! numbers for each strike, in every weather mode; with `weather: full` the
+//! world resolves it here:
 //!
 //! 1. Power plants attract lightning: with a roll below
 //!    [`PLANT_STRIKE_PERCENT`] the strike goes for a power plant (a structure
@@ -177,7 +178,17 @@ impl World {
         self.inf.outage.resize(n, (0, 0));
         if self.inf.outage[player as usize].0 < OUTAGE_TICKS {
             self.inf.outage[player as usize] = (OUTAGE_TICKS, OUTAGE_TICKS);
+            self.lightning_end.resize(n, 0);
+            self.lightning_end[player as usize] = self.tick + OUTAGE_TICKS as u32;
         }
+    }
+
+    /// Whether `player`'s power is out because lightning struck one of its
+    /// plants (not a spy's or a mission's outage): the plants stand intact
+    /// and make power again when it ends (the AI looks through it, ai_lightning.rs).
+    pub(crate) fn lightning_blackout(&self, player: u8) -> bool {
+        let left = self.power_outage(player);
+        left > 0 && self.lightning_end.get(player as usize).is_some_and(|&end| end == self.tick + left as u32)
     }
 }
 

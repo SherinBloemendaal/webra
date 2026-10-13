@@ -1083,6 +1083,8 @@ pub struct World {
     pub mission: Option<Box<crate::mission::Mission>>,
     /// A mission runs: engine events are recorded for its triggers.
     pub(crate) mission_on: bool,
+    /// Per player: the tick a power outage lightning started ends (lightning.rs; 0: none).
+    pub(crate) lightning_end: Vec<u32>,
     pub(crate) script_events: Vec<crate::mission::ScriptEvent>,
     /// A mission map's structures beyond its playable area (mission/mod.rs `OffMapStructure`).
     pub offmap: Vec<crate::mission::OffMapStructure>,
@@ -1388,6 +1390,7 @@ impl World {
             leftover_at: crate::husks::LeftoverCells::new(cells),
             mission: None,
             mission_on: false,
+            lightning_end: Vec::new(),
             script_events: Vec::new(),
             offmap: Vec::new(),
             kill_source: NONE,
@@ -2717,6 +2720,9 @@ impl World {
         mix(self.options.movement as i64);
         mix(self.crates.hash());
         mix(self.env.weather as i64);
+        for &t in &self.lightning_end {
+            mix(t as i64);
+        }
         for p in &self.players {
             mix(p.cash as i64);
             mix(p.resources as i64);

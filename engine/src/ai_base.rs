@@ -354,7 +354,7 @@ fn producible(w: &mut World, player: u8, cfg: &BotConfig, types: &[u16], buildab
 /// OpenRA HasSufficientPowerForActor.
 fn sufficient_power(w: &World, player: u8, cfg: &BotConfig, ty: u16) -> bool {
     let p = &w.players[player as usize];
-    power_amount(w, ty) + p.power_gen - p.power_use >= cfg.info.base_builder.minimum_excess_power
+    power_amount(w, ty) + crate::ai_lightning::power_gen(w, player) - p.power_use >= cfg.info.base_builder.minimum_excess_power
 }
 
 /// OpenRA HasAdequateRefineryCount.
@@ -390,7 +390,8 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
         .filter(|&t| cfg.power.contains(&t) && limit_ok(w, player, cfg, t))
         .max_by_key(|&t| (power_amount(w, t), std::cmp::Reverse(t)));
     let power_ok = power.is_some_and(|p| power_amount(w, p) > 0);
-    let excess = w.players[player as usize].power_gen - w.players[player as usize].power_use;
+    // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
+    let excess = crate::ai_lightning::power_gen(w, player) - w.players[player as usize].power_use;
     let min_excess = qm(w, player, idx).min_excess_power;
     let ore = crate::ai_economy::reachable_resources(w, player) > 0;
     // Starving (ai_economy.rs): only the power the factories need, a first

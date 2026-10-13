@@ -11,7 +11,10 @@
 # Lightning Rod: grounds every lightning strike that would land within its
 # range, so the units and structures there (power plants included) are never
 # struck (engine/src/lightning.rs). Passive: it needs no power and keeps
-# working during a power outage. Both sides build it once a power plant stands.
+# working during a power outage. Both sides build it once a power plant stands,
+# outside campaign and co-op missions: `global-skirmish` is a WebRA token the
+# engine grants every player except in missions (production.rs), which run
+# with OpenRA's rules and never have it.
 LROD:
 	Inherits: ^Building
 	Selectable:
@@ -20,7 +23,7 @@ LROD:
 	Buildable:
 		Queue: Defense
 		BuildPaletteOrder: 36
-		Prerequisites: anypower, ~techlevel.low
+		Prerequisites: anypower, ~techlevel.low, ~global-skirmish
 		Description: Grounds thunderstorm lightning: units and structures within its range are never struck.
 	Valued:
 		Cost: 300

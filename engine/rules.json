@@ -39755,7 +39755,8 @@
    "build_limit": 0,
    "prerequisites": [
     "anypower",
-    "~techlevel.low"
+    "~techlevel.low",
+    "~global-skirmish"
    ],
    "build_at": "Defense",
    "hp": 30000,

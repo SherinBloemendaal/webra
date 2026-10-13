@@ -381,3 +381,72 @@ fn the_bolt_shows_briefly_where_the_viewer_explored_the_ground() {
     w.build_lightning_bolt(0, 0.0, &mut late);
     assert!(late.is_empty());
 }
+
+// ---- Missions ---------------------------------------------------------------------------
+
+/// Campaign and co-op missions keep OpenRA's rules: no mission file carries
+/// WebRA's actors, and no player of any mission may build a Lightning Rod
+/// (no `global-skirmish` token), while skirmish players do.
+#[test]
+fn no_mission_offers_the_lightning_rod() {
+    use crate::tests_mission::{load, mission_ids, missions_dir};
+    let ids = mission_ids();
+    assert!(ids.len() > 40, "{} missions", ids.len());
+    for id in &ids {
+        let text = std::fs::read_to_string(missions_dir().join(format!("{id}.json"))).expect("mission file");
+        assert!(!text.contains("\"LROD\""), "{id}: WebRA actors in the mission rules");
+        let w = World::from_mission(load(id), 7, &Default::default()).unwrap_or_else(|e| panic!("{id}: {e}"));
+        let rod = ty(&w, "LROD");
+        for p in 0..w.players.len() as u8 {
+            assert!(!w.can_start(p, rod), "{id}: player {p} can build a Lightning Rod");
+            assert!(!w.availability(p, rod).visible, "{id}: player {p} sees the Lightning Rod");
+        }
+    }
+    let mut w = world();
+    building(&mut w, "POWR", 0, 10, 10);
+    w.refresh_tokens();
+    assert!(w.can_start(0, ty(&w, "LROD")), "skirmish players build it");
+}
+
+/// What the bot queues in its Building queue over `ticks`, by id.
+fn queued_buildings(w: &mut World, ticks: i32) -> Vec<String> {
+    let mut seen = Vec::new();
+    for _ in 0..ticks {
+        w.step();
+        if let Some(it) = w.players[0].queues[QueueType::Building as usize].items.first() {
+            let id = w.rules.actors[it.ty as usize].id.clone();
+            if !seen.contains(&id) {
+                seen.push(id);
+            }
+        }
+    }
+    seen
+}
+
+#[test]
+fn bots_look_through_a_lightning_blackout_but_not_a_spys() {
+    // Lightning: the plants stand intact, so no power plant is bought; the rod comes first.
+    let mut w = ai_world(Biome::Temperate, WeatherMode::Full);
+    // As World::step resolves it: at the start of the next tick, before the bot thinks.
+    w.tick += 1;
+    w.strike_lightning(strike(60, 60, 0, 0));
+    assert!(w.power_outage(0) > 0 && w.lightning_blackout(0));
+    w.tick -= 1;
+    let gen = crate::ai_lightning::power_gen(&w, 0);
+    w.update_power();
+    assert_eq!(w.players[0].power_gen, 0);
+    assert!(gen > 0, "the bot counts its intact plants");
+    let seen = queued_buildings(&mut w, OUTAGE_TICKS);
+    assert!(!seen.iter().any(|id| id == "POWR" || id == "APWR"), "{seen:?}");
+    assert!(
+        w.players[0].queues[QueueType::Defense as usize].items.iter().any(|it| w.rules.actors[it.ty as usize].id == "LROD")
+            || !rods(&w, 0).is_empty()
+    );
+    // A spy's outage is what OpenRA's bots see as low power: they buy power.
+    let mut w = ai_world(Biome::Temperate, WeatherMode::Off);
+    w.inf.outage.resize(w.players.len(), (0, 0));
+    w.inf.outage[0] = (500, 500);
+    assert!(!w.lightning_blackout(0));
+    let seen = queued_buildings(&mut w, 500);
+    assert!(seen.first().is_some_and(|id| id == "POWR" || id == "APWR"), "{seen:?}");
+}
