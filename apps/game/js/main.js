@@ -1457,7 +1457,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         onRadar: viewer ? null : (online) => audio?.radar(online),
         // Finger taps on the radar go through the touch controls (Add, Force; js/touch.js), made below.
         touch: {
-          radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {}, 0)),
+          radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {})),
           radarMayOrder: () => (touch ? touch.radarMayOrder() : input.radarMayOrder()),
         },
       });

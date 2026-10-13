@@ -732,18 +732,16 @@ export class Input {
    * support powers, sidebar modes, ability targeting, the command bar's modes
    * and modifiers (force move, force attack, guard, Shift waypoints),
    * minefields, attack move, the smart order (move, attack, harvest, enter...)
-   * and rally points. `mods`: { shift, ctrl, alt }. `button` 0 is the action
-   * button (left, as on the battlefield); 2, the right button (the radar's
-   * order button before, and OpenRA's in its modern mouse style), gives only
-   * the selected units' orders. Selecting, deploying and placing structures
-   * stay on the battlefield (OpenRA places where the mouse is, not at the
-   * radar spot); spectators and replays give no orders. Resolves with true
-   * when the click was an order; false leaves it to the radar, which moves
-   * the camera there.
+   * and rally points. `mods`: { shift, ctrl, alt }. Only the action button
+   * (left, as on the battlefield) and a touch tap come here: the radar's
+   * other buttons move the camera (OpenRA RadarWidget). Selecting, deploying
+   * and placing structures stay on the battlefield (OpenRA places where the
+   * mouse is, not at the radar spot); spectators and replays give no orders.
+   * Resolves with true when the click was an order; false leaves it to the
+   * radar, which moves the camera there.
    */
-  async radarClick(w, mods = {}, button = 0) {
+  async radarClick(w, mods = {}) {
     if (this.suspended || this.spectator || this.placing) return false;
-    if ((this.power || this.mode || this.targeting) && button !== 0) return false;
     const e = { shiftKey: !!mods.shift, ctrlKey: !!mods.ctrl, metaKey: false, altKey: !!mods.alt };
     if (this.pressAction(w, e, null)) {
       // A down and an up at one spot: a support power without a direction, a one-cell minefield.
