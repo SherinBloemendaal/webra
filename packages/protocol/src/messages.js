@@ -297,6 +297,24 @@ export function validResumeInfo(v, what = 'resume') {
 
 // ---- Client to server -------------------------------------------------------------------
 
+/** The fields of one slot change: the `slot` message, and each entry of `slots`. */
+const SLOT_CHANGE_KEYS = ['slot', 'faction', 'color', 'team', 'type', 'difficulty', 'bot', 'handicap', 'spawn'];
+
+/** Validate one slot change (`what` prefixes the field names in errors). */
+function slotChange(m, what) {
+  const out = { slot: int(m.slot, 0, SLOT_MAX, `${what}slot`) };
+  if (has(m, 'handicap')) out.handicap = oneOf(m.handicap, HANDICAPS, `${what}handicap`);
+  if (has(m, 'faction')) out.faction = validFaction(m.faction, `${what}faction`);
+  if (has(m, 'color')) out.color = int(m.color, 0, COLOR_COUNT - 1, `${what}color`);
+  if (has(m, 'team')) out.team = int(m.team, 0, TEAM_MAX, `${what}team`);
+  if (has(m, 'type')) out.type = oneOf(m.type, HOST_SLOT_TYPES, `${what}type`);
+  if (has(m, 'difficulty')) out.difficulty = oneOf(m.difficulty, DIFFICULTIES, `${what}difficulty`);
+  if (has(m, 'bot')) out.bot = oneOf(m.bot, BOTS, `${what}bot`);
+  // The spawn this slot starts at (OpenRA's lobby spawn selection), null: automatic again.
+  if (has(m, 'spawn')) out.spawn = m.spawn === null ? null : int(m.spawn, 0, SPAWN_MAX, `${what}spawn`);
+  return out;
+}
+
 const CLIENT = {
   [C2S.HELLO](m) {
     object(m, ['t', 'protocol', 'version', 'name', 'password', 'hostKey', 'spectate', 'rejoin'], 'hello');
@@ -320,18 +338,21 @@ const CLIENT = {
     return out;
   },
   [C2S.SLOT](m) {
-    object(m, ['t', 'slot', 'faction', 'color', 'team', 'type', 'difficulty', 'bot', 'handicap', 'spawn'], 'slot');
-    const out = { t: C2S.SLOT, slot: int(m.slot, 0, SLOT_MAX, 'slot') };
-    if (has(m, 'handicap')) out.handicap = oneOf(m.handicap, HANDICAPS, 'handicap');
-    if (has(m, 'faction')) out.faction = validFaction(m.faction, 'faction');
-    if (has(m, 'color')) out.color = int(m.color, 0, COLOR_COUNT - 1, 'color');
-    if (has(m, 'team')) out.team = int(m.team, 0, TEAM_MAX, 'team');
-    if (has(m, 'type')) out.type = oneOf(m.type, HOST_SLOT_TYPES, 'type');
-    if (has(m, 'difficulty')) out.difficulty = oneOf(m.difficulty, DIFFICULTIES, 'difficulty');
-    if (has(m, 'bot')) out.bot = oneOf(m.bot, BOTS, 'bot');
-    // The spawn this slot starts at (OpenRA's lobby spawn selection), null: automatic again.
-    if (has(m, 'spawn')) out.spawn = m.spawn === null ? null : int(m.spawn, 0, SPAWN_MAX, 'spawn');
-    return out;
+    object(m, ['t', ...SLOT_CHANGE_KEYS], 'slot');
+    return { t: C2S.SLOT, ...slotChange(m, '') };
+  },
+  [C2S.SLOTS](m) {
+    object(m, ['t', 'changes'], 'slots');
+    if (!Array.isArray(m.changes) || m.changes.length < 1 || m.changes.length > MAX_PLAYERS) fail('slots.changes must list 1 to 8 slot changes');
+    const changes = m.changes.map((c, i) => {
+      const what = `changes[${i}]`;
+      object(c, SLOT_CHANGE_KEYS, what);
+      const out = slotChange(c, `${what}.`);
+      if (Object.keys(out).length < 2) fail(`${what} changes nothing`);
+      return out;
+    });
+    if (new Set(changes.map((c) => c.slot)).size !== changes.length) fail('slots.changes may name each slot once');
+    return { t: C2S.SLOTS, changes };
   },
   [C2S.OPTIONS](m) {
     object(m, ['t', 'options'], 'options');
@@ -781,6 +802,7 @@ export function errorMessage(code, message) {
 export const client = {
   hello: (f) => ({ t: C2S.HELLO, ...f }),
   slot: (slot, fields = {}) => ({ t: C2S.SLOT, slot, ...fields }),
+  slots: (changes) => ({ t: C2S.SLOTS, changes }),
   options: (options) => ({ t: C2S.OPTIONS, options }),
   map: (map) => ({ t: C2S.MAP, map }),
   mission: (mission) => ({ t: C2S.MISSION, mission }),
