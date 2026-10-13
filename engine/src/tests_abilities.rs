@@ -708,8 +708,11 @@ fn loading_uncloaks_the_phase_transport() {
     assert!(!w.actors[stnk].ab.cloaked, "loading reveals it (UncloakOn: Load)");
 }
 
+/// OpenRA: mines occupy their cell (Immobile OccupiesSpace, in the ActorMap),
+/// so World.IsCellBuildable refuses any mine, also a hidden enemy one: the
+/// footprint preview shows that cell blocked and the placement is refused.
 #[test]
-fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
+fn every_mine_blocks_placement_also_a_hidden_enemy_one() {
     let mut w = flat_world(["allies", "soviet"]);
     let (sx, sy) = w.players[0].start;
     w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy);
@@ -728,8 +731,8 @@ fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
     assert!(cells(&w, sx + 5, sy - 2), "the spot next to it is buildable (control)");
     assert!(!cells(&w, sx + 4, sy - 2), "own mine blocks the cell");
     assert!(w.is_cloaked_from(w.mine_at(enemy_cell).unwrap(), 0), "the enemy mine is hidden from player 0");
-    assert!(cells(&w, sx + 6, sy - 2), "a hidden enemy mine does not give itself away");
-    // Placing on it crushes the mine.
+    assert!(!cells(&w, sx + 6, sy - 2), "a hidden enemy mine blocks the cell too");
+    // The order is refused as well; the mine stays.
     w.players[0].cash = 10_000;
     w.spawn_building(ty(&w, "TENT"), 0, sx - 4, sy + 5);
     w.refresh_tokens();
@@ -737,6 +740,6 @@ fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
     run(&mut w, 600);
     w.queue_order(Order::Place { player: 0, ty: gun, cx: sx + 6, cy: sy - 2 });
     run(&mut w, 2);
-    assert!(w.building_at[enemy_cell] != crate::world::NONE, "pillbox placed");
-    assert!(w.mine_at(enemy_cell).is_none(), "the hidden mine was crushed");
+    assert_eq!(w.building_at[enemy_cell], crate::world::NONE, "no pillbox on the mine");
+    assert!(w.mine_at(enemy_cell).is_some(), "the hidden mine is still there");
 }

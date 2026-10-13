@@ -516,6 +516,17 @@ fn ai_trains_dogs_and_grenadiers_within_limits() {
 #[test]
 fn ai_engineers_capture_what_they_see() {
     let mut w = World::new(5, 64, &[("russia", true), ("england", false)]);
+    // Only the power plant below may be a capture target: OpenRA's capture
+    // manager picks a random enemy or neutral player each round, and with
+    // the generated map's neutral oil derrick next to the bot's base the
+    // engineer went there first on some random draws and lost sight of the
+    // power plant (seen after the bots placed structures into the shroud,
+    // which changed their random draws).
+    for i in 0..w.actors.len() {
+        if w.actors[i].alive && w.actors[i].kind == Kind::Building && w.actors[i].owner > 1 {
+            w.remove(i);
+        }
+    }
     flat_reset(&mut w);
     let powr = building(&mut w, "POWR", 1, 30, 30);
     let e6 = unit(&mut w, "E6", 0, 31, 35);

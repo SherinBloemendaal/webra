@@ -400,8 +400,14 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 
 /// Generated maps where fleets used to pile up idle: in 15 minutes on 64
 /// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
-/// idle without a target, a Turtle AI on islands (seed 3) 12. Now no
-/// fleet idles that large.
+/// idle without a target, a Turtle AI on islands (seed 3) 12, while enemies
+/// were in reach. Now a naval squad never idles longer than one squad
+/// update (AttackForceInterval) while one of its ships can reach an enemy
+/// (ai_naval.rs `enemy_in_reach`). A fleet with nothing in reach may wait:
+/// on the islands the Soviet bot's submarines, which only hit ships and
+/// structures on water, wait between the enemy's destroyers (its naval
+/// yard lies out of their reach), and only finish the submarines they
+/// started while a destroyer was in reach.
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::mapgen::MapStyle;
@@ -412,17 +418,36 @@ fn generated_naval_maps_keep_no_idle_fleets() {
             (0..2).map(|k| PlayerSetup { bot, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
         let mut w = World::with_options(seed, 64, &players, GameOptions { map_style: style, ..GameOptions::default() });
         let mut idle_most = 0;
+        // Per player: consecutive ticks a naval squad idled with an enemy in reach.
+        let mut waited = [0i32; 2];
+        let mut waited_most = 0;
+        let mut ships_most = 0;
         for _ in 0..25 * 60 * 15 {
             w.step();
-            for p in 0..2 {
-                idle_most = idle_most.max(naval_report(&w, p).idle_ships);
+            for p in 0..2u8 {
+                let r = naval_report(&w, p);
+                idle_most = idle_most.max(r.idle_ships);
+                ships_most = ships_most.max(r.ships);
+                let cfg = w.ai[p as usize].cfg.clone();
+                let in_reach = r.idle_ships > 0
+                    && w.actors
+                        .iter()
+                        .filter(|a| a.alive && a.owner == p && a.kind == Kind::Ship)
+                        .any(|a| crate::ai_naval::enemy_in_reach(&w, p, &cfg, a.ty, w.pass_water.component[w.cell_index(a.x, a.y)]));
+                waited[p as usize] = if in_reach { waited[p as usize] + 1 } else { 0 };
+                waited_most = waited_most.max(waited[p as usize]);
             }
             if w.winner.is_some() {
                 break;
             }
         }
-        // Before: 20 and 12.
-        assert!(idle_most <= 6, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle without a target");
+        let interval = w.ai[0].cfg.info.squads.attack_force_interval;
+        assert!(
+            waited_most <= interval,
+            "{style:?} seed {seed} {bot:?}: a fleet idled {waited_most} ticks with an enemy in reach (squads update every {interval})"
+        );
+        // Before: 20 and 12 idle; the islands fleet now peaks at 9 ships, all waiting with nothing in reach.
+        assert!(idle_most <= 9 && ships_most <= 12, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle, {ships_most} ships");
     }
 }
 

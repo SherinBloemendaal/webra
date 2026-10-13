@@ -474,3 +474,136 @@ fn the_last_map_row_is_left_out_of_the_buildable_area_scan() {
     w.spawn_building(sbag, 0, 2, 23).unwrap();
     assert!(!w.can_place(0, powr, 2, 20), "two rows above a giver on the last row");
 }
+
+// ---- Shroud, fog and hidden actors (OpenRA World.IsCellBuildable) ------------------
+
+/// Finish a `q` item of `id` for player 0 and place it at (x, y) by order.
+fn build_and_place(w: &mut World, id: &str, q: usize, x: i32, y: i32) {
+    let t = ty(w, id);
+    w.players[0].cash = 100_000;
+    w.queue_order(Order::StartProduction { player: 0, ty: t, count: 1 });
+    run_until_done(w, 0, q);
+    w.queue_order(Order::Place { player: 0, ty: t, cx: x, cy: y });
+    run(w, 2);
+}
+
+/// OpenRA never asks the shroud when placing: a footprint may reach into
+/// cells the player has not explored, in the preview and by order.
+#[test]
+fn structures_go_into_the_shroud_like_openra() {
+    let mut w = shore_world();
+    w.spawn_building(ty(&w, "POWR"), 0, 8, 10).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 0);
+    }
+    let syrd = ty(&w, "SYRD");
+    assert!(w.placement_cells(0, syrd, 21, 12).iter().all(|c| c.2), "preview over unexplored water");
+    build_and_place(&mut w, "SYRD", BQ, 21, 12);
+    assert_eq!(count(&w, 0, "SYRD"), 1, "placed into the shroud");
+}
+
+/// OpenRA checks the true world state (ActorMap), so an enemy unit the
+/// player cannot see still blocks its cell: the preview shows that cell
+/// blocked (it gives the unit away) and the order is refused. Cloaked units
+/// (a submarine under a naval yard's footprint) block the same way.
+#[test]
+fn hidden_actors_block_their_cells_like_openra() {
+    let mut w = shore_world();
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 0);
+    }
+    let syrd = ty(&w, "SYRD");
+    let sub = w.spawn_unit(ty(&w, "SS"), 1, cell_center(22), cell_center(11), 0);
+    w.rebuild_hash();
+    assert!(w.players[0].explored[w.map.idx(22, 11)] == 0, "the player has not seen the cell");
+    let cells = w.placement_cells(0, syrd, 21, 10);
+    let blocked: Vec<(i32, i32)> = cells.iter().filter(|c| !c.2).map(|c| (c.0, c.1)).collect();
+    assert_eq!(blocked, vec![(22, 11)], "only the submarine's cell is blocked");
+    w.remove(sub);
+    w.rebuild_hash();
+    assert!(w.can_place(0, syrd, 21, 10), "free once it is gone");
+}
+
+/// Aircraft in the air occupy no cell (OpenRA Aircraft.OccupiedCells holds
+/// only landing cells); a landed one blocks.
+#[test]
+fn only_landed_aircraft_block_placement() {
+    let mut w = shore_world();
+    let powr = ty(&w, "POWR");
+    let heli = w.spawn_unit(ty(&w, "HELI"), 1, cell_center(9), cell_center(11), 0);
+    w.rebuild_hash();
+    assert!(w.actors[heli].altitude > 0, "spawned flying");
+    assert!(w.can_place(0, powr, 9, 11), "a helicopter overhead");
+    w.actors[heli].altitude = 0;
+    assert!(!w.can_place(0, powr, 9, 11), "a landed helicopter");
+}
+
+/// OpenRA LineBuild Range 8 searches cells 1 to 7 out: posts seven cells
+/// apart are joined, eight apart are not.
+#[test]
+fn wall_lines_reach_seven_cells() {
+    for (gap, joined) in [(7, true), (8, false)] {
+        let mut w = shore_world();
+        build_and_place(&mut w, "SBAG", DQ, 6, 8);
+        build_and_place(&mut w, "SBAG", DQ, 6 + gap, 8);
+        assert_eq!(count(&w, 0, "SBAG"), if joined { gap as usize + 1 } else { 2 }, "posts {gap} apart");
+    }
+}
+
+/// OpenRA GetLineBuildCells passes over unexplored cells, also occupied
+/// ones: the line is filled through the shroud. An occupied unexplored cell
+/// stays empty (OpenRA puts a piece over what is there; WebRA structures
+/// never share a cell).
+#[test]
+fn wall_lines_are_filled_through_the_shroud() {
+    let mut w = shore_world();
+    build_and_place(&mut w, "SBAG", DQ, 6, 8);
+    let rifle = w.spawn_unit(ty(&w, "E1"), 1, cell_center(9), cell_center(8), 0);
+    for x in 8..=10 {
+        let i = w.map.idx(x, 8);
+        w.players[0].explored[i] = 0;
+    }
+    build_and_place(&mut w, "SBAG", DQ, 12, 8);
+    let walls: Vec<i32> = (6..=12).filter(|&x| w.building_at[w.map.idx(x, 8)] != crate::world::NONE).collect();
+    assert_eq!(walls, vec![6, 7, 8, 10, 11, 12], "all but the rifleman's cell");
+    assert!(w.actors[rifle].alive);
+}
+
+/// OpenRA's line search connects to any LineBuildNode of the wall's type,
+/// whoever owns it.
+#[test]
+fn wall_lines_join_another_players_wall() {
+    let mut w = shore_world();
+    w.spawn_building(ty(&w, "SBAG"), 1, 11, 8).unwrap();
+    build_and_place(&mut w, "SBAG", DQ, 7, 8);
+    let owners: Vec<u8> = (7..=11).map(|x| w.actors[w.building_at[w.map.idx(x, 8)] as usize].owner).collect();
+    assert_eq!(owners, vec![0, 0, 0, 0, 1]);
+}
+
+/// OpenRA Building.FindBaseProvider measures from the candidate's centre to
+/// the provider's CenterPosition, both with LocalCenterOffset: the yard's
+/// centre is half a cell above its footprint's (FACT 0,-512). Power plants
+/// next to a giver, near the edge of the yard's 16c0 build radius.
+#[test]
+fn the_build_radius_is_measured_from_the_yards_openra_centre() {
+    use crate::map::{Map, Terrain};
+    let mut m = Map::filled(48, 24, Terrain::Clear);
+    m.spawns = vec![(12, 10), (40, 2)];
+    let mut w = World::empty(crate::rules::Rules::load(), m, 5);
+    for (f, start) in [("allies", (12, 10)), ("soviet", (40, 2))] {
+        let fi = w.rules.faction_index(f).unwrap();
+        w.add_player(fi, false, start);
+    }
+    assert!(w.options.build_radius);
+    let (fact, powr) = (ty(&w, "FACT"), ty(&w, "POWR"));
+    w.spawn_building(fact, 0, 12, 10).unwrap();
+    // Givers of buildable area that give no build radius.
+    w.spawn_building(powr, 0, 25, 4).unwrap();
+    w.spawn_building(powr, 0, 24, 19).unwrap();
+    // (25, 1): 16077 from the yard's OpenRA centre (16392 from its footprint's).
+    assert!(w.can_place(0, powr, 25, 1), "north of the yard, inside the radius");
+    // (24, 22): 16654 from the yard's OpenRA centre (16296 from its footprint's).
+    assert!(!w.can_place(0, powr, 24, 22), "south of the yard, outside the radius");
+}

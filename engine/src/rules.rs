@@ -1079,6 +1079,13 @@ impl BuildingInfo {
         self.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1))
     }
 
+    /// OpenRA's CenterPosition of the structure with its top-left at (cx, cy):
+    /// the footprint's centre plus LocalCenterOffset (Building.CenterOffset).
+    /// Actor positions (`Actor::x`, `y`) are the footprint's centre only.
+    pub fn openra_center(&self, cx: i32, cy: i32) -> (i32, i32) {
+        (cx * CELLS + self.width * CELLS / 2 + self.center_offset.0, cy * CELLS + self.height * CELLS / 2 + self.center_offset.1)
+    }
+
     /// Whether the structure fits inside `map` with its top-left at (cx, cy).
     pub fn fits(&self, map: &crate::map::Map, cx: i32, cy: i32) -> bool {
         self.area_cells().all(|(dx, dy)| map.contains(cx + dx, cy + dy))

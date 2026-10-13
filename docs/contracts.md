@@ -1414,21 +1414,38 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   each structure queue has at most one ready structure. `place` only accepts
   the finished head of the queue.
 - Placement follows OpenRA's BuildingInfo.IsCloseEnoughToBase and
-  CanPlaceBuilding. A structure with RequiresBuildableArea needs a footprint
-  cell within `adjacent` cells (both axes) of a footprint cell (not `_`) of
-  an own structure, or an allied one with the "Ally build radius" option,
-  whose GivesBuildableArea types (`gives_area` in rules.json) share one of
-  its `requires_area` types: 2 cells for most structures, 7 for walls, 8
-  for naval yards and sub pens (and their fakes); fakes give and need only
+  World.CanPlaceBuilding. A structure with RequiresBuildableArea needs a
+  footprint cell within `adjacent` cells (both axes) of a footprint cell (not
+  `_`) of an own structure, or an allied one with the "Ally build radius"
+  option, whose GivesBuildableArea types (`gives_area` in rules.json) share
+  one of its `requires_area` types: 2 cells for most structures, 7 for walls,
+  8 for naval yards and sub pens (and their fakes); fakes give and need only
   `fake` area, so a real structure never goes next to fakes alone. With the
   "Build radius" option a structure with `requires_base_provider` also needs
-  its footprint centre within a base provider's range. A structure without
-  RequiresBuildableArea (`requires_area` null) goes anywhere its terrain
-  allows. Every footprint cell must be on the map, of the structure's
-  terrain (naval yards and sub pens: Water only, never beach or river), free
-  of ore, gems, structures, units, husks, crates and visible mines. WebRA
-  difference: every footprint cell must also be explored by the player
-  (OpenRA lets a footprint reach into the shroud).
+  its OpenRA centre within a base provider's range of the provider's OpenRA
+  centre (both footprint centres plus LocalCenterOffset, `center_offset`;
+  the yard's is half a cell up). A structure without RequiresBuildableArea
+  (`requires_area` null) goes anywhere its terrain allows. Every footprint
+  cell must be on the map, of the structure's terrain (naval yards and sub
+  pens: Water only, never beach or river), without ore or gems, and empty:
+  no structure, unit on the ground (aircraft in the air do not count), husk,
+  crate or mine.
+- Like OpenRA (World.IsCellBuildable at b6fc03f), placement reads the true
+  world state and never the player's view: footprints may reach into the
+  shroud and the fog, and every occupant blocks its cell whether the player
+  can see it or not: enemy units and structures under the shroud or fog,
+  cloaked units (submarines, phase transports), hidden enemy mines, husks and
+  crates, and ore or gems under the shroud. The footprint preview
+  (`placement_preview`) asks the same check, so a blocked cell there tells
+  the player something occupies it; a structure destroyed under the fog
+  frees its cells at once. See docs/security.md.
+- Wall lines follow OpenRA GetLineBuildCells: from a placed piece each
+  direction is searched up to LineBuild Range - 1 cells (7 for Red Alert's
+  walls); free cells and unexplored cells are passed over, the first other
+  cell ends the search, and a piece of the same wall there (any owner) fills
+  the cells passed over. OpenRA puts a piece on every passed cell, even an
+  unexplored occupied one; WebRA structures never share a cell, so such a
+  cell stays empty.
 - `cancel_production` removes the last queued item of that type and refunds
   what was paid for it (a finished structure refunds its full cost).
 - `pause_production` (OpenRA PauseProduction) puts the first queued item of
