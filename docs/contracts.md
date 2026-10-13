@@ -265,16 +265,33 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   the render clock at 0 and clear weather, so it needs no WebGPU context.
   The map is cut into tiles of 8 x 8 cells at 24 pixels per cell, drawn a
   few rows per animation frame within a 6 ms budget (the preview's pixels
-  stand in until a tile is ready) and kept in an LRU cache of 48 tiles per
-  lens; at most two sprite atlases are kept, and all of it is let go when a
+  stand in until a tile is ready) and kept in an LRU cache of 64 tiles per
+  lens (the lowest zoom shows up to 25 at once); at most two sprite atlases are kept, and all of it is let go when a
   game starts (`LensArt.release`). The lens starts at half the game's
   zoom (`LENS_START_FACTOR` of `baseZoom` at the player's game scale, at the
   render ratio a game uses: `gameScaleFor`), so it shows twice the map
   around the pointer; not at the zoom the player last used in a game
-  (`game.zoomFactor`), which is for playing. The mouse wheel zooms it
-  between the game's zoom limits only while it shows after the pointer
-  moved over the preview, and scrolls the page again at a limit. On touch,
-  press and hold (350 ms) shows it above the finger. It is `aria-hidden`,
+  (`game.zoomFactor`), which is for playing. When it shows (mouse): only
+  while the pointer is over the preview and the magnify key is held
+  (`magnifyHeld`: Ctrl; on macOS also Cmd, because Ctrl + click is the
+  system's right click there), so a plain preview never covers a click on
+  a start marker; pressing the key under a resting mouse shows it at once
+  (window `keydown`/`keyup`), releasing it, leaving the preview or the
+  window losing focus (a lost key release) hides it. While the mouse is
+  over a preview with a lens and the key is up, a small click-through hint
+  (`.map-lens-hint`, `aria-hidden`) at the bottom of the preview says "Hold
+  Ctrl to magnify, scroll to zoom" ("Hold Cmd or Ctrl ..." on macOS). The
+  mouse wheel zooms it only while it shows after the pointer moved over the
+  preview, between `lensZoomLimits`: out to `LENS_MIN_ZOOM` (0.25 CSS px per
+  world pixel at game scale 1, half the game's `MIN_ZOOM`: about 29 cells
+  across a 176 px lens), in to the game's `MAX_ZOOM`; while it shows the
+  wheel never reaches the page, also at a limit (Ctrl + wheel would zoom
+  the browser page). Without the key the wheel scrolls the page. The same
+  rule on every preview with a lens (lobbies, campaign, the editor's
+  thumbnail). On touch and with a pen (no key at hand), press and hold
+  (350 ms) shows it above the finger or pen tip, without a key. Keyboard
+  focus does not open it (it is decorative; the markers and preview keep
+  their labels). It is `aria-hidden`,
   never focused, placed through CSSOM custom properties (CSP) and sized in
   `--ui-px` (`css/maplens.css`). Previews with a lens: the skirmish lobby,
   the online lobby (generated maps, installed shared and community maps,
@@ -1016,7 +1033,11 @@ and online lobbies (`apps/game/js/spawnpick.js`):
   host disables empty spawns with a right click; WebRA has no disabled spawns.
 - Hover or focus shows the shared tooltip (who starts there, team, picked
   or automatic, and what a click does); the markers are buttons (Tab, Enter
-  or Space), and the lens rings the one under the pointer or focus.
+  or Space), and the lens rings the one under the pointer or focus. The
+  lens shows only while Ctrl (on macOS Cmd or Ctrl) is held, so a plain
+  preview never covers a marker; on macOS Ctrl + click is the system's
+  right click, which frees a spawn, so Cmd is the key to click with while
+  magnifying (the hint names Cmd first there).
 - How many spawns a battlefield has is one definition for both lobbies
   and the server (`packages/protocol` `battlefieldSpawns`): a map file's
   own, none in a co-op mission, else one per player of the generated map,

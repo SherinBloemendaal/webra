@@ -4,15 +4,23 @@
 // with ore, gems, cliffs and water, bridges, buildings, units and trees as
 // placed on the map, and the start positions.
 //
-// - Mouse and pen: the lens is centred on the pointer while it is over the
-//   preview and hides when it leaves. The mouse wheel over the preview
-//   zooms the lens while it shows, after the pointer has moved there (a
-//   page that scrolls under a still pointer never starts zooming), between
-//   the game's zoom limits; at a limit the wheel scrolls the page as usual.
-// - Touch: press and hold on the preview shows the lens above the finger
-//   (below it near the top of the screen), so the finger does not cover it;
-//   it follows the finger, the page does not scroll meanwhile, and lifting
-//   the finger hides it. A swipe that starts as a scroll stays a scroll.
+// - Mouse: the lens shows only while the pointer is over the preview AND
+//   the magnify key is held (magnifyHeld: Ctrl; on macOS Cmd or Ctrl, since
+//   Ctrl + click is the system's right click there and Cmd leaves clicks
+//   alone). Without the key the preview is plain, so clicks on the start
+//   markers (js/spawnpick.js) are never covered; a small hint at the bottom
+//   of the preview says so (lensHint) while the mouse is over it. Pressing
+//   the key under a resting mouse shows the lens at once, releasing it (or
+//   leaving the preview, or the window losing focus) hides it. Centred on
+//   the pointer. The mouse wheel over the preview zooms the lens while it
+//   shows, after the pointer has moved there (a page that scrolls under a
+//   still pointer never starts zooming), between lensZoomLimits; while it
+//   shows the wheel is the lens's only, also at a limit, since Ctrl + wheel
+//   would zoom the whole page. Without the key the wheel scrolls the page.
+// - Touch and pen: press and hold on the preview shows the lens above the
+//   finger or pen (below it near the top of the screen), so it does not
+//   cover it; it follows, the page does not scroll meanwhile, and lifting
+//   hides it. A swipe that starts as a scroll stays a scroll. No key needed.
 // - The zoom starts at half the game's own scale (LENS_START_FACTOR of
 //   js/scale.js baseZoom at the player's game scale, gameScaleFor: the
 //   render ratio a game would use): at the game's own scale the lens showed
@@ -20,10 +28,15 @@
 //   player last used in a game (game.zoomFactor): that zoom is for playing,
 //   while the lens is for looking over a map before playing it, and a
 //   player who zooms in to play would get a lens that shows less of the map.
+//   It zooms out further than a game (LENS_MIN_ZOOM, half the game's
+//   MIN_ZOOM: about 29 cells across at game scale 1) to look over a larger
+//   part of the map, and in as far as a game.
 // - Purely decorative: aria-hidden, never focused, no keyboard handling
-//   (the preview keeps its label). It shows and hides at once and the art
-//   is the first frame; only the loading spinner turns, and not with
-//   reduced motion (then the progress ring alone shows the loading).
+//   (the preview and its markers keep their labels; keyboard focus on a
+//   marker rings it in the lens while it shows). It shows and hides at
+//   once and the art is the first frame; only the loading spinner turns,
+//   and not with reduced motion (then the progress ring alone shows the
+//   loading).
 // - It never takes the pointer (css/maplens.css pointer-events: none):
 //   clicks under it reach the preview, and the start markers over it
 //   (js/spawnpick.js), which tell the lens which marker the pointer or the
@@ -55,10 +68,28 @@
 // come from css/maplens.css (theme tokens, --ui-px).
 
 import { baseZoom, zoomLimits } from '../scale.js';
+import { isMac } from '../hotkeys.js';
+import { CELL_PX, SPRITE_FLOATS, frameQuad, spriteFrame, tintPixels } from './raster.js';
 
 /** The lens starts at this factor of the game's base zoom (the wheel changes it). */
 export const LENS_START_FACTOR = 0.5;
-import { CELL_PX, SPRITE_FLOATS, frameQuad, spriteFrame, tintPixels } from './raster.js';
+/**
+ * The lens's lowest zoom (CSS px per world pixel at game scale 1), half the
+ * game's MIN_ZOOM (js/scale.js): a 176 px lens shows about 29 cells across.
+ */
+export const LENS_MIN_ZOOM = 0.25;
+
+/** The lens's zoom limits at a game scale: out to LENS_MIN_ZOOM, in as far as a game. */
+export const lensZoomLimits = (scale) => ({ min: LENS_MIN_ZOOM * scale, max: zoomLimits(scale).max });
+
+/** Whether an event's modifiers hold the magnify key: Ctrl, or on macOS Cmd or Ctrl. */
+export const magnifyHeld = (e, mac = isMac()) => !!(e?.ctrlKey || (mac && e?.metaKey));
+
+/** The hint over a preview with a lens. */
+export const lensHint = (mac = isMac()) => (mac ? 'Hold Cmd or Ctrl to magnify, scroll to zoom' : 'Hold Ctrl to magnify, scroll to zoom');
+
+/** Pointers that show the lens by press and hold (no hover, no keyboard at hand). */
+const holds = (e) => e.pointerType === 'touch' || e.pointerType === 'pen';
 
 /** Cells per side of a cached tile. */
 export const TILE_CELLS = 8;
@@ -241,18 +272,26 @@ export class MapLens {
    * @param {number} [o.maxFrames] tinted sprite frames kept
    * @param {number} [o.budgetMs] terrain drawing per frame
    * @param {() => number} [o.now]
+   * @param {boolean} [o.mac] macOS: Cmd magnifies too (js/hotkeys.js isMac)
    */
   constructor({
     art,
     gameScale = () => 1,
     doc = globalThis.document,
     win = globalThis.window,
-    maxTiles = 48,
+    maxTiles = 64,
     maxFrames = 512,
     budgetMs = 6,
     now = () => globalThis.performance.now(),
     reducedMotion = () => !!win?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches,
+    mac = isMac(),
   }) {
+    this.mac = mac;
+    /** The magnify key is held (magnifyHeld, from the last pointer or key event). */
+    this.magnify = false;
+    /** The "Hold Ctrl to magnify" hint over the preview, made on the first hover. */
+    this.hint = null;
+    this.hintShown = false;
     this.art = art;
     this.reducedMotion = reducedMotion;
     /** The map being read in the background: { source, steps, progress, timer } or null. */
@@ -289,10 +328,17 @@ export class MapLens {
     /** Timings of the last frame (ms): lens drawing and tile work. */
     this.stats = { draw: 0, work: 0 };
     this.offArt = art?.onChange?.(() => this.reset()) ?? null;
-    this.onScroll = () => this.visible && this.follow();
-    this.onBlur = () => this.hide();
+    this.onScroll = () => (this.visible || this.hintShown) && this.follow();
+    // Switching windows (Ctrl + Tab, Cmd + Tab) loses the key's release.
+    this.onBlur = () => {
+      this.magnify = false;
+      this.hide();
+    };
+    this.onKey = (e) => this.key(e);
     win?.addEventListener?.('scroll', this.onScroll, { capture: true, passive: true });
     win?.addEventListener?.('blur', this.onBlur);
+    win?.addEventListener?.('keydown', this.onKey, { capture: true });
+    win?.addEventListener?.('keyup', this.onKey, { capture: true });
   }
 
   /**
@@ -312,10 +358,10 @@ export class MapLens {
     };
     on('pointerenter', (e) => this.pointerMove(e));
     on('pointermove', (e) => this.pointerMove(e));
-    on('pointerleave', (e) => e.pointerType !== 'touch' && this.leave());
-    on('pointerdown', (e) => e.pointerType === 'touch' && this.touchDown(e));
-    on('pointerup', (e) => e.pointerType === 'touch' && this.touchEnd());
-    on('pointercancel', (e) => e.pointerType === 'touch' && this.touchEnd());
+    on('pointerleave', (e) => !holds(e) && this.leave());
+    on('pointerdown', (e) => holds(e) && this.touchDown(e));
+    on('pointerup', (e) => holds(e) && this.touchEnd());
+    on('pointercancel', (e) => holds(e) && this.touchEnd());
     // While the lens shows under a finger the page must not scroll, and a
     // long press must not open the context menu or the text selection.
     on('touchmove', (e) => this.touch?.shown && e.cancelable && e.preventDefault(), { passive: false });
@@ -516,6 +562,8 @@ export class MapLens {
     this.offArt?.();
     this.win?.removeEventListener?.('scroll', this.onScroll, { capture: true });
     this.win?.removeEventListener?.('blur', this.onBlur);
+    this.win?.removeEventListener?.('keydown', this.onKey, { capture: true });
+    this.win?.removeEventListener?.('keyup', this.onKey, { capture: true });
     this.cancelJob();
     if (this.frame) this.win?.cancelAnimationFrame?.(this.frame);
     this.frame = 0;
@@ -523,12 +571,15 @@ export class MapLens {
     this.el?.remove();
     this.el = null;
     this.canvas = null;
+    this.hint?.remove();
+    this.hint = null;
+    this.hintShown = false;
   }
 
   // ---- Pointer --------------------------------------------------------------------
 
   pointerMove(e) {
-    if (e.pointerType === 'touch') {
+    if (holds(e)) {
       const t = this.touch;
       if (!t || e.pointerId !== t.id) return;
       if (!t.shown) {
@@ -541,8 +592,17 @@ export class MapLens {
     }
     const moved = !this.pointer || this.pointer.touch || this.pointer.x !== e.clientX || this.pointer.y !== e.clientY;
     if (e.type === 'pointermove' && moved) this.armed = true;
+    this.magnify = magnifyHeld(e, this.mac);
     this.pointer = { x: e.clientX, y: e.clientY, touch: false };
     this.follow();
+  }
+
+  /** A key went down or up anywhere: the magnify key under a resting mouse shows or hides the lens. */
+  key(e) {
+    const held = magnifyHeld(e, this.mac);
+    if (held === this.magnify) return;
+    this.magnify = held;
+    if (this.pointer && !this.pointer.touch) this.follow();
   }
 
   touchDown(e) {
@@ -576,12 +636,12 @@ export class MapLens {
 
   wheel(e) {
     if (!this.visible || !this.armed || !this.pointer || this.pointer.touch) return;
+    // The lens's alone, also at a limit: with the key held it would zoom the page.
+    e.preventDefault();
     const scale = this.gameScale();
     const zoom = this.zoom();
-    const next = wheelZoom(zoom, e.deltaY, e.deltaMode, zoomLimits(scale));
-    // At a limit the wheel is the page's again.
+    const next = wheelZoom(zoom, e.deltaY, e.deltaMode, lensZoomLimits(scale));
     if (Math.abs(next - zoom) < 1e-9) return;
-    e.preventDefault();
     this.factor = next / baseZoom(scale);
     this.requestFrame();
   }
@@ -589,7 +649,7 @@ export class MapLens {
   /** CSS px per world pixel in the lens. */
   zoom() {
     const scale = this.gameScale();
-    const { min, max } = zoomLimits(scale);
+    const { min, max } = lensZoomLimits(scale);
     return clamp(baseZoom(scale) * this.factor, min, max);
   }
 
@@ -611,7 +671,10 @@ export class MapLens {
     return contentBox(img.getBoundingClientRect(), style, iw, ih);
   }
 
-  /** Move the lens to the pointer (show it), or hide it when that is not possible. */
+  /**
+   * Move the lens to the pointer (show it), or hide it when that is not
+   * possible. A mouse without the magnify key gets the hint instead.
+   */
   follow() {
     const p = this.pointer;
     if (!p || !this.source || this.source.failed || !this.target?.isConnected || !this.image) return this.hide();
@@ -619,9 +682,40 @@ export class MapLens {
     if (!p.touch && (p.x < r.left || p.y < r.top || p.x > r.right || p.y > r.bottom)) return this.hide();
     const { width, height } = this.mapSize();
     if (!(width > 0 && height > 0)) return this.hide();
+    if (!p.touch && !this.magnify) {
+      this.hideLens();
+      this.showHint(r);
+      return;
+    }
+    this.hideHint();
     this.centre = cellAt(this.pictureBox(), width, height, p.x, p.y);
     this.show();
     this.requestFrame();
+  }
+
+  /** The hint at the bottom centre of the preview's box `r` (client px). */
+  showHint(r) {
+    if (!this.hint) {
+      const el = this.doc.createElement('div');
+      el.className = 'map-lens-hint';
+      el.setAttribute('aria-hidden', 'true');
+      el.hidden = true;
+      el.textContent = lensHint(this.mac);
+      this.doc.body.append(el);
+      this.hint = el;
+    }
+    this.hint.style.setProperty('--map-lens-hint-x', `${Math.round(r.left + r.width / 2)}px`);
+    this.hint.style.setProperty('--map-lens-hint-y', `${Math.round(r.bottom)}px`);
+    if (!this.hintShown) {
+      this.hint.hidden = false;
+      this.hintShown = true;
+    }
+  }
+
+  hideHint() {
+    if (!this.hintShown) return;
+    this.hintShown = false;
+    if (this.hint) this.hint.hidden = true;
   }
 
   ensureElement() {
@@ -653,7 +747,13 @@ export class MapLens {
     this.size = size;
   }
 
+  /** Hide the lens and the hint. */
   hide() {
+    this.hideHint();
+    this.hideLens();
+  }
+
+  hideLens() {
     if (!this.visible) return;
     this.visible = false;
     if (this.el) this.el.hidden = true;
