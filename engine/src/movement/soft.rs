@@ -11,10 +11,10 @@
 //!   pushes it aside (a crowd never plugs a road), but a unit arriving at
 //!   its goal treats standing friends as walls: it stops against them
 //!   (units.rs `goal_reached`) instead of shoving the group around.
-//! - Units holding a dock, a repair pad or an ore cell are never pushed;
-//!   the unit next in line for a pad or dock reserves it before it drives
-//!   on, and the others wait where they are (units.rs `tick_repair`,
-//!   `tick_harvest`).
+//! - Units holding a dock, a repair pad or an ore cell, or waiting on
+//!   their cell in a service depot's line, are never pushed; the unit next
+//!   in line for a pad or dock reserves it before it drives on, and the
+//!   others wait (service.rs, units.rs `tick_harvest`).
 //!
 //! Every push goes through `World::try_move`, which never enters a cell
 //! the unit's locomotor cannot enter.
@@ -47,9 +47,12 @@ impl World {
         let a = &self.actors[i];
         match a.activity {
             Activity::Move if a.goal != NONE => Some((a.goal, ARRIVAL_ZONE * CELL)),
-            Activity::Repair if !self.on_repair_pad(i) => {
+            // In a service depot's line: toward its waiting cell, or the pad
+            // once called (service.rs); the corridors to it are kept free.
+            Activity::Repair => {
                 let d = self.resolve(a.depot)?;
-                Some((self.repair_pad_cell(d), QUEUE_RANGE * CELL))
+                let goal = if a.svc.slot != NONE { a.svc.slot } else { self.repair_pad_cell(d) };
+                Some((goal, QUEUE_RANGE * CELL))
             }
             Activity::Harvest if a.harv == HarvState::ToDock && !self.holds_dock(i) => {
                 let r = self.resolve(a.refinery)?;
@@ -201,7 +204,10 @@ impl World {
             }
             let a = &self.actors[i];
             // Units busy at a dock, a repair pad or an ore cell hold their spot.
-            if a.activity == Activity::Harvest && matches!(a.harv, HarvState::Unloading | HarvState::Harvesting) || self.on_repair_pad(i) {
+            if a.activity == Activity::Harvest && matches!(a.harv, HarvState::Unloading | HarvState::Harvesting)
+                || self.on_repair_pad(i)
+                || self.waits_on_slot(i)
+            {
                 continue;
             }
             let (px, py) = (px.clamp(-MAX_PUSH, MAX_PUSH), py.clamp(-MAX_PUSH, MAX_PUSH));

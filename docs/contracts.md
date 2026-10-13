@@ -1546,9 +1546,8 @@ diagonal step never cuts a blocked corner.
 - Scatter is a nudge of the unit itself (OpenRA Mobile `Scatter`).
 - The service depot's pad cells may be crossed but not stayed on
   (footprint `+`, OccupiedPassableTransitOnly): an idle unit on one moves
-  off. Vehicles sent for repair drive onto the pad; the one on it holds
-  the cell and the others wait next to it and try again (OpenRA Resupply).
-  Ore trucks dock the same way; an empty truck that finds no ore leaves the
+  off. Vehicles sent for repair wait their turn in the depot's line and
+  drive onto the pad when called (see "Service depot line" below). Ore trucks dock the same way; an empty truck that finds no ore leaves the
   dock for a cell near four cells below it (Harvester.UnblockCell), and a
   refinery's free truck belongs to that refinery.
 - A unit that other code placed (unloaded, teleported, landed from a leap,
@@ -1576,10 +1575,74 @@ so a crowd that arrived comes to rest and then does not move. A unit
 driving through a standing crowd on its way elsewhere pushes it aside; a
 unit within 4 cells (of path) of its destination stops against standing
 friends instead and arrives there, while one farther out pushes, so a big
-group funnels through a gap. Units waiting for a repair pad or a refinery
-dock stop within 3 cells of it; the next in line reserves
-the pad or dock before it drives on, so they come one at a time, and units
-holding a pad, a dock or an ore cell are never pushed.
+group funnels through a gap. Units waiting for a refinery dock stop
+within 3 cells of it; the next in line reserves the dock before it drives
+on, so they come one at a time. Units in a service depot's line wait on
+cells of their own (below). Units holding a pad, a dock or an ore cell, or
+standing on their waiting cell in a depot's line, are never pushed.
+
+### Service depot line (`engine/src/service.rs`)
+
+WebRA difference (design request): OpenRA serves one unit at a time on a
+service depot's pad but keeps no line. Ground units sent there together
+crowd the pad and push for it (Resupply moves onto the host with
+MoveCooldownHelper retries), and an aircraft cannot be sent to a depot
+another aircraft has reserved (Aircraft.ResolveOrder: Reservable.IsAvailableFor,
+blocked cursor). WebRA keeps a line per depot, the same in both movement
+models, single player, skirmish and multiplayer:
+
+- Who repairs where follows OpenRA RA's rules: vehicles (harvesters and the
+  MCV included) and all aircraft, planes and helicopters, have
+  `Repairable RepairActors: fix` (`^Vehicle`, `^Plane`, `^Helicopter`);
+  ships use RepairableNear at the naval yard and sub pen and are repaired
+  side by side there, without a line (as in OpenRA); infantry are not
+  repaired by structures in RA (medics heal them, a captured hospital heals
+  nearby infantry). A smart order (or the bulk repair order) on an own
+  depot sends the selected units that can be repaired there; with nothing
+  to repair (or, minelayers, to reload) the cursor is blocked (cursor 15)
+  and the click does nothing, as OpenRA ignores the Repair order then.
+- On its way a unit joins the line within 6 cells of the pad, or where it
+  is held up on the way while the pad can still be reached. Its ticket is
+  the tick it joined, ties by actor index: first come first served, the
+  same order on every machine. A unit that cannot reach the pad at all
+  stops.
+- Ground units wait on a cell of their own: the nearest ring around the
+  pad from 2 cells out first (up to 8), there the cell nearest the unit,
+  never on the four corridors straight out of the pad (3 cells; the way on
+  and off the pad), nor on a structure, nor where someone stands or waits.
+  Held up on the way to it they wait where they are when that is such a
+  cell, else they take another. Helicopters hover over every other cell of
+  the rings 4 to 10 cells out (OpenRA WaitDistanceFromResupplyBase 4c0);
+  planes circle the depot within WaitDistanceFromResupplyBase.
+- When the pad is free the first in line is called and reserves it
+  (`dock_user`); vehicles drive onto it, helicopters land on it, planes
+  glide down onto it. Something else in the way: it tries again (OpenRA
+  RetryIfDestinationBlocked). Repair is OpenRA's Resupply.RepairTick: the
+  StartRepairing notification at the first step, then a step every
+  `Interval + 1` ticks (FIX: 8) heals HpPerStep (1000) for
+  `max(1, HpPerStep * Cost * ValuePercentage / (MaxHP * 100))` (20 %);
+  without the money the insufficient funds notification plays and it tries
+  again two ticks later: the unit stays on the pad and the line waits, as
+  in OpenRA. A minelayer also reloads its mines there before it leaves.
+- Done (UnitRepaired notification), it leaves for the depot's rally point
+  (OpenRA Resupply with RallyPoint: MoveTo(cell, 1)); a rally point is set
+  on a selected own depot like on a factory and drawn the same way. Without
+  one, ground units drive to the nearest free cell next to the depot they
+  can reach without passing a standing unit, south first, out of the
+  corridors and the waiting cells (OpenRA moves them just off the pad);
+  helicopters hover over such a spot (OpenRA: TakeOff above the pad);
+  planes take off and fly home to a free airfield, circling until one is
+  free (OpenRA: TakeOff, then FlyIdle circling over the depot). Leaving frees the
+  pad for the next one. While a unit holds the pad, idle own ground units
+  standing on a corridor or the footprint move to such a spot too.
+- A unit that no longer needs anything (healed by a mechanic) leaves the
+  line and stops. When the depot is destroyed, sold or captured, everyone
+  in its line stops where it is and aircraft on it take off (OpenRA
+  Resupply with an invalid host). A new order takes a unit out of the line.
+- Tickets and waiting cells are part of the state hash. Measured on an open
+  map (tests_depot_queue.rs): ten Heavy Tanks at a quarter of their hit
+  points are repaired in about 140 seconds, ten Hinds in about 55, ten
+  MiGs in about 56, one after another in the order they arrived.
 
 ### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
 
@@ -1951,7 +2014,7 @@ replaces that attack. A map's rules that set `AbortOnResupply: true` get
 OpenRA's behaviour: the attack and the orders queued after it end while
 they rearm, and they wait at the base (or hover after `TakeOffOnResupply`)
 for a new order. On an attack-move they never resupply: the attack ends,
-the move goes on, and an aircraft with an empty AmmoPool picks no targets. Damaged helicopters land on the service depot to be repaired.
+the move goes on, and an aircraft with an empty AmmoPool picks no targets. Damaged helicopters and planes land on the service depot to be repaired, in turn ("Service depot line").
 Shot down in the air they fall and explode on impact.
 
 Orders (`Order` in engine/src/world.rs, validated by `packages/protocol`):

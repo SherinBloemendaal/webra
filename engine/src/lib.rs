@@ -69,6 +69,7 @@ pub mod rules;
 pub mod rules_options;
 pub mod selection;
 mod sell;
+mod service;
 pub mod smudges;
 pub mod sound_events;
 #[cfg(any(test, feature = "stack-probe"))]
@@ -98,6 +99,8 @@ mod tests_combat;
 mod tests_commands;
 #[cfg(test)]
 mod tests_debug;
+#[cfg(test)]
+mod tests_depot_queue;
 #[cfg(test)]
 mod tests_doors;
 #[cfg(test)]

@@ -141,6 +141,8 @@ pub struct Actor {
     // Repair
     pub depot: u32,
     pub repair_timer: i32,
+    /// Place in the service depot's line (service.rs).
+    pub svc: crate::service::ServiceState,
 
     // Buildings
     pub cx: i32,
@@ -276,6 +278,7 @@ impl Actor {
             refinery: NONE,
             depot: NONE,
             repair_timer: 0,
+            svc: Default::default(),
             cx: 0,
             cy: 0,
             rally: None,
@@ -2216,12 +2219,13 @@ impl World {
                 self.actors[r].dock_user = NONE;
             }
         }
-        // The service depot's pad (units.rs tick_repair).
+        // The service depot's pad and line (service.rs).
         if let Some(d) = self.resolve(self.actors[i].depot) {
             if self.actors[d].dock_user == me {
                 self.actors[d].dock_user = NONE;
             }
         }
+        self.actors[i].svc = Default::default();
         self.heli_cancel(i);
     }
 
@@ -2436,9 +2440,15 @@ impl World {
                     if b.refinery.is_some() && any_harv {
                         return SmartAction::Dock;
                     }
-                    // Vehicles repair on a service depot pad, ships near a naval yard (Repairable(Near).RepairActors).
+                    // Vehicles and planes repair on a service depot pad, ships near a naval
+                    // yard (Repairable(Near).RepairActors); with nothing to repair or rearm
+                    // there the cursor is blocked and the click does nothing (OpenRA
+                    // EnterBlockedCursor, Repairable ignores the order).
                     if b.repairs.is_some() && units.iter().any(|&u| self.repairs_at(u, t)) {
-                        return SmartAction::Repair;
+                        if units.iter().any(|&u| self.repairs_at(u, t) && self.needs_service(u, t)) {
+                            return SmartAction::Repair;
+                        }
+                        return SmartAction::EnterBlocked;
                     }
                 }
             }
@@ -2683,6 +2693,9 @@ impl World {
                 }
                 mix(a.repair_ticks as i64);
                 mix(a.powered_off as i64);
+                // The service depot's line (service.rs).
+                mix(a.repair_timer as i64);
+                a.svc.mix(&mut mix);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
