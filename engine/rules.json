@@ -4811,6 +4811,13 @@
       "camera_range": 10240,
       "camera_spawn_advance": 25,
       "camera_remove_delay": 25,
+      "flight_velocity": 512,
+      "spawn_offset": [
+       1024,
+       427,
+       0
+      ],
+      "beacon_remove_advance": 25,
       "one_shot": false,
       "display_timer": [
        "ally",
@@ -6943,6 +6950,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 30,
     "center_offset": [
      0,
@@ -7109,6 +7117,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 50,
     "center_offset": [
      0,
@@ -7274,6 +7283,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 100,
     "center_offset": [
      0,
@@ -7440,6 +7450,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 200,
     "center_offset": [
      0,
@@ -7606,6 +7617,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 180,
     "center_offset": [
      0,
@@ -7761,6 +7773,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 120,
     "center_offset": [
      0,
@@ -7927,6 +7940,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 50,
     "center_offset": [
      0,
@@ -8093,6 +8107,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 150,
     "center_offset": [
      0,
@@ -8258,6 +8273,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 150,
     "center_offset": [
      0,
@@ -8422,6 +8438,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 250,
     "center_offset": [
      0,
@@ -8578,6 +8595,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 200,
     "center_offset": [
      0,
@@ -19967,6 +19985,7 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
     "value": 80,
     "center_offset": [
      0,

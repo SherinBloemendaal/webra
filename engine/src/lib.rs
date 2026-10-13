@@ -990,6 +990,16 @@ impl Game {
         self.world.render_opts.set_death_art(n, &types, &ticks);
     }
 
+    /// Per actor type, the ticks its make animation plays (apps/game/js/sprites.js
+    /// `buildAtlas` returns them as `makeTicks`; 0 for art without one): a
+    /// structure shows its make pose that long, then its body and the layers
+    /// drawn over it (the War Factory's roof and door, OpenRA
+    /// WithProductionDoorOverlay after WithMakeAnimation). Presentation only:
+    /// the state hash is the same either way.
+    pub fn set_make_ticks(&mut self, ticks: Vec<u32>) {
+        self.world.render_opts.make_ticks = ticks;
+    }
+
     /// The sprite slots drawn from the original graphics and what they need
     /// (apps/game/js/content/atlas.js originalSlotInfo, docs/contracts.md
     /// section 8): those slots are drawn the OpenRA way (rotor sequences,

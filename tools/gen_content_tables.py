@@ -27,7 +27,7 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - SEQUENCES[image][sequence] = normalized sequence fields (see SequenceDef in
   apps/game/js/content/sequences.js).
 - ACTOR_ART[actor id] = { image, body: {pose: sequence}, second: {pose:
-  sequence} | null, wall?, overlay?, bib?, cameo, muzzle? } (or only { image,
+  sequence} | null, wall?, overlay?, bib?, cameo, fakeMark?, muzzle? } (or only { image,
   muzzle } for an actor without an original body): which sequence each pose of
   (infantry: stand variants, idle animations and deaths too) of
   the engine's body slot (2t) and second slot (2t + 1: turret, prone for
@@ -45,6 +45,7 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - RESOURCES: ore and gem overlay sequences (misc.yaml "resources").
 - SPECIAL_ART, EXPLOSIONS, EXPLOSION_ART, MUZZLE_ACTORS: the engine's special
   sprites, explosions and muzzle flashes with original art.
+- FAKE_ACTORS: the fake structures, whose cameos carry a FAKE mark.
 - CURSOR_ART: OpenRA's cursors (data/source/cursors.yaml) in mouse.shp.
 - GRAPHICS_FILES: every file name the tables can use (what the installer keeps).
 - render-facts.js RENDER_FACTS: what OpenRA draws per actor (the art audit).
@@ -177,7 +178,8 @@ ORIGINAL_SHORTER = {
     'gunfire2.shp': ('gunfire.shp', 3),
 }
 # OpenRA's files with no original counterpart: sequences using them are left
-# out (fake structures show the real cameo, OpenRA's own units, the Mobile
+# out (fake structures show the real cameo with WebRA's FAKE mark over it,
+# ACTOR_ART fakeMark; OpenRA's own units, the Mobile
 # Flak and the Black Hawk, are WebRA's own pixel art, tools/gen_pixel_art.py,
 # small bibs and the refinery top are not drawn).
 NO_ORIGINAL = {
@@ -304,9 +306,13 @@ SPECIAL_ART = {
     'veterancy.1': None,
     'veterancy.2': None,
     'veterancy.3': None,
-    # Repair wrench (select.shp repair frame) and power off sign (speed.shp
-    # disabled frame, OpenRA's "powerdown" image).
-    'decorations.0': ['select', 'repair', 'loop'],
+    # The repair wrench: OpenRA's WithBuildingRepairDecoration draws its own
+    # allyrepair.shp in the colour of each repairing player in turn (Palette
+    # player, IsPlayerPalette), so allied repairers are told apart; Red
+    # Alert's select.shp wrench has no remap colours. WebRA's team coloured
+    # wrench always. The power off sign: speed.shp disabled frame, OpenRA's
+    # "powerdown" image.
+    'decorations.0': None,
     'decorations.1': ['powerdown', 'disabled', 'loop'],
     # The neutral world (engine/src/neutral.rs): trees on fire (^Tree
     # WithDamageOverlay@SmallBurn, @MediumBurn, @LargeBurn: start, loop and
@@ -328,6 +334,10 @@ SPECIAL_ART = {
     # facings); every other missile is a DRAGON rocket ('missile' above).
     # engine/render.json `missiles` names the weapons drawn with it.
     'fx.3': ['missile', 'idle', 'loop'],
+    # The atom bomb (NukePower MissileImage atomic, MissileUp up and
+    # MissileDown down, PlayRepeating): rising, then falling (abilities.rs).
+    'fx.4': ['atomic', 'up', 'loop'],
+    'fx.5': ['atomic', 'down', 'loop'],
     # Leftovers (engine/src/husks.rs LEFTOVER_*): the fire on husks and
     # scorch marks (OpenRA Husk WithIdleOverlay@Burns: fire 1), crater smoke
     # (SmudgeLayer SmokeType: smoke_m, played once), the PRIMARY tag
@@ -616,6 +626,13 @@ def rules_of(aid):
         if name.upper() == aid.upper():
             return tree
     return {}
+
+
+def is_fake(tree):
+    """Whether an actor is a fake structure: its build palette icon is the
+    fake-icon sequence (OpenRA fakes.yaml Buildable.Icon)."""
+    buildable = trait(tree, 'Buildable') or {}
+    return buildable.get('Icon', [''])[0] == 'fake-icon'
 
 
 def trait(tree, name):
@@ -987,10 +1004,17 @@ def actor_art(actors, seqs):
             if 'muzzle' in entry:
                 art[aid] = {'image': image, 'muzzle': entry['muzzle']}
             continue
-        fake = aid.upper() != image.upper() and kind == 'building' and use(image, 'fake-icon')
-        cameo = 'fake-icon' if fake else use(image, 'icon')
+        # Fakes (Buildable.Icon fake-icon): Red Alert's own fake cameo where it
+        # has one (dome, construction yard, naval yard, sub pen, war factory);
+        # OpenRA drew the others itself (NO_ORIGINAL), so those show the real
+        # cameo with WebRA's FAKE mark over it (`fakeMark`, js/content/cameos.js).
+        fake = is_fake(tree)
+        fake_icon = fake and use(image, 'fake-icon')
+        cameo = 'fake-icon' if fake_icon else use(image, 'icon')
         if cameo:
             entry['cameo'] = cameo
+            if fake and not fake_icon:
+                entry['fakeMark'] = True
         art[aid] = entry
     return art, used
 
@@ -1531,6 +1555,13 @@ def main():
         ' * engine draws explosion k with the slot after the muzzle slots plus k).',
         ' */',
         f'export const EXPLOSIONS = {js(render["explosions"])};',
+        '',
+        '/**',
+        ' * Fake structures (OpenRA fakes.yaml: Buildable.Icon fake-icon): their',
+        ' * cameos carry a FAKE mark, Red Alert\'s own fake cameo or WebRA\'s mark',
+        ' * over the real one (js/art/cameo.js paintFakeMark).',
+        ' */',
+        f'export const FAKE_ACTORS = {js(sorted(a["id"] for a in rules["actors"] if is_fake(rules_of(a["id"]))))};',
         '',
         '/** Actors with muzzle flashes (engine/render.json `actors[].muzzles`): WebRA draws its own flash for them. */',
         f'export const MUZZLE_ACTORS = {js(sorted(a for a, e in render["actors"].items() if e.get("muzzles")))};',

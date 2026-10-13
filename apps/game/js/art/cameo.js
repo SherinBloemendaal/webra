@@ -96,3 +96,44 @@ export function paintCameoShadow(ctx, cx, cy, rx, ry) {
   ctx.fill();
   ctx.restore();
 }
+
+/** Block letters of the FAKE mark, five by seven cells, '#' lit. */
+const FAKE_GLYPHS = [
+  ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+  ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+];
+
+/**
+ * The FAKE mark across a fake structure's cameo (`w` x `h` canvas pixels):
+ * a dark band through the middle with "FAKE" in red block letters over the
+ * real structure, so the build palette tells a fake from the real thing
+ * (OpenRA's Buildable.Icon fake-icon). Drawn over WebRA's cameos of every
+ * fake and over the original real cameo of a fake Red Alert has no fake
+ * cameo for (js/content/cameos.js). WebRA's own design; block letters, so
+ * it needs no font and stays crisp at any size.
+ */
+export function paintFakeMark(ctx, w, h) {
+  const cols = FAKE_GLYPHS.length * 6 - 1;
+  const u = Math.max(1, Math.floor(Math.min(h * 0.055, (w * 0.82) / cols)));
+  const tw = cols * u;
+  const th = 7 * u;
+  const o = Math.max(1, Math.round(u / 2));
+  const x0 = Math.round((w - tw) / 2);
+  const y0 = Math.round((h - th) / 2);
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, y0 - 2 * o, w, th + 4 * o);
+  for (const [style, grow] of [['#120404', o], ['#ff3a22', 0]]) {
+    ctx.fillStyle = style;
+    FAKE_GLYPHS.forEach((rows, g) => {
+      rows.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) {
+          if (row[x] === '#') ctx.fillRect(x0 + (g * 6 + x) * u - grow, y0 + y * u - grow, u + 2 * grow, u + 2 * grow);
+        }
+      });
+    });
+  }
+  ctx.restore();
+}

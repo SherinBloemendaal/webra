@@ -6,9 +6,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAtlas, animationPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
+import { buildAtlas, animationPlan, workingPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
+import { MODE, POSE, POSE_COUNT, onceTicks, packSprite } from '../js/content/sequences.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
-import { BUILDING_ANIM } from '../js/art/animated.js';
+import { BUILDING_ANIM, BUILDING_WORKING } from '../js/art/animated.js';
 import { worldDraw } from '../js/art/world.js';
 import { pixelSlots } from '../js/art/pixel.js';
 import init, { Game } from '../pkg/webra_sim.js';
@@ -273,9 +274,12 @@ test('the atlas holds every animation once: head slots point at their frames, fo
     const plan = animationPlan(actors, listLength);
     const entry = (i) => Array.from(frames.slice(i * FRAME_FLOATS, (i + 1) * FRAME_FLOATS));
     const keys = new Set(plan.map((p) => p.key));
-    const total = [...keys].reduce((n, k) => n + BUILDING_ANIM[k].frames, 0);
-    // Then the pose tables of WebRA's pixel art (art/pixel.js): descriptors and their frames, once per table.
-    let tables = 0;
+    const working = workingPlan(actors, listLength);
+    const workKeys = new Set(working.map((p) => p.key));
+    const total = [...keys].reduce((n, k) => n + BUILDING_ANIM[k].frames, 0) + [...workKeys].reduce((n, k) => n + BUILDING_WORKING[k].frames, 0);
+    // Then the pose tables of WebRA's pixel art (art/pixel.js): descriptors and their frames, once per table;
+    // and the working layers' descriptors.
+    let tables = workKeys.size * POSE_COUNT;
     for (const art of new Set(pixelSlots(actors).values())) {
       tables += art.poses.length + [...new Set(art.poses)].reduce((n, d) => n + d.frames.length, 0);
     }
@@ -299,9 +303,9 @@ test('the atlas holds every animation once: head slots point at their frames, fo
     const start = (id) => overlays[actors.findIndex((a) => a.id.toUpperCase() === id)];
     assert.ok(start('POWR') > 0);
     assert.equal(start('FPWR'), start('POWR'));
-    // Everything else: no overlay, no animation.
+    // Everything else: no overlay, no animation (working layers are pose tables, below).
     actors.forEach((a, i) => {
-      if (!plan.some((p) => p.actor === i)) assert.equal(overlays[i], 0, a.id);
+      if (!plan.some((p) => p.actor === i) && !working.some((p) => p.actor === i)) assert.equal(overlays[i], 0, a.id);
     });
     for (let i = 0; i < listLength; i++) {
       if (!plan.some((p) => p.head === i)) assert.equal(frames[i * FRAME_FLOATS + 9], 0, `sprite ${i} is not animated`);
@@ -311,6 +315,52 @@ test('the atlas holds every animation once: head slots point at their frames, fo
   } finally {
     delete globalThis.document;
   }
+});
+
+test('the silo hatch is a working layer the engine plays once for a launch, at rest otherwise', () => {
+  const sizes = [];
+  globalThis.document = stubDocument(sizes);
+  try {
+    const { frames, overlays, makeTicks } = buildAtlas(actors);
+    // The working layers' frames come after the animated layers' frames.
+    const listLength = spriteList(actors).length;
+    const anims = new Set(animationPlan(actors, listLength).map((p) => p.key));
+    const plan = workingPlan(actors, listLength + [...anims].reduce((n, k) => n + BUILDING_ANIM[k].frames, 0));
+    const ids = plan.map((p) => actors[p.actor].id.toUpperCase()).sort();
+    assert.deepEqual(ids, ['MSLF', 'MSLO'], 'the silo and its fake (which never launches)');
+    const entry = (i) => Array.from(frames.slice(i * FRAME_FLOATS, (i + 1) * FRAME_FLOATS));
+    for (const p of plan) {
+      // The engine's still frame: the layer slot's STILL pose (a pose layer, engine/src/overlays.rs).
+      assert.equal(overlays[p.actor], packSprite(p.head, POSE.STILL, 1));
+      const head = entry(p.head);
+      const [base, count] = head.slice(12, 14);
+      assert.equal(count, POSE_COUNT);
+      const desc = (pose) => entry(base + pose).slice(8, 16);
+      const { start, length, fps } = BUILDING_WORKING.MSLO.active;
+      assert.deepEqual(desc(POSE.ACTIVE).slice(0, 4), [p.start + start, length, fps, MODE.ONCE], 'opens and shuts once');
+      assert.deepEqual(desc(POSE.DAMAGED_ACTIVE).slice(0, 4), [p.start + start, length, fps, MODE.ONCE]);
+      assert.deepEqual(desc(POSE.IDLE).slice(0, 4), [p.start, 1, 0, MODE.INDEX], 'at rest: frame 0');
+      assert.deepEqual(desc(POSE.STILL).slice(0, 4), [p.start, 1, 0, MODE.STILL]);
+      // The silo plays the same 7 frames at 80 ms as OpenRA's active sequence: 14 ticks.
+      assert.equal(onceTicks({ length, fps }), 14);
+    }
+    // WebRA's vector structures have no make animation: the engine shows them built at once.
+    actors.forEach((a, t) => assert.equal(makeTicks[t], 0, a.id));
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test('the silo hatch frames: shut draws nothing over the structure, open shows the shaft', () => {
+  const w = BUILDING_WORKING.MSLO;
+  const draws = (f) => {
+    const log = [];
+    w.draw(fakeContext(log, null), passes({ team: 0 }).colour, f);
+    return log.join('|');
+  };
+  assert.equal(draws(0), '', 'at rest the structure shows its own shut hatch');
+  for (let f = 1; f < w.frames; f++) assert.ok(draws(f).includes('fill:#141210'), `frame ${f}: the dark shaft`);
+  assert.notEqual(draws(1), draws(4));
 });
 
 test('the frame table matches the Frame struct of the sprite shader', () => {
@@ -356,7 +406,15 @@ test('cameos are deterministic and follow the requested size and team colour', (
 });
 
 test('cameo aliases reuse the base art and the cache hands out one canvas per key', () => {
-  assert.equal(recordCameo('FPWR', 'building')[1], recordCameo('POWR', 'building')[1]);
+  assert.equal(recordCameo('AFLD.Ukraine', 'building')[1], recordCameo('AFLD', 'building')[1]);
+  // Fakes: the real structure's cameo with the FAKE mark over it (every fake, OpenRA Buildable.Icon fake-icon).
+  for (const [fake, real] of [['FPWR', 'POWR'], ['TENF', 'TENT'], ['FIXF', 'FIX'], ['FAPW', 'APWR'], ['ATEF', 'ATEK'], ['PDOF', 'PDOX'], ['MSLF', 'MSLO'], ['DOMF', 'DOME'], ['WEAF', 'WEAP'], ['SYRF', 'SYRD'], ['SPEF', 'SPEN'], ['FACF', 'FACT']]) {
+    const [drawn, log] = recordCameo(fake, 'building');
+    const base = recordCameo(real, 'building')[1];
+    assert.ok(drawn && log.startsWith(base) && log.length > base.length, `${fake}: ${real}'s cameo, then the mark`);
+    assert.ok(log.slice(base.length).includes('fill:#ff3a22'), `${fake}: the red FAKE letters`);
+    assert.ok(!base.includes('fill:#ff3a22'), `${real} is not marked`);
+  }
   globalThis.document = {
     createElement: () => {
       const canvas = { width: 0, height: 0 };
@@ -375,6 +433,8 @@ test('cameo aliases reuse the base art and the cache hands out one canvas per ke
     assert.notEqual(getCameo('POWR', 48, { team: [1, 0, 0] }), a);
     assert.equal(getCameo('NOSUCH', 48), null);
     assert.equal(getCameo('POWR', 48, { height: 36 }).height, 36);
+    assert.notEqual(getCameo('FPWR', 48), a, 'a fake has a cameo of its own (the FAKE mark)');
+    assert.equal(getCameo('fpwr', 48), getCameo('FPWR', 48));
   } finally {
     delete globalThis.document;
   }

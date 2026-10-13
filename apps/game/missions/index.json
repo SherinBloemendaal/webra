@@ -471,7 +471,7 @@
      "id": "allies-10a",
      "title": "10a: Suspicion",
      "file": "allies-10a.json",
-     "sha256": "ee2fb20adccaefa00d2c9e79c8ef355e2e1c21b72e723ff4840d43eb8847e399",
+     "sha256": "07d2bb1071b519fd2b017bf1cff8a79d8beda65479eaef6a8df586a6526f24c7",
      "faction": "allies",
      "briefing": "Kosygin has indicated that this is the site of Stalin's main atomic weapons plant. Use extreme care in approaching the Soviet base -- we don't know if any atomic bombs are armed. Take the facility offline and destroy any atomic weapons that exist.",
      "options": {
@@ -1575,7 +1575,7 @@
      "id": "situation-critical",
      "title": "Situation Critical",
      "file": "situation-critical.json",
-     "sha256": "e96ce93a6097c03ff6b317f34d4d734a2f69ce8789e8c75ce2cb34239d5686a8",
+     "sha256": "82b0520cb7a5ad3ac06418cedb20c16c317a9860111c3f8bb9d9949d2a54e21d",
      "faction": "soviet",
      "briefing": "A radical faction of our forces has stolen a biological weapon, threatening to use it on Allied emplacements. Since the weapon is highly unstable, it could destroy us all if released.\n\nThe facility must be destroyed, but the weapon must be neutralized first. Destroy the island's defenses, then use Volkov to assist our scientist in reaching the bio-research center. If either are killed before the weapon is neutralized, the mission is a failure.\n\nOnce the scientist completes his mission, destroy the base.",
      "options": {},

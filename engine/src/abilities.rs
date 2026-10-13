@@ -102,23 +102,53 @@ pub struct AbilityState {
     pub gps_at: Vec<Option<u32>>,
 }
 
-/// An atom bomb (NukePower) on its way: up from the silo, down on the target.
+/// An atom bomb (NukePower) on its way (OpenRA NukeLaunch): straight up
+/// from the silo for half the flight time, then straight down on the target,
+/// at FlightVelocity both ways.
 #[derive(Clone, Debug)]
 pub struct Nuke {
     pub owner: u8,
-    /// Launch point (the silo) and target, world units.
+    /// Where it rises (the silo's centre plus SpawnOffset) and the target, world units.
     pub sx: i32,
     pub sy: i32,
     pub x: i32,
     pub y: i32,
     pub weapon: u16,
-    /// Tick it leaves the silo, tick it lands.
+    /// Tick it leaves the silo (MissileDelay after the order) and tick it
+    /// lands (FlightDelay after that); it turns halfway, `top` world units up.
     pub launch: u32,
     pub impact: u32,
-    /// Target camera for the owner (CameraRange) and its timing.
+    pub top: i32,
+    /// The target camera for the owner and allies (CameraRange): from
+    /// `camera_at` for `camera_ticks` ticks.
     pub camera_range: i32,
-    pub camera_advance: i32,
-    pub camera_remove: i32,
+    pub camera_at: u32,
+    pub camera_ticks: i32,
+    /// Last tick the target beacon shows (DisplayBeacon: FlightDelay less
+    /// BeaconRemoveAdvance after the order).
+    pub beacon_until: u32,
+}
+
+impl Nuke {
+    /// Ticks of the climb (OpenRA NukeLaunch `turn`: half the flight time).
+    pub fn turn(&self) -> u32 {
+        (self.impact - self.launch) / 2
+    }
+
+    /// Where the missile is after tick `tick` (OpenRA NukeLaunch.Tick with
+    /// `ticks = tick - launch`): x, y and height in world units, and whether
+    /// it falls. None before it left the silo.
+    pub fn position(&self, tick: u32) -> Option<(i32, i32, i32, bool)> {
+        let j = tick.checked_sub(self.launch)?.min(self.impact - self.launch) as i64;
+        let (turn, flight) = (self.turn() as i64, (self.impact - self.launch) as i64);
+        let top = self.top as i64;
+        Some(if j < turn {
+            // WPos.LerpQuadratic(ascendSource, ascendTarget, 0, ticks, turn): a straight line.
+            (self.sx, self.sy, (top * j / turn) as i32, false)
+        } else {
+            (self.x, self.y, (top - top * (j - turn) / (flight - turn).max(1)) as i32, true)
+        })
+    }
 }
 
 /// OpenRA terrain type name of a WebRA terrain class (map.rs `Terrain::name`).
@@ -1038,30 +1068,32 @@ impl World {
                 sink.sprite(sprites, r.radians((self.tick % 64) as f32 * 0.1));
             }
         }
-        // Atom bombs: up from the silo, then down on the target; a beacon marks
-        // the target for the owner and allies (DisplayBeacon).
+        // Atom bombs: up from the silo, then down on the target (the `up` and
+        // `down` sequences of MissileImage, OpenRA NukeLaunch); a beacon marks
+        // the target for the owner and allies until BeaconRemoveAdvance
+        // before the flight time is up (DisplayBeacon).
         for n in &self.abil.nukes {
-            if self.render_allied(n.owner, player) {
+            if self.render_allied(n.owner, player) && self.tick <= n.beacon_until {
                 let (bx, by) = (px(n.x), px(n.y));
                 if sink.visible([bx, by], [bx, by], 32.0) {
                     let pulse = 0.6 + 0.4 * ((self.tick % 20) as f32 / 20.0);
                     sink.sprite(sprites, SpriteRec::at(bx, by, 32.0).look(ids.abilities_base + 5.0, n.owner as f32, 1.0, pulse, 0.0));
                 }
             }
-            if self.tick < n.launch {
+            let Some((mx, my, z, falling)) = n.position(self.tick) else { continue };
+            // Screen point of a world position: the height lifts it (classic 2D view).
+            let at = |(x, y, z): (i32, i32, i32)| [px(x), px(y) - px(z)];
+            let to = at((mx, my, z));
+            // From last tick's point, unless it just left the silo or turned over the target.
+            let from = match n.position(self.tick.wrapping_sub(1)) {
+                Some((x, y, z, f)) if f == falling && self.tick > n.launch => at((x, y, z)),
+                _ => to,
+            };
+            if !self.render_sees_cell(player, self.cell_index(mx, my)) || !sink.visible(from, to, 48.0) {
                 continue;
             }
-            let half = (n.impact - n.launch) / 2;
-            let t = self.tick - n.launch;
-            let (mx, my, ang, lift) = if t < half {
-                (n.sx, n.sy, -std::f32::consts::FRAC_PI_2, px(CELL * 12) * t as f32 / half.max(1) as f32)
-            } else {
-                (n.x, n.y, std::f32::consts::FRAC_PI_2, px(CELL * 12) * (n.impact - self.tick) as f32 / half.max(1) as f32)
-            };
-            let (x, y) = (px(mx), px(my) - lift);
-            if self.render_sees_cell(player, self.cell_index(mx, my)) && sink.visible([x, y], [x, y], 32.0) {
-                sink.sprite(sprites, SpriteRec::at(x, y, 32.0).look(ids.missile, n.owner as f32, 2.0, 1.0, 0.0).radians(ang));
-            }
+            let sprite = ids.fx_base + if falling { crate::fx::FX_NUKE_DOWN } else { crate::fx::FX_NUKE_UP };
+            sink.sprite(sprites, SpriteRec::moving(from, to, 48.0).look(sprite, n.owner as f32, 1.0, 1.0, 0.0));
         }
         // GPS: enemy units under fog show as dots (GpsDot).
         if self.has_gps(player) {
@@ -1309,8 +1341,12 @@ impl World {
         fired
     }
 
-    /// Atom bomb (NukePower): leaves a powered silo after MissileDelay and
-    /// lands FlightDelay ticks later.
+    /// Atom bomb (NukePower, OpenRA NukeLaunch): leaves a powered silo
+    /// MissileDelay ticks after the effect's first tick (the tick after the
+    /// order) and lands FlightDelay ticks after that. The camera over the
+    /// target (RevealShroudEffect) and the beacon count from the order:
+    /// the camera opens FlightDelay less CameraSpawnAdvance ticks after it
+    /// and stays CameraSpawnAdvance plus CameraRemoveDelay ticks.
     pub(crate) fn fire_nuke(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32) -> bool {
         let Some(w) = info.missile_weapon else { return false };
         let silo = (0..self.actors.len()).find(|&i| {
@@ -1322,21 +1358,30 @@ impl World {
                 && self.rules.actors[a.ty as usize].abilities.support_powers.as_ref().is_some_and(|l| l.iter().any(|p| p.key == info.key))
         });
         let Some(silo) = silo else { return false };
-        // The silo opens (fx.rs, presentation only).
+        // The silo opens (WithSupportPowerActivationAnimation; fx.rs, presentation only).
         self.note_launch(silo);
-        let launch = self.tick + info.missile_delay.max(0) as u32;
+        let flight = info.flight_delay.max(2) as u32;
+        let turn = flight / 2;
+        // SpawnOffset through BodyOrientation.LocalToWorld (classic perspective
+        // fudge, CameraPitch 40 degrees): (right, -sin(pitch) * forward).
+        let off = |k: usize| info.spawn_offset.get(k).copied().unwrap_or(0);
+        let (sx, sy) = (self.actors[silo].x + off(1), self.actors[silo].y - crate::render::CLASSIC_PITCH_SIN_1024 * off(0) / 1024);
+        let fired = self.tick;
+        let launch = fired + info.missile_delay.max(0) as u32 + 1;
         self.abil.nukes.push(Nuke {
             owner: player,
-            sx: self.actors[silo].x,
-            sy: self.actors[silo].y,
+            sx,
+            sy,
             x,
             y,
             weapon: w as u16,
             launch,
-            impact: launch + info.flight_delay.max(1) as u32,
+            impact: launch + flight,
+            top: (info.flight_velocity as i64 * (flight - turn) as i64).min(i32::MAX as i64) as i32,
             camera_range: info.camera_range,
-            camera_advance: info.camera_spawn_advance,
-            camera_remove: info.camera_remove_delay,
+            camera_at: (fired + flight + 1).saturating_sub(info.camera_spawn_advance.max(0) as u32),
+            camera_ticks: info.camera_spawn_advance + info.camera_remove_delay - 1,
+            beacon_until: (fired + flight).saturating_sub(info.beacon_remove_advance.max(0) as u32),
         });
         true
     }
@@ -1346,8 +1391,8 @@ impl World {
         let mut k = 0;
         while k < self.abil.nukes.len() {
             let n = self.abil.nukes[k].clone();
-            if n.camera_range > 0 && tick + n.camera_advance.max(0) as u32 == n.impact {
-                self.add_reveal(n.owner, n.x, n.y, n.camera_range, n.camera_advance + n.camera_remove);
+            if n.camera_range > 0 && tick == n.camera_at {
+                self.add_reveal(n.owner, n.x, n.y, n.camera_range, n.camera_ticks);
             }
             if tick >= n.impact {
                 self.abil.nukes.swap_remove(k);

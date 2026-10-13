@@ -731,3 +731,36 @@ fn being_captured_shuts_exits_pauses_the_yard_and_stops_vehicles() {
     assert!(!w.can_deploy(yard), "Transforms paused");
     assert!(!w.can_place(1, ty(&w, "POWR"), yx + 4, yy), "BaseProvider paused");
 }
+
+/// Fake structures (OpenRA ^FakeBuilding WithDecoration@fake, ValidRelationships
+/// default Ally): their owner sees the FAKE tag over them, selected or not;
+/// the enemy sees a real looking structure, and the tag only on a selected
+/// fake that one of its spies infiltrated (^InfiltratableFake InfiltrateForDecoration).
+#[test]
+fn fakes_carry_the_fake_tag_for_their_owner_only() {
+    use crate::render::{SpriteIds, View, SPRITE_FLOATS};
+    let mut w = flat_world();
+    let fake = building(&mut w, "FPWR", 0, 30, 30);
+    let real = building(&mut w, "POWR", 0, 36, 30);
+    assert!(w.rules.actors[w.actors[fake].ty as usize].building.as_ref().unwrap().fake_tag);
+    assert!(!w.rules.actors[w.actors[real].ty as usize].building.as_ref().unwrap().fake_tag);
+    w.update_vision();
+    w.players[1].visible.iter_mut().for_each(|v| *v = 1);
+    let tag = SpriteIds::new(w.rules.actors.len()).infantry_base + crate::infantry_render::SPRITE_FAKE_TAG;
+    let tags = |w: &World, player: u8, selected: &[u32]| {
+        let view = View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(player, 1.0, &view, selected, &mut sprites, &mut rects);
+        sprites.chunks(SPRITE_FLOATS).filter(|c| c[3] == tag).map(|c| c[0]).collect::<Vec<f32>>()
+    };
+    let fx = crate::render::px(w.actors[fake].x);
+    assert_eq!(tags(&w, 0, &[]), vec![fx], "the owner: over the fake only, without selecting it");
+    let both = [w.make_ref(fake), w.make_ref(real)];
+    assert_eq!(tags(&w, 0, &both), vec![fx], "once, selected too");
+    assert!(tags(&w, 1, &both).is_empty(), "the enemy is fooled");
+    // An enemy spy got in: that enemy sees the tag on the selected fake.
+    w.actors[fake].inf.infiltrated_by |= 1 << 1;
+    assert!(tags(&w, 1, &[]).is_empty());
+    assert_eq!(tags(&w, 1, &both), vec![fx]);
+    assert_eq!(tags(&w, 0, &both), vec![fx]);
+}

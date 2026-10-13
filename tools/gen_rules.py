@@ -1833,6 +1833,12 @@ def main():
                     power['camera_range'] = wdist(v.get('CameraRange', '0'))
                     power['camera_spawn_advance'] = int(v.get('CameraSpawnAdvance', 25))
                     power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
+                    # The missile's flight (OpenRA NukeLaunch): FlightVelocity up and
+                    # down, from SpawnOffset on the silo; the beacon goes
+                    # BeaconRemoveAdvance before the flight time is up.
+                    power['flight_velocity'] = wdist(v.get('FlightVelocity', '512'))
+                    power['spawn_offset'] = [wdist(x) for x in str(v.get('SpawnOffset', '0,0,0')).split(',')]
+                    power['beacon_remove_advance'] = int(v.get('BeaconRemoveAdvance', 25))
                 if base == 'GpsPower':
                     power['reveal_delay'] = int(v.get('RevealDelay', 0))
                 if base == 'SpawnActorPower':
@@ -1940,6 +1946,13 @@ def main():
             # building like low power does (repair.rs).
             e['building']['power_down'] = any(isinstance(v, dict) and v.get('OrderName') == 'PowerDown'
                                               for v in trait(t, 'ToggleConditionOnOrder').values())
+            # Fakes (^FakeBuilding WithDecoration@fake: pips tag-fake, not only
+            # when selected): the FAKE tag over the structure for its owner
+            # and allies (infantry_render.rs; WithDecoration ValidRelationships
+            # default Ally), so enemies are fooled. Left out when false.
+            if any(isinstance(v, dict) and v.get('Sequence') == 'tag-fake' and str(v.get('RequiresSelection', 'False')).lower() != 'true'
+                   for v in trait(t, 'WithDecoration').values()):
+                e['building']['fake_tag'] = True
             # OpenRA GetSellValue: CustomSellValue, else the cost (repair cost, repair.rs).
             csv = t.get('CustomSellValue')
             e['building']['value'] = int(csv.get('Value', a['cost'])) if isinstance(csv, dict) else a['cost']

@@ -541,6 +541,62 @@ fn wrench_power_off_icon_and_darkening_show_on_structures() {
     assert!(sprites(&w, wrench).is_empty() && sprites(&w, off).is_empty());
 }
 
+/// Allies repairing one structure together: the wrench shows in the colour
+/// of each repairer in turn, one per blink cycle (OpenRA
+/// WithBuildingRepairDecoration: `allyrepair` in the player palette of
+/// `Repairers[shownPlayer]`, CycleRepairer after every animation), so every
+/// repairer's colour shows. Enemies who see the structure see no wrench
+/// (WithDecorationBase.ValidRelationships, default Ally).
+#[test]
+fn the_wrench_cycles_through_the_colours_of_every_repairer() {
+    use crate::render::{SpriteIds, SPRITE_FLOATS};
+    use crate::repair::DECORATION_FRAME_TICKS;
+    let mut w = world(true);
+    let b = building(&mut w, "TSLA", 0, 30, 30);
+    w.actors[b].hp = 100;
+    set_cash(&mut w, 0, 50_000);
+    set_cash(&mut w, 1, 50_000);
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 1);
+    }
+    w.queue_order(Order::RepairBuilding { player: 1, building: w.make_ref(b) });
+    w.queue_order(Order::RepairBuilding { player: 0, building: w.make_ref(b) });
+    w.step();
+    assert_eq!(w.actors[b].repairers, vec![1, 0]);
+    let wrench = SpriteIds::new(w.rules.actors.len()).decorations_base + crate::repair::DECORATION_WRENCH;
+    // The colour (team field) of the wrench each viewer sees, or None on an off frame.
+    let colour = |w: &World, viewer: u8| {
+        let sprites = render_for(w, viewer).0;
+        let found: Vec<f32> = sprites.chunks(SPRITE_FLOATS).filter(|c| c[3] == wrench).map(|c| c[4]).collect();
+        assert!(found.len() <= 1, "one wrench at a time: {found:?}");
+        found.first().copied()
+    };
+    // Two blink cycles show both colours; within a cycle the colour holds.
+    let mut seen = Vec::new();
+    for _ in 0..(4 * 2 * DECORATION_FRAME_TICKS) {
+        w.step();
+        // The enemy sees the whole map, the structure included.
+        w.players[2].visible.iter_mut().for_each(|v| *v = 1);
+        assert_eq!(colour(&w, 2), None, "no wrench for the enemy");
+        if let Some(c) = colour(&w, 0) {
+            let cycle = w.tick / (2 * DECORATION_FRAME_TICKS);
+            if seen.last().is_none_or(|&(k, _)| k != cycle) {
+                seen.push((cycle, c));
+            } else {
+                assert_eq!(seen.last().unwrap().1, c, "one colour per cycle");
+            }
+            // The ally sees the same wrench.
+            assert_eq!(colour(&w, 1), Some(c));
+        }
+    }
+    let colours: Vec<f32> = seen.iter().map(|&(_, c)| c).collect();
+    assert!(colours.len() >= 3, "{seen:?}");
+    for pair in colours.windows(2) {
+        assert_ne!(pair[0], pair[1], "the next cycle shows the next repairer: {colours:?}");
+    }
+    assert!(colours.contains(&0.0) && colours.contains(&1.0), "both repairers' colours: {colours:?}");
+}
+
 #[test]
 fn beacons_draw_for_the_owner_and_allies_only() {
     let mut w = World::new(7, 64, &[("allies", false), ("allies", false), ("soviet", false)]);

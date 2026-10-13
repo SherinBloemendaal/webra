@@ -194,7 +194,9 @@ impl World {
     /// The wrench of a structure being repaired, in the colour of each
     /// repairer in turn, and the power off icon of a switched off one, at its
     /// centre (OpenRA WithBuildingRepairDecoration and WithDecoration@POWERDOWN:
-    /// shown to everyone who sees the structure, blinking, side by side when both show).
+    /// blinking, side by side when both show). Like every OpenRA decoration
+    /// (WithDecorationBase.ValidRelationships, default Ally) only the owner,
+    /// allies and spectators see them, where the structure is not fogged.
     pub(crate) fn render_building_decorations(&self, player: u8, sink: &mut crate::instances::Sink, base: f32, sprites: &mut Vec<f32>) {
         let frame = self.tick / DECORATION_FRAME_TICKS;
         if frame % 2 == 1 {
@@ -202,6 +204,9 @@ impl World {
         }
         for (i, a) in self.actors.iter().enumerate() {
             if !a.alive || a.kind != Kind::Building || (!a.repair_active && !a.powered_off) {
+                continue;
+            }
+            if !self.render_allied(a.owner, player) {
                 continue;
             }
             if a.owner != player && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {

@@ -99,6 +99,8 @@ const QUARTER_TURN: f32 = std::f32::consts::FRAC_PI_2;
 /// part of an offset along the body is shortened by it on screen, the way
 /// the pre-rendered sprites are foreshortened.
 pub const CLASSIC_PITCH_SIN: f32 = 654.0 / 1024.0;
+/// The same sine in 1024ths (OpenRA `CameraPitch.Sin()`), for world offsets.
+pub const CLASSIC_PITCH_SIN_1024: i32 = 654;
 
 /// Screen offset (world pixels) of a part `fwd` world units ahead of and
 /// `side` to the right of a body facing `facing` (WebRA angle units), the
@@ -731,8 +733,9 @@ impl World {
         if info.is_wall() {
             return (if damaged { Pose::Damaged } else { Pose::Idle }, self.wall_connections(i));
         }
+        // The make animation (OpenRA WithMakeAnimation), as long as the art plays it.
         let age = self.tick.saturating_sub(a.born);
-        if a.born > 0 && age < MAX_POSE_AGE {
+        if a.born > 0 && age < self.render_opts.make_ticks(a.ty) {
             return (Pose::Make, age);
         }
         // Working animations (fx.rs): resupplying, the Tesla charge, a launch, placing.

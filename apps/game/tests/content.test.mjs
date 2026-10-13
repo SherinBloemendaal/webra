@@ -25,7 +25,7 @@ import {
   packSprite,
   unpackSprite,
 } from '../js/content/sequences.js';
-import { ACTOR_ART, SEQUENCES, GRAPHICS_FILES, TERRAIN, ACTOR_PALETTE, RESOURCES } from '../js/content/tables.js';
+import { ACTOR_ART, FAKE_ACTORS, SEQUENCES, GRAPHICS_FILES, TERRAIN, ACTOR_PALETTE, RESOURCES } from '../js/content/tables.js';
 import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage } from '../js/content/atlas.js';
 import {
   originalTerrain,
@@ -58,7 +58,7 @@ import { MemoryStore, storageProblem, StorageError } from '../js/content/store.j
 import { ContentSystem, orderPacks, mergePackPrefs, KEPT_PACKAGE, KEPT_META } from '../js/content/index.js';
 import { createSettings } from '../js/settings.js';
 import { validateManifest, readPack, PackError, packSlots, packSummary, pngSize, soundType, safePath, decodePackImages, PACK_LIMITS, POSE_NAMES } from '../js/content/packs.js';
-import { originalCameoPixels } from '../js/content/cameos.js';
+import { cameoSource, originalCameoPixels } from '../js/content/cameos.js';
 import { downloadQuickInstall, QUICKINSTALL_BYTES, shouldShowNotice, dismissNotice, canAutoInstall, formatWait, RelayLimitError, retryAfterOf } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
 import { buildAtlas, FRAME_FLOATS } from '../js/sprites.js';
@@ -550,8 +550,19 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
         assert.ok(e[2] > e[0] && e[3] > e[1], 'has an atlas rectangle');
       }
     }
-    // Slot heads stay below the pose stride; the WebRA building layers keep their still frames there too.
-    for (const s of atlas.overlays) assert.ok(s < POSE_STRIDE);
+    // Slot heads stay below the pose stride; the WebRA building layers keep their still frames there too,
+    // except WebRA's working layers (the silo hatch), pose tables in the structure's second slot.
+    atlas.overlays.forEach((s, t) => {
+      if (s >= POSE_STRIDE) assert.deepEqual([ACTORS[t].id, s % POSE_STRIDE], [ACTORS[t].id, 2 * t + 1], 'a working layer in its second slot');
+      else assert.ok(s < POSE_STRIDE);
+    });
+    assert.ok(atlas.overlays[ACTORS.findIndex((a) => a.id === 'MSLO')] >= POSE_STRIDE, "WebRA's silo hatch");
+    // How long the make animations play (Game.set_make_ticks): the original
+    // power plant's 13 frames at 40 ms; WebRA's structures have none.
+    const powr = ACTORS.findIndex((a) => a.id === 'POWR');
+    assert.equal(atlas.makeTicks[powr], 13);
+    assert.equal(atlas.makeTicks.filter((v) => v > 0).length, ACTORS.filter((a) => a.kind === 'building' && out.slots.get(2 * ACTORS.indexOf(a))?.poses[POSE.MAKE].mode === MODE.ONCE).length);
+    assert.ok(plain.makeTicks.every((v) => v === 0));
     assert.equal(atlas.overlays[ACTORS.findIndex((a) => a.id === 'POWR')], 0, 'the original power plant has no WebRA layer');
     assert.ok(plain.overlays[ACTORS.findIndex((a) => a.id === 'POWR')] > 0);
     // Slots without original art are WebRA sprites as before.
@@ -604,8 +615,16 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
   assert.equal(ACTOR_ART.WEAP.bib, 'bib');
   assert.deepEqual(SEQUENCES.weap.bib.tilesets, { DESERT: 'bib2.des', SNOW: 'bib2.sno' });
   assert.equal(ACTOR_ART.SAM.bib, undefined);
-  // Fakes without an original fake cameo show the real one.
+  // Fakes without an original fake cameo (OpenRA drew those) show the real
+  // one with WebRA's FAKE mark; the others Red Alert's own fake cameo.
   assert.equal(ACTOR_ART.TENF.cameo, 'icon');
+  assert.deepEqual(FAKE_ACTORS, ['ATEF', 'DOMF', 'FACF', 'FAPW', 'FIXF', 'FPWR', 'MSLF', 'PDOF', 'SPEF', 'SYRF', 'TENF', 'WEAF']);
+  for (const id of FAKE_ACTORS) {
+    const marked = ['ATEF', 'FAPW', 'FIXF', 'FPWR', 'MSLF', 'PDOF', 'TENF'].includes(id);
+    assert.equal(ACTOR_ART[id].cameo, marked ? 'icon' : 'fake-icon', id);
+    assert.equal(!!ACTOR_ART[id].fakeMark, marked, id);
+  }
+  assert.equal(ACTOR_ART.POWR.fakeMark, undefined);
   // OpenRA's own units have no original body (WebRA's own pixel art stays), only Red Alert's muzzle flashes.
   assert.deepEqual(ACTOR_ART.FTRK, { image: 'ftrk', muzzle: 'muzzle' });
   assert.deepEqual(ACTOR_ART.MH60, { image: 'mh60', muzzle: 'muzzle' });
@@ -747,6 +766,33 @@ test('original cameos come from the icon sequence, opaque, without team remap', 
   assert.equal(pic.labelled, true, 'Red Alert cameos have the name in the picture');
   for (let i = 3; i < pic.rgba.length; i += 4) assert.equal(pic.rgba[i], 255);
   assert.equal(originalCameoPixels('3TNK', (n) => files.get(n) ?? null), null);
+  // A fake without a fake cameo of Red Alert's: the real cameo, to be marked.
+  files.set('tenticon.shp', buildShp(64, 48, [testFrame(64, 48, 31)]));
+  files.set('domficon.shp', buildShp(64, 48, [testFrame(64, 48, 32)]));
+  const tenf = originalCameoPixels('TENF', (n) => files.get(n) ?? null);
+  const tent = originalCameoPixels('TENT', (n) => files.get(n) ?? null);
+  assert.deepEqual([tenf.fake, tent.fake], [true, undefined]);
+  assert.deepEqual(tenf.rgba, tent.rgba);
+  assert.equal(originalCameoPixels('DOMF', (n) => files.get(n) ?? null).fake, undefined, "Red Alert's own fake cameo");
+});
+
+test('the cameo source paints the FAKE mark over a picture that needs it', () => {
+  const fills = [];
+  const doc = {
+    createElement: () => {
+      const ctx = new Proxy(
+        { fillRect: () => fills.push(ctx.fillStyle) },
+        { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) },
+      );
+      return { width: 0, height: 0, getContext: () => ctx };
+    },
+  };
+  const source = cameoSource([(id) => ({ width: 64, height: 48, image: {}, labelled: true, fake: id === 'FPWR' })], doc);
+  source('POWR', 64, 48);
+  assert.ok(!fills.includes('#ff3a22'));
+  const canvas = source('FPWR', 64, 48);
+  assert.ok(fills.includes('#ff3a22'), 'red FAKE letters');
+  assert.equal(canvas.labelled, true);
 });
 
 // ---- Terrain ------------------------------------------------------------------------------------

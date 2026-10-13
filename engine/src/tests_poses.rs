@@ -302,6 +302,47 @@ fn structure_layers_hide_while_built_and_show_the_door_frame_by_damage_state() {
     assert!(sprite_ids(&w).contains(&(layer as f32)));
 }
 
+/// The War Factory's roof and door show as soon as its make animation ended
+/// (OpenRA WithMakeAnimation revokes `build-incomplete`, the layer requires
+/// `!build-incomplete`), not after the longest pose age: placed, the factory
+/// showed its body without the roof for seconds.
+#[test]
+fn structure_layers_show_when_the_make_animation_ends() {
+    let mut w = world();
+    w.render_opts.poses = true;
+    let weap = ty(&w, "WEAP");
+    let layer = weap as u32 * 2 + 1;
+    let mut table = vec![0u32; w.rules.actors.len()];
+    table[weap as usize] = posed(layer, Pose::Still, 4) as u32;
+    w.render_opts.building_overlays = table;
+    // A make animation of 20 ticks (the art's length, Game.set_make_ticks).
+    let mut make = vec![0u32; w.rules.actors.len()];
+    make[weap as usize] = 20;
+    w.render_opts.make_ticks = make;
+    w.players[0].power_gen = 100;
+    w.tick = 500;
+    w.spawn_building(weap, 0, 30, 30).unwrap();
+    w.update_vision();
+    for age in [0, 10, 19] {
+        w.tick = 500 + age;
+        assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Make as u32, age)), "making, age {age}");
+        assert_eq!(pose_of(&w, layer), None, "no roof while it is made");
+    }
+    w.tick = 520;
+    assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Idle as u32, 0)), "built");
+    assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)), "the roof and the shut door at once");
+    // Art without a make animation shows everything from the start.
+    w.render_opts.make_ticks[weap as usize] = 0;
+    w.tick = 1000;
+    w.spawn_building(weap, 0, 40, 30).unwrap();
+    w.update_vision();
+    let bodies: Vec<u32> = sprite_ids(&w).into_iter().map(unpack).filter(|&(s, _, _)| s == weap as u32 * 2).map(|(_, p, _)| p).collect();
+    assert_eq!(bodies, vec![Pose::Idle as u32; 2], "both factories built");
+    // Types past the table (or no table): the longest pose age, as before.
+    w.render_opts.make_ticks.clear();
+    assert_eq!(w.render_opts.make_ticks(weap), MAX_POSE_AGE);
+}
+
 #[test]
 fn structure_layer_records_match_the_cpu_path() {
     let mut w = world();
