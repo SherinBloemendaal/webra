@@ -23,7 +23,7 @@ import { idleTask } from './js/idle.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, isTyping } from './js/view.js';
 import { Controller, teamOf } from './js/controller.js';
-import { COMMANDS, MATERIAL_KEYS, PAINT_LAYERS, TOOLS, actionName } from './js/commands.js';
+import { COMMANDS, HELP_TEXT, MATERIAL_KEYS, PAINT_LAYERS, TOOLS, actionName } from './js/commands.js';
 import { Minimap, previewCanvas } from './js/preview.js';
 import { RulesPanel, MODDED_WARNING, loadRulesBase } from './js/rulespanel.js';
 import { ApiError, fetchMap, listMaps, publishMap, shareLink } from './js/online.js';
@@ -1656,7 +1656,7 @@ function helpOverlay() {
   const body = el('div', {});
   const render = () =>
     body.replaceChildren(
-      el('p', {}, 'Tools paint with symmetry: every edit also lands at its mirror images. Right drag undoes what a tool does (paints clear ground, removes ore). Middle drag, Space and drag, two fingers or the arrow keys move the map; the wheel and pinching zoom.'),
+      el('p', {}, HELP_TEXT),
       keysList(keys.list().filter((a) => a.context === 'editor'), {
         listening,
         mac: isMac(),

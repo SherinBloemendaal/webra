@@ -74,7 +74,7 @@ export function previewCanvas(doc, catalog, scale = 4) {
 export class Minimap {
   /**
    * @param canvas minimap canvas element
-   * @param onJump (worldX, worldY) => void, centres the main view
+   * @param onJump (worldX, worldY) => void, centres the main view (a press of any button, and its drag)
    * @param onZoom (factor, worldX, worldY) => void, zooms the main view (mouse wheel over the minimap)
    */
   constructor(canvas, onJump, onZoom = null) {
@@ -83,19 +83,30 @@ export class Minimap {
     this.base = document.createElement('canvas');
     this.dirty = true;
     this.doc = null;
-    let dragging = false;
+    // Any button (left, right, middle; a finger) moves the view there and a
+    // drag keeps moving it, like the game's radar does with every button
+    // but the one that gives orders (js/minimap.js). One pointer at a time.
+    let dragging = null;
     const jump = (e) => {
       const p = this.toWorld(e);
       if (p) this.onJump(p.x, p.y);
     };
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // The middle button moves the view: no autoscroll (Windows) or paste (Linux).
+    canvas.addEventListener('mousedown', (e) => e.button === 1 && e.preventDefault());
+    canvas.addEventListener('auxclick', (e) => e.button === 1 && e.preventDefault());
     canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      dragging = true;
+      if (dragging !== null || e.button > 2) return;
+      dragging = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       jump(e);
     });
-    canvas.addEventListener('pointermove', (e) => dragging && jump(e));
-    canvas.addEventListener('pointerup', () => (dragging = false));
+    canvas.addEventListener('pointermove', (e) => e.pointerId === dragging && jump(e));
+    const lift = (e) => {
+      if (e.pointerId === dragging) dragging = null;
+    };
+    canvas.addEventListener('pointerup', lift);
+    canvas.addEventListener('pointercancel', lift);
     canvas.addEventListener(
       'wheel',
       (e) => {

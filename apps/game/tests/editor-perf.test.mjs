@@ -16,8 +16,10 @@ import { TERRAIN, canOccupy, catalogEntry, createMap, footprintOf, groundFor } f
 import { Occupancy, actorCells, copyRegion, placeActor, placementProblem } from '../editor/js/edits.js';
 import { findFixes } from '../editor/js/fixes.js';
 import { symmetricPositions } from '../editor/js/symmetry.js';
+import { HELP_TEXT } from '../editor/js/commands.js';
 import { idleTask } from '../editor/js/idle.js';
 import { InstalledTiles, TileWorker, commonTiles, planTiles } from '../editor/js/tiles.js';
+import { Minimap } from '../editor/js/preview.js';
 import { cellTiles, terrainSeed } from '../js/art/terrain.js';
 import { originalTerrain, theaterFiles } from '../js/content/terrain.js';
 import { syntheticTheater } from './content-fixtures.mjs';
@@ -484,6 +486,58 @@ test('idle tasks run once after a burst of requests, when the browser is idle', 
   plain.soon();
   timers.at(-1).fn();
   assert.equal(runs, 3);
+});
+
+// ---- The minimap -------------------------------------------------------------------------------------
+
+test('the minimap moves the view with any mouse button and follows the drag; no context menu', () => {
+  const listeners = {};
+  const canvas = {
+    width: 200,
+    height: 200,
+    addEventListener: (type, fn) => (listeners[type] ??= []).push(fn),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }),
+    setPointerCapture() {},
+  };
+  const saved = globalThis.document;
+  globalThis.document = { createElement: () => ({}) };
+  try {
+    const jumps = [];
+    const minimap = new Minimap(canvas, (x, y) => jumps.push([x, y]));
+    minimap.doc = { width: 100, height: 100 };
+    const fire = (type, e) => {
+      let prevented = false;
+      for (const fn of listeners[type] ?? []) fn({ preventDefault: () => (prevented = true), ...e });
+      return prevented;
+    };
+    assert.ok(fire('contextmenu', {}), 'no context menu on the minimap');
+    assert.ok(fire('mousedown', { button: 1 }), 'no autoscroll for the middle button');
+    assert.ok(!fire('mousedown', { button: 2 }));
+    for (const button of [0, 2, 1]) {
+      jumps.length = 0;
+      fire('pointerdown', { button, pointerId: 7, clientX: 50, clientY: 100 });
+      assert.deepEqual(jumps, [[25 * 24, 50 * 24]], `button ${button} moves the view there`);
+      fire('pointermove', { pointerId: 7, clientX: 100, clientY: 100 });
+      assert.deepEqual(jumps.at(-1), [50 * 24, 50 * 24], 'and the drag follows');
+      // A second pointer while dragging changes nothing.
+      fire('pointerdown', { button: 0, pointerId: 8, clientX: 10, clientY: 10 });
+      fire('pointermove', { pointerId: 8, clientX: 10, clientY: 10 });
+      assert.equal(jumps.length, 2);
+      fire('pointerup', { pointerId: 7 });
+      fire('pointermove', { pointerId: 7, clientX: 150, clientY: 150 });
+      assert.equal(jumps.length, 2, 'released: the view stays');
+    }
+    jumps.length = 0;
+    fire('pointerdown', { button: 3, pointerId: 9, clientX: 50, clientY: 50 });
+    assert.equal(jumps.length, 0, 'the back button does nothing');
+    fire('pointerdown', { button: 2, pointerId: 10, clientX: 50, clientY: 50 });
+    fire('pointercancel', { pointerId: 10 });
+    fire('pointermove', { pointerId: 10, clientX: 150, clientY: 150 });
+    assert.equal(jumps.length, 1, 'a cancelled press ends the drag');
+  } finally {
+    globalThis.document = saved;
+  }
+  assert.match(HELP_TEXT, /minimap any mouse button \(left, right or middle\) moves the view/);
 });
 
 // ---- Placing many actors -------------------------------------------------------------------------------
