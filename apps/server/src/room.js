@@ -7,8 +7,13 @@
 // Rules:
 // - a joining player takes the first open slot with the first free colour;
 // - players edit their own slot (faction, colour, team) or move to an open slot;
-// - the host also edits AI slots and sets any other slot to ai / open / closed
-//   (doing that to a human's slot kicks that player);
+// - the host also edits AI slots and other players' faction, colour, team,
+//   handicap and spawn (OpenRA: only the host changes other clients' info),
+//   and sets any other slot to ai / open / closed (doing that to a human's
+//   slot kicks that player);
+// - the host's bulk edit (`slots`, setSlots) is a list of such changes,
+//   each checked like a `slot` message, all applied or none, the colours
+//   checked once all are in;
 // - colours are unique; teams 0 (none) .. TEAM_MAX;
 // - host changes to options, map or slots reset everyone's ready flag, a
 //   player's own change resets only their flag;
@@ -520,24 +525,58 @@ export class Room {
       this.slots = before;
       throw err;
     }
-    // The map's locked slot parts (map format version 2): a change may not
-    // break one that held. A lock that was already broken (a lobby from
-    // before the map, or another way in) does not block changes, so the
-    // lobby can always be put right; the start refuses it (startProblem).
-    const setup = this.map?.setup;
-    if (setup && !this.resume) {
-      for (const [k, slot] of this.slots.entries()) {
-        const was = new Set(lockedSlotProblems(before[k], setup, k));
-        const added = lockedSlotProblems(slot, setup, k).find((p) => !was.has(p));
-        if (added) {
-          this.slots = before;
-          fail(added, 'forbidden');
-        }
-      }
-    }
+    this.keepLocks(before);
     // Another player count makes another generated map: its picks go.
     this.keepSpawnsFor(field);
     return result;
+  }
+
+  /**
+   * Apply a validated `slots` message (the host's bulk edit, js/lobby-bulk.js):
+   * every change is checked like a `slot` message of the host, in order, and
+   * the colours once all are in (a shuffle swaps them). All or nothing.
+   * Returns { kicked: [clientId] }.
+   */
+  setSlots(client, changes) {
+    if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
+    if (!this.isHost(client)) fail('Only the host can change several slots at once.', 'not_host');
+    const before = structuredClone(this.slots);
+    const field = this.battlefield();
+    const kicked = [];
+    try {
+      for (const change of changes) {
+        const { kicked: k } = this.applySlot(client, change, { batch: true });
+        if (k !== null) kicked.push(k);
+      }
+      const colors = this.slots.filter((s) => 'color' in s).map((s) => s.color);
+      if (new Set(colors).size !== colors.length) fail('Two slots would share a colour.');
+    } catch (err) {
+      this.slots = before;
+      throw err;
+    }
+    this.keepLocks(before);
+    this.keepSpawnsFor(field);
+    return { kicked };
+  }
+
+  /**
+   * The map's locked slot parts (map format version 2): a change may not
+   * break one that held. A lock that was already broken (a lobby from
+   * before the map, or another way in) does not block changes, so the
+   * lobby can always be put right; the start refuses it (startProblem).
+   * Puts `before` back and throws when a change broke one.
+   */
+  keepLocks(before) {
+    const setup = this.map?.setup;
+    if (!setup || this.resume) return;
+    for (const [k, slot] of this.slots.entries()) {
+      const was = new Set(lockedSlotProblems(before[k], setup, k));
+      const added = lockedSlotProblems(slot, setup, k).find((p) => !was.has(p));
+      if (added) {
+        this.slots = before;
+        fail(added, 'forbidden');
+      }
+    }
   }
 
   /** Why the slots break the lobby map's locks (map format version 2), or null. */
@@ -551,7 +590,8 @@ export class Room {
     return lockedOptionProblem(this.options, setup);
   }
 
-  applySlot(client, msg) {
+  /** One slot change; `batch`: part of a `slots` message (setSlots checks the colours at the end). */
+  applySlot(client, msg, { batch = false } = {}) {
     if (this.phase !== 'lobby') fail('The game has already started.', 'bad_state');
     this.refuseInResume();
     const mine = this.slotOf(client);
@@ -583,7 +623,7 @@ export class Room {
         if (cur.type !== 'ai') this.takeMapSlot(target);
         if (msg.difficulty !== undefined) this.slots[target].difficulty = msg.difficulty;
         if (msg.bot !== undefined) this.slots[target].bot = msg.bot;
-        this.applySettings(target, msg);
+        this.applySettings(target, msg, batch);
       } else {
         if (
           msg.faction !== undefined ||
@@ -605,7 +645,7 @@ export class Room {
     if (target === mine) {
       if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
       if (msg.bot !== undefined) fail('Humans have no bot type.');
-      this.applySettings(target, msg);
+      this.applySettings(target, msg, batch);
       cur.ready = false;
       return { kicked: null };
     }
@@ -617,13 +657,13 @@ export class Room {
       this.slots[target] = this.slots[mine];
       this.slots[mine] = { type: 'open' };
       this.takeMapSlot(target);
-      this.applySettings(target, msg);
+      this.applySettings(target, msg, batch);
       this.slots[target].ready = false;
       return { kicked: null };
     }
 
     if (cur.type === 'ai' && host) {
-      this.applySettings(target, msg);
+      this.applySettings(target, msg, batch);
       if (msg.difficulty !== undefined) cur.difficulty = msg.difficulty;
       if (msg.bot !== undefined) cur.bot = msg.bot;
       this.resetReady();
@@ -635,6 +675,17 @@ export class Room {
     if (cur.type === 'human' && host && msg.spawn === null && Object.keys(msg).every((k) => k === 't' || k === 'slot' || k === 'spawn')) {
       delete cur.spawn;
       cur.ready = false;
+      return { kicked: null };
+    }
+
+    // OpenRA LobbyCommands: "Only the host can change other client's info"
+    // (faction, team, handicap, spawn, colour); a host change makes everyone
+    // not ready, like its other changes.
+    if (cur.type === 'human' && host) {
+      if (msg.difficulty !== undefined) fail('Humans have no difficulty.');
+      if (msg.bot !== undefined) fail('Humans have no bot type.');
+      this.applySettings(target, msg, batch);
+      this.resetReady();
       return { kicked: null };
     }
 
@@ -654,10 +705,10 @@ export class Room {
     if (this.slots.some((s, i) => i !== target && s.spawn === spawn)) fail('That start position is taken.', 'forbidden');
   }
 
-  applySettings(index, msg) {
+  applySettings(index, msg, batch = false) {
     const s = this.slots[index];
     if (msg.color !== undefined) {
-      if (this.colorTaken(msg.color, index)) fail('That colour is taken.');
+      if (!batch && this.colorTaken(msg.color, index)) fail('That colour is taken.');
       s.color = msg.color;
     }
     if (msg.faction !== undefined) s.faction = msg.faction;
