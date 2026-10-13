@@ -80,7 +80,7 @@ export const HELP = Object.freeze({
   spawn:
     'Where the player starts. Automatic shows where the lobby puts the player now (it moves when someone picks that position). Pick a position here, or click a marker on the map preview: a free one is yours (the host places its AI players there first, then itself), clicking your own frees it again, a position another player picked is taken. Right-click (or Delete on a marked position) frees it; the host can free anyone\'s. On a generated map the map itself changes with the seed, size, style and number of players, and so the picks are cleared.',
   spectators:
-    'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators.',
+    'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators. While watching, the statistics panel (F1 to F7, or its list) shows each player by team with its flag: cash, economy (with oil derricks), what each one is building, its support powers and army as icons, combat (with how much of the map it sees) and graphs. Point at an icon for its details.',
 
   // ---- Campaign (js/campaign/menu.js) ------------------------------------------------------
   campaign:

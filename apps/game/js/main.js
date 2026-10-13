@@ -70,7 +70,7 @@ import { AccountSession } from './account/session.js';
 import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
 import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
-import { setCameoArt } from './cameo.js';
+import { cameoBacking, cameoPainter, powerIconArt, setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
 import { allOriginalNames } from './audio/catalog.js';
 import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
@@ -78,6 +78,7 @@ import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
 import { askOf } from './sim/methods.js';
 import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
+import { ICON_CSS as OBSERVER_ICON_CSS } from './observer-icons.js';
 import { EndGameDialog, EndGameFlow } from './endgame.js';
 import { StatsScreen } from './stats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
@@ -1171,6 +1172,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     applyTerrain();
     // Sidebar cameos were painted once: paint them again from the new content (cameo.js setCameoArt ran first).
     sidebar?.repaintIcons();
+    observer?.repaintIcons();
   });
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -1457,6 +1459,17 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         input.watchAll = all;
       },
       onStats: statsScreen ? openStats : null,
+      // The icon panels (js/observer-icons.js): cameos and support power icons (js/cameo.js).
+      actors: rules.actors,
+      ticksPerSecond: Game.ticks_per_second(),
+      lowPowerModifier: rules.lowPowerModifier,
+      paintCameo: (canvas, actor, team) => cameoPainter.paint(canvas, actor, team),
+      paintPower: (canvas, icon) => {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(powerIconArt(icon, canvas.width, canvas.height), 0, 0);
+      },
+      iconBacking: cameoBacking(OBSERVER_ICON_CSS.width, OBSERVER_ICON_CSS.height, window.devicePixelRatio),
     });
   };
   if (viewer) mountObserver();
@@ -2104,20 +2117,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
 
   /** What the observer's statistics panel needs per player besides observer_stats (js/observer.js `needs`). */
   function observerExtra(need) {
-    const names = (id) => rules.actors.find((a) => a.id === id)?.name ?? id;
     return (p) => {
       if (need === 'harvesters') return { harvesters: game.harvesters(p).length };
-      if (need === 'army') {
-        const flat = game.army_counts(p);
-        const army = [];
-        for (let i = 0; i + 1 < flat.length; i += 2) army.push([rules.actors[flat[i]]?.name ?? '?', flat[i + 1]]);
-        return { army };
-      }
-      if (need === 'state') {
-        const json = game.player_json(p);
-        const state = json ? JSON.parse(json) : null;
-        for (const q of state?.queues ?? []) for (const it of q) it.name = names(it.id);
-        return { state };
+      // [actor type index, count, ...] (engine World::army_counts).
+      if (need === 'army') return { army: game.army_counts(p) };
+      if (need === 'production') {
+        const json = game.observer_production(p);
+        return { production: json ? JSON.parse(json) : null };
       }
       return {};
     };

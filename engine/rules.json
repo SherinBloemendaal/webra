@@ -2558,6 +2558,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 60,
+      "icon": "spyplane",
       "order_name": "SovietSpyPlane",
       "unit_type": "U2",
       "squad_size": 1,
@@ -2583,6 +2584,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 50,
+      "icon": "paratroopers",
       "order_name": "SovietParatroopers",
       "unit_type": "BADR",
       "squad_size": 1,
@@ -2614,6 +2616,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 40,
+      "icon": "parabombs",
       "order_name": "UkraineParabombs",
       "unit_type": "BADR.Bomber",
       "squad_size": 1,
@@ -2849,6 +2852,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 60,
+      "icon": "spyplane",
       "order_name": "SovietSpyPlane",
       "unit_type": "U2",
       "squad_size": 1,
@@ -2874,6 +2878,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 50,
+      "icon": "paratroopers",
       "order_name": "SovietParatroopers",
       "unit_type": "BADR",
       "squad_size": 1,
@@ -2905,6 +2910,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 40,
+      "icon": "parabombs",
       "order_name": "UkraineParabombs",
       "unit_type": "BADR.Bomber",
       "squad_size": 1,
@@ -3636,6 +3642,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 90,
+      "icon": "gps",
       "order_name": "GpsPowerInfoOrder",
       "reveal_delay": 375,
       "one_shot": true,
@@ -4297,6 +4304,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 20,
+      "icon": "chrono",
       "order_name": "Chronoshift",
       "footprint": [
        "_x_",
@@ -4319,6 +4327,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 30,
+      "icon": "chrono",
       "order_name": "AdvancedChronoshift",
       "footprint": [
        "__x__",
@@ -4555,6 +4564,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 10,
+      "icon": "invuln",
       "order_name": "GrantExternalConditionPowerInfoOrder",
       "footprint": [
        "_x_",
@@ -4772,6 +4782,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 70,
+      "icon": "abomb",
       "order_name": "NukePowerInfoOrder",
       "missile_weapon": 0,
       "missile_delay": 5,
@@ -16775,6 +16786,7 @@
    "infiltrate_types": [],
    "disguisable": true,
    "world": {
+    "stats_actor": "E1",
     "hospital_heal": {
      "prerequisite": "hosp",
      "step": 500,
@@ -16979,6 +16991,7 @@
    "infiltrate_types": [],
    "disguisable": true,
    "world": {
+    "stats_actor": "E3",
     "hospital_heal": {
      "prerequisite": "hosp",
      "step": 500,
@@ -19418,6 +19431,7 @@
       "range": 1,
       "max_distance": 0,
       "palette_order": 80,
+      "icon": "sonar",
       "order_name": "SpawnActorPowerInfoOrder",
       "terrain": [
        "Water"
@@ -22809,6 +22823,7 @@
      "amount": 100,
      "combatant_only": true
     },
+    "derrick": true,
     "selectable": true,
     "category": "Tech building",
     "ally_description": "Provides additional funds.",

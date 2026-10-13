@@ -109,6 +109,11 @@ pub struct WorldTraits {
     /// GivesCashOnCapture.Amount.
     pub cash_on_capture: i32,
     pub cash_trickler: Option<CashTrickler>,
+    /// OpenRA UpdatesDerrickCount: counted in the observer's Derricks column (observer.rs).
+    pub derrick: bool,
+    /// OpenRA UpdatesPlayerStatistics.OverrideActor: the actor id the
+    /// observer's army panel counts it as (E1R1 as E1; lib.rs `army_counts`).
+    pub stats_actor: Option<String>,
     pub hospital_heal: Option<HospitalHeal>,
     pub scaredy_cat: Option<ScaredyCat>,
     pub wanders: Option<Wanders>,

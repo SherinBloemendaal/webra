@@ -26,7 +26,7 @@ import { CHAT_HOTKEYS, chatMode, completeName, hasTeamChat } from '../js/chatkey
 import { RadarPings, STRUCTURE_INTERVAL_MS, UNIT_INTERVAL_MS, PING_TICKS, FROM_RADIUS, TO_RADIUS } from '../js/radarpings.js';
 import { EV, STRIDE } from '../js/audio/director.js';
 import { POWER_KINDS } from '../js/audio/catalog.js';
-import { productionText, powersText, armyText, History, PANELS, PANEL_ORDER } from '../js/observer.js';
+import { History, PANELS, PANEL_ORDER } from '../js/observer.js';
 
 const NONE = 0xffffffff;
 const createSettings = (storage = null) => settingsOver(createRegistry({ storage }));
@@ -576,13 +576,14 @@ test('chat keys: team chat needs a team mate (spectators have the others); names
   assert.equal(completeName('hi ', names), null);
 });
 
-test('observer panels: OpenRA statistics, text for production, powers and army; graph samples', () => {
+test('observer panels: OpenRA statistics, icons for production, powers and army; graph samples', () => {
   assert.deepEqual(PANEL_ORDER, ['none', 'basic', 'economy', 'production', 'supportPowers', 'combat', 'army', 'graph', 'armyGraph']);
   assert.equal(PANELS.none.columns, undefined);
-  assert.equal(productionText({ queues: [[{ id: 'POWR', name: 'Power Plant', progress: 0.5, done: false }], [], [{ id: 'E1', progress: 1, done: true }]] }), 'Power Plant 50%, E1 ready');
-  assert.equal(productionText(null), '-');
-  assert.equal(powersText({ powers: [{ name: 'GPS', ready: false, remainingTicks: 25 * 61 }, { name: 'Nuke', ready: true }] }), 'GPS 1:01, Nuke ready');
-  assert.equal(armyText([['Heavy Tank', 2]]), '2 Heavy Tank');
+  // The icon panels are tested in observer-icons.test.mjs.
+  assert.deepEqual(
+    ['production', 'supportPowers', 'army'].map((p) => PANELS[p].icons),
+    ['production', 'powers', 'army'],
+  );
   const h = new History(4);
   for (let t = 0; t < 10; t++) h.sample(0, t, t * 10);
   assert.ok(h.series.get(0).length <= 5, 'thinned out');

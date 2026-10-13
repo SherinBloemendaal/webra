@@ -812,18 +812,21 @@
 
 #menu .lobby-flag[data-faction='randomallies'],
 .faction-flag[data-faction='randomallies'],
-.faction-flag[data-faction='allies'] {
+.faction-flag[data-faction='allies'],
+.observer-flag[data-faction='allies'] {
   background: #23477e;
 }
 
 #menu .lobby-flag[data-faction='randomsoviet'],
 .faction-flag[data-faction='randomsoviet'],
-.faction-flag[data-faction='soviet'] {
+.faction-flag[data-faction='soviet'],
+.observer-flag[data-faction='soviet'] {
   background: #8e1d16;
 }
 
 #menu .lobby-flag[data-faction='england'],
-.faction-flag[data-faction='england'] {
+.faction-flag[data-faction='england'],
+.observer-flag[data-faction='england'] {
   background:
     linear-gradient(#c8102e, #c8102e) center / 100% 20% no-repeat,
     linear-gradient(#c8102e, #c8102e) center / 14% 100% no-repeat,
@@ -835,22 +838,26 @@
 }
 
 #menu .lobby-flag[data-faction='france'],
-.faction-flag[data-faction='france'] {
+.faction-flag[data-faction='france'],
+.observer-flag[data-faction='france'] {
   background: linear-gradient(90deg, #0055a4 0 33.4%, #fff 33.4% 66.6%, #ef4135 66.6%);
 }
 
 #menu .lobby-flag[data-faction='germany'],
-.faction-flag[data-faction='germany'] {
+.faction-flag[data-faction='germany'],
+.observer-flag[data-faction='germany'] {
   background: linear-gradient(#111 0 33.4%, #dd0000 33.4% 66.6%, #ffce00 66.6%);
 }
 
 #menu .lobby-flag[data-faction='russia'],
-.faction-flag[data-faction='russia'] {
+.faction-flag[data-faction='russia'],
+.observer-flag[data-faction='russia'] {
   background: linear-gradient(#fff 0 33.4%, #0039a6 33.4% 66.6%, #d52b1e 66.6%);
 }
 
 #menu .lobby-flag[data-faction='ukraine'],
-.faction-flag[data-faction='ukraine'] {
+.faction-flag[data-faction='ukraine'],
+.observer-flag[data-faction='ukraine'] {
   background: linear-gradient(#0057b7 0 50%, #ffd700 50%);
 }
 

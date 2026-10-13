@@ -1320,13 +1320,27 @@ generator shroud only where it hides a cell from all, cloaked and submerged
 units shown and no owner-only decorations (render only: slot 0's vision is
 swapped for the union during the call and restored). `Game.army_counts(player)`
 lists `[actor type index, count, ...]` of the units that count for the army
-value (the observer panel's army statistics). `Game.observer_stats()` returns `[{
+value (the observer panel's army icons, OpenRA PlayerStatistics.Units): each
+under the type its UpdatesPlayerStatistics.OverrideActor names (rules
+`world.stats_actor`: the paratroopers' E1R1 and E3R1 count as E1 and E3),
+only types with a build icon (never `~disabled`, OpenRA Buildable), ordered
+by production tab (QueueType order, which is OpenRA's ProductionQueue
+DisplayOrder) and then BuildPaletteOrder. `Game.observer_production(player)`
+returns `{ funds, powerGenerated, powerUsed, lowPower, queues: [{ queue, id,
+progress, done, paused, remainingTicks, buildTicks }], powers: [{ key, icon,
+name, description, progress, ready, charging, remainingTicks, totalTicks }] }`
+(null for an unknown player): each production tab's current item with the
+time left as OpenRA's RemainingTimeActual (stretched by LowPowerModifier
+while power is low), and the support powers in palette order with their
+SupportPowerInfo.Icon (rules `icon`, also in `player_json` powers). It is
+small enough to ask for every player on each UI update (`player_json` lists
+every buildable type). `Game.observer_stats()` returns `[{
 player, faction, team, isAi, cash, funds, earned, harvestedOre, harvestedGems,
 spent, repairSpent, sold, armyValue, unitsKilled, unitsLost, buildingsKilled,
 buildingsLost, assetsDestroyed, assetsLost, damageDealt, damageTaken,
 unitsBuilt, buildingsBuilt, aircraftBuilt, shipsBuilt, builtValue, experience,
-unitExperience, promotions, powersUsed, orders, score, powerGenerated, powerUsed, defeated,
-defeatedAt, won }]` for the non-neutral players (kills credited to the owner
+unitExperience, promotions, powersUsed, orders, score, powerGenerated, powerUsed, vision,
+derricks, defeated, defeatedAt, won }]` for the non-neutral players (kills credited to the owner
 of the weapon that dealt the killing damage; `experience` is OpenRA's
 PlayerStatistics.Experience, the player's PlayerExperience (a kill gives
 the victim's value times its PlayerExperienceModifier, 1 per 100 credits;
@@ -1334,7 +1348,7 @@ repairs of an ally's structure and infiltrations add theirs; the time
 limit's tie breaker), shown by the game info scores, the observer panel's
 Experience column and the statistics screen; `unitExperience` is the
 veterancy experience the player's units gained, behind `promotions`;
-`orders` counts the orders of
+`vision`: the percentage of the map's cells the player sees now, rounded up, 0 once defeated, OpenRA ObserverStatsLogic.Vision of Shroud.RevealedCells; with the fog of war off the engine's visible cells include every explored one, like OpenRA's count that never goes down without fog, except that cells a GPS satellite explored count at once where OpenRA counts them when first seen. `derricks`: owned actors with UpdatesDerrickCount, rules `world.derrick`, the oil derricks. `orders` counts the orders of
 the order log, AI decisions are not orders; `score` is the value destroyed
 plus half the value built; not part of the state hash).
 `Game.observer_report()` adds per player `productionTicks` (per queue),
@@ -1348,7 +1362,39 @@ and in a replay. `Game.player_defeated(p)` is a cheap check for the lockstep
 driver. The client's end-game dialog (`js/endgame.js`) and statistics screen
 (`js/stats.js`, tabs Basic, Economy, Production, Combat, Army, Support powers,
 Graphs) read these; the screen asks for the report (`ask.observer_report`)
-when it opens and every two seconds while it is open. `Game.snapshot()` and
+when it opens and every two seconds while it is open.
+
+The spectator's statistics panel (`js/observer.js`, OpenRA
+ingame-observer.yaml with ObserverStatsLogic; F1..F7 or its list) groups the
+players by team in ascending order with a "Team N" or "No team" header row
+when anyone has a team (TEAM_TEMPLATE), shows each player's faction flag
+before the name (FLAG; the flags of css/lobby.css), and has OpenRA's
+columns: Economy with Derricks, Combat with Vision. Production, Support
+powers and Army are rows of icons per player (`js/observer-icons.js`,
+ObserverProductionIcons, ObserverSupportPowerIcons, ObserverArmyIcons): the
+cameo (js/cameo.js, the player's own content first), a clock shade over what
+is still to go, and the time left (FormatTime: seconds rounded up), "Ready"
+or "On hold"; production icons group the current items of all tabs by type
+(the count shows when several tabs build it, which Red Alert's one tab per
+type never does) in tab and palette order, ready first, then building, then
+on hold; support powers show "Ready" (OpenRA SupportPowerInstance.Ready:
+charged and Active, with a powered provider; `observer_production` `ready`
+means the same) or the time left, in red while every provider is without
+power (00:00 in red once charged, as OpenRA draws it; its "ON HOLD" is for
+powers without a provider, which it leaves out); army icons
+show the unit count. Each icon has OpenRA's tooltip: production (name, cost
+red when the player cannot pay, build time red under low power, power, the
+description; no hotkey or click hints for spectators), support power (name,
+"time left / charge time" red while paused, description) and army (name and
+description). Support power pictures are WebRA's own emblems
+(`js/art/powericons.js`) or, with the original content installed, Red
+Alert's icons (`icon:<name>` through the cameo source, sequences of OpenRA's
+"icon" image in the content tables). The rows stay on screen between
+updates (rebuilt only when the panel or the players change) and each update
+writes only the text, clock and counts that changed; pictures are painted
+once and again when the installed content changes. Not shown: OpenRA's
+Economy "Assets" column (the value of everything a player owns) and the
+production icon overlays (veterancy chevrons). `Game.snapshot()` and
 `game.restore(snapshot)` copy the whole world in memory (replay seeking; not
 serialized).
 
@@ -2790,7 +2836,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `observer_production`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the

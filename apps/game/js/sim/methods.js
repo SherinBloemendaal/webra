@@ -106,6 +106,8 @@ export const QUERY_DEFAULTS = Object.freeze({
   observer_stats: () => null,
   // The top-left support power timers a player sees (js/powertimers.js): none until the first answer.
   power_timers_json: () => '[]',
+  // The observer's production and support power icons, per player (js/observer-icons.js).
+  observer_production: () => null,
   // The end-game statistics (asked with `ask.observer_report()` when the statistics screen opens or refreshes).
   observer_report: () => null,
   radar_state: () => 0,

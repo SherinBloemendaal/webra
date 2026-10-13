@@ -431,6 +431,115 @@ impl World {
             .sum()
     }
 
+    /// The Combat panel's Vision column (OpenRA ObserverStatsLogic.Vision of
+    /// Shroud.RevealedCells): the percentage of the map's cells the player
+    /// sees now, rounded up (with the fog of war off `visible` holds every
+    /// explored cell, vision.rs, like OpenRA's count without fog). 0 once
+    /// defeated, like RevealedCells of a lost player. Read only, a plain
+    /// count of the fog bytes: nothing in the state hash.
+    pub fn vision_percent(&self, player: u8) -> u32 {
+        let Some(p) = self.players.get(player as usize) else { return 0 };
+        let cells = self.map.cells();
+        if p.defeated || cells == 0 {
+            return 0;
+        }
+        let seen = p.visible.iter().filter(|&&v| v != 0).count();
+        seen.saturating_mul(100).div_ceil(cells) as u32
+    }
+
+    /// The Economy panel's Derricks column (OpenRA ActorsHavingTrait
+    /// UpdatesDerrickCount): the player's oil derricks.
+    pub fn derrick_count(&self, player: u8) -> u32 {
+        self.actors.iter().filter(|a| a.alive && a.owner == player && a.hp > 0 && self.rules.actors[a.ty as usize].world.derrick).count()
+            as u32
+    }
+
+    /// The observer's army panel (OpenRA PlayerStatistics.Units shown by
+    /// ObserverArmyIcons): `(actor type, count)` of the units that count for
+    /// the army value, each under the type UpdatesPlayerStatistics.OverrideActor
+    /// names (E1R1 as E1), only types with a build icon (Buildable: never
+    /// `~disabled`), ordered by production tab (ProductionQueue DisplayOrder,
+    /// the QueueType order) and then BuildPaletteOrder.
+    pub fn army_counts(&self, player: u8) -> Vec<(u16, u32)> {
+        let mut counts: BTreeMap<u16, u32> = BTreeMap::new();
+        for (i, a) in self.actors.iter().enumerate() {
+            if !(a.alive && a.owner == player && a.is_unit() && a.hp > 0) || self.is_harvester(i) || self.is_support_aircraft(i) {
+                continue;
+            }
+            let info = &self.rules.actors[a.ty as usize];
+            let ty = info.world.stats_actor.as_deref().and_then(|id| self.rules.actor_index(id)).map_or(a.ty, |t| t as u16);
+            *counts.entry(ty).or_insert(0) += 1;
+        }
+        let mut list: Vec<(u16, u32)> = counts.into_iter().filter(|&(t, _)| self.has_build_icon(t)).collect();
+        list.sort_by_key(|&(t, _)| {
+            let info = &self.rules.actors[t as usize];
+            (info.queue as usize, info.palette_order, t)
+        });
+        list
+    }
+
+    /// Whether a type can be built at all (OpenRA Buildable): its icon shows in the observer panels.
+    fn has_build_icon(&self, ty: u16) -> bool {
+        !self.rules.actors[ty as usize].prerequisites.iter().any(|pr| self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED)
+    }
+
+    /// The observer's production and support power icons of one player
+    /// (OpenRA ObserverProductionIcons, ObserverSupportPowerIcons): see
+    /// `Game::observer_production`.
+    pub fn observer_production_json(&self, player: u8) -> serde_json::Value {
+        let Some(pl) = self.players.get(player as usize) else { return serde_json::Value::Null };
+        let factories = self.factories(player);
+        // ProductionItem.RemainingTimeActual: low power stretches the time left by LowPowerModifier.
+        let modifier = if pl.low_power() && !pl.dev.fast_build { self.rules.player.low_power_modifier } else { 100 };
+        let queues: Vec<_> = pl
+            .queues
+            .iter()
+            .enumerate()
+            .filter_map(|(qi, q)| {
+                let it = q.items.first()?;
+                let build = self.build_time_with(player, it.ty, self.producer_count_in(&factories, it.ty));
+                // Not started yet: the whole build time is still ahead.
+                let (total, remaining) = if it.total > 0 { (it.total, it.remaining.max(0)) } else { (build, build) };
+                Some(json!({
+                    "queue": qi,
+                    "id": self.rules.actors[it.ty as usize].id,
+                    "progress": if total > 0 { (total - remaining) as f32 / total as f32 } else { 0.0 },
+                    "done": it.done,
+                    "paused": it.paused,
+                    "remainingTicks": if it.done { 0 } else { i64::from(remaining) * i64::from(modifier) / 100 },
+                    "buildTicks": build,
+                }))
+            })
+            .collect();
+        let powers: Vec<_> = self
+            .power_instances(player)
+            .iter()
+            .map(|inst| {
+                let info = self.power_info(inst);
+                json!({
+                    "key": inst.key,
+                    "icon": info.icon,
+                    "name": info.name,
+                    "description": info.description,
+                    "progress": (inst.total - inst.remaining) as f32 / inst.total.max(1) as f32,
+                    // OpenRA SupportPowerInstance.Ready: charged and Active (a powered provider; powers.rs fires only then).
+                    "ready": inst.ready() && inst.charging,
+                    "charging": inst.charging,
+                    "remainingTicks": inst.remaining.max(0),
+                    "totalTicks": inst.total,
+                })
+            })
+            .collect();
+        json!({
+            "funds": pl.funds(),
+            "powerGenerated": pl.power_gen,
+            "powerUsed": pl.power_use,
+            "lowPower": pl.low_power(),
+            "queues": queues,
+            "powers": powers,
+        })
+    }
+
     /// Observer statistics of one player (the counters, no per type tables).
     fn player_stats_json(&self, p: usize) -> serde_json::Value {
         let pl = &self.players[p];
@@ -473,6 +582,8 @@ impl World {
             "score": s.score(),
             "powerGenerated": pl.power_gen,
             "powerUsed": pl.power_use,
+            "vision": self.vision_percent(p as u8),
+            "derricks": self.derrick_count(p as u8),
             "defeated": pl.defeated,
             "defeatedAt": self.defeated_at(p as u8),
             "won": self.has_won(p as u8),
@@ -594,7 +705,8 @@ impl Game {
     /// Observer statistics as a JSON array, one entry per non-neutral player
     /// in player order: `{ player, faction, team, cash, funds, earned,
     /// armyValue, unitsKilled, unitsLost, buildingsKilled, buildingsLost,
-    /// powerGenerated, powerUsed, defeated, won }`.
+    /// powerGenerated, powerUsed, vision (percent of the map seen now),
+    /// derricks (oil derricks owned), defeated, won }`.
     pub fn observer_stats(&self) -> String {
         self.world.observer_stats_json().to_string()
     }
@@ -610,6 +722,19 @@ impl Game {
     /// with `history.ticks`.
     pub fn observer_report(&self) -> String {
         self.world.observer_report_json().to_string()
+    }
+
+    /// One player's production and support powers for the observer's icon
+    /// panels (OpenRA ObserverProductionIcons and ObserverSupportPowerIcons),
+    /// small enough to ask for every player each UI update: `{ funds,
+    /// powerGenerated, powerUsed, lowPower, queues: [{ queue, id, progress,
+    /// done, paused, remainingTicks (ProductionItem.RemainingTimeActual: with
+    /// the low power slowdown), buildTicks }] (each production tab's current
+    /// item, in tab order), powers: [{ key, icon, name, description,
+    /// progress, ready, charging, remainingTicks, totalTicks }] (palette
+    /// order) }`; null for an unknown player. Read only, not hashed.
+    pub fn observer_production(&self, player: u8) -> String {
+        self.world.observer_production_json(player).to_string()
     }
 
     /// Whether `player` is out of the game (false for unknown players). Its
