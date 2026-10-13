@@ -675,7 +675,8 @@ joined protocol 6 the same way, without a version of its own):
   `assignSpawns` (lobby markers) share the cases of
   `packages/protocol/test/fixtures/spawn-cases.json`.
 - `bounty` (default off, OpenRA GivesBounty): a kill pays the killer the
-  victim's GivesBounty percentage (10 % by default) of its value; allies pay
+  victim's GivesBounty percentage (10 % by default) of its sell value
+  (CustomSellValue, else the cost: a pillbox pays 40, not 60); allies pay
   nothing.
 - `timeLimit` (minutes: 0 = none, 10, 20, 30, 40, 60, 90; OpenRA
   TimeLimitManager): the countdown counts game time in real seconds of the
@@ -1394,6 +1395,26 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   player's current factories (BuildTimeSpeedReduction), before the low power
   slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
   sidebar's production tooltip shows both (OpenRA ProductionTooltipLogic).
+- Selling (`{"o": "sell", player, building}`, `World::sell_refund`) pays
+  OpenRA's Sell activity refund: `sell_value * sell_refund * hp / (100 *
+  max_hp)`, rounded down, where `sell_value` is OpenRA GetSellValue
+  (`custom_sell_value`, the actor's CustomSellValue, else its `cost`) and
+  `building.sell_refund` is Sellable.RefundPercent (50 in Red Alert; 0: no
+  Sellable, so it cannot be sold). So a pillbox pays 200 (CustomSellValue
+  400, not its cost 600), a camouflaged pillbox 275, a refinery 150, and
+  walls (CustomSellValue 0) can be sold for nothing. A map rule that
+  changes the cost changes the refund of actors without CustomSellValue,
+  like OpenRA. The same value is the base of the repair cost (repair.rs),
+  kill bounties (gamerules.rs), the sell crew (sell.rs) and the AI's
+  capture value. A structure being captured or demolished cannot be sold.
+  `Game.sell_value(player, id)` is that refund for an own structure, -1
+  while it cannot be sold (the sell cursor, and the "Refund: $n" tooltip
+  line, $0 for walls); the Sold event (7) carries the refund in `b`, which
+  js/battlefx.js floats as "+$n" for the seller and its allies when it is
+  above 0 (Sell ShowTicks); the statistics' `sold` adds it up. The broke
+  AI sells the structure that pays the most first within a rank.
+  Differences: the refund is paid at once (OpenRA pays it when the reverse
+  make animation has played), and RefundPercent 0 means "not sellable".
 
 ## 5. Domains for units
 
@@ -2072,8 +2093,8 @@ most `bonuses.len() - 1` repairers), `{"o": "power_down", player, building}`
 beacon sits on the centre of that cell and replaces the player's previous
 one). Repair follows OpenRA's RepairableBuilding: a step of `min(step,
 missing hp)` every `interval + 1` ticks, each repairing player pays
-`max(1, hp * percent * value / (max_hp * 100))` (`building.value`: OpenRA
-GetSellValue, CustomSellValue or the cost), the step is multiplied by
+`max(1, hp * percent * value / (max_hp * 100))` (value: OpenRA
+GetSellValue, `custom_sell_value` or the cost), the step is multiplied by
 `bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
 insufficient funds event per player, repairers who are no longer allied or
 playing drop out, a full structure ends the repair. Powered off, a structure
@@ -2084,7 +2105,7 @@ in the state hash; beacons are not (they change nothing) and last
 `player.beacon_duration` ticks (OpenRA PlaceBeacon.Duration, 750), shown to
 the owner and allies (rects over the shroud, not in the spectator views).
 Rules: `building.repairable {percent, interval, step, bonuses}` or null,
-`building.power_down`, `building.value`, `base_building` (actor),
+`building.power_down`, `custom_sell_value` (actor, absent: the cost), `base_building` (actor),
 `player.beacon_duration`; `Rules::validate` bounds them (bonuses 1..9 values).
 `rules_json` actors have `repairable` and `powerDown`, players `team` and
 `neutral`. Wasm: `repair_building`, `power_down`, `place_beacon(player, x,
@@ -2130,7 +2151,7 @@ log is presentation only: never read by the simulation, off by default
 `air.power` / `air.launched`) is not hashed either. Kinds and their fields:
 1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
 attacking player; only another player's fire counts, as in OpenRA's
-DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold, 8
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: the refund), 8
 InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
 ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
 Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
@@ -2262,7 +2283,8 @@ Neutral 2, Enemy 4, `generic_prefix`, `show_owner`; null: no tooltip) and
 battlefield (TooltipContainerWidget), 20 px under the cursor, moved left at
 the right edge and above the cursor at the bottom; it adds the owner's name
 and colour, the faction flag (css flag chips) and, in sell mode,
-"Refund: $n" for the player's own structures (Sellable). Differences: a
+"Refund: $n" for the player's own structures that can be sold (Sellable:
+`Game.sell_value`, the amount the sale pays; walls say $0). Differences: a
 remembered structure's TooltipDescription follows the owner it was seen
 with (OpenRA reads the live actor's, which tells a capture under the fog);
 mouse bounds of actors without Selectable bounds are their footprint or one

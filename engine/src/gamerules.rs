@@ -459,7 +459,7 @@ impl World {
         let info = &self.rules.actors[self.actors[i].ty as usize];
         let pct = info.options.gives_bounty?;
         // OpenRA GetSellValue: CustomSellValue, else the cost.
-        let value = info.building.as_ref().map_or(info.cost, |b| b.value);
+        let value = info.sell_value();
         Some((value as i64 * pct as i64 / 100) as i32)
     }
 

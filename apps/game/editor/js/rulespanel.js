@@ -16,6 +16,8 @@ const seconds = (v) => `${(v / TICKS_PER_SECOND).toFixed(1)} s`;
 
 const ACTOR_FIELDS = [
   { path: 'cost', label: 'Cost', min: 0 },
+  // OpenRA CustomSellValue: sell, repair and bounty value instead of the cost (pillboxes, refineries, walls).
+  { path: 'custom_sell_value', label: 'Sell value', min: 0 },
   { path: 'build_ticks', label: 'Build time (ticks)', min: 0, hint: seconds },
   { path: 'hp', label: 'Hit points', min: 1 },
   { path: 'armor', label: 'Armor', kind: 'armor' },

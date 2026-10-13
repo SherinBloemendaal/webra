@@ -42,6 +42,9 @@ struct RawActor {
     kind: String,
     queue: String,
     cost: i32,
+    /// OpenRA CustomSellValue.Value (absent: the cost counts).
+    #[serde(default)]
+    custom_sell_value: Option<i32>,
     build_ticks: i32,
     palette_order: i32,
     /// OpenRA Buildable.BuildLimit (0: no limit).
@@ -652,7 +655,6 @@ struct RawBuilding {
     repairs: Option<RepairInfo>,
     repairable: Option<RepairableInfo>,
     power_down: bool,
-    value: i32,
     center_offset: Vec<i32>,
 }
 
@@ -1037,8 +1039,6 @@ pub struct BuildingInfo {
     pub repairable: Option<RepairableInfo>,
     /// The power down button works on it (repair.rs).
     pub power_down: bool,
-    /// OpenRA GetSellValue: CustomSellValue or the cost; the base of the repair cost.
-    pub value: i32,
     pub center_offset: (i32, i32),
 }
 
@@ -1077,6 +1077,9 @@ pub struct ActorInfo {
     pub kind: Kind,
     pub queue: QueueType,
     pub cost: i32,
+    /// OpenRA CustomSellValue: what selling, repairing and kill bounties count
+    /// instead of the cost (see `sell_value`).
+    pub custom_sell_value: Option<i32>,
     pub build_ticks: i32,
     pub palette_order: i32,
     /// OpenRA Buildable.BuildLimit: at most this many owned and queued (0: no limit).
@@ -1177,6 +1180,13 @@ impl ActorInfo {
 
     pub fn is_wall(&self) -> bool {
         self.abilities.line_build.is_some()
+    }
+
+    /// OpenRA CustomSellValueExts.GetSellValue: CustomSellValue, else the
+    /// Valued cost. The base of the sell refund (production.rs), the repair
+    /// cost (repair.rs), kill bounties (gamerules.rs) and the sell crew (sell.rs).
+    pub fn sell_value(&self) -> i32 {
+        self.custom_sell_value.unwrap_or(self.cost)
     }
 }
 
@@ -1450,6 +1460,9 @@ impl Rules {
     fn validate_actor(&self, a: &ActorInfo) -> Result<(), String> {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
+        if let Some(v) = a.custom_sell_value {
+            within(&n("custom_sell_value"), v, 0, 1_000_000)?;
+        }
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
         within(&n("build_limit"), a.build_limit, 0, 1000)?;
         // Crates and proxies have no health (OpenRA ^Crate has no Health trait; proxies no body).
@@ -1665,7 +1678,6 @@ impl Rules {
             within(&n("repairs.interval"), r.interval, 1, TIMER)?;
             within(&n("repairs.value_percent"), r.value_percent, 0, 1000)?;
         }
-        within(&n("value"), b.value, 0, 1_000_000)?;
         if let Some(r) = &b.repairable {
             within(&n("repairable.percent"), r.percent, 0, MAX_PERCENT)?;
             within(&n("repairable.interval"), r.interval, 1, TIMER)?;
@@ -2103,7 +2115,6 @@ impl Rules {
                         repairs: b.repairs,
                         repairable: b.repairable,
                         power_down: b.power_down,
-                        value: b.value,
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
                     })
                 }
@@ -2147,6 +2158,7 @@ impl Rules {
                 kind,
                 queue,
                 cost: a.cost,
+                custom_sell_value: a.custom_sell_value,
                 build_ticks: a.build_ticks,
                 palette_order: a.palette_order,
                 build_limit: a.build_limit,
@@ -2549,7 +2561,7 @@ mod tests {
             serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "bonuses": [] } } } } }),
             serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "bonuses": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100] } } } } }),
             serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "percent": -1 } } } } }),
-            serde_json::json!({ "actors": { "POWR": { "building": { "value": -1 } } } }),
+            serde_json::json!({ "actors": { "PBOX": { "custom_sell_value": -1 } } }),
         ] {
             assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
         }

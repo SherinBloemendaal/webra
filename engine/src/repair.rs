@@ -111,7 +111,7 @@ impl World {
         let max_hp = info.hp.max(1);
         let hp = (r.step).min(max_hp - a.hp).max(0);
         // The cost is the same however many players repair.
-        let cost = ((hp as i64 * r.percent as i64 * b.value as i64) / (max_hp as i64 * 100)).max(1) as i32;
+        let cost = ((hp as i64 * r.percent as i64 * info.sell_value() as i64) / (max_hp as i64 * 100)).max(1) as i32;
         let (interval, bonuses, ty, player_xp) = (r.interval, r.bonuses.clone(), a.ty, r.player_experience);
         let tick = self.tick;
         let mut paying = 0usize;

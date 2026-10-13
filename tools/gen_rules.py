@@ -1501,6 +1501,9 @@ def main():
             'kind': kind,
             'queue': a['queue'],
             'cost': a['cost'],
+            # OpenRA CustomSellValue (GetSellValue: this, else the cost): what selling,
+            # repairing and kill bounties count instead of the cost (pillboxes, refineries, walls).
+            **({'custom_sell_value': int(t['CustomSellValue']['Value'])} if isinstance(t.get('CustomSellValue'), dict) else {}),
             'build_ticks': a['cost'] * int(a['buildDurationModifier'] or BUILD_DURATION_MODIFIER) // 100
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
@@ -1901,9 +1904,6 @@ def main():
             # building like low power does (repair.rs).
             e['building']['power_down'] = any(isinstance(v, dict) and v.get('OrderName') == 'PowerDown'
                                               for v in trait(t, 'ToggleConditionOnOrder').values())
-            # OpenRA GetSellValue: CustomSellValue, else the cost (repair cost, repair.rs).
-            csv = t.get('CustomSellValue')
-            e['building']['value'] = int(csv.get('Value', a['cost'])) if isinstance(csv, dict) else a['cost']
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
         elif kind in ('mine', 'crate', 'husk', 'proxy'):

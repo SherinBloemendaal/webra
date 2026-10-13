@@ -248,7 +248,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 2000,
     "center_offset": [
      0,
      -512
@@ -442,7 +441,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 300,
     "center_offset": [
      0,
      -512
@@ -637,7 +635,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 500,
     "center_offset": [
      0,
      -512
@@ -651,6 +648,7 @@
    "kind": "building",
    "queue": "Building",
    "cost": 1400,
+   "custom_sell_value": 300,
    "build_ticks": 840,
    "palette_order": 60,
    "build_limit": 0,
@@ -849,7 +847,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 300,
     "center_offset": [
      0,
      -512
@@ -1016,7 +1013,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 150,
     "center_offset": [
      0,
      0
@@ -1238,7 +1234,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 500,
     "center_offset": [
      0,
      -512
@@ -1458,7 +1453,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 500,
     "center_offset": [
      0,
      -512
@@ -1661,7 +1655,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 200,
     "center_offset": [
      0,
      0
@@ -1876,7 +1869,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 2000,
     "center_offset": [
      0,
      -512
@@ -2063,7 +2055,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 1200,
     "center_offset": [
      0,
      0
@@ -2259,7 +2250,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 1500,
     "center_offset": [
      0,
      -512
@@ -2469,7 +2459,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 500,
     "center_offset": [
      0,
      -512
@@ -2761,7 +2750,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 500,
     "center_offset": [
      0,
      0
@@ -3052,7 +3040,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 500,
     "center_offset": [
      0,
      0
@@ -3294,7 +3281,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 1000,
     "center_offset": [
      0,
      0
@@ -3550,7 +3536,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 800,
     "center_offset": [
      0,
      0
@@ -3792,7 +3777,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 1500,
     "center_offset": [
      0,
      -512
@@ -4001,7 +3985,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 1500,
     "center_offset": [
      0,
      -512
@@ -4210,7 +4193,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 800,
     "center_offset": [
      0,
      0
@@ -4470,7 +4452,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 1500,
     "center_offset": [
      0,
      0
@@ -4688,7 +4669,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 2000,
     "center_offset": [
      0,
      0
@@ -4910,7 +4890,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 2500,
     "center_offset": [
      0,
      0
@@ -4924,6 +4903,7 @@
    "kind": "building",
    "queue": "Defense",
    "cost": 30,
+   "custom_sell_value": 0,
    "build_ticks": 18,
    "palette_order": 10,
    "build_limit": 0,
@@ -5021,7 +5001,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -5035,6 +5014,7 @@
    "kind": "building",
    "queue": "Defense",
    "cost": 30,
+   "custom_sell_value": 0,
    "build_ticks": 18,
    "palette_order": 20,
    "build_limit": 0,
@@ -5132,7 +5112,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -5146,6 +5125,7 @@
    "kind": "building",
    "queue": "Defense",
    "cost": 200,
+   "custom_sell_value": 0,
    "build_ticks": 120,
    "palette_order": 30,
    "build_limit": 0,
@@ -5242,7 +5222,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -5256,6 +5235,7 @@
    "kind": "building",
    "queue": "Defense",
    "cost": 600,
+   "custom_sell_value": 400,
    "build_ticks": 360,
    "palette_order": 40,
    "build_limit": 0,
@@ -5470,7 +5450,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 400,
     "center_offset": [
      0,
      0
@@ -5484,6 +5463,7 @@
    "kind": "building",
    "queue": "Defense",
    "cost": 750,
+   "custom_sell_value": 550,
    "build_ticks": 450,
    "palette_order": 50,
    "build_limit": 0,
@@ -5690,7 +5670,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 550,
     "center_offset": [
      0,
      0
@@ -5897,7 +5876,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 800,
     "center_offset": [
      0,
      0
@@ -6118,7 +6096,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 600,
     "center_offset": [
      0,
      0
@@ -6334,7 +6311,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 1200,
     "center_offset": [
      0,
      0
@@ -6534,7 +6510,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 800,
     "center_offset": [
      0,
      0
@@ -6734,7 +6709,6 @@
      "player_experience": 5
     },
     "power_down": true,
-    "value": 700,
     "center_offset": [
      0,
      0
@@ -6899,7 +6873,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 30,
     "center_offset": [
      0,
      -512
@@ -7064,7 +7037,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 50,
     "center_offset": [
      0,
      -512
@@ -7228,7 +7200,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 100,
     "center_offset": [
      0,
      0
@@ -7393,7 +7364,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 200,
     "center_offset": [
      0,
      -512
@@ -7558,7 +7528,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 180,
     "center_offset": [
      0,
      -512
@@ -7712,7 +7681,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 120,
     "center_offset": [
      0,
      0
@@ -7877,7 +7845,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 50,
     "center_offset": [
      0,
      -512
@@ -8042,7 +8009,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 150,
     "center_offset": [
      0,
      -512
@@ -8206,7 +8172,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 150,
     "center_offset": [
      0,
      0
@@ -8369,7 +8334,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 250,
     "center_offset": [
      0,
      0
@@ -8524,7 +8488,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 200,
     "center_offset": [
      0,
      -512
@@ -19616,7 +19579,6 @@
      "player_experience": 5
     },
     "power_down": false,
-    "value": 80,
     "center_offset": [
      0,
      0
@@ -22263,7 +22225,6 @@
      ]
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      -512
@@ -22412,7 +22373,6 @@
      ]
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -22561,7 +22521,6 @@
      ]
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -22711,7 +22670,6 @@
      ]
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      -512
@@ -22852,7 +22810,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -22981,7 +22938,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23107,7 +23063,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23233,7 +23188,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23359,7 +23313,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23484,7 +23437,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23609,7 +23561,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23734,7 +23685,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23859,7 +23809,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -23984,7 +23933,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24109,7 +24057,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24234,7 +24181,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24351,7 +24297,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24468,7 +24413,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24585,7 +24529,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24702,7 +24645,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24819,7 +24761,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -24936,7 +24877,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25053,7 +24993,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25176,7 +25115,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25289,7 +25227,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25414,7 +25351,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25539,7 +25475,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25663,7 +25598,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25787,7 +25721,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -25912,7 +25845,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26040,7 +25972,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26164,7 +26095,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26288,7 +26218,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26412,7 +26341,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26536,7 +26464,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26660,7 +26587,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26784,7 +26710,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -26908,7 +26833,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27032,7 +26956,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27156,7 +27079,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27280,7 +27202,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27404,7 +27325,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27529,7 +27449,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27645,7 +27564,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27770,7 +27688,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -27894,7 +27811,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28019,7 +27935,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28148,7 +28063,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28277,7 +28191,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28380,7 +28293,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28494,7 +28406,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28603,7 +28514,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28712,7 +28622,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28825,7 +28734,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -28938,7 +28846,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -29051,7 +28958,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -29240,7 +29146,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -29422,7 +29327,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -29586,7 +29490,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -29750,7 +29653,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -29914,7 +29816,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -30082,7 +29983,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -30246,7 +30146,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -30410,7 +30309,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -30625,7 +30523,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -30840,7 +30737,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31065,7 +30961,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31174,7 +31069,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31282,7 +31176,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31391,7 +31284,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31500,7 +31392,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31609,7 +31500,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31717,7 +31607,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31826,7 +31715,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -31935,7 +31823,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32044,7 +31931,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32148,7 +32034,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32255,7 +32140,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32364,7 +32248,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32473,7 +32356,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32582,7 +32464,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32691,7 +32572,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32800,7 +32680,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -32909,7 +32788,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33018,7 +32896,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33127,7 +33004,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33232,7 +33108,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33341,7 +33216,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33450,7 +33324,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33560,7 +33433,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33670,7 +33542,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33779,7 +33650,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33888,7 +33758,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -33997,7 +33866,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34105,7 +33973,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34214,7 +34081,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34323,7 +34189,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34432,7 +34297,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34536,7 +34400,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34643,7 +34506,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34752,7 +34614,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34861,7 +34722,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -34970,7 +34830,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35079,7 +34938,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35188,7 +35046,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35297,7 +35154,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35406,7 +35262,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35515,7 +35370,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35620,7 +35474,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35729,7 +35582,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35838,7 +35690,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -35948,7 +35799,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36058,7 +35908,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36161,7 +36010,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36264,7 +36112,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36367,7 +36214,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36470,7 +36316,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36573,7 +36418,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36676,7 +36520,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36779,7 +36622,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36882,7 +36724,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -36985,7 +36826,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37092,7 +36932,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37199,7 +37038,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37305,7 +37143,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37411,7 +37248,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37517,7 +37353,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37625,7 +37460,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37732,7 +37566,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37840,7 +37673,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -37947,7 +37779,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38054,7 +37885,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38162,7 +37992,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38269,7 +38098,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38372,7 +38200,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38475,7 +38302,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38579,7 +38405,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38683,7 +38508,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38792,7 +38616,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -38901,7 +38724,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -39010,7 +38832,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -39119,7 +38940,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0
@@ -39228,7 +39048,6 @@
      "ukraine": []
     },
     "power_down": false,
-    "value": 0,
     "center_offset": [
      0,
      0

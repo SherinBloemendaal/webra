@@ -93,7 +93,7 @@ function fakeGame(over = {}) {
     select_all: () => new Uint32Array(0),
     select_by_class: () => new Uint32Array(0),
     units_center: (_p, ids) => (ids.length ? Float32Array.from([ids[0] * 10, ids[0] * 20]) : new Float32Array(0)),
-    sell_value: () => 0,
+    sell_value: () => -1,
     repair_cursor: () => 0,
     repair_unit_target: () => new Float32Array(0),
     can_power_down: () => false,
@@ -308,7 +308,7 @@ test('repair, power down and sell modes stay on; a beacon ends its mode', async 
     repair_cursor: (_p, id) => (id === 7 ? 1 : id === 8 ? 2 : 0),
     repair_unit_target: () => Float32Array.from([300, 400]),
     can_power_down: (_p, id) => id === 7,
-    sell_value: (_p, id) => (id === 7 ? 150 : 0),
+    sell_value: (_p, id) => (id === 7 ? 150 : -1),
   });
   const { input, hotkeys } = await makeInput({ game, hooks: { onMode: (m) => modes.push(m) } });
   const key = (code, k = code.replace('Key', '')) => hotkeys.handle({ code, key: k.toLowerCase(), ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {} });

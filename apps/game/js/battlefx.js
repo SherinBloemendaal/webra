@@ -1,12 +1,12 @@
 // What the battlefield shows of the lobby options and the bigger warheads,
-// from the engine's events (engine/src/sound_events.rs: CrateCollected and
-// the kinds 38 to 42):
+// from the engine's events (engine/src/sound_events.rs: Sold, CrateCollected
+// and the kinds 38 to 42):
 //
 // - floating cash ("+$1000") where a crate paid out, a kill earned a
-//   bounty or cash changed hands (CashTick: oil derricks, captures, thieves,
-//   supply trucks), in the player's colour, like OpenRA's FloatingText
-//   (bounties for the killer and its allies, the rest for everyone who sees
-//   the spot);
+//   bounty, a structure was sold or cash changed hands (CashTick: oil
+//   derricks, captures, thieves, supply trucks), in the player's colour,
+//   like OpenRA's FloatingText (bounties and sales for the player and its
+//   allies, the rest for everyone who sees the spot);
 // - camera shake (OpenRA ScreenShaker: ShakeScreen warheads, ShakeOnDeath)
 //   and the nuke's white flash (FlashEffect warhead);
 // - message lines: time limit warnings come with the announcer
@@ -21,6 +21,7 @@
 
 /** Event kinds (engine/src/sound_events.rs SoundEventKind). */
 export const FX = Object.freeze({
+  SOLD: 7,
   CRATE_COLLECTED: 36,
   BOUNTY: 38,
   TIME_LIMIT_EXPIRED: 39,
@@ -206,6 +207,10 @@ export class BattleFx {
         }
         case FX.BOUNTY:
           if (this.allied(owner)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));
+          break;
+        case FX.SOLD:
+          // b: the refund (OpenRA Sell activity: ShowTicks, refund > 0, allies of the seller).
+          if (b > 0 && this.allied(owner)) this.texts.add(tick, cashText(b), x * k, y * k, this.colorOf(owner));
           break;
         case FX.CASH_TICK:
           if (visible(x * k, y * k)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));

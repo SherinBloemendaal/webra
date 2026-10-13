@@ -115,6 +115,10 @@ test('BattleFx turns engine events into floats, lines, shake and flash', () => {
         ...ev(FX.CRATE_COLLECTED, 1, 1024, 1024, 0, 0),
         ...ev(FX.BOUNTY, 150, 2048, 0, 1, 0), // an enemy's bounty: not shown
         ...ev(FX.BOUNTY, 90, 2048, 0, 0, 0),
+        // Sales (b: the refund): the seller and its allies see it, nothing for $0 (walls).
+        ...ev(FX.SOLD, 7, 0, 2048, 0, 200),
+        ...ev(FX.SOLD, 7, 0, 2048, 1, 300),
+        ...ev(FX.SOLD, 8, 0, 2048, 0, 0),
         ...ev(FX.TIME_LIMIT_EXPIRED, 0, 0, 0, 255, 0),
         ...ev(FX.PLAYER_LOST, 0, 0, 0, 1, 0),
         ...ev(FX.SCREEN_SHAKE, 20, 0, 0, 1 + 16, 5),
@@ -122,10 +126,10 @@ test('BattleFx turns engine events into floats, lines, shake and flash', () => {
       ],
       0,
     );
-    assert.deepEqual(fx.texts.visible(0).map((t) => t.text), ['+$1,000', '+$90']);
+    assert.deepEqual(fx.texts.visible(0).map((t) => t.text), ['+$1,000', '+$90', '+$200']);
     // Cash ticks (oil derricks, captures, thieves, supply trucks): for whoever sees the spot.
     fx.onEvents([...ev(FX.CASH_TICK, 100, 4096, 0, 1, 0), ...ev(FX.CASH_TICK, -20, 0, 4096, 1, 0)], 1, (x) => x > 0);
-    assert.deepEqual(fx.texts.visible(1).map((t) => t.text), ['+$1,000', '+$90', '+$100']);
+    assert.deepEqual(fx.texts.visible(1).map((t) => t.text), ['+$1,000', '+$90', '+$200', '+$100']);
     assert.deepEqual(lines, ['Time limit has expired.', 'P1 is defeated.']);
     assert.notDeepEqual(fx.cameraOffset(1, 0, 0), [0, 0]);
     assert.ok(fx.flash.alpha(0) > 0.9);
@@ -145,13 +149,14 @@ test('BattleFx turns engine events into floats, lines, shake and flash', () => {
 
 test('battlefield effect kinds follow the engine and stay apart from the announcer kinds', () => {
   assert.equal(FX.CRATE_COLLECTED, EV.CRATE_COLLECTED, 'one crate event for floats and sounds');
+  assert.equal(FX.SOLD, EV.SOLD, 'one sale event for the refund float and the announcer');
   const announcer = new Set(Object.values(EV));
   for (const [name, kind] of Object.entries(FX)) {
-    if (name !== 'CRATE_COLLECTED') assert.ok(!announcer.has(kind), `${name} ${kind} is not an announcer kind`);
+    if (name !== 'CRATE_COLLECTED' && name !== 'SOLD') assert.ok(!announcer.has(kind), `${name} ${kind} is not an announcer kind`);
   }
   // The effect kinds are one block no announcer kind falls into (later kinds,
   // such as KillAnnounced 43, follow it; CashTick 44 came after that).
-  const effects = Object.values(FX).filter((k) => k !== FX.CRATE_COLLECTED && k !== FX.CASH_TICK);
+  const effects = Object.values(FX).filter((k) => k !== FX.CRATE_COLLECTED && k !== FX.CASH_TICK && k !== FX.SOLD);
   const [lo, hi] = [Math.min(...effects), Math.max(...effects)];
   for (const k of announcer) assert.ok(k < lo || k > hi, `announcer kind ${k} is outside the effect kinds ${lo}..${hi}`);
 });

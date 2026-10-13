@@ -44,7 +44,8 @@ pub enum SoundEventKind {
     UnitProduced = 5,
     /// a = actor type of a structure placed by its owner.
     BuildingPlaced = 6,
-    /// a = actor type of a structure sold.
+    /// a = actor type of a structure sold; b = the refund paid (the client
+    /// floats it for the seller's allies, OpenRA Sell activity ShowTicks).
     Sold = 7,
     /// Production stalled for lack of money; a = actor type being built.
     InsufficientFunds = 8,
