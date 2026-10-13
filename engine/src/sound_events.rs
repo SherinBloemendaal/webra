@@ -172,6 +172,11 @@ pub enum SoundEventKind {
     /// `owner` won (OpenRA ConquestVictoryConditions.OnPlayerWon: the
     /// "player is victorious" line), one event per winning player.
     PlayerWon = 47,
+    /// A thunderstorm's lightning struck (WebRA, lightning.rs): one event per
+    /// struck actor, at it; a = its type, owner = its owner, b = the
+    /// `StrikeKind` (2: a unit or structure, 3: a power plant, its owner's
+    /// power is out; 1: grounded on a Lightning Rod, a = the rod's type).
+    LightningStrike = 48,
 }
 
 /// `owner` of events every player hears (time limit warnings).

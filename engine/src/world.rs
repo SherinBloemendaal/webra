@@ -2564,7 +2564,7 @@ impl World {
         // The spectator view flag is render only (observer.rs).
         debug_assert!(!self.render_all, "render_all set while the simulation runs");
         self.tick += 1;
-        self.env.tick(self.tick, self.map.width, self.map.height);
+        let strike = self.env.tick(self.tick, self.map.width, self.map.height);
         for a in self.actors.iter_mut() {
             a.px = a.x;
             a.py = a.y;
@@ -2572,6 +2572,10 @@ impl World {
             a.pturret = a.turret;
         }
         self.rebuild_hash();
+        // Lightning strikes hit with gameplay effects only (lightning.rs).
+        if let Some(s) = strike.filter(|_| self.env.effects()) {
+            self.strike_lightning(s);
+        }
         // Who holds which cells (OpenRA movement model), before this tick's
         // orders and with last tick's moves (movement/occupancy.rs).
         if self.cell_moves() {

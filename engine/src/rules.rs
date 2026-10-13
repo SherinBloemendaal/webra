@@ -668,6 +668,8 @@ struct RawBuilding {
     power_down: bool,
     value: i32,
     center_offset: Vec<i32>,
+    #[serde(default)]
+    lightning_rod: i32,
 }
 
 #[derive(Deserialize)]
@@ -1054,6 +1056,9 @@ pub struct BuildingInfo {
     /// OpenRA GetSellValue: CustomSellValue or the cost; the base of the repair cost.
     pub value: i32,
     pub center_offset: (i32, i32),
+    /// WebRA's Lightning Rod (data/webra/rules.yaml `LightningRod`, lightning.rs):
+    /// lightning that would land within this range (world units) is grounded on it; 0 for none.
+    pub lightning_rod: i32,
 }
 
 impl BuildingInfo {
@@ -2128,6 +2133,7 @@ impl Rules {
                         power_down: b.power_down,
                         value: b.value,
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
+                        lightning_rod: b.lightning_rod,
                     })
                 }
             };

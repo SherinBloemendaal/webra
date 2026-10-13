@@ -279,7 +279,11 @@ fn tick_queue(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> bool {
             } else {
                 Placement::Building
             };
-            let (location, center) = choose_build_location(w, player, cfg, item.ty, kind, idx);
+            let (mut location, center) = choose_build_location(w, player, cfg, item.ty, kind, idx);
+            // WebRA: a Lightning Rod goes where it covers the most power plants (ai_lightning.rs).
+            if crate::ai_lightning::is_rod(w, item.ty) {
+                location = crate::ai_lightning::rod_location(w, player, item.ty).or(location);
+            }
             qm(w, player, idx).base_center_failing = center;
             let Some((cx, cy)) = location else {
                 let q = qm(w, player, idx);
@@ -470,6 +474,10 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
                 return power;
             }
         }
+    }
+    // WebRA: a Lightning Rod over power plants while thunderstorms can strike (ai_lightning.rs).
+    if let Some(r) = crate::ai_lightning::wanted_rod(w, player, &buildable) {
+        return Some(r);
     }
     // Everything else, by BuildingFractions in random order.
     let mut fractions = cfg.fractions.clone();
@@ -814,7 +822,7 @@ fn dock_ore_distance(w: &World, ty: u16, cx: i32, cy: i32, field: &[i32]) -> i32
     best
 }
 
-fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
+pub(crate) fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
     for y in cy - 1..=cy + bh {
         for x in cx - 1..=cx + bw {
             let inside = x >= cx && x < cx + bw && y >= cy && y < cy + bh;
