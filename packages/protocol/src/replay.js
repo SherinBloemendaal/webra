@@ -10,9 +10,9 @@
 // then every field strictly (unknown keys, orders, options, map, hashes), and
 // returns a fresh object holding only validated values.
 
-import { HASH_INTERVAL, MAX_PLAYERS, SAVE_ID_RE, SHA256_RE, STATE_HASH_RE, TICKS_PER_SECOND, VERSION_RE } from './constants.js';
+import { CHAT_MAX, HASH_INTERVAL, MAX_PLAYERS, SAVE_ID_RE, SHA256_RE, STATE_HASH_RE, TICKS_PER_SECOND, VERSION_RE } from './constants.js';
 import { fail, int, isPlainObject, object, oneOf, ProtocolError, text, utf8Length } from './check.js';
-import { validFrameOrders } from './messages.js';
+import { validFrameOrders, validName } from './messages.js';
 import { parseMap, sha256Hex } from './map.js';
 import { validateGameOptions } from './options.js';
 import { coopMission, validateMissionOptions, validCoopMission, validMissionRef } from './mission.js';
@@ -28,10 +28,12 @@ export const REPLAY_HASH_INTERVAL = 250;
 export const REPLAY_KINDS = ['replay', 'save'];
 export const REPLAY_MODES = ['skirmish', 'online', 'mission'];
 export const REPLAY_TITLE_MAX = 64;
+/** Chat lines a replay keeps at most (OpenRA replays hold the Chat orders). */
+export const REPLAY_CHAT_MAX = 5000;
 /** Saves in the browser (IndexedDB) and their names. */
 export const SAVE_SLOTS_MAX = 50;
 
-const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes', 'online', 'mission'];
+const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes', 'online', 'mission', 'chat'];
 
 /**
  * Validate everything except the map hash (which needs async SHA-256).
@@ -137,6 +139,20 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
   });
   if (out.kind === 'save' && (out.hashes.length === 0 || out.hashes.at(-1)[0] !== out.ticks)) {
     fail('a save must end with the state hash of its last tick');
+  }
+  // The chat of an online game's replay, as the recording client received it:
+  // [tick, player (-1: a spectator), name, text, team (1: team chat)]. Saves never carry chat.
+  if (v.chat !== undefined) {
+    if (out.kind !== 'replay' || out.mode !== 'online') fail('only replays of online games carry chat');
+    if (!Array.isArray(v.chat) || v.chat.length > REPLAY_CHAT_MAX) fail(`chat must be a list of at most ${REPLAY_CHAT_MAX} lines`);
+    last = -1;
+    out.chat = v.chat.map((c, i) => {
+      if (!Array.isArray(c) || c.length !== 5) fail(`chat[${i}] must be [tick, player, name, text, team]`);
+      const tick = int(c[0], 0, out.ticks, `chat[${i}] tick`);
+      if (tick < last) fail('chat ticks must not decrease');
+      last = tick;
+      return [tick, int(c[1], -1, players - 1, `chat[${i}] player`), validName(c[2], `chat[${i}] name`), text(c[3], 1, CHAT_MAX, `chat[${i}] text`), int(c[4], 0, 1, `chat[${i}] team`)];
+    });
   }
   return out;
 }
