@@ -156,6 +156,8 @@ mod tests_security;
 #[cfg(test)]
 mod tests_selection;
 #[cfg(test)]
+mod tests_simperf;
+#[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
 mod tests_sound_eva;

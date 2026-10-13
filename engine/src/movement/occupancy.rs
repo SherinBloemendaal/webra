@@ -119,6 +119,20 @@ fn overlaps(a: u8, b: u8) -> bool {
     a == FULL_CELL || b == FULL_CELL || a == b
 }
 
+/// Every sub-cell as a bit set (`sub_bits`).
+const ALL_SUBS: u8 = 0b11_1110;
+
+/// The sub-cells a holder on sub-cell `s` takes, as bits `1 << sub`: all
+/// of them for the whole cell.
+#[inline]
+fn sub_bits(s: u8) -> u8 {
+    if s == FULL_CELL {
+        ALL_SUBS
+    } else {
+        1 << s
+    }
+}
+
 impl World {
     /// Whether the game uses the OpenRA movement model.
     #[inline]
@@ -210,18 +224,36 @@ impl World {
 
     /// OpenRA Locomotor.IsBlockedBy: whether occupant `o` keeps unit `i` out
     /// under `check`.
-    fn blocked_by(&self, i: usize, o: usize, check: Blocking) -> bool {
-        let movable = self.is_movable(o);
-        let moving = movable && self.actors[o].mv.moving;
-        // Allies that can be asked to move out of the way.
-        if check <= Blocking::Immovable && movable && self.are_allies(self.actors[i].owner, self.actors[o].owner) {
-            return false;
-        }
-        // Units on the move.
-        if check <= Blocking::Stationary && moving {
-            return false;
+    pub(crate) fn blocked_by(&self, i: usize, o: usize, check: Blocking) -> bool {
+        if check <= Blocking::Stationary {
+            let movable = self.is_movable(o);
+            // Allies that can be asked to move out of the way.
+            if check <= Blocking::Immovable && movable && self.are_allies(self.actors[i].owner, self.actors[o].owner) {
+                return false;
+            }
+            // Units on the move.
+            if movable && self.actors[o].mv.moving {
+                return false;
+            }
         }
         !self.crushable_by(o, i)
+    }
+
+    /// The sub-cells of `cell` that its holders other than `i` take (bits
+    /// `1 << sub`, all of them for a holder of the whole cell), counting
+    /// only the holders `counts` accepts, and whether `cell` has any holder
+    /// other than `i` at all. One pass over the holders: the occupancy
+    /// queries below ask about the sub-cells of crowded cells many times
+    /// per tick.
+    fn taken_subs(&self, cell: u32, i: usize, counts: impl Fn(Occupant) -> bool) -> (u8, bool) {
+        let (mut mask, mut any) = (0, false);
+        for o in self.others_at(cell, i) {
+            any = true;
+            if mask != ALL_SUBS && counts(o) {
+                mask |= sub_bits(o.sub);
+            }
+        }
+        (mask, any)
     }
 
     /// OpenRA Mobile.CanEnterCell: unit `i` may move into `cell` (its
@@ -234,8 +266,13 @@ impl World {
             return true;
         }
         let shares = self.shares_cell(i);
-        if shares && self.free_sub_cell(cell, i, self.actors[i].mv.to_sub).is_some() {
-            return true;
+        // `free_sub_cell` finds a sub-cell exactly when nobody else holds
+        // the cell or one of its sub-cells is free.
+        if shares {
+            let (mask, any) = self.taken_subs(cell, i, |_| true);
+            if !any || mask != ALL_SUBS {
+                return true;
+            }
         }
         let sub = if shares { self.actors[i].mv.to_sub } else { FULL_CELL };
         !self.others_at(cell, i).any(|o| overlaps(o.sub, sub) && self.blocked_by(i, o.actor as usize, check))
@@ -246,11 +283,12 @@ impl World {
     /// nearest, `nearest_sub_cell`). None when every sub-cell is taken (or a
     /// unit holds the whole cell).
     pub(crate) fn free_sub_cell(&self, cell: u32, i: usize, preferred: u8) -> Option<u8> {
-        let taken = |s: u8| self.others_at(cell, i).any(|o| overlaps(o.sub, s));
+        let (mask, any) = self.taken_subs(cell, i, |_| true);
+        let taken = |s: u8| mask & sub_bits(s) != 0;
         if preferred != FULL_CELL && !taken(preferred) {
             return Some(preferred);
         }
-        if self.others_at(cell, i).next().is_none() {
+        if !any {
             return Some(DEFAULT_SUB_CELL);
         }
         self.nearest_sub_cell(i, cell, |s| s != preferred && !taken(s))
@@ -261,7 +299,7 @@ impl World {
     /// free one in index order (top left first); this order keeps mirrored
     /// units on mirrored sub-cells, so a sub-cell never favours a side of
     /// the map.
-    fn nearest_sub_cell(&self, i: usize, cell: u32, free: impl Fn(u8) -> bool) -> Option<u8> {
+    pub(crate) fn nearest_sub_cell(&self, i: usize, cell: u32, free: impl Fn(u8) -> bool) -> Option<u8> {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         (1..SUB_CELL_OFFSETS.len() as u8).filter(|&s| free(s)).min_by_key(|&s| {
             let (px, py) = sub_cell_point(self.map.width, cell, s);
@@ -280,11 +318,12 @@ impl World {
             return (!blocked).then_some(FULL_CELL);
         }
         let preferred = self.actors[i].mv.from_sub;
-        let taken = |s: u8| self.others_at(cell, i).any(|o| overlaps(o.sub, s) && self.blocked_by(i, o.actor as usize, Blocking::All));
+        let (mask, any) = self.taken_subs(cell, i, |o| self.blocked_by(i, o.actor as usize, Blocking::All));
+        let taken = |s: u8| mask & sub_bits(s) != 0;
         if preferred != FULL_CELL && !taken(preferred) {
             return Some(preferred);
         }
-        if self.others_at(cell, i).next().is_none() {
+        if !any {
             return Some(DEFAULT_SUB_CELL);
         }
         self.nearest_sub_cell(i, cell, |s| s != preferred && !taken(s))
