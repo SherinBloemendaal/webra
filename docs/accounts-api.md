@@ -812,7 +812,9 @@ Serialized size at most 32 KiB.
   },
   "debug": {
     "cells": false, "footprints": false, "flow": false, "combat": false,
-    "tags": false, "health": false, "stats": false, "graph": false, "cpuInstances": false
+    "tags": false, "health": false, "stats": false, "graph": false, "cpuInstances": false,
+    "perfCaptureSeconds": 30,      // performance capture length: 10, 30, 60 or 120 (PERF_CAPTURE_SECONDS, docs/contracts.md section 10)
+    "perfCaptureStart": false      // record the first 60 s of every game
   },
   "lobby": {
     "name": "Commander",           // 1..20 characters, lobby name text rules

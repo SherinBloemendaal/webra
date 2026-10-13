@@ -148,6 +148,7 @@ export class SimCore {
    */
   start(spec) {
     if (this.game) throw new Error('this simulation already runs a game');
+    const startedAt = this.now();
     const G = this.Game;
     this.kind = spec.kind;
     this.tickMs = spec.tickMs ?? 40;
@@ -216,7 +217,11 @@ export class SimCore {
       default:
         throw new Error(`unknown game kind ${spec.kind}`);
     }
-    return this.info();
+    const createMs = this.now() - startedAt;
+    const info = this.info();
+    // How long the engine took to make the game (the performance capture's start, js/perfcapture.js).
+    info.timings = { createMs, infoMs: this.now() - startedAt - createMs };
+    return info;
   }
 
   /** Facts that do not change during the game, for the main thread's mirror. */
@@ -247,7 +252,18 @@ export class SimCore {
       recorder: this.recorder ? { start: this.recorder.start } : null,
       // A mission (engine mission/): where the camera starts (world pixels) and its players' names and colours.
       mission: g.is_mission() ? { camera: Array.from(g.mission_camera()), players: JSON.parse(g.mission_state()).players } : null,
+      // The terrain at the start (engine terrain bytes, RGBA per cell), so the
+      // terrain art is made before the first frame; later changes come with frames.
+      terrain: this.initialTerrain(),
     };
+  }
+
+  /** A copy of the game's terrain bytes now (null without engine memory, as in some tests). */
+  initialTerrain() {
+    const g = this.game;
+    const mem = this.memory();
+    if (!mem || typeof g.terrain_ptr !== 'function') return null;
+    return new Uint8Array(mem.buffer, g.terrain_ptr(), g.terrain_len()).slice();
   }
 
   // ---- Calls and queries ---------------------------------------------------------------
@@ -379,7 +395,7 @@ export class SimCore {
    * @param {{
    *   dt: number, paused?: boolean, view: number, rect: number[],
    *   audio?: boolean, table?: boolean, paths?: boolean, targetLines?: number[], queries?: Array<[string, string, any[]]>,
-   *   instances?: 'cpu' | 'gpu',
+   *   instances?: 'cpu' | 'gpu', perf?: boolean,
    * }} req `view`: the player whose eyes the screen uses (or the observer
    *   view), `rect`: the visible world rectangle [x0, y0, x1, y1] in pixels,
    *   `audio`: take the sound events, `table`: send the actor table when it
@@ -388,12 +404,18 @@ export class SimCore {
    *   `instances`: 'cpu' (default) builds this frame's interpolated and culled
    *   sprites and rects; 'gpu' builds tick-rate records of the whole map for
    *   the GPU instance pass (js/crowd-gpu.js) and sends them, with the fog,
-   *   only when they changed (a tick, an order, the selection, the view)
+   *   only when they changed (a tick, an order, the selection, the view);
+   *   `perf`: a performance capture runs (js/perfcapture.js): time the
+   *   slowest tick, the queries and the whole step, and count the actors
+   *   (null without it)
    * @returns {object} the frame: timings, status, query answers, and
    *   `{ ptr, len }` locations in wasm memory of the render data (valid until
    *   the next call into the game; js/sim/worker.js copies them out)
    */
   step(req) {
+    // The performance capture's timings (`req.perf`) cost a few clock reads: only while it records.
+    const perf = !!req.perf;
+    const stepStart = perf ? this.now() : 0;
     const g = this.game;
     const tickMs = this.tickMs;
     const dt = req.dt;
@@ -401,12 +423,16 @@ export class SimCore {
     let alpha = paused ? 1 : this.acc / tickMs;
     let simFrameMs = 0;
     let ticks = 0;
+    // The slowest tick of this step, while a capture records (the lockstep
+    // driver and replays tick inside: one tick is its time, several their mean).
+    let tickMaxMs = perf ? 0 : null;
     let loadError = null;
     if (this.driver || this.replay) {
       const t0 = this.now();
       const r = this.driver ? this.driver.advance(dt) : this.replay.advance(dt, tickMs);
       simFrameMs = this.now() - t0;
       ticks = r.ticks;
+      if (perf && ticks > 0) tickMaxMs = simFrameMs / ticks;
       if (r.ticks > 0 && !this.busy()) this.simMs = this.simMs * 0.9 + (simFrameMs / r.ticks) * 0.1;
       alpha = r.alpha;
     } else if (this.local?.loading) {
@@ -421,8 +447,10 @@ export class SimCore {
       this.acc += dt;
       const t0 = this.now();
       while (this.acc >= tickMs && ticks < MAX_TICKS_PER_FRAME) {
+        const tt = perf ? this.now() : 0;
         if (this.local) this.local.tick();
         else g.tick();
+        if (perf) tickMaxMs = Math.max(tickMaxMs, this.now() - tt);
         this.acc -= tickMs;
         ticks++;
       }
@@ -435,7 +463,9 @@ export class SimCore {
 
     // Everything that may allocate in wasm memory comes first: the locations
     // of the render data below stay valid only until the next call.
+    const queryStart = perf ? this.now() : 0;
     const answers = req.queries?.length ? this.queries(req.queries) : null;
+    const queryMs = perf ? this.now() - queryStart : null;
     // Sounds of what happened (fast-forwarding stays silent: they are dropped).
     let audio = null;
     if (busy || !req.audio) g.take_audio_events();
@@ -521,6 +551,12 @@ export class SimCore {
       ticks,
       alpha,
       simFrameMs,
+      tickMaxMs,
+      queryMs,
+      // The whole step in the simulation (ticks, queries, render data).
+      stepMs: perf ? this.now() - stepStart : null,
+      // Actors alive.
+      actors: perf ? g.actor_count() : null,
       simMs: this.simMs,
       tick,
       busy,

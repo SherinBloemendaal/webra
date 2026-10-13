@@ -20,6 +20,7 @@ import { defaultRegistry } from '../registry.js';
 export const FOG_VISIBLE = 255;
 import { EVA, notificationSound, PLAYER_LINES, BACKGROUND_MUSIC } from './catalog.js';
 import { actorInfo } from '../sim/methods.js';
+import { perfTrace } from '../perfcapture.js';
 
 /** Game methods that give a unit order: the units reply. Their second argument is the unit ids. */
 export const ORDER_METHODS = new Set([
@@ -327,7 +328,7 @@ export class AudioSystem {
       const ctx = new Offline(1, 1, 44100);
       for (const [key, bytes] of sounds) {
         try {
-          const buffer = await ctx.decodeAudioData(bytes.slice(0));
+          const buffer = await perfTrace.spanAsync('audio.decode-pack', () => ctx.decodeAudioData(bytes.slice(0)), { key });
           if (buffer.duration <= maxSeconds) decoded.set(key, buffer);
         } catch {
           // Not decodable in this browser: the key keeps its other sounds.

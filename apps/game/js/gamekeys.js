@@ -43,6 +43,8 @@ export const GAME_KEYS = Object.freeze([
   // WebRA's own: the game menu (Esc always opens it too), debug menu, unit paths, fullscreen.
   { name: 'menu', keys: [], label: 'Game menu (Esc also opens it)', group: 'Game Commands', contexts: ['player', 'spectator'] },
   { name: 'debugMenu', keys: ['`'], label: 'Debug menu', group: 'Game Commands', contexts: ['player', 'spectator'] },
+  // The debug menu's performance capture (js/perfcapture.js): start, or stop and save. Alt+P is free in OpenRA's set.
+  { name: 'recordPerformance', keys: ['Alt+P'], label: 'Record performance (again: stop and save)', group: 'Game Commands', contexts: ['player', 'spectator'] },
   // OpenRA has no default key for its path lines; L is free in its set.
   { name: 'showUnitPaths', keys: ['L'], label: 'Show unit paths', group: 'Game Commands', contexts: ['player', 'spectator'] },
   { name: 'fullscreen', keys: ['Alt+Enter'], label: 'Fullscreen', group: 'Game Commands', contexts: ['player', 'spectator', 'menu'] },

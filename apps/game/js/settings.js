@@ -53,6 +53,10 @@ export const KEYS = Object.freeze({
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
   // "Send error reports" (js/telemetry/index.js follows it).
   errorReports: ['privacy', 'errorReports'],
+  // The performance capture (js/perfcapture.js, the debug menu): its length
+  // in seconds, and recording the first 60 s of every game.
+  perfCaptureSeconds: ['debug', 'perfCaptureSeconds'],
+  perfCaptureStart: ['debug', 'perfCaptureStart'],
 });
 
 /**

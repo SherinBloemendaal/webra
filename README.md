@@ -350,6 +350,7 @@ Game commands (OpenRA defaults):
 | (none) | Relationship colours: you green, allies yellow, enemies red (also in Settings) |
 | \` (backquote), L, Alt + Enter | WebRA's own: debug menu, unit paths, fullscreen |
 | Alt + M (Option + M on macOS) | WebRA's own: capture or release the mouse (OpenRA's Alt + E is bookmark 3) |
+| Alt + P (Option + P on macOS) | WebRA's own: record performance; again: stop and save the JSON file |
 
 Units, stances and production:
 
@@ -479,6 +480,7 @@ Notes on browsers:
   | 144 fps | GPU (every tick) | 0.12 / 0.57 ms | 152 to 200 KB |
 
   Worker figures are from the transfer mode; shared memory and the main thread give the same within noise. Building the records costs 0.43 ms per tick in the engine against 0.47 ms per frame for `build_render`, and a record is 52 bytes against 32 for an instance, so at 60 fps the saving is the per-frame build and about a third of the bytes, at 144 fps three quarters of both; frames between ticks carry no render data at all. The main thread's share stays below 0.1 ms per frame on both paths. The GPU side (upload, the three compute dispatches, the indirect draws) cannot run headless and is not measured; neither is its cost in a browser. `apps/game/tests/crowd.test.mjs` checks that the shader's math and compaction, run in JavaScript on engine records, draws exactly what `build_render` draws.
+- **Performance capture.** For what headless benchmarks cannot see (canvas drawing, uploads, the GPU, the browser's own work), the debug menu records a game for 10, 30, 60 or 120 seconds (Alt + P), or the first 60 seconds of every game from its first frame with "Record the start of every game" (leaving the game saves what was recorded), and saves a `webra-perf` JSON file to attach to a report: frame times with the main thread, simulation, worker round trip and GPU parts, long tasks and long animation frames, heavy work such as atlas builds and sound decoding, the spans of the game's start, memory, and the browser, GPU and settings, with a summary of the worst frames and where the time went at the top. No names, chat or account, and the game sends it nowhere. [docs/contracts.md](docs/contracts.md) (section 10) describes the file. Measured headless on a large 8-player map with Normal AIs (Node 26, Apple Silicon): tile terrain with the original graphics (a synthetic theater) took 4.0 s on the main thread in the first frame; the same tiles now take 0.7 s while the game loads, before its first frame.
 
 ## Credits
 

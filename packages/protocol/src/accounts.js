@@ -278,6 +278,8 @@ export const GAME_SCALE_LIMITS = Object.freeze({ min: 0.5, max: 3, step: 0.05 })
 export const ZOOM_FACTOR_LIMITS = Object.freeze({ min: 1 / 3, max: 8 / 3 });
 /** audio.musicRepeat: repeat the playlist, repeat one track, or stop after the last track. */
 export const MUSIC_REPEAT_MODES = Object.freeze(['all', 'one', 'off']);
+/** Lengths (seconds) of the game's performance capture (apps/game/js/perfcapture.js, debug setting `perfCaptureSeconds`). */
+export const PERF_CAPTURE_SECONDS = Object.freeze([10, 30, 60, 120]);
 
 /** `range` names the limits in the message when they are not short decimals (1/3 to 8/3). */
 const num = (min, max, range = `${min} to ${max}`) => (v, f) => {
@@ -416,7 +418,12 @@ const SETTINGS_SECTIONS = {
     musicRepeat: choice(MUSIC_REPEAT_MODES),
   },
   content: { packs },
-  debug: Object.fromEntries(['cells', 'footprints', 'flow', 'combat', 'tags', 'health', 'stats', 'graph', 'cpuInstances'].map((k) => [k, boolean])),
+  debug: {
+    ...Object.fromEntries(['cells', 'footprints', 'flow', 'combat', 'tags', 'health', 'stats', 'graph', 'cpuInstances'].map((k) => [k, boolean])),
+    // The performance capture (apps/game/js/perfcapture.js).
+    perfCaptureSeconds: choice(PERF_CAPTURE_SECONDS),
+    perfCaptureStart: boolean,
+  },
   lobby: {
     name: (v, f) => wrapText(f, () => text(v, 1, Math.min(20, NAME_MAX), 'name')),
     faction: choice(FACTIONS),
