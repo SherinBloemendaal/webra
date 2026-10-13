@@ -159,6 +159,10 @@ const ORDER_SCHEMA = {
   repair_building: { building: u32 },
   // WebRA bulk repair: toggle the sender's own damaged structures among `ids` as a group.
   repair_buildings: { ids: idList },
+  // WebRA bulk repair: the sender's own damaged units among `ids` go to their nearest repair structure.
+  repair_units: { ids: idList },
+  // WebRA bulk sell (a box in sell mode): the sender's own sellable structures among `ids`, never a Construction Yard.
+  sell_buildings: { ids: idList },
   power_down: { building: u32 },
   place_beacon: { x: i32, y: i32 },
   // engine/src/gamerules.rs: the in-game menu's Surrender (OpenRA's

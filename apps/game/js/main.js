@@ -80,6 +80,7 @@ import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
 import { askOf } from './sim/methods.js';
+import { BoxChooser } from './boxchooser.js';
 import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 import { ICON_CSS as OBSERVER_ICON_CSS } from './observer-icons.js';
 import { EndGameDialog, EndGameFlow } from './endgame.js';
@@ -1225,7 +1226,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     sidebar?.repaintIcons();
   };
   settings.subscribe('playerStanceColors', applyRelationshipColors);
+  // Bulk repair chooser and bulk sell confirmation (js/boxchooser.js), next to where a mode's box ends.
+  const boxChooser = new BoxChooser($('field'));
   const input = new Input($('view'), ui, rules, player, {
+    chooseRepair: (ask) => boxChooser.chooseRepair(ask),
+    confirmSell: (ask) => boxChooser.confirmSell(ask),
+    cancelBoxChoice: () => boxChooser.cancel(),
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
       if (key) audio?.selectTarget(key);

@@ -348,52 +348,81 @@ test('repair, power down and sell modes stay on; a beacon ends its mode', async 
   assert.equal(input.modeTarget({ x: 500, y: 50 }), false);
 });
 
-// ---- Bulk repair (WebRA addition, js/input.js) --------------------------------------------
+// ---- Bulk repair and sell (WebRA additions, js/input.js) ----------------------------------
 
-/** Ids 1..3: own structures (3 undamaged), 4: an own tank, 5: an ally's structure. */
-function bulkRepairGame(over = {}) {
+/**
+ * Ids 1..3: own structures (3 undamaged), 4: an own damaged tank, 5: an
+ * ally's structure, 6: an own damaged ore truck, 7: an own damaged tank with
+ * no depot, 8: an own undamaged tank, 9: the own Construction Yard.
+ */
+function bulkGame(over = {}) {
   const actors = {
     1: { owner: 0, building: true },
     2: { owner: 0, building: true },
     3: { owner: 0, building: true },
-    4: { owner: 0, building: false },
+    4: { owner: 0, building: false, kind: 'combat' },
     5: { owner: 1, building: true },
+    6: { owner: 0, building: false, kind: 'harvesters' },
+    7: { owner: 0, building: false, kind: 'combat' },
+    8: { owner: 0, building: false },
+    9: { owner: 0, building: true },
   };
-  const damaged = new Set([1, 2]);
+  const damaged = new Set([1, 2, 4, 6, 7]);
+  // The engine's answer: own damaged actors among the ids by category, in their order.
+  const groups = (p, ids) => {
+    const out = { buildings: [], combat: [], harvesters: [], other: [], noFacility: [] };
+    for (const id of new Set(ids)) {
+      const a = actors[id];
+      if (!a || a.owner !== p || !damaged.has(id)) continue;
+      out[a.building ? 'buildings' : a.kind].push(id);
+      if (id === 7) out.noFacility.push(id);
+    }
+    return JSON.stringify(out);
+  };
+  const recorder = () => {
+    const calls = [];
+    const f = (...args) => calls.push(args.map((v) => (ArrayBuffer.isView(v) ? Array.from(v) : v)));
+    f.calls = calls;
+    return f;
+  };
   return fakeGame({
-    actor_json: (id) => (actors[id] ? JSON.stringify({ id, type: 'powr', ...actors[id], carrier: NONE }) : 'null'),
-    // The engine's answer: own damaged structures among the ids, in their order.
-    repair_targets: (p, ids) => Uint32Array.from(Array.from(ids).filter((id) => actors[id]?.owner === p && actors[id].building && damaged.has(id))),
-    // Structures 1 and 2 stand inside x < 400; nothing to repair elsewhere.
-    repair_box: (_p, x0, _y0, x1) => (Math.min(x0, x1) < 400 ? Uint32Array.from([1, 2]) : new Uint32Array(0)),
-    repair_buildings: (() => {
-      const calls = [];
-      const f = (...args) => calls.push(args.map((v) => (ArrayBuffer.isView(v) ? Array.from(v) : v)));
-      f.calls = calls;
-      return f;
-    })(),
+    actor_json: (id) => (actors[id] ? JSON.stringify({ id, type: 'x', ...actors[id], carrier: NONE }) : 'null'),
+    repair_selection_json: (p, ids) => groups(p, Array.from(ids)),
+    // Everything stands inside x < 400; nothing elsewhere.
+    repair_box_json: (p, x0, _y0, x1) => groups(p, Math.min(x0, x1) < 400 ? [1, 2, 3, 4, 5, 6, 7, 8, 9] : []),
+    // The sell box: 1, 2 and 3 (never the Construction Yard 9), worth 100, 200 and 300.
+    sell_box: (_p, x0, _y0, x1) => (Math.min(x0, x1) < 400 ? Uint32Array.from([1, 2, 3]) : Math.min(x0, x1) < 600 ? Uint32Array.from([2]) : new Uint32Array(0)),
+    sell_value: (_p, id) => id * 100,
+    repair_buildings: recorder(),
+    repair_units: recorder(),
+    sell_buildings: recorder(),
     ...over,
   });
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const keyEvent = (code, k) => ({ code, key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {} });
+const mouseOf = (input) => (type, x, y, shift = false) =>
+  input[type]({ button: 0, clientX: x, clientY: y, shiftKey: shift, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} });
 
-test('the Repair key with own structures selected repairs the damaged ones at once instead of opening the mode', async () => {
+test('the Repair key with own actors selected repairs the damaged ones at once instead of opening the mode', async () => {
   const modes = [];
-  const game = bulkRepairGame();
-  const { input, hotkeys } = await makeInput({ game, hooks: { onMode: (m) => modes.push(m) } });
-  input.setSelection([4, 3, 2, 5, 1]);
+  const feedback = [];
+  const game = bulkGame();
+  const { input, hotkeys } = await makeInput({ game, hooks: { onMode: (m) => modes.push(m), feedback: (t) => feedback.push(t) } });
+  input.setSelection([4, 3, 2, 5, 1, 6, 7, 8]);
   hotkeys.handle(keyEvent('KeyC', 'c'));
   await flush();
   assert.equal(input.mode, null, 'no repair mode');
   assert.deepEqual(game.repair_buildings.calls, [[0, [2, 1]]], 'one order for the selected own damaged structures');
+  assert.deepEqual(game.repair_units.calls, [[0, [4, 6]]], 'one order for the units that have a depot, no chooser');
+  assert.deepEqual(feedback, ['No repair facility for one unit.']);
   // The sidebar button goes the same way (main.js: onMode -> toggleMode).
   input.toggleMode('repair');
   await flush();
-  assert.equal(game.repair_buildings.calls.length, 2, 'pressed again: the engine stops them all when all repair');
-  // Only undamaged, allied or no structures selected: repair mode as before.
-  for (const sel of [[3], [5], [4], []]) {
+  assert.equal(game.repair_buildings.calls.length, 2, 'pressed again: the engine stops the structures when all repair');
+  // Only undamaged or allied actors selected, or none: repair mode as before.
+  for (const sel of [[3], [5], [8], []]) {
     input.setSelection(sel);
     input.toggleMode('repair');
     await flush();
@@ -405,31 +434,88 @@ test('the Repair key with own structures selected repairs the damaged ones at on
   assert.deepEqual(modes, ['repair', null, 'repair', null, 'repair', null, 'repair', null]);
 });
 
-test('a box dragged in repair mode repairs the structures in it; a short drag is a click', async () => {
-  const game = bulkRepairGame({ pick: (_p, x) => (x < 100 ? 1 : NONE), repair_cursor: (_p, id) => (id === 1 ? 1 : 0) });
+test('the Repair key from sell or power down mode leaves that mode before it repairs', async () => {
+  const game = bulkGame({ pick: () => 1, sell_value: () => 150 });
   const { input } = await makeInput({ game });
+  for (const mode of ['sell', 'powerDown']) {
+    input.setMode(mode);
+    input.setSelection([1]);
+    input.toggleMode('repair');
+    assert.equal(input.mode, null, `${mode} ends at once, before the answer`);
+    // A click meanwhile sells or powers down nothing.
+    await input.modeClick({ x: 50, y: 50 });
+    await flush();
+    assert.equal(input.mode, null);
+  }
+  assert.deepEqual(game.calls.filter((c) => c[0] === 'sell' || c[0] === 'power_down'), []);
+  assert.equal(game.repair_buildings.calls.length, 2);
+});
+
+test('a box dragged in repair mode asks what to repair, remembers it, and Shift skips the question', async () => {
+  const asked = [];
+  let answer = 'combat';
+  const feedback = [];
+  const game = bulkGame({ pick: (_p, x) => (x < 100 ? 1 : NONE), repair_cursor: (_p, id) => (id === 1 ? 1 : 0) });
+  const settings = createSettings();
+  installDom();
+  const { Input } = await import('../js/input.js');
+  const canvas = { clientWidth: 800, clientHeight: 600, style: {}, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  const hooks = {
+    onSelectionChanged() {},
+    feedback: (t) => feedback.push(t),
+    chooseRepair: async (q) => {
+      asked.push(q);
+      return answer;
+    },
+  };
+  const input = new Input(canvas, game, { actors: [] }, 0, hooks, { hotkeys: new HotkeyRegistry(createSettings()), settings });
+  input.camera.zoom = 1;
+  const mouse = mouseOf(input);
   input.setMode('repair');
-  const mouse = (type, x, y) => input[type]({ button: 0, clientX: x, clientY: y, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} });
-  // A drag over the base: the yellow box and the repair cursor while it holds a structure.
+  // While dragging: the yellow box and the repair cursor while it holds something.
   mouse('onMouseDown', 10, 10);
   assert.equal(input.drag, null, 'no selection box');
   mouse('onMouseMove', 300, 200);
-  assert.equal(input.modeTarget({ x: 600, y: 600 }), true, 'the box holds structures to repair');
+  assert.equal(input.modeTarget({ x: 600, y: 600 }), true, 'the box holds things to repair');
   const rects = input.uiRects();
-  assert.ok(rects.length >= 40, 'the box is drawn');
   assert.deepEqual(rects.slice(4, 7), [0.95, 0.79, 0.3], 'in the repair yellow');
   mouse('onMouseUp', 300, 200);
   await flush();
+  assert.deepEqual(asked, [{ options: ['buildings', 'combat', 'harvesters', 'all'], last: 'all', at: { x: 300, y: 200 } }]);
+  assert.deepEqual(game.repair_units.calls, [[0, [4]]], 'combat units with a depot');
+  assert.deepEqual(game.repair_buildings.calls, []);
+  assert.deepEqual(feedback, ['No repair facility for one unit.']);
+  assert.equal(settings.get('repairBoxChoice'), 'combat', 'remembered');
+  // Shift: the last choice without asking.
+  mouse('onMouseDown', 10, 10, true);
+  mouse('onMouseMove', 300, 200, true);
+  mouse('onMouseUp', 300, 200, true);
+  await flush();
+  assert.equal(asked.length, 1);
+  assert.equal(game.repair_units.calls.length, 2);
+  // All: structures toggle, units go; cancelled (null): nothing.
+  answer = 'all';
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
   assert.deepEqual(game.repair_buildings.calls, [[0, [1, 2]]]);
-  assert.equal(input.repairDrag, null);
-  assert.equal(input.mode, 'repair', 'the mode stays on');
-  // A box with nothing to repair: the blocked cursor, no order.
+  assert.deepEqual(game.repair_units.calls.at(-1), [0, [4, 6]]);
+  assert.equal(asked.at(-1).last, 'combat', 'the remembered choice is offered first');
+  answer = null;
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.equal(game.repair_buildings.calls.length, 1);
+  assert.equal(settings.get('repairBoxChoice'), 'all');
+  // A box with nothing to repair: the blocked cursor, no question, no order.
   mouse('onMouseDown', 500, 10);
   mouse('onMouseMove', 700, 200);
   assert.equal(input.modeTarget({ x: 50, y: 50 }), false, 'the box decides, not the actor under the mouse');
   mouse('onMouseUp', 700, 200);
   await flush();
-  assert.equal(game.repair_buildings.calls.length, 1);
+  assert.equal(asked.length, 3);
   // A click (less than 6 px of movement) repairs the one structure under it.
   mouse('onMouseDown', 50, 50);
   mouse('onMouseMove', 52, 51);
@@ -440,10 +526,112 @@ test('a box dragged in repair mode repairs the structures in it; a short drag is
   mouse('onMouseDown', 10, 10);
   mouse('onMouseMove', 300, 200);
   input.setMode(null);
-  assert.equal(input.repairDrag, null);
+  assert.equal(input.modeDrag, null);
   mouse('onMouseUp', 300, 200);
   await flush();
-  assert.equal(game.repair_buildings.calls.length, 1);
+  assert.equal(asked.length, 3);
+});
+
+test('a box dragged in sell mode sells the structures in it after a confirmation with the refund', async () => {
+  const asked = [];
+  let ok = false;
+  const game = bulkGame({ pick: (_p, x) => (x < 100 ? 9 : NONE), sell_value: (_p, id) => id * 100 });
+  const { input } = await makeInput({ game, hooks: { confirmSell: async (q) => (asked.push(q), ok) } });
+  const mouse = mouseOf(input);
+  input.setMode('sell');
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  assert.equal(input.modeTarget({ x: 700, y: 700 }), true, 'the sell cursor while the box holds a structure');
+  assert.deepEqual(input.uiRects().slice(4, 7), [0.95, 0.3, 0.22], 'in red');
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  await flush();
+  assert.deepEqual(asked, [{ count: 3, refund: 600, at: { x: 300, y: 200 } }], 'the count and the total refund');
+  assert.deepEqual(game.sell_buildings.calls, [], 'cancelled: nothing sold');
+  ok = true;
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  await flush();
+  assert.deepEqual(game.sell_buildings.calls, [[0, [1, 2, 3]]]);
+  // One structure: no question.
+  mouse('onMouseDown', 450, 10);
+  mouse('onMouseMove', 500, 200);
+  mouse('onMouseUp', 500, 200);
+  await flush();
+  assert.equal(asked.length, 2);
+  assert.deepEqual(game.sell_buildings.calls.at(-1), [0, [2]]);
+  // Nothing sellable in the box: the blocked cursor, nothing sold.
+  mouse('onMouseDown', 700, 10);
+  mouse('onMouseMove', 760, 200);
+  assert.equal(input.modeTarget({ x: 50, y: 50 }), false);
+  mouse('onMouseUp', 760, 200);
+  await flush();
+  assert.equal(game.sell_buildings.calls.length, 2);
+  // A single click still sells the Construction Yard (9).
+  mouse('onMouseDown', 50, 50);
+  mouse('onMouseUp', 50, 50);
+  await flush();
+  assert.deepEqual(game.calls.filter((c) => c[0] === 'sell'), [['sell', 0, 9]]);
+  assert.equal(input.mode, 'sell', 'the mode stays on');
+});
+
+test('the box chooser: keys, Enter, Esc and a press outside answer it', async () => {
+  const { BoxChooser, sellConfirmText, formatCredits } = await import('../js/boxchooser.js');
+  assert.equal(formatCredits(12345), '$12,345');
+  assert.equal(sellConfirmText(3, 1500), 'Sell 3 structures for $1,500?');
+  const listeners = new Map();
+  const win = {
+    addEventListener: (t, f) => listeners.set(t, f),
+    removeEventListener: (t, f) => listeners.get(t) === f && listeners.delete(t),
+  };
+  const make = (tag) => {
+    const el = {
+      tag,
+      children: [],
+      attrs: {},
+      style: {},
+      handlers: {},
+      textContent: '',
+      setAttribute: (k, v) => (el.attrs[k] = v),
+      append: (...c) => el.children.push(...c),
+      addEventListener: (t, f) => (el.handlers[t] = f),
+      remove: () => (el.removed = true),
+      contains: (x) => x === el || el.children.some((c) => c === x || c.contains?.(x)),
+      focus: () => (focused = el),
+    };
+    return el;
+  };
+  let focused = null;
+  const parent = make('main');
+  const doc = { createElement: make };
+  const chooser = new BoxChooser(parent, { doc, win });
+  const key = (k) => listeners.get('keydown')({ key: k, stopImmediatePropagation() {}, preventDefault() {} });
+  let p = chooser.chooseRepair({ options: ['buildings', 'combat', 'all'], last: 'combat', at: { x: 5, y: 5 } });
+  const buttons = parent.children[0].children[1].children;
+  assert.equal(buttons.length, 3);
+  assert.equal(focused, buttons[1], 'the remembered choice has the focus (Enter takes it)');
+  key('2');
+  assert.equal(await p, 'combat');
+  assert.equal(chooser.open, false);
+  assert.equal(listeners.size, 0, 'listeners removed');
+  p = chooser.chooseRepair({ options: ['buildings', 'harvesters', 'all'], last: 'other', at: null });
+  assert.equal(focused, parent.children[1].children[1].children[2], 'All when the last choice is not offered');
+  key('o');
+  assert.equal(await p, 'harvesters', 'letters pick too');
+  p = chooser.chooseRepair({ options: ['buildings', 'all'], last: 'all' });
+  key('Escape');
+  assert.equal(await p, null);
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  listeners.get('pointerdown')({ target: parent });
+  assert.equal(await p, false, 'a press outside cancels');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  parent.children.at(-1).children[1].children[0].handlers.click();
+  assert.equal(await p, true, 'Sell clicked');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  chooser.cancel();
+  assert.equal(await p, false, 'the mode ended');
 });
 
 // ---- Selection and camera hotkeys ---------------------------------------------------------

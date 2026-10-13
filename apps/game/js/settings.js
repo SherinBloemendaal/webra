@@ -51,6 +51,8 @@ export const KEYS = Object.freeze({
   mouseCaptureRaw: ['game', 'mouseCaptureRaw'],
   mouseCaptureEscMenu: ['game', 'mouseCaptureEscMenu'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
+  // The repair mode box chooser's last choice (js/input.js): 'all', 'buildings', 'combat', 'harvesters' or 'other'.
+  repairBoxChoice: ['extra', 'repairBoxChoice'],
   // "Send error reports" (js/telemetry/index.js follows it).
   errorReports: ['privacy', 'errorReports'],
 });

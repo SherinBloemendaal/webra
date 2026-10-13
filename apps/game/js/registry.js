@@ -274,7 +274,7 @@ export const GROUPS = deepFreeze({
   },
   extra: {
     label: 'Other',
-    description: 'The original content notice, the mouse capture hint, the map editor and the campaign progress.',
+    description: 'The original content notice, the mouse capture hint, the map editor, the repair box choice and the campaign progress.',
     scope: 'game',
     open: true,
     maxBytes: 8 * 1024,
@@ -311,6 +311,13 @@ export const GROUPS = deepFreeze({
       },
       // How often the "Mouse captured" hint was shown (js/mouselock.js shows it the first few times).
       mouseCaptureHints: { type: 'integer', default: 0, min: 0, max: 99, label: 'Mouse capture hints shown' },
+      // The last choice of the repair mode's box chooser (js/input.js bulk repair); Shift skips the chooser with it.
+      repairBoxChoice: {
+        type: 'choice',
+        default: 'all',
+        options: ['all', 'buildings', 'combat', 'harvesters', 'other'],
+        label: 'Repair box: last choice',
+      },
       // Campaign missions won (js/campaign/progress.js): mission id -> the difficulty it was won on ('' without one).
       campaignProgress: {
         type: 'json',
