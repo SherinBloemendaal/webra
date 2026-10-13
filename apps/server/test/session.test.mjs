@@ -453,3 +453,22 @@ test('a co-op mission online: the lobby, the start and orders for its own actor 
   assert.ok(guest.take('error').length > 0 || guest.closed, 'an actor type past the mission rules is refused');
   assertValid(host);
 });
+
+test('bulk edit: the host sends one slots message, everyone gets one lobby; a guest is refused', async () => {
+  const { s, host, guest } = await started({ start: false });
+  const room = s.session.room;
+  const slotOf = (name) => room.slots.findIndex((x) => x.type === 'human' && x.name === name);
+  const open = room.slots.findIndex((x) => x.type === 'open');
+  host.take('lobby');
+  guest.take('lobby');
+  await s.send(host, { t: 'slots', changes: [{ slot: slotOf('Host'), team: 1 }, { slot: slotOf('Guest'), team: 1 }, { slot: open, type: 'ai', bot: 'rush', team: 2 }] });
+  assert.deepEqual([room.slots[slotOf('Host')].team, room.slots[slotOf('Guest')].team, room.slots[open].team, room.slots[open].bot], [1, 1, 2, 'rush']);
+  assert.equal(guest.take('lobby').length, 1, 'one lobby update for the whole edit');
+  await s.send(guest, { t: 'slots', changes: [{ slot: slotOf('Guest'), team: 2 }] });
+  assert.equal(guest.take('error')[0].code, 'not_host');
+  assert.equal(room.slots[slotOf('Guest')].team, 1);
+  // Removing the guest closes its connection like the slot admin's kick.
+  await s.send(host, { t: 'slots', changes: [{ slot: slotOf('Guest'), type: 'open' }] });
+  assert.equal(slotOf('Guest'), -1);
+  for (const ws of [host, guest]) assertValid(ws);
+});

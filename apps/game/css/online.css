@@ -2,33 +2,7 @@
    dialogs and the in-game overlay. Same gunmetal chrome as the skirmish lobby
    (colours and metal from theme.css). */
 
-#online-button {
-  position: fixed;
-  right: 16px;
-  top: 14px;
-  z-index: 30;
-  padding: 9px 16px;
-  background: var(--ui-primary-fill);
-  color: #fff;
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  font: 700 var(--ui-fs-m) var(--ui-font);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
-  cursor: pointer;
-  box-shadow:
-    var(--ui-bevel),
-    0 6px 20px rgba(0, 0, 0, 0.5);
-}
-
-#online-button:hover {
-  background: var(--ui-primary-fill-hover);
-}
-
-#online-button:active {
-  background: var(--ui-primary-fill-active);
-}
+/* The Play online entry is part of the start screen's main menu (css/startmenu.css). */
 
 #online-root {
   --o-panel: var(--ui-metal-1);
@@ -322,6 +296,21 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+/* The host's bulk edit (js/lobby-bulkbar.js; its bar is styled in css/lobby.css). */
+.online-bulk {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.online-bulk .bulk-bar {
+  justify-self: stretch;
+}
+
+.online-cell-player .bulk-pick {
+  margin: 0;
 }
 
 .online-cell-player .online-badge:first-child {

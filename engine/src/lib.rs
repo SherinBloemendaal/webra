@@ -395,6 +395,15 @@ impl Game {
         Ok(preview_rgba(&map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style), biome))
     }
 
+    /// The start positions of a generated map, as `generated_map_styled`
+    /// places them, flat (x0, y0, x1, y1, ...). Only the map is generated (no
+    /// actors, no map file): the lobby previews' markers (js/mappreview.js).
+    pub fn map_spawns_styled(seed: u32, size: i32, players: u32, style: &str) -> Result<Vec<i32>, JsError> {
+        let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
+        let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, parse_style(style)?);
+        Ok(m.spawns.iter().flat_map(|&(x, y)| [x, y]).collect())
+    }
+
     /// The style a seed gives a generated map (`style` may be "random").
     pub fn resolved_style(seed: u32, style: &str) -> Result<String, JsError> {
         Ok(parse_style(style)?.resolve(seed as u64).name().to_string())

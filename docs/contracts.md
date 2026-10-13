@@ -198,6 +198,9 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   `Game.map_preview_players(seed, size, players)` and
   `Game.map_preview_styled(seed, size, players, style, biome)` (RGBA per
   cell in the biome's colours, spawns in player colours);
+  `Game.map_spawns_styled(seed, size, players, style)` the spawns
+  `generated_map_styled` places, flat `[x0, y0, x1, y1, ...]`, from the
+  map alone (no actors, no map file: the lobby previews);
   `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
   name what `random` picks.
 - Map editor (presentation only, never ticked): `Game.editor_preview(mapJson)`
@@ -926,7 +929,8 @@ Client to server:
 | t | Fields | When |
 |---|--------|------|
 | `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
-| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions") | lobby |
+| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions"; another player's team, handicap and spawn: host only, as OpenRA's lobby offers; another player's faction and colour: never) | lobby |
+| `slots` | `changes: [{ slot, ...the fields of slot }]` (host only; 1 to 8 changes, each slot once, each changing something; see "Bulk edit") | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
 | `resume` | | rejoining player, after catching up |
@@ -1042,14 +1046,112 @@ and online lobbies (`apps/game/js/spawnpick.js`):
   save keeps the saved ones.
 - Online: the client sends `slot { slot, spawn }` (null: automatic). The
   server (`apps/server/src/room.js`) checks it: your own slot (a change of
-  your own makes you not ready), the host for AI slots (everyone not
-  ready, like other host changes) or `spawn: null` alone for another
-  person's slot; the spawn on the battlefield (`map.players` spawns, or one
+  your own makes you not ready), the host for AI slots and other people's
+  team, handicap and spawn (everyone not ready, like other host changes),
+  and `spawn: null` alone for another person's slot only makes that person
+  not ready (OpenRA `clear_spawn`). OpenRA's server would also take the
+  host's faction and colour for another client (LobbyCommands.cs), but its
+  lobby (LobbyLogic, a player who is not you) offers the host only team,
+  handicap, spawn and the slot admin; WebRA's server accepts that same set
+  and refuses the rest; the spawn on the battlefield (`map.players` spawns, or one
   per player); not picked by another slot; never with `type` and never in
   a mission or a resumed save. Lobby slots carry `spawn` when picked; the
   start message's players carry it to the engine. Like OpenRA a ready player
   could not change its spawn; WebRA lets every own change through and makes
   the player not ready, as for faction or colour.
+
+### Bulk edit
+
+The skirmish and online lobbies edit many slots at once
+(`apps/game/js/lobby-bulk.js` plans, `lobby-bulkbar.js` is the bar),
+beyond OpenRA's slot admin dropdown and its `assign_teams` command
+(`LobbyCommands.cs AssignTeams`):
+
+- **Bulk edit** (a toggle by the slots) shows a checkbox in every row.
+  Selection works like a file manager, by slot index: a click on a row
+  (not on one of its controls) selects that row alone, Ctrl or Cmd adds or
+  removes it, and both set the anchor; Shift selects every row from the
+  anchor to the clicked one, up or down, in place of the selection (with
+  Ctrl or Cmd, or on a checkbox, the range takes the clicked row's new
+  state, like Shift on checkbox lists). The anchor stays for Shift. "All"
+  selects or clears every row. The selection survives lobby updates and
+  forgets rows that are gone; turning bulk edit off clears it.
+- One grouped action list and Apply (Enter in the list applies). With no
+  row selected an action applies to every slot it can change; slots the
+  map locks (map format version 2) keep the locked part. Actions: team
+  presets (free for all; humans vs AI, OpenRA's "Humans vs Bots"; split
+  into 2 to 4 teams in slot order, OpenRA's `assigned * teams / count + 1`;
+  alternating teams; put on one team), AI (fill empty slots with a bot
+  type, Normal difficulty: online the open slots, in skirmish the closed
+  ones and, with nothing selected, new rows up to the map's spawns; set
+  the bot type or difficulty of AI slots; remove the AI: online the slots
+  open, in skirmish they close and at least two players must stay),
+  factions (any choice of the faction list, or "Shuffle countries" which
+  picks a country per slot now), shuffled colours (unique: the targets
+  share the colours no other slot holds; skirmish closed rows keep
+  theirs; online both only for the host's own slot and the AI slots, as
+  the bar says, since another player's faction and colour are its own), handicap (0 to 90 %), start positions back to automatic, and
+  slots (make open or closed slots Normal AI; online also remove selected
+  players, open or close AI and empty slots; never your own slot).
+- Skirmish: the plan is applied all or nothing (`applyBulk`), checked for
+  unique colours, two to the map's spawns of players and your own slot.
+- Online: only the host has bulk edit (not while resuming a save; in a
+  co-op mission only the slot actions, within the mission's places). It
+  sends one `slots` message. The server (`room.js setSlots`) applies each
+  change exactly as the host's `slot` message (types, AI settings, other
+  people's settings, spawns, the mission's places), checks the colours
+  once all changes are in (a shuffle swaps them), then the map's locks
+  like `slot`; any refusal puts every slot back. Everyone is no longer
+  ready, removed players are kicked like the slot admin's, and the lobby
+  goes out once. The bar says "Sent to the server..." until a lobby update
+  shows every change (then the summary), or the server's refusal. Added in protocol 6 without a version bump (a new
+  message only the host sends; sessions pair identical builds).
+
+### Unloading a map
+
+The skirmish lobby's **Unload map** (next to Load map file, while a map
+file or `.oramap` is installed) goes back to the generated map with the
+size, style, biome, tech buildings and seed it had before: they are kept
+while a map file is in use. The file is forgotten as the lobby's map (it
+stays in the map library); the slots stay as they are, and the spawn
+picks clear with the battlefield as on every map change. The seed field
+and New seed show only for a generated map. A game on a map file still
+draws its random events from the seed (crates, random factions, the AI,
+the weather), so each start on a map file gets a new random seed (the
+skirmish lobby picks it at Start, the server at `start` for a lobby map);
+the game's options carry it, so replays, saves and Restart keep it, and
+the lobby keeps its own seed for the generated map. Online, the host's **Unload
+map** (a shared or community map) or **Leave mission** (a co-op mission)
+sends `map: null`, like Generated map in the map list: the lobby's
+options, seed included, were kept.
+
+### Lobby previews of generated maps
+
+The skirmish and online lobbies make the preview and the start positions of
+a generated map in a worker (`apps/game/js/mappreview.js`,
+`mappreview-worker.js`), given the engine module the page compiled; the
+main thread only draws the bytes. Without workers, or when the worker
+cannot load, the same work runs on the page after a timeout (so the loading
+state paints first). One generation runs at a time and the latest wins: a
+newer request replaces the one waiting (it never starts) and a running one
+it overtakes is kept in a small cache but not drawn. The spawns come from
+`Game.map_spawns_styled` instead of a whole generated map file.
+
+While a map is made, New seed shows a loader (disabled, `aria-busy`, its die
+or ring turns unless Reduce motion, the setting or the browser's, is on),
+the preview is dimmed with "Generating the map...", its start markers are
+gone (they would name places on the old map) and Start game waits. Online
+the host's New seed stays busy from the click until the lobby has the new
+seed and its map is made. The map lens still reads its map only when the
+pointer first rests on the preview.
+
+Main thread time of one New seed (Node 26, Apple Silicon, `node` timing of
+the engine calls; the browser's draw of the preview bytes comes on top in
+both): before, the preview, the full map file for the spawns and the caption
+took 49 ms (96 x 96) and 60 ms (160 x 160) for the first seed of a page, and
+10 to 17 ms on average (up to 45 ms) after that; now only the caption is
+left on the main thread (under 0.1 ms), and the worker takes 8 ms and 16 ms
+for a first seed, 2.4 to 7.5 ms after that.
 
 ### Reconnecting
 

@@ -710,6 +710,15 @@ export class Session extends DurableObject {
         await this.syncDirectory();
         return;
       }
+      case C2S.SLOTS: {
+        // The host's bulk edit: every change checked like a `slot` message, all or none.
+        const { kicked } = room.setSlots(client, msg.changes);
+        await this.saveRoom();
+        for (const k of kicked) this.kick(k);
+        this.broadcastLobby();
+        await this.syncDirectory();
+        return;
+      }
       case C2S.OPTIONS:
         room.setOptions(client, msg.options);
         await this.saveRoom();

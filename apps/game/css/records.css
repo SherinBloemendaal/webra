@@ -1,33 +1,7 @@
 /* Saves, replays and spectating: lobby buttons, dialogs, the observer panel,
    the replay bar and the progress overlay (js/records.js, js/observer.js). */
 
-#records-entry {
-  position: fixed;
-  right: 16px;
-  top: 58px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: stretch;
-}
-
-.records-entry-button {
-  padding: 7px 14px;
-  background: #2a3123;
-  color: var(--text);
-  border: 1px solid #4a5540;
-  border-top-color: #66735a;
-  border-radius: 2px;
-  font: 700 12px system-ui, sans-serif;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.records-entry-button:hover {
-  filter: brightness(1.2);
-}
+/* Load game and Replays are entries of the start screen's main menu (css/startmenu.css). */
 
 .records-dialog {
   width: min(560px, calc(100vw - 32px));
@@ -435,20 +409,9 @@
 }
 
 @media (pointer: coarse) {
-  .records-entry-button,
   .replay-bar button,
   .observer-view,
   .observer-toggle {
     min-height: 44px;
-  }
-}
-
-@media (max-width: 600px) {
-  /* Next to the Play online entry, which moves to the bottom corner. */
-  #records-entry {
-    top: auto;
-    right: max(12px, env(safe-area-inset-right));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px);
-    flex-direction: row;
   }
 }
