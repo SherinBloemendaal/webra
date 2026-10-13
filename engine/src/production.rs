@@ -622,44 +622,61 @@ impl World {
         !cells.is_empty() && cells.iter().all(|c| c.2)
     }
 
-    /// OpenRA rules: within `Adjacent` cells of an existing building that gives
-    /// buildable area, and (with the "Build radius" option) within range of a
-    /// base provider (construction yard).
+    /// OpenRA BuildingInfo.IsCloseEnoughToBase: with RequiresBuildableArea, a
+    /// footprint cell within `Adjacent` cells (both axes) of a cell of an own
+    /// (or, with the "Ally build radius" option, allied) structure that gives
+    /// one of the required area types; with the "Build radius" option also
+    /// within range of a base provider (construction yard).
     fn in_build_area(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
         // Debug menu "build anywhere" (debug.rs): no adjacency or build radius.
         if self.players[player as usize].dev.build_anywhere {
             return true;
         }
         let b = self.rules.actors[ty as usize].building.as_ref().unwrap();
-        let (x0, y0, x1, y1) = (cx, cy, cx + b.width - 1, cy + b.height - 1);
-        let mut adjacent = false;
-        let mut provider = !(self.options.build_radius && b.requires_base_provider);
-        for (k, a) in self.actors.iter().enumerate() {
-            // The "Ally build radius" option: allied structures count too (OpenRA MapBuildRadius).
-            let ally = self.options.ally_build_radius && a.owner != player && self.are_allies(a.owner, player);
-            if !a.alive || (a.owner != player && !ally) || a.kind != Kind::Building {
-                continue;
-            }
-            let ob = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-            // BaseProvider PauseOnCondition being-captured (infantry.rs).
-            if ob.base_provider_range > 0 && !self.being_captured(k) {
-                let center = (cx * CELL + b.width * CELL / 2, cy * CELL + b.height * CELL / 2);
-                if dist(center.0, center.1, a.x, a.y) <= ob.base_provider_range {
-                    provider = true;
-                }
-            }
-            if ob.gives_buildable_area && !adjacent {
-                let adj = b.adjacent;
-                let (ox0, oy0, ox1, oy1) = (a.cx, a.cy, a.cx + ob.width - 1, a.cy + ob.height - 1);
-                // Chebyshev gap between the two rectangles.
-                let gx = (ox0 - x1).max(x0 - ox1).max(0);
-                let gy = (oy0 - y1).max(y0 - oy1).max(0);
-                if gx.max(gy) <= adj {
-                    adjacent = true;
-                }
+        // Without RequiresBuildableArea a structure goes anywhere (no base provider either).
+        let Some(requires) = b.requires_area else { return true };
+        let ally = |a: &crate::world::Actor| self.options.ally_build_radius && a.owner != player && self.are_allies(a.owner, player);
+        if self.options.build_radius && b.requires_base_provider {
+            // FindBaseProvider: the footprint's centre (with LocalCenterOffset)
+            // within range of a provider; BaseProvider PauseOnCondition
+            // being-captured (infantry.rs).
+            let center = (cx * CELL + b.width * CELL / 2 + b.center_offset.0, cy * CELL + b.height * CELL / 2 + b.center_offset.1);
+            let provider = self.actors.iter().enumerate().any(|(k, a)| {
+                a.alive
+                    && a.kind == Kind::Building
+                    && (a.owner == player || ally(a))
+                    && self.rules.actors[a.ty as usize]
+                        .building
+                        .as_ref()
+                        .is_some_and(|ob| ob.base_provider_range > 0 && dist(center.0, center.1, a.x, a.y) <= ob.base_provider_range)
+                    && !self.being_captured(k)
+            });
+            if !provider {
+                return false;
             }
         }
-        adjacent && provider
+        let adj = b.adjacent;
+        // OpenRA scans the cells from Map.Clamp(topLeft - adjacent) up to, but
+        // not including, Map.Clamp(topLeft + Dimensions + adjacent): clamped to
+        // the last map cell, that end leaves out the last column and row.
+        let (sx0, sy0) = ((cx - adj).clamp(0, self.map.width - 1), (cy - adj).clamp(0, self.map.height - 1));
+        let (sx1, sy1) = ((cx + b.width + adj).clamp(0, self.map.width - 1), (cy + b.height + adj).clamp(0, self.map.height - 1));
+        let tiles: Vec<(i32, i32)> = b.cells().map(|(dx, dy)| (cx + dx, cy + dy)).collect();
+        self.actors.iter().any(|a| {
+            if !a.alive || a.kind != Kind::Building || (a.owner != player && !ally(a)) {
+                return false;
+            }
+            let ob = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            ob.gives_area & requires != 0
+                && ob.cells().any(|(dx, dy)| {
+                    let (x, y) = (a.cx + dx, a.cy + dy);
+                    x >= sx0
+                        && x < sx1
+                        && y >= sy0
+                        && y < sy1
+                        && tiles.iter().any(|&(tx, ty)| (x - tx).abs() <= adj && (y - ty).abs() <= adj)
+                })
+        })
     }
 
     pub fn place_building(&mut self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {

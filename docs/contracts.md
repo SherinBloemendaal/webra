@@ -1413,6 +1413,22 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   for placement and the items behind it do not start until it is placed, so
   each structure queue has at most one ready structure. `place` only accepts
   the finished head of the queue.
+- Placement follows OpenRA's BuildingInfo.IsCloseEnoughToBase and
+  CanPlaceBuilding. A structure with RequiresBuildableArea needs a footprint
+  cell within `adjacent` cells (both axes) of a footprint cell (not `_`) of
+  an own structure, or an allied one with the "Ally build radius" option,
+  whose GivesBuildableArea types (`gives_area` in rules.json) share one of
+  its `requires_area` types: 2 cells for most structures, 7 for walls, 8
+  for naval yards and sub pens (and their fakes); fakes give and need only
+  `fake` area, so a real structure never goes next to fakes alone. With the
+  "Build radius" option a structure with `requires_base_provider` also needs
+  its footprint centre within a base provider's range. A structure without
+  RequiresBuildableArea (`requires_area` null) goes anywhere its terrain
+  allows. Every footprint cell must be on the map, of the structure's
+  terrain (naval yards and sub pens: Water only, never beach or river), free
+  of ore, gems, structures, units, husks, crates and visible mines. WebRA
+  difference: every footprint cell must also be explored by the player
+  (OpenRA lets a footprint reach into the shroud).
 - `cancel_production` removes the last queued item of that type and refunds
   what was paid for it (a finished structure refunds its full cost).
 - `pause_production` (OpenRA PauseProduction) puts the first queued item of

@@ -350,3 +350,127 @@ fn the_ai_rebuilds_after_losing_a_prerequisite() {
     let buildings = w.actors.iter().filter(|a| a.alive && a.owner == 1 && a.kind == Kind::Building).count();
     assert!(buildings >= 8, "the AI kept building: {buildings}");
 }
+
+// ---- Placement near the base (OpenRA BuildingInfo.IsCloseEnoughToBase) ------------
+
+/// A 48x24 map: land west of x = 18, a two cell beach, open water from x = 20.
+/// Player 0 owns a Construction Yard at (12, 10) (cells 12..14, 10..13) and
+/// has explored the whole map.
+fn shore_world() -> World {
+    use crate::map::{Map, Terrain};
+    let mut m = Map::filled(48, 24, Terrain::Water);
+    m.spawns = vec![(12, 10), (40, 2)];
+    for y in 0..24 {
+        for x in 0..20 {
+            let i = m.idx(x, y);
+            m.terrain[i] = if x < 18 { Terrain::Clear } else { Terrain::Beach };
+        }
+    }
+    let mut w = World::empty(crate::rules::Rules::load(), m, 5);
+    for (f, start) in [("allies", (12, 10)), ("soviet", (40, 2))] {
+        let fi = w.rules.faction_index(f).unwrap();
+        w.add_player(fi, false, start);
+    }
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 1);
+    }
+    let fact = ty(&w, "FACT");
+    w.spawn_building(fact, 0, 12, 10).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    w
+}
+
+/// OpenRA SYRD and SPEN: RequiresBuildableArea Adjacent 8. Past a beach the
+/// first all-water 3x3 spot lies more than two cells from the base; it must
+/// still take a naval yard, up to eight cells from a structure that gives
+/// buildable area (and no further).
+#[test]
+fn naval_yards_and_sub_pens_go_up_to_eight_cells_from_the_base() {
+    let w = shore_world();
+    for id in ["SYRD", "SPEN"] {
+        let t = ty(&w, id);
+        assert_eq!(w.rules.actors[t as usize].building.as_ref().unwrap().adjacent, 8, "{id}");
+        // The yard's east edge is x = 14: a gap of 5 (x = 20, by the beach) to 8 (x = 22).
+        for cx in 20..=22 {
+            assert!(w.can_place(0, t, cx, 10), "{id} at x {cx}");
+        }
+        assert!(!w.can_place(0, t, 23, 10), "{id} nine cells out");
+        // The footprint must be all water: not on the beach.
+        assert!(!w.can_place(0, t, 19, 10), "{id} on the beach");
+        // The placement preview (lib.rs placement_preview) agrees cell by cell.
+        assert!(w.placement_cells(0, t, 22, 10).iter().all(|c| c.2), "{id} preview");
+        assert!(w.placement_cells(0, t, 23, 10).iter().all(|c| !c.2), "{id} preview nine cells out");
+    }
+}
+
+/// The whole order path: a finished naval yard placed by its order.
+#[test]
+fn a_finished_naval_yard_is_placed_by_its_order() {
+    let mut w = shore_world();
+    let syrd = ty(&w, "SYRD");
+    for (id, x, y) in [("POWR", 8, 10), ("PROC", 8, 14)] {
+        w.spawn_building(ty(&w, id), 0, x, y).unwrap();
+    }
+    w.players[0].cash = 100_000;
+    w.refresh_tokens();
+    w.update_power();
+    w.queue_order(Order::StartProduction { player: 0, ty: syrd, count: 1 });
+    run_until_done(&mut w, 0, BQ);
+    w.queue_order(Order::Place { player: 0, ty: syrd, cx: 21, cy: 12 });
+    run(&mut w, 2);
+    let yard = find(&w, 0, "SYRD");
+    assert_eq!((w.actors[yard].cx, w.actors[yard].cy), (21, 12));
+}
+
+/// OpenRA ^Wall: RequiresBuildableArea Adjacent 7.
+#[test]
+fn walls_go_up_to_seven_cells_from_the_base() {
+    let w = shore_world();
+    let brik = ty(&w, "BRIK");
+    assert!(w.can_place(0, brik, 5, 11), "seven cells west of the yard");
+    assert!(!w.can_place(0, brik, 4, 11), "eight cells west of the yard");
+}
+
+/// OpenRA AreaTypes: fakes give and need only `fake` area; real structures
+/// give `building, fake` and need `building`. So a real structure cannot go
+/// next to a fake alone, a fake can.
+#[test]
+fn fake_structures_give_area_only_to_fakes() {
+    let mut w = shore_world();
+    w.spawn_building(ty(&w, "FPWR"), 0, 2, 18).unwrap();
+    assert!(!w.can_place(0, ty(&w, "POWR"), 5, 18), "a power plant next to a fake only");
+    assert!(w.can_place(0, ty(&w, "FPWR"), 5, 18), "a fake next to a fake");
+    // A real structure gives fakes their area too.
+    assert!(w.can_place(0, ty(&w, "FPWR"), 16, 10), "a fake next to the yard");
+}
+
+/// OpenRA counts footprint cells, not the bounding box: the empty corners of
+/// the service depot (`_+_ +++ _+_`) give no buildable area.
+#[test]
+fn empty_footprint_corners_give_no_buildable_area() {
+    let mut w = shore_world();
+    // FIX at (4, 2): its south-east corner (6, 4) is empty.
+    w.spawn_building(ty(&w, "FIX"), 0, 4, 2).unwrap();
+    let powr = ty(&w, "POWR");
+    assert!(w.can_place(0, powr, 7, 6), "two cells from the depot's pad (5, 4)");
+    assert!(!w.can_place(0, powr, 8, 6), "two cells from the empty corner only");
+}
+
+/// OpenRA scans up to, not including, Map.Clamp(topLeft + Dimensions +
+/// Adjacent): on the map's last row a structure gives no area to a
+/// footprint below the scan end.
+#[test]
+fn the_last_map_row_is_left_out_of_the_buildable_area_scan() {
+    let mut w = shore_world();
+    let (sbag, powr) = (ty(&w, "SBAG"), ty(&w, "POWR"));
+    // A one cell structure that gives buildable area (synthetic rules).
+    let area = w.rules.actors[powr as usize].building.as_ref().unwrap().gives_area;
+    w.rules.actors[sbag as usize].building.as_mut().unwrap().gives_area = area;
+    w.spawn_building(sbag, 0, 2, 22).unwrap();
+    assert!(w.can_place(0, powr, 2, 19), "two rows above a giver on row 22");
+    let b = w.building_at[w.map.idx(2, 22)] as usize;
+    w.remove(b);
+    w.spawn_building(sbag, 0, 2, 23).unwrap();
+    assert!(!w.can_place(0, powr, 2, 20), "two rows above a giver on the last row");
+}

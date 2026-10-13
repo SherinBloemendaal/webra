@@ -189,8 +189,14 @@
      "Defense"
     ],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 16384,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -398,8 +404,14 @@
     "power_scales_with_health": true,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -594,8 +606,14 @@
     "power_scales_with_health": true,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -796,8 +814,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 2000,
     "sell_refund": 50,
@@ -989,8 +1013,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 3000,
     "sell_refund": 50,
@@ -1183,8 +1210,14 @@
       2
      ]
     ],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -1406,8 +1439,14 @@
       2
      ]
     ],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -1623,8 +1662,11 @@
       1
      ]
     ],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -1825,8 +1867,14 @@
       2
      ]
     ],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -2022,8 +2070,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -2224,8 +2278,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -2427,8 +2487,14 @@
       0
      ]
     ],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -2725,8 +2791,14 @@
       1
      ]
     ],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -3020,8 +3092,14 @@
       1
      ]
     ],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -3256,9 +3334,12 @@
       0
      ]
     ],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 8,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -3515,9 +3596,12 @@
       0
      ]
     ],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 8,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -3763,8 +3847,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -3973,8 +4063,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -4204,8 +4300,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -4452,8 +4554,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -4687,8 +4795,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -4911,8 +5025,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building",
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -5040,9 +5160,12 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 7,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -5152,9 +5275,12 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 7,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -5263,9 +5389,12 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 7,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -5475,8 +5604,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -5696,8 +5828,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -5904,8 +6039,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -6112,8 +6250,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -6329,8 +6470,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -6544,8 +6688,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -6745,8 +6892,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -6911,8 +7061,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -7077,8 +7232,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -7242,9 +7402,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "fake"
+    ],
+    "adjacent": 8,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -7408,8 +7573,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -7574,8 +7744,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -7729,8 +7904,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -7895,8 +8075,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -8061,8 +8246,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -8226,8 +8416,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -8390,8 +8585,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -8546,8 +8746,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
+    "requires_area": [
+     "fake"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 50,
@@ -19935,9 +20140,14 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "fake"
+    ],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "fake"
+    ],
+    "adjacent": 8,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -22599,8 +22809,13 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": true,
+    "gives_area": [
+     "building"
+    ],
     "base_provider_range": 8192,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -22749,8 +22964,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -22899,8 +23117,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23050,8 +23271,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23207,8 +23431,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23337,8 +23564,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23464,8 +23694,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23591,8 +23824,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23718,8 +23954,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23844,8 +24083,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -23970,8 +24212,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24096,8 +24341,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24222,8 +24470,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24348,8 +24599,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24474,8 +24728,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24600,8 +24857,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24718,8 +24978,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24836,8 +25099,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -24954,8 +25220,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25072,8 +25341,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25190,8 +25462,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25308,8 +25583,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25426,8 +25704,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25550,8 +25831,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25664,8 +25948,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25790,8 +26077,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -25916,8 +26206,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26041,8 +26334,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26166,8 +26462,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26292,8 +26591,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26421,8 +26723,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26546,8 +26851,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26671,8 +26979,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26796,8 +27107,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -26921,8 +27235,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27046,8 +27363,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27171,8 +27491,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27296,8 +27619,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27421,8 +27747,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27546,8 +27875,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27671,8 +28003,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27796,8 +28131,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -27922,8 +28260,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28039,8 +28380,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28165,8 +28509,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28290,8 +28637,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28416,8 +28766,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28546,8 +28899,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28676,8 +29032,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28780,8 +29139,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -28895,8 +29255,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29005,8 +29368,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29115,8 +29481,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29229,8 +29598,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29343,8 +29715,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29457,8 +29832,11 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": [
+     "building"
+    ],
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29647,8 +30025,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29830,8 +30209,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -29995,8 +30375,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -30160,8 +30541,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -30325,8 +30707,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -30494,8 +30877,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -30659,8 +31043,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -30824,8 +31209,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31040,8 +31426,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31256,8 +31643,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31482,8 +31870,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31592,8 +31981,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31701,8 +32091,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31811,8 +32202,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -31921,8 +32313,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32031,8 +32424,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32140,8 +32534,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32250,8 +32645,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32360,8 +32756,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32470,8 +32867,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32575,8 +32973,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32683,8 +33082,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32793,8 +33193,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -32903,8 +33304,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33013,8 +33415,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33123,8 +33526,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33233,8 +33637,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33343,8 +33748,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33453,8 +33859,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33563,8 +33970,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33669,8 +34077,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33779,8 +34188,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -33889,8 +34299,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34000,8 +34411,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34111,8 +34523,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34221,8 +34634,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34331,8 +34745,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34441,8 +34856,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34550,8 +34966,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34660,8 +35077,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34770,8 +35188,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34880,8 +35299,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -34985,8 +35405,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35093,8 +35514,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35203,8 +35625,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35313,8 +35736,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35423,8 +35847,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35533,8 +35958,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35643,8 +36069,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35753,8 +36180,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35863,8 +36291,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -35973,8 +36402,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36079,8 +36509,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36189,8 +36620,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36299,8 +36731,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36410,8 +36843,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36521,8 +36955,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36625,8 +37060,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36729,8 +37165,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36833,8 +37270,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -36937,8 +37375,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37041,8 +37480,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37145,8 +37585,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37249,8 +37690,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37353,8 +37795,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37457,8 +37900,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37565,8 +38009,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37673,8 +38118,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37780,8 +38226,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37887,8 +38334,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -37994,8 +38442,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38103,8 +38552,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38211,8 +38661,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38320,8 +38771,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38428,8 +38880,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38536,8 +38989,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38645,8 +39099,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38753,8 +39208,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38857,8 +39313,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -38961,8 +39418,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -39066,8 +39524,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -39171,8 +39630,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -39281,8 +39741,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -39391,8 +39852,9 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
+    "requires_area": null,
     "adjacent": 2,
     "storage": 0,
     "sell_refund": 0,
@@ -39501,9 +39963,12 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 7,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -39611,9 +40076,12 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 7,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
@@ -39721,9 +40189,12 @@
     "power_scales_with_health": false,
     "produces": [],
     "exits": [],
-    "gives_buildable_area": false,
+    "gives_area": [],
     "base_provider_range": 0,
-    "adjacent": 2,
+    "requires_area": [
+     "building"
+    ],
+    "adjacent": 7,
     "storage": 0,
     "sell_refund": 50,
     "provides": {
