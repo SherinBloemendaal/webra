@@ -515,13 +515,7 @@ impl World {
     pub(crate) fn produce_at(&mut self, b: usize, player: u8, ty: u16) -> Option<usize> {
         let (bcy, rally) = (self.actors[b].cy, self.actors[b].rally);
         let height = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap().height;
-        let (ex, ey, facing) = if self.is_water_type(ty) {
-            // Ships launch onto open water next to the yard (naval.rs); they wait while every exit is blocked.
-            self.naval_spawn_cell(b)?
-        } else {
-            let (ex, ey) = self.select_exit(b, player, ty)?;
-            (ex, ey, 512)
-        };
+        let (ex, ey, facing) = self.select_exit(b, player, ty)?;
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
         // OpenRA LocationInit(exit): the unit holds its exit cell from the
         // tick it is made, so the next one waits until it has driven off.
@@ -548,12 +542,10 @@ impl World {
             Some(r) => r,
             // OpenRA: without a rally point the unit stays on its exit cell
             // (RallyPointInit [exit]); the next one to come out asks it to make
-            // way, helicopters stay on their pad. Ships, and ground units in
-            // the WebRA movement model (whose crowd would jam the door, see
-            // `exit_free_for`), drive on to a cell below the structure.
-            None if self.rules.actors[ty as usize].kind == Kind::Aircraft || (self.cell_moves() && !self.is_water_type(ty)) => {
-                return Some(u)
-            }
+            // way, helicopters stay on their pad. In the WebRA movement model
+            // (whose crowd would jam the door, see `exit_free_for`) ground
+            // units and ships drive on to a cell below the structure.
+            None if self.rules.actors[ty as usize].kind == Kind::Aircraft || self.cell_moves() => return Some(u),
             None => (cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))),
         };
         self.order_move(&[u], rx, ry, false);
@@ -568,9 +560,23 @@ impl World {
     /// those), and the first a unit of `ty` can enter. Each exit looked at
     /// first tells the friendly units on it that they are in the way (idle
     /// ones step aside, movement/cellmove.rs). Aircraft (helipads,
-    /// airfields) are not held up by units. None while every exit is blocked.
-    fn select_exit(&mut self, b: usize, player: u8, ty: u16) -> Option<(i32, i32)> {
+    /// airfields) are not held up by units. Ships take the same rule on the
+    /// open water just outside the yard's exits (naval.rs
+    /// `naval_launch_cells`). The cell and facing, None while every exit is
+    /// blocked.
+    fn select_exit(&mut self, b: usize, player: u8, ty: u16) -> Option<(i32, i32, i32)> {
         let (bcx, bcy) = (self.actors[b].cx, self.actors[b].cy);
+        let nudger = self.map.idx(bcx.clamp(0, self.map.width - 1), bcy.clamp(0, self.map.height - 1)) as u32;
+        if self.is_water_type(ty) {
+            for (cx, cy, facing) in self.naval_launch_cells(b) {
+                let cell = self.map.idx(cx, cy) as u32;
+                self.notify_blockers_at(cell, player, nudger);
+                if self.exit_free_for(player, ty, cell) {
+                    return Some((cx, cy, facing));
+                }
+            }
+            return None;
+        }
         let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
         let (width, height) = (binfo.width, binfo.height);
         let (rx, ry) =
@@ -585,20 +591,19 @@ impl World {
             .collect();
         if exits.is_empty() {
             // A structure without exits: below its middle.
-            return Some((bcx + width / 2, (bcy + height).min(self.map.height - 1)));
+            return Some((bcx + width / 2, (bcy + height).min(self.map.height - 1), 512));
         }
         // Stable: equal exits keep their order.
         exits.sort_by_key(|&(p, d, _, _)| (std::cmp::Reverse(p), d));
         let ground = self.rules.actors[ty as usize].kind != Kind::Aircraft;
         if !ground {
-            return exits.first().map(|&(_, _, cx, cy)| (cx, cy));
+            return exits.first().map(|&(_, _, cx, cy)| (cx, cy, 512));
         }
-        let nudger = self.map.idx(bcx.clamp(0, self.map.width - 1), bcy.clamp(0, self.map.height - 1)) as u32;
         for (_, _, cx, cy) in exits {
             let cell = self.map.idx(cx, cy) as u32;
             self.notify_blockers_at(cell, player, nudger);
             if self.exit_free_for(player, ty, cell) {
-                return Some((cx, cy));
+                return Some((cx, cy, 512));
             }
         }
         None

@@ -61,37 +61,59 @@ impl World {
 
     // ---- Launching from a naval yard -------------------------------------------
 
-    /// Cell and facing where a ship built at naval yard `b` enters the world:
-    /// open water just outside one of the yard's exits (the exit cells are the
-    /// yard's own corners). Water joined to the yard's rally point comes
-    /// first, then the largest body of water (a yard on a shore may touch a
-    /// pond too, and a ship launched into it could never leave; OpenRA
-    /// issue 19154), then the exit with the fewest units nearby, so ships
-    /// fan out. None while every exit is blocked.
+    /// Cell and facing where a ship built at naval yard `b` would enter the
+    /// world when nothing is in the way: the first of `naval_launch_cells`.
     pub(crate) fn naval_spawn_cell(&self, b: usize) -> Option<(i32, i32, i32)> {
+        self.naval_launch_cells(b).into_iter().next()
+    }
+
+    /// The cells (with facings) where a ship built at naval yard `b` may
+    /// enter the world, best first: open water just outside each of the
+    /// yard's exits (the exit cells are the yard's own corners). Water
+    /// joined to the yard's rally point comes first, then the largest body
+    /// of water (a yard on a shore may touch a pond too, and a ship launched
+    /// into it could never leave; OpenRA issue 19154), then the exit nearest
+    /// the rally point (OpenRA Production.SelectExit; without one, the
+    /// exits in order), only cells on that first water. Production takes the first one a ship can enter now
+    /// (production.rs `select_exit`, OpenRA CanUseExit), so ships wait while
+    /// every one is taken.
+    pub(crate) fn naval_launch_cells(&self, b: usize) -> Vec<(i32, i32, i32)> {
         let ya = &self.actors[b];
-        let binfo = self.rules.actors[ya.ty as usize].building.as_ref()?;
+        let Some(binfo) = self.rules.actors[ya.ty as usize].building.as_ref() else { return Vec::new() };
         let (w, h) = (binfo.width, binfo.height);
         let rally_area =
             ya.rally.map(|(rx, ry)| self.cell_index(rx, ry)).filter(|&c| !self.pass_water.blocked[c]).map(|c| self.pass_water.component[c]);
-        // Not the rally point's water, smaller water, more units nearby: worse.
-        type ExitKey = (bool, std::cmp::Reverse<u32>, usize);
-        let mut best: Option<(ExitKey, (i32, i32))> = None;
-        for &(ex, ey) in &binfo.exits {
+        // Not the rally point's water, smaller water, lower priority, farther from the rally point: worse.
+        type ExitKey = (bool, std::cmp::Reverse<u32>, std::cmp::Reverse<i32>, i64);
+        let mut cells: Vec<(ExitKey, (i32, i32))> = Vec::new();
+        for (k, &(ex, ey)) in binfo.exits.iter().enumerate() {
             // Outward direction from the yard's centre through the exit cell.
             let (dx, dy) = ((2 * ex + 1 - w).signum(), (2 * ey + 1 - h).signum());
             let Some(c) = self.open_water_near(ya.cx + ex + dx, ya.cy + ey + dy, 3) else { continue };
-            let ci = self.map.idx(c.0, c.1);
-            let crowd = self.units_in_cell(ci).len();
-            let key =
-                (rally_area.is_some_and(|r| r != self.pass_water.component[ci]), std::cmp::Reverse(self.pass_water.area_size(ci)), crowd);
-            if best.is_none_or(|(bk, _)| key < bk) {
-                best = Some((key, c));
+            if cells.iter().any(|&(_, o)| o == c) {
+                continue;
             }
+            let ci = self.map.idx(c.0, c.1);
+            let to_rally = ya.rally.map_or(0, |(rx, ry)| crate::math::dist_sq(cell_center(c.0), cell_center(c.1), rx, ry));
+            let priority = binfo.exit_priority.get(k).copied().unwrap_or(1);
+            let key = (
+                rally_area.is_some_and(|r| r != self.pass_water.component[ci]),
+                std::cmp::Reverse(self.pass_water.area_size(ci)),
+                std::cmp::Reverse(priority),
+                to_rally,
+            );
+            cells.push((key, c));
         }
-        let (cx, cy) = best?.1;
-        let facing = facing_of(cell_center(cx) - ya.x, cell_center(cy) - ya.y).unwrap_or(512);
-        Some((cx, cy, facing))
+        // Stable: equal cells keep the exits' order.
+        cells.sort_by_key(|&(key, _)| key);
+        // Only onto the chosen water: a ship waits rather than being launched
+        // into a pond because the sea side of the yard is busy.
+        let water = cells.first().map(|&(_, (x, y))| self.pass_water.component[self.map.idx(x, y)]);
+        cells
+            .into_iter()
+            .filter(|&(_, (x, y))| Some(self.pass_water.component[self.map.idx(x, y)]) == water)
+            .map(|(_, (cx, cy))| (cx, cy, facing_of(cell_center(cx) - ya.x, cell_center(cy) - ya.y).unwrap_or(512)))
+            .collect()
     }
 
     /// Nearest open water cell to (x, y) within `radius` rings (ties: lowest index).

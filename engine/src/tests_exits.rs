@@ -239,3 +239,60 @@ fn the_kennel_uses_its_highest_priority_exit_first() {
     }
     panic!("no dog came out");
 }
+
+/// An open 48 x 40 map whose right half (from column 16) is sea, with a
+/// naval yard of player 0 at (24, 18) and instant builds.
+fn harbour() -> (World, usize) {
+    let mut w = arena(MovementModel::OpenRA);
+    for y in 0..40 {
+        for x in 16..48 {
+            let i = w.map.idx(x, y);
+            w.map.terrain[i] = Terrain::Water;
+        }
+    }
+    w.reset_passability();
+    let yard = factory(&mut w, "SYRD", 24, 18);
+    (w, yard)
+}
+
+/// Ships hold one cell each: no two ships may share one.
+fn ships_stacked(w: &World) -> bool {
+    let mut held = std::collections::BTreeSet::new();
+    w.actors.iter().filter(|a| a.alive && a.kind == Kind::Ship && a.in_world()).any(|a| !held.insert(a.mv.to))
+}
+
+/// Ships leave the naval yard by the same rule as units leave a factory:
+/// twelve gunboats built instantly come out one at a time onto the free
+/// water outside the yard's corners (six park there without a rally point
+/// and are asked to make way for the next ones), never two on one cell.
+#[test]
+fn ships_leave_the_yard_one_at_a_time() {
+    let (mut w, _) = harbour();
+    let pt = ty(&w, "PT");
+    w.start_production(0, pt, 12);
+    for tick in 0..25 * 60 {
+        w.step();
+        assert!(!ships_stacked(&w), "tick {tick}: two ships on one cell");
+    }
+    assert_eq!(all_of(&w, "PT").len(), 12, "all launched");
+}
+
+/// Enemy ships on every launch cell keep the finished gunboat in the yard.
+#[test]
+fn enemy_ships_on_every_launch_cell_keep_the_ship_inside() {
+    let (mut w, yard) = harbour();
+    let cells = w.naval_launch_cells(yard);
+    assert!(!cells.is_empty());
+    for &(x, y, _) in &cells {
+        unit(&mut w, "PT", 1, x, y);
+    }
+    w.players[0].dev.fast_build = false;
+    let pt = ty(&w, "PT");
+    w.start_production(0, pt, 1);
+    for _ in 0..25 * 60 {
+        w.step();
+        assert!(!ships_stacked(&w));
+    }
+    assert_eq!(all_of(&w, "PT").iter().filter(|&&s| w.actors[s].owner == 0).count(), 0, "still inside");
+    assert!(w.players[0].queues[QueueType::Ship as usize].items.first().is_some_and(|it| it.done), "finished");
+}

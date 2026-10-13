@@ -468,9 +468,14 @@ fn naval_bots_keep_every_ship_on_water() {
     // and build at most one ship in twelve minutes (with either movement
     // model), too few to check fleets.
     game(MapStyle::Islands, 2, 12 * minutes);
-    // Lakes seed 1: since factories let units out one at a time (production
-    // exits) the lake bots of seed 7 build one ship in twelve minutes; over
-    // seeds 1 to 8 the bots build as many ships as before (21 on lakes).
+    // Lakes seed 1 (5 ships in twelve minutes). Seed 7 was marginal: no bot
+    // has a naval yard before minute 11, and its ships came from a yard one
+    // bot (hoarding 15,000 credits with an idle queue) only placed in the
+    // last minute; since production exits changed the timing of land units
+    // that bot no longer places it in time (1 ship). Ships themselves are
+    // never held up there. Over seeds 1 to 8 the bots still build about as
+    // many ships as before: 18 on lakes (21 before), 16 on islands (13), 23
+    // on rivers (23).
     let lakes = game(MapStyle::Lakes, 1, 12 * minutes);
     game(MapStyle::Rivers, 3, 12 * minutes);
     assert_eq!(game(MapStyle::Lakes, 1, 12 * minutes), lakes, "deterministic");

@@ -179,7 +179,7 @@ pub enum SoundEventKind {
     /// way stayed blocked (movement/cellmove.rs `note_route_blocked`), at the
     /// unit; a = actor type. WebRA addition (OpenRA gives no feedback), at
     /// most once per `ROUTE_BLOCKED_INTERVAL` per player.
-    RouteBlocked = 48,
+    RouteBlocked = 49,
 }
 
 /// `owner` of events every player hears (time limit warnings).

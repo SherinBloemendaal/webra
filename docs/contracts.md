@@ -1460,16 +1460,24 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   time, also with the debug menu's instant build, and never stack. While
   every exit of every producer is blocked (an enemy, a unit that does not
   move, a husk) the item stays finished, the queue says so once
-  (ProductionBlocked) and tries again every tick. Ships launch onto open
-  water next to the yard (`naval_spawn_cell`); aircraft are never held up.
-  Without a rally point a unit stays on its exit cell (OpenRA), until the
-  next one asks it to make way; in the WebRA movement model ground units
+  (ProductionBlocked) and tries again every tick. Ships follow the same
+  rule on their launch cells: the open water just outside each corner exit
+  of the naval yard or sub pen (`naval_launch_cells`; water joined to the
+  rally point first, else the largest water, and only cells on that water,
+  so a ship is never launched into a pond it cannot leave, OpenRA issue
+  19154; then the exit nearest the rally point): friendly idle ships on one
+  are asked to make way, and the ship waits while every launch cell is
+  taken. Aircraft are never held up.
+  Without a rally point a unit or ship stays where it came out (OpenRA:
+  RallyPointInit is its exit cell) until the next one asks it to make way;
+  helicopters stay on their pad. In the WebRA movement model ground units
   and ships drive on to a cell below the structure instead, and only units
   standing idle on an exit block it (that model's crowd separation spreads
   the ones on the move; waiting for those would jam the door behind the
   crowd its arrival rule gathers in front of it). Differences: units appear
   on the exit cell instead of inside the structure at the Exit's
-  SpawnOffset, and the Exit's Facing is not used.
+  SpawnOffset (ships on the water outside the yard's corner instead of on
+  the corner itself), and the Exit's Facing is not used.
 
 ## 5. Domains for units
 
@@ -1581,7 +1589,7 @@ diagonal step never cuts a blocked corner.
 - Feedback (WebRA addition; OpenRA has none: its move cursor only shows
   terrain that cannot be reached when the order is given): a move order
   that ends short because the way stayed blocked, farther from its goal
-  than it may stop short (8 cells), sends the owner the audio event 48
+  than it may stop short (8 cells), sends the owner the audio event 49
   RouteBlocked at the unit, at most once every 250 ticks per player
   (`ROUTE_BLOCKED_INTERVAL`); the WebRA model sends it when a move gives up
   as blocked for good more than 8 cells (of path) out. The client shows
@@ -2269,7 +2277,7 @@ back and the missions' chronoshifts, Chronoshiftable), 40 PlayerLost and 47
 PlayerWon (owner: the player; one PlayerWon per player of the last side
 standing, after the losers' PlayerLost, like OpenRA ConquestVictoryConditions
 marking each remaining ally's objective; js/battlefx.js writes "X is
-defeated." and "X is victorious." as system lines), 48 RouteBlocked (a: the
+defeated." and "X is victorious." as system lines), 49 RouteBlocked (a: the
 unit's type, at the unit; WebRA addition, see the movement models: the line
 "Route blocked." and a radar ping for its owner). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
