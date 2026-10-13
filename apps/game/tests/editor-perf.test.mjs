@@ -2,12 +2,13 @@
 // frame and per edit follows what changed, not the size of the map
 // (checked by counting reads, not by the clock), and the quicker paths give
 // what the plain ones gave: placement checks, quick fixes, the shape
-// preview, the cell layer, and the saved map.
+// preview, the cell layer, installed tiles and the saved map.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { Worker as ThreadWorker } from 'node:worker_threads';
 import { initSync, Game } from '../pkg/webra_sim.js';
 import { MapDoc } from '../editor/js/doc.js';
 import { Controller } from '../editor/js/controller.js';
@@ -15,7 +16,11 @@ import { TERRAIN, canOccupy, catalogEntry, createMap, footprintOf, groundFor } f
 import { Occupancy, actorCells, copyRegion, placeActor, placementProblem } from '../editor/js/edits.js';
 import { findFixes } from '../editor/js/fixes.js';
 import { symmetricPositions } from '../editor/js/symmetry.js';
+import { idleTask } from '../editor/js/idle.js';
+import { InstalledTiles, TileWorker, commonTiles, planTiles } from '../editor/js/tiles.js';
 import { cellTiles, terrainSeed } from '../js/art/terrain.js';
+import { originalTerrain, theaterFiles } from '../js/content/terrain.js';
+import { syntheticTheater } from './content-fixtures.mjs';
 
 initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 const CATALOG = Object.fromEntries(JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json()).actors.map((a) => [a.id, a]));
@@ -236,6 +241,47 @@ test('the shape preview covers the cells it covered, is made once per corner cha
   }
 });
 
+// ---- Snapshots -------------------------------------------------------------------------------
+
+test('the document text is made once per change, read only, and new after every kind of change', () => {
+  const doc = new MapDoc(createMap({ width: 40, height: 32 }));
+  const a = doc.snapshot();
+  assert.equal(doc.snapshot(), a);
+  assert.equal(a.json, JSON.stringify(doc.toMap()));
+  assert.ok(Object.isFrozen(a.map) && Object.isFrozen(a.map.spawns));
+  assert.throws(() => {
+    a.map.spawns.push([1, 1]);
+  }, TypeError);
+  const steps = [
+    () => (doc.begin('paint'), doc.setCell(3, 3, TERRAIN.WATER), doc.commit()),
+    () => doc.undo(),
+    () => doc.redo(),
+    () => (doc.begin('meta'), doc.touchMeta(), (doc.meta.name = 'X'), doc.commit()),
+    () => (doc.begin('actors'), doc.touchObjects(), doc.actors.push({ type: 'E1', owner: -1, x: 5, y: 5, facing: 0 }), doc.rollback()),
+    () => doc.replace(createMap({ width: 50, height: 40 })),
+  ];
+  let last = a;
+  for (const step of steps) {
+    step();
+    const s = doc.snapshot();
+    assert.notEqual(s, last);
+    assert.equal(s.json, JSON.stringify(doc.toMap()));
+    last = s;
+  }
+  // Inside a transaction: made afresh (the document is changing).
+  doc.begin('open');
+  doc.setCell(1, 1, TERRAIN.ROCK);
+  assert.notEqual(doc.snapshot(), doc.snapshot());
+  assert.equal(doc.snapshot().json, JSON.stringify(doc.toMap()));
+  doc.commit();
+});
+
+test('a map with rules: the snapshot does not freeze the document\'s own rules', () => {
+  const doc = new MapDoc({ ...createMap({ width: 40, height: 32 }), rules: { actors: { E1: { prerequisites: ['tent'] } } } });
+  doc.snapshot();
+  assert.ok(!Object.isFrozen(doc.rules.actors.E1.prerequisites));
+});
+
 // ---- The same results as before -------------------------------------------------------------------
 
 /**
@@ -293,6 +339,151 @@ test('edits give the same map, quick fixes and cell layer as before', () => {
     },
     GOLDEN,
   );
+});
+
+// ---- Installed tiles ------------------------------------------------------------------------------
+
+/** Engine terrain bytes of a small coast: water on the left, land with rock and roads on the right. */
+function coastBytes(w, h, shift = 0) {
+  const b = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      b[i * 4] = x < 12 + shift + ((y * 7) % 5) ? TERRAIN.WATER : (x * 3 + y) % 17 === 0 ? TERRAIN.ROCK : y === 20 ? TERRAIN.ROAD : TERRAIN.CLEAR;
+      b[i * 4 + 3] = 255;
+    }
+  }
+  return b;
+}
+
+const THEATER = { key: 'test', tileset: 'TEMPERAT', files: syntheticTheater() };
+
+test('installed tiles: nothing until planned, then the plan; changed cells show their type\'s common tile until the next plan', async () => {
+  const w = 40;
+  const h = 30;
+  const jobs = [];
+  let readyCalls = 0;
+  const tiles = new InstalledTiles({ plan: (job) => (jobs.push(job), Promise.resolve(planTiles(job, job.bytes, job.w, job.h))), ready: () => readyCalls++ });
+  const before = coastBytes(w, h);
+  assert.equal(tiles.tiles(THEATER, before, w, h), null, 'no plan yet: WebRA tiles meanwhile');
+  assert.equal(jobs.length, 1);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(readyCalls, 1);
+  const full = originalTerrain((n) => THEATER.files.get(n) ?? null, 'TEMPERAT', before, w, h);
+  let got = tiles.tiles(THEATER, before, w, h);
+  assert.deepEqual(got.cells, full.cells);
+  assert.deepEqual(got.atlas.data, full.atlas.data);
+  assert.equal(jobs.length, 1, 'the same terrain: no new plan');
+  // Ore only (G) changes no tile and starts no plan.
+  const ore = before.slice();
+  ore[(5 * w + 30) * 4 + 1] = 200;
+  assert.deepEqual(tiles.tiles(THEATER, ore, w, h).cells, full.cells);
+  assert.equal(jobs.length, 1);
+  // Move the coast: changed cells take their type's common tile at once, a plan starts.
+  const after = coastBytes(w, h, 4);
+  const atlas = got.atlas;
+  got = tiles.tiles(THEATER, after, w, h);
+  assert.equal(jobs.length, 2);
+  assert.equal(got.atlas, atlas, 'the atlas stays until the next plan');
+  const common = commonTiles(Uint8Array.from({ length: w * h }, (_, i) => before[i * 4]), full.cells);
+  for (let i = 0; i < w * h; i++) {
+    const k = got.cells[i * 4] | (got.cells[i * 4 + 1] << 8);
+    if (after[i * 4] === before[i * 4]) assert.equal(k, full.cells[i * 4] | (full.cells[i * 4 + 1] << 8));
+    else assert.equal(k, common[after[i * 4]]);
+  }
+  // A further edit while the plan runs starts nothing new; the plan's result is then patched for it.
+  const later = after.slice();
+  later[(25 * w + 35) * 4] = TERRAIN.WATER;
+  tiles.tiles(THEATER, later, w, h);
+  assert.equal(jobs.length, 2);
+  await new Promise((r) => setTimeout(r, 0));
+  got = tiles.tiles(THEATER, later, w, h);
+  assert.equal(jobs.length, 3, 'the next plan for the later edit');
+  const planned = originalTerrain((n) => THEATER.files.get(n) ?? null, 'TEMPERAT', after, w, h);
+  const i = 25 * w + 35;
+  assert.deepEqual([...got.cells.subarray(0, i * 4)], [...planned.cells.subarray(0, i * 4)]);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(tiles.tiles(THEATER, later, w, h).cells, originalTerrain((n) => THEATER.files.get(n) ?? null, 'TEMPERAT', later, w, h).cells);
+  // Another theater (new art): the old plan is dropped.
+  assert.equal(tiles.tiles({ ...THEATER, key: 'other' }, later, w, h), null);
+});
+
+test('the tile worker plans exactly what this thread plans, from the theater files only', async () => {
+  // originalTerrain reads nothing but theaterFiles.
+  const read = new Set();
+  const bytes = coastBytes(36, 28);
+  originalTerrain((n) => (read.add(n), THEATER.files.get(n) ?? null), 'TEMPERAT', bytes, 36, 28);
+  const listed = new Set(theaterFiles('TEMPERAT'));
+  for (const n of read) assert.ok(listed.has(n), `${n} is listed`);
+  for (const ts of ['SNOW', 'DESERT']) assert.ok(theaterFiles(ts).length > 10);
+  assert.deepEqual(theaterFiles('NOPE'), []);
+
+  class NodeTileWorker {
+    constructor() {
+      this.thread = new ThreadWorker(new URL('./tiles-worker-boot.mjs', import.meta.url));
+      this.thread.on('message', (data) => this.onmessage?.({ data }));
+      this.thread.on('error', (err) => this.onerror?.({ message: err.message }));
+    }
+    postMessage(msg, transfer) {
+      this.thread.postMessage(msg, transfer);
+    }
+    terminate() {
+      return this.thread.terminate();
+    }
+  }
+  const worker = new TileWorker({ WorkerClass: NodeTileWorker });
+  try {
+    const job = { ...THEATER, bytes, w: 36, h: 28 };
+    const [a, b] = await Promise.all([worker.plan(job), worker.plan({ ...job, bytes: coastBytes(36, 28, 3) })]);
+    const here = planTiles(THEATER, bytes, 36, 28);
+    assert.deepEqual(a.cells, here.cells);
+    assert.deepEqual(a.atlas.data, here.atlas.data);
+    assert.equal(a.atlas.flags, here.atlas.flags);
+    assert.deepEqual(b.cells, planTiles(THEATER, coastBytes(36, 28, 3), 36, 28).cells);
+  } finally {
+    worker.dispose();
+  }
+  // Without workers the plans run here.
+  const local = new TileWorker({ WorkerClass: null });
+  assert.deepEqual((await local.plan({ ...THEATER, bytes, w: 36, h: 28 })).cells, planTiles(THEATER, bytes, 36, 28).cells);
+});
+
+// ---- Work after edits ---------------------------------------------------------------------------------
+
+test('idle tasks run once after a burst of requests, when the browser is idle', () => {
+  const timers = [];
+  const idles = [];
+  const env = {
+    setTimeout: (fn, ms) => timers.push({ fn, ms }) - 1,
+    clearTimeout: (id) => timers[id] && (timers[id].fn = null),
+    requestIdleCallback: (fn, o) => idles.push({ fn, o }) - 1,
+    cancelIdleCallback: (id) => idles[id] && (idles[id].fn = null),
+  };
+  let runs = 0;
+  const task = idleTask(() => runs++, { delay: 300, maxWait: 900, env });
+  for (let k = 0; k < 5; k++) task.soon();
+  assert.equal(timers.filter((t) => t.fn).length, 1, 'one timer for five requests');
+  assert.equal(timers.at(-1).ms, 300);
+  timers.at(-1).fn();
+  assert.equal(runs, 0, 'waits for idle time');
+  assert.equal(idles.at(-1).o.timeout, 900);
+  assert.ok(task.pending);
+  idles.at(-1).fn();
+  assert.equal(runs, 1);
+  assert.ok(!task.pending);
+  task.soon();
+  task.flush();
+  assert.equal(runs, 2, 'flush runs a requested task now');
+  task.flush();
+  assert.equal(runs, 2, 'and nothing when none is requested');
+  task.soon();
+  task.cancel();
+  assert.ok(!task.pending);
+  // Without requestIdleCallback: straight after the delay.
+  const plain = idleTask(() => runs++, { delay: 10, env: { setTimeout: env.setTimeout, clearTimeout: env.clearTimeout } });
+  plain.soon();
+  timers.at(-1).fn();
+  assert.equal(runs, 3);
 });
 
 // ---- Placing many actors -------------------------------------------------------------------------------

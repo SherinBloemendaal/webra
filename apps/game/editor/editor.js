@@ -18,6 +18,8 @@ import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index
 import { renderReport } from '../js/oramap/report.js';
 import { EditorArt } from './js/art.js';
 import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
+import { InstalledTiles, TileWorker } from './js/tiles.js';
+import { idleTask } from './js/idle.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, isTyping } from './js/view.js';
 import { Controller, teamOf } from './js/controller.js';
@@ -118,6 +120,8 @@ let minimap;
 let renderer;
 let art;
 let preview;
+/** Installed terrain tiles, planned in a worker (js/tiles.js). */
+let installedTiles;
 /** The magnifier over the Map tab's thumbnail (js/maplens): the map in the game's art. */
 let thumbLens = null;
 let keys;
@@ -161,6 +165,8 @@ async function boot() {
     TEAM_COLORS[PREVIEW_NEUTRAL] = NEUTRAL_COLOR.slice();
     animClock.watchReducedMotion();
     preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
+    const tileWorker = new TileWorker();
+    installedTiles = new InstalledTiles({ plan: (job) => tileWorker.plan(job), ready: () => view && (view.terrainDirty = true) });
     thumbLens = new MapLens({
       art: new LensArt({ Game, memory: () => wasm.memory, content: art.content }),
       gameScale: () => gameScaleFor(settings, window),
@@ -227,9 +233,12 @@ async function start() {
  * content or WebRA's), as a game on the map builds it (js/gameart.js).
  */
 let artBiome = null;
+/** Counts the art changes: installed tiles planned for older art are dropped. */
+let artEpoch = 0;
 function applyArt() {
   const biome = doc.meta.biome ?? 'temperate';
   artBiome = biome;
+  artEpoch++;
   const { atlas } = art.build(artActors(actorList), biome, renderer.maxTextureSize);
   renderer.setAtlas(atlas);
   ctl.overlays = atlas.overlays;
@@ -287,9 +296,6 @@ let minimapTime = 0;
 let previewDirty = true;
 /** The engine checks (Game.editor_cells, editor_report) are out of date. */
 let analysisDirty = true;
-/** When installed terrain tiles were last planned (they take a while on big maps). */
-let tilesTime = 0;
-const TILES_EVERY_MS = 250;
 
 /** Previews built so far, and the fog shown (js/world.js, Game.editor_fog). */
 let previewBuilds = 0;
@@ -299,13 +305,14 @@ let shownFog = 'clear';
 const ANALYSIS_LAYERS = ['passability', 'buildable', 'zones', 'rush', 'reach'];
 
 function frame(now) {
+  updatePanels();
   const dt = Math.min(0.25, (now - last) / 1000);
   animClock.advance(now - last, false);
   last = now;
   view.update(dt);
   if (previewDirty) {
     previewDirty = false;
-    if (preview.update(JSON.stringify(doc.toMap()))) previewBuilds++;
+    if (preview.update(doc.snapshot().json)) previewBuilds++;
     if (preview.error) console.warn('Map preview:', preview.error);
     view.terrainDirty = true;
     analysisDirty = true;
@@ -313,7 +320,8 @@ function frame(now) {
   if (analysisDirty && preview.game && (ANALYSIS_LAYERS.some((k) => state.layers[k]) || activeTab === 'check')) {
     analysisDirty = false;
     ctl.analysis = preview.game.editor_cells();
-    if (activeTab === 'check') renderFairness();
+    // The fairness table (the engine's report and a table) waits for a quiet moment.
+    if (activeTab === 'check') fairnessTask.soon();
   }
   // Fog preview: what the chosen spawn sees at the start, else everything visible.
   const fogKey = state.layers.fog && preview.game ? `${previewBuilds}:${state.fogSpawn}` : 'clear';
@@ -321,14 +329,7 @@ function frame(now) {
     shownFog = fogKey;
     view.uploadFog(fogKey === 'clear' ? null : preview.game.editor_fog(state.fogSpawn));
   }
-  if (view.terrainDirty) {
-    // Installed tiles are planned for the whole map: during a stroke at most a few times a second.
-    const tiled = art.originalActive || art.content?.enabledPacks().some((p) => p.manifest.terrain);
-    if (!tiled || !ctl.gesture || now - tilesTime > TILES_EVERY_MS) {
-      tilesTime = now;
-      view.updateTerrain(doc, preview.terrain(), (bytes) => art.terrain(doc.meta.biome ?? 'temperate', bytes, doc.width, doc.height));
-    }
-  }
+  if (view.terrainDirty) view.updateTerrain(doc, preview.terrain(), installedTerrain);
   const scene = ctl.scene();
   const actors = state.layers.actors ? preview.sprites(view.viewRect()) : new Float32Array(0);
   view.draw(animClock.uniform(), actors, scene);
@@ -338,6 +339,30 @@ function frame(now) {
     minimap.draw(doc, catalog, view.viewRect());
   }
   requestAnimationFrame(frame);
+}
+
+/**
+ * Installed terrain tiles for engine terrain bytes: a texture pack's (made
+ * here, cell by cell) or the original graphics' (planned in a worker; the
+ * last plan until the next one is in, js/tiles.js), or null for WebRA's.
+ */
+function installedTerrain(bytes) {
+  const biome = doc.meta.biome ?? 'temperate';
+  const pack = art.packTerrain(biome, bytes, doc.width, doc.height);
+  if (pack) return pack;
+  const theater = currentTheater(biome);
+  return theater ? installedTiles.tiles(theater, bytes, doc.width, doc.height) : null;
+}
+
+/** The original theater files of the biome for the tile worker, read once per art change. */
+let theaterCache = null;
+function currentTheater(biome) {
+  const key = `${artEpoch}:${biome}`;
+  if (theaterCache?.key !== key) {
+    const theater = art.theater(biome);
+    theaterCache = { key, theater: theater && { key, ...theater } };
+  }
+  return theaterCache.theater;
 }
 
 const labelEls = [];
@@ -368,8 +393,15 @@ const teamCss = (team) => `rgb(${TEAM_COLORS[team].map((v) => Math.round(v * 255
 
 // ---- Document changes ---------------------------------------------------------------------
 
-let autosaveTimer = 0;
-let validateTimer = 0;
+/** The checks after a burst of edits (the engine's validation, quick fixes, the thumbnail). */
+const VALIDATE_DELAY_MS = 300;
+/** The draft in browser storage after a burst of edits. */
+const AUTOSAVE_DELAY_MS = 800;
+const validationTask = idleTask(() => runValidation(), { delay: VALIDATE_DELAY_MS });
+const autosaveTask = idleTask(() => autosave(), { delay: AUTOSAVE_DELAY_MS, maxWait: 2000 });
+const fairnessTask = idleTask(() => activeTab === 'check' && renderFairness(), { delay: 0, maxWait: 500 });
+/** Side panels to bring up to date at the next frame (one update for many changes, as undoing several steps makes). */
+let panels = null;
 
 function onDocChange(change, { initial = false } = {}) {
   if (change.resized) view.setMap(doc);
@@ -382,38 +414,60 @@ function onDocChange(change, { initial = false } = {}) {
     if ((doc.meta.biome ?? 'temperate') !== artBiome) applyArt();
     minimap.invalidate();
   }
-  if (change.objects || change.resized) {
+  panels ??= { objects: false, meta: false };
+  panels.objects ||= !!(change.objects || change.resized);
+  panels.meta ||= !!(change.meta || change.objects || change.resized);
+  if (initial) {
+    updatePanels();
+    validationTask.cancel();
+    runValidation();
+    return;
+  }
+  validationTask.soon();
+  $('#save-state').textContent = 'Unsaved draft...';
+  autosaveTask.soon();
+}
+
+/** The side panels after document changes (called by the frame, and at once when the map opens). */
+function updatePanels() {
+  const p = panels;
+  if (!p) return;
+  panels = null;
+  if (p.objects) {
     renderOwnerOptions();
     renderSelection();
   }
-  if ((change.meta || change.objects || change.resized) && activeTab === 'setup') renderSetup();
+  if (p.meta && activeTab === 'setup') renderSetup();
   updateUndoButtons();
   updateModded();
   if (activeTab === 'history') renderHistory();
-  clearTimeout(validateTimer);
-  validateTimer = setTimeout(runValidation, initial ? 0 : 250);
-  if (!initial) {
-    $('#save-state').textContent = 'Unsaved draft...';
-    clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(autosave, 800);
-  }
   document.title = `${doc.meta.name || 'Untitled'} - WebRA Map Editor`;
 }
 
 function autosave() {
-  const ok = store.set(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), map: doc.toMap() }));
+  autosaveTask.cancel();
+  // JSON.stringify({ savedAt, map }), with the map's text made once per change.
+  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"map":${doc.snapshot().json}}`);
   $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
 }
 
 // ---- Recovery copies ------------------------------------------------------------------------
 
+/** The recovery copies as last read or written here (another tab writing them drops it). */
+let recoveryList = null;
+window.addEventListener('storage', (e) => {
+  if (e.key === RECOVERY_KEY || e.key === null) recoveryList = null;
+});
+
 function recoveryCopies() {
+  if (recoveryList) return recoveryList;
   try {
     const list = JSON.parse(store.get(RECOVERY_KEY) ?? '[]');
-    return Array.isArray(list) ? list.filter((r) => r && typeof r.savedAt === 'number' && r.map) : [];
+    recoveryList = Array.isArray(list) ? list.filter((r) => r && typeof r.savedAt === 'number' && r.map) : [];
   } catch {
-    return [];
+    recoveryList = [];
   }
+  return recoveryList;
 }
 
 /**
@@ -426,9 +480,13 @@ function saveRecovery() {
   const map = doc.toMap();
   const list = recoveryCopies().filter((r) => r.map.name !== map.name);
   list.unshift({ savedAt: Date.now(), map });
+  recoveryList = null;
   for (let n = Math.min(list.length, RECOVERY_COPIES); n > 0; n--) {
     // Large maps may not fit next to the draft: keep fewer copies.
-    if (store.set(RECOVERY_KEY, JSON.stringify(list.slice(0, n)))) break;
+    if (store.set(RECOVERY_KEY, JSON.stringify(list.slice(0, n)))) {
+      recoveryList = list.slice(0, n);
+      break;
+    }
   }
   if (activeTab === 'history') renderHistory();
 }
@@ -456,16 +514,20 @@ function updateModded() {
 
 /** Validate with the engine (source of truth) and the editor's located checks. */
 function validateNow() {
-  const map = doc.toMap();
-  const text = JSON.stringify(map);
+  const { map, json: text } = doc.snapshot();
   engineResult = JSON.parse(Game.validate_map(text));
   jsResult = validateMap(map, { catalog, rulesBase });
   return { map, text, engine: engineResult, js: jsResult };
 }
 
+/** The last checks (runValidation): the problems list and the thumbnail are drawn from them when their tab shows. */
+let checked = null;
+
 function runValidation() {
+  validationTask.cancel();
   const { text, engine, js } = validateNow();
   const fixes = findFixes(doc, catalog);
+  checked = { version: doc.version, engine, js, fixes, listed: false, thumbnail: false };
   const head = $('#validation-head');
   const bytes = byteLength(text);
   const problems = engine.errors.length + fixes.length;
@@ -473,6 +535,24 @@ function runValidation() {
   head.textContent = engine.ok
     ? `Valid map${js.warnings.length ? `, ${js.warnings.length} warning${js.warnings.length === 1 ? '' : 's'}` : ''}`
     : `${engine.errors.length} error${engine.errors.length === 1 ? '' : 's'}: fix before test play or publishing`;
+  const tab = $('[data-tab="check"]');
+  tab.classList.toggle('bad', !engine.ok);
+  $('#check-count').hidden = problems === 0;
+  $('#check-count').textContent = String(problems);
+  // The problems with their buttons and the thumbnail only where they show (big maps have hundreds of problems).
+  if (activeTab === 'check') renderProblems();
+  if (activeTab === 'map') renderThumbnail();
+  $('#map-stats').textContent =
+    `${doc.width} x ${doc.height} cells, ${doc.spawns.length} spawns, ${doc.actors.length} actors, ` +
+    `${(bytes / 1024).toFixed(1)} KiB of ${LIMITS.maxBytes / 1024} KiB` +
+    (engine.hash ? `, hash ${engine.hash.slice(0, 12)}` : '');
+}
+
+/** The problems list of the last checks, with their quick fixes (Check tab). */
+function renderProblems() {
+  if (!checked || checked.listed) return;
+  checked.listed = true;
+  const { engine, js, fixes } = checked;
   $('#validation').replaceChildren(
     openedView(),
     problemsView(
@@ -486,15 +566,13 @@ function runValidation() {
       (x, y) => view.centerOnCell(x, y),
     ),
   );
-  const tab = $('[data-tab="check"]');
-  tab.classList.toggle('bad', !engine.ok);
-  $('#check-count').hidden = problems === 0;
-  $('#check-count').textContent = String(problems);
-  renderThumbnail();
-  $('#map-stats').textContent =
-    `${doc.width} x ${doc.height} cells, ${doc.spawns.length} spawns, ${doc.actors.length} actors, ` +
-    `${(bytes / 1024).toFixed(1)} KiB of ${LIMITS.maxBytes / 1024} KiB` +
-    (engine.hash ? `, hash ${engine.hash.slice(0, 12)}` : '');
+}
+
+/** The checks for the tab just shown: the last ones when the map has not changed since, else new ones. */
+function showChecked() {
+  if (!checked || checked.version !== doc.version || validationTask.pending) runValidation();
+  else if (activeTab === 'check') renderProblems();
+  else if (activeTab === 'map') renderThumbnail();
 }
 
 /**
@@ -534,7 +612,8 @@ function fixOpened(p, fix) {
 function renderThumbnail() {
   const canvas = $('#map-thumb');
   if (!canvas) return;
-  const map = doc.toMap();
+  if (checked) checked.thumbnail = true;
+  const { map, json } = doc.snapshot();
   const { width, height, rgba } = mapThumbnail(map);
   canvas.width = width;
   canvas.height = height;
@@ -542,7 +621,6 @@ function renderThumbnail() {
   // Its magnifier shows the map as a game draws it (read on the first hover after a change).
   if (thumbLens) {
     if (thumbLens.image !== canvas) thumbLens.attach(canvas);
-    const json = JSON.stringify(map);
     thumbLens.setSource(json, (lensArt) => lensArt.mapSteps(json), { width, height });
   }
 }
@@ -850,6 +928,8 @@ function showTab(name) {
   if (name === 'stamps') renderStamps();
   if (name === 'setup') renderSetup();
   if (name === 'check') analysisDirty = true;
+  // The checks' problem list and thumbnail are drawn when their tab shows (the first checks draw their own).
+  if (checked && ((name === 'check' && !checked.listed) || (name === 'map' && !checked.thumbnail))) showChecked();
 }
 
 // ---- Map pane ----------------------------------------------------------------------------------

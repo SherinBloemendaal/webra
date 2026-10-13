@@ -12,6 +12,15 @@ const COALESCE_MS = 1500;
 
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
+/** Freeze a JSON value and everything in it (a shared snapshot nobody may change). */
+function freeze(v) {
+  if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+    for (const k of Object.keys(v)) freeze(v[k]);
+    Object.freeze(v);
+  }
+  return v;
+}
+
 /** An actor's state fields (health, stance, veterancy, passengers) that differ from the defaults. */
 function actorState(a) {
   return {
@@ -32,9 +41,10 @@ export class MapDoc {
      * Counts the changes: it moves on whenever a transaction closes, undo or
      * redo apply, or a map is loaded. Every change happens inside a
      * transaction, so outside one an equal version means the same document
-     * (what the editor's caches rely on).
+     * (what `snapshot` and the editor's caches rely on).
      */
     this.version = 0;
+    this.snap = null;
     this.load(map);
   }
 
@@ -87,7 +97,8 @@ export class MapDoc {
       ...(format === 1 ? {} : { gems: encodeBase64(this.gems) }),
       spawns: clone(this.spawns),
       actors: clone(this.actors),
-      rules: pruneOverrides(this.rules),
+      // A copy: pruneOverrides keeps the document's own arrays.
+      rules: clone(pruneOverrides(this.rules)),
       // Optional: a temperate map leaves it out (and keeps its identity).
       ...(this.meta.biome && this.meta.biome !== 'temperate' ? { biome: this.meta.biome } : {}),
       // Slots beyond the spawns are kept while editing (a removed spawn comes back with its slot) but not written.
@@ -96,6 +107,25 @@ export class MapDoc {
       lockedOptions: this.meta.lockedOptions.filter((k) => Object.hasOwn(this.meta.options, k)),
       tags: clone(this.meta.tags),
     };
+  }
+
+  /**
+   * The document as a map object and its JSON text (`JSON.stringify` of
+   * `toMap()`), made once per version and shared by everything that reads
+   * the whole map (the preview, the checks, the thumbnail, the draft).
+   * Both are read only: change a copy (`toMap()`). Inside a transaction a
+   * fresh one is made each time.
+   */
+  snapshot() {
+    if (this.tx) {
+      const map = freeze(this.toMap());
+      return { map, json: JSON.stringify(map), version: -1 };
+    }
+    if (this.snap?.version !== this.version) {
+      const map = freeze(this.toMap());
+      this.snap = { map, json: JSON.stringify(map), version: this.version };
+    }
+    return this.snap;
   }
 
   /** Replace the document with another map as one undoable step. */
