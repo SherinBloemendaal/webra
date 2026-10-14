@@ -653,3 +653,30 @@ fn aircraft_sent_together_by_the_bulk_path_queue_one_at_a_time() {
     let run = run_line(&mut w, &units, 25 * 120);
     assert_first_come_first_served(&run);
 }
+
+/// The repair box (bulk `Order::RepairUnits`) on a damaged plane and several
+/// tanks: the plane counts as a combat unit in the box's chooser, and all
+/// of them go into the depot's line and are repaired one at a time.
+#[test]
+fn a_bulk_repair_order_sends_a_plane_and_tanks_into_the_line() {
+    for model in MovementModel::ALL {
+        let mut w = arena(model);
+        let _fix = depot(&mut w);
+        let mut units = damaged(&mut w, "2TNK", 4, 8);
+        units.extend(damaged(&mut w, "MIG", 1, 4));
+        w.step();
+        let mig = *units.last().unwrap();
+        let v = w.repair_groups_json(0, units.iter().copied());
+        let combat: Vec<u64> = v["combat"].as_array().unwrap().iter().map(|x| x.as_u64().unwrap()).collect();
+        assert!(combat.contains(&(w.make_ref(mig) as u64)), "{model:?}: the plane is a combat unit in the repair box");
+        assert!(v["noFacility"].as_array().unwrap().is_empty(), "{model:?}: the depot repairs them all");
+        let ids = units.iter().map(|&u| w.make_ref(u)).collect();
+        w.queue_order(Order::RepairUnits { player: 0, ids });
+        w.step();
+        for &u in &units {
+            assert_eq!(w.actors[u].activity, Activity::Repair, "{model:?}: sent to the depot");
+        }
+        let run = run_line(&mut w, &units, 25 * 240);
+        assert_first_come_first_served(&run);
+    }
+}

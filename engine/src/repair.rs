@@ -349,16 +349,16 @@ impl World {
     }
 
     /// Whether unit `i` has structures that repair it at all (OpenRA
-    /// Repairable or RepairableNear: vehicles, ships and helicopters in Red
-    /// Alert). Infantry have none (they heal at a Hospital or by a medic);
-    /// planes have `Repairable` in OpenRA but WebRA's planes only land on
-    /// airfields, so they have none here.
+    /// Repairable or RepairableNear: vehicles, ships, helicopters and planes
+    /// in Red Alert; aircraft land on the service depot in its line,
+    /// service.rs). Infantry have none (they heal at a Hospital or by a
+    /// medic), nor do support power aircraft.
     pub fn unit_has_repair_facilities(&self, i: usize) -> bool {
         let a = &self.actors[i];
         let Some(u) = self.rules.actors[a.ty as usize].unit.as_ref() else { return false };
         match a.kind {
             Kind::Vehicle | Kind::Ship => !u.repair_at.is_empty(),
-            Kind::Aircraft => self.is_helicopter(i) && u.aircraft.as_ref().is_some_and(|air| !air.repair_actors.is_empty()),
+            Kind::Aircraft => !self.is_support_aircraft(i) && u.aircraft.as_ref().is_some_and(|air| !air.repair_actors.is_empty()),
             _ => false,
         }
     }

@@ -2574,9 +2574,10 @@ Repair order also use an ally's structure (own first, the unit's owner pays,
 the ally gains PlayerExperience), WebRA repairs units at own structures only,
 in the click path and in `repair_units` alike; its waypoints and guarding end as with any new command;
 units without such a structure now, infantry (no Repairable in Red Alert;
-they heal at a Hospital or by a medic), planes (OpenRA RA gives them
-`Repairable: fix`, but WebRA's planes only land on airfields, so they are left
-out), other players' and undamaged units are skipped),
+they heal at a Hospital or by a medic), support power aircraft, other
+players' and undamaged units are skipped; planes and helicopters go to the
+service depot (OpenRA RA `Repairable: fix`) and wait in its line like the
+others, "Service depot line"),
 `{"o": "sell_buildings", player, ids}` (WebRA bulk sell: each listed
 structure that `can_bulk_sell` allows is sold as by `sell`, in the order
 listed: the sender's own, alive, in the world, with OpenRA's Sellable (a

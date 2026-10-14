@@ -613,16 +613,18 @@ fn bulk_repair_sorts_units_into_combat_ore_trucks_and_other() {
     let all: Vec<usize> = vec![tank, harv, mcv, tran, rifle, yak, enemy, healthy, fix];
     let v = w.repair_groups_json(0, all.iter().copied());
     let r = |i: usize| w.make_ref(i);
-    assert_eq!(ids_of(&v, "combat"), vec![r(tank)]);
+    // The armed Yak is a combat unit: planes land on the service depot (OpenRA ^Plane Repairable, service.rs).
+    assert_eq!(ids_of(&v, "combat"), vec![r(tank), r(yak)]);
     assert_eq!(ids_of(&v, "harvesters"), vec![r(harv)]);
     assert_eq!(ids_of(&v, "other"), vec![r(mcv), r(tran)], "MCV and the unarmed Chinook");
     assert!(ids_of(&v, "noFacility").is_empty(), "the service depot repairs them all");
     assert!(ids_of(&v, "buildings").is_empty(), "the depot is undamaged");
-    // Infantry have no repair structure, WebRA planes neither, enemy and healthy units are not ours to repair.
-    for i in [rifle, yak, enemy, healthy] {
+    // Infantry have no repair structure, enemy and healthy units are not ours to repair.
+    for i in [rifle, enemy, healthy] {
         assert_eq!(w.repair_category(0, i), None);
     }
     assert_eq!(w.repair_category(0, tank), Some(RepairCategory::Combat));
+    assert_eq!(w.repair_category(0, yak), Some(RepairCategory::Combat));
 }
 
 #[test]
