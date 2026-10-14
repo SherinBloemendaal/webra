@@ -202,11 +202,14 @@ pub struct Actor {
     /// a script; map actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
     /// Simulation state (state hash).
     pub make_until: u32,
-    /// A Construction Yard packing up (OpenRA Transform: the make animation
-    /// played backwards, uninterruptible, then the MCV): the tick it turns
-    /// into the MCV, 0 when not packing (production.rs `tick_pack_up`).
-    /// Simulation state (state hash).
+    /// A structure playing its make animation backwards before it goes
+    /// (OpenRA WithMakeAnimation.Reverse; uninterruptible): a Construction
+    /// Yard packing up (Transform, then the MCV) or a structure being sold
+    /// (`unmake_sell`; Sellable.Sell, then the Sell activity). The tick it
+    /// ends, 0 when it is not (production.rs `tick_unmake`). Simulation
+    /// state (state hash).
     pub unmake_at: u32,
+    pub unmake_sell: bool,
     /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
     pub fx: crate::fx::ActorFx,
 
@@ -314,6 +317,7 @@ impl Actor {
             born: 0,
             make_until: 0,
             unmake_at: 0,
+            unmake_sell: false,
             fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
@@ -2604,8 +2608,8 @@ impl World {
         }
         self.retarget_memo.clear();
         self.apply_orders();
-        // Construction Yards whose reverse make animation ended turn into MCVs (production.rs).
-        self.tick_pack_up();
+        // Reverse make animations that ended: yards turn into MCVs, sold structures go (production.rs).
+        self.tick_unmake();
         if self.tokens_dirty {
             self.refresh_tokens();
         }
@@ -2713,6 +2717,7 @@ impl World {
                 // The make animation's build-incomplete condition, forwards and back.
                 mix(a.make_until as i64);
                 mix(a.unmake_at as i64);
+                mix(a.unmake_sell as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);

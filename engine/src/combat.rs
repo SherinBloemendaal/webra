@@ -62,8 +62,9 @@ impl World {
     /// Whether structure `i` plays its make animation now (OpenRA
     /// WithMakeAnimation's `build-incomplete` condition), forwards after it
     /// was placed, deployed from an MCV or created by a script
-    /// (`World::begin_make`), or backwards while a Construction Yard packs
-    /// up (`World::deploy`), until `make_until` (world.rs).
+    /// (`World::begin_make`), or backwards while it is sold (`World::sell`)
+    /// or a Construction Yard packs up (`World::deploy`), until
+    /// `make_until` (world.rs).
     pub fn build_incomplete(&self, i: usize) -> bool {
         let a = &self.actors[i];
         a.make_until > 0 && self.tick <= a.make_until

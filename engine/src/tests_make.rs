@@ -97,7 +97,79 @@ fn a_structure_being_built_cannot_be_sold() {
     assert!(g.sell_value(0, r) > 0);
     g.world.queue_order(Order::Sell { player: 0, building: r });
     g.world.step();
-    assert!(!g.world.actors[p].alive || g.world.resolve(r).is_none(), "sold once built");
+    assert!(g.world.actors[p].unmake_sell, "sold once built (the reverse make animation plays first)");
+}
+
+fn sold_events(w: &mut World) -> Vec<i32> {
+    use crate::sound_events::{SoundEventKind, EVENT_STRIDE};
+    w.sound.take().chunks(EVENT_STRIDE).filter(|e| e[0] == SoundEventKind::Sold as i32).map(|e| e[5]).collect()
+}
+
+/// Selling (OpenRA Sellable.Sell, then the Sell activity): the sell sound at
+/// once, the make animation backwards (build-incomplete again: no second
+/// sale, no capture), then the refund for the health at that moment, the
+/// crew walking out, the script's event and the announcement; the
+/// structure is gone after make_ticks ticks.
+#[test]
+fn selling_plays_the_make_animation_backwards_and_refunds_at_the_end() {
+    use crate::render::Pose;
+    use crate::sound_events::{SOLD_DONE, SOLD_STARTED};
+    let mut w = world();
+    let p = placed(&mut w, "POWR", 0, 30, 30);
+    while w.build_incomplete(p) {
+        w.step();
+    }
+    w.sound.set_enabled(true);
+    w.sound.take();
+    let max = w.rules.actors[w.actors[p].ty as usize].hp;
+    let r = w.make_ref(p);
+    let cash0 = w.players[0].funds();
+    let crew0 = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == crate::rules::Kind::Infantry).count();
+    w.queue_order(Order::Sell { player: 0, building: r });
+    w.step();
+    let start = w.tick;
+    let n = make_ticks(&w, "POWR");
+    assert_eq!((w.actors[p].unmake_at, w.actors[p].unmake_sell), (start + n, true));
+    assert_eq!(sold_events(&mut w), vec![SOLD_STARTED], "the sell sound at once");
+    assert_eq!(w.players[0].funds(), cash0, "no refund yet");
+    assert_eq!(w.building_pose(p), (Pose::Unmake, 0));
+    assert!(!w.can_sell(p) && w.build_incomplete(p));
+    // A second sale changes nothing; damage meanwhile lowers the refund.
+    w.queue_order(Order::Sell { player: 0, building: r });
+    w.actors[p].hp = max / 2;
+    while w.tick + 1 < start + n {
+        w.step();
+        assert!(w.actors[p].alive);
+    }
+    assert!(sold_events(&mut w).is_empty());
+    w.step();
+    assert!(w.resolve(r).is_none(), "gone {n} ticks after the order");
+    let info = &w.rules.actors[ty(&w, "POWR") as usize];
+    let refund = (info.cost as i64 * info.building.as_ref().unwrap().sell_refund as i64 * (max / 2) as i64 / (100 * max as i64)) as i32;
+    assert_eq!(w.players[0].funds(), cash0 + refund, "refund for the health at the end, once");
+    assert_eq!(sold_events(&mut w), vec![SOLD_DONE], "the announcement at the end");
+    let crew = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == crate::rules::Kind::Infantry).count();
+    assert!(crew > crew0, "the crew walked out at the end");
+}
+
+#[test]
+fn a_structure_destroyed_while_sold_brings_nothing() {
+    let mut w = world();
+    let p = placed(&mut w, "POWR", 0, 30, 30);
+    while w.build_incomplete(p) {
+        w.step();
+    }
+    let r = w.make_ref(p);
+    let cash0 = w.players[0].funds();
+    w.queue_order(Order::Sell { player: 0, building: r });
+    w.step();
+    w.kill(p);
+    for _ in 0..30 {
+        w.step();
+    }
+    assert!(w.resolve(r).is_none());
+    assert_eq!(w.players[0].funds(), cash0, "no refund");
+    assert_eq!(w.player_stats(0).sold, 0);
 }
 
 #[test]

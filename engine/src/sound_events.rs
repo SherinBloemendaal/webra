@@ -27,6 +27,9 @@ pub const FUNDS_EVENT_INTERVAL: u32 = 25;
 /// A structure that was hit within this many ticks does not report again
 /// (one "under attack" event per burst of fire, not per bullet).
 pub const DAMAGE_EVENT_QUIET_TICKS: u32 = 50;
+/// `SoundEventKind::Sold` b: the sale started (sell sound) or is done (announcement).
+pub const SOLD_STARTED: i32 = 1;
+pub const SOLD_DONE: i32 = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(i32)]
@@ -44,7 +47,9 @@ pub enum SoundEventKind {
     UnitProduced = 5,
     /// a = actor type of a structure placed by its owner.
     BuildingPlaced = 6,
-    /// a = actor type of a structure sold.
+    /// a = actor type of a structure sold; b = `SOLD_STARTED` when the sale
+    /// starts (the sell sound, OpenRA SellSounds) or `SOLD_DONE` when it is
+    /// done (the StructureSold announcement), after the reverse make animation.
     Sold = 7,
     /// Production stalled for lack of money; a = actor type being built.
     InsufficientFunds = 8,

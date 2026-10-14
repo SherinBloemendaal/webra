@@ -464,22 +464,20 @@ fn naval_bots_keep_every_ship_on_water() {
         w.state_hash()
     };
     let minutes = 25 * 60;
-    // Seeds 6 (islands) and 7 (rivers, 182 ford cells): since structures
-    // wait for their make animation, new defences pause briefly (about 60
-    // ticks in a 12 minute game, the only build-incomplete gate the bots
-    // meet; no order of theirs is refused), which changes their target
-    // scans and the game from then on. Ships built in 12 minutes by the 4
-    // Hard Naval bots of this test (96 cell maps), seeds 1 to 8, without
-    // the make time and with it (Construction Yards packing up backwards
-    // included; the same numbers): islands 7/3,
-    // 2/0, 0/0, 2/2, 0/2, 4/4, 4/2, 0/0; rivers 2/2, 1/0, 3/0, 3/2, 6/4,
-    // 2/2, 3/4, 8/7. First naval yard (seconds): islands 359/361, 441/695,
-    // 708/none, 401/426, 647/390, 366/374, 388/411, 417/491; rivers
-    // 302/414, 417/445, 421/464, 354/441, 325/366, 532/440, 377/501,
-    // 389/349. Seeds 2 and 3 of either style build no ship now, too few to
-    // check fleets.
+    // Seeds 6 (islands) and 1 (rivers, 148 ford cells). Structures wait for
+    // their make animation and play it backwards when sold or packed up;
+    // that changes when defences fire, refineries go and money comes back,
+    // and so the bots' games from then on, seed by seed. Ships built in 12
+    // minutes / most afloat at once by the 4 Hard Naval bots of this test
+    // (96 cell maps), seeds 1 to 10, without the make time and with it:
+    // islands 7/4 and 3/3, 2/2 and 2/2, 0/0 and 0/0, 2/2 and 2/2, 0/0 and
+    // 3/3, 4/3 and 4/4, 4/2 and 1/1, 0/0 and 1/1, 1/1 and 5/4, 4/3 and 5/3;
+    // rivers 2/2 and 6/3, 1/1 and 1/1, 3/3 and 2/2, 3/3 and 0/0, 6/3 and
+    // 3/3, 2/2 and 5/5, 3/3 and 0/0, 8/6 and 1/1, 2/2 and 2/2, 1/1 and 0/0
+    // (26 against 24 ships on the islands, 20 against 31 on the rivers).
+    // A seed whose bots float fewer than 2 ships cannot check fleets.
     game(MapStyle::Islands, 6, 12 * minutes);
     let lakes = game(MapStyle::Lakes, 7, 12 * minutes);
-    game(MapStyle::Rivers, 7, 12 * minutes);
+    game(MapStyle::Rivers, 1, 12 * minutes);
     assert_eq!(game(MapStyle::Lakes, 7, 12 * minutes), lakes, "deterministic");
 }

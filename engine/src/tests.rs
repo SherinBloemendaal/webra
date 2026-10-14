@@ -450,7 +450,9 @@ fn selling_refunds_half_the_value_scaled_by_health() {
     w.actors[p].hp = w.rules.actors[ty(&w, "POWR") as usize].hp / 2;
     let cash = w.players[0].cash;
     w.queue_order(Order::Sell { player: 0, building: pref });
-    run(&mut w, 1);
+    // The make animation backwards first (OpenRA Sellable.Sell), then the refund.
+    let make = w.rules.actors[ty(&w, "POWR") as usize].building.as_ref().unwrap().make_ticks;
+    run(&mut w, 1 + make);
     assert!(w.resolve(pref).is_none());
     assert_eq!(w.players[0].cash - cash, 300 * 50 / 100 / 2, "50% refund at half health");
 }

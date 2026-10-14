@@ -170,9 +170,9 @@ pub enum Pose {
     /// lists several, OpenRA picks one per shot: Tanya's shoot-left and
     /// shoot-right; infantry_render.rs `infantry_attack_pose`).
     Attack2 = 25,
-    /// A Construction Yard packing up: the make animation played backwards
-    /// (OpenRA Transform, WithMakeAnimation.Reverse), `age` = ticks since
-    /// it started.
+    /// The make animation played backwards (OpenRA WithMakeAnimation.Reverse):
+    /// a structure being sold, a Construction Yard packing up; `age` =
+    /// ticks since it started.
     Unmake = 26,
 }
 

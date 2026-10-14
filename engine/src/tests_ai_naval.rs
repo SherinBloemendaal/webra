@@ -406,15 +406,16 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 ///
 /// Rivers, seed 3, two Normal Naval bots: the fleet is measured by its idle
 /// share, not an absolute count, because how big it grows depends on the
-/// rest of the game (structures waiting for their make animation changed
-/// it: before, at most 4 of 6 ships idled; now the largest fleet has 8
-/// ships, all 8 idle at the worst moment, but in the 11351 player-ticks
-/// with a fleet of 6 or more, summed over both players, 0.47 of its ships
-/// idle on average; the test allows 0.55). A fleet that never sets out
-/// idles with all its ships all the time (share 1). The fleet must last
-/// at least 1500 such player-ticks (both players together).
-/// Islands, seed 3, two Normal Turtle bots: at most 3 ships idle (fleet of
-/// 3; 12 before the fix).
+/// rest of the game (structures waiting for their make animation, and
+/// playing it backwards when sold or packed up, changed it: without that
+/// at most 4 of 6 ships idled; now the largest fleet has 7 ships, 6 idle
+/// at the worst moment, but in the 11172 player-ticks with a fleet of 6 or
+/// more, summed over both players, 0.29 of its ships idle on average; the
+/// test allows 0.40). A fleet that never sets out idles with all its ships
+/// all the time (share 1). The fleet must last at least 1500 such
+/// player-ticks (both players together).
+/// Islands, seed 3, two Normal Turtle bots: at most 4 ships idle (fleet of
+/// 4; 12 before the fix).
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::mapgen::MapStyle;
@@ -444,7 +445,7 @@ fn generated_naval_maps_keep_no_idle_fleets() {
         if style == MapStyle::Rivers {
             // A real fleet for a good while, and not idling as a whole.
             assert!(big_ticks >= 25 * 60, "{what}: a fleet of 6 or more for {big_ticks} player-ticks");
-            assert!(big_idle * 20 <= big_ships * 11, "{what}: {big_idle} of {big_ships} ship-ticks idle without a target");
+            assert!(big_idle * 10 <= big_ships * 4, "{what}: {big_idle} of {big_ships} ship-ticks idle without a target");
         } else {
             assert!(idle_most <= 6, "{what}: {idle_most} ships idle without a target");
         }

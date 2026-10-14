@@ -70,7 +70,7 @@ export const POSE = Object.freeze({
   CRUSHED: 24,
   // A soldier's second attack sequence (AttackSequences: OpenRA picks one per shot).
   ATTACK2: 25,
-  /** A Construction Yard packing up: the make animation backwards (OpenRA Transform), once from the age. */
+  /** The make animation backwards (OpenRA WithMakeAnimation.Reverse: selling, a Construction Yard packing up), once from the age. */
   UNMAKE: 26,
 });
 export const POSE_COUNT = 27;

@@ -963,9 +963,12 @@ fn set_rally_point(w: &mut World, _player: u8, b: usize, radius: i32) {
 /// minimum count).
 pub(crate) fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) {
     let bb = &cfg.info.base_builder;
+    // One being sold already (its make animation playing backwards) no longer counts.
     let refineries: Vec<usize> = owned_buildings(w, player)
         .into_iter()
-        .filter(|&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some()))
+        .filter(|&b| {
+            !w.actors[b].unmake_sell && w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some())
+        })
         .collect();
     if refineries.len() as i32 <= bb.initital_minimum_refinery_count + bb.additional_minimum_refinery_count {
         return;

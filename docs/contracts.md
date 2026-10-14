@@ -1948,6 +1948,18 @@ override files of the same name) by `node tools/make-frames.mjs <files>`
 (it prints file names and frame counts only). The tileset variants have
 the same counts, so the time does not depend on the map.
 
+Selling (OpenRA Sellable.Sell, then the Sell activity): the sell order
+plays the sell sound at once (`Sold` event, b = 1), then the make animation
+backwards: from the order's tick the structure is `build-incomplete` again
+for `make_ticks` ticks (`unmake_at` with `unmake_sell`, in the state hash;
+no second sale, no capture, no pack-up, its attacks paused), and in the
+tick `make_ticks` after the order it is sold: the refund for its health at
+that moment (RefundPercent of the value), the statistics, the crew walking
+out (SpawnActorsOnSell), the script's Sold event and the announcement
+(`Sold`, b = 2); then it is gone. Destroyed meanwhile, it brings nothing.
+A structure without a make animation (walls) is sold at once (both events).
+`sell_value` is 0 during the sale.
+
 Packing up (OpenRA Transform on the Construction Yard): the pack-up order
 plays the make animation backwards first. From the order's tick the yard
 is `build-incomplete` again for `make_ticks` ticks (`unmake_at`, in the
@@ -1961,9 +1973,9 @@ the yard cannot pack up (OpenRA Transforms PauseOnCondition
 being-captured, being-demolished, build-incomplete; WebRA has no chrono
 vortex): it is not remembered for later (TransformsIntoTransforms only
 queues a deploy behind a pack-up that already runs). Only a yard whose MCV
-would not fit reports a blocked deploy. Not modelled: OpenRA's reverse make animation
-before a structure is sold, the ConyardChronoReturn of a chronoshifted MCV,
-and TransformsIntoTransforms (a pack-up order queued while being built).
+would not fit reports a blocked deploy. Not modelled: the ConyardChronoReturn of a chronoshifted MCV,
+and TransformsIntoTransforms (a deploy order for the coming MCV queued
+behind a pack-up that runs).
 
 ### Pilots (`engine/src/plane.rs` `eject_pilot`)
 
@@ -2259,7 +2271,7 @@ log is presentation only: never read by the simulation, off by default
 `air.power` / `air.launched`) is not hashed either. Kinds and their fields:
 1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
 attacking player; only another player's fire counts, as in OpenRA's
-DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold, 8
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: 1 the sale starts, 2 it is done), 8
 InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
 ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
 Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
@@ -2816,9 +2828,9 @@ harvester leaving the refinery played backwards), 15 the second stand
 sequence and 16, 17 the idle animations of a standing soldier (`age` = ticks
 into the animation), 18 to 23 death sequences die1 to die6 and 24 a crushed
 body (`age` = ticks since the death), 25 a soldier's second attack sequence
-(AttackSequences: picked per shot, Tanya's shoot-right), 26 a Construction
-Yard packing up (the make animation backwards, `age` = ticks since the
-pack-up order; art without one fades out). Dying soldiers are drawn with their
+(AttackSequences: picked per shot, Tanya's shoot-right), 26 the make
+animation backwards (a structure being sold, a Construction Yard packing
+up; `age` = ticks since the order; art without one fades out). Dying soldiers are drawn with their
 death sequences only for actor types `Game.set_death_art(types, ticks)`
 names (the atlas's `deaths`; `ticks`, the atlas's `deathTicks`, has eight
 lengths per type: die1..die6, crushed and the longest idle animation, so a

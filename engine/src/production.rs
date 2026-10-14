@@ -3,7 +3,7 @@
 use crate::map::Terrain;
 use crate::math::{dist, CELL};
 use crate::rules::{Kind, QueueType};
-use crate::sound_events::SoundEventKind;
+use crate::sound_events::{SoundEventKind, SOLD_DONE, SOLD_STARTED};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
@@ -764,10 +764,15 @@ impl World {
         a.alive && a.kind == Kind::Building && !self.make_gates(b).sell && !self.being_captured(b) && !self.being_demolished(b)
     }
 
-    /// Sell a structure: refund RefundPercent of its value, scaled by health (OpenRA Sellable).
+    /// Sell a structure (OpenRA Sellable.Sell): the sell sound at once, then
+    /// the make animation backwards (WithMakeAnimation.Reverse: build-incomplete
+    /// again, uninterruptible), and when it ended the Sell activity
+    /// (`finish_sale`): RefundPercent of its value scaled by its health then,
+    /// the crew, the announcement. A structure without a make animation is
+    /// sold at once. Destroyed meanwhile, it brings nothing.
     pub fn sell(&mut self, b: usize) -> bool {
         let a = &self.actors[b];
-        if !a.alive || a.kind != Kind::Building {
+        if !a.alive || a.kind != Kind::Building || a.unmake_at > 0 {
             return false;
         }
         // Sellable RequiresCondition !build-incomplete && !being-captured && !being-demolished (infantry.rs).
@@ -779,18 +784,40 @@ impl World {
         if percent <= 0 {
             return false;
         }
+        let make = info.building.as_ref().map_or(0, |bi| bi.make_ticks);
+        let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
+        // Sellable.SellSounds (cashturn), to the owner, at once.
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, SOLD_STARTED);
+        if make > 0 {
+            let a = &mut self.actors[b];
+            a.unmake_at = self.tick + make;
+            a.unmake_sell = true;
+            a.make_until = a.unmake_at;
+            return true;
+        }
+        self.finish_sale(b);
+        true
+    }
+
+    /// The Sell activity (OpenRA Activities/Sell): the refund for the health
+    /// the structure has now, INotifySold.Sold (the crew walks out, the
+    /// script's Sold event, the statistics) and the Notification
+    /// (StructureSold); then it is gone.
+    fn finish_sale(&mut self, b: usize) {
+        let a = &self.actors[b];
+        let info = &self.rules.actors[a.ty as usize];
+        let percent = info.building.as_ref().unwrap().sell_refund;
         let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
         let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
         self.refund(owner, refund);
         self.note_sold(owner, refund);
-        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, SOLD_DONE);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
         self.spawn_sell_survivors(b);
         let actor = self.make_ref(b);
         self.script_event(crate::mission::ScriptEvent::Sold { actor });
         self.remove(b);
-        true
     }
 
     /// Where actor `i` would deploy to: (target actor type, top-left cell or unit cell).
@@ -884,16 +911,21 @@ impl World {
         self.transform_now(i)
     }
 
-    /// Packing Construction Yards whose reverse make animation ended: they
-    /// turn into the MCV, or, when it no longer fits, play the make
-    /// animation forwards again and stay (OpenRA Transform.DoTransform).
-    pub(crate) fn tick_pack_up(&mut self) {
+    /// Structures whose reverse make animation ended: a sold one is sold
+    /// (`finish_sale`); a packing Construction Yard turns into the MCV or,
+    /// when it no longer fits, plays the make animation forwards again and
+    /// stays (OpenRA Transform.DoTransform).
+    pub(crate) fn tick_unmake(&mut self) {
         for i in 0..self.actors.len() {
             let a = &self.actors[i];
             if !a.alive || a.unmake_at == 0 || self.tick < a.unmake_at {
                 continue;
             }
             self.actors[i].unmake_at = 0;
+            if std::mem::take(&mut self.actors[i].unmake_sell) {
+                self.finish_sale(i);
+                continue;
+            }
             // Transforms.CanDeploy once build-incomplete is revoked: the MCV
             // fits and no C4 ticks on the yard (it cannot be captured while
             // packing up). Otherwise it unfolds again, silently.

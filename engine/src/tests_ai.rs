@@ -645,6 +645,11 @@ fn a_dry_refinery_by_an_ore_mine_is_not_sold() {
     w.remove(actor_of(&w, neutral, "GMINE"));
     crate::ai_base::sell_useless_refinery(&mut w, 0, &cfg);
     run(&mut w, 2);
+    // Being sold: its make animation plays backwards first, and no second
+    // refinery is sold meanwhile (the one being sold no longer counts).
+    crate::ai_base::sell_useless_refinery(&mut w, 0, &cfg);
+    let make = w.rules.actors[ty(&w, "PROC") as usize].building.as_ref().unwrap().make_ticks;
+    run(&mut w, make);
     assert_eq!(count(&w, 0, "PROC"), 2, "without the mine it is sold");
 }
 
