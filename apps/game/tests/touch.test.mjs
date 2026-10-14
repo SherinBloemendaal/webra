@@ -536,6 +536,41 @@ test('touch: drag box-selects (with Add: adds), a second finger cancels the box'
   assert.deepEqual(input.selection, [1, 2, 4]);
 });
 
+test('touch: taps and box drags at the screen edge never start edge scrolling; a mouse moving again does', async () => {
+  const { input, p, clock } = await setup(ARMY);
+  Object.assign(window, { innerWidth: 800, innerHeight: 600 });
+  input.centerOn(2400, 2400);
+  const still = () => {
+    const { x, y } = input.camera;
+    input.update(0.1);
+    assert.equal(input.edgeScroll, null);
+    assert.deepEqual([input.camera.x, input.camera.y], [x, y], 'the camera stays');
+  };
+  // A tap within the edge zone (right edge, x 797 of 800) goes through js/input.js's mouse handlers.
+  await p.tap(797, 300);
+  assert.equal(input.mouse.touch, false, 'no placement footprint: the touch flag is not what holds it');
+  still();
+  clock.advance(1000);
+  await flush();
+  // A box drag that ends in the bottom right corner.
+  await p.down(1, 400, 300);
+  await p.move(1, 600, 450);
+  await p.move(1, 797, 597);
+  assert.ok(input.drag);
+  await p.up(1, 797, 597);
+  assert.equal(input.drag, null);
+  still();
+  still();
+  // A real mouse on a hybrid device moves again (pointer events first, then its mouse event): it scrolls.
+  input.notePointerType({ pointerType: 'mouse' });
+  input.onMouseMove({ clientX: 797, clientY: 300 });
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // A finger again: the position is gone, the scrolling stops at once.
+  input.notePointerType({ pointerType: 'touch' });
+  still();
+});
+
 test('touch: two fingers pan and pinch-zoom the camera around the fingers', async () => {
   const { input, p } = await setup(ARMY);
   input.camera.x = 200;

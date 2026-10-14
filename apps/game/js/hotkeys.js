@@ -319,10 +319,10 @@ function inputType(el) {
 
 /** Whether `el` is a text field the player can type in (focused, every key is its own: the chat line). */
 export function typingIn(el) {
-  if (typeof el?.tagName !== 'string' || el.disabled || !rendered(el)) return false;
-  if (el.isContentEditable) return true;
-  if (el.tagName === 'TEXTAREA') return !el.readOnly;
-  return el.tagName === 'INPUT' && TEXT_TYPES.has(inputType(el)) && !el.readOnly;
+  if (typeof el?.tagName !== 'string' || el.disabled) return false;
+  // The cheap checks first: js/input.js asks every frame, and rendered() measures layout.
+  const text = el.isContentEditable || (el.tagName === 'TEXTAREA' && !el.readOnly) || (el.tagName === 'INPUT' && TEXT_TYPES.has(inputType(el)) && !el.readOnly);
+  return text && rendered(el);
 }
 
 /**

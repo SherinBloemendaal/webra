@@ -179,7 +179,10 @@ export class Input {
     this.mouse = { x: -1, y: -1, inside: false, touch: false };
     // The mouse anywhere in the window, in window px (edge scrolling, like
     // OpenRA's Viewport.LastMousePos): also over the sidebar, radar and HUD.
-    this.windowMouse = { x: -1, y: -1, inside: false };
+    // finger: the last pointer was a finger or pen (notePointerType), whose
+    // mouse-like events (js/touch.js, the browser's compatibility events) say
+    // nothing about where a mouse is.
+    this.windowMouse = { x: -1, y: -1, inside: false, finger: false };
     /** The scroll cursor the whole page shows while edge scrolling ('' when not: updateCursor). */
     this.pageCursor = '';
     this.drag = null;
@@ -646,6 +649,8 @@ export class Input {
     // Into the window from outside, and out of it (relatedTarget null; the
     // virtual pointer of js/mouselock.js sends that too when it lets go).
     window.addEventListener('mouseover', (e) => this.trackWindowMouse(e));
+    // Pointer events come before their mouse events: they say whether a mouse or a finger moved.
+    for (const type of ['pointerdown', 'pointermove', 'pointerup']) window.addEventListener(type, (e) => this.notePointerType(e), true);
     window.addEventListener('mouseout', (e) => {
       if (!e.relatedTarget) this.windowMouse.inside = false;
     });
@@ -661,9 +666,26 @@ export class Input {
     });
   }
 
-  /** The mouse's window position from a mouse event: inside while it is within the window. */
+  /** A pointer event: a finger or pen takes the window position away until a mouse moves again (hybrid devices). */
+  notePointerType(e) {
+    if (!e.pointerType) return;
+    const m = this.windowMouse;
+    m.finger = e.pointerType !== 'mouse';
+    if (m.finger) m.inside = false;
+  }
+
+  /**
+   * The mouse's window position from a mouse event: inside while it is
+   * within the window. Events of a finger (js/touch.js marks its own with
+   * pointerType 'touch') leave no position: a tap at the screen edge must not
+   * scroll the map until the next touch.
+   */
   trackWindowMouse(e) {
     const m = this.windowMouse;
+    if (m.finger || (e.pointerType && e.pointerType !== 'mouse')) {
+      m.inside = false;
+      return;
+    }
     m.x = e.clientX;
     m.y = e.clientY;
     m.inside = m.x >= 0 && m.y >= 0 && m.x < window.innerWidth && m.y < window.innerHeight;

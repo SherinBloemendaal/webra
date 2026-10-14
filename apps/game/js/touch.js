@@ -153,9 +153,9 @@ export class TouchControls {
     return { x: x - r.left, y: y - r.top };
   }
 
-  /** A mouse-like event for js/input.js at client point (x, y). */
+  /** A mouse-like event for js/input.js at client point (x, y); pointerType 'touch' keeps it out of edge scrolling. */
   fake(x, y, button = 0) {
-    return { button, clientX: x, clientY: y, shiftKey: this.queue, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} };
+    return { button, clientX: x, clientY: y, pointerType: 'touch', shiftKey: this.queue, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} };
   }
 
   /** Left click at a client point, through the mouse code path. */
