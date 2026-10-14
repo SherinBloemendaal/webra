@@ -103,6 +103,11 @@ fn production_placement_and_selling_are_reported() {
     let placed = ev.iter().find(|e| e[0] == K::BuildingPlaced as i32).expect("placed");
     assert_eq!((placed[1], placed[4]), (powr as i32, 0));
     let b = w.actors.iter().position(|a| a.alive && a.owner == 0 && a.ty == powr).unwrap();
+    // Selling waits for the make animation (Sellable needs !build-incomplete).
+    while w.build_incomplete(b) {
+        w.step();
+    }
+    events(&mut w);
     let bref = w.make_ref(b);
     w.queue_order(Order::Sell { player: 0, building: bref });
     run(&mut w, 1);
@@ -208,9 +213,16 @@ fn deploying_and_packing_up_report_the_transform() {
 
     let fact = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == fact_t as u16).unwrap();
     let (fx, fy) = (w.actors[fact].x, w.actors[fact].y);
+    // Packing up waits for the make animation (Transforms PauseOnCondition build-incomplete).
+    while w.build_incomplete(fact) {
+        w.step();
+    }
+    events(&mut w);
     let r = w.make_ref(fact);
     w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
-    run(&mut w, 1);
+    // The reverse make animation plays first (OpenRA Transform).
+    let make = w.rules.actors[fact_t as usize].building.as_ref().unwrap().make_ticks;
+    run(&mut w, make + 1);
     let ev = events(&mut w);
     let t = ev.iter().find(|e| e[0] == K::Transformed as i32).expect("packed up");
     assert_eq!(*t, [K::Transformed as i32, fact_t, fx, fy, 0, mcv_t], "yard into MCV, where the yard stood");

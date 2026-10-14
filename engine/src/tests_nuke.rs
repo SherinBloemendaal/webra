@@ -140,3 +140,179 @@ fn the_missile_silo_is_built_charges_and_launches_an_atom_bomb_that_lands() {
     assert!(impact.iter().any(|e| e[0] == K::ScreenShake as i32), "the screen shakes (ShakeScreen)");
     assert!(impact.iter().any(|e| e[0] == K::Impact as i32), "the explosion sounds");
 }
+
+/// A ready silo of player 0 at its start and the target far away in the
+/// enemy's corner, seen by nobody. Returns the world, the silo and the target cell.
+fn ready_silo() -> (World, usize, (i32, i32)) {
+    let mut w = silo_world();
+    let (sx, sy) = w.players[0].start;
+    let mslo = ty(&w, "MSLO");
+    let silo = (0..3).find_map(|k| w.spawn_building(mslo, 0, sx + 2 + k, sy - 4)).expect("room for the silo");
+    w.refresh_tokens();
+    w.update_power();
+    w.step();
+    w.powers.players[0].iter_mut().find(|p| p.key == KEY).expect("the atom bomb is offered").remaining = 0;
+    let (ex, ey) = w.players[1].start;
+    (w, silo, (ex + 2, ey + 2))
+}
+
+/// OpenRA NukeLaunch and NukePower.Activate with Red Alert's numbers
+/// (MissileDelay 5, FlightDelay 400, FlightVelocity 512, SpawnOffset
+/// 1c0,427,0, CameraRange 10c0, CameraSpawnAdvance and CameraRemoveDelay
+/// 25, BeaconRemoveAdvance 25): the effects start the tick after the order;
+/// the missile leaves on the sixth, climbs 512 units a tick for 200 ticks,
+/// appears 102400 units over the target and falls as fast for 200 ticks.
+#[test]
+fn the_atom_bomb_flies_like_openras_nuke_launch() {
+    let (mut w, silo, (tx, ty_)) = ready_silo();
+    let info = w.rules.actors[w.actors[silo].ty as usize]
+        .abilities
+        .support_powers
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|p| p.key == KEY)
+        .unwrap()
+        .clone();
+    assert_eq!((info.missile_delay, info.flight_delay, info.flight_velocity), (5, 400, 512));
+    assert_eq!((info.spawn_offset.clone(), info.beacon_remove_advance), (vec![1024, 427, 0], 25));
+    w.queue_order(Order::SupportPower { player: 0, key: KEY.into(), x: cell_center(tx), y: cell_center(ty_), x2: None, y2: None });
+    w.step();
+    let order = w.tick;
+    let n = w.abil.nukes[0].clone();
+    assert_eq!((n.launch, n.impact), (order + 6, order + 406));
+    assert_eq!(n.top, 512 * 200);
+    // SpawnOffset through LocalToWorld: 427 east, sin(40 deg) * 1024 north.
+    assert_eq!((n.sx, n.sy), (w.actors[silo].x + 427, w.actors[silo].y - 654));
+    assert_eq!(n.position(order + 5), None, "still in the silo");
+    assert_eq!(n.position(order + 6), Some((n.sx, n.sy, 0, false)));
+    assert_eq!(n.position(order + 6 + 100), Some((n.sx, n.sy, 51_200, false)));
+    assert_eq!(n.position(order + 6 + 199), Some((n.sx, n.sy, 512 * 199, false)));
+    assert_eq!(n.position(order + 6 + 200), Some((n.x, n.y, 102_400, true)), "over the target");
+    assert_eq!(n.position(order + 6 + 300), Some((n.x, n.y, 51_200, true)));
+    assert_eq!(n.position(order + 406), Some((n.x, n.y, 0, true)));
+    let target = w.map.idx(tx, ty_);
+    let seen = |w: &World| w.players[0].visible[target] != 0;
+    let beacon = crate::render::SpriteIds::new(w.rules.actors.len()).abilities_base + 5.0;
+    let beacons = |w: &World| {
+        let view = crate::render::View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(0, 1.0, &view, &[], &mut sprites, &mut rects);
+        sprites.chunks(crate::render::SPRITE_FLOATS).filter(|c| c[3] == beacon).count()
+    };
+    assert_eq!(beacons(&w), 1, "the beacon over the target");
+    while w.tick < order + 375 {
+        w.step();
+        assert!(!seen(&w), "no camera yet at {}", w.tick - order);
+    }
+    assert_eq!(beacons(&w), 1, "the beacon until FlightDelay - BeaconRemoveAdvance");
+    // RevealShroudEffect: delay FlightDelay - CameraSpawnAdvance, from the effect's first tick.
+    w.step();
+    assert!(seen(&w), "the camera opens 376 ticks after the order");
+    assert_eq!(beacons(&w), 0, "the beacon is gone");
+    while w.tick < order + 405 {
+        w.step();
+        assert_eq!(w.abil.nukes.len(), 1, "in the air at {}", w.tick - order);
+    }
+    w.step();
+    assert!(w.abil.nukes.is_empty(), "lands 406 ticks after the order");
+    while w.tick < order + 425 {
+        w.step();
+        assert!(seen(&w), "the camera stays 50 ticks, at {}", w.tick - order);
+    }
+    w.step();
+    assert!(!seen(&w), "and closes");
+}
+
+/// What the missile looks like: the silo plays its activation animation at
+/// the order (WithSupportPowerActivationAnimation), the missile rises with
+/// the `up` sprite from the silo and comes down with the `down` sprite, at
+/// its height over the ground, moving smoothly between ticks.
+#[test]
+fn the_silo_opens_and_the_missile_rises_and_falls_with_its_sprites() {
+    use crate::fx::{FX_NUKE_DOWN, FX_NUKE_UP};
+    use crate::render::{px, SpriteIds, View, SPRITE_FLOATS};
+    let (mut w, silo, _) = ready_silo();
+    let (tx, ty_) = (w.actors[silo].cx + 12, w.actors[silo].cy + 2);
+    // A soldier at the target, so player 0 sees it come down.
+    w.spawn_unit(ty(&w, "E1"), 0, cell_center(tx), cell_center(ty_), 0);
+    w.render_opts.poses = true;
+    w.queue_order(Order::SupportPower { player: 0, key: KEY.into(), x: cell_center(tx), y: cell_center(ty_), x2: None, y2: None });
+    w.step();
+    let order = w.tick;
+    assert_eq!(w.building_pose(silo).0, crate::render::Pose::Active, "the silo opens at the order");
+    let ids = SpriteIds::new(w.rules.actors.len());
+    let (up, down) = (ids.fx_base + FX_NUKE_UP, ids.fx_base + FX_NUKE_DOWN);
+    let missile = |w: &World, alpha: f32| {
+        let view = View { x0: -2000.0, y0: -4000.0, x1: 64.0 * 24.0 + 2000.0, y1: 64.0 * 24.0 + 2000.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(0, alpha, &view, &[], &mut sprites, &mut rects);
+        let found: Vec<(f32, f32, f32)> =
+            sprites.chunks(SPRITE_FLOATS).filter(|c| c[3] == up || c[3] == down).map(|c| (c[0], c[1], c[3])).collect();
+        assert!(found.len() <= 1, "{found:?}");
+        found.first().copied()
+    };
+    while w.tick < order + 5 {
+        w.step();
+        assert_eq!(missile(&w, 1.0), None, "in the silo");
+    }
+    let n = w.abil.nukes[0].clone();
+    w.step();
+    assert_eq!(missile(&w, 1.0), Some((px(n.sx), px(n.sy), up)), "out of the silo");
+    for _ in 0..10 {
+        w.step();
+    }
+    let j = (w.tick - n.launch) as f32;
+    let (x, y, s) = missile(&w, 1.0).unwrap();
+    assert_eq!((x, s), (px(n.sx), up));
+    assert!((y - (px(n.sy) - px(512) * j)).abs() < 0.01, "12 pixels a tick up: {y}");
+    let (_, half, _) = missile(&w, 0.5).unwrap();
+    assert!((half - (y + px(512) / 2.0)).abs() < 0.01, "between the ticks: {half}");
+    while w.tick < n.launch + 200 {
+        w.step();
+    }
+    let (x, y, s) = missile(&w, 0.0).unwrap();
+    assert_eq!((x, y, s), (px(n.x), px(n.y) - px(102_400), down), "turned: high over the target, no streak across the map");
+    while w.tick < n.impact - 1 {
+        w.step();
+    }
+    let (x, y, s) = missile(&w, 1.0).unwrap();
+    assert_eq!((x, s), (px(n.x), down));
+    assert!((y - (px(n.y) - px(512))).abs() < 0.01, "one tick over the ground: {y}");
+}
+
+/// OpenRA's Beacon removes itself only for a positive duration (FlightDelay
+/// less BeaconRemoveAdvance): with an advance of FlightDelay or more the
+/// beacon stays, in WebRA as long as the missile flies.
+#[test]
+fn a_beacon_advance_past_the_flight_time_keeps_the_beacon_up() {
+    use crate::abilities::beacon_until;
+    assert_eq!(beacon_until(100, 400, 25), 475);
+    assert_eq!(beacon_until(100, 400, -10), 510);
+    assert_eq!(beacon_until(100, 400, 399), 101);
+    assert_eq!(beacon_until(100, 400, 400), u32::MAX);
+    assert_eq!(beacon_until(100, 400, 5000), u32::MAX);
+    let (mut w, silo, (tx, ty_)) = ready_silo();
+    let t = w.actors[silo].ty as usize;
+    for p in w.rules.actors[t].abilities.support_powers.as_mut().unwrap().iter_mut().filter(|p| p.key == KEY) {
+        p.beacon_remove_advance = p.flight_delay;
+    }
+    w.queue_order(Order::SupportPower { player: 0, key: KEY.into(), x: cell_center(tx), y: cell_center(ty_), x2: None, y2: None });
+    w.step();
+    let beacon = crate::render::SpriteIds::new(w.rules.actors.len()).abilities_base + 5.0;
+    let beacons = |w: &World| {
+        let view = crate::render::View { x0: 0.0, y0: 0.0, x1: 64.0 * 24.0, y1: 64.0 * 24.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(0, 1.0, &view, &[], &mut sprites, &mut rects);
+        sprites.chunks(crate::render::SPRITE_FLOATS).filter(|c| c[3] == beacon).count()
+    };
+    let impact = w.abil.nukes[0].impact;
+    while w.tick + 1 < impact {
+        assert_eq!(beacons(&w), 1, "shown at {}", w.tick);
+        w.step();
+    }
+    assert_eq!(beacons(&w), 1);
+    w.step();
+    assert!(w.abil.nukes.is_empty());
+    assert_eq!(beacons(&w), 0, "gone with the missile");
+}

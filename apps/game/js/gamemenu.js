@@ -70,6 +70,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'mouseCaptureNotice',
   'pauseWhenHidden',
   'errorReports',
+  'cloudReplays',
 ]);
 
 /** The "?" beside the titles of the Game info and Surrender pages (js/help.js). */
@@ -676,6 +677,8 @@ export class GameMenu {
     // The switch is kept even when this build reports nothing (it is synced and applies once reports are turned on).
     list.append(el('h2', null, 'Privacy'), check('errorReports', 'Send error reports'));
     if (!reportsConfigured()) list.append(el('p', 'hint', 'Error reporting is off on this site: nothing is sent, whatever this switch says.'));
+    // Replays in the account (js/account/replays.js): uploaded only while signed in; the switch syncs with the account.
+    list.append(check('cloudReplays', 'Save replays to my account'));
 
     c.append(
       list,

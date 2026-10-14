@@ -38,12 +38,12 @@ import { CIVILIAN_DRAW, worldDraw, worldSecond } from './art/world.js';
 import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry.js';
 import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
 import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
-import { EXPLOSIONS, MUZZLE_ACTORS } from './content/tables.js';
+import { EXPLOSIONS, FAKE_ACTORS, MUZZLE_ACTORS } from './content/tables.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
-import { BUILDING_ANIM } from './art/animated.js';
+import { BUILDING_ANIM, BUILDING_WORKING } from './art/animated.js';
 import { drawPixelCameo, pixelBox, pixelSlots, pixelUnitDraw } from './art/pixel.js';
-import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow } from './art/cameo.js';
-import { INFANTRY_TIMED_POSES, MODE, POSE, POSE_STRIDE, onceTicks, packSprite } from './content/sequences.js';
+import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow, paintFakeMark } from './art/cameo.js';
+import { INFANTRY_TIMED_POSES, MODE, POSE, POSE_COUNT, POSE_STRIDE, onceTicks, packSprite } from './content/sequences.js';
 
 const UNIT_DRAW = {
   '1TNK': {
@@ -622,6 +622,48 @@ export function animationPlan(actors, listLength, skip = () => false) {
   return plan;
 }
 
+/**
+ * Working layers (art/animated.js BUILDING_WORKING): per actor index with
+ * one (and both slots WebRA's, `skip(i)` otherwise), its head slot (2i + 1),
+ * the first of its frames after the sprite list (`start`, shared by
+ * aliases) and the layer's offset from the building centre.
+ */
+export function workingPlan(actors, listLength, skip = () => false) {
+  const plan = [];
+  const starts = new Map();
+  let next = listLength;
+  actors.forEach((a, i) => {
+    if (a.kind !== 'building' || skip(i)) return;
+    const key = spriteKey(a.id);
+    const work = BUILDING_WORKING[key];
+    if (!work || buildingAnim(key) || BUILDING_TURRET[key]) return;
+    if (!starts.has(key)) {
+      starts.set(key, next);
+      next += work.frames;
+    }
+    const [bx, by, bw, bh] = work.box;
+    const offset = [bx + bw / 2 - (a.width * 24) / 2, by + bh / 2 - (a.height * 24) / 2];
+    plan.push({ actor: i, key, work, head: 2 * i + 1, start: starts.get(key), offset });
+  });
+  return plan;
+}
+
+/**
+ * The pose table entries (descriptors only) of a working layer: frame 0 at
+ * rest in every pose (the door frame the engine names is 0), the active
+ * frames once from the age the engine gives in the working poses.
+ */
+function workingPoses(p) {
+  const { start, length, fps } = p.work.active;
+  const rest = [p.start, 1, 0, MODE.INDEX, 1, 0, 0, 0];
+  const still = [p.start, 1, 0, MODE.STILL, 1, 0, 0, 0];
+  const active = [p.start + start, length, fps, MODE.ONCE, 1, 0, 0, 0];
+  return Array.from({ length: POSE_COUNT }, (_, k) => {
+    if (k === POSE.ACTIVE || k === POSE.DAMAGED_ACTIVE) return { desc: active };
+    return { desc: k === POSE.STILL || k === POSE.DAMAGED_STILL ? still : rest };
+  });
+}
+
 /** Smallest power of two at least `n`. */
 const pow2 = (n) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
 
@@ -714,11 +756,32 @@ export function buildAtlas(actors, opts = {}) {
     const art = slots.get(k);
     if (k % 2 === 1 && art) overlays[(k - 1) / 2] = packSprite(k, POSE.STILL, art.poses[POSE.IDLE].length);
   }
+  // Working layers (art/animated.js BUILDING_WORKING: the silo hatch): their
+  // frames after the animated layers, a pose table in the second slot whose
+  // working poses play the active frames once (descriptors below).
+  const working = workingPlan(actors, list.length, (i) => slots.has(2 * i) || slots.has(2 * i + 1));
+  for (const p of working) {
+    overlays[p.actor] = packSprite(p.head, POSE.STILL, 1);
+    if (meta.has(p.start)) continue; // an alias already added the frames
+    for (let f = 0; f < p.work.frames; f++) {
+      meta.set(p.start + f, { offset: p.offset, anim: [0, 0, 0] });
+      list.push(layerSprite(p.work, f));
+    }
+  }
   // Sequence slots: images placed once, entries after the WebRA frames.
   const images = [];
   const extra = []; // [slot head, descriptor base, pose count, entries]
   const shared = new Map(); // art -> descriptor base (aliases share one copy)
   let next = list.length;
+  for (const p of working) {
+    if (shared.has(p.key)) {
+      extra.push([p.head, shared.get(p.key), POSE_COUNT, []]);
+      continue;
+    }
+    shared.set(p.key, next);
+    extra.push([p.head, next, POSE_COUNT, workingPoses(p)]);
+    next += POSE_COUNT;
+  }
   for (const [slot, art] of slots) {
     if (!art) continue;
     if (shared.has(art)) {
@@ -878,10 +941,16 @@ export function buildAtlas(actors, opts = {}) {
     });
     deathTicks.push(...t.slice(0, 7), Math.max(t[7], t[8]));
   }
+  // The structures whose body art plays a make animation (Game.set_make_art):
+  // the others fade in over the rules' make time.
+  const makeArt = [];
+  for (let t = 0; t < actors.length; t++) {
+    if (actors[t].kind === 'building' && slots.get(2 * t)?.poses?.[POSE.MAKE]?.mode === MODE.ONCE) makeArt.push(t);
+  }
   // Pose tables (sequence slots) need the engine's poses (Game.set_sprite_poses).
   const filter = opts.filter ?? 'linear';
   // `pixel`: the slots of WebRA's pixel art, which the engine draws like pre-rendered art (gameart.js applyGameArt).
-  return { color, mask, frames, overlays, deaths, deathTicks, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), width, height };
+  return { color, mask, frames, overlays, deaths, deathTicks, makeArt, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), width, height };
 }
 
 /**
@@ -995,9 +1064,25 @@ function cameoModel(typeName, kind) {
  * 3/4 view. Buildings are the atlas drawings; units are turned towards the
  * viewer and lit by a spotlight. opts.team is the player's colour as [r, g, b]
  * in 0..1 (default blue); opts.kind names the actor kind for ships and aircraft
- * without dedicated art. Returns false (drawing nothing) for a type without art.
+ * without dedicated art. A fake structure (FAKE_ACTORS) shows the real one
+ * with the FAKE mark across it (art/cameo.js paintFakeMark). Returns false
+ * (drawing nothing) for a type without art.
  */
 export function drawCameo(ctx, typeName, size, opts = {}) {
+  if (!drawCameoPicture(ctx, typeName, size, opts)) return false;
+  if (isFake(typeName)) paintFakeMark(ctx, size, opts.height ?? size);
+  return true;
+}
+
+const FAKES = new Set(FAKE_ACTORS);
+
+/** Whether an actor id is a fake structure (content/tables.js FAKE_ACTORS). */
+export function isFake(typeName) {
+  return FAKES.has(String(typeName).toUpperCase());
+}
+
+/** drawCameo without the FAKE mark. */
+function drawCameoPicture(ctx, typeName, size, opts) {
   // WebRA's own pixel art cameos (art/pixel.js) are pictures of their own.
   if (drawPixelCameo(ctx, spriteKey(typeName), size, opts.height ?? size)) return true;
   const model = cameoModel(typeName, opts.kind);
@@ -1048,7 +1133,8 @@ const cameoCache = new Map();
 export function getCameo(typeName, size, opts = {}) {
   const team = opts.team ?? CAMEO_TEAM;
   const height = opts.height ?? size;
-  const id = `${spriteKey(typeName)}|${size}x${height}|${team.map((c) => c.toFixed(3)).join(',')}`;
+  // Fakes share their real structure's art but not its cameo (the FAKE mark).
+  const id = `${isFake(typeName) ? 'fake:' : ''}${spriteKey(typeName)}|${size}x${height}|${team.map((c) => c.toFixed(3)).join(',')}`;
   let canvas = cameoCache.get(id);
   if (canvas === undefined) {
     canvas = document.createElement('canvas');

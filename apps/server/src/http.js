@@ -122,11 +122,20 @@ export function checkOrigin(request, { required }) {
 
 /** Read a request body as text, refusing more than `maxBytes` without buffering it all. */
 export async function readText(request, maxBytes) {
+  return (await readBody(request, maxBytes)).text;
+}
+
+/**
+ * Read a request body (at most `maxBytes`, as readText): `{ text, bytes }`,
+ * the UTF-8 text and the bytes it was decoded from (their length is the
+ * body's size; hash or compress them without encoding the text again).
+ */
+export async function readBody(request, maxBytes) {
   const declared = request.headers.get('Content-Length');
   if (declared !== null && (!/^\d{1,10}$/.test(declared) || Number(declared) > maxBytes)) {
     throw new HttpError(413, 'too_large', 'Request body is too large.');
   }
-  if (!request.body) return '';
+  if (!request.body) return { text: '', bytes: new Uint8Array(0) };
   const reader = request.body.getReader();
   const chunks = [];
   let size = 0;
@@ -147,7 +156,7 @@ export async function readText(request, maxBytes) {
     o += c.byteLength;
   }
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(all);
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(all), bytes: all };
   } catch {
     throw new HttpError(400, 'bad_message', 'Request body is not valid UTF-8.');
   }

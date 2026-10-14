@@ -32,6 +32,7 @@ import { effective, loadSite, publicSite, saveSite } from './site.js';
 import { adminUser, banOf, hasPassword, softDeleteStatement, uniqueViolation, userById, userSelect } from './users.js';
 import { statusAfterVerification } from './common.js';
 import { sendAddressMail } from './verification.js';
+import { deleteAccountReplaysStatement, drainReplayTrash } from './replays.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const notFound = (what = 'user') => new HttpError(404, 'not_found', `No such ${what}.`);
@@ -322,8 +323,10 @@ async function reject(ctx, { id }) {
     softDeleteStatement(ctx.db, row.id, ctx.now),
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id),
     ctx.db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(row.id),
+    deleteAccountReplaysStatement(ctx.db, row.id),
     auditStatement(ctx.db, { actor, action: 'user.reject', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { status: row.status }, after: { status: 'deleted' }, reason }, ctx.now),
   ]);
+  ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
   return json({ user: adminUser(await target(ctx, row.id), { moderator: actor.role !== 'admin' }) });
 }
 
@@ -394,8 +397,10 @@ async function softDelete(ctx, { id }) {
     softDeleteStatement(ctx.db, row.id, ctx.now),
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id),
     ctx.db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(row.id),
+    deleteAccountReplaysStatement(ctx.db, row.id),
     auditStatement(ctx.db, { actor, action: 'user.delete', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { status: row.status }, after: { status: 'deleted' } }, ctx.now),
   ]);
+  ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
   await evictFromGames(ctx.env, { userIds: [row.id] }, ctx.now);
   return json({ user: adminUser(await target(ctx, row.id)) });
 }
@@ -467,6 +472,8 @@ export function purgeStatements(db, userId, now = Date.now()) {
     db.prepare('DELETE FROM game_presence WHERE user_id = ?1').bind(userId),
     // Saved online games it played in go too (none can be resumed without it).
     purgeOnlineSavesStatement(db, userId),
+    // Replays kept in the account (normally gone already: deletion removes them).
+    deleteAccountReplaysStatement(db, userId),
     // Maps the account shared with online sessions only go too (published maps stay, without the
     // uploader). A shared map is stored once per content, under its first signed-in sharer: one a
     // session used within SHARED_MAP_IN_USE_MS was shared by someone else too (this account's own
@@ -487,6 +494,7 @@ async function purge(ctx, { id }) {
     ...purgeStatements(ctx.db, row.id, ctx.now),
     auditStatement(ctx.db, { actor, action: 'user.purge', targetType: 'user', targetId: row.id, before: { purged: true }, after: { purged: true } }, ctx.now),
   ]);
+  ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
   return noContent();
 }
 

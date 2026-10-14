@@ -59,6 +59,8 @@ export const KEYS = Object.freeze({
   repairBoxChoice: ['extra', 'repairBoxChoice'],
   // "Send error reports" (js/telemetry/index.js follows it).
   errorReports: ['privacy', 'errorReports'],
+  // "Save replays to my account" (js/account/replays.js follows it).
+  cloudReplays: ['privacy', 'cloudReplays'],
   // The performance capture (js/perfcapture.js, the debug menu): its length
   // in seconds, and recording the first 60 s of every game.
   perfCaptureSeconds: ['debug', 'perfCaptureSeconds'],

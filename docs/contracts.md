@@ -74,9 +74,11 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   bridge actor writes its template's terrain over them when it is placed,
   damaged, destroyed or repaired, so a destroyed span turns into river or
   water under it (`engine/src/bridges.rs`). Whatever cannot stand on a
-  span's new terrain dies: a tank on a fallen span, a boat in the water gap
-  of a long bridge when the span is repaired (OpenRA kills only when a span
-  falls or a dead one is repaired).
+  span's new terrain dies: a tank on a fallen span, a paratrooper coming
+  down onto it (OpenRA's ActorMap holds it already; aircraft in the air
+  fly on), a boat in the water gap of a long bridge when the span is
+  repaired (OpenRA kills only when a span falls or a dead one is
+  repaired).
 - The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
   to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
   (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
@@ -1010,6 +1012,8 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
 | `GET` | `/api/content/ra-movies/allied`, `/api/content/ra-movies/soviet` | A byte range of `movies1.mix` or `movies2.mix` (the mission movies) from the same CD images, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
+| `GET`, `POST` | `/api/account/replays` | The signed-in account's replays (list) and uploading one (the replay file, section 7): [accounts API](accounts-api.md) 5.10 |
+| `GET`, `DELETE` | `/api/account/replays/:id` | One replay of the signed-in account: the file, or deleting it (5.10) |
 
 Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
 `Sec-Fetch-Site` same-origin or absent, and the header `X-WebRA-CSRF: 1`
@@ -1695,6 +1699,53 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   for placement and the items behind it do not start until it is placed, so
   each structure queue has at most one ready structure. `place` only accepts
   the finished head of the queue.
+- Placement follows OpenRA's BuildingInfo.IsCloseEnoughToBase and
+  World.CanPlaceBuilding. A structure with RequiresBuildableArea needs a
+  footprint cell within `adjacent` cells (both axes) of a footprint cell (not
+  `_`) of an own structure, or an allied one with the "Ally build radius"
+  option, whose GivesBuildableArea types (`gives_area` in rules.json) share
+  one of its `requires_area` types: 2 cells for most structures, 7 for walls,
+  8 for naval yards and sub pens (and their fakes); fakes give and need only
+  `fake` area, so a real structure never goes next to fakes alone. With the
+  "Build radius" option a structure with `requires_base_provider` also needs
+  its OpenRA centre within a base provider's range of the provider's OpenRA
+  centre (both footprint centres plus LocalCenterOffset, `center_offset`;
+  the yard's is half a cell up), comparing squared lengths like OpenRA. A
+  structure without RequiresBuildableArea (`requires_area` null) goes
+  anywhere its terrain allows. Every footprint cell must be on the map, of
+  the structure's terrain (naval yards and sub pens: Water only, never
+  beach or river), without ore or gems, and empty: no structure, unit,
+  husk, crate or mine. A unit takes its cell like in OpenRA's ActorMap
+  (`occupies_cell`): from its creation, a paratrooper on its parachute
+  too, but an aircraft only when landed. The same rule decides where
+  crates drop (the spawner's target cell; the delivery plane drops the
+  crate over the first cell of its approach within DropRange that suits
+  it, the crate's TerrainTypes from ^Crate and no actor there, usually
+  before the chosen cell, as in OpenRA, and flies off with it when none
+  does; WaterChance only chooses the target), where a helicopter may land,
+  what a falling bridge kills and which units a mission's footprint
+  trigger sees. A crate landing on a unit whose locomotor crushes crates
+  (a paratrooper still on its parachute too) is collected by it; landing
+  on anything else (a landed aircraft, a structure, husk or mine)
+  destroys it (OpenRA Crate.OnLanded).
+- Like OpenRA (World.IsCellBuildable at b6fc03f), placement reads the true
+  world state and never the player's view: footprints may reach into the
+  shroud and the fog, and every occupant blocks its cell whether the player
+  can see it or not: enemy units and structures under the shroud or fog,
+  cloaked units (submarines, phase transports), hidden enemy mines, husks and
+  crates, and ore or gems under the shroud. The footprint preview
+  (`placement_preview`) asks the same check, so a blocked cell there tells
+  the player something occupies it; a structure destroyed under the fog
+  frees its cells at once. See docs/security.md.
+- Wall lines follow OpenRA GetLineBuildCells: from a placed piece each
+  direction is searched up to LineBuild Range - 1 cells (7 for Red Alert's
+  walls); free cells and unexplored cells are passed over, the first other
+  cell ends the search, and a piece of the same wall there (any owner) fills
+  the cells passed over (OpenRA joins a LineBuildNode whose Types match the
+  piece's NodeTypes; every Red Alert wall has its own node type, so WebRA
+  compares the wall type). OpenRA puts a piece on every passed cell, even an
+  unexplored occupied one; WebRA structures never share a cell, so such a
+  cell stays empty.
 - `cancel_production` removes the last queued item of that type and refunds
   what was paid for it (a finished structure refunds its full cost).
 - `pause_production` (OpenRA PauseProduction) puts the first queued item of
@@ -2019,9 +2070,8 @@ diagonal step never cuts a blocked corner.
 - Scatter is a nudge of the unit itself (OpenRA Mobile `Scatter`).
 - The service depot's pad cells may be crossed but not stayed on
   (footprint `+`, OccupiedPassableTransitOnly): an idle unit on one moves
-  off. Vehicles sent for repair drive onto the pad; the one on it holds
-  the cell and the others wait next to it and try again (OpenRA Resupply).
-  Ore trucks dock the same way; an empty truck that finds no ore leaves the
+  off. Vehicles sent for repair wait their turn in the depot's line and
+  drive onto the pad when called (see "Service depot line" below). Ore trucks dock the same way; an empty truck that finds no ore leaves the
   dock for a cell near four cells below it (Harvester.UnblockCell), and a
   refinery's free truck belongs to that refinery.
 - A unit that other code placed (unloaded, teleported, landed from a leap)
@@ -2052,10 +2102,99 @@ so a crowd that arrived comes to rest and then does not move. A unit
 driving through a standing crowd on its way elsewhere pushes it aside; a
 unit within 4 cells (of path) of its destination stops against standing
 friends instead and arrives there, while one farther out pushes, so a big
-group funnels through a gap. Units waiting for a repair pad or a refinery
-dock stop within 3 cells of it; the next in line reserves
-the pad or dock before it drives on, so they come one at a time, and units
-holding a pad, a dock or an ore cell are never pushed.
+group funnels through a gap. Units waiting for a refinery dock stop
+within 3 cells of it; the next in line reserves the dock before it drives
+on, so they come one at a time. Units in a service depot's line wait on
+cells of their own (below). Units holding a pad, a dock or an ore cell, or
+standing on their waiting cell in a depot's line, are never pushed.
+
+### Service depot line (`engine/src/service.rs`)
+
+WebRA difference (design request): OpenRA serves one unit at a time on a
+service depot's pad but keeps no line. Ground units sent there together
+crowd the pad and push for it (Resupply moves onto the host with
+MoveCooldownHelper retries), and an aircraft cannot be sent to a depot
+another aircraft has reserved (Aircraft.ResolveOrder: Reservable.IsAvailableFor,
+blocked cursor). WebRA keeps a line per depot, the same in both movement
+models, single player, skirmish and multiplayer:
+
+- Who repairs where follows OpenRA RA's rules: vehicles (harvesters and the
+  MCV included) and all aircraft, planes and helicopters, have
+  `Repairable RepairActors: fix` (`^Vehicle`, `^Plane`, `^Helicopter`);
+  ships use RepairableNear at the naval yard and sub pen and are repaired
+  side by side there, without a line (as in OpenRA); infantry are not
+  repaired by structures in RA (medics heal them, a captured hospital heals
+  nearby infantry). A smart order (or the bulk repair order) on an own
+  depot sends the selected units that can be repaired there; with nothing
+  to repair (or, minelayers, to reload) the cursor is blocked (cursor 15)
+  and the click does nothing, as OpenRA ignores the Repair order then.
+- On its way a unit joins the line within 6 cells of the pad, or where it
+  is held up on the way while the pad can still be reached. Its ticket is
+  the tick it joined, ties by actor index: first come first served, the
+  same order on every machine. A unit that cannot reach the pad at all
+  stops.
+- Ground units wait on a cell of their own: the nearest ring around the
+  pad from 2 cells out first (up to 8), there the cell nearest the unit,
+  never on the four corridors straight out of the pad (3 cells; the way on
+  and off the pad) of this or any other depot, nor on a structure's exit
+  cell or the cell in front of it, nor on a structure, nor where someone
+  stands or waits. A unit that finds no free cell waits where it is and
+  looks again a second later.
+  Held up on the way to it they wait where they are when that is such a
+  cell, else they take another. Helicopters hover over every other cell of
+  the rings 4 to 10 cells out (OpenRA WaitDistanceFromResupplyBase 4c0);
+  planes circle the depot within WaitDistanceFromResupplyBase.
+- When the pad is free the first in line is called and reserves it
+  (`dock_user`); vehicles drive onto it, helicopters land on it, planes
+  glide down onto it. Something else in the way: it tries again (OpenRA
+  RetryIfDestinationBlocked). Repair is OpenRA's Resupply.RepairTick: the
+  StartRepairing notification at the first step, then a step every
+  `Interval + 1` ticks (FIX: 8) heals HpPerStep (1000) for
+  `max(1, HpPerStep * Cost * ValuePercentage / (MaxHP * 100))` (20 %);
+  without the money the insufficient funds notification plays and it tries
+  again two ticks later: the unit stays on the pad and the line waits, as
+  in OpenRA. A minelayer also reloads its mines there before it leaves.
+- Done (UnitRepaired notification), it leaves for the depot's rally point
+  (OpenRA Resupply with RallyPoint: MoveTo(cell, 1)); a rally point is set
+  on a selected own depot like on a factory and drawn the same way. Without
+  one, ground units drive to the nearest free cell next to the depot they
+  can reach without passing a standing unit, south first, out of the
+  corridors and the waiting cells (OpenRA moves them just off the pad);
+  helicopters hover over such a spot (OpenRA: TakeOff above the pad);
+  planes take off and fly home to a free airfield, circling until one is
+  free (OpenRA: TakeOff, then FlyIdle circling over the depot). Leaving frees the
+  pad for the next one. While a unit holds the pad, idle own ground units
+  standing on a corridor or the footprint move to such a spot too.
+- A unit that no longer needs anything (healed by a mechanic) leaves the
+  line and stops. When the depot is destroyed, sold or captured, everyone
+  in its line stops where it is and aircraft on it take off (OpenRA
+  Resupply with an invalid host). A new order takes a unit out of the line;
+  a new repair order to the same depot keeps its place, and the unit on
+  the pad keeps the pad (OpenRA queues the new Resupply on the same host;
+  like OpenRA it starts the repair steps afresh, StartRepairing included).
+  The line state stays on the unit until an order that is not a repair
+  there (it is dead then: a later repair order or a repair started without
+  an order takes a fresh place at the end, unless the pad is still reserved
+  for it). Repairs start without an order (WebRA additions: OpenRA's
+  Repairable and Aircraft need the order) for a damaged helicopter landed
+  on the depot and, in the `webra` movement model only, for a damaged
+  vehicle left idle on its footprint (in the `openra` model an idle unit
+  moves off the pad's cells first). A Stop given to a minelayer on the pad also ends its return to
+  the minefield (as a Stop ends OpenRA's LayMines). Clicking the middle of the depot while a unit stands on the pad
+  targets that unit, as in OpenRA; clicking an arm of the depot gives the
+  repair order.
+- A minelayer out of mines with cells left to mine goes to reload in the
+  depot's line like any unit sent for repair, and back to the minefield
+  once full (OpenRA Rearmable, Resupply). Minelayers reload only on the pad
+  they were called to (OpenRA reloads only in Resupply), and one that leaves
+  the line early goes back to its minefield with the mines it has.
+- Tickets, waiting cells and the pad reservation are part of the state
+  hash. The lines and the waiting cells taken are gathered once a tick, so
+  the work per unit follows the length of its line, not the number of
+  actors. Measured on an open
+  map (tests_depot_queue.rs): ten Heavy Tanks at a quarter of their hit
+  points are repaired in about 140 seconds, ten Hinds in about 55, ten
+  MiGs in about 56, one after another in the order they arrived.
 
 ### Combat and auto-targeting (`engine/src/combat.rs`, `engine/src/units.rs`)
 
@@ -2390,7 +2529,75 @@ vehicles send `Captured` (33), infiltrations `Infiltrated` (34), and a kill
 Tanya announces `KillAnnounced` (43, `a` the killer's type, to its owner).
 Sprites: `SpriteIds::infantry_base` + 0..4 built-in dying soldiers (shot,
 blown up, burned, electrocuted, crushed), 5 spy tag, 6 fake tag, 7 sonar
-ring (apps/game/js/art/infantry.js).
+ring (apps/game/js/art/infantry.js). The fake tag shows over every fake
+structure (rules `building.fake_tag`, OpenRA ^FakeBuilding
+WithDecoration@fake) to its owner, allies and spectators, selected or not;
+an enemy sees it only on a selected fake one of its (or an ally's) spies
+infiltrated (InfiltrateForDecoration). The build palette marks fakes too:
+`FAKE_ACTORS` (js/content/tables.js) get the FAKE mark across WebRA's cameo
+(js/art/cameo.js `paintFakeMark`), and with the original graphics Red
+Alert's own fake cameo where it has one (dome, construction yard, naval
+yard, sub pen, war factory), else the real cameo with the same mark
+(ACTOR_ART `fakeMark`: the fakes whose cameo OpenRA drew itself).
+
+### Make animations (`engine/src/world.rs` `make_until`, `combat.rs` `build_incomplete`)
+
+OpenRA's WithMakeAnimation grants a structure the `build-incomplete`
+condition while its `make` sequence plays once, and Red Alert's rules
+switch traits off with it. In WebRA a structure that is placed, deployed
+from an MCV or created by a mission script (`Actor.Create`, also in
+WorldLoaded at tick 0: OpenRA adds no SkipMakeAnimsInit there) is being
+built from the tick it appeared through `building.make_ticks` ticks after
+it (`make_until`, `World::begin_make`, in the state hash; the map's own
+actors, the starting base and a mission's SpawnActorOnDeath skip it, like
+OpenRA's SkipMakeAnimsInit).
+Meanwhile its `building.make_gates` are off: `sell` (Sellable: no sell
+order, `sell_value` 0), `capture` (Capturable), `attack` (AttackTurreted,
+AttackTesla, AttackGarrisoned paused and Turreted off: it neither aims nor
+fires and keeps its target) and `transform` (the Construction Yard does not
+pack up). `make_ticks` is the frame count of the structure's make sequence
+at one frame per tick (every RA make sequence is `Length: *` at Tick 40);
+`tools/gen_rules.py` `MAKE_FRAMES` holds the counts with their sources,
+read once from Red Alert's files (and OpenRA's own `mods/ra/bits`, which
+override files of the same name) by `node tools/make-frames.mjs <files>`
+(it prints file names and frame counts only). The tileset variants have
+the same counts, so the time does not depend on the map.
+
+Selling (OpenRA Sellable.Sell, then the Sell activity): the sell order
+plays the sell sound at once (`Sold` event, b = -1), then the make animation
+backwards: from the order's tick the structure is `build-incomplete` again
+for `make_ticks` ticks (`unmake_at` with `unmake_sell`, in the state hash;
+no second sale, no capture, no pack-up, its attacks paused), and in the
+tick `make_ticks` after the order it is sold: the refund for its health at
+that moment (`World::sell_refund`'s RefundPercent of the sell value), paid,
+counted and announced for the player who owned it when the sale started
+(`unmake_seller`, OpenRA's Sell activity keeps that player's resources),
+the crew walking out (SpawnActorsOnSell), the script's Sold event and the
+announcement (`Sold`, b = the refund, for the cash tick); then it is gone.
+Destroyed meanwhile, it brings nothing. A structure without a make
+animation (walls) is sold at once (both events). `sell_value` is -1 during
+the sale (no sell cursor, no refund line). WebRA removes it exactly
+`make_ticks` ticks after the order; OpenRA takes one or two ticks more (the
+reverse animation's callback queues the Sell activity, which runs on the
+actor's next tick, and the reversed make condition is revoked in a frame
+end task); packing up likewise.
+
+Packing up (OpenRA Transform on the Construction Yard): the pack-up order
+plays the make animation backwards first. From the order's tick the yard
+is `build-incomplete` again for `make_ticks` ticks (`unmake_at`, in the
+state hash; no selling, no capture, no second pack-up: the activity cannot
+be interrupted), and in the tick `make_ticks` after the order it turns into
+the MCV (production.rs `tick_pack_up`). Should the MCV no longer fit then,
+or C4 tick on the yard, it plays its make animation forwards again (the
+make pose from that tick) and stays, silently (OpenRA
+Transform.DoTransform). A pack-up order is ignored without a word while
+the yard cannot pack up (OpenRA Transforms PauseOnCondition
+being-captured, being-demolished, build-incomplete; WebRA has no chrono
+vortex): it is not remembered for later (TransformsIntoTransforms only
+queues a deploy behind a pack-up that already runs). Only a yard whose MCV
+would not fit reports a blocked deploy. Not modelled: the ConyardChronoReturn of a chronoshifted MCV,
+and TransformsIntoTransforms (a deploy order for the coming MCV queued
+behind a pack-up that runs).
 
 ### Pilots (`engine/src/plane.rs` `eject_pilot`)
 
@@ -2427,7 +2634,7 @@ replaces that attack. A map's rules that set `AbortOnResupply: true` get
 OpenRA's behaviour: the attack and the orders queued after it end while
 they rearm, and they wait at the base (or hover after `TakeOffOnResupply`)
 for a new order. On an attack-move they never resupply: the attack ends,
-the move goes on, and an aircraft with an empty AmmoPool picks no targets. Damaged helicopters land on the service depot to be repaired.
+the move goes on, and an aircraft with an empty AmmoPool picks no targets. Damaged helicopters and planes land on the service depot to be repaired, in turn ("Service depot line").
 Shot down in the air they fall and explode on impact.
 
 Orders (`Order` in engine/src/world.rs, validated by `packages/protocol`):
@@ -2473,7 +2680,21 @@ over land, stay); when the Duration runs out a unit goes back to its origin,
 or to the nearest explored cell it can enter if the origin closed meanwhile
 (a naval yard went up there), and dies when there is none (OpenRA Teleport
 killOnFailure), `GrantExternalConditionPower` (Iron Curtain) and
-`NukePower` take the target as (x, y), `GpsPower` launches by itself when
+`NukePower` take the target as (x, y) (the atom bomb flies like OpenRA's
+NukeLaunch: the silo plays its activation animation at the order, the
+missile leaves `missile_delay + 1` ticks after it from the silo's centre
+plus `spawn_offset` (forward, right, up through LocalToWorld: right, minus
+sin 40 degrees times forward), climbs `flight_velocity` per tick for half
+of `flight_delay`, turns `flight_velocity * flight_delay / 2` over the
+target and falls as fast, and goes off `flight_delay` ticks after leaving;
+`Nuke::position` gives its point and height per tick; the camera over the
+target opens `flight_delay - camera_spawn_advance + 1` ticks after the
+order for `camera_spawn_advance + camera_remove_delay` ticks, and the
+target beacon shows until `flight_delay - beacon_remove_advance` ticks
+after it (OpenRA's Beacon only removes itself for a positive duration: with
+an advance of `flight_delay` or more it stays, in WebRA while the missile
+flies); drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
+`down` with the original graphics), `GpsPower` launches by itself when
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
 
@@ -2523,6 +2744,24 @@ not now, 3 needs a target), `has_minelayer`; `actor_json(id).ability` holds
 detonatesIn, payload }` (only the fields that apply). Smart action 7 is
 "deliver cash" (supply truck onto an own or allied structure). Mines are
 actors of kind `mine` (`MINV`, `MINP`).
+
+A minefield follows OpenRA's Minelayer and LayMines. The order keeps the
+rectangle's cells of a terrain the Minelayer mines that its owner has
+explored (not under a Gap Generator's shroud either; bots too, so a bot
+mines nothing in the shroud) and the Minelayer can drive onto and stop on.
+While it works, a cell goes for good (CleanMineField) once a mine its
+owner sees lies there, or once its owner sees the Minelayer cannot get
+onto it (Locomotor.IsBlockedBy with BlockedByActor.Immovable): a
+structure, a husk, blocking terrain, an enemy vehicle or ship, or a landed
+aircraft (aircraft have no Mobile to move away). A cell with a unit of
+its own side, enemy infantry (its tracks crush infantry, as WebRA's
+movement does too), a crate it crushes or anything under the fog stays:
+the Minelayer skips it
+while a mine cannot go there now (CanLayMine: nothing but itself in the
+ActorMap, `occupies_cell` for units) and comes back once it is free. When
+no cell left can take a mine now, the Minelayer stops, as OpenRA's
+activity ends. Deploying lays a mine under the Minelayer only when one can
+go there now.
 
 Debug menu (engine/src/debug.rs, apps/game/js/debug.js, opened with the `
 key or the Debug button). Cheats are orders, so online they go through
@@ -2661,9 +2900,10 @@ Repair order also use an ally's structure (own first, the unit's owner pays,
 the ally gains PlayerExperience), WebRA repairs units at own structures only,
 in the click path and in `repair_units` alike; its waypoints and guarding end as with any new command;
 units without such a structure now, infantry (no Repairable in Red Alert;
-they heal at a Hospital or by a medic), planes (OpenRA RA gives them
-`Repairable: fix`, but WebRA's planes only land on airfields, so they are left
-out), other players' and undamaged units are skipped),
+they heal at a Hospital or by a medic), support power aircraft, other
+players' and undamaged units are skipped; planes and helicopters go to the
+service depot (OpenRA RA `Repairable: fix`) and wait in its line like the
+others, "Service depot line"),
 `{"o": "sell_buildings", player, ids}` (WebRA bulk sell: each listed
 structure that `can_bulk_sell` allows is sold as by `sell`, in the order
 listed: the sender's own, alive, in the world, with OpenRA's Sellable (a
@@ -2679,7 +2919,15 @@ missing hp)` every `interval + 1` ticks, each repairing player pays
 GetSellValue, `custom_sell_value` or the cost), the step is multiplied by
 `bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
 insufficient funds event per player, repairers who are no longer allied or
-playing drop out, a full structure ends the repair. Powered off, a structure
+playing drop out, a full structure ends the repair. The wrench over a
+structure being repaired shows in the colour of each repairer in turn
+(OpenRA WithBuildingRepairDecoration loops `allyrepair`, Tick 160, in the
+player palette and takes the next repairer after each loop, CycleRepairer):
+WebRA's wrench is one team coloured picture (Red Alert's own wrench has no
+team colours), shown steadily, the colour changing every 8 ticks (WebRA
+counts a loop as two frames of 160 ms). The power off icon blinks, one
+frame on and one off, next to the wrench when both show; like every OpenRA
+decoration only the owner, allies and spectators see them. Powered off, a structure
 adds nothing to the power drain and `is_powered_down` is true (defences hold
 fire, radar, gap generator and detection stop, support powers stop
 charging, the sprite stands still and is darkened like low power). Both are
@@ -2776,7 +3024,7 @@ log is presentation only: never read by the simulation, off by default
 `air.power` / `air.launched`) is not hashed either. Kinds and their fields:
 1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
 attacking player; only another player's fire counts, as in OpenRA's
-DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: the refund), 8
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: -1 when the sale starts, the sell sound; the refund when it is done after the reverse make animation, the announcement and cash tick), 8
 InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
 ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
 Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
@@ -3066,6 +3314,69 @@ model, like cloud gaming services:
   menu opens (and so pauses) when the page is hidden. Online games never
   pause.
 
+### Menu screens and dialogs (`apps/game/css`)
+
+Every menu screen outside the battlefield is one card as wide and as tall
+as the window, with the grid background showing around it; small dialogs
+stay compact cards in the middle. `tests/screens-layout.test.mjs` checks
+the rules below.
+
+- **Screens**: the start screen (main menu bar over the skirmish setup,
+  `#menu`), online play (server browser and online lobby, `#online-root`),
+  the campaign's mission browser (`#campaign-root`), the end-game
+  statistics (`#stats-screen`, over the dimmed battlefield) and Load game
+  (`js/records.js` `dialog(..., { screen: true })`). Their cards have no
+  width cap; the screen pads them by `--ui-screen-pad` (theme.css), and the
+  card stretches to the rest of the window, its footer bar at the bottom
+  (the server browser's session list grows into a well with its status
+  line under it).
+  A card taller than the window scrolls with the screen (the statistics
+  scroll inside the card, so the tabs and buttons stay in view).
+- **The gap**: `--ui-screen-gap` is `clamp(12px, 1.5vw, 24px)` (12 px up to
+  an 800 px window, 24 px from 1600 px) and 8 px on phones (600 px and
+  less), in plain pixels at any UI scale. Each side is at least the
+  safe-area inset there. At the bottom the gap is at least
+  `--ui-corner-clear`, so a card ends above the parts in the bottom left
+  corner: 24 px for the version tag on every screen (Load game too); 56 px
+  times the UI scale while the Sound button shows on the online and
+  campaign screens, 84 px times the UI scale while Original content shows
+  above it (on touch screens and phones the safe-area inset or 24 px, the
+  buttons' offsets and a 44 px row, plus 8 px); and 56 px times the UI
+  scale on the statistics over a game on a mouse device in the desktop
+  layout, where the Sound button stays (touch screens and the phone
+  layouts hide it).
+- **Fallbacks**: the corner clearance needs `:has()` (Chrome 105, Safari
+  15.4, Firefox 121; older browsers keep the 24 px and the buttons may
+  overlap the card), and Load game's grid backdrop needs a `::backdrop`
+  that inherits custom properties (Chrome 122, Firefox 120, Safari 17.4;
+  older ones show the plain dark background).
+- **Inside a card**: the parts are laid out by the card's width through
+  named container queries, never unnamed ones, so a wider card cannot
+  change what a query measures:
+  - `lobby` (the skirmish card): one column up to 930 px; map | players
+    over options from there; map | players | options from 1440 px (the
+    map column 26% of the card, 300 to 440 px), where the players panel
+    stays wider than the 560 px at which its slots turn into cards.
+  - `lobby-panel` (each lobby panel): the player slots become cards and
+    the option grid one column at 560 px and less.
+  - `online` (the online card): from 1440 px the game options get a column
+    of their own next to the slots; the map and the chat stay on the right.
+  - `campaign` (the mission browser): the mission list takes 40% of the
+    card, at most 420 px; from 1200 px (a mission column of 760 px or more)
+    the map preview goes beside the briefing.
+  - `records` (Load game): from 720 px a save's name and details share a
+    line.
+  Viewport media queries stay for phone sizes (touch targets, padding).
+- **Line length**: running text in a screen card (briefings, notes,
+  warnings, errors) keeps to `--ui-measure` (75ch); the card is not capped
+  for it.
+- **Compact dialogs**: the game menu (with its Settings, Controls and
+  Hotkeys pages, over the running game), victory and defeat, the modded map
+  question, the online host, password and resume dialogs, sign in and the
+  settings conflict, Sound and music, the music player, Original content,
+  release notes, the bulk repair and sell chooser, help tips and tooltips,
+  and the map editor's dialogs keep their widths.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
@@ -3184,6 +3495,22 @@ mission of `COOP_MISSIONS` with this version's file, every player a person.
 - An online save (mode `online`, with `online.id`) ends right after a hash
   tick (`ticks - 1` is a multiple of 25) and is never loaded alone: it is
   resumed online with its players (section 4, "Online saves").
+- Replays in the account (accounts API 5.10, `apps/game/js/account/replays.js`):
+  while a signed-in, active account has "Save replays to my account"
+  (`privacy.cloudReplays`, on by default) on, the game encodes the replay of
+  every skirmish, online game, mission and co-op game once, when the whole
+  game ended (or this player won) or when the player leaves it first, with
+  the result `won`, `lost`, `left` or `spectated`. It is queued in IndexedDB
+  (database `webra-replay-uploads`, store `pending`, keyed by account, start
+  time and title; at most 10, dropped after 7 days) and uploaded in the
+  background (`POST /api/account/replays`), never in the game's frame. The
+  server validates it with `parseReplay` (refusing saves), keeps it 30 days,
+  at most 100 replays and 100 MiB per account, and lists a summary
+  (`replaySummary` in the protocol package: mode, title, engine, start time,
+  ticks, map name, players). Watching one downloads the file and checks it
+  like a file (above): one made by another engine version shows the version
+  message. `/play/#replay=<id>` opens a replay of the account directly (the
+  account page's Watch).
 
 ## 8. Simulation worker (`apps/game/js/sim`)
 
@@ -3216,7 +3543,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours, `terrain`: the terrain bytes at the start, so the terrain art and the minimap are made before the first frame (frames carry terrain only when it changed later), `timings { createMs, infoMs }`: the engine's time to make the game, for the performance capture, section 10) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `background` (`[on]`: tick a hidden local game on a timer, see "Hidden pages"; answers whether the timer runs), `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances, perf }`, `recycle` | `frame` |
@@ -3401,7 +3728,14 @@ PRIMARY tag and the crate pickup signs), always below 4096. Poses
 (`engine/src/render.rs` `Pose`, `js/content/sequences.js` `POSE`): 0 idle,
 1 move (the actor moved this tick), 2 attack (attacking and standing), 3
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
-(structure placed during the game, `age` = ticks since then, up to 127), 5
+(structure placed during the game, `age` = ticks since then, while it is
+being built: the simulation's `make_until`, from the rules'
+`building.make_ticks`, the same for every player whatever their art; see
+"Make animations" below; `Game.set_make_art(types)` names the types whose
+art plays a make animation, the atlas's `makeArt`, and the others fade in
+from 25 percent over that time; a render setting: players with different
+art keep the same simulation and state hash, `tests_poses.rs`
+`poses_never_change_the_simulation`), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
 remembered structure under fog), 8 damaged and still, 9 and 10 aux idle and
 aux move (a second overlay in the same slot: the Chinook's rear rotor on the
@@ -3413,7 +3747,9 @@ harvester leaving the refinery played backwards), 15 the second stand
 sequence and 16, 17 the idle animations of a standing soldier (`age` = ticks
 into the animation), 18 to 23 death sequences die1 to die6 and 24 a crushed
 body (`age` = ticks since the death), 25 a soldier's second attack sequence
-(AttackSequences: picked per shot, Tanya's shoot-right). Dying soldiers are drawn with their
+(AttackSequences: picked per shot, Tanya's shoot-right), 26 the make
+animation backwards (a structure being sold, a Construction Yard packing
+up; `age` = ticks since the order; art without one fades out). Dying soldiers are drawn with their
 death sequences only for actor types `Game.set_death_art(types, ticks)`
 names (the atlas's `deaths`; `ticks`, the atlas's `deathTicks`, has eight
 lengths per type: die1..die6, crushed and the longest idle animation, so a
@@ -3457,12 +3793,17 @@ Layers over structures (`Game.set_building_overlays`, one value per actor
 type): a value below 4096 is the still frame of WebRA's animated layer
 (slot `2t + 1` animates, the still frame is drawn without power or under
 fog). A value of 4096 or more marks a layer that is a pose table (the
-original War Factory roof and door, OpenRA WithProductionDoorOverlay): the
+original War Factory roof and door, OpenRA WithProductionDoorOverlay; WebRA's
+missile silo hatch, `js/art/animated.js` `BUILDING_WORKING`): the
 value is the layer's still pose with `age` = the number of door frames.
 With poses on, the engine leaves slot `2t + 1` out while the structure is
-built (make) and otherwise draws it with the idle or damaged pose (by
-damage state only: the door is never paused) and `age` = the door frame,
-which the layer shows as is (mode 3). The door frame
+built (the make pose: only as long as the make animation plays, like
+OpenRA's `build-incomplete` condition, so the War Factory's roof shows the
+moment its make animation ends), draws it with the structure's working
+pose and its `age` while it works (fx.rs: the silo's hatch opens and shuts
+once at a launch, mode 1, then rests on frame 0) and otherwise with the
+idle or damaged pose (by damage state only: the door is never paused) and
+`age` = the door frame, which the layer shows as is (mode 3). The door frame
 (`engine/src/doors.rs`, presentation only, not in the state hash) follows
 OpenRA's `PlayFetchDirection`: 0 (shut) while the factory is idle or
 building; once it produces a unit, one frame per tick up to the last while
@@ -3604,7 +3945,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (range circles, engine/src/range_circles.rs, rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `sell_buildings`, `repair_building`, `repair_buildings`, `repair_units`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |

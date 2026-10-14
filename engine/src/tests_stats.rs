@@ -191,6 +191,9 @@ fn economy_production_and_combat_counters() {
     let powr = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].owner == 0 && w.actors[i].ty == ty(&w, "POWR")).unwrap();
     w.queue_order(Order::Sell { player: 0, building: w.make_ref(powr) });
     run(&mut w, 2);
+    assert_eq!(w.player_stats(0).sold, 0, "counted when the sale is done");
+    let make = w.rules.actors[w.actors[powr].ty as usize].building.as_ref().unwrap().make_ticks;
+    run(&mut w, make);
     assert!(w.player_stats(0).sold > 0);
     // Combat: tanks kill a soldier; damage, value and the per type table follow.
     let victim = unit(&mut w, "E1", 1, 40, 40);

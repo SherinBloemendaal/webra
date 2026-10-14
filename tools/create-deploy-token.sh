@@ -53,6 +53,8 @@ group() {
 # Plain assignments, so a missing group stops the script (set -e).
 SCRIPTS=$(group 'Workers Scripts Write')
 D1=$(group 'D1 Write')
+# Replays in accounts: the deploy creates the R2 bucket when it is missing.
+R2=$(group 'Workers R2 Storage Write')
 ROUTES=$(group 'Workers Routes Write')
 ZONEREAD=$(group 'Zone Read')
 SETTINGS=$(group 'Account Settings Read')
@@ -63,6 +65,7 @@ BODY=$(jq -n \
   --arg zone "com.cloudflare.api.account.zone.$ZONE_ID" \
   --arg scripts "$SCRIPTS" \
   --arg d1 "$D1" \
+  --arg r2 "$R2" \
   --arg routes "$ROUTES" \
   --arg zoneread "$ZONEREAD" \
   --arg settings "$SETTINGS" \
@@ -70,7 +73,7 @@ BODY=$(jq -n \
   '{
     name: "webra GitHub deploy",
     policies: [
-      { effect: "allow", resources: { ($account): "*" }, permission_groups: [{ id: $scripts }, { id: $d1 }, { id: $settings }] },
+      { effect: "allow", resources: { ($account): "*" }, permission_groups: [{ id: $scripts }, { id: $d1 }, { id: $r2 }, { id: $settings }] },
       { effect: "allow", resources: { ($zone): "*" }, permission_groups: [{ id: $routes }, { id: $zoneread }, { id: $dns }] }
     ]
   }')

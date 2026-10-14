@@ -302,7 +302,7 @@ No authentication. What clients need to draw sign-in and signup forms.
     "discord": false,
     "passkey": true
   },
-  "services": { "email": false, "discord": false },
+  "services": { "email": false, "discord": false, "replays": true },
   "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false },
   "onlineRequiresAccount": true,
   "gameRequiresAccount": true,
@@ -318,7 +318,8 @@ No authentication. What clients need to draw sign-in and signup forms.
 service behind it is configured (`email` needs the binding `env.EMAIL` and a
 valid sender address in the variable `EMAIL_FROM`, `discord` needs
 `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`). `services` tells whether the
-binding or credentials exist at all. `emailVerificationRequired` is the
+binding or credentials exist at all; `services.replays` whether the server
+keeps replays in accounts (the R2 bucket binding `REPLAYS`, 5.10). `emailVerificationRequired` is the
 effective value of `registration.emailVerification` (false while email is
 unavailable or `login.email` is off).
 
@@ -830,7 +831,7 @@ Serialized size at most 32 KiB.
     ]
   },
   "releaseNotes": { "lastSeenVersion": "0.6.0" },   // VERSION_RE
-  "privacy": { "errorReports": true },               // "Send error reports" (docs/security.md, "Error reports")
+  "privacy": { "errorReports": true, "cloudReplays": true }, // "Send error reports" (docs/security.md, "Error reports"); "Save replays to my account" (5.10)
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
                                    // (the game keeps e.g. "mouseCaptureHints": 0..99 and the
                                    // repair box chooser's "repairBoxChoice" there)
@@ -877,12 +878,131 @@ Serialized size at most 32 KiB.
   uploaded maps (ids, names, hashes, `published`: in the community list or
   only shared with online sessions, and when a session last used them),
   saved online games it played in (`onlineSaves`: record id, time, session
-  name, ticks, game version and its seat), and audit log entries that target
-  the account.
+  name, ticks, game version and its seat), the replays kept in the account
+  (`replays`: the list entries of 5.10; the files download from there), and
+  audit log entries that target the account.
 - `DELETE /api/account` `{ "confirm": "<username>" }` (recent
   re-authentication) -> `204`: the account becomes `deleted`, every session
-  is revoked and the cookie cleared. It is purged 30 days later (an admin can
-  restore it until then). The username stays reserved until the purge.
+  is revoked and the cookie cleared. Its replays (5.10) are deleted at once,
+  their files right after. It is purged 30 days later (an admin can restore
+  it until then, without the replays). The username stays reserved until the
+  purge.
+
+### 5.10 Replays
+
+The game uploads the replay of every game a signed-in player finishes or
+leaves (skirmish, online, campaign missions, co-op) while the setting
+`privacy.cloudReplays` (5.8, "Save replays to my account", on by default) is
+on and `GET /api/site` reports `services.replays`. Files are stored in the
+R2 bucket bound as `REPLAYS` (gzip, key `replays/<user id>/<replay id>`),
+listed from D1 (`account_replays`, migration 0008). Every route needs a
+signed-in account that is not banned or deleted (`401 unauthenticated`,
+`403 banned`, `403 account_inactive`) and only ever sees the caller's own
+replays: another account's id answers `404 not_found`, like an unknown one.
+Reads carry `X-WebRA-CSRF` (1.1), writes the full CSRF rules.
+
+Limits (protocol `constants.js`):
+
+| Constant | Value |
+|----------|-------|
+| `ACCOUNT_REPLAYS_MAX` | 100 replays per account |
+| `ACCOUNT_REPLAYS_BYTES_MAX` | 100 MiB of stored (gzip) files per account |
+| `ACCOUNT_REPLAY_MAX_BYTES` | 16 MiB per uploaded file (UTF-8, before compression) |
+| `ACCOUNT_REPLAY_RETENTION_MS` | 30 days after the upload |
+
+`Replay` (a list entry):
+
+```json
+{
+  "id": "1f0c2a9b3d4e5f60",
+  "createdAt": 0, "expiresAt": 0,
+  "size": 48213, "rawSize": 391022,
+  "engine": "0.14.0+abcdef12",
+  "mode": "online",
+  "title": "Tanya's game",
+  "mapName": "Coastal Influence",
+  "players": [{ "name": "Tanya", "type": "human", "faction": "england", "team": 1 }, { "name": null, "type": "ai", "faction": "russia", "team": 2 }],
+  "playedAt": 0,
+  "ticks": 45000,
+  "result": "won"
+}
+```
+
+`size` is what the stored object takes (what the limit counts), `rawSize`
+the file; `mapName` the map's name, a mission's id or `Generated map`;
+`players` the game options' players (`name: null` for an AI without one; a
+campaign mission lists none); `playedAt` the file's `createdAt`; `result`
+how the game ended for the uploader, as its client saw it: `won`, `lost`,
+`left` (left before the end), `spectated` or `unknown`.
+
+- `GET /api/account/replays` -> `200 { replays: [Replay], usage: { count,
+  bytes }, limits: { count, bytes, retentionMs, uploadBytes }, available }`,
+  newest first; `available` is `services.replays`. Expired replays are left
+  out before the daily job deletes them.
+- `POST /api/account/replays?result=<result>` (an active account, else `403
+  account_inactive`): the body is the replay file itself, `Content-Type:
+  application/json` (`415` otherwise), at most `ACCOUNT_REPLAY_MAX_BYTES`
+  (`413 too_large`, checked from `Content-Length` and while reading).
+  `result` is optional (`unknown`); another value is `400 invalid` with
+  `field: result`. The file is checked with the protocol's `parseReplay`
+  like any replay file (`422 invalid`, "Invalid replay: ..."; a save is
+  `422` too). Answers:
+  - `201 { replay, evicted }`: stored. When the account then holds more than
+    `ACCOUNT_REPLAYS_MAX` replays or `ACCOUNT_REPLAYS_BYTES_MAX` bytes, its
+    oldest replays (by upload) are deleted until it fits, in the same D1
+    batch as the new row, so concurrent uploads never leave an account over
+    a limit; `evicted` says how many.
+  - `200 { replay, duplicate: true }`: the account already has this file
+    (same SHA-256); nothing is stored. Two uploads of one file at once store
+    it once.
+  - `503 unavailable`: the server has no bucket.
+  - 60 uploads per hour per account (`429 rate_limited`), counted before the
+    body is read.
+- `GET /api/account/replays/:id` -> `200` the replay file (`application/json`,
+  decompressed by the Worker, `Content-Disposition: attachment;
+  filename="webra-replay-<title>-<date>.json"`, `Cache-Control: private,
+  no-store`). 300 per hour per account. `404 not_found` for an unknown,
+  expired or foreign id, or when the file is gone; `503 unavailable` without
+  the bucket.
+- `DELETE /api/account/replays/:id` -> `204`; `404 not_found` as above.
+
+**Deletion and retention.** A replay row is deleted by its owner, by the
+limits above, 30 days after its upload (the daily job, in batches of 500),
+when its account is deleted (self, admin or rejection: at once) and when the
+account is purged. A trigger queues the R2 object of every deleted row in
+`replay_object_trash`; the Worker deletes queued objects right after the
+change (`waitUntil`) and the daily job deletes whatever is left (100 keys a
+round), so a failed R2 delete is retried and an object outlives its row by
+at most a day. An upload queues its own object (ready an hour later) before
+writing it and takes it out of the queue in the batch that adds the row: an
+upload that fails halfway leaves no object behind.
+
+**Client.** `apps/game/js/account/replays.js`: the game queues a replay once
+per game, when the whole game ended (or this player won) or when the player
+leaves it first (waiting at most 3 s before the page reloads), in IndexedDB
+(`webra-replay-uploads`), and uploads it in the background, one at a time,
+for the account that played it. Offline, `5xx` and `429` are retried with a
+pause from 5 s doubling to 30 minutes (8 tries); `401` and every `403`
+except `403 csrf` (signed out, banned, not active) keep the replay and
+wait for that account's next sign-in (an answer that arrives after another
+account signed in leaves that account's uploads alone); `503 unavailable`
+drops it; every other refusal, `403 csrf` included, drops it with a
+message. An upload the server already has (the one sent before the page
+reloaded got through) is dropped silently. Queued replays wait at most 7
+days, at most 10 of them, for their account to sign in again; signing out
+in the game or on the account page drops that account's waiting replays
+(a session that ends by itself keeps them). Switching the setting off drops
+the replays still waiting. Closing
+the tab without leaving the game uploads nothing for that game (the page
+cannot finish the work while it closes). The game's Replays button lists the
+account's replays (Watch, Download, Delete) when signed in, and the account
+page has the same list with the switch; its Watch opens `/play/#replay=<id>`,
+which loads that replay. The id is kept in the tab's sessionStorage
+(`webra.replayLink.v1`) until it opens, so a link followed while signed out
+(the play gate sends the player to the account page, the fragment goes
+along) opens in the game after the sign-in. Watching checks the file with `parseReplay` and the
+running version: one made by another version says so (docs/contracts.md
+section 7).
 
 ## 6. Bans
 
@@ -1149,7 +1269,8 @@ on plain users).
 ### 8.5 Deletion
 
 - `DELETE /api/admin/users/:id` (admin) -> `200 { user }`: soft delete
-  (status `deleted`, sessions revoked, dropped from games). Never self.
+  (status `deleted`, sessions revoked, dropped from games, its replays
+  deleted, 5.10). Never self.
 - `DELETE /api/admin/users/:id` and rejection give up the address and the
   Discord account like any soft deletion (2.2).
 - `POST /api/admin/users/:id/restore` `{}` (admin) -> `200 { user, dropped }`:
@@ -1162,8 +1283,8 @@ on plain users).
 - `POST /api/admin/users/:id/purge` `{ "confirm": "<username>" }` (admin,
   only for `deleted` accounts) -> `204`: removes the account and everything
   stored about it now (maps it only shared with online sessions and the
-  records of saved online games it played in included; maps it published
-  stay, without the uploader). Audit entries about it keep
+  records of saved online games it played in and any replays left (5.10)
+  included; maps it published stay, without the uploader). Audit entries about it keep
   the action, actor and time; their before and after values are replaced by
   `{ "purged": true }`.
   Soft-deleted accounts are purged automatically after 30 days.
@@ -1219,7 +1340,7 @@ Expired IP bans are deleted 90 days after they end.
 
 ### 8.9 Site settings, audit log, stats
 
-- `GET /api/admin/site` (admin) -> `200 { "settings": SiteSettings, "services": { "email", "discord" }, "effective": <GET /api/site body> }`
+- `GET /api/admin/site` (admin) -> `200 { "settings": SiteSettings, "services": { "email", "discord", "replays" }, "effective": <GET /api/site body> }`
   with `ETag: "v<version>"`.
 - `PATCH /api/admin/site` (admin) with `If-Match` and any subset of the
   settings (nested objects merge) -> `200` like `GET`. Unknown keys:
@@ -1242,7 +1363,7 @@ Expired IP bans are deleted 90 days after they end.
   "games": { "lobbies": 0, "running": 0 },
   "maps": { "total": 0 },
   "bans": { "accounts": 0, "ips": 0 },
-  "services": { "email": false, "discord": false },
+  "services": { "email": false, "discord": false, "replays": true },
   "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false }
 }
 ```
@@ -1313,6 +1434,8 @@ write.
 | Profile changes | 30 per hour per account |
 | Settings document writes | 120 per hour per account |
 | Data export | 5 per hour per account |
+| Replay uploads (5.10) | 60 per hour per account |
+| Replay downloads (5.10) | 300 per hour per account |
 | One-click package relay | 8 completed downloads and 24 requests per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
 | One-click music relay | 256 MiB and 96 requests per account per UTC day; 64 requests per network per hour (7.3) |
 | One-click movie relay | 1,500 MiB and 288 requests per account per UTC day; 192 requests per network per hour (7.3) |

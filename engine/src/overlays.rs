@@ -50,11 +50,12 @@ pub struct RenderOptions {
     /// when the type has none. The animated head frame is the type's second
     /// sprite slot (`2t + 1`), see apps/game/js/sprites.js `buildAtlas`.
     /// A value of `POSE_STRIDE` or more is a layer with poses (the original
-    /// War Factory roof and door, OpenRA WithProductionDoorOverlay): with
-    /// `poses` on it is hidden while the structure is built and otherwise
-    /// shows the door frame (doors.rs) as the age of the idle or damaged
-    /// pose; the value itself is the layer's still sprite (fog), its age
-    /// field the number of door frames.
+    /// War Factory roof and door, OpenRA WithProductionDoorOverlay; WebRA's
+    /// missile silo hatch): with `poses` on it is hidden while the structure
+    /// is built, plays the working pose of a working structure (fx.rs) and
+    /// otherwise shows the door frame (doors.rs) as the age of the idle or
+    /// damaged pose; the value itself is the layer's still sprite (fog), its
+    /// age field the number of door frames.
     pub building_overlays: Vec<u32>,
     /// Sprite poses (render.rs `Pose`): body sprites carry what the actor is
     /// doing, for art with pre-rendered animations (original graphics,
@@ -88,6 +89,11 @@ pub struct RenderOptions {
     /// crushed) and its longest idle animation (0: none), so a body stays
     /// until its sequence ended and an idle animation is not cut short.
     pub infantry_ticks: Vec<[u32; 8]>,
+    /// Per actor type: whether its body art plays a make animation (the
+    /// original graphics, texture packs). The make pose lasts the rules'
+    /// `building.make_ticks` either way; art without one fades the structure
+    /// in meanwhile (render.rs). Empty: none has.
+    pub make_art: Vec<bool>,
 }
 
 impl RenderOptions {
@@ -125,6 +131,7 @@ impl Default for RenderOptions {
             fire_frames: [None; 3],
             death_art: Vec::new(),
             infantry_ticks: Vec::new(),
+            make_art: Vec::new(),
         }
     }
 }
@@ -212,6 +219,11 @@ impl RenderOptions {
     /// The level stages of structures of type `ty`, if their body shows the storage level.
     pub fn level_stages(&self, ty: u16) -> Option<u32> {
         self.level_stages.iter().find(|o| o.0 == ty).map(|o| o.1)
+    }
+
+    /// Whether type `ty`'s body art plays a make animation (`make_art`).
+    pub fn has_make_art(&self, ty: u16) -> bool {
+        self.make_art.get(ty as usize).copied().unwrap_or(false)
     }
 
     /// The control group of actor ref `r`, if it is in one.
@@ -542,8 +554,12 @@ impl World {
         let slot = a.ty as u32 * 2 + 1;
         let sprite = if still >= POSE_STRIDE && self.render_opts.poses {
             match self.building_pose(i) {
-                // OpenRA shows the layer once the structure is built.
-                (Pose::Make, _) => return,
+                // OpenRA shows the layer once the structure is built (and
+                // hides it again while a Construction Yard packs up).
+                (Pose::Make | Pose::Unmake, _) => return,
+                // A working animation of the layer, played from its start (fx.rs:
+                // WebRA's missile silo hatch opening for a launch).
+                (pose @ (Pose::Active | Pose::DamagedActive), age) => posed(slot, pose, age),
                 // The door frame, by damage state only: OpenRA's door is
                 // never paused (no power condition), it follows the
                 // damaged sequence (NormalizeSequence).

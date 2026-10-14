@@ -72,6 +72,7 @@ pub mod rules;
 pub mod rules_options;
 pub mod selection;
 mod sell;
+mod service;
 pub mod smudges;
 pub mod sound_events;
 #[cfg(any(test, feature = "stack-probe"))]
@@ -102,6 +103,8 @@ mod tests_commands;
 #[cfg(test)]
 mod tests_debug;
 #[cfg(test)]
+mod tests_depot_queue;
+#[cfg(test)]
 mod tests_doors;
 #[cfg(test)]
 mod tests_editor;
@@ -121,6 +124,8 @@ mod tests_instances;
 mod tests_leftovers;
 #[cfg(test)]
 mod tests_lightning;
+#[cfg(test)]
+mod tests_make;
 #[cfg(test)]
 mod tests_mapsetup;
 #[cfg(test)]
@@ -1011,6 +1016,23 @@ impl Game {
     pub fn set_death_art(&mut self, types: Vec<u32>, ticks: Vec<u32>) {
         let n = self.world.rules.actors.len();
         self.world.render_opts.set_death_art(n, &types, &ticks);
+    }
+
+    /// The actor types whose body art plays a make animation
+    /// (apps/game/js/sprites.js `buildAtlas` returns them as `makeArt`). How
+    /// long a structure is being built comes from the rules
+    /// (`building.make_ticks`); structures whose art has no make animation
+    /// fade in over that time instead. Presentation only: the state hash is
+    /// the same either way.
+    pub fn set_make_art(&mut self, types: Vec<u32>) {
+        let n = self.world.rules.actors.len();
+        let mut art = vec![false; n];
+        for t in types {
+            if let Some(v) = art.get_mut(t as usize) {
+                *v = true;
+            }
+        }
+        self.world.render_opts.make_art = art;
     }
 
     /// The sprite slots drawn from the original graphics and what they need

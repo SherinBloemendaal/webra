@@ -12,7 +12,9 @@ test('GET /api/site reports effective switches and services', async () => {
   const b = new Browser(env);
   const r = await b.get('/api/site', { csrf: false });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.services, { email: false, discord: false });
+  assert.deepEqual(r.body.services, { email: false, discord: false, replays: true });
+  const noBucket = await new Browser(makeEnv({ email: false, replays: false })).get('/api/site', { csrf: false });
+  assert.equal(noBucket.body.services.replays, false, 'no R2 bucket: no replays in accounts');
   assert.equal(r.body.login.email, false, 'no binding: email links unavailable');
   assert.equal(r.body.login.discord, false);
   assert.equal(r.body.login.password, true);
