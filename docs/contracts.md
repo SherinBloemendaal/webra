@@ -1647,9 +1647,13 @@ models, single player, skirmish and multiplayer:
   like OpenRA it starts the repair steps afresh, StartRepairing included).
   The line state stays on the unit until an order that is not a repair
   there (it is dead then: a later repair order or a repair started without
-  an order, a damaged vehicle left idle on the depot or a helicopter landed
-  on it, takes a fresh place at the end, unless the pad is still reserved
-  for it). Clicking the middle of the depot while a unit stands on the pad
+  an order takes a fresh place at the end, unless the pad is still reserved
+  for it). Repairs start without an order (WebRA additions: OpenRA's
+  Repairable and Aircraft need the order) for a damaged helicopter landed
+  on the depot and, in the `webra` movement model only, for a damaged
+  vehicle left idle on its footprint (in the `openra` model an idle unit
+  moves off the pad's cells first). A Stop given to a minelayer on the pad also ends its return to
+  the minefield (as a Stop ends OpenRA's LayMines). Clicking the middle of the depot while a unit stands on the pad
   targets that unit, as in OpenRA; clicking an arm of the depot gives the
   repair order.
 - A minelayer out of mines with cells left to mine goes to reload in the

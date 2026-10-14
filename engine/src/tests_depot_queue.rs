@@ -555,44 +555,56 @@ fn a_minelayer_reloading_waits_in_the_line() {
     assert_eq!(w.actors[ml].ab.ammo, max - 1, "reloaded, then laid the second mine");
 }
 
+/// A tank leaves the line and stops on the depot's arm, arriving at every
+/// phase of the eight-tick cycle of `clear_service_way`: idle and damaged on
+/// the depot, it always gets back in line (never driven off), at the end.
 #[test]
 fn a_unit_that_left_the_line_and_stops_on_the_depot_gets_back_in_at_the_end() {
-    let mut w = arena(MovementModel::WebRA);
-    let fix = depot(&mut w);
-    let tanks = damaged(&mut w, "2TNK", 5, 8);
-    send(&mut w, &tanks, fix);
-    let waiting = |w: &World| -> Vec<usize> {
-        tanks
-            .iter()
-            .copied()
-            .filter(|&t| w.actors[t].svc.ticket != 0 && !w.on_repair_pad(t) && w.actors[t].activity == Activity::Repair)
-            .collect()
-    };
-    for _ in 0..25 * 60 {
-        w.step();
-        if waiting(&w).len() >= 3 {
-            break;
+    for offset in 0..8 {
+        let mut w = arena(MovementModel::WebRA);
+        let fix = depot(&mut w);
+        let tanks = damaged(&mut w, "2TNK", 5, 8);
+        send(&mut w, &tanks, fix);
+        let waiting = |w: &World| -> Vec<usize> {
+            tanks
+                .iter()
+                .copied()
+                .filter(|&t| w.actors[t].svc.ticket != 0 && !w.on_repair_pad(t) && w.actors[t].activity == Activity::Repair)
+                .collect()
+        };
+        for _ in 0..25 * 60 {
+            w.step();
+            if waiting(&w).len() >= 3 {
+                break;
+            }
         }
-    }
-    // The first in line (lowest ticket) moves off, onto the depot's left arm.
-    let first = waiting(&w).into_iter().min_by_key(|&t| w.actors[t].svc.ticket).unwrap();
-    let old_ticket = w.actors[first].svc.ticket;
-    move_to(&mut w, first, 30, 21);
-    let mut back = false;
-    for _ in 0..25 * 30 {
-        w.step();
-        if w.actors[first].activity == Activity::Repair && w.actors[first].svc.ticket != 0 {
-            back = true;
-            break;
+        for _ in 0..offset {
+            w.step();
         }
+        // The first in line (lowest ticket) moves off, onto the depot's left arm.
+        let first = waiting(&w).into_iter().min_by_key(|&t| w.actors[t].svc.ticket).unwrap();
+        let old_ticket = w.actors[first].svc.ticket;
+        move_to(&mut w, first, 30, 21);
+        let mut back = false;
+        let mut idled = false;
+        for _ in 0..25 * 30 {
+            w.step();
+            let act = w.actors[first].activity;
+            idled |= act == Activity::Idle;
+            assert!(!(idled && act == Activity::Move), "offset {offset}: driven off the depot instead of rejoining");
+            if act == Activity::Repair && w.actors[first].svc.ticket != 0 {
+                back = true;
+                break;
+            }
+        }
+        assert!(back, "offset {offset}: idle and damaged on the depot, it gets back in line");
+        let t = w.actors[first].svc.ticket;
+        assert!(t > old_ticket, "offset {offset}: with a fresh ticket");
+        for &o in &waiting(&w) {
+            assert!(o == first || w.actors[o].svc.ticket < t, "offset {offset}: behind everyone who was waiting");
+        }
+        run_line(&mut w, &tanks, 25 * 200);
     }
-    assert!(back, "idle and damaged on the depot: it gets back in line");
-    let t = w.actors[first].svc.ticket;
-    assert!(t > old_ticket, "with a fresh ticket");
-    for &o in &waiting(&w) {
-        assert!(o == first || w.actors[o].svc.ticket < t, "behind everyone who was waiting");
-    }
-    run_line(&mut w, &tanks, 25 * 200);
 }
 
 fn move_to(w: &mut World, u: usize, cx: i32, cy: i32) {

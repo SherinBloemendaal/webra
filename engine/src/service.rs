@@ -643,6 +643,13 @@ impl World {
             }
         }
         let Some(d) = depot else { return false };
+        // A damaged vehicle on the footprint joins the line instead
+        // (`enter_service_line`, units.rs tick_idle).
+        let a = &self.actors[i];
+        let here = self.cell_index(a.x, a.y);
+        if a.kind == Kind::Vehicle && self.building_at[here] as usize == d && a.hp < self.rules.actors[a.ty as usize].hp {
+            return false;
+        }
         self.refresh_service_index();
         let c = self.park_cell(i, d);
         let (x, y) = self.cell_point(c);
