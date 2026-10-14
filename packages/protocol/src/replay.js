@@ -10,7 +10,7 @@
 // then every field strictly (unknown keys, orders, options, map, hashes), and
 // returns a fresh object holding only validated values.
 
-import { CHAT_MAX, HASH_INTERVAL, MAX_PLAYERS, SAVE_ID_RE, SHA256_RE, STATE_HASH_RE, TICKS_PER_SECOND, VERSION_RE } from './constants.js';
+import { CHAT_MAX, HASH_INTERVAL, MAX_PLAYERS, REPLAY_TIME_MAX, SAVE_ID_RE, SHA256_RE, STATE_HASH_RE, TICKS_PER_SECOND, VERSION_RE } from './constants.js';
 import { fail, int, isPlainObject, object, oneOf, ProtocolError, text, utf8Length } from './check.js';
 import { validFrameOrders, validName } from './messages.js';
 import { parseMap, sha256Hex } from './map.js';
@@ -32,8 +32,6 @@ export const REPLAY_TITLE_MAX = 64;
 export const REPLAY_CHAT_MAX = 5000;
 /** Saves in the browser (IndexedDB) and their names. */
 export const SAVE_SLOTS_MAX = 50;
-/** Latest `createdAt` (Unix milliseconds) a file may name: the end of the Date range, so every reader can format it. */
-export const REPLAY_TIME_MAX = 8.64e15;
 
 /** The map name of each replay validateReplay returned (replaySummary reads it instead of parsing the map again). */
 const MAP_NAMES = new WeakMap();

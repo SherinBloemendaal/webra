@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   C2S,
+  REPLAY_TIME_MAX,
+  validResumeInfo,
   client,
   DEFAULT_OPTIONS,
   encodeClient,
@@ -612,4 +614,12 @@ test('protocol 6: save messages, resumed starts and resume lobbies are strict', 
   assert.deepEqual(p(lobby).msg.resume, lobby.resume);
   assert.equal(p({ ...lobby, resume: { ...lobby.resume, waiting: ['a‮b'] } }).ok, false);
   assert.equal(p({ ...lobby, resume: { ...lobby.resume, frames: [] } }).ok, false);
+});
+
+test('a resumed lobby names its save time within the Date range', () => {
+  const resume = { id: '0123456789abcdef', title: 'Saved', createdAt: 1_760_000_000_000, ticks: 251, waiting: [] };
+  assert.equal(validResumeInfo(resume).createdAt, 1_760_000_000_000);
+  assert.equal(validResumeInfo({ ...resume, createdAt: REPLAY_TIME_MAX }).createdAt, REPLAY_TIME_MAX);
+  assert.throws(() => validResumeInfo({ ...resume, createdAt: REPLAY_TIME_MAX + 1 }), /resume\.createdAt/);
+  assert.throws(() => validResumeInfo({ ...resume, createdAt: Number.MAX_SAFE_INTEGER }), /resume\.createdAt/);
 });

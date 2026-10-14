@@ -106,6 +106,12 @@ export const SAVE_CANCEL_REASONS = ['declined', 'withdrawn', 'left', 'expired', 
 export const ONLINE_SAVES_PER_ACCOUNT = 20;
 export const ONLINE_SAVE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const SAVE_ID_RE = /^[0-9a-f]{16}$/;
+/**
+ * Latest time (Unix milliseconds) a replay, save or online save record may
+ * name as its `createdAt`: the end of the Date range, so every reader can
+ * format it.
+ */
+export const REPLAY_TIME_MAX = 8.64e15;
 
 // ---- Replays in accounts --------------------------------------------------------------
 

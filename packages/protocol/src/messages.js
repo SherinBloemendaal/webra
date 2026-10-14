@@ -16,6 +16,7 @@ import {
   BOTS,
   ERROR_CODE_RE,
   ERROR_MESSAGE_MAX,
+  REPLAY_TIME_MAX,
   SPAWN_MAX,
   HASH_INTERVAL,
   HOST_KEY_RE,
@@ -295,7 +296,7 @@ export function validResumeInfo(v, what = 'resume') {
   return {
     id: matches(v.id, SAVE_ID_RE, `${what}.id`),
     title: text(v.title, 1, 64, `${what}.title`),
-    createdAt: int(v.createdAt, 0, Number.MAX_SAFE_INTEGER, `${what}.createdAt`),
+    createdAt: int(v.createdAt, 0, REPLAY_TIME_MAX, `${what}.createdAt`),
     ticks: int(v.ticks, 1, TICK_MAX, `${what}.ticks`),
     waiting: v.waiting.map((n, i) => validName(n, `${what}.waiting[${i}]`)),
   };
