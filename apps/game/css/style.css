@@ -602,6 +602,15 @@ body {
   cursor: none !important;
 }
 
+/* Edge scrolling (js/input.js setPageCursor): the window edge scrolls the
+   map whatever is under the mouse, so the scroll arrow shows over the
+   sidebar, the radar and the HUD too. The hidden cursor above still wins on
+   the battlefield. */
+html.edge-scroll,
+html.edge-scroll * {
+  cursor: var(--edge-scroll-cursor, auto) !important;
+}
+
 /* Mouse capture (js/mouselock.js): while the pointer is locked the browser
    hides the OS cursor and the game draws its own at the virtual pointer
    (its position comes through the CSSOM transform). The art keeps its own

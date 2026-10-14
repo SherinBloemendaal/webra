@@ -1381,7 +1381,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     sidebar?.repaintIcons();
   };
   settings.subscribe('playerStanceColors', applyRelationshipColors);
+  // A menu, the end of the game, statistics or a modal dialog is open (set per frame).
+  let modalOpen = false;
   const input = new Input($('view'), ui, rules, player, {
+    // No edge scrolling while a dialog is open, the radar is dragged, or the
+    // mouse is released with the release hotkey (js/mouselock.js isDetached,
+    // where it has it): the pointer is then the player's for other windows.
+    holdsEdgeScroll: () => modalOpen || !!minimap?.isPressed() || !!mouseCapture?.isDetached?.(),
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
       if (key) audio?.selectTarget(key);
@@ -2204,8 +2210,10 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const catching = busy();
     const suspend = catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
     if (suspend !== input.suspended) input.setSuspended(suspend);
-    // Menus, the end of the game, statistics and modal dialogs (saves, online) get the OS cursor.
-    mouseCapture?.setBlocked(suspend || !!document.querySelector('dialog[open]'));
+    // Menus, the end of the game, statistics and modal dialogs (saves, online)
+    // get the OS cursor, and the window edge does not scroll the map.
+    modalOpen = suspend || !!document.querySelector('dialog[open]');
+    mouseCapture?.setBlocked(modalOpen);
     input.update(dt / 1000);
     // Animated original cursors step like OpenRA's (cursors.js); the input shows the new frame.
     if (tickCursors(now)) input.updateCursor();

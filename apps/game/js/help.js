@@ -104,7 +104,7 @@ export const HELP = Object.freeze({
   'settings.reduceMotion':
     'Big explosions shake the camera and an atom bomb flashes the screen white, like OpenRA. On: no shaking and only a dim flash. Like the browser: on when the system asks for reduced motion.',
   'settings.fullscreen': 'Fills the screen with the game. Esc and the number keys then go to the game in browsers that allow it.',
-  'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches a screen edge. Off turns edge scrolling off.',
+  'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches an edge of the window, over the sidebar too. Off turns edge scrolling off.',
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
   'settings.showUnitPaths': 'Draws the routes of your selected units to where they are going.',
   'settings.targetLines':

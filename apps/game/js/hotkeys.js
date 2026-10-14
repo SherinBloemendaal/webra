@@ -353,6 +353,14 @@ function inputType(el) {
   return String(el.type || el.getAttribute?.('type') || 'text').toLowerCase();
 }
 
+/** Whether `el` is a text field the player can type in (focused, every key is its own: the chat line). */
+export function typingIn(el) {
+  if (typeof el?.tagName !== 'string' || el.disabled) return false;
+  // The cheap checks first: js/input.js asks every frame, and rendered() measures layout.
+  const text = el.isContentEditable || (el.tagName === 'TEXTAREA' && !el.readOnly) || (el.tagName === 'INPUT' && TEXT_TYPES.has(inputType(el)) && !el.readOnly);
+  return text && rendered(el);
+}
+
 /**
  * Whether the focused element (the event's target) uses this key itself, so
  * no hotkey runs: every key in a text field the player can type in, the keys
@@ -360,11 +368,10 @@ function inputType(el) {
  */
 export function focusKeepsKey(e) {
   const t = e.target;
+  if (typingIn(t)) return true;
   if (typeof t?.tagName !== 'string' || t.disabled || !rendered(t)) return false;
-  if (t.isContentEditable) return true;
-  if (t.tagName === 'TEXTAREA') return !t.readOnly;
-  const text = t.tagName === 'INPUT' && TEXT_TYPES.has(inputType(t));
-  if (text) return !t.readOnly;
+  if (t.tagName === 'TEXTAREA') return false;
+  if (t.tagName === 'INPUT' && TEXT_TYPES.has(inputType(t))) return false;
   // A control's own keys are plain ones: Alt+Arrow is still the map edge key.
   if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
   if (t.tagName === 'INPUT') return CONTROL_KEYS[inputType(t)]?.has(e.key) ?? false;

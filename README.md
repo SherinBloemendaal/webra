@@ -327,7 +327,7 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Double click | Add all of that type on screen to the selection (OpenRA's selection class: the veteran rifleman counts as a rifleman, structures too). For the whole map, press W (select by type) twice |
 | Right click | Clear the selection (or cancel placement, a sidebar mode, attack-move or targeting) |
 | Factory selected + left click on the ground | Set its rally point (while the factory is selected, a line in your colour runs from its exit to the flag, like OpenRA) |
-| Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges) |
+| Middle mouse drag, screen edges | Pan the camera (the cursor turns into a scroll arrow at the edges). The edges are the window's: pushing the mouse against the right edge scrolls right over the sidebar too, and the buttons there still take clicks. Not while a menu or dialog is open, a box or the radar is dragged, or the chat line has the focus |
 | Radar: left click | With units selected (or a mode on): the order the cursor shows for that spot, as a click there on the battlefield would give (Shift queues a waypoint, Ctrl force fires, Alt force moves). Otherwise: move the camera there |
 | Radar: right or middle click | Move the camera there, never an order (also with units selected or a mode on; OpenRA's radar moves the view with every button but the action button) |
 | Radar: drag, or a left click without an order | Move the camera (a left press that gave an order does not drag) |

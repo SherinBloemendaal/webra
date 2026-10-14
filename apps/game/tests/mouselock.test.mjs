@@ -2,7 +2,8 @@
 // (clicks, fullscreen, menus, blur, the browser's cooldown), Esc, the capture
 // hotkey, the virtual pointer (clamping, speed, the events it fires, focus,
 // wheel, pointer capture, cursor art) and edge scrolling and box selection
-// through js/input.js with it. Fake DOM, no browser.
+// through js/input.js with it, edge scrolling with the OS cursor too (the
+// window's edge over the sidebar, what holds it). Fake DOM, no browser.
 // Run with: node --test apps/game/tests/*.test.mjs
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -997,11 +998,166 @@ test('edge scrolling with the virtual pointer: the window edge scrolls, wherever
   move(p, 0, 100000);
   input.update(0.1);
   assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [-1, 1]);
-  // Released: the canvas is left, the scrolling stops.
+  // Across to the right edge, over the sidebar (x >= 800): the window edge scrolls there too.
+  move(p, 100000, -100000);
+  move(p, 0, 250); // y 250: the list's band
+  assert.deepEqual([input.windowMouse.x, input.windowMouse.y], [999, 250]);
+  assert.equal(input.mouse.inside, false, 'off the battlefield canvas');
+  const x1 = input.camera.x;
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  assert.ok(input.camera.x > x1, 'scrolled right');
+  // Released: the window is left (mouseout to nowhere), the scrolling stops.
   p.capture.release();
   assert.equal(input.mouse.inside, false);
+  assert.equal(input.windowMouse.inside, false);
   input.update(0.1);
   assert.equal(input.edgeScroll, null);
+});
+
+/** A real mouse move (no capture) to window point (x, y) over `at`. */
+const realMove = (p, x, y, at) => p.real('mousemove', { clientX: x, clientY: y }, at);
+
+test('edge scrolling with the OS cursor: measured against the window, over the sidebar, radar and HUD too', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  const root = doc.documentElement;
+  // The middle of the sidebar: no edge.
+  realMove(p, 900, 50, p.card);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+  assert.equal(root.classList.contains('edge-scroll'), false);
+  // The window's right edge over a sidebar button: scrolls right, the page shows the scroll arrow.
+  const x0 = input.camera.x;
+  realMove(p, 995, 50, p.card);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  assert.ok(input.camera.x > x0, 'scrolled right');
+  assert.equal(input.cursor, CURSORS.scrollE);
+  assert.equal(root.classList.contains('edge-scroll'), true, 'the arrow over the whole page (css/style.css)');
+  // The button at the edge still takes its click while the map scrolls.
+  const clicks = record(p.card, ['click']);
+  p.real('click', { clientX: 995, clientY: 50 }, p.card);
+  assert.equal(clicks.length, 1);
+  input.update(0.1);
+  assert.ok(input.edgeScroll, 'still scrolling');
+  // Bottom right corner over the Menu button (y 500..599 in the hit map), bottom edge over the radar.
+  realMove(p, 999, 599, p.menuButton);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 1]);
+  realMove(p, 900, 595, p.radar);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [0, 1]);
+  // The battlefield's own right side (x 799) is no edge any more: the window's is.
+  realMove(p, 799, 300, p.view);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+  assert.equal(root.classList.contains('edge-scroll'), false, 'the arrow goes again');
+  // Top and left edges on the battlefield as before.
+  realMove(p, 0, 0, p.view);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [-1, -1]);
+  // Out of the window (mouseout to nowhere): browsers report nothing more, so it stops.
+  realMove(p, 999, 300, p.sidebar);
+  input.update(0.1);
+  assert.ok(input.edgeScroll);
+  p.real('mouseout', { clientX: 1000, clientY: 300, relatedTarget: null }, p.sidebar);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+  // Back in (mouseover from nowhere) at the edge: scrolls again at once.
+  p.real('mouseover', { clientX: 998, clientY: 300, relatedTarget: null }, p.sidebar);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // Moves outside the window while a button is held come with positions outside it: not inside.
+  p.real('mousemove', { clientX: 1200, clientY: 300 }, p.sidebar);
+  assert.equal(input.windowMouse.inside, false);
+});
+
+test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, focus and the release hotkey', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  const atRightEdge = () => {
+    realMove(p, 999, 50, p.card);
+    input.update(0.1);
+    return input.edgeScroll;
+  };
+  assert.ok(atRightEdge(), 'scrolls with nothing in the way');
+  // The game menu (suspended): no scrolling and the page arrow goes.
+  input.setSuspended(true);
+  assert.equal(atRightEdge(), null);
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), false);
+  input.setSuspended(false);
+  assert.ok(atRightEdge());
+  // js/main.js holdsEdgeScroll: a dialog open, the radar dragged, the mouse released with the hotkey.
+  let held = true;
+  input.hooks.holdsEdgeScroll = () => held;
+  assert.equal(atRightEdge(), null);
+  held = false;
+  assert.ok(atRightEdge());
+  // Typing in the chat line.
+  p.chat.focus();
+  assert.equal(atRightEdge(), null);
+  p.chat.blur();
+  assert.ok(atRightEdge());
+  // A box selection under way.
+  p.real('mousedown', { clientX: 400, clientY: 300, button: 0, buttons: 1 }, p.view);
+  assert.ok(input.drag);
+  assert.equal(atRightEdge(), null);
+  p.real('mouseup', { clientX: 999, clientY: 50, button: 0, buttons: 0 }, p.card);
+  assert.ok(atRightEdge());
+  // A touch (js/touch.js) and the window without the input focus (OpenRA WindowHasInputFocus).
+  input.mouse.touch = true;
+  assert.equal(atRightEdge(), null);
+  input.mouse.touch = false;
+  doc.hasFocus = () => false;
+  assert.equal(atRightEdge(), null);
+  doc.hasFocus = () => true;
+  assert.ok(atRightEdge());
+  // Edge scroll speed 0 turns it off.
+  input.settings.set('edgeScrollSpeed', 0);
+  assert.equal(atRightEdge(), null);
+});
+
+test('edge scrolling: the pointer events of a finger (window, capture phase) drop the position until a mouse moves again', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  // A tap on a sidebar button at the right edge: the pointer events of the
+  // finger, then the browser's compatibility mouse events at the same spot.
+  p.real('pointerdown', { clientX: 995, clientY: 50, pointerType: 'touch' }, p.card);
+  p.real('pointerup', { clientX: 995, clientY: 50, pointerType: 'touch' }, p.card);
+  realMove(p, 995, 50, p.card);
+  assert.equal(input.windowMouse.finger, true);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null, 'a tap at the edge does not scroll');
+  // The mouse moves again (hybrid device): pointermove of the mouse, then its mousemove.
+  p.real('pointermove', { clientX: 996, clientY: 50, pointerType: 'mouse' }, p.card);
+  realMove(p, 996, 50, p.card);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // A pen counts as a finger: the scrolling stops at once.
+  p.real('pointermove', { clientX: 996, clientY: 50, pointerType: 'pen' }, p.card);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+});
+
+test('Input.dispose removes every listener it added to the window and the canvas', async () => {
+  const p = page();
+  const count = (node) => [...node.listeners.values()].reduce((n, l) => n + l.length, 0);
+  const winBefore = count(win);
+  const viewBefore = count(p.view);
+  const { input } = await withInput(p);
+  assert.ok(count(win) > winBefore, 'bind added window listeners');
+  assert.ok(count(p.view) > viewBefore, 'and canvas listeners');
+  realMove(p, 999, 50, p.card);
+  input.update(0.1);
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), true);
+  input.dispose();
+  assert.equal(count(win), winBefore, 'no window listener is left');
+  assert.equal(count(p.view), viewBefore, 'no canvas listener is left');
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), false, 'the page arrow goes');
+  // A later game's events reach the disposed view no more.
+  realMove(p, 0, 0, p.view);
+  assert.equal(input.windowMouse.x, 999);
 });
 
 test('box selection, orders and the wheel through js/input.js with the virtual pointer', async () => {
