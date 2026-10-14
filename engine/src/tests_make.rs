@@ -133,7 +133,7 @@ fn selling_plays_the_make_animation_backwards_and_refunds_at_the_end() {
     assert_eq!(sold_events(&mut w), vec![SOLD_STARTED], "the sell sound at once");
     assert_eq!(w.players[0].funds(), cash0, "no refund yet");
     assert_eq!(w.building_pose(p), (Pose::Unmake, 0));
-    assert!(!w.can_sell(p) && w.build_incomplete(p));
+    assert!(!w.can_sell(0, p) && w.build_incomplete(p));
     // A second sale changes nothing; damage meanwhile lowers the refund.
     w.queue_order(Order::Sell { player: 0, building: r });
     w.actors[p].hp = max / 2;
@@ -270,7 +270,7 @@ fn a_construction_yard_packs_up_by_playing_its_make_animation_backwards() {
         w.step();
     }
     let e6 = w.spawn_unit(ty(&w, "E6"), 1, cell_center(w.actors[yard].cx - 2), cell_center(w.actors[yard].cy), 0);
-    assert!(w.can_capture(e6, yard) && w.can_sell(yard), "built: sellable and capturable");
+    assert!(w.can_capture(e6, yard) && w.can_sell(0, yard), "built: sellable and capturable");
     let r = w.make_ref(yard);
     w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
     w.step();
@@ -278,7 +278,7 @@ fn a_construction_yard_packs_up_by_playing_its_make_animation_backwards() {
     let n = make_ticks(&w, "FACT");
     assert_eq!(w.actors[yard].unmake_at, start + n);
     assert!(w.build_incomplete(yard));
-    assert!(!w.can_sell(yard) && !w.can_capture(e6, yard) && !w.can_deploy(yard), "build-incomplete again");
+    assert!(!w.can_sell(0, yard) && !w.can_capture(e6, yard) && !w.can_deploy(yard), "build-incomplete again");
     assert_eq!(w.building_pose(yard), (Pose::Unmake, 0));
     // Another pack-up order or a sale changes nothing (uninterruptible).
     w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
@@ -408,4 +408,51 @@ fn the_player_who_started_the_sale_is_paid() {
         .collect();
     assert_eq!(done.len(), 1);
     assert_eq!((done[0][4], done[0][5]), (0, refund), "announced for the seller");
+}
+
+/// WebRA bulk sell (Order::SellBuildings) goes through the same delayed sale
+/// for each structure: the box leaves out the Construction Yard (also while
+/// it packs up) and structures already being sold, every listed structure
+/// is sold once, the refunds and the crews come at the end of each sale.
+#[test]
+fn a_bulk_sell_sells_each_structure_through_the_reverse_make_animation() {
+    let mut w = world();
+    w.options.redeployable_mcv = true;
+    let powr = [placed(&mut w, "POWR", 0, 30, 30), placed(&mut w, "POWR", 0, 34, 30)];
+    let weap = placed(&mut w, "WEAP", 0, 38, 30);
+    let yard = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].ty == ty(&w, "FACT") && w.actors[i].owner == 0).unwrap();
+    while powr.iter().chain([&weap]).any(|&b| w.build_incomplete(b)) {
+        w.step();
+    }
+    let refunds: i32 = powr.iter().chain([&weap]).map(|&b| w.sell_refund(b).unwrap()).sum();
+    let ids: Vec<u32> = [powr[0], powr[1], weap, yard, powr[0]].iter().map(|&b| w.make_ref(b)).collect();
+    let all = crate::Game::wrap(w.clone()).sell_box(0, 0.0, 0.0, 64.0 * 24.0, 64.0 * 24.0);
+    assert!(!all.contains(&w.make_ref(yard)), "never the Construction Yard");
+    assert!(all.contains(&ids[0]) && all.contains(&ids[2]));
+    let cash0 = w.players[0].funds();
+    let crew0 = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == crate::rules::Kind::Infantry).count();
+    w.queue_order(Order::SellBuildings { player: 0, ids: ids.clone() });
+    w.step();
+    for &b in powr.iter().chain([&weap]) {
+        assert!(w.actors[b].unmake_sell, "each one's sale started");
+    }
+    assert!(w.actors[yard].alive && !w.actors[yard].unmake_sell && w.actors[yard].unmake_at == 0, "the yard stays");
+    assert_eq!(w.players[0].funds(), cash0, "nothing paid yet");
+    // Being sold: out of the box, and a second bulk sell changes nothing.
+    let boxed = crate::Game::wrap(w.clone()).sell_box(0, 0.0, 0.0, 64.0 * 24.0, 64.0 * 24.0);
+    assert!(ids[..3].iter().all(|id| !boxed.contains(id)));
+    let ends: Vec<u32> = powr.iter().chain([&weap]).map(|&b| w.actors[b].unmake_at).collect();
+    w.queue_order(Order::SellBuildings { player: 0, ids: ids.clone() });
+    w.step();
+    assert_eq!(powr.iter().chain([&weap]).map(|&b| w.actors[b].unmake_at).collect::<Vec<_>>(), ends);
+    // A packing yard is not taken either.
+    w.queue_order(Order::Deploy { player: 0, ids: vec![w.make_ref(yard)] });
+    w.step();
+    assert!(w.actors[yard].unmake_at > 0 && !w.can_bulk_sell(0, yard));
+    while ids[..3].iter().any(|&id| w.resolve(id).is_some()) {
+        w.step();
+    }
+    assert_eq!(w.players[0].funds(), cash0 + refunds, "every refund once, at the end of each sale");
+    let crew = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == crate::rules::Kind::Infantry).count();
+    assert!(crew > crew0, "the crews walked out");
 }

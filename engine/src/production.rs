@@ -775,11 +775,6 @@ impl World {
 
     // ---- Selling, deploying ------------------------------------------------
 
-    /// Whether structure `b` can be sold now (`sell_refund` is Some).
-    pub fn can_sell(&self, b: usize) -> bool {
-        self.sell_refund(b).is_some()
-    }
-
     /// What selling structure `b` would pay now, or None while it cannot be
     /// sold. OpenRA Sell activity and Sellable.TooltipText: RefundPercent of
     /// the sell value (CustomSellValue, else the cost), scaled by health,
@@ -857,6 +852,37 @@ impl World {
         let actor = self.make_ref(b);
         self.script_event(crate::mission::ScriptEvent::Sold { actor });
         self.remove(b);
+    }
+
+    /// Whether a click in sell mode sells structure `b` for `player`: their
+    /// own structure in the world with OpenRA's Sellable (a refund percent),
+    /// not being built, sold, captured or demolished (the checks of `sell`,
+    /// `sell_refund`).
+    pub fn can_sell(&self, player: u8, b: usize) -> bool {
+        let a = &self.actors[b];
+        a.owner == player && a.in_world() && self.sell_refund(b).is_some()
+    }
+
+    /// Whether a box in sell mode (WebRA bulk sell) takes structure `b`:
+    /// `can_sell` (so never one already being sold, whose reverse make
+    /// animation plays), but never a structure that packs up into a unit
+    /// (OpenRA Transforms: the Construction Yard into an MCV, also not while
+    /// it packs up), which only a single click sells.
+    pub fn can_bulk_sell(&self, player: u8, b: usize) -> bool {
+        self.can_sell(player, b) && self.rules.actors[self.actors[b].ty as usize].abilities.transforms.is_none()
+    }
+
+    /// `Order::SellBuildings` (WebRA bulk sell): sell each listed structure
+    /// that `can_bulk_sell` still allows, once, in the order listed; each
+    /// sale plays its reverse make animation and pays at its end (`sell`).
+    pub(crate) fn sell_group(&mut self, player: u8, ids: &[u32]) {
+        for &id in ids {
+            if let Some(b) = self.resolve(id) {
+                if self.can_bulk_sell(player, b) {
+                    self.sell(b);
+                }
+            }
+        }
     }
 
     /// Where actor `i` would deploy to: (target actor type, top-left cell or unit cell).

@@ -986,7 +986,7 @@ pub(crate) fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) 
     let far = bb.sell_refinery_no_resource_distance;
     for (k, &r) in refineries.iter().enumerate() {
         // A refinery still being built cannot be sold yet (Sellable !build-incomplete).
-        if !w.can_sell(r) {
+        if !w.can_sell(player, r) {
             continue;
         }
         let at = (w.actors[r].cx, w.actors[r].cy);

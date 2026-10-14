@@ -229,7 +229,7 @@ pub(crate) fn surplus_structure(w: &World, player: u8) -> Option<usize> {
         let a = info(b);
         let bi = a.building.as_ref()?;
         // Nor one that cannot be sold now (still being built, being captured).
-        if kept.contains(&b) || a.queue == QueueType::Defense || a.is_wall() || !a.weapons.is_empty() || !w.can_sell(b) {
+        if kept.contains(&b) || a.queue == QueueType::Defense || a.is_wall() || !a.weapons.is_empty() || !w.can_sell(player, b) {
             return None;
         }
         if bi.refinery.is_some() || bi.storage > 0 {

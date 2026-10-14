@@ -13,11 +13,14 @@
 //! and for players who are no longer allied or no longer playing. Red Alert
 //! numbers: 700 hit points per 24 ticks, 20 percent of the value in total.
 //!
-//! Bulk repair (a WebRA addition, `Order::RepairBuildings`): the Repair button
-//! with own structures selected, or a box dragged in repair mode, toggles a
-//! group of the player's own damaged structures at once with OpenRA's toggle
-//! rule: when any of them can start repairing, all that can start; when all
-//! are being repaired already, all stop. One "Repairing" line for the group.
+//! Bulk repair (a WebRA addition): the Repair button with own actors
+//! selected, or a box dragged in repair mode, repairs a group at once.
+//! `Order::RepairBuildings` toggles the player's own damaged structures with
+//! OpenRA's toggle rule: when any of them can start repairing, all that can
+//! start; when all are being repaired already, all stop. One "Repairing" line
+//! for the group. `Order::RepairUnits` sends each own damaged unit to its
+//! nearest repair structure, OpenRA's Repair order (`RepairCategory` sorts
+//! what a box holds for the client's chooser).
 //!
 //! Power down (OpenRA `ToggleConditionOnOrder` with `OrderName: PowerDown`
 //! and `PowerMultiplier@POWERDOWN`, `Order::PowerDown`): the owner switches a
@@ -106,7 +109,7 @@ impl World {
     /// repairable and damaged (`can_repair_building`), each once, in the
     /// order listed. Allied structures stay one click each (WebRA bulk
     /// repair spends only on the player's own base).
-    pub fn bulk_repair_targets(&self, player: u8, ids: &[u32]) -> Vec<usize> {
+    pub(crate) fn bulk_repair_targets(&self, player: u8, ids: &[u32]) -> Vec<usize> {
         let mut out: Vec<usize> = Vec::new();
         for &id in ids {
             let Some(i) = self.resolve(id) else { continue };
@@ -302,12 +305,43 @@ impl World {
     }
 }
 
+/// What a bulk repair acts on (WebRA addition, the repair mode's box chooser).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepairCategory {
+    /// An own damaged structure with the repair button.
+    Building,
+    /// An own damaged armed unit that a structure repairs.
+    Combat,
+    /// An own damaged harvester (ore truck).
+    Harvester,
+    /// Any other own damaged unit a structure repairs (MCV, transports,
+    /// minelayers, unarmed helicopters...).
+    Other,
+}
+
+impl RepairCategory {
+    pub fn key(self) -> &'static str {
+        match self {
+            RepairCategory::Building => "buildings",
+            RepairCategory::Combat => "combat",
+            RepairCategory::Harvester => "harvesters",
+            RepairCategory::Other => "other",
+        }
+    }
+}
+
 impl World {
-    /// Where the repair cursor sends an own damaged unit `i`: the nearest own
-    /// structure that repairs it (service depot, naval yard, helipad for
-    /// helicopters; OpenRA Repairable(Near).FindRepairBuilding, which prefers
-    /// the player's own), as the world point a smart order there targets.
-    pub fn repair_depot_for(&self, player: u8, i: usize) -> Option<(i32, i32)> {
+    /// The structure that repairs own damaged unit `i`: the player's nearest
+    /// one of the unit's repair actors (service depot for vehicles and
+    /// helicopters, naval yard or sub pen for ships; OpenRA
+    /// Repairable(Near).RepairActors), ties to the lower index. OpenRA's
+    /// FindRepairBuilding also takes allied structures with RepairsUnits,
+    /// the player's own first, then the nearest (the unit's owner pays, the
+    /// ally gains PlayerExperience). WebRA repairs units at own structures
+    /// only, in the click path (smart order, helicopters) and here alike: the
+    /// depot pad, helicopter landing and payment code only serve the owner's
+    /// units, and allied depots would need all three plus the experience.
+    pub fn repair_facility_for(&self, player: u8, i: usize) -> Option<usize> {
         let a = &self.actors[i];
         if !a.alive || !a.in_world() || a.owner != player || !a.is_unit() || a.hp >= self.rules.actors[a.ty as usize].hp {
             return None;
@@ -318,6 +352,115 @@ impl World {
                 ba.alive && ba.owner == player && ba.kind == Kind::Building && (self.repairs_at(i, b) || self.heli_repairs_at(i, b))
             })
             .min_by_key(|&b| (crate::math::dist_sq(a.x, a.y, self.actors[b].x, self.actors[b].y), b))
-            .map(|b| (self.actors[b].x, self.actors[b].y))
+    }
+
+    /// Where the repair cursor sends an own damaged unit `i`: the world point
+    /// of `repair_facility_for`, which a smart order there targets.
+    pub fn repair_depot_for(&self, player: u8, i: usize) -> Option<(i32, i32)> {
+        self.repair_facility_for(player, i).map(|b| (self.actors[b].x, self.actors[b].y))
+    }
+
+    /// Whether unit `i` has structures that repair it at all (OpenRA
+    /// Repairable or RepairableNear: vehicles, ships and helicopters in Red
+    /// Alert). Infantry have none (they heal at a Hospital or by a medic);
+    /// planes have `Repairable` in OpenRA but WebRA's planes only land on
+    /// airfields, so they have none here.
+    pub fn unit_has_repair_facilities(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        let Some(u) = self.rules.actors[a.ty as usize].unit.as_ref() else { return false };
+        match a.kind {
+            Kind::Vehicle | Kind::Ship => !u.repair_at.is_empty(),
+            Kind::Aircraft => self.is_helicopter(i) && u.aircraft.as_ref().is_some_and(|air| !air.repair_actors.is_empty()),
+            _ => false,
+        }
+    }
+
+    /// The bulk repair category of actor `i` for `player`, or None when a
+    /// bulk repair leaves it alone: not the player's, gone, undamaged, a
+    /// structure without the repair button, or a unit no structure repairs.
+    /// Units count whether or not the player has a structure for them now
+    /// (the client says when none is there).
+    pub fn repair_category(&self, player: u8, i: usize) -> Option<RepairCategory> {
+        let a = &self.actors[i];
+        if !a.alive || !a.in_world() || a.owner != player {
+            return None;
+        }
+        if a.kind == Kind::Building {
+            return self.can_repair_building(player, i).then_some(RepairCategory::Building);
+        }
+        let info = &self.rules.actors[a.ty as usize];
+        if !a.is_unit() || a.hp >= info.hp || !self.unit_has_repair_facilities(i) {
+            return None;
+        }
+        Some(if self.is_harvester(i) {
+            RepairCategory::Harvester
+        } else if !info.weapons.is_empty() {
+            RepairCategory::Combat
+        } else {
+            RepairCategory::Other
+        })
+    }
+
+    /// Unit `i` goes to repair structure `b` (OpenRA's Repair order: the
+    /// smart order on a service depot or naval yard, or a helicopter sent to a
+    /// service depot).
+    pub(crate) fn send_to_repair_depot(&mut self, i: usize, b: usize) {
+        if self.actors[i].kind == Kind::Aircraft {
+            self.heli_send_to_depot(i, b);
+            return;
+        }
+        self.release_dock(i);
+        let tref = self.make_ref(b);
+        let a = &mut self.actors[i];
+        a.activity = crate::world::Activity::Repair;
+        a.depot = tref;
+        a.repair_timer = 0;
+        a.group_size = 1;
+        a.best_dist = i32::MAX;
+        a.stuck_ticks = 0;
+    }
+
+    /// `Order::RepairUnits` (WebRA bulk repair): each listed own damaged unit
+    /// that some own structure repairs goes to the nearest one, as if the
+    /// player had clicked it with that unit selected (its queued waypoints
+    /// and guarding end, as with any new command). The rest is left alone:
+    /// other players' units, undamaged ones, infantry, units with no such
+    /// structure now.
+    pub(crate) fn send_units_to_repair(&mut self, player: u8, ids: &[u32]) {
+        let mut seen: Vec<usize> = Vec::new();
+        for &id in ids {
+            let Some(i) = self.resolve(id) else { continue };
+            if seen.contains(&i) || !self.repair_category(player, i).is_some_and(|c| c != RepairCategory::Building) {
+                continue;
+            }
+            seen.push(i);
+            let Some(b) = self.repair_facility_for(player, i) else { continue };
+            self.clear_commands(i);
+            self.send_to_repair_depot(i, b);
+        }
+    }
+
+    /// The bulk repair targets among `ids` by category, in the order listed,
+    /// each once, as JSON: `{"buildings": [...], "combat": [...],
+    /// "harvesters": [...], "other": [...], "noFacility": [...]}` (ids;
+    /// `noFacility`: the units of the lists that no own structure repairs now).
+    pub fn repair_groups_json(&self, player: u8, ids: impl IntoIterator<Item = usize>) -> serde_json::Value {
+        let mut groups: [Vec<u32>; 4] = Default::default();
+        let mut none: Vec<u32> = Vec::new();
+        let mut seen: Vec<usize> = Vec::new();
+        for i in ids {
+            if seen.contains(&i) {
+                continue;
+            }
+            seen.push(i);
+            let Some(c) = self.repair_category(player, i) else { continue };
+            let r = self.make_ref(i);
+            groups[c as usize].push(r);
+            if c != RepairCategory::Building && self.repair_facility_for(player, i).is_none() {
+                none.push(r);
+            }
+        }
+        let [buildings, combat, harvesters, other] = groups;
+        serde_json::json!({ "buildings": buildings, "combat": combat, "harvesters": harvesters, "other": other, "noFacility": none })
     }
 }
