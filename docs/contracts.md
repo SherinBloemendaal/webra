@@ -1916,12 +1916,17 @@ diagonal step never cuts a blocked corner.
   that a route never depends on how far other units extended a partial
   field); one search expands at most 4096 cells (then it counts as no
   route). WebRA addition, a safety net for huge armies: the searches of
-  one tick expand at most 400,000 cells (`ROUTE_SEARCH_BUDGET`, about
-  70 ms natively); a search asked for after that waits for the unit's
-  next step in a later tick (a unit waiting for a blocker keeps waiting),
-  so which searches wait depends only on the order units act in. Normal
-  games never reach it; the first ticks of the stress test with 2,000
-  units or more do.
+  one tick expand at most 100,000 cells (`ROUTE_SEARCH_BUDGET`; searches
+  expand about 4,000 cells a millisecond natively and 2,800 in wasm, so
+  about 25 ms and 36 ms). A search asked for after that waits (the unit
+  stands, a unit waiting for a blocker keeps waiting), and before units
+  act in the next tick the waiting searches run, the oldest first, then
+  by actor (`serve_deferred_searches`, `Motion::pending_since`), as long
+  as the budget lasts; new searches only get what they leave. So no unit
+  waits behind ones that asked later, whatever its place in the actor
+  list, and which searches wait depends only on the game state. Normal
+  games never reach the budget; the first ticks of the stress test with
+  2,000 units or more do.
 - When the next cell is taken (Move.PopPath): within `near` cells of the
   destination the move gives up unless a free cell next to the blocker is
   as close (player and AI move orders: 8 cells, OpenRA's `Move` order; a
@@ -1967,7 +1972,9 @@ diagonal step never cuts a blocked corner.
   `HUGE_ORDER`): a unit boxed in when its move starts, every neighbouring
   cell it may step to held, and only by friendly units about to move
   (driving, turning, waiting for their route or for a cell, or ordered and
-  not yet acting), does not search its route yet (`Pending::Boxed`): it
+  not yet acting; a free sub-cell beside soldiers of its own crowd does
+  not count as room, see below), does not search its route yet
+  (`Pending::Boxed`): it
   waits like a unit held up by a blocker (`WaitAverage`, then on while
   the queue toward its goal moves, up to `QUEUE_PATIENCE`) until a
   neighbouring cell comes free, then searches around the units that
@@ -1977,10 +1984,23 @@ diagonal step never cuts a blocked corner.
   first and the rows behind follow as cells come free, as they would
   anyway; only the route searches move from the order's first tick to the
   ticks the rows start in (34,506 searches in the first tick of the
-  stress test with 20,000 units before, 103 now). A unit of a huge order
+  stress test with 20,000 units before, 31 now). A unit of a huge order
   held up in a queue that moves waits in the open too, not only in a pass
   (a huge army files after its own head). Smaller orders search at once
-  and follow OpenRA's rule in the open, exactly as before.
+  and follow OpenRA's rule in the open, as before. A soldier with
+  room only beside soldiers of its own crowd that are about to move counts
+  as boxed in: stepping in beside them gets it nowhere yet, and counting
+  that room (as OpenRA's CanEnterCell would) made the soldiers in the
+  middle of the stress test's crowds (two to a cell) search at once, so
+  the units at the crowds' edges, which can drive off, waited up to 44
+  ticks (2,000 units) and 102 ticks (20,000) for theirs instead of 3 and
+  14. Beside idle soldiers with room it is not boxed in.
+- A unit that backs out of the way of others (no way round a blocker,
+  Mobile.IsBlocking) and must turn first keeps the cell it backs out to on
+  its route while it turns (OpenRA's Move.Tick adds it to its path before
+  the Turn). WebRA forgot it after one tick of turning, so two units head
+  on in a lane could wait for each other for half a minute and more: the
+  one waiting saw the other turn (leaving) every WaitAverage and waited on.
 - Feedback (WebRA addition; OpenRA has none: its move cursor only shows
   terrain that cannot be reached when the order is given): a move order
   that ends short because the way stayed blocked, farther from its goal
@@ -3653,7 +3673,7 @@ the first tick, when every unit of both armies starts its move: 34,500
 searches expanding 37 million cells at 20,000 units, 6 to 10 s native and
 7 to 8 s in wasm for that one tick in the quieter runs on a busy machine
 (17 s in wasm before); see "Huge move orders" below for how that tick
-went down to about 0.1 s. Flow fields (the HUD's count
+went down to 0.06 s native and 0.1 s in wasm. Flow fields (the HUD's count
 is the fields computed since the start, not the fields kept) cost about
 2 % of a tick. The worker's render build (`build_render` with the whole map
 in view) is 1.9 ms per frame at 20,000 units in wasm; the GPU instance path
@@ -3688,36 +3708,39 @@ ai_vs_ai games and the native against the wasm build are identical.
 `ROUTE_SEARCH_BUDGET`). A unit of an order of 250 units or more that is
 boxed in by its own units when its move starts searches its route once a
 neighbouring cell comes free, and the searches of one tick expand at most
-400,000 cells. The first tick of the stress test now searches the routes
-of the units at the edges of the two crowds only; the rows behind search
-as they start. Units of such an order also wait in a queue that moves on
-instead of searching a way round every unit after each `WaitAverage`.
-Measured with `sim_bench` (native, 1,500 ticks) and
-`tools/sim-tick-bench.mjs` (wasm in node 26, 600 ticks), seed 1, before
-and after, one run each on a busy machine (the state hashes of native and
-wasm agree, at tick 600: 2,000 units `69487e6d2c77b520`, 20,000 units
-`885f69d1739d84f8`):
+100,000 cells, the ones that waited the longest first. The first tick of
+the stress test now searches the routes of the units at the edges of the
+two crowds only; the rows behind search as they start. Units of such an
+order also wait in a queue that moves on instead of searching a way round
+every unit after each `WaitAverage`. Measured with `sim_bench` (native,
+1,500 ticks) and `tools/sim-tick-bench.mjs` (wasm in node 26, 600 ticks),
+seed 1, before and after, one run each on a busy machine (the state hashes
+of native and wasm agree, at tick 600: 2,000 units `c882217a445391c6`,
+20,000 units `9144b76ebf6789d8`):
 
 | Units | First tick, before | after | Ticks after it: median / p95 / worst, before | after |
 |------:|-------------------:|------:|----------------------------------------------:|------:|
-| 2,000 native | 682 ms | 58 ms | 0.68 / 2.41 / 5.3 ms | 0.68 / 3.05 / 37 ms |
-| 5,000 native | 408 ms | 64 ms | 1.88 / 4.97 / 12.7 ms | 2.20 / 6.12 / 41 ms |
-| 10,000 native | 1,604 ms | 77 ms | 6.38 / 10.6 / 29 ms | 4.68 / 13.0 / 63 ms |
-| 20,000 native | 5,068 ms | 101 ms | 7.93 / 15.7 / 65 ms | 9.66 / 30.1 / 86 ms |
-| 2,000 wasm | 953 ms | 119 ms | 1.27 / 3.62 / 6.8 ms | 0.99 / 5.38 / 62 ms |
-| 5,000 wasm | 525 ms | 105 ms | 2.74 / 5.89 / 8.7 ms | 3.57 / 7.56 / 49 ms |
-| 10,000 wasm | 1,980 ms | 115 ms | 7.91 / 11.9 / 17 ms | 7.21 / 17.2 / 78 ms |
-| 20,000 wasm | 6,220 ms | 144 ms | 12.3 / 20.6 / 49 ms | 18.8 / 45.3 / 107 ms |
+| 2,000 native | 682 ms | 24 ms | 0.68 / 2.41 / 5.3 ms | 0.72 / 3.16 / 16 ms |
+| 5,000 native | 408 ms | 25 ms | 1.88 / 4.97 / 12.7 ms | 1.75 / 4.47 / 19 ms |
+| 10,000 native | 1,604 ms | 36 ms | 6.38 / 10.6 / 29 ms | 3.84 / 12.2 / 35 ms |
+| 20,000 native | 5,068 ms | 61 ms | 7.93 / 15.7 / 65 ms | 9.47 / 24.1 / 77 ms |
+| 2,000 wasm | 953 ms | 48 ms | 1.27 / 3.62 / 6.8 ms | 1.13 / 5.55 / 25 ms |
+| 5,000 wasm | 525 ms | 57 ms | 2.74 / 5.89 / 8.7 ms | 2.48 / 5.75 / 23 ms |
+| 10,000 wasm | 1,980 ms | 69 ms | 7.91 / 11.9 / 17 ms | 6.97 / 18.4 / 26 ms |
+| 20,000 wasm | 6,220 ms | 101 ms | 12.3 / 20.6 / 49 ms | 22.4 / 29.3 / 42 ms |
 
-At 20,000 units the whole native run averages 13.4 ms a tick against 13.9
-before: the searches of the first tick are spread over the ticks the rows
-start in (worst ticks near 100 ms while the budget holds them back; 1,343
-searches waited for a later tick), and with fewer searches in all (18,519
-against 51,835, 40 against 46 million cells). The wasm runs of 600 ticks
-end before that evens out. The armies also play differently: before, the
-units behind the front gave up their move once `WaitAverage` ran out
-(12,000 of 20,000 stood idle by tick 1,500), now they keep filing after
-the units ahead.
+The first tick holds more than the searches (the two crowds' flow fields,
+the boxed-in checks, target scans). At 20,000 units the whole native run
+averages 12.6 ms a tick against 13.9 before, with fewer searches in all
+(18,470 against 51,835, 38 against 46 million cells); 9,988 searches
+waited for a later tick, none longer than 14 ticks (3, 3 and 6 at 2,000,
+5,000 and 10,000 units), and the units that started at once when theirs
+ran had waited 1 to 4 ticks (median). The 20,000-unit wasm run of 600
+ticks ends before the spread-out searches even out, and the armies play
+differently: before, the units behind the front gave up their move once
+`WaitAverage` ran out (12,000 of 20,000 stood idle by tick 1,500), now
+they keep filing after the units ahead, which costs a little every tick.
+The worst ticks after the first are fights, not searches.
 
 **Several cores.** The game page is already cross-origin isolated (COOP
 `same-origin`, COEP `require-corp`, docs/security.md), so
