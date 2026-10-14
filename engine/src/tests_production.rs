@@ -350,3 +350,124 @@ fn the_ai_rebuilds_after_losing_a_prerequisite() {
     let buildings = w.actors.iter().filter(|a| a.alive && a.owner == 1 && a.kind == Kind::Building).count();
     assert!(buildings >= 8, "the AI kept building: {buildings}");
 }
+
+// ---- Losing the last factory of a queue (lobby option `factoryLoss`) ---------------------
+
+/// A partly built harvester and a queued one, every prerequisite met (the
+/// "all tech" cheat, so only the producer counts), then the war factory
+/// dies. OpenRA's rule (ClassicProductionQueue.Tick, ClearQueue): the
+/// Vehicle queue is emptied and everything paid refunded, silently, and
+/// nothing can be queued there until a war factory stands again. WebRA's:
+/// the queue waits, nothing paid, and builds again with a new factory.
+#[test]
+fn losing_the_last_war_factory_under_each_factory_loss_rule() {
+    use crate::world::FactoryLoss;
+    for rule in FactoryLoss::ALL {
+        let mut w = World::new(4, 80, &[("allies", false), ("soviet", false)]);
+        w.options.factory_loss = rule;
+        base(&mut w, 0, "TENT");
+        w.players[0].dev.all_tech = true;
+        let harv = ty(&w, "HARV");
+        w.queue_order(Order::StartProduction { player: 0, ty: harv, count: 2 });
+        run(&mut w, 60);
+        let paid: i32 = w.players[0].queues[VQ].items.iter().map(|it| it.paid).sum();
+        assert!(paid > 0 && !w.players[0].queues[VQ].items[0].done, "{rule:?}: partly built");
+        let funds = w.players[0].funds();
+        let harvesters = count(&w, 0, "HARV");
+        w.sound.set_enabled(true);
+        let weap = find(&w, 0, "WEAP");
+        destroy(&mut w, weap);
+        run(&mut w, 1);
+        let cancelled = w
+            .sound
+            .take()
+            .chunks(crate::sound_events::EVENT_STRIDE)
+            .filter(|e| e[0] == crate::sound_events::SoundEventKind::ProductionCancelled as i32)
+            .count();
+        assert_eq!(cancelled, 0, "{rule:?}: no announcement");
+        match rule {
+            FactoryLoss::OpenRA => {
+                assert!(w.players[0].queues[VQ].items.is_empty(), "cleared");
+                assert_eq!(w.players[0].funds(), funds + paid, "refunded exactly");
+                assert!(!w.can_produce(0, harv), "nothing to queue without a war factory");
+                assert!(!w.requirements(0, harv).is_empty(), "the sidebar names the factory");
+                w.queue_order(Order::StartProduction { player: 0, ty: harv, count: 1 });
+                run(&mut w, 1);
+                assert!(w.players[0].queues[VQ].items.is_empty(), "the order is refused");
+            }
+            FactoryLoss::WebRA => {
+                assert_eq!(w.players[0].queues[VQ].items.len(), 2, "kept");
+                assert!(w.can_produce(0, harv), "units may still be queued");
+                run(&mut w, 300);
+                assert_eq!(w.players[0].queues[VQ].items.iter().map(|it| it.paid).sum::<i32>(), paid, "the queue waits");
+                assert_eq!(w.players[0].funds(), funds, "nothing paid, nothing refunded");
+            }
+        }
+        // A new war factory: production goes on (OpenRA: from scratch).
+        let (sx, sy) = w.players[0].start;
+        w.spawn_building(ty(&w, "WEAP"), 0, sx, sy + 6).expect("the war factory fits again");
+        w.refresh_tokens();
+        w.update_power();
+        if rule == FactoryLoss::OpenRA {
+            assert!(w.can_produce(0, harv));
+            w.queue_order(Order::StartProduction { player: 0, ty: harv, count: 1 });
+        }
+        run(&mut w, 2500);
+        assert!(count(&w, 0, "HARV") > harvesters, "{rule:?}: built again");
+    }
+}
+
+/// A finished structure waiting for placement when the Construction Yard
+/// dies: OpenRA's rule refunds its whole cost silently (ClearQueue), WebRA's
+/// cancels it with a refund and one announcement.
+#[test]
+fn a_ready_structure_is_refunded_in_full_under_each_factory_loss_rule() {
+    use crate::world::FactoryLoss;
+    for rule in FactoryLoss::ALL {
+        let mut w = World::new(5, 80, &[("allies", false), ("soviet", false)]);
+        w.options.factory_loss = rule;
+        base(&mut w, 0, "TENT");
+        let powr = ty(&w, "POWR");
+        w.queue_order(Order::StartProduction { player: 0, ty: powr, count: 1 });
+        run_until_done(&mut w, 0, BQ);
+        let funds = w.players[0].funds();
+        w.sound.set_enabled(true);
+        let fact = find(&w, 0, "FACT");
+        destroy(&mut w, fact);
+        run(&mut w, 1);
+        let cancelled = w
+            .sound
+            .take()
+            .chunks(crate::sound_events::EVENT_STRIDE)
+            .filter(|e| e[0] == crate::sound_events::SoundEventKind::ProductionCancelled as i32)
+            .count();
+        assert!(w.players[0].queues[BQ].items.is_empty(), "{rule:?}: emptied");
+        assert_eq!(w.players[0].funds(), funds + w.rules.actors[powr as usize].cost, "{rule:?}: the whole cost back");
+        assert_eq!(cancelled, usize::from(rule == FactoryLoss::WebRA), "{rule:?}: announcement");
+    }
+}
+
+/// The lobby option travels in the game options: saves and replays carry
+/// it, and those from before it (no `factoryLoss`) play WebRA's rule.
+#[test]
+fn the_factory_loss_option_round_trips_through_game_options() {
+    use crate::world::FactoryLoss;
+    let base = r#"{"seed": 3, "mapSize": 64, "players": [{"type": "human", "faction": "england"}, {"type": "ai", "faction": "russia"}]"#;
+    let rule = |extra: &str| crate::parse_options(&format!("{base}{extra}}}")).map(|p| p.options.factory_loss);
+    assert_eq!(rule(""), Ok(FactoryLoss::WebRA), "games from before the option");
+    assert_eq!(rule(r#", "factoryLoss": "openra""#), Ok(FactoryLoss::OpenRA));
+    assert_eq!(rule(r#", "factoryLoss": "webra""#), Ok(FactoryLoss::WebRA));
+    assert!(rule(r#", "factoryLoss": "refund""#).is_err());
+    assert!(rule(r#", "factoryLoss": true"#).is_err());
+    assert_eq!(crate::world::GameOptions::default().factory_loss, FactoryLoss::OpenRA, "the lobby default");
+    let replay = |extra: &str| {
+        let mut g = crate::Game::from_options(&format!("{base}{extra}}}")).unwrap();
+        for _ in 0..25 * 30 {
+            g.world.step();
+        }
+        g.world.state_hash()
+    };
+    assert_eq!(replay(r#", "factoryLoss": "openra""#), replay(r#", "factoryLoss": "openra""#));
+    assert_eq!(replay(""), replay(r#", "factoryLoss": "webra""#), "absent is WebRA's rule");
+    assert_ne!(replay(r#", "factoryLoss": "openra""#), replay(r#", "factoryLoss": "webra""#), "the rule is in the state hash");
+}

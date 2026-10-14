@@ -3,13 +3,13 @@
 //! Usage: cargo run -p webra-sim --release --example ai_vs_ai -- [seed] [faction0] [faction1]
 //! Environment: AI_STYLE (random, land, rivers, lakes, islands), AI_BIOME
 //! (random, temperate, snow, desert), AI_WEATHER (full, cosmetic, off),
-//! AI_MOVEMENT (openra, webra); defaults random, temperate, full, openra
-//! (the engine defaults).
+//! AI_MOVEMENT (openra, webra), AI_FACTORY_LOSS (openra, webra); defaults
+//! random, temperate, full, openra, openra (the engine defaults).
 use webra_sim::mapgen::MapStyle;
 use webra_sim::movement::MovementModel;
 use webra_sim::rules::Kind;
 use webra_sim::weather::{Biome, WeatherMode};
-use webra_sim::world::{AiDifficulty, GameOptions, PlayerSetup, World};
+use webra_sim::world::{AiDifficulty, FactoryLoss, GameOptions, PlayerSetup, World};
 
 fn main() {
     let seed: u64 = std::env::args().nth(1).map(|s| s.parse().expect("seed is a number")).unwrap_or(13);
@@ -22,6 +22,7 @@ fn main() {
         biome: if biome == "random" { None } else { Some(Biome::from_name(&biome).expect("AI_BIOME")) },
         weather: WeatherMode::from_name(&var("AI_WEATHER", "full")).expect("AI_WEATHER"),
         movement: MovementModel::from_name(&var("AI_MOVEMENT", "openra")).expect("AI_MOVEMENT"),
+        factory_loss: FactoryLoss::from_name(&var("AI_FACTORY_LOSS", "openra")).expect("AI_FACTORY_LOSS"),
         ..GameOptions::default()
     };
     let players = [PlayerSetup::new(&f0, Some(AiDifficulty::Normal)), PlayerSetup::new(&f1, Some(AiDifficulty::Normal))];

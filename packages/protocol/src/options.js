@@ -29,6 +29,7 @@ import {
   WEATHER_MODES,
   HANDICAPS,
   MOVEMENT_MODELS,
+  FACTORY_LOSS_RULES,
 } from './constants.js';
 import { bool, fail, int, isPlainObject, object, oneOf, text } from './check.js';
 
@@ -45,16 +46,17 @@ export const LOBBY_OPTION_KEYS = [
   'gameSpeed',
   'timeLimit',
   'movement',
+  'factoryLoss',
   ...BOOLEAN_OPTIONS,
 ];
 
 /**
  * Strictly validate host-editable lobby options. Every key is required.
  * With `legacy` (the options of a game that starts, is saved or is
- * recorded), `movement` may be absent: games saved or recorded before it
- * existed lack it and play with `webra` (the engine's default for an
- * absent key). Live lobby options always carry it, so a lobby never shows
- * one model while the game would play another.
+ * recorded), `movement` and `factoryLoss` may be absent: games saved or
+ * recorded before they existed lack them and play with `webra` (the
+ * engine's default for an absent key). Live lobby options always carry
+ * them, so a lobby never shows one rule while the game would play another.
  */
 export function validateLobbyOptions(v, what = 'options', { legacy = false } = {}) {
   object(v, LOBBY_OPTION_KEYS, what);
@@ -72,6 +74,7 @@ export function validateLobbyOptions(v, what = 'options', { legacy = false } = {
     timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
   };
   if (!legacy || v.movement !== undefined) out.movement = oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`);
+  if (!legacy || v.factoryLoss !== undefined) out.factoryLoss = oneOf(v.factoryLoss, FACTORY_LOSS_RULES, `${what}.factoryLoss`);
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;
 }

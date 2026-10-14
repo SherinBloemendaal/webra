@@ -453,7 +453,7 @@ refused (protocol and engine alike); leave it out for its default.
   the same team (`mapSlotsProblem`, the engine's `validate_setup`).
 - `options`: lobby options the map starts with, from `weather`,
   `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`,
-  `movement` and the boolean options (section 3), with their section 3 values; not
+  `movement`, `factoryLoss` and the boolean options (section 3), with their section 3 values; not
   the generator options (seed, size, style, biome, tech buildings).
   `lockedOptions`: options the lobbies keep at the map's value (each one
   the map sets, once).
@@ -585,7 +585,7 @@ human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?, spawn?
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
-weather, techBuildings, movement, map`.
+weather, techBuildings, movement, factoryLoss, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -626,7 +626,17 @@ and the lobby state) always carry it. Start options, saves and replays may
 leave it out, and the engine then plays `webra`: those from before the
 option were made with WebRA's model and replay with it; a lobby resuming
 such a save shows `webra`. Game modes include it; a mode saved before it
-existed takes `openra`. `team` 0 means no team (free for all);
+existed takes `openra`. `factoryLoss` is what a production queue does
+when its player loses the last structure of its type ("Factory loss" in
+the lobbies, "Production queues" below): `openra` (the default,
+OpenRA's ClassicProductionQueue: the queue is cleared and refunded) or
+`webra` (unit queues wait for a new factory). It is part of the game's
+state and follows `movement` in everything else: live lobby options carry
+it, start options, saves and replays may leave it out and then play
+`webra` (the rule of games from before the option; a lobby resuming such a
+save shows `webra`), game modes saved before it take `openra`, and maps may
+set and lock it. Both defaults are `openra` for the same reason: new games
+play like OpenRA, old ones replay as they were made. `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
@@ -1439,16 +1449,33 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   queue carries on; the items can be queued again once the prerequisites (or
   a deployed MCV) are back. Unit queues keep going from their own factories.
   `start_production` and `place` are refused for such items.
-- A unit queue builds while the player has a structure of its type (OpenRA
-  ClassicProductionQueue.Enabled). Without one it waits; that is a WebRA
-  difference, OpenRA clears the queue with a refund (ClearQueue). A unit
-  that finishes while no structure makes its `build_at` type is not made
+- Losing the last factory (lobby option `factoryLoss`, section 3): a queue
+  builds while the player has a structure of its type (OpenRA
+  ClassicProductionQueue.Enabled). Under `openra` (OpenRA at b6fc03f) a
+  queue without one is not Enabled: every tick, before anything else,
+  ClearQueue empties it and refunds everything paid for each item (a
+  finished one, also a structure waiting for placement, in full; partly
+  built ones what they cost so far), with no notification, and nothing can
+  be queued there (`can_produce` is false, `requirements` names the
+  producers) until such a structure stands again. That holds for every
+  queue: structures and defences after the last Construction Yard, units
+  after the last barracks or kennel, war factory, airfield or helipad,
+  naval yard or sub pen. Under `webra` a unit queue keeps its items and
+  waits, paying nothing, and builds on once a structure of its type stands;
+  structure items are cancelled with a refund and one ProductionCancelled
+  (`CancelUnbuildableItems` above). WebRA refunds everything to cash
+  (OpenRA returns the stored-ore share of a payment to the silos). A unit
+  that finishes while structures of its queue's type stand but none makes
+  its `build_at` type is not made
   (OpenRA BuildUnit with CancelProduction(unit, 1)): the last item of that
   type in the queue is cancelled and refunded, one per tick, so the finished
   one goes once it is the last, and the queue says ProductionBlocked once
   (not for instant builds).
 - `player_json().buildable[].enabled` is false for structures without a
-  Construction Yard, and their `requires` lists `Construction Yard`.
+  Construction Yard, and their `requires` lists `Construction Yard`; under
+  the `openra` factory loss rule likewise for units without a structure of
+  their queue's type (once their prerequisites are met: those already
+  name it).
 - `player_json().buildable[].buildTicks` is the time the item takes with the
   player's current factories (BuildTimeSpeedReduction), before the low power
   slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
@@ -2578,8 +2605,9 @@ A mission replay or save (`mode: "mission"`) has no `map` (null) and names
 its mission file instead: `mission.id` (`[a-z0-9][a-z0-9-]{0,63}`, the file
 `apps/game/missions/<id>.json`) and `mission.hash` (SHA-256 of the file's
 text). Its `options` are the mission's start options, `{ seed, gameSpeed,
-options, movement }` (`movement` as in section 3: missions started now play
-`openra`; left out by saves and replays from before it, which play `webra`)
+options, movement, factoryLoss }` (`movement` and `factoryLoss` as in
+section 3: missions started now play `openra`; left out by saves and
+replays from before them, which play `webra`)
 with at most 8 mission options (`options.difficulty`: `easy`,
 ...; keys and values `[a-z0-9][a-z0-9_-]{0,31}`, case-insensitive), not
 the game options of section 3. The person playing is player 0, so `player`
@@ -3192,14 +3220,15 @@ server share.
   message, validated against `COOP_MISSIONS`: a file of another version is
   refused). The first slots become the mission's playable players, people
   only (OpenRA `AllowBots: False`); later slots close; faction, colour and
-  team are the mission's. Only the game speed and the movement model of the
-  lobby options apply.
+  team are the mission's. Only the game speed, the movement model and the
+  factory loss rule of the lobby options apply.
   The game starts when every place holds a ready person. Choosing a map or
   a generated map goes back to a skirmish.
 - **Start.** `start.mission` names the mission; every client loads its own
   copy of the mission file from its own server, checks the hash and starts
   `Game.from_mission` with `humans` (the playable players, engine players 0
-  and 1), `localPlayer` (its own seat) and the lobby's `movement`. No client
+  and 1), `localPlayer` (its own seat) and the lobby's `movement` and
+  `factoryLoss`. No client
   ever sends a script or a mission file to another.
 - **Lockstep.** The scripts run on every client. `IsLocalPlayer` is true for
   each client's own player only, and the scripts use it for presentation

@@ -152,9 +152,12 @@ impl World {
     pub fn requirements(&self, player: u8, ty: u16) -> Vec<Requirement> {
         let p = &self.players[player as usize];
         let mut out: Vec<Requirement> = Vec::new();
-        // Structures also need a building that produces their queue (the Construction Yard).
+        // Structures also need a building that produces their queue (the
+        // Construction Yard); under OpenRA's factory loss rule so do units
+        // (shown once their prerequisites are met: those name the factory).
         let q = self.rules.actors[ty as usize].queue;
-        if q.is_structure() && !self.has_producer(player, q) {
+        let shown = q.is_structure() || self.availability(player, ty).enabled;
+        if shown && self.queue_needs_producer(q) && !self.has_producer(player, q) {
             let names = self.queue_producer_names(q);
             if !names.is_empty() {
                 out.push(Requirement { label: names.join(" or "), never: false });
@@ -315,13 +318,22 @@ impl World {
         })
     }
 
+    /// Whether queue `q` takes items only while a structure of its type
+    /// stands: structure queues always, unit queues under OpenRA's factory
+    /// loss rule (OpenRA ClassicProductionQueue: BuildableItems is empty
+    /// while the queue is not Enabled). Under WebRA's a unit queue waits.
+    fn queue_needs_producer(&self, q: QueueType) -> bool {
+        q.is_structure() || self.options.factory_loss == crate::world::FactoryLoss::OpenRA
+    }
+
     /// Whether `player` may produce `ty` right now: every prerequisite is met
-    /// and, for structures, a building that produces its queue (the
-    /// Construction Yard) stands. OpenRA: the item is in `BuildableItems()`,
-    /// which is empty while a classic queue has no producer.
+    /// and, where the queue needs one (`queue_needs_producer`), a building
+    /// that produces its queue (for structures the Construction Yard)
+    /// stands. OpenRA: the item is in `BuildableItems()`, which is empty
+    /// while a classic queue has no producer.
     pub fn can_produce(&self, player: u8, ty: u16) -> bool {
         let q = self.rules.actors[ty as usize].queue;
-        self.availability(player, ty).enabled && (!q.is_structure() || self.has_producer(player, q))
+        self.availability(player, ty).enabled && (!self.queue_needs_producer(q) || self.has_producer(player, q))
     }
 
     /// Whether `player` can queue one more `ty`: `can_produce` within its
@@ -392,11 +404,35 @@ impl World {
         }
     }
 
+    /// OpenRA ClassicProductionQueue.Tick under OpenRA's factory loss rule: a
+    /// queue whose player has no structure of its type left is not Enabled
+    /// and ClearQueue empties it, refunding everything paid for every item
+    /// (a finished one in full), without a notification.
+    fn clear_disabled_queues(&mut self, player: u8) {
+        if self.options.factory_loss != crate::world::FactoryLoss::OpenRA {
+            return;
+        }
+        for qi in 0..crate::rules::QUEUE_COUNT {
+            let q = QueueType::from_index(qi);
+            if self.players[player as usize].queues[qi].items.is_empty() || self.has_producer(player, q) {
+                continue;
+            }
+            let items = std::mem::take(&mut self.players[player as usize].queues[qi].items);
+            for item in items {
+                self.refund(player, item.paid);
+                self.note_production_refund(player, item.paid);
+            }
+            self.sound.unblock(player, qi);
+        }
+    }
+
     /// OpenRA `CancelUnbuildableItems`: every queued item that can no longer
     /// be produced is removed and what was paid for it refunded. That covers
     /// items whose prerequisites were destroyed (a half-built tank after its
     /// service depot died) and, for the Building and Defense queues, every item
-    /// once the last Construction Yard is gone. Nothing else in the queue is
+    /// once the last Construction Yard is gone (under WebRA's factory loss
+    /// rule; OpenRA's has already cleared those queues silently,
+    /// `clear_disabled_queues`). Nothing else in the queue is
     /// held up, and the items can be queued again once the prerequisites (or a
     /// new Construction Yard) are back.
     fn cancel_unbuildable(&mut self, player: u8) {
@@ -434,6 +470,7 @@ impl World {
         }
         let tick = self.tick;
         self.sound.flush_new_options(player, tick);
+        self.clear_disabled_queues(player);
         self.cancel_unbuildable(player);
         for qi in 0..crate::rules::QUEUE_COUNT {
             let q = QueueType::from_index(qi);
@@ -441,10 +478,11 @@ impl World {
                 continue;
             }
             let first_ty = self.players[player as usize].queues[qi].items[0].ty;
-            // Structure queues without a Construction Yard were emptied
-            // above. A unit queue builds while a structure of its type stands
-            // (OpenRA ClassicProductionQueue.Enabled); without one it waits
-            // (WebRA: OpenRA clears the queue with a refund, ClearQueue). The
+            // Queues without a structure of their type were emptied above
+            // (structure queues always, unit queues under OpenRA's factory
+            // loss rule). A unit queue builds while a structure of its type
+            // stands (OpenRA ClassicProductionQueue.Enabled); without one,
+            // under WebRA's rule, it waits. The
             // build time counts the structures of the item's build_at type
             // (`producer_count_in`, one at most for structures).
             let (has_factory, producers) = if q.is_structure() {

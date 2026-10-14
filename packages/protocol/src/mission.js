@@ -6,7 +6,7 @@
 // name the file by id and SHA-256 instead of carrying it; the loader fetches
 // it and refuses a file whose hash differs (the mission changed).
 
-import { GAME_SPEEDS, MOVEMENT_MODELS, SEED_MAX, SHA256_RE } from './constants.js';
+import { FACTORY_LOSS_RULES, GAME_SPEEDS, MOVEMENT_MODELS, SEED_MAX, SHA256_RE } from './constants.js';
 import { fail, int, isPlainObject, matches, object, oneOf } from './check.js';
 import { COOP_MISSIONS } from './coop-missions.js';
 
@@ -43,12 +43,13 @@ export const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** Mission lobby option keys and values (OpenRA ScriptLobbyDropdown ids and values). */
 export const MISSION_OPTION_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
 export const MISSION_OPTIONS_MAX = 8;
-export const MISSION_OPTION_KEYS = ['seed', 'gameSpeed', 'options', 'movement'];
+export const MISSION_OPTION_KEYS = ['seed', 'gameSpeed', 'options', 'movement', 'factoryLoss'];
 
 /**
- * `{ seed, gameSpeed, options: { key: value }, movement? }`, validated;
- * returns a fresh object. `movement` (MOVEMENT_MODELS) is left out by
- * mission saves and replays from before it: they play with `webra`.
+ * `{ seed, gameSpeed, options: { key: value }, movement?, factoryLoss? }`,
+ * validated; returns a fresh object. `movement` (MOVEMENT_MODELS) and
+ * `factoryLoss` (FACTORY_LOSS_RULES) are left out by mission saves and
+ * replays from before them: they play with `webra`.
  */
 export function validateMissionOptions(v, what = 'options') {
   object(v, MISSION_OPTION_KEYS, what);
@@ -67,6 +68,7 @@ export function validateMissionOptions(v, what = 'options') {
     options,
   };
   if (v.movement !== undefined) out.movement = oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`);
+  if (v.factoryLoss !== undefined) out.factoryLoss = oneOf(v.factoryLoss, FACTORY_LOSS_RULES, `${what}.factoryLoss`);
   return out;
 }
 

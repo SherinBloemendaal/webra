@@ -74,7 +74,7 @@ export function newGame(Game, replay, missionText = null) {
     game =
       replay.mode === 'mission'
         ? Game.from_mission(missionText, options)
-        : Game.from_mission(missionText, coopStart(replay.mission, replay.options.seed, replay.player ?? 0, replay.options.movement));
+        : Game.from_mission(missionText, coopStart(replay.mission, replay.options.seed, replay.player ?? 0, replay.options.movement, replay.options.factoryLoss));
   } else {
     game = replay.map ? Game.from_map(replay.map, options) : Game.from_options(options);
   }
@@ -85,13 +85,14 @@ export function newGame(Game, replay, missionText = null) {
 /**
  * `Game.from_mission` options of an online co-op mission (protocol
  * mission.js): its options, every playable player a person in slot order,
- * the player of this screen, and the lobby's movement model (left out by
- * games from before the option: the engine then plays `webra`).
+ * the player of this screen, and the lobby's movement model and factory
+ * loss rule (left out by games from before the options: the engine then
+ * plays `webra`).
  */
-export function coopStart(mission, seed, localPlayer, movement) {
+export function coopStart(mission, seed, localPlayer, movement, factoryLoss) {
   const m = coopMission(mission.id);
   if (!m) throw new Error(`${mission.id} is not a co-op mission of this version`);
-  return JSON.stringify({ seed, options: mission.options, humans: m.players, localPlayer, ...(movement ? { movement } : {}) });
+  return JSON.stringify({ seed, options: mission.options, humans: m.players, localPlayer, ...(movement ? { movement } : {}), ...(factoryLoss ? { factoryLoss } : {}) });
 }
 
 /**

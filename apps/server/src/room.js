@@ -79,6 +79,7 @@ import {
   DEFAULT_MAX_SPECTATORS,
   DEFAULT_OPTIONS,
   LEGACY_MOVEMENT,
+  LEGACY_FACTORY_LOSS,
   MAX_REJOINS,
   MAX_SPECTATORS,
   MIN_PLAYERS,
@@ -496,6 +497,8 @@ export class Room {
     this.options = { ...DEFAULT_OPTIONS, ...Object.fromEntries(Object.keys(DEFAULT_OPTIONS).map((k) => [k, rest[k] ?? DEFAULT_OPTIONS[k]])) };
     // A save from before the movement option plays the model it was made with.
     this.options.movement = rest.movement ?? LEGACY_MOVEMENT;
+    // Likewise the factory loss rule.
+    this.options.factoryLoss = rest.factoryLoss ?? LEGACY_FACTORY_LOSS;
     this.mapStates = this.map ? { [client]: 'installed' } : {};
   }
 

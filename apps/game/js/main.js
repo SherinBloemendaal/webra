@@ -697,9 +697,10 @@ async function startMission(entry, chosen, gameSpeed, lobby) {
     return lobby.showError(`Could not load the mission: ${loadErrorText(err)}`);
   }
   const speed = Object.hasOwn(SPEEDS, gameSpeed) ? gameSpeed : 'normal';
-  // Missions play OpenRA's movement model (engine/src/movement); saves and
-  // replays keep the model they were made with.
-  const options = { seed: Math.floor(Math.random() * 0x7fffffff), gameSpeed: speed, options: missionOptions(entry, chosen), movement: 'openra' };
+  // Missions play OpenRA's movement model (engine/src/movement) and factory
+  // loss rule (engine/src/production.rs); saves and replays keep the ones
+  // they were made with.
+  const options = { seed: Math.floor(Math.random() * 0x7fffffff), gameSpeed: speed, options: missionOptions(entry, chosen), movement: 'openra', factoryLoss: 'openra' };
   const recording = records
     ? { mode: 'mission', options, map: null, mapHash: null, player: 0, engine: version(), title: entry.title.slice(0, 64), mission: { id: entry.id, hash: entry.sha256 } }
     : null;

@@ -850,12 +850,14 @@ Serialized size at most 32 KiB.
   ignoring case and not the name of a built-in mode. `options` holds the
   mode keys (every lobby option but `seed` and `mapSize`: `mapStyle`,
   `biome`, `weather`, `techBuildings`, `startingCash`, `startingUnits`,
-  `techLevel`, `gameSpeed`, `timeLimit`, `fog`, `explored`, `buildRadius`,
+  `techLevel`, `gameSpeed`, `timeLimit`, `movement`, `factoryLoss`, `fog`,
+  `explored`, `buildRadius`,
   `redeployableMcv`, `oreRegrowth`, `cheats` and the other boolean
   options), each with a value the lobby options accept (docs/contracts.md
   section 3). Keys added after modes could be saved (`ADDED_PRESET_KEYS`:
   `timeLimit`, `crates`, `shortGame`, `bounty`, `separateTeamSpawns`,
-  `allyBuildRadius`, `reusableEngineers`, `techBuildings`) may be missing:
+  `allyBuildRadius`, `reusableEngineers`, `techBuildings`, `movement`,
+  `factoryLoss`) may be missing:
   they take their defaults.
 
 ### 5.9 Data export and deletion
