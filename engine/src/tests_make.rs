@@ -87,7 +87,7 @@ fn a_structure_being_built_cannot_be_sold() {
     let p = placed(&mut w, "POWR", 0, 30, 30);
     let r = w.make_ref(p);
     let mut g = crate::Game::wrap(w);
-    assert_eq!(g.sell_value(0, r), 0, "nothing to sell yet");
+    assert_eq!(g.sell_value(0, r), -1, "nothing to sell yet");
     g.world.queue_order(Order::Sell { player: 0, building: r });
     g.world.step();
     assert!(g.world.actors[p].alive, "Sellable needs !build-incomplete");
@@ -113,7 +113,7 @@ fn sold_events(w: &mut World) -> Vec<i32> {
 #[test]
 fn selling_plays_the_make_animation_backwards_and_refunds_at_the_end() {
     use crate::render::Pose;
-    use crate::sound_events::{SOLD_DONE, SOLD_STARTED};
+    use crate::sound_events::SOLD_STARTED;
     let mut w = world();
     let p = placed(&mut w, "POWR", 0, 30, 30);
     while w.build_incomplete(p) {
@@ -145,9 +145,10 @@ fn selling_plays_the_make_animation_backwards_and_refunds_at_the_end() {
     w.step();
     assert!(w.resolve(r).is_none(), "gone {n} ticks after the order");
     let info = &w.rules.actors[ty(&w, "POWR") as usize];
-    let refund = (info.cost as i64 * info.building.as_ref().unwrap().sell_refund as i64 * (max / 2) as i64 / (100 * max as i64)) as i32;
+    let refund =
+        (info.sell_value() as i64 * info.building.as_ref().unwrap().sell_refund as i64 * (max / 2) as i64 / (100 * max as i64)) as i32;
     assert_eq!(w.players[0].funds(), cash0 + refund, "refund for the health at the end, once");
-    assert_eq!(sold_events(&mut w), vec![SOLD_DONE], "the announcement at the end");
+    assert_eq!(sold_events(&mut w), vec![refund], "the announcement at the end, with the refund for the cash tick");
     let crew = w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == crate::rules::Kind::Infantry).count();
     assert!(crew > crew0, "the crew walked out at the end");
 }
@@ -373,4 +374,38 @@ fn a_paused_yard_ignores_pack_up_orders_silently() {
     }
     assert!(w.actors[yard].alive && w.actors[yard].unmake_at == 0 && w.build_incomplete(yard), "stays and unfolds again");
     assert!(!blocked(&mut w));
+}
+
+/// OpenRA's Sell activity keeps the PlayerResources of the player who owned
+/// the structure when the sale started: a script handing it to another
+/// player meanwhile does not redirect the refund, the count or the announcement.
+#[test]
+fn the_player_who_started_the_sale_is_paid() {
+    use crate::sound_events::{SoundEventKind, EVENT_STRIDE};
+    let mut w = world();
+    let p = placed(&mut w, "POWR", 0, 30, 30);
+    while w.build_incomplete(p) {
+        w.step();
+    }
+    let r = w.make_ref(p);
+    let refund = w.sell_refund(p).expect("sellable");
+    let (cash0, cash1) = (w.players[0].funds(), w.players[1].funds());
+    w.sound.set_enabled(true);
+    w.queue_order(Order::Sell { player: 0, building: r });
+    w.step();
+    w.actors[p].owner = 1; // as a script's Owner = ... would
+    while w.resolve(r).is_some() {
+        w.step();
+    }
+    assert_eq!((w.players[0].funds(), w.players[1].funds()), (cash0 + refund, cash1));
+    assert_eq!((w.player_stats(0).sold, w.player_stats(1).sold), (refund as i64, 0));
+    let done: Vec<[i32; EVENT_STRIDE]> = w
+        .sound
+        .take()
+        .chunks(EVENT_STRIDE)
+        .filter(|e| e[0] == SoundEventKind::Sold as i32 && e[5] >= 0)
+        .map(|e| e.try_into().unwrap())
+        .collect();
+    assert_eq!(done.len(), 1);
+    assert_eq!((done[0][4], done[0][5]), (0, refund), "announced for the seller");
 }

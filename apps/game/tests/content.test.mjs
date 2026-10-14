@@ -87,6 +87,7 @@ import {
   beachTile,
 } from './content-fixtures.mjs';
 import init, { Game, base_rules_json } from '../pkg/webra_sim.js';
+import { PIXEL_ART } from '../js/art/pixel-data.js';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const SPRITE_WGSL = read('../shaders/sprite.wgsl');
@@ -267,8 +268,9 @@ test('the sequences table covers the engine actors and names only files it lists
   // OpenRA's own units (its Flak Truck and Black Hawk) have no Red Alert body: WebRA's own pixel
   // art draws them, only their muzzle flash is Red Alert's. So does the neutral world art OpenRA drew itself (tools/gen_content_tables.py
   // NO_ORIGINAL: huts, ammo boxes, poles, the oil derrick, the desert and small
-  // bridges, ...); bridge huts are invisible.
-  const openraOnly = new Set(['FTRK', 'MH60',
+  // bridges, ...); bridge huts are invisible. WebRA's own actors (render-facts.js
+  // WEBRA_ACTORS: the Lightning Rod) have no original art either.
+  const openraOnly = new Set(['FTRK', 'MH60', 'LROD',
     'C11', 'OILB', 'RICE', 'RUSHOUSE', 'ASIANHUT', 'SNOWHUT', 'LHUS', 'WINDMILL', 'RAILMINE', 'CTFLAG', 'AMMOBOX1', 'AMMOBOX2',
     'AMMOBOX3', 'BRIDGE3', 'BRIDGE4', 'SBRIDGE1', 'SBRIDGE2', 'SBRIDGE3', 'SBRIDGE4', 'BRIDGEHUT', 'BRIDGEHUT.small', 'UTILPOL1', 'UTILPOL2', 'TANKTRAP1', 'TANKTRAP2', 'GMINE']);
   for (const a of BASE.actors) {
@@ -561,8 +563,11 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
     // original power plant's; WebRA's structures fade in instead.
     const powr = ACTORS.findIndex((a) => a.id === 'POWR');
     assert.ok(atlas.makeArt.includes(powr));
-    assert.deepEqual(atlas.makeArt, ACTORS.flatMap((a, t) => (a.kind === 'building' && out.slots.get(2 * t)?.poses[POSE.MAKE].mode === MODE.ONCE ? [t] : [])));
-    assert.deepEqual(plain.makeArt, []);
+    // The original art's make animations, and WebRA's pixel art Lightning Rod's (no original art for it).
+    const lrod = ACTORS.findIndex((a) => a.id === 'LROD');
+    const original = ACTORS.flatMap((a, t) => (a.kind === 'building' && out.slots.get(2 * t)?.poses[POSE.MAKE].mode === MODE.ONCE ? [t] : []));
+    assert.deepEqual(atlas.makeArt, [...original, lrod].sort((x, y) => x - y));
+    assert.deepEqual(plain.makeArt, [ACTORS.findIndex((a) => a.id === 'LROD')], "WebRA's pixel art Lightning Rod only");
     assert.equal(atlas.overlays[ACTORS.findIndex((a) => a.id === 'POWR')], 0, 'the original power plant has no WebRA layer');
     assert.ok(plain.overlays[ACTORS.findIndex((a) => a.id === 'POWR')] > 0);
     // Slots without original art are WebRA sprites as before.
@@ -1673,6 +1678,8 @@ test('the rules make times are one tick per frame of the make sequences OpenRA p
   }
   const ticks = Object.fromEntries(made.map((a) => [a.id, a.building.make_ticks]));
   assert.deepEqual([ticks.FACT, ticks.WEAP, ticks.POWR, ticks.FTUR, ticks.PROC, ticks.MSLO], [32, 15, 13, 28, 10, 15]);
+  // WebRA's own Lightning Rod: the length of its pixel art's make sequence.
+  assert.equal(ticks.LROD, PIXEL_ART.LROD.body.make.length);
   // Fakes take their real structure's time; walls have none.
   assert.equal(ticks.FPWR, ticks.POWR);
   assert.equal(ticks.SBAG, undefined);

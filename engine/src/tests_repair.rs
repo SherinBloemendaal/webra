@@ -57,7 +57,7 @@ fn step_cost(w: &World, i: usize, hp: i32) -> i32 {
     let info = &w.rules.actors[w.actors[i].ty as usize];
     let b = info.building.as_ref().unwrap();
     let r = b.repairable.as_ref().unwrap();
-    ((hp as i64 * r.percent as i64 * b.value as i64) / (info.hp as i64 * 100)).max(1) as i32
+    ((hp as i64 * r.percent as i64 * info.sell_value() as i64) / (info.hp as i64 * 100)).max(1) as i32
 }
 
 fn events(w: &mut World, kind: SoundEventKind) -> Vec<[i32; EVENT_STRIDE]> {
@@ -75,8 +75,8 @@ fn red_alert_repair_numbers() {
     assert_eq!(r.bonuses, vec![100, 150, 175, 200, 220, 240, 260, 280, 300]);
     // Walls have no repair button; the refinery's value is its CustomSellValue.
     assert!(w.rules.actors[ty(&w, "SBAG") as usize].building.as_ref().unwrap().repairable.is_none());
-    assert_eq!(w.rules.actors[ty(&w, "PROC") as usize].building.as_ref().unwrap().value, 300);
-    assert_eq!(w.rules.actors[ty(&w, "TSLA") as usize].building.as_ref().unwrap().value, w.rules.actors[ty(&w, "TSLA") as usize].cost);
+    assert_eq!(w.rules.actors[ty(&w, "PROC") as usize].sell_value(), 300);
+    assert_eq!(w.rules.actors[ty(&w, "TSLA") as usize].sell_value(), w.rules.actors[ty(&w, "TSLA") as usize].cost);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn repair_heals_a_step_every_interval_and_charges_per_step() {
     w.step();
     // The first step comes at once, then one every interval + 1 ticks (OpenRA counts down to 0).
     let cost = step_cost(&w, b, 700);
-    assert_eq!(cost, 700 * 20 * w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().value / (max * 100));
+    assert_eq!(cost, 700 * 20 * w.rules.actors[w.actors[b].ty as usize].sell_value() / (max * 100));
     assert_eq!(w.actors[b].hp, max / 2 + 700);
     assert_eq!(w.players[0].funds(), 10_000 - cost);
     assert!(w.actors[b].repair_active);
@@ -120,7 +120,7 @@ fn a_full_repair_costs_about_the_repair_percent_of_the_value_and_then_stops() {
     run(&mut w, 25 * 70);
     assert_eq!(w.actors[b].hp, max);
     assert_eq!(w.players[0].funds(), 10_000 - bill);
-    let value = w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().value;
+    let value = w.rules.actors[w.actors[b].ty as usize].sell_value();
     assert!(bill * 100 >= value * 18 && bill * 100 <= value * 21, "{bill} is about 20% of {value}");
     assert!(w.actors[b].repairers.is_empty() && !w.actors[b].repair_active, "repairing ended");
     // Nothing more is charged.
@@ -421,6 +421,159 @@ fn beacons_stay_out_of_the_state_hash() {
     a.step();
     b.step();
     assert_eq!(a.state_hash(), b.state_hash());
+}
+
+// ---- Bulk repair (WebRA addition, Order::RepairBuildings) ----------------------------------
+
+fn refs(w: &World, ids: &[usize]) -> Vec<u32> {
+    ids.iter().map(|&i| w.make_ref(i)).collect()
+}
+
+#[test]
+fn bulk_repair_starts_every_damaged_own_structure_and_announces_once() {
+    let mut w = world(true);
+    w.sound.set_enabled(true);
+    let a = building(&mut w, "POWR", 0, 20, 20);
+    let b = building(&mut w, "TSLA", 0, 26, 20);
+    let full = building(&mut w, "POWR", 0, 32, 20);
+    let wall = building(&mut w, "SBAG", 0, 38, 20);
+    let ally = building(&mut w, "POWR", 1, 20, 30);
+    let enemy = building(&mut w, "POWR", 2, 30, 40);
+    for i in [a, b, ally, enemy, wall] {
+        w.actors[i].hp = max_hp(&w, i) / 2;
+    }
+    set_cash(&mut w, 0, 10_000);
+    w.sound.take();
+    let ids = refs(&w, &[a, b, full, wall, ally, enemy, a]);
+    w.queue_order(Order::RepairBuildings { player: 0, ids });
+    w.step();
+    assert_eq!(w.actors[a].repairers, vec![0]);
+    assert_eq!(w.actors[b].repairers, vec![0]);
+    for i in [full, wall, ally, enemy] {
+        assert!(w.actors[i].repairers.is_empty(), "full health, walls, allied and enemy structures are skipped");
+    }
+    let said = events(&mut w, SoundEventKind::RepairStarted);
+    assert_eq!(said.len(), 1, "one Repairing line for the group");
+    assert_eq!(said[0][4], 0, "to the player who started repairing");
+}
+
+#[test]
+fn bulk_repair_stops_all_when_all_are_repairing_and_completes_a_mixed_group() {
+    let mut w = world(false);
+    w.sound.set_enabled(true);
+    let a = building(&mut w, "POWR", 0, 20, 20);
+    let b = building(&mut w, "POWR", 0, 26, 20);
+    for i in [a, b] {
+        w.actors[i].hp = max_hp(&w, i) / 4;
+    }
+    set_cash(&mut w, 0, 100_000);
+    // One is repairing already: the group toggle starts the other, the first keeps going.
+    w.queue_order(Order::RepairBuilding { player: 0, building: w.make_ref(a) });
+    w.step();
+    w.sound.take();
+    w.queue_order(Order::RepairBuildings { player: 0, ids: refs(&w, &[a, b]) });
+    w.step();
+    assert_eq!((w.actors[a].repairers.clone(), w.actors[b].repairers.clone()), (vec![0], vec![0]));
+    assert_eq!(events(&mut w, SoundEventKind::RepairStarted).len(), 1);
+    // All repairing: the same order stops all, silently (Red Alert has no "stopped" line).
+    w.queue_order(Order::RepairBuildings { player: 0, ids: refs(&w, &[b, a]) });
+    w.step();
+    assert!(w.actors[a].repairers.is_empty() && w.actors[b].repairers.is_empty());
+    assert!(!w.actors[a].repair_active && !w.actors[b].repair_active);
+    assert!(events(&mut w, SoundEventKind::RepairStarted).is_empty());
+    let hp = (w.actors[a].hp, w.actors[b].hp);
+    run(&mut w, 100);
+    assert_eq!((w.actors[a].hp, w.actors[b].hp), hp, "no more repair steps");
+}
+
+#[test]
+fn bulk_repair_ignores_other_players_orders_and_empty_or_stale_lists() {
+    let mut w = world(true);
+    let a = building(&mut w, "POWR", 0, 20, 20);
+    w.actors[a].hp = max_hp(&w, a) / 2;
+    // Player 1 (an ally) cannot bulk repair player 0's structure, an enemy neither.
+    w.queue_order(Order::RepairBuildings { player: 1, ids: refs(&w, &[a]) });
+    w.queue_order(Order::RepairBuildings { player: 2, ids: refs(&w, &[a]) });
+    w.queue_order(Order::RepairBuildings { player: 0, ids: vec![] });
+    w.queue_order(Order::RepairBuildings { player: 0, ids: vec![NONE, 12345] });
+    w.step();
+    assert!(w.actors[a].repairers.is_empty());
+    // Undamaged structures only: nothing starts and nothing is charged.
+    w.actors[a].hp = max_hp(&w, a);
+    let cash = w.players[0].funds();
+    w.queue_order(Order::RepairBuildings { player: 0, ids: refs(&w, &[a]) });
+    run(&mut w, 30);
+    assert!(w.actors[a].repairers.is_empty());
+    assert_eq!(w.players[0].funds(), cash);
+}
+
+#[test]
+fn bulk_repair_pays_per_step_like_single_repairs() {
+    let mut single = world(false);
+    let mut bulk = world(false);
+    let mut ids = Vec::new();
+    for w in [&mut single, &mut bulk] {
+        let a = building(w, "TSLA", 0, 20, 20);
+        let b = building(w, "POWR", 0, 26, 20);
+        for i in [a, b] {
+            w.actors[i].hp = max_hp(w, i) / 3;
+        }
+        set_cash(w, 0, 1500);
+        ids = vec![a, b];
+    }
+    for &i in &ids {
+        single.queue_order(Order::RepairBuilding { player: 0, building: single.make_ref(i) });
+    }
+    bulk.queue_order(Order::RepairBuildings { player: 0, ids: refs(&bulk, &ids) });
+    for _ in 0..400 {
+        single.step();
+        bulk.step();
+        assert_eq!(single.players[0].funds(), bulk.players[0].funds());
+        for &i in &ids {
+            assert_eq!(single.actors[i].hp, bulk.actors[i].hp);
+            assert_eq!(single.actors[i].repairers, bulk.actors[i].repairers);
+        }
+    }
+    assert!(bulk.players[0].funds() < 1500);
+}
+
+#[test]
+fn bulk_repair_orders_cross_the_wire_and_are_capped() {
+    let o = Order::RepairBuildings { player: 3, ids: vec![1, 2] };
+    let json = serde_json::to_string(&o).unwrap();
+    assert_eq!(json, r#"{"o":"repair_buildings","player":3,"ids":[1,2]}"#);
+    let back: Order = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.player(), 3);
+    assert!(o.is_reasonable());
+    assert!(!Order::RepairBuildings { player: 0, ids: vec![1; 2001] }.is_reasonable());
+}
+
+#[test]
+fn bulk_repair_queries_for_the_selection_and_the_repair_box() {
+    let mut w = world(true);
+    let a = building(&mut w, "POWR", 0, 20, 20);
+    let b = building(&mut w, "POWR", 0, 40, 20);
+    let full = building(&mut w, "POWR", 0, 24, 20);
+    let ally = building(&mut w, "POWR", 1, 20, 24);
+    let tank = w.spawn_unit(ty(&w, "2TNK"), 0, cell_center(22), cell_center(28), 0);
+    for i in [a, b, ally, tank] {
+        w.actors[i].hp = max_hp(&w, i) / 2;
+    }
+    w.step();
+    let mut g = Game::wrap(w);
+    let r = |g: &Game, i: usize| g.world.make_ref(i);
+    let sel = vec![r(&g, tank), r(&g, b), r(&g, full), r(&g, ally), r(&g, a)];
+    assert_eq!(g.repair_targets(0, sel.clone()), vec![r(&g, b), r(&g, a)], "own damaged structures, in selection order");
+    assert_eq!(g.repair_targets(1, sel), vec![r(&g, ally)], "for player 1 only their own structure");
+    // A box around cells 18..30 x 18..30: a, full, ally and the tank, not b.
+    let c = 24.0;
+    let boxed = g.repair_box(0, 18.0 * c, 18.0 * c, 30.0 * c, 30.0 * c);
+    assert_eq!(boxed, vec![r(&g, a)]);
+    assert!(g.repair_box(0, 50.0 * c, 50.0 * c, 51.0 * c, 51.0 * c).is_empty());
+    // Through the Game API: the order queues and toggles both.
+    g.repair_buildings(0, vec![r(&g, a), r(&g, b)]);
+    g.world.step();
+    assert_eq!((g.world.actors[a].repairers.clone(), g.world.actors[b].repairers.clone()), (vec![0], vec![0]));
 }
 
 // ---- Game API -----------------------------------------------------------------------------

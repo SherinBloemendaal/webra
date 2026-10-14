@@ -28,7 +28,9 @@
 //              art/pixel.js, and `webra` names its pose); when the
 //              player's files do have such a file (render-facts.js
 //              OPENRA_MADE_FILES) every row using it is wrong instead, and
-//              so is a row "(files)" naming it
+//              so is a row "(files)" naming it; WebRA's own actors
+//              (render-facts.js WEBRA_ACTORS) are webra-only throughout,
+//              a row per pose of their pixel art
 //   n/a        OpenRA draws it in a situation WebRA never has (vehicles
 //              dropped by parachute)
 //
@@ -37,7 +39,7 @@
 // and frame every image came from, so every frame is checked too.
 
 import { ACTOR_ART, CURSOR_ART, EXPLOSION_ART, EXPLOSIONS, RESOURCES, SEQUENCES, SMUDGES, SPECIAL_ART, TERRAIN, TREES } from './tables.js';
-import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS } from './render-facts.js';
+import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS, WEBRA_ACTORS } from './render-facts.js';
 import { explosionSlot, muzzleSlot, originalSlots, specialSlot } from './atlas.js';
 import { originalCursorFrames } from './cursors.js';
 import { CURSOR_NAMES, COMMAND_CURSOR_NAMES } from '../cursors.js';
@@ -86,6 +88,28 @@ function ownPixelArt(id, role, seq, image) {
   }
   if (art?.cameo && spec?.part === 'cameo') return { webra: `pixel ${id.toLowerCase()}.cameo`, where: 'cameo', note };
   return { note: 'OpenRA made this art (bits.txt); Red Alert has none' };
+}
+
+/**
+ * The rows of one of WebRA's own actors (render-facts.js WEBRA_ACTORS:
+ * data/webra/rules.yaml, no OpenRA or Red Alert art): a row per pose of its
+ * pixel art (art/pixel.js) and its cameo, named like OpenRA's roles.
+ */
+function webraActorRows(id) {
+  const art = pixelArtOf(id);
+  const note = "WebRA's own actor (data/webra/rules.yaml), no OpenRA or Red Alert art: WebRA's own pixel art in Red Alert's style";
+  if (!art) return [{ role: 'body', note: "WebRA's own actor (data/webra/rules.yaml), no OpenRA or Red Alert art" }];
+  const name = id.toLowerCase();
+  const roles = { idle: 'body', damaged: 'body-damaged', make: 'make' };
+  const rows = [];
+  for (const part of ['body', 'second']) {
+    for (const pose of Object.keys(art[part] ?? {})) {
+      const role = part === 'body' ? (roles[pose] ?? pose) : `second-${pose}`;
+      rows.push({ role, webra: `pixel ${name}.${part === 'body' ? pose : `second.${pose}`}`, where: `${part}.${pose}`, note });
+    }
+  }
+  if (art.cameo) rows.push({ role: 'icon', webra: `pixel ${name}.cameo`, where: 'cameo', note });
+  return rows;
 }
 
 export const ROLES = Object.freeze({
@@ -387,7 +411,11 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
     const facts = RENDER_FACTS[a.id];
     const entry = actorArt[a.id];
     if (!facts) {
-      row({ actor: a.id, role: 'body', openra: null, status: 'webra-only', note: 'not an OpenRA actor' });
+      if (WEBRA_ACTORS.includes(a.id)) {
+        for (const r of webraActorRows(a.id)) row({ actor: a.id, openra: null, status: 'webra-only', ...r });
+      } else {
+        row({ actor: a.id, role: 'body', openra: null, status: 'webra-only', note: 'not an OpenRA actor' });
+      }
       continue;
     }
     const rotors = rotorPairs(facts.parts);

@@ -43,18 +43,18 @@ export function worldTooltipPosition(mouse, size, viewport) {
  * show). `nameOf(owner)` and `colorOf(owner)` ([r, g, b] 0..1) name and
  * colour the owner row; `refund` is the money selling the actor would give
  * when the sell mode is on and it may be sold (OpenRA Sellable's tooltip
- * text, for the owner only), else 0.
+ * text, for the owner only; walls show $0), else -1.
  * @param {null | { kind: string, label: string, id?: number | null, owner?: number | null, faction?: string | null, extras?: string[] }} tip
  * @returns {null | { label: string, owner: null | { name: string, color: string, faction: string }, extras: string[] }}
  */
-export function worldTooltipContent(tip, { nameOf, colorOf, refund = 0 }) {
+export function worldTooltipContent(tip, { nameOf, colorOf, refund = -1 }) {
   if (!tip || !tip.label) return null;
   const owner =
     tip.owner === null || tip.owner === undefined
       ? null
       : { name: nameOf(tip.owner), color: cssColor(colorOf(tip.owner)), faction: tip.faction ?? '' };
   const extras = [...(tip.extras ?? [])];
-  if (tip.kind === 'actor' && refund > 0) extras.push(`Refund: $${refund}`);
+  if (tip.kind === 'actor' && refund >= 0) extras.push(`Refund: $${refund}`);
   return { label: tip.label, owner, extras };
 }
 
@@ -154,7 +154,7 @@ export class WorldTooltip {
       tip = null;
     }
     // OpenRA Sellable: "Refund: $" for the owner while the sell order generator is active.
-    const refund = inp.mode === 'sell' && tip?.kind === 'actor' && tip.id !== null && tip.id !== undefined ? this.game.sell_value(this.player, tip.id) : 0;
+    const refund = inp.mode === 'sell' && tip?.kind === 'actor' && tip.id !== null && tip.id !== undefined ? this.game.sell_value(this.player, tip.id) : -1;
     const content = worldTooltipContent(tip, { nameOf: this.nameOf, colorOf: this.colorOf, refund });
     if (!content) {
       this.hide();

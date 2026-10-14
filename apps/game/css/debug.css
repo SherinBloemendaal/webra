@@ -150,3 +150,21 @@
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
 }
+
+/* Performance capture (js/debug.js buildCapture). */
+.debug-capture-head {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--ui-px));
+}
+
+.debug-capture-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(8 * var(--ui-px));
+}
+
+.debug-capture-status {
+  margin-top: calc(6 * var(--ui-px));
+}

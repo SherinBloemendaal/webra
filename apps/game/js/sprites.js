@@ -41,7 +41,7 @@ import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
 import { EXPLOSIONS, FAKE_ACTORS, MUZZLE_ACTORS } from './content/tables.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from './art/animated.js';
-import { drawPixelCameo, pixelSlots, pixelUnitDraw } from './art/pixel.js';
+import { drawPixelCameo, pixelBox, pixelSlots, pixelUnitDraw } from './art/pixel.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow, paintFakeMark } from './art/cameo.js';
 import { INFANTRY_TIMED_POSES, MODE, POSE, POSE_COUNT, POSE_STRIDE, onceTicks, packSprite } from './content/sequences.js';
 
@@ -537,7 +537,9 @@ export function actorSprites(a) {
     const anim = buildingAnim(key);
     const turret = BUILDING_TURRET[key] ?? null;
     const second = turret ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null);
-    return { body: [a.width * 24, a.height * 24, draw], second, turret: !!turret };
+    // The footprint; WebRA's pixel art that reaches past it (a mast) draws into a box grown around it.
+    const [w, h] = pixelBox({ ...a, id: key }) ?? [a.width * 24, a.height * 24];
+    return { body: [w, h, draw], second, turret: !!turret };
   }
   if (a.kind === 'crate') {
     // Crates (art/leftovers.js): the land image, then the water image.

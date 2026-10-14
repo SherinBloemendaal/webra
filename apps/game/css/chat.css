@@ -17,7 +17,17 @@
 }
 
 .chat-panel.above-replay-bar {
-  bottom: calc(96 * var(--ui-px));
+  /* --replay-bar-height: the replay bar's height (js/main.js), more rows on phones. */
+  bottom: max(calc(96 * var(--ui-px)), calc(var(--replay-bar-height, 0px) + 24px));
+}
+
+/* The Chat button of the HUD row (js/main.js): touch screens only, which have no Enter key. */
+.hud-buttons .hud-chat {
+  display: none;
+}
+
+body.touch .hud-buttons .hud-chat {
+  display: block;
 }
 
 .chat-extras {

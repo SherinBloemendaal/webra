@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAtlas, animationPlan, workingPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
+import { actorSprites, buildAtlas, animationPlan, workingPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
 import { MODE, POSE, POSE_COUNT, onceTicks, packSprite } from '../js/content/sequences.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from '../js/art/animated.js';
@@ -174,8 +174,9 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
 for (const a of buildings) {
   test(`building art ${a.id}: finite, inside its box, team coloured, deterministic`, () => {
     const key = keyOf(a.id);
-    const w = a.width * 24;
-    const h = a.height * 24;
+    // The footprint box, or the taller one of pixel art reaching past it (art/pixel.js pixelBox: the Lightning Rod).
+    const [w, h] = actorSprites(a).body;
+    assert.ok(w >= a.width * 24 && h >= a.height * 24, `${a.id} box covers the footprint`);
     const draw = drawOf(a);
     // The neutral world needs no team colour (OpenRA draws it with fixed palettes; captured
     // tech buildings show their owner's stripe) and looks like the map's biome.
@@ -344,8 +345,10 @@ test('the silo hatch is a working layer the engine plays once for a launch, at r
       // The silo plays the same 7 frames at 80 ms as OpenRA's active sequence: 14 ticks.
       assert.equal(onceTicks({ length, fps }), 14);
     }
-    // WebRA's vector structures have no make animation: they fade in over the rules' make time.
-    assert.deepEqual(makeArt, []);
+    // WebRA's vector structures have no make animation (they fade in over the
+    // rules' make time); its pixel art may (the Lightning Rod's).
+    assert.deepEqual(makeArt, actors.flatMap((a, t) => (a.kind === 'building' && pixelSlots(actors).get(2 * t)?.poses[POSE.MAKE].mode === MODE.ONCE ? [t] : [])));
+    assert.ok(makeArt.includes(actors.findIndex((a) => a.id === 'LROD')));
   } finally {
     delete globalThis.document;
   }

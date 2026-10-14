@@ -7,9 +7,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PIXEL_ART, PIXEL_INDICES, PIXEL_PALETTE } from '../js/art/pixel-data.js';
-import { PIXEL_RES, pixelBodyArt, pixelDraw, pixelFrame, pixelLookup, pixelPartArt, pixelSlots, pixelUnitDraw, drawPixelCameo } from '../js/art/pixel.js';
+import { PIXEL_RES, pixelBodyArt, pixelBox, pixelDraw, pixelFrame, pixelLookup, pixelPartArt, pixelSlots, pixelUnitDraw, drawPixelCameo } from '../js/art/pixel.js';
 import { worldDraw } from '../js/art/world.js';
-import { buildAtlas, drawCameo, FRAME_FLOATS } from '../js/sprites.js';
+import { actorSprites, buildAtlas, drawCameo, FRAME_FLOATS } from '../js/sprites.js';
+import { BUILDING_DRAW, BUILDING_SIZE } from '../js/art/buildings.js';
 import { prerenderedSlots } from '../js/gameart.js';
 import { MODE, POSE, POSE_COUNT, facingFrame } from '../js/content/sequences.js';
 import { REMAP_END, REMAP_START, ACTOR_SHADOW } from '../js/content/palette.js';
@@ -18,6 +19,7 @@ import { pixelDocument } from './content-fixtures.mjs';
 const OILB = { id: 'OILB', kind: 'building', width: 2, height: 2, centerOffset: [0, 0] };
 const MH60 = { id: 'MH60', kind: 'aircraft', width: 1, height: 1 };
 const FTRK = { id: 'FTRK', kind: 'vehicle', width: 1, height: 1 };
+const LROD = { id: 'LROD', kind: 'building', width: 1, height: 1, centerOffset: [0, 0] };
 const CELL = 24;
 const SHADOW = ACTOR_SHADOW[0];
 const isRemap = (v) => v >= REMAP_START && v <= REMAP_END;
@@ -42,6 +44,36 @@ test('the oil derrick is two frames (idle, damaged) within its 2x2 footprint', (
     assert.ok(f.left >= -CELL && f.top >= -CELL && f.left + f.width <= CELL && f.top + f.height <= CELL, 'inside the footprint');
   }
   assert.notDeepEqual(idle.data, damaged.data, 'the damaged frame differs');
+});
+
+test('the Lightning Rod is idle, damaged and a 12 frame make animation on its 1x1 footprint, its mast two cells high', () => {
+  const art = PIXEL_ART.LROD;
+  assert.ok(art, 'LROD has pixel art');
+  assert.deepEqual(art.offset, [0, 0], 'centred on the footprint');
+  assert.deepEqual(art.body, { idle: { start: 0 }, damaged: { start: 1 }, make: { start: 2, length: 12 } });
+  assert.equal(art.second, undefined);
+  assert.equal(art.frames.length, 14);
+  const frames = art.frames.map((_, k) => pixelFrame(art, k));
+  for (const [k, f] of frames.entries()) {
+    assert.equal(f.data.length, f.width * f.height, `frame ${k}`);
+    // On the cell (its west and north edges), the cast shadow to the south east.
+    assert.ok(f.left >= -CELL / 2 && f.top + f.height <= CELL, `frame ${k} on its cell`);
+  }
+  // Selectable DecorationBounds 1024, 2048, 0, -512: about 36 pixels above the cell's centre.
+  const idle = frames[0];
+  assert.ok(idle.top <= -34 && idle.top >= -40, `the rod's tip at ${idle.top}`);
+  assert.ok(frames[1].top > idle.top + 6, 'the damaged mast is bent over');
+  // The rod and its crown are copper, the damaged rod too.
+  const pal = Uint8Array.from(atob(PIXEL_PALETTE), (ch) => ch.charCodeAt(0));
+  const copper = (v) => v > 4 && !isRemap(v) && pal[v * 3] > pal[v * 3 + 2] + 60 && pal[v * 3 + 1] < pal[v * 3] * 0.75;
+  for (const k of [0, 1]) assert.ok([...used(art, k)].some(copper), `frame ${k}: copper`);
+  // The make animation builds up: the pad, the plinth, the mast rising, the rod last; the idle frame adds the cable.
+  const tops = frames.slice(2).map((f) => f.top);
+  for (let k = 1; k < tops.length; k++) assert.ok(tops[k] <= tops[k - 1], `make ${k} is no lower than make ${k - 1}`);
+  assert.ok(tops[0] >= -CELL / 2, 'make 0: the ground only');
+  assert.equal(tops[tops.length - 1], idle.top, 'the last make frame is the whole rod');
+  assert.equal(new Set(frames.map((f) => f.data.join())).size, 14, 'every frame differs');
+  assert.ok(![...used(art, 2)].some(isRemap), 'make 0: no plinth, no owner\'s colour yet');
 });
 
 test('the Black Hawk has 32 body facings, 8 ground and 4 air rotor frames and a cameo', () => {
@@ -137,7 +169,7 @@ test('every frame uses the palette with Red Alert conventions, the owner\'s colo
     });
   }
   // The owner's colour on every body and turret frame (not on the rotor blades).
-  const owner = { OILB: [0, 1], MH60: range(0, 32), FTRK: range(0, 64) };
+  const owner = { OILB: [0, 1], LROD: [0, 1, ...range(6, 8)], MH60: range(0, 32), FTRK: range(0, 64) };
   for (const [id, frames] of Object.entries(owner)) {
     for (const k of frames) assert.ok([...used(PIXEL_ART[id], k)].some(isRemap), `${id} frame ${k}: the owner's colour`);
   }
@@ -146,6 +178,7 @@ test('every frame uses the palette with Red Alert conventions, the owner\'s colo
   // shadow is drawn by the engine (its sprite, dark, on the ground), and a
   // turret's would fall on its own body.
   for (const k of [0, 1]) assert.ok(used(PIXEL_ART.OILB, k).has(SHADOW), `OILB ${k}: casts a shadow`);
+  for (const k of range(0, 14).filter((k) => k < 2 || k > 4)) assert.ok(used(PIXEL_ART.LROD, k).has(SHADOW), `LROD ${k}: casts a shadow`);
   for (const k of range(0, 32)) assert.ok(used(PIXEL_ART.FTRK, k).has(SHADOW), `FTRK body ${k}: casts a shadow`);
   for (const k of range(32, 32)) assert.ok(!used(PIXEL_ART.FTRK, k).has(SHADOW), `FTRK turret ${k}: no shadow`);
   for (const k of range(0, 32)) assert.ok(!used(PIXEL_ART.MH60, k).has(SHADOW), `MH60 body ${k}: no shadow`);
@@ -156,7 +189,7 @@ test('every frame uses the palette with Red Alert conventions, the owner\'s colo
 });
 
 test('cameos are opaque 64 x 48 pictures in their own colours', () => {
-  for (const id of ['MH60', 'FTRK']) {
+  for (const id of ['MH60', 'FTRK', 'LROD']) {
     const [w, h, b64] = PIXEL_ART[id].cameo;
     assert.deepEqual([w, h], [64, 48], id);
     const data = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
@@ -177,6 +210,9 @@ test('cameos are opaque 64 x 48 pictures in their own colours', () => {
   assert.equal(drawPixelCameo(ctx, 'HIND', 64, 48), false);
   fills.length = 0;
   assert.equal(drawCameo(ctx, 'ftrk', 64, { height: 48 }), true, 'the sidebar cameo is the pixel picture');
+  assert.equal(fills.length, 64 * 48);
+  fills.length = 0;
+  assert.equal(drawCameo(ctx, 'LROD', 64, { height: 48 }), true, 'the Lightning Rod\'s cameo too');
   assert.equal(fills.length, 64 * 48);
 });
 
@@ -248,6 +284,39 @@ test('the derrick\'s pose table has the idle and damaged frames, centred on the 
   }
 });
 
+test('the Lightning Rod\'s pose table: idle, damaged, the make animation once from placement', () => {
+  const art = pixelBodyArt(LROD);
+  assert.equal(art.poses.length, POSE_COUNT);
+  assert.equal(art.images.length, 14);
+  const imgOf = (pose) => art.images[art.poses[pose].frames[0]];
+  const idle = imgOf(POSE.IDLE);
+  assert.notEqual(imgOf(POSE.DAMAGED), idle);
+  assert.equal(imgOf(POSE.STILL), idle);
+  assert.equal(imgOf(POSE.DAMAGED_STILL), imgOf(POSE.DAMAGED));
+  const make = art.poses[POSE.MAKE];
+  // OpenRA WithMakeAnimation: the make sequence once (40 ms a frame), then idle; within the ages the engine reports.
+  assert.deepEqual([make.mode, make.length, make.facings, make.fps], [MODE.ONCE, 12, 1, 25]);
+  assert.ok(Math.ceil((make.length * 25) / make.fps) < 127, 'played within MAX_POSE_AGE ticks');
+  assert.equal(new Set(make.frames).size, 12);
+  assert.ok(!make.frames.includes(art.poses[POSE.IDLE].frames[0]), 'the make frames are their own');
+  // Placed on the cell: the image's bottom at the cell's south edge, the mast above it.
+  const h = idle.height * idle.scale;
+  assert.ok(Math.abs(idle.offset[1] + h / 2 - pixelFrame(PIXEL_ART.LROD, 0).top - pixelFrame(PIXEL_ART.LROD, 0).height) <= 1);
+  assert.ok(idle.offset[1] - h / 2 <= -34, 'the mast rises over the cell');
+  // In the atlas: the body slot heads its pose table, the second slot stays empty.
+  const other = { id: 'E1', kind: 'infantry', width: 1, height: 1 };
+  assert.deepEqual([...pixelSlots([other, LROD]).keys()], [2]);
+  globalThis.document = pixelDocument();
+  try {
+    const atlas = buildAtlas([other, LROD], {});
+    assert.equal(atlas.frames[2 * FRAME_FLOATS + 13], POSE_COUNT, 'slot 2 heads a pose table');
+    assert.deepEqual(atlas.pixel, [2]);
+    assert.equal(atlas.poses, true, 'the engine reports poses: the make animation plays');
+  } finally {
+    delete globalThis.document;
+  }
+});
+
 test('the atlas uses the pixel art where no pack or original art has the slot', () => {
   globalThis.document = pixelDocument();
   try {
@@ -303,6 +372,17 @@ test('icons paint the pixel art pixel by pixel', () => {
   assert.ok(fills.some((r) => r[4].startsWith('team(')), 'the owner\'s colour');
   assert.ok(fills.some((r) => r[4].startsWith('rgba(0,0,0,')), 'the shadow');
   assert.equal(fills.filter((r) => r[4].startsWith('team(')).length, [...f.data].filter(isRemap).length);
+  // The Lightning Rod's mast stands above its cell: its icon box grows evenly round the footprint, so all of it shows.
+  const [bw, bh] = pixelBox(LROD);
+  assert.deepEqual(pixelBox(OILB), [48, 48], 'the derrick fits its footprint');
+  assert.ok(bw >= 24 && bh >= 72 && bw % 2 === 0 && bh % 2 === 0, `${bw} x ${bh}`);
+  assert.deepEqual(actorSprites(LROD).body.slice(0, 2), [bw, bh], 'the building sprite uses that box');
+  assert.equal(actorSprites(LROD).body[2], BUILDING_DRAW.LROD);
+  assert.deepEqual(BUILDING_SIZE.LROD, [1, 1]);
+  const rod = paint(BUILDING_DRAW.LROD);
+  assert.equal(rod.length, [...pixelFrame(PIXEL_ART.LROD, 0).data].filter((v) => v !== 0).length);
+  for (const [x, y] of rod) assert.ok(x >= 0 && y >= 0 && x < bw && y < bh, 'inside its box');
+  assert.ok(rod.some((r) => r[4].startsWith('team(')), 'the owner\'s colour band');
   // Units face north in one box centred on them: the body, then the turret or the stopped rotor.
   for (const [id, second] of [['MH60', 32], ['FTRK', 32]]) {
     const d = pixelUnitDraw(id, id === 'FTRK' ? [-298, 0] : [0, 0]);

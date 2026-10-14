@@ -24,6 +24,9 @@ fn events(w: &mut World) -> Vec<[i32; EVENT_STRIDE]> {
 fn silo_world() -> World {
     let mut w = World::new(17, 64, &[("russia", false), ("england", false)]);
     w.clear_neutral_world();
+    // Clear skies: a lightning strike on a power plant (lightning.rs) would
+    // black out the base and hold up the full charge this test counts.
+    w.env = crate::weather::Environment::new(w.env.biome, crate::weather::WeatherMode::Off, 17);
     let (sx, sy) = w.players[0].start;
     for (id, dx, dy) in
         [("APWR", 4, 0), ("APWR", 4, 4), ("APWR", 8, 0), ("BARR", 8, 4), ("PROC", -4, 0), ("WEAP", 0, 6), ("DOME", 8, 8), ("STEK", 4, 8)]

@@ -13,6 +13,7 @@
 // sprite exactly once.
 
 import { C, rect, circle, poly, polyline, ring, ngon, hazard, trefoil, barrel, drum, teslaHead } from './kit.js';
+import { pixelDraw } from './pixel.js';
 import {
   KX,
   KY,
@@ -67,6 +68,7 @@ export const BUILDING_SIZE = {
   WEAP: [3, 3], FIX: [3, 3], DOME: [2, 3], HPAD: [2, 3], AFLD: [3, 2], SYRD: [3, 3], SPEN: [3, 3], ATEK: [2, 3],
   STEK: [3, 3], GAP: [1, 1], PDOX: [2, 2], IRON: [2, 2], MSLO: [2, 1], SBAG: [1, 1], FENC: [1, 1], BRIK: [1, 1],
   PBOX: [1, 1], HBOX: [1, 1], GUN: [1, 1], FTUR: [1, 1], TSLA: [1, 1], AGUN: [1, 1], SAM: [2, 1],
+  LROD: [1, 1],
 };
 
 /** Seeded pseudo random numbers in [0, 1). */
@@ -1225,6 +1227,11 @@ export const BUILDING_DRAW = {
     lamp(ctx, P, 6.5, 21.6, '#ff4a3a', 'rgba(255,90,70,0.35)');
     lamp(ctx, P, 41.5, 21.6, '#ff4a3a', 'rgba(255,90,70,0.35)');
   },
+
+  // WebRA's own Lightning Rod: WebRA's pixel art in Red Alert's style
+  // (art/pixel.js). Its mast stands above the footprint, so it paints into
+  // the taller box pixelBox gives (js/sprites.js actorSprites).
+  LROD: pixelDraw({ id: 'LROD', width: BUILDING_SIZE.LROD[0], height: BUILDING_SIZE.LROD[1] }),
 };
 
 /** The missile silo's roof (MSLO: box at (1, 3), 44 x 17, 3.4 high). */

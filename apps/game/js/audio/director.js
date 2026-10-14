@@ -99,6 +99,8 @@ export const EV = {
   MAD_TANK: 45,
   /** OpenRA Teleport, at each end: `b` 1 a chrono tank's own jump (PortableChrono), 0 Chronoshiftable. */
   TELEPORTED: 46,
+  /** WebRA lightning (engine lightning.rs): `b` the strike kind, 3 a power plant of `owner` (power outage). */
+  LIGHTNING_STRIKE: 48,
 };
 
 /** The order behind a smart order's action code (js/cursors.js ACTION), for its voice line. */
@@ -153,15 +155,48 @@ const REACH = { explosion_huge: 6, explosion_building: 1.6 };
  * view, half at its edge, silent at CULL_DISTANCE * reach.
  */
 export function spatial(x, y, view, reach = 1) {
+  const { dx, dist } = viewOffset(x, y, view);
+  const d = dist / reach;
+  if (d > CULL_DISTANCE) return null;
+  const gain = d <= 0.7 ? 1 : Math.max(0, 1 - (d - 0.7) / (CULL_DISTANCE - 0.7));
+  if (gain <= 0.01) return null;
+  return { gain, pan: panAt(dx) };
+}
+
+/** Where (x, y) is from the middle of the view, in half-views: `dx`, `dy` and their larger size `dist` (1: the view's edge). */
+function viewOffset(x, y, view) {
   const hw = Math.max(1, (view.x1 - view.x0) / 2);
   const hh = Math.max(1, (view.y1 - view.y0) / 2);
   const dx = (x - (view.x0 + hw)) / hw;
   const dy = (y - (view.y0 + hh)) / hh;
-  const d = Math.max(Math.abs(dx), Math.abs(dy)) / reach;
-  if (d > CULL_DISTANCE) return null;
-  const gain = d <= 0.7 ? 1 : Math.max(0, 1 - (d - 0.7) / (CULL_DISTANCE - 0.7));
-  if (gain <= 0.01) return null;
-  return { gain, pan: Math.max(-1, Math.min(1, dx)) * 0.75 };
+  return { dx, dy, dist: Math.max(Math.abs(dx), Math.abs(dy)) };
+}
+
+const panAt = (dx) => Math.max(-1, Math.min(1, dx)) * 0.75;
+
+/** Thunder (synth.js thunder_close, thunder, thunder_distant) up to these distances in half-views; beyond, the distant one. */
+export const THUNDER_CLOSE = 1;
+export const THUNDER_MEDIUM = 3;
+/** Thunder fades with distance as other sounds do, over this reach, but never below THUNDER_MIN_GAIN: a storm is heard across the map. */
+const THUNDER_REACH = 4;
+export const THUNDER_MIN_GAIN = 0.4;
+
+/**
+ * The thunder of a lightning strike at (x, y) (world pixels, Game.weather_json
+ * `flash`) for a view rectangle: `{ synth, gain, pan }`. On screen the close
+ * cue (crack and rumble), further off the medium one, far away the distant
+ * rumble; gain and pan as spatial(), with a floor. `kind` (the flash's 4th
+ * element, StrikeKind: above 0 a lightning rod, units, structures or a power
+ * plant were struck) also gives the close cue just off the view's edge.
+ * Without a view or a position: the medium cue in the middle.
+ */
+export function thunderCue(x, y, view, kind = 0) {
+  if (!view || !Number.isFinite(x) || !Number.isFinite(y)) return { synth: 'thunder', gain: 1, pan: 0 };
+  const { dx, dist } = viewOffset(x, y, view);
+  const close = dist <= THUNDER_CLOSE || (kind > 0 && dist <= CULL_DISTANCE);
+  const synth = close ? 'thunder_close' : dist <= THUNDER_MEDIUM ? 'thunder' : 'thunder_distant';
+  const gain = Math.max(THUNDER_MIN_GAIN, spatial(x, y, view, THUNDER_REACH)?.gain ?? 0);
+  return { synth, gain, pan: panAt(dx) };
 }
 
 /** Key identifying "the same sound" for aggregation. */
@@ -495,12 +530,12 @@ export class Director {
           }
           break;
         case EV.SOLD:
-          // b: 1 the sale starts (OpenRA Sellable.SellSounds at once), 2 it
-          // is done after the reverse make animation (the Sell activity's
-          // Notification); 0 (older replays) both.
+          // b: -1 the sale starts (OpenRA Sellable.SellSounds at once), else
+          // the refund when it is done after the reverse make animation (the
+          // Sell activity's Notification).
           if (own) {
-            if (b !== 2) this.queue(sellSound(this.actor(a).id), x, y);
-            if (b !== 1) this.announce(speechKey(actorSounds(this.actor(a).id).sellNotification ?? 'StructureSold'));
+            if (b < 0) this.queue(sellSound(this.actor(a).id), x, y);
+            else this.announce(speechKey(actorSounds(this.actor(a).id).sellNotification ?? 'StructureSold'));
           }
           break;
         case EV.INSUFFICIENT_FUNDS:
@@ -617,6 +652,10 @@ export class Director {
           break;
         case EV.TELEPORTED:
           if (heard) this.queue(teleportSound(this.actor(a).id, b === 1), x, y);
+          break;
+        case EV.LIGHTNING_STRIKE:
+          // The thunder follows the flash (js/weather-fx.js); the owner of a struck power plant hears why the lights went out.
+          if (own && b === 3) this.announce('lightningOutage');
           break;
         case EV.CRATE_COLLECTED:
           if (own) {

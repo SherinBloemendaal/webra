@@ -15,6 +15,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
 OUT = os.path.join(ROOT, 'engine', 'rules.json')
+# WebRA's own actors (WEBRA_ACTORS); missions point DATA elsewhere, never this.
+WEBRA_RULES = os.path.join(ROOT, 'data', 'webra', 'rules.yaml')
 
 # Actors that are part of the current milestone.
 ACTORS = [
@@ -53,6 +55,12 @@ EXTRA_ACTORS = [
     # prerequisites and support powers.
     'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse',
     'SPEF',                    # France's fake Sub Pen: map-only (OpenRA Prerequisites ~disabled)
+]
+# WebRA's own actors (no OpenRA counterpart), defined in data/webra/rules.yaml
+# in OpenRA's MiniYaml and resolved against OpenRA's templates (webra_actor).
+# They come last, so adding one never moves the index of an OpenRA actor.
+WEBRA_ACTORS = [
+    'LROD',                    # Lightning Rod (engine/src/lightning.rs)
 ]
 PROXIES = {'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse'}
 # The neutral world of OpenRA maps (data/source/rules/civilian.yaml,
@@ -142,6 +150,8 @@ MAKE_FRAMES = {
     'tent': (13, MAKE_SOURCE_BITS.format('tentmake.tem, tentmake.sno, desert/tentmake.des') + ' (Red Alert conquer.mix/tentmake.shp: 13 too)'),
     'tsla': (13, MAKE_SOURCE_RA.format('conquer.mix/tslamake.shp')),
     'weap': (15, MAKE_SOURCE_RA.format('conquer.mix/weapmake.shp')),
+    # WebRA's own structure: its pixel art's make sequence (tools/gen_pixel_art.py LROD_MAKE).
+    'lrod': (12, 'frames of the make sequence of WebRA\'s own pixel art, tools/gen_pixel_art.py LROD_MAKE'),
 }
 # Ticks per frame of every make sequence (Tick 40 at 40 ms per game tick).
 MAKE_TICKS_PER_FRAME = 1
@@ -1229,6 +1239,38 @@ def extra_actor(src, aid):
     }
 
 
+def webra_actor(src, aid):
+    """An actors.json-style record for one of WEBRA_ACTORS: its definition in
+    data/webra/rules.yaml, with `Inherits` resolved against OpenRA's rules
+    (the same parser and merge rules as data/source/parse.py)."""
+    defs = src.parse_miniyaml(open(WEBRA_RULES).read())
+    if aid not in defs:
+        raise SystemExit(f'{aid}: not in data/webra/rules.yaml')
+    tree, own = {}, {}
+    for k, (v, ch) in defs[aid][1].items():
+        if k == 'Inherits' or k.startswith('Inherits@'):
+            tree = src.merge(tree, src.rules[v])
+        else:
+            own[k] = [v, ch]
+    tree = src.merge(tree, own)
+    t = src.to_json(tree)
+    return {
+        'id': aid,
+        'name': src.g(tree, 'Tooltip/Name') or aid,
+        'description': src.g(tree, 'Buildable/Description') or '',
+        'queue': src.g(tree, 'Buildable/Queue'),
+        'cost': int(src.g(tree, 'Valued/Cost') or 0),
+        'buildDuration': src.g(tree, 'Buildable/BuildDuration'),
+        'buildDurationModifier': src.g(tree, 'Buildable/BuildDurationModifier'),
+        'buildPaletteOrder': int(src.g(tree, 'Buildable/BuildPaletteOrder') or 0),
+        'prerequisites': tokens(src.g(tree, 'Buildable/Prerequisites')),
+        'hp': int(src.g(tree, 'Health/HP') or 0),
+        'armor': src.g(tree, 'Armor/Type'),
+        'sight': src.g(tree, 'RevealsShroud/Range'),
+        'traits': t,
+    }
+
+
 def hurts(w):
     """Whether a weapon deals damage: a damage warhead with Damage, or cluster warheads (BarrelExplode)."""
     return any(k.startswith('Warhead') and isinstance(v, dict) and (
@@ -1558,12 +1600,25 @@ def tooltip_descriptions(a):
     return {'ally_description': (tips.get('ally') or '').strip(), 'other_description': (tips.get('other') or '').strip()}
 
 
+def custom_sell_value(t):
+    """OpenRA CustomSellValue.Value of resolved traits `t` (0 when the node
+    gives none: the field's default in CustomSellValue.cs), or None without
+    the trait (GetSellValue then counts the cost)."""
+    if 'CustomSellValue' not in t:
+        return None
+    node = t['CustomSellValue']
+    value = node.get('Value', '') if isinstance(node, dict) else ''
+    return int(value) if value != '' else 0
+
+
 def main():
     actors = {a['id']: a for a in json.load(open(os.path.join(DATA, 'actors.json')))}
     src = load_source_rules()
     for aid in EXTRA_ACTORS + WORLD_ACTORS:
         if aid not in actors:
             actors[aid] = extra_actor(src, aid)
+    for aid in WEBRA_ACTORS:
+        actors[aid] = webra_actor(src, aid)
     weapons = json.load(open(os.path.join(DATA, 'weapons.json')))
     wl = {k.lower(): k for k in weapons}
     locos = parse_locomotors()
@@ -1585,7 +1640,7 @@ def main():
 
     tilesets = load_tilesets(src)
     overlay_types = overlay_manager_types(src)
-    for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS:
+    for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS + WEBRA_ACTORS:
         a = actors[aid]
         t = a['traits']
         kind = ('proxy' if aid in PROXIES else 'building' if 'Building' in t else 'mine' if 'Mine' in t else 'crate' if 'Crate' in t else 'husk' if 'Husk' in t
@@ -1598,6 +1653,9 @@ def main():
             'kind': kind,
             'queue': a['queue'],
             'cost': a['cost'],
+            # OpenRA CustomSellValue (GetSellValue: this, else the cost): what selling,
+            # repairing and kill bounties count instead of the cost (pillboxes, refineries, walls).
+            **({'custom_sell_value': csv} if (csv := custom_sell_value(t)) is not None else {}),
             'build_ticks': a['cost'] * int(a['buildDurationModifier'] or BUILD_DURATION_MODIFIER) // 100
             if not a['buildDuration'] or int(a['buildDuration']) < 0 else int(a['buildDuration']),
             'palette_order': a['buildPaletteOrder'],
@@ -2036,11 +2094,12 @@ def main():
                         raise SystemExit(f'{aid}: {k} depends on build-incomplete; add it to MAKE_GATES')
                 if gates:
                     e['building']['make_gates'] = sorted(gates)
-            # OpenRA GetSellValue: CustomSellValue, else the cost (repair cost, repair.rs).
-            csv = t.get('CustomSellValue')
-            e['building']['value'] = int(csv.get('Value', a['cost'])) if isinstance(csv, dict) else a['cost']
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
+            # WebRA trait LightningRod (data/webra/rules.yaml): lightning that
+            # would land within Range is grounded on it (engine/src/lightning.rs).
+            if 'LightningRod' in t:
+                e['building']['lightning_rod'] = wdist(t['LightningRod']['Range'])
         elif kind in ('mine', 'crate', 'husk', 'proxy'):
             pass  # Immobile mines, crates and husks, bodiless proxies: no unit info.
         else:

@@ -298,7 +298,8 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
     base_actor_ids = [a['id'] for a in base_rules['actors']]
     out_path = os.path.join(data, 'rules.json')
     saved = (gen_rules.DATA, gen_rules.OUT, gen_rules.ACTORS, gen_rules.EXTRA_ACTORS, gen_rules.PROXIES,
-             gen_rules.WEAPON_ORDER, gen_rules.LOCOMOTOR_ORDER, gen_rules.parse_locomotors, gen_rules.ARMOR_TYPES)
+             gen_rules.WEAPON_ORDER, gen_rules.LOCOMOTOR_ORDER, gen_rules.parse_locomotors, gen_rules.ARMOR_TYPES,
+             gen_rules.WEBRA_ACTORS)
     base_locos = gen_rules.parse_locomotors
 
     def mission_locomotors():
@@ -325,6 +326,8 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
     for attempt in range(20):
         gen_rules.DATA = data
         gen_rules.OUT = out_path
+        # Missions keep OpenRA's rules: no WebRA actors (data/webra/rules.yaml).
+        gen_rules.WEBRA_ACTORS = []
         gen_rules.ACTORS = saved[2] + [a for a in extra if a in buildable]
         gen_rules.EXTRA_ACTORS = saved[3] + [a for a in extra if a not in buildable]
         gen_rules.PROXIES = set(saved[4]) | {a for a in extra if support_power_proxy(parse.to_json(rules[a])) and 'Health' not in rules[a]}
@@ -375,7 +378,8 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
             sys.stdout.close()
             sys.stdout = stdout
             (gen_rules.DATA, gen_rules.OUT, gen_rules.ACTORS, gen_rules.EXTRA_ACTORS, gen_rules.PROXIES,
-             gen_rules.WEAPON_ORDER, gen_rules.LOCOMOTOR_ORDER, gen_rules.parse_locomotors, gen_rules.ARMOR_TYPES) = saved
+             gen_rules.WEAPON_ORDER, gen_rules.LOCOMOTOR_ORDER, gen_rules.parse_locomotors, gen_rules.ARMOR_TYPES,
+             gen_rules.WEBRA_ACTORS) = saved
     else:
         raise SystemExit(f'{mission}: too many missing actors')
     with open(out_path, encoding='utf-8') as fh:

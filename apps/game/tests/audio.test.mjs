@@ -237,7 +237,9 @@ test('engine events become announcements for the local player only', () => {
       [EV.UNIT_PRODUCED, 1, 0, 0, 1, 0],
       [EV.CONSTRUCTION_READY, 2, 0, 0, 0, 0],
       [EV.INSUFFICIENT_FUNDS, 1, 0, 0, 0, 0],
-      [EV.SOLD, 2, 500, 300, 0, 0],
+      // A sale: the sell sound when it starts (b -1), the announcement when it is done (b the refund).
+      [EV.SOLD, 2, 500, 300, 0, -1],
+      [EV.SOLD, 2, 500, 300, 0, 500],
       [EV.BUILDING_DAMAGED, 2, 500, 300, 0, 1],
       [EV.BUILDING_DAMAGED, 2, 500, 300, 1, 0],
       [EV.DEATH, 1, 500, 300, 0, 2],

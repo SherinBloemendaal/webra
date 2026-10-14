@@ -1,0 +1,51 @@
+# WebRA's own actors: structures and units with no OpenRA counterpart.
+#
+# Written in OpenRA's MiniYaml (tabs) like the vendored rules in data/source/rules,
+# and resolved against them by tools/gen_rules.py (WEBRA_ACTORS): `Inherits`
+# takes an OpenRA template (^Building, ...) and every OpenRA trait keeps its
+# meaning. Names and descriptions are plain English (OpenRA's are keys into
+# rules.ftl). Traits that only WebRA knows are marked "WebRA trait" below and
+# read by tools/gen_rules.py. See data/CATALOG.md ("WebRA additions") and
+# docs/contracts.md (biomes and weather) for the design.
+
+# Lightning Rod: grounds every lightning strike that would land within its
+# range, so the units and structures there (power plants included) are never
+# struck (engine/src/lightning.rs). Passive: it needs no power and keeps
+# working during a power outage. Both sides build it once a power plant stands,
+# outside campaign and co-op missions: `global-skirmish` is a WebRA token the
+# engine grants every player except in missions (production.rs), which run
+# with OpenRA's rules and never have it.
+LROD:
+	Inherits: ^Building
+	Selectable:
+		Bounds: 1024, 1024
+		DecorationBounds: 1024, 2048, 0, -512
+	Buildable:
+		Queue: Defense
+		BuildPaletteOrder: 36
+		Prerequisites: anypower, ~techlevel.low, ~global-skirmish
+		Description: Grounds thunderstorm lightning: units and structures within its range are never struck.
+	Valued:
+		Cost: 300
+	Tooltip:
+		Name: Lightning Rod
+	-GivesBuildableArea:
+	-MustBeDestroyed:
+	Health:
+		HP: 30000
+	Armor:
+		Type: Heavy
+	RevealsShroud:
+		Range: 4c0
+	WithBuildingBib:
+		HasMinibib: true
+	FireWarheadsOnDeath:
+		Weapon: SmallBuildingExplode
+		EmptyWeapon: SmallBuildingExplode
+	WithRangeCircle:
+		Type: LightningRod
+		Range: 6c0
+		Color: FFE45C80
+	# WebRA trait: lightning that would land within Range is grounded on the rod.
+	LightningRod:
+		Range: 6c0

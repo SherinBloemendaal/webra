@@ -95,6 +95,11 @@ class StaticFacts {
     return this.info.allies[a]?.[b] === true;
   }
 
+  /** The terrain bytes the game started with (SimCore.info `terrain`), or null; later changes come with frames. */
+  initial_terrain() {
+    return this.info.terrain ?? null;
+  }
+
   /** The sky at the start (biome, weather mode); per frame it comes with the frame (`frame.weather`). */
   weather_json() {
     return this.info.weatherJson ?? '{"biome":"temperate","mode":"off","weather":"clear"}';

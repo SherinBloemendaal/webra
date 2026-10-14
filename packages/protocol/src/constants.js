@@ -261,6 +261,8 @@ export const ERROR_CODE_RE = /^[a-z_]{1,32}$/;
 export const C2S = Object.freeze({
   HELLO: 'hello',
   SLOT: 'slot',
+  /** Host: several slot changes at once (the lobby's bulk edit), applied together or not at all. */
+  SLOTS: 'slots',
   OPTIONS: 'options',
   MAP: 'map',
   /** Host: play a co-op mission (protocol mission.js) instead of a skirmish, or back (null). */

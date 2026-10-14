@@ -12,7 +12,7 @@ test('the badge names the sky and every effect in force', () => {
   assert.match(weatherInfo(sky({ biome: 'desert', weather: 'sandstorm', sightPct: 75 })).detail, /Sight -25%/);
   assert.match(weatherInfo(sky({ biome: 'desert', weather: 'heatwave' })).detail, /overheat/);
   assert.match(weatherInfo(sky({ biome: 'snow' })).detail, /slide/);
-  assert.match(weatherInfo(sky({ weather: 'thunderstorm', sightPct: 85 })).detail, /harmless/);
+  assert.match(weatherInfo(sky({ weather: 'thunderstorm', sightPct: 85 })).detail, /Lightning Rods ground/);
   assert.match(weatherInfo(sky({ mode: 'cosmetic', weather: 'rain' })).detail, /only for show/);
   assert.deepEqual(weatherInfo(sky({ mode: 'off' })), { label: '', detail: '' });
   assert.equal(heatText({ heat: 20 }), '');
@@ -51,9 +51,9 @@ test('particle budgets are capped and shrink with low quality and reduced motion
   assert.equal(calm.uniforms(0).env2[3], 0, 'shaders slow down for reduced motion');
 });
 
-test('lightning flashes once per strike and thunder follows, quieter far away', () => {
+test('lightning flashes once per strike and thunder follows from where it struck, later far away', () => {
   const heard = [];
-  const fx = new WeatherFx({ onThunder: (g) => heard.push(g) });
+  const fx = new WeatherFx({ onThunder: (strike) => heard.push(strike) });
   const storm = (tick, flash) => sky({ weather: 'thunderstorm', since: 0, until: 9000, tick, flash });
   fx.update(storm(500, [400, 0, 0]), 10); // already there when we joined: not replayed
   assert.equal(fx.flash(10), 0);
@@ -64,12 +64,13 @@ test('lightning flashes once per strike and thunder follows, quieter far away', 
   fx.update(storm(701, [690, 100, 100]), 20.2);
   assert.equal(heard.length, 0, 'thunder waits a moment');
   fx.update(storm(720, [690, 100, 100]), 21);
-  assert.equal(heard.length, 1);
-  assert.ok(heard[0] > 0.9, 'close strike, loud thunder');
-  fx.update(storm(900, [880, 6000, 6000]), 30, { x: 0, y: 0 });
-  fx.update(storm(990, [880, 6000, 6000]), 34);
-  assert.equal(heard.length, 2);
-  assert.ok(heard[1] < 0.5, 'far strike, soft thunder');
+  assert.deepEqual(heard, [{ x: 100, y: 100, kind: 0 }], 'a 3 element flash: a ground strike');
+  // Far away the sound takes longer (the sound system makes it softer and darker: audio-thunder.test.mjs).
+  fx.update(storm(900, [880, 6000, 6000, 2]), 30, { x: 0, y: 0 });
+  fx.update(storm(950, [880, 6000, 6000, 2]), 32);
+  assert.equal(heard.length, 1, 'still on its way');
+  fx.update(storm(990, [880, 6000, 6000, 2]), 33);
+  assert.deepEqual(heard[1], { x: 6000, y: 6000, kind: 2 }, 'the strike kind is passed on');
   // Reduced motion: one soft pulse, never a bright flicker.
   const calm = new WeatherFx({ reducedMotion: true });
   calm.update(storm(700, [600, 0, 0]), 0);

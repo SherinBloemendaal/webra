@@ -150,6 +150,14 @@ Fake Power Plant (FPWR, $30), Fake Allied Barracks (TENF, $50), Fake Naval Yard 
 
 Zombie (Zombie), Giant Ant (Ant), Fire Ant (FireAnt), Scout Ant (ScoutAnt), Warrior Ant (WarriorAnt), Hind (HIND), Fake Sub Pen (SPEF). Ants/zombies are campaign/mission-only; the Hind is disabled in multiplayer balance.
 
+## WebRA additions (1)
+
+Actors with no OpenRA counterpart, defined in `data/webra/rules.yaml` (OpenRA MiniYaml resolved against the OpenRA templates above, `WEBRA_ACTORS` in `tools/gen_rules.py`); they are not part of OpenRA's catalog and are listed here by hand.
+
+| ID | Name | Side | Cost | HP | Armor | Power | Size | Tech | Requires | Weapons | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| LROD | Lightning Rod | Both | 300 | 300 | Heavy |  | 1x1 | low | anypower (outside missions: `~global-skirmish`) |  | Inherits `^Building` (sellable, repairable, capturable by engineers). WebRA trait `LightningRod` (Range 6c0): thunderstorm lightning that would land within range is grounded on it, and power plants within range are never picked as targets (`engine/src/lightning.rs`, docs/contracts.md "Biomes and weather"). `WithRangeCircle` Type LightningRod, 6c0, shown when selected and while placing. Needs no power. Build time 7.2 s. |
+
 ## Weapons used by buildable actors (48)
 
 Damage is per warhead hit (HP / 100 scale as above). Versus = % damage against each armor type (unlisted = 100%).

@@ -3,7 +3,7 @@
 use crate::map::Terrain;
 use crate::math::{dist, CELL};
 use crate::rules::{Kind, QueueType};
-use crate::sound_events::{SoundEventKind, SOLD_DONE, SOLD_STARTED};
+use crate::sound_events::{SoundEventKind, SOLD_STARTED};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
@@ -31,6 +31,9 @@ fn title(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
+/// The prerequisite token of WebRA's own actors, granted outside missions (`refresh_tokens`).
+pub const GLOBAL_SKIRMISH: &str = "global-skirmish";
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Availability {
     /// Shown in the sidebar (all `~` prerequisites met).
@@ -43,9 +46,14 @@ impl World {
     pub(crate) fn refresh_tokens(&mut self) {
         self.tokens_dirty = false;
         // The lobby tech level grants techlevel.* tokens up to the chosen level.
-        let tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
+        let mut tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
             .filter_map(|l| self.rules.token(&format!("techlevel.{}", crate::rules::TECH_LEVELS[l])))
             .collect();
+        // WebRA's own actors (data/webra/rules.yaml) need `global-skirmish`:
+        // every game but the campaign and co-op missions, which keep OpenRA's rules.
+        if !self.mission_on {
+            tech.extend(self.rules.token(GLOBAL_SKIRMISH));
+        }
         for p in self.players.iter_mut() {
             p.tokens.iter_mut().for_each(|t| *t = false);
             for &t in &tech {
@@ -122,14 +130,24 @@ impl World {
         }
     }
 
+    /// Whether actor type `ty` belongs to this game at all (the sidebar's and
+    /// the observers' lists): not one that is never built (`~disabled`), and
+    /// in a mission none of WebRA's own actors (`global-skirmish`, which
+    /// missions never grant).
+    pub fn in_game_mode(&self, ty: u16) -> bool {
+        self.rules.actors[ty as usize].prerequisites.iter().all(|pr| {
+            let name = self.rules.tokens[pr.token as usize].as_str();
+            name != crate::rules::TOKEN_DISABLED && !(self.mission_on && !pr.negate && name == GLOBAL_SKIRMISH)
+        })
+    }
+
     pub fn availability(&self, player: u8, ty: u16) -> Availability {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
         // Debug menu "all tech" (debug.rs): every prerequisite counts as met,
-        // except the marker of actors that are never buildable.
+        // except for actors outside this game (never buildable, or WebRA's in a mission).
         if p.dev.all_tech {
-            let never =
-                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+            let never = !self.in_game_mode(ty);
             return Availability { visible: !never, enabled: !never };
         }
         let mut visible = true;
@@ -757,39 +775,61 @@ impl World {
 
     // ---- Selling, deploying ------------------------------------------------
 
-    /// Whether structure `b` can be sold now (OpenRA Sellable RequiresCondition
-    /// `!build-incomplete && !being-captured && !being-demolished`).
+    /// Whether structure `b` can be sold now (`sell_refund` is Some).
     pub fn can_sell(&self, b: usize) -> bool {
+        self.sell_refund(b).is_some()
+    }
+
+    /// What selling structure `b` would pay now, or None while it cannot be
+    /// sold. OpenRA Sell activity and Sellable.TooltipText: RefundPercent of
+    /// the sell value (CustomSellValue, else the cost), scaled by health,
+    /// rounded down; walls (CustomSellValue 0) sell for nothing. Sellable
+    /// RequiresCondition `!build-incomplete && !being-captured &&
+    /// !being-demolished`: not while it is being built or already being sold.
+    pub fn sell_refund(&self, b: usize) -> Option<i32> {
         let a = &self.actors[b];
-        a.alive && a.kind == Kind::Building && !self.make_gates(b).sell && !self.being_captured(b) && !self.being_demolished(b)
+        if !a.alive || a.kind != Kind::Building || a.unmake_at > 0 {
+            return None;
+        }
+        if self.make_gates(b).sell || self.being_captured(b) || self.being_demolished(b) {
+            return None;
+        }
+        self.refund_now(b)
+    }
+
+    /// RefundPercent of structure `b`'s sell value scaled by its health now,
+    /// or None without Sellable (the Sell activity pays this at its end).
+    fn refund_now(&self, b: usize) -> Option<i32> {
+        let a = &self.actors[b];
+        let info = &self.rules.actors[a.ty as usize];
+        // No Sellable trait (or a mission's -Sellable): RefundPercent 0 (gen_rules.py).
+        let percent = info.building.as_ref()?.sell_refund;
+        if percent <= 0 {
+            return None;
+        }
+        let max_hp = info.hp.max(1) as i64;
+        Some((info.sell_value() as i64 * percent as i64 * a.hp as i64 / (100 * max_hp)) as i32)
     }
 
     /// Sell a structure (OpenRA Sellable.Sell): the sell sound at once, then
     /// the make animation backwards (WithMakeAnimation.Reverse: build-incomplete
     /// again, uninterruptible), and when it ended the Sell activity
-    /// (`finish_sale`): RefundPercent of its value scaled by its health then,
-    /// the crew, the announcement. A structure without a make animation is
-    /// sold at once. Destroyed meanwhile, it brings nothing.
+    /// (`finish_sale`): the refund for its health then, paid to the player
+    /// who owned it when the sale started (Sell captures their
+    /// PlayerResources), the crew, the announcement. A structure without a
+    /// make animation is sold at once. Destroyed meanwhile, it brings nothing.
     pub fn sell(&mut self, b: usize) -> bool {
+        if self.sell_refund(b).is_none() {
+            return false;
+        }
         let a = &self.actors[b];
-        if !a.alive || a.kind != Kind::Building || a.unmake_at > 0 {
-            return false;
-        }
-        // Sellable RequiresCondition !build-incomplete && !being-captured && !being-demolished (infantry.rs).
-        if !self.can_sell(b) {
-            return false;
-        }
-        let info = &self.rules.actors[a.ty as usize];
-        let percent = info.building.as_ref().unwrap().sell_refund;
-        if percent <= 0 {
-            return false;
-        }
-        let make = info.building.as_ref().map_or(0, |bi| bi.make_ticks);
+        let make = self.rules.actors[a.ty as usize].building.as_ref().map_or(0, |bi| bi.make_ticks);
         let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
-        // Sellable.SellSounds (cashturn), to the owner, at once.
+        // Sellable.SellSounds (cashturn), to the owner, at once (b: no refund yet).
         self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, SOLD_STARTED);
+        let a = &mut self.actors[b];
+        a.unmake_seller = owner;
         if make > 0 {
-            let a = &mut self.actors[b];
             a.unmake_at = self.tick + make;
             a.unmake_sell = true;
             a.make_until = a.unmake_at;
@@ -800,18 +840,17 @@ impl World {
     }
 
     /// The Sell activity (OpenRA Activities/Sell): the refund for the health
-    /// the structure has now, INotifySold.Sold (the crew walks out, the
-    /// script's Sold event, the statistics) and the Notification
-    /// (StructureSold); then it is gone.
+    /// the structure has now, to the player who sold it, INotifySold.Sold
+    /// (the crew walks out, the script's Sold event, the statistics) and the
+    /// Notification (StructureSold, with the refund for the cash tick); then
+    /// it is gone.
     fn finish_sale(&mut self, b: usize) {
+        let refund = self.refund_now(b).unwrap_or(0);
         let a = &self.actors[b];
-        let info = &self.rules.actors[a.ty as usize];
-        let percent = info.building.as_ref().unwrap().sell_refund;
-        let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
-        let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
-        self.refund(owner, refund);
-        self.note_sold(owner, refund);
-        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, SOLD_DONE);
+        let (seller, x, y, ty) = (a.unmake_seller, a.x, a.y, a.ty);
+        self.refund(seller, refund);
+        self.note_sold(seller, refund);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, seller, refund);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
         self.spawn_sell_survivors(b);

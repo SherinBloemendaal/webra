@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { installDom, uninstallDom, FakeEvent } from './dom-fixtures.mjs';
-import { HotkeyRegistry } from '../js/hotkeys.js';
+import { HotkeyRegistry, releaseMouseKey } from '../js/hotkeys.js';
 import { createSettings as settingsOver } from '../js/settings.js';
 import { createRegistry } from '../js/registry.js';
 import { registerGameKeys } from '../js/gamekeys.js';
@@ -173,8 +173,13 @@ test('other keyboard layouts and macOS Option: the key printed on it, or its pla
   assert.deepEqual(press(screen, hits, body, 'Z', { letter: 'Z' }).ran, ['sell']);
   // Option+A types "å" on a Mac: still the Attack anything stance (OpenRA Alt+A).
   assert.deepEqual(press(screen, hits, body, 'Alt+A', { letter: 'å' }).ran, ['stanceAttackAnything']);
-  // Option+E is a dead key on a Mac ("Dead"): still bookmark 3 (OpenRA Alt+E).
-  assert.deepEqual(press(screen, hits, body, 'Alt+E', { letter: 'Dead' }).ran, ['bookmarkJump3']);
+  // Option+E is a dead key on a Mac ("Dead"): still Alt+E. On macOS that is WebRA's
+  // release mouse key (OpenRA's bookmark 3 jump has no default key there:
+  // WEBRA_SUBSTITUTES); on Windows and Linux bookmark 3, and Alt+Shift+E releases.
+  const mac = releaseMouseKey() === 'Alt+E';
+  assert.deepEqual(press(screen, hits, body, 'Alt+E', { letter: 'Dead' }).ran, [mac ? 'toggleMouseCapture' : 'bookmarkJump3']);
+  assert.deepEqual(press(screen, hits, body, 'Alt+E', { letter: '´' }).ran, [mac ? 'toggleMouseCapture' : 'bookmarkJump3']);
+  if (!mac) assert.deepEqual(press(screen, hits, body, 'Alt+Shift+E', { letter: 'E' }).ran, ['toggleMouseCapture']);
   // AZERTY: the key printed A (where QWERTY has Q) is A.
   const azerty = new FakeEvent('keydown', { code: 'KeyQ', key: 'a', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false });
   hits.length = 0;

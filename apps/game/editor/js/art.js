@@ -173,6 +173,20 @@ export class EditorArt {
     return this.content?.terrain(biome, bytes, w, h) ?? null;
   }
 
+  /** `terrain` from a texture pack (made at once), or null (js/content/index.js packTerrain). */
+  packTerrain(biome, bytes, w, h) {
+    return this.content?.packTerrain(biome, bytes, w, h) ?? null;
+  }
+
+  /**
+   * The original theater `terrain` tiles with when no pack does: `{
+   * tileset, files }`, or null (js/content/index.js theater). The editor
+   * plans those tiles in a worker (js/tiles.js).
+   */
+  theater(biome) {
+    return this.content?.theater(biome) ?? null;
+  }
+
   /** Whether actor type index `t` has its body drawn from the original graphics. */
   originalBody(t) {
     const slots = this.original?.slots;

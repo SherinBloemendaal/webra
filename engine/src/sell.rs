@@ -27,7 +27,7 @@ impl World {
             return;
         }
         // OpenRA SpawnActorsOnSell: CustomSellValue, else the cost, scaled by health.
-        let mut value = (s.value_percent as i64 * bi.value as i64 / 100) as i32;
+        let mut value = (s.value_percent as i64 * info.sell_value() as i64 / 100) as i32;
         let max = info.hp.max(1) as i64;
         value = if 100 * a.hp as i64 >= s.min_hp_percent as i64 * max { (a.hp as i64 * value as i64 / max) as i32 } else { 0 };
         let mut cells: Vec<(i32, i32)> =

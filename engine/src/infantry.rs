@@ -494,6 +494,8 @@ impl World {
             self.actors[p].stance = self.initial_stance(self.actors[p].ty, owner);
         }
         self.tokens_dirty = true;
+        // The spatial hash's owners per cell no longer cover this one (combat.rs scans).
+        self.hash_owners_valid = false;
         // Walls change who may crush them (neutral.rs wall crushing).
         self.pass.touch();
     }

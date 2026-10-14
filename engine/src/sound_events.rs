@@ -27,9 +27,9 @@ pub const FUNDS_EVENT_INTERVAL: u32 = 25;
 /// A structure that was hit within this many ticks does not report again
 /// (one "under attack" event per burst of fire, not per bullet).
 pub const DAMAGE_EVENT_QUIET_TICKS: u32 = 50;
-/// `SoundEventKind::Sold` b: the sale started (sell sound) or is done (announcement).
-pub const SOLD_STARTED: i32 = 1;
-pub const SOLD_DONE: i32 = 2;
+/// `SoundEventKind::Sold` b when a sale starts (the sell sound); the event
+/// when it is done carries the refund (0 or more) in b instead.
+pub const SOLD_STARTED: i32 = -1;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(i32)]
@@ -47,9 +47,11 @@ pub enum SoundEventKind {
     UnitProduced = 5,
     /// a = actor type of a structure placed by its owner.
     BuildingPlaced = 6,
-    /// a = actor type of a structure sold; b = `SOLD_STARTED` when the sale
-    /// starts (the sell sound, OpenRA SellSounds) or `SOLD_DONE` when it is
-    /// done (the StructureSold announcement), after the reverse make animation.
+    /// a = actor type of a structure sold; b = `SOLD_STARTED` (-1) when the
+    /// sale starts (the sell sound, OpenRA Sellable.SellSounds), else the
+    /// refund paid when it is done after the reverse make animation (the
+    /// StructureSold announcement; the client floats it for the seller's
+    /// allies, OpenRA Sell activity ShowTicks).
     Sold = 7,
     /// Production stalled for lack of money; a = actor type being built.
     InsufficientFunds = 8,
@@ -177,6 +179,11 @@ pub enum SoundEventKind {
     /// `owner` won (OpenRA ConquestVictoryConditions.OnPlayerWon: the
     /// "player is victorious" line), one event per winning player.
     PlayerWon = 47,
+    /// A thunderstorm's lightning struck (WebRA, lightning.rs): one event per
+    /// struck actor, at it; a = its type, owner = its owner, b = the
+    /// `StrikeKind` (2: a unit or structure, 3: a power plant, its owner's
+    /// power is out; 1: grounded on a Lightning Rod, a = the rod's type).
+    LightningStrike = 48,
 }
 
 /// `owner` of events every player hears (time limit warnings).

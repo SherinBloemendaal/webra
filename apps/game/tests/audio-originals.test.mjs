@@ -40,7 +40,7 @@ import {
   allOriginalNames,
   actorSounds,
 } from '../js/audio/catalog.js';
-import { WEAPON_SOUNDS, SOUND_NOTIFICATIONS, OPENRA_ACTORS } from '../js/audio/catalog-data.js';
+import { WEAPON_SOUNDS, SOUND_NOTIFICATIONS, OPENRA_ACTORS, WEBRA_ACTORS } from '../js/audio/catalog-data.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { Director, EV } from '../js/audio/director.js';
 import { AudioSystem } from '../js/audio/index.js';
@@ -114,7 +114,9 @@ function everyCue() {
 test('every cue OpenRA defines is marked as OpenRA\'s', () => {
   // Cues that are silent in both modes (a mine's or a husk's own death: their weapon or explosion sounds) need no mark.
   for (const [label, sound] of everyCue()) if (sound.synth || sound.originals.length) assert.equal(sound.openra, true, label);
-  for (const a of engineRules.actors) assert.ok(OPENRA_ACTORS.includes(a.id) || /R\d+$/.test(a.id), `${a.id} is an OpenRA actor`);
+  for (const a of engineRules.actors) {
+    assert.ok(OPENRA_ACTORS.includes(a.id) || WEBRA_ACTORS.includes(a.id) || /R\d+$/.test(a.id), `${a.id} is an OpenRA or WebRA actor`);
+  }
 });
 
 test('with Red Alert installed, every cue with an original plays the original, the others stay silent', () => {

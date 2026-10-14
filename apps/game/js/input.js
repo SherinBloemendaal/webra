@@ -14,6 +14,12 @@
 // stay on until cancelled (right click, Esc, the button or key again); a
 // beacon is placed with one click.
 //
+// Bulk repair (a WebRA addition): with own structures selected, the Repair
+// button or key toggles repairing all selected damaged ones at once instead
+// of opening repair mode, and a box dragged in repair mode toggles those in
+// the box (engine Order::RepairBuildings: start all when any is not
+// repairing, else stop all).
+//
 // The game may run in a worker (js/sim): what is drawn each frame (cursor,
 // placement footprint) reads the game handle's synchronous answers, which are
 // one frame old there; what a click or key does asks fresh answers
@@ -34,7 +40,7 @@ const TARGETS_OWN = new Set([
   ACTION.DISGUISE,
   ACTION.INFILTRATE,
 ]);
-import { hotkeys as defaultHotkeys, focusKeepsKey } from './hotkeys.js';
+import { hotkeys as defaultHotkeys, focusKeepsKey, typingIn } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { settings as defaultSettings } from './settings.js';
 import { ControlGroups } from './controlgroups.js';
@@ -43,9 +49,17 @@ import { MIN_ZOOM, MAX_ZOOM, baseZoom, clampZoom, rescaleZoom, zoomFactorOf, zoo
 
 const NONE = 0xffffffff;
 const CELL = 24;
-const EDGE = 12; // px from the canvas edge that scrolls the view
+/**
+ * CSS px from the window edge that scroll the view. OpenRA's
+ * ViewportEdgeScrollMargin is 5 window px; a browser window that is not
+ * maximised lets the mouse leave it, and a quick move then skips a narrow
+ * zone (no event lands in it), so the zone is wider here.
+ */
+export const EDGE = 12;
 const PAN_SPEED = 900; // CSS px per second, at scroll speed 1
 const DOUBLE_CLICK_MS = 300;
+/** View px the mouse may move between down and up for a click, not a box. */
+const CLICK_SLOP = 6;
 /** Modifier keys (KeyboardEvent.key) the cursors follow in `keys`. */
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // Zoom limits at game scale 1 (js/scale.js); an Input's own limits follow its game scale (zoomLimits()).
@@ -75,15 +89,35 @@ export function selectedUnitsText(count, where) {
   return count === 1 ? `Selected one unit across ${where}.` : `Selected ${count} units across ${where}.`;
 }
 
-/** Edge scroll direction for a mouse position inside a w x h view: { dx, dy } in -1..1. */
+/**
+ * Edge scroll direction for a mouse position inside a w x h window: { dx, dy }
+ * in -1..1. The zone is `edge` px wide on every side (OpenRA
+ * ViewportControllerWidget.CheckForDirections: X < margin, X >= width - margin).
+ */
 export function edgeDirection(x, y, w, h, edge = EDGE) {
   let dx = 0;
   let dy = 0;
   if (x < edge) dx = -1;
-  else if (x > w - edge) dx = 1;
+  else if (x >= w - edge) dx = 1;
   if (y < edge) dy = -1;
-  else if (y > h - edge) dy = 1;
+  else if (y >= h - edge) dy = 1;
   return { dx, dy };
+}
+
+/**
+ * Whether the mouse may scroll the view at the window edge now. Like
+ * OpenRA's ViewportControllerWidget, the edge counts whatever is under the
+ * mouse (sidebar, radar, HUD buttons, chat): the zone is the window's, not
+ * the battlefield's. OpenRA asks for the setting (speed above 0) and the
+ * window's input focus; WebRA also holds it while the mouse is outside the
+ * window (browsers report no position there), for a touch, while the game
+ * menu or a dialog is open (suspended, held), while a box, repair box,
+ * middle button pan or radar drag is under way (busy, held), while a text
+ * field has the focus (typing: the chat line) and while the mouse is
+ * released with the release hotkey (held; js/mouselock.js isDetached).
+ */
+export function edgeScrollAllowed({ speed = 0, inWindow = false, touch = false, focused = true, suspended = false, busy = false, typing = false, held = false } = {}) {
+  return speed > 0 && inWindow && !touch && focused && !suspended && !busy && !typing && !held;
 }
 
 /** Camera position limits (world px) for a view of vw x vh world px over a map of mapW x mapH. */
@@ -143,6 +177,14 @@ export class Input {
     this.keys = new Set();
     // touch: the position comes from a finger (js/touch.js, building placement), so no edge scrolling.
     this.mouse = { x: -1, y: -1, inside: false, touch: false };
+    // The mouse anywhere in the window, in window px (edge scrolling, like
+    // OpenRA's Viewport.LastMousePos): also over the sidebar, radar and HUD.
+    // finger: the last pointer was a finger or pen (notePointerType), whose
+    // mouse-like events (js/touch.js, the browser's compatibility events) say
+    // nothing about where a mouse is.
+    this.windowMouse = { x: -1, y: -1, inside: false, finger: false };
+    /** The scroll cursor the whole page shows while edge scrolling ('' when not: updateCursor). */
+    this.pageCursor = '';
     this.drag = null;
     this.pan = null;
     this.placing = null; // actor id being placed
@@ -155,6 +197,7 @@ export class Input {
     // or { kind: 'power', key, power, src } (src: Chronosphere source area, once picked).
     this.targeting = null;
     this.mineDrag = null; // Ctrl + drag with Minelayers selected: { sx, sy, ex, ey, units }
+    this.repairDrag = null; // left button down in repair mode: { sx, sy, ex, ey } (view px)
     this.bind();
     this.unregister = this.registerHotkeys();
     // The remembered zoom changed elsewhere (Defaults in the game menu, another tab, the account): the view follows.
@@ -248,11 +291,18 @@ export class Input {
     this.settings.reset('zoomFactor');
   }
 
-  /** Stop following the remembered zoom (the view is gone). A zoom that waits is stored first. */
+  /**
+   * The view is gone: stop following the remembered zoom (a zoom that waits
+   * is stored first) and drop every listener bind() added to the canvas and
+   * the window.
+   */
   dispose() {
     this.flushZoom();
     this.offZoomFactor?.();
     this.offZoomFactor = null;
+    for (const off of this.offs) off();
+    this.offs = [];
+    this.setPageCursor('');
   }
 
   /**
@@ -419,12 +469,52 @@ export class Input {
     }
     if (next === this.mode) return;
     this.mode = next;
+    this.repairDrag = null;
     this.hooks.onMode?.(this.mode);
   }
 
-  /** The mode's button or hotkey: on, or off again when it is on. */
+  /**
+   * The mode's button or hotkey: on, or off again when it is on. Repair with
+   * own structures selected repairs them instead (`repairSelection`).
+   */
   toggleMode(mode) {
+    if (mode === 'repair' && this.mode !== 'repair' && this.selectedOwnBuildings().length) {
+      this.repairSelection();
+      return;
+    }
     this.setMode(this.mode === mode ? null : mode);
+  }
+
+  /** Selected structures that belong to the local player. */
+  selectedOwnBuildings() {
+    return this.selection.filter((id) => {
+      const info = this.info(id);
+      return info && info.owner === this.player && info.building;
+    });
+  }
+
+  /**
+   * Bulk repair of the selection: the own damaged structures selected start
+   * repairing, or all stop when all are repairing (engine
+   * `repair_buildings`). With none of them damaged, repair mode opens as usual.
+   */
+  async repairSelection() {
+    const ids = await this.ask.repair_targets(this.player, Uint32Array.from(this.selectedOwnBuildings()));
+    if (ids.length) this.game.repair_buildings(this.player, Uint32Array.from(ids));
+    else this.setMode('repair');
+  }
+
+  /** Bulk repair of the own damaged structures in the box from world point `a` to `b` (repair mode). */
+  async boxRepair(a, b) {
+    const ids = await this.ask.repair_box(this.player, a.x, a.y, b.x, b.y);
+    if (ids.length && this.mode === 'repair') this.game.repair_buildings(this.player, Uint32Array.from(ids));
+  }
+
+  /** The repair mode's drag box in world px ({ a, b }), or null while it is still a click. */
+  repairBox() {
+    const d = this.repairDrag;
+    if (!d || Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < CLICK_SLOP) return null;
+    return { a: this.toWorld(d.sx, d.sy), b: this.toWorld(d.ex, d.ey) };
   }
 
   /** A left click on the map in a sidebar mode. */
@@ -439,7 +529,8 @@ export class Input {
     const hit = await this.ask.pick(this.player, w.x, w.y);
     if (hit === NONE) return;
     if (mode === 'sell') {
-      if ((await this.ask.sell_value(this.player, hit)) <= 0) return;
+      // -1: it cannot be sold (walls can, for $0).
+      if ((await this.ask.sell_value(this.player, hit)) < 0) return;
       this.game.sell(this.player, hit);
       this.flashOrder(w, ACTION.HARVEST);
     } else if (mode === 'repair') {
@@ -459,9 +550,12 @@ export class Input {
   /** Whether the current mode can act on what is at world point `w` (the cursor). */
   modeTarget(w) {
     if (this.mode === 'beacon') return true;
+    const box = this.mode === 'repair' ? this.repairBox() : null;
+    // Dragging a repair box: whether it holds a structure to repair.
+    if (box) return this.game.repair_box(this.player, box.a.x, box.a.y, box.b.x, box.b.y).length > 0;
     const hit = this.game.pick(this.player, w.x, w.y);
     if (hit === NONE) return false;
-    if (this.mode === 'sell') return this.game.sell_value(this.player, hit) > 0;
+    if (this.mode === 'sell') return this.game.sell_value(this.player, hit) >= 0;
     if (this.mode === 'repair') return this.game.repair_cursor(this.player, hit) > 0;
     if (this.mode === 'powerDown') return !!this.game.can_power_down(this.player, hit);
     return false;
@@ -544,30 +638,69 @@ export class Input {
 
   bind() {
     const c = this.canvas;
-    c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('mousedown', (e) => this.onMouseDown(e));
-    window.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    // What dispose() takes away again: the canvas outlives a game, and the window too.
+    this.offs = [];
+    const on = (target, type, fn, options) => {
+      target.addEventListener(type, fn, options);
+      this.offs.push(() => target.removeEventListener(type, fn, options));
+    };
+    on(c, 'contextmenu', (e) => e.preventDefault());
+    on(c, 'mousedown', (e) => this.onMouseDown(e));
+    on(window, 'mousemove', (e) => this.onMouseMove(e));
+    on(window, 'mouseup', (e) => this.onMouseUp(e));
     // Take the position from the enter event itself: until the first move the
     // stored position would be stale (-1, -1 at start), which reads as "at the
     // top-left edge" and scrolled the view by itself.
-    c.addEventListener('mouseenter', (e) => {
+    on(c, 'mouseenter', (e) => {
       const p = this.local(e);
       this.mouse.x = p.x;
       this.mouse.y = p.y;
       this.mouse.inside = true;
     });
-    c.addEventListener('mouseleave', () => (this.mouse.inside = false));
-    c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
-    window.addEventListener('keydown', (e) => this.onKeyDown(e));
-    window.addEventListener('keyup', (e) => {
+    on(c, 'mouseleave', () => (this.mouse.inside = false));
+    // Into the window from outside, and out of it (relatedTarget null; the
+    // virtual pointer of js/mouselock.js sends that too when it lets go).
+    on(window, 'mouseover', (e) => this.trackWindowMouse(e));
+    // Pointer events come before their mouse events: they say whether a mouse or a finger moved.
+    for (const type of ['pointerdown', 'pointermove', 'pointerup']) on(window, type, (e) => this.notePointerType(e), true);
+    on(window, 'mouseout', (e) => {
+      if (!e.relatedTarget) this.windowMouse.inside = false;
+    });
+    on(c, 'wheel', (e) => this.onWheel(e), { passive: false });
+    on(window, 'keydown', (e) => this.onKeyDown(e));
+    on(window, 'keyup', (e) => {
       this.keys.delete(e.key);
       this.hotkeys.release(e);
     });
-    window.addEventListener('blur', () => {
+    on(window, 'blur', () => {
       this.keys.clear();
       this.hotkeys.releaseAll();
     });
+  }
+
+  /** A pointer event: a finger or pen takes the window position away until a mouse moves again (hybrid devices). */
+  notePointerType(e) {
+    if (!e.pointerType) return;
+    const m = this.windowMouse;
+    m.finger = e.pointerType !== 'mouse';
+    if (m.finger) m.inside = false;
+  }
+
+  /**
+   * The mouse's window position from a mouse event: inside while it is
+   * within the window. Events of a finger (js/touch.js marks its own with
+   * pointerType 'touch') leave no position: a tap at the screen edge must not
+   * scroll the map until the next touch.
+   */
+  trackWindowMouse(e) {
+    const m = this.windowMouse;
+    if (m.finger || (e.pointerType && e.pointerType !== 'mouse')) {
+      m.inside = false;
+      return;
+    }
+    m.x = e.clientX;
+    m.y = e.clientY;
+    m.inside = m.x >= 0 && m.y >= 0 && m.x < window.innerWidth && m.y < window.innerHeight;
   }
 
   local(e) {
@@ -629,7 +762,9 @@ export class Input {
       return true;
     }
     if (this.mode) {
-      this.modeClick(w);
+      // Repair mode on the battlefield: a click repairs one, a drag a box (mouse up).
+      if (this.mode === 'repair' && at) this.repairDrag = { sx: at.x, sy: at.y, ex: at.x, ey: at.y };
+      else this.modeClick(w);
       return true;
     }
     if (this.placing) {
@@ -677,18 +812,16 @@ export class Input {
    * support powers, sidebar modes, ability targeting, the command bar's modes
    * and modifiers (force move, force attack, guard, Shift waypoints),
    * minefields, attack move, the smart order (move, attack, harvest, enter...)
-   * and rally points. `mods`: { shift, ctrl, alt }. `button` 0 is the action
-   * button (left, as on the battlefield); 2, the right button (the radar's
-   * order button before, and OpenRA's in its modern mouse style), gives only
-   * the selected units' orders. Selecting, deploying and placing structures
-   * stay on the battlefield (OpenRA places where the mouse is, not at the
-   * radar spot); spectators and replays give no orders. Resolves with true
-   * when the click was an order; false leaves it to the radar, which moves
-   * the camera there.
+   * and rally points. `mods`: { shift, ctrl, alt }. Only the action button
+   * (left, as on the battlefield) and a touch tap come here: the radar's
+   * other buttons move the camera (OpenRA RadarWidget). Selecting, deploying
+   * and placing structures stay on the battlefield (OpenRA places where the
+   * mouse is, not at the radar spot); spectators and replays give no orders.
+   * Resolves with true when the click was an order; false leaves it to the
+   * radar, which moves the camera there.
    */
-  async radarClick(w, mods = {}, button = 0) {
+  async radarClick(w, mods = {}) {
     if (this.suspended || this.spectator || this.placing) return false;
-    if ((this.power || this.mode || this.targeting) && button !== 0) return false;
     const e = { shiftKey: !!mods.shift, ctrlKey: !!mods.ctrl, metaKey: false, altKey: !!mods.alt };
     if (this.pressAction(w, e, null)) {
       // A down and an up at one spot: a support power without a direction, a one-cell minefield.
@@ -713,6 +846,7 @@ export class Input {
   }
 
   onMouseMove(e) {
+    this.trackWindowMouse(e);
     const p = this.local(e);
     this.mouse.x = p.x;
     this.mouse.y = p.y;
@@ -724,6 +858,10 @@ export class Input {
     if (this.drag) {
       this.drag.ex = p.x;
       this.drag.ey = p.y;
+    }
+    if (this.repairDrag) {
+      this.repairDrag.ex = p.x;
+      this.repairDrag.ey = p.y;
     }
     if (this.mineDrag) {
       const w = this.toWorld(p.x, p.y);
@@ -747,6 +885,15 @@ export class Input {
       this.layMines();
       return;
     }
+    if (e.button === 0 && this.repairDrag) {
+      this.onMouseMove(e);
+      const box = this.repairBox();
+      const d = this.repairDrag;
+      this.repairDrag = null;
+      if (box) this.boxRepair(box.a, box.b);
+      else this.modeClick(this.toWorld(d.sx, d.sy));
+      return;
+    }
     if (e.button === 0 && this.power && this.powerDrag) {
       const p = this.local(e);
       const t = this.powerDrag;
@@ -759,7 +906,7 @@ export class Input {
     this.drag = null;
     const a = this.toWorld(d.sx, d.sy);
     const b = this.toWorld(d.ex, d.ey);
-    if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < 6) {
+    if (Math.abs(d.ex - d.sx) + Math.abs(d.ey - d.sy) < CLICK_SLOP) {
       this.finishClick(b, d);
       return;
     }
@@ -1204,6 +1351,7 @@ export class Input {
     this.drag = null;
     this.pan = null;
     this.mineDrag = null;
+    this.repairDrag = null;
     this.powerDrag = null;
     this.edgeScroll = null;
   }
@@ -1223,7 +1371,10 @@ export class Input {
   update(dt) {
     this.trackViewSize();
     this.edgeScroll = null;
-    if (this.suspended) return;
+    if (this.suspended) {
+      this.setPageCursor('');
+      return;
+    }
     let kx = 0;
     let ky = 0;
     // OpenRA MapScroll hotkeys (arrow keys by default): held keys of the registry.
@@ -1234,8 +1385,8 @@ export class Input {
     const edgeSpeed = this.settings.get('edgeScrollSpeed');
     let ex = 0;
     let ey = 0;
-    if (edgeSpeed > 0 && this.mouse.inside && !this.mouse.touch && !this.drag && !this.pan) {
-      ({ dx: ex, dy: ey } = edgeDirection(this.mouse.x, this.mouse.y, this.canvas.clientWidth, this.canvas.clientHeight));
+    if (this.mayEdgeScroll(edgeSpeed)) {
+      ({ dx: ex, dy: ey } = edgeDirection(this.windowMouse.x, this.windowMouse.y, window.innerWidth, window.innerHeight));
       if (ex || ey) this.edgeScroll = { dx: ex, dy: ey, blocked: scrollBlocked(ex, ey, this.camera, this.bounds()) };
     }
     const keySpeed = this.settings.get('keyScrollSpeed');
@@ -1247,6 +1398,22 @@ export class Input {
       this.clampCamera();
     }
     this.updateCursor();
+  }
+
+  /** Whether the mouse may scroll the view at the window edge now (edgeScrollAllowed). */
+  mayEdgeScroll(speed = this.settings.get('edgeScrollSpeed')) {
+    const doc = this.canvas.ownerDocument;
+    return edgeScrollAllowed({
+      speed,
+      inWindow: this.windowMouse.inside,
+      touch: this.mouse.touch,
+      focused: doc?.hasFocus?.() ?? true,
+      suspended: this.suspended,
+      busy: !!(this.drag || this.repairDrag || this.pan),
+      typing: typingIn(doc?.activeElement),
+      // { holdsEdgeScroll() }: a dialog open, a radar drag, the mouse released (js/main.js).
+      held: !!this.hooks.holdsEdgeScroll?.(),
+    });
   }
 
   /** Whether the building being placed fits where the mouse is. */
@@ -1268,6 +1435,20 @@ export class Input {
       this.cursor = cursor;
       this.canvas.style.cursor = cursor;
     }
+    this.setPageCursor(this.edgeScroll ? cursor : '');
+  }
+
+  /**
+   * The scroll arrow over the whole page while the edge scrolls, the
+   * sidebar and HUD included (css/style.css html.edge-scroll; '' takes it
+   * away). Their clicks still work, as in OpenRA.
+   */
+  setPageCursor(cursor) {
+    if (this.pageCursor === cursor) return;
+    this.pageCursor = cursor;
+    const root = this.canvas.ownerDocument?.documentElement;
+    if (cursor) root?.style.setProperty('--edge-scroll-cursor', cursor);
+    root?.classList.toggle('edge-scroll', !!cursor);
   }
 
   /** The held modifier keys: { ctrl, alt, shift } (Cmd counts as Ctrl). */
@@ -1336,21 +1517,24 @@ export class Input {
   uiRects() {
     const out = [];
     const push = (x, y, w, h, r, g, b, a) => out.push(x, y, w, h, r, g, b, a);
-    if (this.drag) {
-      const a = this.toWorld(this.drag.sx, this.drag.sy);
-      const b = this.toWorld(this.drag.ex, this.drag.ey);
+    // A drag box from world point a to b: an outline over a faint fill.
+    const box = (a, b, r, g, bl, fill) => {
       const x0 = Math.min(a.x, b.x);
       const y0 = Math.min(a.y, b.y);
       const w = Math.abs(b.x - a.x);
       const h = Math.abs(b.y - a.y);
       const t = 1 / this.camera.zoom;
-      // White outline over a faint fill, like OpenRA's selection box.
-      push(x0, y0, w, h, 1, 1, 1, 0.06);
-      push(x0, y0, w, t, 1, 1, 1, 0.9);
-      push(x0, y0 + h - t, w, t, 1, 1, 1, 0.9);
-      push(x0, y0, t, h, 1, 1, 1, 0.9);
-      push(x0 + w - t, y0, t, h, 1, 1, 1, 0.9);
-    }
+      push(x0, y0, w, h, r, g, bl, fill);
+      push(x0, y0, w, t, r, g, bl, 0.9);
+      push(x0, y0 + h - t, w, t, r, g, bl, 0.9);
+      push(x0, y0, t, h, r, g, bl, 0.9);
+      push(x0 + w - t, y0, t, h, r, g, bl, 0.9);
+    };
+    // White, like OpenRA's selection box.
+    if (this.drag) box(this.toWorld(this.drag.sx, this.drag.sy), this.toWorld(this.drag.ex, this.drag.ey), 1, 1, 1, 0.06);
+    // Bulk repair box: the repair cursor's yellow.
+    const repairBox = this.mode === 'repair' ? this.repairBox() : null;
+    if (repairBox) box(repairBox.a, repairBox.b, 0.95, 0.79, 0.3, 0.08);
     if (this.orderFlash && performance.now() < this.orderFlash.until) {
       const f = this.orderFlash;
       const t = (f.until - performance.now()) / 450;

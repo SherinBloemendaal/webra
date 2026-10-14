@@ -142,11 +142,12 @@ test('selling a structure refunds money', () => {
   // The construction yard is under the start position.
   const [x, y] = game.start_position(0);
   const yard = game.pick(0, x, y);
-  assert.ok(game.sell_value(0, yard) > 0);
+  assert.equal(game.sell_value(0, yard), 1000, 'what the sale pays');
+  assert.equal(game.sell_value(1, yard), -1, 'only its owner can sell it');
   game.sell(0, yard);
   ticks(game, 1);
   assert.equal(JSON.parse(game.player_json(0)).cash, before, 'the make animation plays backwards first');
-  assert.equal(game.sell_value(0, yard), 0, 'it cannot be sold twice');
+  assert.equal(game.sell_value(0, yard), -1, 'it cannot be sold twice');
   ticks(game, 32);
   assert.equal(JSON.parse(game.player_json(0)).cash, before + 1000, '50% of 2000, at the end');
 });

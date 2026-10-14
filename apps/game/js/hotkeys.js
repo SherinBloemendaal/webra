@@ -7,7 +7,9 @@
 //
 // Defaults are OpenRA's Red Alert hotkeys (js/openra-hotkeys.js, generated
 // from OpenRA's mods/common/hotkeys/*.yaml and mods/ra/hotkeys.yaml), except
-// where the browser keeps OpenRA's key for itself (BROWSER_SUBSTITUTES).
+// where the browser keeps OpenRA's key for itself (BROWSER_SUBSTITUTES) or
+// one of WebRA's own actions has it (WEBRA_SUBSTITUTES: on macOS Option+E
+// releases the mouse).
 // Actions name their OpenRA hotkey (`openra`), which gives them OpenRA's
 // description, contexts and section of the hotkey settings; README.md
 // (Controls) lists them all.
@@ -58,11 +60,45 @@ export const BROWSER_SUBSTITUTES = Object.freeze({
   ReplaySpeedMax: { key: null, why: 'F12 opens the browser developer tools' },
 });
 
-/** WebRA's default keys for an OpenRA hotkey: OpenRA's key, or its browser substitute. */
-export function openraDefaults(name) {
+/**
+ * The release mouse key (js/mouselock.js, js/gamekeys.js), per platform:
+ * Option+E on macOS, like cloud gaming services (the owner's choice; Option
+ * opens no browser menu there). On Windows and Linux Alt+E opens Chrome's and
+ * Edge's menu and Firefox's Edit menu, which a page cannot reliably hold
+ * back, and Ctrl+Alt+E is AltGr+E (the euro sign on many European layouts),
+ * so it is Alt+Shift+E there: no browser reserves it (Chrome, Edge and
+ * Firefox's published shortcut lists) and no OpenRA hotkey has it.
+ */
+export const RELEASE_MOUSE_KEYS = Object.freeze({ mac: 'Alt+E', other: 'Alt+Shift+E' });
+
+/** The release mouse key's default on this platform (RELEASE_MOUSE_KEYS). */
+export function releaseMouseKey(mac = isMac()) {
+  return mac ? RELEASE_MOUSE_KEYS.mac : RELEASE_MOUSE_KEYS.other;
+}
+
+/**
+ * OpenRA hotkeys whose default key one of WebRA's own actions has, and what
+ * they use instead (null: no default key; the player can bind one in the
+ * Controls page); `macOnly`: only where that action has the key (macOS).
+ * docs and README.md list them.
+ */
+export const WEBRA_SUBSTITUTES = Object.freeze({
+  MapBookmarkRestore03: { key: null, why: 'Option+E releases the captured mouse, as in cloud gaming services', macOnly: true },
+});
+
+/** Where WebRA's default for an OpenRA hotkey differs from OpenRA's on this platform: `{ key, why }`, or null. */
+export function substituteFor(name, mac = isMac()) {
+  if (Object.hasOwn(BROWSER_SUBSTITUTES, name)) return BROWSER_SUBSTITUTES[name];
+  const own = Object.hasOwn(WEBRA_SUBSTITUTES, name) ? WEBRA_SUBSTITUTES[name] : null;
+  return own && (mac || !own.macOnly) ? own : null;
+}
+
+/** WebRA's default keys for an OpenRA hotkey: OpenRA's key, or its substitute (substituteFor). */
+export function openraDefaults(name, mac = isMac()) {
   const h = OPENRA_HOTKEYS[name];
   if (!h) throw new Error(`Unknown OpenRA hotkey "${name}"`);
-  const key = Object.hasOwn(BROWSER_SUBSTITUTES, name) ? BROWSER_SUBSTITUTES[name].key : h.key;
+  const sub = substituteFor(name, mac);
+  const key = sub ? sub.key : h.key;
   return key ? [key] : [];
 }
 
@@ -317,6 +353,14 @@ function inputType(el) {
   return String(el.type || el.getAttribute?.('type') || 'text').toLowerCase();
 }
 
+/** Whether `el` is a text field the player can type in (focused, every key is its own: the chat line). */
+export function typingIn(el) {
+  if (typeof el?.tagName !== 'string' || el.disabled) return false;
+  // The cheap checks first: js/input.js asks every frame, and rendered() measures layout.
+  const text = el.isContentEditable || (el.tagName === 'TEXTAREA' && !el.readOnly) || (el.tagName === 'INPUT' && TEXT_TYPES.has(inputType(el)) && !el.readOnly);
+  return text && rendered(el);
+}
+
 /**
  * Whether the focused element (the event's target) uses this key itself, so
  * no hotkey runs: every key in a text field the player can type in, the keys
@@ -324,11 +368,10 @@ function inputType(el) {
  */
 export function focusKeepsKey(e) {
   const t = e.target;
+  if (typingIn(t)) return true;
   if (typeof t?.tagName !== 'string' || t.disabled || !rendered(t)) return false;
-  if (t.isContentEditable) return true;
-  if (t.tagName === 'TEXTAREA') return !t.readOnly;
-  const text = t.tagName === 'INPUT' && TEXT_TYPES.has(inputType(t));
-  if (text) return !t.readOnly;
+  if (t.tagName === 'TEXTAREA') return false;
+  if (t.tagName === 'INPUT' && TEXT_TYPES.has(inputType(t))) return false;
   // A control's own keys are plain ones: Alt+Arrow is still the map edge key.
   if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
   if (t.tagName === 'INPUT') return CONTROL_KEYS[inputType(t)]?.has(e.key) ?? false;

@@ -26,50 +26,88 @@ use std::collections::BinaryHeap;
 /// Cells a single search may expand.
 pub const SEARCH_LIMIT: u32 = 4096;
 /// OpenRA PathFinderInfo.HeuristicWeightPercentage.
-const HEURISTIC_WEIGHT: u32 = 125;
+pub(crate) const HEURISTIC_WEIGHT: u32 = 125;
 
 /// Per-cell bookkeeping reused by every search (never part of the game
 /// state): a cell's entries are valid when its stamp is the current one.
 #[derive(Clone, Default)]
 pub struct Scratch {
-    stamp: Vec<u32>,
-    cost: Vec<u32>,
-    parent: Vec<u32>,
+    nodes: Vec<Node>,
+    /// The open list's storage, kept between searches.
+    open: Vec<Reverse<Open>>,
     current: u32,
     /// Cells expanded by all searches so far (tests and the stress bench).
     pub expanded: u64,
     /// Searches run so far.
     pub searches: u64,
+    /// Searches that gave up at `SEARCH_LIMIT`.
+    pub limited: u64,
 }
+
+/// A cell's entries of the current search, side by side in memory: a
+/// search reads all of them for each cell it reaches.
+#[derive(Clone, Copy)]
+struct Node {
+    /// `cost` and `parent` belong to the search with this stamp.
+    stamp: u32,
+    cost: u32,
+    parent: u32,
+    /// `step` belongs to the search with this stamp.
+    seen: u32,
+    /// The cost factor of entering the cell (its terrain speed), or
+    /// `u32::MAX` when the unit may not enter it under the search's check.
+    /// Asked once per search and cell, though a search reaches a cell from
+    /// up to eight neighbours: the answer cannot change while it runs
+    /// (nothing moves during a search).
+    step: u32,
+}
+
+/// An open list entry: estimated total cost, estimate, tie-break, cell,
+/// cost so far. Entries never compare equal (a cell is only pushed again at
+/// a lower cost), so the order of the search does not depend on the heap.
+type Open = (u32, u32, (i32, i32), u32, u32);
+
+const UNSEEN: Node = Node { stamp: 0, cost: 0, parent: NONE, seen: 0, step: 0 };
 
 impl Scratch {
     fn begin(&mut self, cells: usize) {
-        if self.stamp.len() != cells {
-            self.stamp = vec![0; cells];
-            self.cost = vec![0; cells];
-            self.parent = vec![NONE; cells];
+        if self.nodes.len() != cells {
+            self.nodes = vec![UNSEEN; cells];
             self.current = 0;
         }
         self.current = self.current.wrapping_add(1);
         if self.current == 0 {
-            self.stamp.iter_mut().for_each(|s| *s = 0);
+            self.nodes.iter_mut().for_each(|n| *n = UNSEEN);
             self.current = 1;
         }
         self.searches += 1;
     }
 
     fn cost_of(&self, c: usize) -> u32 {
-        if self.stamp[c] == self.current {
-            self.cost[c]
+        let n = &self.nodes[c];
+        if n.stamp == self.current {
+            n.cost
         } else {
             u32::MAX
         }
     }
 
     fn set(&mut self, c: usize, cost: u32, parent: u32) {
-        self.stamp[c] = self.current;
-        self.cost[c] = cost;
-        self.parent[c] = parent;
+        let n = &mut self.nodes[c];
+        n.stamp = self.current;
+        n.cost = cost;
+        n.parent = parent;
+    }
+
+    /// `step(c)` (None: the cell may not be entered) asked once per search for cell `c`.
+    fn step(&mut self, c: usize, step: impl FnOnce(usize) -> Option<u32>) -> Option<u32> {
+        let current = self.current;
+        let n = &mut self.nodes[c];
+        if n.seen != current {
+            n.seen = current;
+            n.step = step(c).unwrap_or(u32::MAX);
+        }
+        (n.step != u32::MAX).then_some(n.step)
     }
 }
 
@@ -79,6 +117,7 @@ impl World {
     /// next cell last (`dest` first). None when there is none (the
     /// destination itself is taken under `check`, or no way was found).
     pub(crate) fn find_path(&mut self, i: usize, dest: u32, check: Blocking) -> Option<Vec<u32>> {
+        let _section = crate::profile::scope(crate::profile::Section::RouteSearch);
         let from = self.actors[i].mv.to;
         if from == NONE || dest as usize >= self.map.cells() {
             return None;
@@ -130,7 +169,9 @@ impl World {
             (lo * COST_DIAGONAL + (hi - lo) * COST_STRAIGHT) * 80 / 100
         };
         let enter_cost = |c: usize| -> u32 { 10_000 / loco.speeds[self.map.speed_class(c)].max(1) as u32 };
-        let blocked = |c: usize| !self.terrain_allows(i, c as u32);
+        // `terrain_allows`, with the unit's passability looked up once.
+        let pass = self.pass_of(i);
+        let blocked = |c: usize| pass.blocked[c] && !(pass.crush[c] != 0 && self.crushes_wall_at(i, c));
         // Ties: nearer the goal, then nearer the map centre (mirror neutral).
         let tie = |c: usize| {
             let (x, y) = (c as i32 % w, c as i32 / w);
@@ -138,7 +179,7 @@ impl World {
         };
         s.begin(self.map.cells());
         s.set(from as usize, 0, NONE);
-        let mut heap = BinaryHeap::new();
+        let mut heap = BinaryHeap::from(std::mem::take(&mut s.open));
         let h0 = estimate(from as usize);
         heap.push(Reverse((h0 * HEURISTIC_WEIGHT / 100, h0, tie(from as usize), from, 0u32)));
         let mut expanded = 0u32;
@@ -155,6 +196,7 @@ impl World {
             }
             expanded += 1;
             if expanded > SEARCH_LIMIT {
+                s.limited += 1;
                 break;
             }
             let (x, y) = (c as i32 % w, c as i32 / w);
@@ -171,11 +213,16 @@ impl World {
                 if ox != 0 && oy != 0 && (blocked(self.map.idx(x + ox, y)) || blocked(self.map.idx(x, y + oy))) {
                     continue;
                 }
-                if n != dest as usize && !self.can_enter_cell(i, n as u32, check) {
-                    continue;
-                }
+                let step = if n == dest as usize {
+                    enter_cost(n)
+                } else {
+                    match s.step(n, |n| self.can_enter_cell(i, n as u32, check).then(|| enter_cost(n))) {
+                        Some(step) => step,
+                        None => continue,
+                    }
+                };
                 let base = if d % 2 == 0 { COST_STRAIGHT } else { COST_DIAGONAL };
-                let ng = g + base * enter_cost(n) / 100;
+                let ng = g + base * step / 100;
                 if ng < s.cost_of(n) {
                     s.set(n, ng, c as u32);
                     let hn = estimate(n);
@@ -184,6 +231,8 @@ impl World {
             }
         }
         s.expanded += expanded as u64;
+        s.open = heap.into_vec();
+        s.open.clear();
         if !found {
             return None;
         }
@@ -191,7 +240,7 @@ impl World {
         let mut c = dest;
         while c != from {
             path.push(c);
-            c = s.parent[c as usize];
+            c = s.nodes[c as usize].parent;
         }
         Some(path)
     }

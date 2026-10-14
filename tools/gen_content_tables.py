@@ -22,6 +22,7 @@ Input (OpenRA mods/ra, GPL-3.0, copied into data/source, see data/CATALOG.md):
   differs (OTHER_LAYOUT). A bits file nobody decided about is an error, and
   so is an actor OpenRA draws from an original file without ACTOR_ART.
 - engine/rules.json: the actors WebRA has (id, kind, turret, harvester).
+- data/webra/rules.yaml: WebRA's own actors (no OpenRA or Red Alert art).
 
 Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - SEQUENCES[image][sequence] = normalized sequence fields (see SequenceDef in
@@ -48,7 +49,8 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - FAKE_ACTORS: the fake structures, whose cameos carry a FAKE mark.
 - CURSOR_ART: OpenRA's cursors (data/source/cursors.yaml) in mouse.shp.
 - GRAPHICS_FILES: every file name the tables can use (what the installer keeps).
-- render-facts.js RENDER_FACTS: what OpenRA draws per actor (the art audit).
+- render-facts.js RENDER_FACTS: what OpenRA draws per actor (the art audit);
+  WEBRA_ACTORS: WebRA's own actors, which OpenRA does not draw at all.
 - engine/render.json: effect warheads per weapon, muzzle flashes, damage
   smoke and working animations per actor (engine/src/fx.rs).
 
@@ -356,6 +358,20 @@ SPECIAL_ART = {
 
 sys.path.insert(0, SRC)
 import parse  # noqa: E402 (data/source/parse.py: MiniYaml parser and inheritance)
+
+WEBRA_RULES = os.path.join(ROOT, 'data', 'webra', 'rules.yaml')
+
+
+def webra_actor_ids():
+    """WebRA's own actors (data/webra/rules.yaml, tools/gen_rules.py
+    WEBRA_ACTORS): no OpenRA counterpart, so neither OpenRA nor Red Alert
+    has art for them. They get no ACTOR_ART and no RENDER_FACTS; WebRA
+    always draws them (its pixel art, apps/game/js/art/pixel.js), and the
+    art audit lists them as webra-only."""
+    if not os.path.exists(WEBRA_RULES):
+        return set()
+    with open(WEBRA_RULES) as f:
+        return {k for k in parse.parse_miniyaml(f.read()) if not k.startswith('^')}
 
 # Sequence fields this tool understands; anything else on a used sequence is an error.
 KNOWN_FIELDS = {
@@ -1431,8 +1447,13 @@ def main():
                 raise SystemExit(f"{a['id']} {power['key']}: no sequence icon.{name}")
             used.setdefault('icon', {})[name] = rec
     specials, explosion_art = special_art(seqs, used, render['explosions'])
-    facts = render_facts(actors, seqs)
+    webra = webra_actor_ids()
+    facts = render_facts([a for a in actors if a['id'] not in webra], seqs)
     for a in actors:
+        if a['id'] in webra:
+            if a['id'] in art:
+                raise SystemExit(f"{a['id']}: WebRA's own actor (data/webra/rules.yaml) cannot have original art")
+            continue
         # An actor OpenRA draws from an original file has original art: one
         # dropped here (no idle pose) would silently keep WebRA's.
         body = [p for p in facts[a['id']]['parts'] if p[0] in ('body', 'stand', 'crate-land')]
@@ -1648,6 +1669,13 @@ def main():
         ' * `art`), so the audit checks them like the rules actors.',
         ' */',
         f'export const MISSION_ACTORS = {js({key: kind for key, _source, kind in MISSION_ART})};',
+        '',
+        '/**',
+        ' * WebRA\'s own actors (data/webra/rules.yaml): not OpenRA actors, so no',
+        ' * RENDER_FACTS. Neither OpenRA nor Red Alert has art for them; WebRA',
+        ' * always draws its own (art/pixel.js), the audit lists them as webra-only.',
+        ' */',
+        f'export const WEBRA_ACTORS = {js(sorted(a["id"] for a in actors if a["id"] in webra))};',
         '',
         '/**',
         ' * OpenRA\'s own files (data/source/bits.txt) the tables treat as missing',
