@@ -789,6 +789,19 @@ pub enum Order {
         player: u8,
         ids: Vec<u32>,
     },
+    /// WebRA bulk repair: each listed own damaged unit goes to the nearest own
+    /// structure that repairs it (OpenRA's Repair order, as a click on that
+    /// service depot or naval yard with the unit selected; repair.rs).
+    RepairUnits {
+        player: u8,
+        ids: Vec<u32>,
+    },
+    /// WebRA bulk sell: sell the listed own sellable structures (a box in
+    /// sell mode), never one that packs up into a unit (production.rs).
+    SellBuildings {
+        player: u8,
+        ids: Vec<u32>,
+    },
     /// Switch an own structure off or on again (the sidebar's Power down
     /// button, OpenRA ToggleConditionOnOrder; repair.rs).
     PowerDown {
@@ -863,6 +876,8 @@ impl Order {
             | Order::SetStance { player, .. }
             | Order::RepairBuilding { player, .. }
             | Order::RepairBuildings { player, .. }
+            | Order::RepairUnits { player, .. }
+            | Order::SellBuildings { player, .. }
             | Order::PowerDown { player, .. }
             | Order::PlaceBeacon { player, .. }
             | Order::Surrender { player }
@@ -899,6 +914,8 @@ impl Order {
             | Order::SetStance { player, .. }
             | Order::RepairBuilding { player, .. }
             | Order::RepairBuildings { player, .. }
+            | Order::RepairUnits { player, .. }
+            | Order::SellBuildings { player, .. }
             | Order::PowerDown { player, .. }
             | Order::PlaceBeacon { player, .. }
             | Order::Surrender { player }
@@ -927,6 +944,8 @@ impl Order {
             | Order::Waypoint { ids, .. }
             | Order::SetStance { ids, .. }
             | Order::RepairBuildings { ids, .. }
+            | Order::RepairUnits { ids, .. }
+            | Order::SellBuildings { ids, .. }
             | Order::DevKill { ids, .. }
             | Order::DevExperience { ids, .. } => ids.len() <= MAX_IDS,
             Order::LayMines { ids, x0, y0, x1, y1, .. } => {
@@ -967,6 +986,9 @@ impl Order {
             | Order::SupportPower { .. }
             | Order::RepairBuilding { .. }
             | Order::RepairBuildings { .. }
+            // Clears the commands of the units it sends only (repair.rs).
+            | Order::RepairUnits { .. }
+            | Order::SellBuildings { .. }
             | Order::PowerDown { .. }
             | Order::PlaceBeacon { .. }
             | Order::Surrender { .. }
@@ -2263,6 +2285,8 @@ impl World {
                     }
                 }
                 Order::RepairBuildings { player, ids } => self.toggle_repair_group(player, &ids),
+                Order::RepairUnits { player, ids } => self.send_units_to_repair(player, &ids),
+                Order::SellBuildings { player, ids } => self.sell_group(player, &ids),
                 Order::PowerDown { player, building } => {
                     if let Some(b) = self.resolve(building) {
                         self.toggle_power_down(player, b);
@@ -2612,17 +2636,9 @@ impl World {
             }
             SmartAction::Repair => {
                 let t = self.actor_at(player, x, y).unwrap();
-                let tref = self.make_ref(t);
                 let (veh, others): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.repairs_at(i, t));
                 for i in veh {
-                    self.release_dock(i);
-                    let a = &mut self.actors[i];
-                    a.activity = Activity::Repair;
-                    a.depot = tref;
-                    a.repair_timer = 0;
-                    a.group_size = 1;
-                    a.best_dist = i32::MAX;
-                    a.stuck_ticks = 0;
+                    self.send_to_repair_depot(i, t);
                 }
                 self.order_move(&others, x, y, false);
             }

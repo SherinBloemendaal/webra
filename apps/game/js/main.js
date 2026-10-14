@@ -83,6 +83,7 @@ import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
 import { askOf } from './sim/methods.js';
+import { BoxChooser } from './boxchooser.js';
 import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 import { ICON_CSS as OBSERVER_ICON_CSS } from './observer-icons.js';
 import { EndGameDialog, EndGameFlow } from './endgame.js';
@@ -1385,11 +1386,17 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   settings.subscribe('playerStanceColors', applyRelationshipColors);
   // A menu, the end of the game, statistics or a modal dialog is open (set per frame).
   let modalOpen = false;
+  // Bulk repair chooser and bulk sell confirmation (js/boxchooser.js), next to where a mode's box ends.
+  const boxChooser = new BoxChooser($('field'));
   const input = new Input($('view'), ui, rules, player, {
-    // No edge scrolling while a dialog is open, the radar is dragged, or the
-    // mouse is released with the release hotkey (js/mouselock.js isDetached,
-    // where it has it): the pointer is then the player's for other windows.
-    holdsEdgeScroll: () => modalOpen || !!minimap?.isPressed() || !!mouseCapture?.isDetached?.(),
+    // No edge scrolling while a dialog or a box's chooser is open, the radar
+    // is dragged, or the mouse is released with the release hotkey
+    // (js/mouselock.js isDetached, where it has it): the pointer is then the
+    // player's for the dialog or for other windows.
+    holdsEdgeScroll: () => modalOpen || boxChooser.open || !!minimap?.isPressed() || !!mouseCapture?.isDetached?.(),
+    chooseRepair: (ask) => boxChooser.chooseRepair(ask),
+    confirmSell: (ask) => boxChooser.confirmSell(ask),
+    cancelBoxChoice: () => boxChooser.cancel(),
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
       if (key) audio?.selectTarget(key);

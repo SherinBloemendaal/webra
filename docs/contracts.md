@@ -2588,7 +2588,27 @@ slot is free) all of those start, otherwise all that the sender repairs stop;
 one `RepairStarted` sound event for the group, at the first one started;
 funds are paid per step exactly as for single repairs; allied structures stay
 one `repair_building` click each, so a box over an ally's base never spends
-money on it; at most 2000 ids like the other id lists) and
+money on it; at most 2000 ids like the other id lists),
+`{"o": "repair_units", player, ids}` (WebRA bulk repair: each listed unit of
+the sender that is alive, in the world, damaged and has repair structures at
+all, each once, goes to the nearest own structure that repairs it, ties to the
+lower actor index: OpenRA's Repair order, exactly what a smart order on that
+service depot or naval yard does with the unit selected (the state hash after
+both is the same); difference from OpenRA: OpenRA's FindRepairBuilding and
+Repair order also use an ally's structure (own first, the unit's owner pays,
+the ally gains PlayerExperience), WebRA repairs units at own structures only,
+in the click path and in `repair_units` alike; its waypoints and guarding end as with any new command;
+units without such a structure now, infantry (no Repairable in Red Alert;
+they heal at a Hospital or by a medic), planes (OpenRA RA gives them
+`Repairable: fix`, but WebRA's planes only land on airfields, so they are left
+out), other players' and undamaged units are skipped),
+`{"o": "sell_buildings", player, ids}` (WebRA bulk sell: each listed
+structure that `can_bulk_sell` allows is sold as by `sell`, in the order
+listed: the sender's own, alive, in the world, with OpenRA's Sellable (a
+refund percent, so no tech buildings), not being captured or demolished, and
+never one with OpenRA's Transforms (the Construction Yard, which packs up into
+an MCV; a single `sell` still sells it); the announcer's per-key cooldown
+makes N sales one "Structure sold") and
 `{"o": "place_beacon", player, x, y}` (world units, inside the map; the
 beacon sits on the centre of that cell and replaces the player's previous
 one). Repair follows OpenRA's RepairableBuilding: a step of `min(step,
@@ -2612,19 +2632,49 @@ Rules: `building.repairable {percent, interval, step, bonuses}` or null,
 y)` (pixels), `repair_cursor(player, id)` (0 nothing, 1 toggle repairing that
 structure, 2 an own damaged unit goes to its depot), `repair_unit_target(player,
 id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`,
-for bulk repair `repair_buildings(player, ids)`, `repair_targets(player, ids)`
-(the own damaged repairable structures among `ids`, in that order: the Repair
-button or key with them selected sends `repair_buildings` for them instead of
-opening repair mode, which opens when there are none) and
-`repair_box(player, x0, y0, x1, y1)` (pixels; the own damaged repairable
-structures whose selection bounds touch the box, in actor order: a drag of at
-least 6 view px in repair mode sends `repair_buildings` for them on release,
-draws a yellow box and shows the repair cursor while the box holds one, the
-blocked one otherwise; a shorter drag is the usual click; touch: a drag in
-repair mode is that box). There is no separate "repair all damaged structures"
-hotkey: OpenRA's hotkey set has no such command to name it after, and
-selecting the base (box or double click on a structure) and pressing Repair
-does the same. Wasm for the hotkeys:
+for bulk repair and sell `repair_buildings(player, ids)`,
+`repair_units(player, ids)`, `sell_buildings(player, ids)`,
+`repair_selection_json(player, ids)` and `repair_box_json(player, x0, y0,
+x1, y1)` (pixels; the player's actors whose selection bounds touch the box,
+in actor order) as `{"buildings", "combat", "harvesters", "other",
+"noFacility"}` id lists (each id once, in order: own damaged structures with
+the repair button; own damaged units that structures repair, armed ones
+`combat`, harvesters `harvesters`, the rest `other` (MCV, transports,
+minelayers, unarmed helicopters); `noFacility`: those units with no own repair
+structure now), and `sell_box(player, x0, y0, x1, y1)` (the structures a box
+sells, in actor order). Client (apps/game/js/input.js, js/boxchooser.js): the
+Repair button or key with own actors selected, outside repair mode, ends a
+sell or power down mode at once, then sends `repair_buildings` for the
+selected structures and `repair_units` for the selected units that have a
+repair structure (all kinds: the selection is the choice, no chooser) and a
+feedback line ("No repair facility for N units.") for the rest; with nothing
+to repair it opens repair mode. In repair and sell mode a drag of at least 6
+view px is a box (a shorter one is the usual click; touch: a drag in those
+modes), drawn yellow (repair) or red (sell), with the mode's cursor while it
+holds something and the blocked one otherwise. On release a repair box with
+one kind acts at once; with several, a chooser next to the release point
+offers the kinds present and All (number keys or the letters S, C, O, U, A,
+Enter for the focused one, which is the last choice when offered, Esc or a
+press outside cancels, the mode ending closes it); the choice is remembered
+in the settings (`extra.repairBoxChoice`, default `all`), and Shift held at
+the press or release (touch: Add) skips the chooser with it (All when it is
+not present). A sell box sells at once when it holds one structure; more
+asks "Sell N structures for $X?" with the total of `sell_value`; only a
+click on Sell or its keys S and Y sell, Cancel has the focus and Enter (also
+the chat key), Esc, N, C, Cancel or a press outside cancel; no modifier skips
+that question, since a sale cannot be undone. The answers of a box are
+dropped when the mode changes, a newer box starts, the game menu opens or
+the view goes (`Input.dispose`) while they come (no question is left open).
+Tab and Shift+Tab cycle within the chooser and the question while one is
+open; it takes every key meanwhile, and the view does not scroll at the
+screen edges (js/main.js `holdsEdgeScroll`). With the mouse captured
+(js/mouselock.js) the browser keeps Esc to let the mouse go: with "Esc also
+opens the menu" on, that Esc ends the mode and so the question; off, the
+question stays and the next Esc (after the 250 ms release guard) cancels
+it. There is no separate "repair
+all damaged structures" hotkey: OpenRA's hotkey set has no such command to
+name it after, and a box in repair mode or selecting the base and pressing
+Repair does the same. Wasm for the hotkeys:
 `base_actors(player)` (Construction Yards and MCVs, else the first
 structure), `harvesters(player)`, `production_buildings(player)` (no
 Construction Yards, by first production type) and `queue_producer(player,
@@ -3493,10 +3543,10 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `repair_building`, `repair_buildings`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
+| `order_*`, `sell`, `sell_buildings`, `repair_building`, `repair_buildings`, `repair_units`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `repair_targets`, `repair_box`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `observer_production`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `repair_selection_json`, `repair_box_json`, `sell_box`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `observer_production`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the

@@ -55,6 +55,8 @@ export const KEYS = Object.freeze({
   // Single player: whether a hidden page opens the menu (and so pauses); off, the game plays on.
   pauseWhenHidden: ['game', 'pauseWhenHidden'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
+  // The repair mode box chooser's last choice (js/input.js): 'all', 'buildings', 'combat', 'harvesters' or 'other'.
+  repairBoxChoice: ['extra', 'repairBoxChoice'],
   // "Send error reports" (js/telemetry/index.js follows it).
   errorReports: ['privacy', 'errorReports'],
   // The performance capture (js/perfcapture.js, the debug menu): its length
