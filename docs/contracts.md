@@ -1128,11 +1128,12 @@ reason}` (`player` null for spectators and lobby members; reasons `left`,
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
 {player, client, name, tick}`, `error {code, message}`. Protocol version 7
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello` (the client then asks to reload the page). Version 7 made live
+at `hello` with "Protocol 7 required. Reload the page.", which the client
+shows in its error banner. Version 7 made live
 lobby messages stricter: lobby options must carry `factoryLoss` (section
 3), and the host may change several slots at once (`slots`) and edit
 other players' team, handicap and spawn; frames may carry the bulk orders
-`repair_units` and `sell_buildings`, which a version 6 client would refuse
+`repair_buildings`, `repair_units` and `sell_buildings`, which a version 6 client would refuse
 to parse. Version 6 added lobby maps (the map details, `mapState`,
 `mapstate`, `kick`), the rematch (`rematch` both ways, rejoining the lobby),
 online saves (`save` both ways, `start.resume`, `lobby.resume`, online save

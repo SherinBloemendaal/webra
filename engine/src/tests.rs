@@ -846,7 +846,8 @@ fn four_player_free_for_all_ai_game_finishes() {
     // OpenRA movement (the default) makes land games a few minutes longer
     // than the WebRA model (docs/contracts.md, AI measurements). Measured
     // with this setup after merging the production exits with lightning
-    // (lightning.rs), stepping each seed until a winner or 60 minutes: seed
+    // (lightning.rs), stepping each seed until a winner or 60 minutes (longer than
+    // this test's 50-minute limit, to see the whole spread): seed
     // 11's first player falls after 10 minutes and the winner stands after
     // 17. Over seeds 10 to 17 the first falls come at 10 to 24 minutes with
     // lightning (winners at 17 to 35, seed 13 none) and at 11 to 26 with
