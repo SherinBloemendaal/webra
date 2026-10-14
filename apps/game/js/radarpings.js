@@ -8,7 +8,10 @@
 // - a beacon of the player or an ally (PlaceBeacon: the owner's colour, for
 //   as long as the beacon stays);
 // - the player's or an ally's superweapon fired (SupportPower
-//   DisplayRadarPing: the Nuke, Iron Curtain and Chronosphere).
+//   DisplayRadarPing: the Nuke, Iron Curtain and Chronosphere);
+// - WebRA addition: a move order of the watched player that stopped short
+//   because the way stayed blocked (engine RouteBlocked: yellow, at the
+//   unit, as often as the engine reports it).
 //
 // Only pings the viewer may see count (OpenRA: allies of the render player);
 // the last of them is the last event. No DOM: js/minimap.js draws them.
@@ -33,20 +36,26 @@ export const STRUCTURE_INTERVAL_MS = 30000;
 export const UNIT_INTERVAL_MS = 10000;
 /** Support powers with DisplayRadarPing in Red Alert. */
 export const PINGED_POWERS = new Set(['NukePower', 'GrantExternalConditionPower', 'ChronoshiftPower']);
+/** Ticks a route-blocked ping stays (WebRA). */
+export const ROUTE_BLOCKED_TICKS = 100;
 
 const RED = [1, 0, 0];
+const YELLOW = [1, 1, 0];
 
 export class RadarPings {
   /**
    * @param {object} o
    * @param {(owner: number) => boolean} o.visible whether pings of `owner`'s
    *   things are for this viewer (owner and allies of the watched player)
+   * @param {(owner: number) => boolean} [o.own] whether `owner` is the watched
+   *   player (pings meant for that player alone); default `visible`
    * @param {(owner: number) => number[]} o.color an owner's colour, rgb 0..1
    * @param {number} o.pxPerWorld world pixels per engine world unit
    * @param {number} [o.tickMs] milliseconds per game tick
    */
-  constructor({ visible, color, pxPerWorld, tickMs = 40 }) {
+  constructor({ visible, own = visible, color, pxPerWorld, tickMs = 40 }) {
     this.visible = visible;
+    this.own = own;
     this.color = color;
     this.pxPerWorld = pxPerWorld;
     this.tickMs = tickMs;
@@ -93,6 +102,8 @@ export class RadarPings {
         this.add(x, y, this.color(owner), Math.max(1, b), now);
       } else if (kind === EV.POWER_ACTIVATED && PINGED_POWERS.has(POWER_KINDS[a])) {
         this.add(x, y, this.color(owner), PING_TICKS, now);
+      } else if (kind === EV.ROUTE_BLOCKED && this.own(owner)) {
+        this.add(x, y, YELLOW, ROUTE_BLOCKED_TICKS, now);
       }
     }
   }

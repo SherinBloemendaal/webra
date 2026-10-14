@@ -191,7 +191,7 @@ fn a_yard_between_two_waters_launches_onto_the_one_that_reaches() {
     w.step();
     let (pond, sea) = (water(&w, 5, 5), water(&w, 22, 5));
     assert_ne!(pond, sea);
-    let launch = w.naval_spawn_cell(yard).unwrap();
+    let launch = w.naval_spawn_cell(yard, ty(&w, "PT")).unwrap();
     assert_eq!(water(&w, launch.0, launch.1), pond, "the larger pond by default");
     run(&mut w, 25 * 120);
     let (rx, ry) = w.actors[yard].rally.expect("a rally point");

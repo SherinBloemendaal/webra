@@ -101,6 +101,8 @@ export const EV = {
   TELEPORTED: 46,
   /** WebRA lightning (engine lightning.rs): `b` the strike kind, 3 a power plant of `owner` (power outage). */
   LIGHTNING_STRIKE: 48,
+  /** WebRA addition: a move order ended short because the way stayed blocked, at the unit (to its owner). */
+  ROUTE_BLOCKED: 49,
 };
 
 /** The order behind a smart order's action code (js/cursors.js ACTION), for its voice line. */
@@ -570,6 +572,9 @@ export class Director {
           break;
         case EV.PRODUCTION_BLOCKED:
           if (own) this.announce(queueLine(this.actor(a).queue ?? 0, 'blocked'));
+          break;
+        case EV.ROUTE_BLOCKED:
+          if (own) this.announce('routeBlocked');
           break;
         case EV.UNIT_REPAIR_STARTED:
         case EV.UNIT_REPAIRED:

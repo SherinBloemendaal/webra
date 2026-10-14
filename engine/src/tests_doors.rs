@@ -28,6 +28,9 @@ fn factory_world() -> (World, usize) {
     }
     let weap = ty(&w, "WEAP");
     let f = w.spawn_building(weap, 0, sx, sy + 6).expect("the war factory fits");
+    // A rally point a cell below the exit, so that a new unit drives off it
+    // (without one it would stay on the exit, as in OpenRA).
+    w.actors[f].rally = Some((cell_center(sx + 1), cell_center(sy + 6 + 4)));
     w.players[0].cash = 100_000;
     w.refresh_tokens();
     w.update_power();

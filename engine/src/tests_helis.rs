@@ -98,6 +98,8 @@ fn hind_is_buildable_for_the_soviets_at_their_helipad() {
 fn hind_is_built_landed_on_the_helipad_then_takes_off() {
     let mut w = flat_world();
     let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    // Without a rally point it would stay on the pad (OpenRA).
+    w.actors[pad].rally = Some((cell_center(10), cell_center(14)));
     w.refresh_tokens();
     w.update_power();
     let hind = ty(&w, "HIND");

@@ -1248,6 +1248,16 @@
       "tent"
      ]
     },
+    "exit_types": [
+     [
+      "Soldier",
+      "Infantry"
+     ],
+     [
+      "Soldier",
+      "Infantry"
+     ]
+    ],
     "repairable": {
      "percent": 20,
      "interval": 24,
@@ -1473,6 +1483,16 @@
       "infantry.ukraine"
      ]
     },
+    "exit_types": [
+     [
+      "Soldier",
+      "Infantry"
+     ],
+     [
+      "Soldier",
+      "Infantry"
+     ]
+    ],
     "repairable": {
      "percent": 20,
      "interval": 24,
@@ -1681,6 +1701,50 @@
       "kenn"
      ]
     },
+    "exit_priorities": [
+     3,
+     2,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "exit_types": [
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ],
+     [
+      "Dog",
+      "Infantry"
+     ]
+    ],
     "repairable": {
      "percent": 20,
      "interval": 24,
@@ -3350,6 +3414,24 @@
       "syrd"
      ]
     },
+    "exit_types": [
+     [
+      "Ship",
+      "Boat"
+     ],
+     [
+      "Ship",
+      "Boat"
+     ],
+     [
+      "Ship",
+      "Boat"
+     ],
+     [
+      "Ship",
+      "Boat"
+     ]
+    ],
     "repairs": {
      "hp_per_step": 1000,
      "interval": 24,
@@ -3611,6 +3693,32 @@
       "spen"
      ]
     },
+    "exit_types": [
+     [
+      "Submarine"
+     ],
+     [
+      "Submarine"
+     ],
+     [
+      "Submarine"
+     ],
+     [
+      "Submarine"
+     ],
+     [
+      "Ship"
+     ],
+     [
+      "Ship"
+     ],
+     [
+      "Ship"
+     ],
+     [
+      "Ship"
+     ]
+    ],
     "repairs": {
      "hp_per_step": 1000,
      "interval": 24,

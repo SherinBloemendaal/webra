@@ -15,12 +15,15 @@ use wasm_bindgen::prelude::*;
 impl Game {
     /// A game of a mission file (`apps/game/missions/<id>.json`) with
     /// `{ seed, options: { difficulty: "hard" }, humans?: ["Allies1",
-    /// "Allies2"], localPlayer?: 0, movement?: "openra" }`: `humans` names
+    /// "Allies2"], localPlayer?: 0, movement?: "openra", factoryLoss?:
+    /// "openra" }`: `humans` names
     /// the mission's playable players people take, in engine order
     /// (default: its first playable player alone), `localPlayer` this
     /// screen's (presentation only), `movement` the movement model
-    /// (movement/; absent: `webra`, as games saved before the option). The
-    /// scripts are loaded and `WorldLoaded` has run.
+    /// (movement/; absent: `webra`, as games saved before the option),
+    /// `factoryLoss` what a queue does without a structure of its type
+    /// (production.rs; absent: `webra` likewise). The scripts are loaded
+    /// and `WorldLoaded` has run.
     pub fn from_mission(mission_json: &str, options_json: &str) -> Result<Game, JsError> {
         let data = MissionData::parse(mission_json).map_err(|e| JsError::new(&e))?;
         let o: serde_json::Value = serde_json::from_str(options_json).map_err(|e| JsError::new(&format!("bad options: {e}")))?;
@@ -51,6 +54,14 @@ impl Game {
                 .as_str()
                 .and_then(crate::movement::MovementModel::from_name)
                 .ok_or_else(|| JsError::new("movement must be openra or webra"))?,
+        };
+        // Absent likewise: their unit queues waited for a new factory.
+        chosen.factory_loss = match o.get("factoryLoss") {
+            None => crate::world::FactoryLoss::WebRA,
+            Some(v) => v
+                .as_str()
+                .and_then(crate::world::FactoryLoss::from_name)
+                .ok_or_else(|| JsError::new("factoryLoss must be openra or webra"))?,
         };
         let world = World::from_mission(data, seed, &chosen).map_err(|e| JsError::new(&e))?;
         Ok(Game::wrap(world))

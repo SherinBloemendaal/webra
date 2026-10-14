@@ -24,6 +24,8 @@ pub mod soft;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_blocking;
 
 pub use cellmove::Motion;
 

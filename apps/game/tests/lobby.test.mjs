@@ -13,6 +13,7 @@ import {
   STARTING_CASH,
   STARTING_UNITS,
   TECH_LEVELS,
+  LOBBY_SELECT_OPTIONS,
   GAME_SPEEDS,
   DIFFICULTIES,
   BOT_TYPES,
@@ -200,10 +201,13 @@ test('options keep the lobby contract and add teams, closed slots and the map', 
   keys.push('timeLimit', 'crates', 'shortGame', 'bounty', 'separateTeamSpawns', 'allyBuildRadius', 'reusableEngineers');
   // The movement model (engine/src/movement): OpenRA's unless the player picks WebRA's.
   keys.push('movement');
+  // The factory loss rule (engine/src/production.rs): OpenRA's unless the player picks WebRA's.
+  keys.push('factoryLoss');
   for (const key of keys) {
     assert.ok(key in o, key);
   }
   assert.equal(o.movement, 'openra');
+  assert.equal(o.factoryLoss, 'openra');
   s.mapSource = 'file';
   assert.equal(buildOptions(s, '{"format":1}').map, '{"format":1}');
   const stored = storedSettings(s);
@@ -395,4 +399,33 @@ test('the movement model: lobby default, stored choice, and what the engine play
   };
   assert.equal(hash('openra'), hash('openra'));
   assert.notEqual(hash('openra'), hash('webra'));
+});
+
+test('the factory loss rule: lobby default, stored choice, and what the engine plays', () => {
+  const s = fresh();
+  assert.equal(s.factoryLoss, 'openra', 'OpenRA by default');
+  assert.ok(LOBBY_SELECT_OPTIONS.some((o) => o.key === 'factoryLoss'), 'a lobby option row (and in the game info)');
+  s.factoryLoss = 'webra';
+  const back = sanitizeState(JSON.parse(JSON.stringify(storedSettings(s))), COLORS, () => 0);
+  assert.equal(back.factoryLoss, 'webra', 'the choice is stored');
+  assert.equal(sanitizeState({ ...storedSettings(s), factoryLoss: 'nonsense' }, COLORS, () => 0).factoryLoss, 'openra');
+  // The engine plays the chosen rule, which is part of the game state; a
+  // game recorded before the option (no key) replays with WebRA's.
+  const hash = (factoryLoss) => {
+    const st = fresh();
+    st.mapSize = 64;
+    st.players[0].faction = 'germany';
+    st.players[1].faction = 'russia';
+    const options = buildOptions(st);
+    if (factoryLoss) options.factoryLoss = factoryLoss;
+    else delete options.factoryLoss;
+    const g = Game.from_options(JSON.stringify(options));
+    for (let t = 0; t < 50; t++) g.tick();
+    const h = g.state_hash();
+    g.free();
+    return h;
+  };
+  assert.equal(hash('openra'), hash('openra'));
+  assert.notEqual(hash('openra'), hash('webra'));
+  assert.equal(hash(null), hash('webra'), 'absent: WebRA, as games before the option');
 });

@@ -375,8 +375,10 @@ test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   // version 5 accounts (optional hello name, welcome name, account marks);
   // version 6 OpenRA's crates, short game, bounties, team spawns, ally build
   // radius and time limit options and per slot handicaps, map sharing (map
-  // details, map states) and rematches.
-  assert.equal(PROTOCOL_VERSION, 6);
+  // details, map states) and rematches; version 7 stricter live lobby
+  // messages (lobby options must carry factoryLoss, bulk slot edits) and
+  // the bulk orders repair_buildings, repair_units and sell_buildings.
+  assert.equal(PROTOCOL_VERSION, 7);
   assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
   assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
   bad({ ...hello, spectate: 'yes' }, /spectate/);

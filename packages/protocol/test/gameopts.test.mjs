@@ -163,3 +163,36 @@ test('the movement model: OpenRA by default, WebRA for games from before it, not
   // A map may set and lock it (map format version 2).
   assert.deepEqual(MAP_OPTION_VALUES.movement, MOVEMENT_MODELS);
 });
+
+test('the factory loss rule: OpenRA by default, WebRA for games from before it, nothing else', async () => {
+  const { FACTORY_LOSS_RULES, LEGACY_FACTORY_LOSS, validateMissionOptions, MAP_OPTION_VALUES, MISSION_OPTION_KEYS } = await import('../src/index.js');
+  assert.deepEqual(FACTORY_LOSS_RULES, ['openra', 'webra']);
+  assert.equal(DEFAULT_OPTIONS.factoryLoss, 'openra');
+  assert.equal(LEGACY_FACTORY_LOSS, 'webra');
+  for (const r of FACTORY_LOSS_RULES) assert.equal(validateLobbyOptions({ ...DEFAULT_OPTIONS, factoryLoss: r }).factoryLoss, r);
+  assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, factoryLoss: 'refund' }), /factoryLoss/);
+  assert.throws(() => validateLobbyOptions({ ...DEFAULT_OPTIONS, factoryLoss: false }), /factoryLoss/);
+  // Saves and replays from before the option keep it out: the engine plays them with `webra`.
+  const { factoryLoss: _f, ...old } = DEFAULT_OPTIONS;
+  assert.equal('factoryLoss' in validateLobbyOptions(old, 'options', { legacy: true }), false);
+  assert.equal('factoryLoss' in validateGameOptions({ ...old, players }), false);
+  const { movement: _m, ...older } = old;
+  assert.deepEqual(Object.keys(validateGameOptions({ ...older, players })).filter((k) => k === 'movement' || k === 'factoryLoss'), [], 'from before both');
+  // Live lobby options always carry it.
+  assert.throws(() => validateLobbyOptions(old), /options\.factoryLoss/);
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: old })).ok, false);
+  assert.equal(validateGameOptions({ ...DEFAULT_OPTIONS, players }).factoryLoss, 'openra');
+  // Missions: optional the same way.
+  assert.ok(MISSION_OPTION_KEYS.includes('factoryLoss'));
+  const mission = { seed: 3, gameSpeed: 'normal', options: { difficulty: 'hard' } };
+  assert.equal('factoryLoss' in validateMissionOptions(mission), false);
+  assert.equal(validateMissionOptions({ ...mission, factoryLoss: 'webra' }).factoryLoss, 'webra');
+  assert.throws(() => validateMissionOptions({ ...mission, factoryLoss: 'wait' }), /factoryLoss/);
+  // Game modes carry it; modes saved before it take OpenRA's.
+  assert.ok(PRESET_KEYS.includes('factoryLoss') && ADDED_PRESET_KEYS.includes('factoryLoss'));
+  const saved = presetOptions(DEFAULT_OPTIONS);
+  delete saved.factoryLoss;
+  assert.equal(validateSavedPresets([{ name: 'Before factory loss', options: saved }])[0].options.factoryLoss, 'openra');
+  // A map may set and lock it.
+  assert.deepEqual(MAP_OPTION_VALUES.factoryLoss, FACTORY_LOSS_RULES);
+});
