@@ -124,7 +124,8 @@ test('structures queue; without a Construction Yard they are cancelled and unava
   // Sell the only Construction Yard: the finished power plant is refunded.
   const [x, y] = game.start_position(0);
   game.sell(0, game.pick(0, x, y));
-  ticks(game, 2);
+  // Sold after its make animation played backwards (32 ticks for the yard).
+  ticks(game, 34);
   state = JSON.parse(game.player_json(0));
   assert.equal(state.hasProducer[0], false);
   assert.deepEqual(state.queues[0], []);
@@ -145,7 +146,10 @@ test('selling a structure refunds money', () => {
   assert.equal(game.sell_value(1, yard), -1, 'only its owner can sell it');
   game.sell(0, yard);
   ticks(game, 1);
-  assert.equal(JSON.parse(game.player_json(0)).cash, before + 1000, '50% of 2000');
+  assert.equal(JSON.parse(game.player_json(0)).cash, before, 'the make animation plays backwards first');
+  assert.equal(game.sell_value(0, yard), -1, 'it cannot be sold twice');
+  ticks(game, 32);
+  assert.equal(JSON.parse(game.player_json(0)).cash, before + 1000, '50% of 2000, at the end');
 });
 
 test('render buffers are produced for the view', () => {

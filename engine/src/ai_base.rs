@@ -972,9 +972,12 @@ fn set_rally_point(w: &mut World, _player: u8, b: usize, radius: i32) {
 /// minimum count).
 pub(crate) fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) {
     let bb = &cfg.info.base_builder;
+    // One being sold already (its make animation playing backwards) no longer counts.
     let refineries: Vec<usize> = owned_buildings(w, player)
         .into_iter()
-        .filter(|&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some()))
+        .filter(|&b| {
+            !w.actors[b].unmake_sell && w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.refinery.is_some())
+        })
         .collect();
     if refineries.len() as i32 <= bb.initital_minimum_refinery_count + bb.additional_minimum_refinery_count {
         return;
@@ -982,6 +985,10 @@ pub(crate) fn sell_useless_refinery(w: &mut World, player: u8, cfg: &BotConfig) 
     let close = bb.sell_refinery_too_close_cell_distance;
     let far = bb.sell_refinery_no_resource_distance;
     for (k, &r) in refineries.iter().enumerate() {
+        // A refinery still being built cannot be sold yet (Sellable !build-incomplete).
+        if !w.can_sell(player, r) {
+            continue;
+        }
         let at = (w.actors[r].cx, w.actors[r].cy);
         let crowded = refineries[k + 1..].iter().any(|&o| cell_dist_sq(at, (w.actors[o].cx, w.actors[o].cy)) <= (close * close) as i64);
         let (rx, ry) = (w.actors[r].x, w.actors[r].y);

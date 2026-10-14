@@ -358,7 +358,12 @@ fn a_sold_structure_leaves_its_crew() {
     let b = w.spawn_building(weap, 0, 20, 20).unwrap();
     let infantry = |w: &World| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.kind == Kind::Infantry).count();
     let n = infantry(&w);
+    let make = w.rules.actors[weap as usize].building.as_ref().unwrap().make_ticks;
     w.sell(b);
+    assert_eq!(infantry(&w), n, "the crew comes out when the sale is done");
+    for _ in 0..=make {
+        w.step();
+    }
     // 40 % of 2000 = 800: the guaranteed rifleman, then riflemen and
     // technicians (TECN, TECN2: $10, the neutral world's civilians) while the
     // rest pays, one per footprint cell: all nine cells.
@@ -369,6 +374,9 @@ fn a_sold_structure_leaves_its_crew() {
     w.actors[b].hp = w.rules.actors[weap as usize].hp / 5;
     let n = infantry(&w);
     w.sell(b);
+    for _ in 0..=make {
+        w.step();
+    }
     assert_eq!(infantry(&w) - n, 1);
 }
 

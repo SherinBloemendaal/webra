@@ -269,6 +269,7 @@ impl Ctx<'_> {
         let (cx, cy) = ((snap.x - w * CELL / 2).div_euclid(CELL), (snap.y - h * CELL / 2).div_euclid(CELL));
         match self.w.rules.actors[t].kind {
             crate::rules::Kind::Building => {
+                // SpawnActorOnDeath.SkipMakeAnimations (default true): built at once.
                 self.w.spawn_building(t as u16, snap.owner, cx, cy);
             }
             _ => {

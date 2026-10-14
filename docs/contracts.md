@@ -2419,7 +2419,75 @@ vehicles send `Captured` (33), infiltrations `Infiltrated` (34), and a kill
 Tanya announces `KillAnnounced` (43, `a` the killer's type, to its owner).
 Sprites: `SpriteIds::infantry_base` + 0..4 built-in dying soldiers (shot,
 blown up, burned, electrocuted, crushed), 5 spy tag, 6 fake tag, 7 sonar
-ring (apps/game/js/art/infantry.js).
+ring (apps/game/js/art/infantry.js). The fake tag shows over every fake
+structure (rules `building.fake_tag`, OpenRA ^FakeBuilding
+WithDecoration@fake) to its owner, allies and spectators, selected or not;
+an enemy sees it only on a selected fake one of its (or an ally's) spies
+infiltrated (InfiltrateForDecoration). The build palette marks fakes too:
+`FAKE_ACTORS` (js/content/tables.js) get the FAKE mark across WebRA's cameo
+(js/art/cameo.js `paintFakeMark`), and with the original graphics Red
+Alert's own fake cameo where it has one (dome, construction yard, naval
+yard, sub pen, war factory), else the real cameo with the same mark
+(ACTOR_ART `fakeMark`: the fakes whose cameo OpenRA drew itself).
+
+### Make animations (`engine/src/world.rs` `make_until`, `combat.rs` `build_incomplete`)
+
+OpenRA's WithMakeAnimation grants a structure the `build-incomplete`
+condition while its `make` sequence plays once, and Red Alert's rules
+switch traits off with it. In WebRA a structure that is placed, deployed
+from an MCV or created by a mission script (`Actor.Create`, also in
+WorldLoaded at tick 0: OpenRA adds no SkipMakeAnimsInit there) is being
+built from the tick it appeared through `building.make_ticks` ticks after
+it (`make_until`, `World::begin_make`, in the state hash; the map's own
+actors, the starting base and a mission's SpawnActorOnDeath skip it, like
+OpenRA's SkipMakeAnimsInit).
+Meanwhile its `building.make_gates` are off: `sell` (Sellable: no sell
+order, `sell_value` 0), `capture` (Capturable), `attack` (AttackTurreted,
+AttackTesla, AttackGarrisoned paused and Turreted off: it neither aims nor
+fires and keeps its target) and `transform` (the Construction Yard does not
+pack up). `make_ticks` is the frame count of the structure's make sequence
+at one frame per tick (every RA make sequence is `Length: *` at Tick 40);
+`tools/gen_rules.py` `MAKE_FRAMES` holds the counts with their sources,
+read once from Red Alert's files (and OpenRA's own `mods/ra/bits`, which
+override files of the same name) by `node tools/make-frames.mjs <files>`
+(it prints file names and frame counts only). The tileset variants have
+the same counts, so the time does not depend on the map.
+
+Selling (OpenRA Sellable.Sell, then the Sell activity): the sell order
+plays the sell sound at once (`Sold` event, b = -1), then the make animation
+backwards: from the order's tick the structure is `build-incomplete` again
+for `make_ticks` ticks (`unmake_at` with `unmake_sell`, in the state hash;
+no second sale, no capture, no pack-up, its attacks paused), and in the
+tick `make_ticks` after the order it is sold: the refund for its health at
+that moment (`World::sell_refund`'s RefundPercent of the sell value), paid,
+counted and announced for the player who owned it when the sale started
+(`unmake_seller`, OpenRA's Sell activity keeps that player's resources),
+the crew walking out (SpawnActorsOnSell), the script's Sold event and the
+announcement (`Sold`, b = the refund, for the cash tick); then it is gone.
+Destroyed meanwhile, it brings nothing. A structure without a make
+animation (walls) is sold at once (both events). `sell_value` is -1 during
+the sale (no sell cursor, no refund line). WebRA removes it exactly
+`make_ticks` ticks after the order; OpenRA takes one or two ticks more (the
+reverse animation's callback queues the Sell activity, which runs on the
+actor's next tick, and the reversed make condition is revoked in a frame
+end task); packing up likewise.
+
+Packing up (OpenRA Transform on the Construction Yard): the pack-up order
+plays the make animation backwards first. From the order's tick the yard
+is `build-incomplete` again for `make_ticks` ticks (`unmake_at`, in the
+state hash; no selling, no capture, no second pack-up: the activity cannot
+be interrupted), and in the tick `make_ticks` after the order it turns into
+the MCV (production.rs `tick_pack_up`). Should the MCV no longer fit then,
+or C4 tick on the yard, it plays its make animation forwards again (the
+make pose from that tick) and stays, silently (OpenRA
+Transform.DoTransform). A pack-up order is ignored without a word while
+the yard cannot pack up (OpenRA Transforms PauseOnCondition
+being-captured, being-demolished, build-incomplete; WebRA has no chrono
+vortex): it is not remembered for later (TransformsIntoTransforms only
+queues a deploy behind a pack-up that already runs). Only a yard whose MCV
+would not fit reports a blocked deploy. Not modelled: the ConyardChronoReturn of a chronoshifted MCV,
+and TransformsIntoTransforms (a deploy order for the coming MCV queued
+behind a pack-up that runs).
 
 ### Pilots (`engine/src/plane.rs` `eject_pilot`)
 
@@ -2502,7 +2570,21 @@ over land, stay); when the Duration runs out a unit goes back to its origin,
 or to the nearest explored cell it can enter if the origin closed meanwhile
 (a naval yard went up there), and dies when there is none (OpenRA Teleport
 killOnFailure), `GrantExternalConditionPower` (Iron Curtain) and
-`NukePower` take the target as (x, y), `GpsPower` launches by itself when
+`NukePower` take the target as (x, y) (the atom bomb flies like OpenRA's
+NukeLaunch: the silo plays its activation animation at the order, the
+missile leaves `missile_delay + 1` ticks after it from the silo's centre
+plus `spawn_offset` (forward, right, up through LocalToWorld: right, minus
+sin 40 degrees times forward), climbs `flight_velocity` per tick for half
+of `flight_delay`, turns `flight_velocity * flight_delay / 2` over the
+target and falls as fast, and goes off `flight_delay` ticks after leaving;
+`Nuke::position` gives its point and height per tick; the camera over the
+target opens `flight_delay - camera_spawn_advance + 1` ticks after the
+order for `camera_spawn_advance + camera_remove_delay` ticks, and the
+target beacon shows until `flight_delay - beacon_remove_advance` ticks
+after it (OpenRA's Beacon only removes itself for a positive duration: with
+an advance of `flight_delay` or more it stays, in WebRA while the missile
+flies); drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
+`down` with the original graphics), `GpsPower` launches by itself when
 charged and is `OneShot` (it disappears from `powers` after launch). The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
 
@@ -2709,7 +2791,15 @@ missing hp)` every `interval + 1` ticks, each repairing player pays
 GetSellValue, `custom_sell_value` or the cost), the step is multiplied by
 `bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
 insufficient funds event per player, repairers who are no longer allied or
-playing drop out, a full structure ends the repair. Powered off, a structure
+playing drop out, a full structure ends the repair. The wrench over a
+structure being repaired shows in the colour of each repairer in turn
+(OpenRA WithBuildingRepairDecoration loops `allyrepair`, Tick 160, in the
+player palette and takes the next repairer after each loop, CycleRepairer):
+WebRA's wrench is one team coloured picture (Red Alert's own wrench has no
+team colours), shown steadily, the colour changing every 8 ticks (WebRA
+counts a loop as two frames of 160 ms). The power off icon blinks, one
+frame on and one off, next to the wrench when both show; like every OpenRA
+decoration only the owner, allies and spectators see them. Powered off, a structure
 adds nothing to the power drain and `is_powered_down` is true (defences hold
 fire, radar, gap generator and detection stop, support powers stop
 charging, the sprite stands still and is darkened like low power). Both are
@@ -2806,7 +2896,7 @@ log is presentation only: never read by the simulation, off by default
 `air.power` / `air.launched`) is not hashed either. Kinds and their fields:
 1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
 attacking player; only another player's fire counts, as in OpenRA's
-DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: the refund), 8
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: -1 when the sale starts, the sell sound; the refund when it is done after the reverse make animation, the announcement and cash tick), 8
 InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
 ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
 Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
@@ -3246,7 +3336,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours, `terrain`: the terrain bytes at the start, so the terrain art and the minimap are made before the first frame (frames carry terrain only when it changed later), `timings { createMs, infoMs }`: the engine's time to make the game, for the performance capture, section 10) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `background` (`[on]`: tick a hidden local game on a timer, see "Hidden pages"; answers whether the timer runs), `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances, perf }`, `recycle` | `frame` |
@@ -3431,7 +3521,14 @@ PRIMARY tag and the crate pickup signs), always below 4096. Poses
 (`engine/src/render.rs` `Pose`, `js/content/sequences.js` `POSE`): 0 idle,
 1 move (the actor moved this tick), 2 attack (attacking and standing), 3
 damaged (structure below half health, OpenRA's DamageState.Heavy), 4 make
-(structure placed during the game, `age` = ticks since then, up to 127), 5
+(structure placed during the game, `age` = ticks since then, while it is
+being built: the simulation's `make_until`, from the rules'
+`building.make_ticks`, the same for every player whatever their art; see
+"Make animations" below; `Game.set_make_art(types)` names the types whose
+art plays a make animation, the atlas's `makeArt`, and the others fade in
+from 25 percent over that time; a render setting: players with different
+art keep the same simulation and state hash, `tests_poses.rs`
+`poses_never_change_the_simulation`), 5
 harvest, 6 dock (unloading at the refinery), 7 still (no power, or a
 remembered structure under fog), 8 damaged and still, 9 and 10 aux idle and
 aux move (a second overlay in the same slot: the Chinook's rear rotor on the
@@ -3443,7 +3540,9 @@ harvester leaving the refinery played backwards), 15 the second stand
 sequence and 16, 17 the idle animations of a standing soldier (`age` = ticks
 into the animation), 18 to 23 death sequences die1 to die6 and 24 a crushed
 body (`age` = ticks since the death), 25 a soldier's second attack sequence
-(AttackSequences: picked per shot, Tanya's shoot-right). Dying soldiers are drawn with their
+(AttackSequences: picked per shot, Tanya's shoot-right), 26 the make
+animation backwards (a structure being sold, a Construction Yard packing
+up; `age` = ticks since the order; art without one fades out). Dying soldiers are drawn with their
 death sequences only for actor types `Game.set_death_art(types, ticks)`
 names (the atlas's `deaths`; `ticks`, the atlas's `deathTicks`, has eight
 lengths per type: die1..die6, crushed and the longest idle animation, so a
@@ -3487,12 +3586,17 @@ Layers over structures (`Game.set_building_overlays`, one value per actor
 type): a value below 4096 is the still frame of WebRA's animated layer
 (slot `2t + 1` animates, the still frame is drawn without power or under
 fog). A value of 4096 or more marks a layer that is a pose table (the
-original War Factory roof and door, OpenRA WithProductionDoorOverlay): the
+original War Factory roof and door, OpenRA WithProductionDoorOverlay; WebRA's
+missile silo hatch, `js/art/animated.js` `BUILDING_WORKING`): the
 value is the layer's still pose with `age` = the number of door frames.
 With poses on, the engine leaves slot `2t + 1` out while the structure is
-built (make) and otherwise draws it with the idle or damaged pose (by
-damage state only: the door is never paused) and `age` = the door frame,
-which the layer shows as is (mode 3). The door frame
+built (the make pose: only as long as the make animation plays, like
+OpenRA's `build-incomplete` condition, so the War Factory's roof shows the
+moment its make animation ends), draws it with the structure's working
+pose and its `age` while it works (fx.rs: the silo's hatch opens and shuts
+once at a launch, mode 1, then rests on frame 0) and otherwise with the
+idle or damaged pose (by damage state only: the door is never paused) and
+`age` = the door frame, which the layer shows as is (mode 3). The door frame
 (`engine/src/doors.rs`, presentation only, not in the state hash) follows
 OpenRA's `PlayFetchDirection`: 0 (shut) while the factory is idle or
 building; once it produces a unit, one frame per tick up to the last while
@@ -3634,7 +3738,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (range circles, engine/src/range_circles.rs, rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `sell_buildings`, `repair_building`, `repair_buildings`, `repair_units`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |

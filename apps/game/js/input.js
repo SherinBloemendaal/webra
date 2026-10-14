@@ -590,7 +590,10 @@ export class Input {
       if (!current()) return;
       // sell_value is -1 for a structure that cannot be sold any more (captured meanwhile).
       const refund = values.reduce((sum, v) => sum + Math.max(0, v), 0);
-      if (!(await this.hooks.confirmSell?.({ count: ids.length, refund, at })) || !current()) return;
+      // A structure whose sale started meanwhile (its make animation plays backwards) is not counted twice.
+      const count = values.filter((v) => v >= 0).length;
+      if (!count) return;
+      if (!(await this.hooks.confirmSell?.({ count, refund, at })) || !current()) return;
     }
     this.game.sell_buildings(this.player, Uint32Array.from(ids));
     this.flashOrder({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ACTION.HARVEST);

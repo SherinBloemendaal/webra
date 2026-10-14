@@ -400,8 +400,21 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 
 /// Generated maps where fleets used to pile up idle: in 15 minutes on 64
 /// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
-/// idle without a target, a Turtle AI on islands (seed 3) 12. Now no
-/// fleet idles that large.
+/// idle without a target, a Turtle AI on islands (seed 3) 12: the fleets
+/// never set out although enemies were in reach, and every ship built
+/// joined the idle squad (dc028b5). Now fleets go after what they can reach.
+///
+/// Rivers, seed 3, two Normal Naval bots: what matters is idling while an
+/// enemy is in reach of the fleet's water (ai_naval.rs `enemy_in_reach`);
+/// a fleet with nothing in reach rightly waits (here the largest one, 8
+/// ships, waits that way for minutes once the enemy's shore is cleared).
+/// Sampled once a second for both players: of the ship-samples with an
+/// enemy in reach, 0.09 are idle (1695 samples; seeds 4 and 7: 0.01 and
+/// 0.00; without structures waiting for their make animation 0.01, 0.01,
+/// 0.03); the test allows 0.25 and needs 600 such samples. A fleet that
+/// never sets out idles with all its ships (share 1).
+/// Islands, seed 3, two Normal Turtle bots: at most 6 ships idle (2 of 4
+/// now; 12 before the fix).
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::mapgen::MapStyle;
@@ -411,18 +424,39 @@ fn generated_naval_maps_keep_no_idle_fleets() {
         let players: Vec<PlayerSetup> =
             (0..2).map(|k| PlayerSetup { bot, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
         let mut w = World::with_options(seed, 64, &players, GameOptions { map_style: style, ..GameOptions::default() });
-        let mut idle_most = 0;
-        for _ in 0..25 * 60 * 15 {
+        let (mut idle_most, mut reach_ships, mut reach_idle) = (0, 0, 0);
+        for t in 0..25 * 60 * 15 {
             w.step();
-            for p in 0..2 {
-                idle_most = idle_most.max(naval_report(&w, p).idle_ships);
+            for p in 0..2u8 {
+                let r = naval_report(&w, p);
+                idle_most = idle_most.max(r.idle_ships);
+                if t % 25 != 0 || r.ships == 0 {
+                    continue;
+                }
+                let cfg = w.ai[p as usize].cfg.clone();
+                let reach = (0..w.actors.len()).any(|i| {
+                    let a = &w.actors[i];
+                    a.alive
+                        && a.owner == p
+                        && a.kind == Kind::Ship
+                        && crate::ai_naval::enemy_in_reach(&w, p, &cfg, a.ty, w.pass_water.component[w.cell_index(a.x, a.y)])
+                });
+                if reach {
+                    reach_ships += r.ships;
+                    reach_idle += r.idle_ships;
+                }
             }
             if w.winner.is_some() {
                 break;
             }
         }
-        // Before: 20 and 12.
-        assert!(idle_most <= 6, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle without a target");
+        let what = format!("{style:?} seed {seed} {bot:?}");
+        if style == MapStyle::Rivers {
+            assert!(reach_ships >= 600, "{what}: {reach_ships} ship-samples with an enemy in reach");
+            assert!(reach_idle * 4 <= reach_ships, "{what}: {reach_idle} of {reach_ships} ship-samples idle with an enemy in reach");
+        } else {
+            assert!(idle_most <= 6, "{what}: {idle_most} ships idle without a target");
+        }
     }
 }
 

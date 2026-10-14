@@ -623,6 +623,19 @@ pub struct SupportPowerInfo {
     /// Nuke: the target camera appears this many ticks before impact.
     #[serde(default)]
     pub camera_spawn_advance: i32,
+    /// Nuke: how fast the missile rises and falls (FlightVelocity, world
+    /// units per tick): it turns at that speed times half the flight time up.
+    #[serde(default)]
+    pub flight_velocity: i32,
+    /// Nuke: where the missile leaves the silo (SpawnOffset: forward, right,
+    /// up from its centre, world units; turned into the world like OpenRA's
+    /// BodyOrientation.LocalToWorld).
+    #[serde(default)]
+    pub spawn_offset: Vec<i32>,
+    /// Nuke: the target beacon goes this many ticks before the flight time
+    /// ends (BeaconRemoveAdvance).
+    #[serde(default)]
+    pub beacon_remove_advance: i32,
     /// GPS: ticks from launch until the map is revealed.
     #[serde(default)]
     pub reveal_delay: i32,
@@ -675,6 +688,12 @@ struct RawBuilding {
     repairs: Option<RepairInfo>,
     repairable: Option<RepairableInfo>,
     power_down: bool,
+    #[serde(default)]
+    fake_tag: bool,
+    #[serde(default)]
+    make_ticks: i32,
+    #[serde(default)]
+    make_gates: Vec<String>,
     center_offset: Vec<i32>,
     #[serde(default)]
     lightning_rod: i32,
@@ -1081,10 +1100,36 @@ pub struct BuildingInfo {
     pub repairable: Option<RepairableInfo>,
     /// The power down button works on it (repair.rs).
     pub power_down: bool,
+    /// A fake (OpenRA WithDecoration@fake): its owner and allies see the FAKE
+    /// tag over it (infantry_render.rs).
+    pub fake_tag: bool,
+    /// Ticks a structure placed during the game plays its make animation
+    /// (OpenRA WithMakeAnimation: the frames of its `make` sequence, one per
+    /// tick; tools/gen_rules.py MAKE_FRAMES), 0 for none. Meanwhile it is
+    /// `build-incomplete` (world.rs `build_incomplete`) and `make_gates`
+    /// are off.
+    pub make_ticks: u32,
+    pub make_gates: MakeGates,
     pub center_offset: (i32, i32),
     /// WebRA's Lightning Rod (data/webra/rules.yaml `LightningRod`, lightning.rs):
     /// lightning that would land within this range (world units) is grounded on it; 0 for none.
     pub lightning_rod: i32,
+}
+
+/// What a structure's `build-incomplete` condition switches off (OpenRA's
+/// RequiresCondition / PauseOnCondition `!build-incomplete`; rules
+/// `building.make_gates`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MakeGates {
+    /// Sellable: no selling.
+    pub sell: bool,
+    /// Capturable: engineers cannot take it.
+    pub capture: bool,
+    /// AttackTurreted, AttackTesla, AttackGarrisoned (paused) and Turreted:
+    /// it neither turns its turret nor fires.
+    pub attack: bool,
+    /// Transforms: the Construction Yard does not pack up.
+    pub transform: bool,
 }
 
 impl BuildingInfo {
@@ -2003,6 +2048,14 @@ impl Rules {
         within(&n("missile_delay"), p.missile_delay, 0, TIMER)?;
         within(&n("flight_delay"), p.flight_delay, 0, TIMER)?;
         within(&n("camera_spawn_advance"), p.camera_spawn_advance, 0, TIMER)?;
+        within(&n("flight_velocity"), p.flight_velocity, 0, 4 * CELLS)?;
+        if !p.spawn_offset.is_empty() {
+            count(&n("spawn_offset"), p.spawn_offset.len(), 3)?;
+            for &o in &p.spawn_offset {
+                within(&n("spawn_offset"), o, -16 * CELLS, 16 * CELLS)?;
+            }
+        }
+        within(&n("beacon_remove_advance"), p.beacon_remove_advance, -TIMER, TIMER)?;
         within(&n("reveal_delay"), p.reveal_delay, 0, TIMER)
     }
 
@@ -2206,6 +2259,24 @@ impl Rules {
                         repairs: b.repairs,
                         repairable: b.repairable,
                         power_down: b.power_down,
+                        fake_tag: b.fake_tag,
+                        make_ticks: u32::try_from(b.make_ticks)
+                            .ok()
+                            .filter(|&t| t <= TIMER as u32)
+                            .ok_or_else(|| n("building.make_ticks must be between 0 and 100000"))?,
+                        make_gates: {
+                            let mut g = MakeGates::default();
+                            for name in &b.make_gates {
+                                match name.as_str() {
+                                    "sell" => g.sell = true,
+                                    "capture" => g.capture = true,
+                                    "attack" => g.attack = true,
+                                    "transform" => g.transform = true,
+                                    _ => return Err(n("building.make_gates: unknown gate (sell, capture, attack, transform)")),
+                                }
+                            }
+                            g
+                        },
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
                         lightning_rod: b.lightning_rod,
                     })

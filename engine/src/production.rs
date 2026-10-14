@@ -3,7 +3,7 @@
 use crate::map::Terrain;
 use crate::math::{dist, CELL};
 use crate::rules::{Kind, QueueType};
-use crate::sound_events::SoundEventKind;
+use crate::sound_events::{SoundEventKind, SOLD_STARTED};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items a single queue holds.
@@ -916,6 +916,7 @@ impl World {
         // OpenRA PlaceBuilding: NewOptions when the placement adds buildable items (sound only).
         let options_before = self.sound.enabled().then(|| self.buildable_count(player));
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
+        self.begin_make(b);
         self.players[player as usize].queues[qi].items.remove(0);
         self.note_built(player, ty);
         let (bx, by) = (self.actors[b].x, self.actors[b].y);
@@ -998,16 +999,24 @@ impl World {
     /// What selling structure `b` would pay now, or None while it cannot be
     /// sold. OpenRA Sell activity and Sellable.TooltipText: RefundPercent of
     /// the sell value (CustomSellValue, else the cost), scaled by health,
-    /// rounded down; walls (CustomSellValue 0) sell for nothing.
+    /// rounded down; walls (CustomSellValue 0) sell for nothing. Sellable
+    /// RequiresCondition `!build-incomplete && !being-captured &&
+    /// !being-demolished`: not while it is being built or already being sold.
     pub fn sell_refund(&self, b: usize) -> Option<i32> {
         let a = &self.actors[b];
-        if !a.alive || a.kind != Kind::Building {
+        if !a.alive || a.kind != Kind::Building || a.unmake_at > 0 {
             return None;
         }
-        // Sellable RequiresCondition !being-captured && !being-demolished (infantry.rs).
-        if self.being_captured(b) || self.being_demolished(b) {
+        if self.make_gates(b).sell || self.being_captured(b) || self.being_demolished(b) {
             return None;
         }
+        self.refund_now(b)
+    }
+
+    /// RefundPercent of structure `b`'s sell value scaled by its health now,
+    /// or None without Sellable (the Sell activity pays this at its end).
+    fn refund_now(&self, b: usize) -> Option<i32> {
+        let a = &self.actors[b];
         let info = &self.rules.actors[a.ty as usize];
         // No Sellable trait (or a mission's -Sellable): RefundPercent 0 (gen_rules.py).
         let percent = info.building.as_ref()?.sell_refund;
@@ -1018,41 +1027,75 @@ impl World {
         Some((info.sell_value() as i64 * percent as i64 * a.hp as i64 / (100 * max_hp)) as i32)
     }
 
-    /// Sell a structure: pay `sell_refund` (OpenRA Sellable, Sell activity).
+    /// Sell a structure (OpenRA Sellable.Sell): the sell sound at once, then
+    /// the make animation backwards (WithMakeAnimation.Reverse: build-incomplete
+    /// again, uninterruptible), and when it ended the Sell activity
+    /// (`finish_sale`): the refund for its health then, paid to the player
+    /// who owned it when the sale started (Sell captures their
+    /// PlayerResources), the crew, the announcement. A structure without a
+    /// make animation is sold at once. Destroyed meanwhile, it brings nothing.
     pub fn sell(&mut self, b: usize) -> bool {
-        let Some(refund) = self.sell_refund(b) else { return false };
+        if self.sell_refund(b).is_none() {
+            return false;
+        }
         let a = &self.actors[b];
+        let make = self.rules.actors[a.ty as usize].building.as_ref().map_or(0, |bi| bi.make_ticks);
         let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
-        self.refund(owner, refund);
-        self.note_sold(owner, refund);
-        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, refund);
+        // Sellable.SellSounds (cashturn), to the owner, at once (b: no refund yet).
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, SOLD_STARTED);
+        let a = &mut self.actors[b];
+        a.unmake_seller = owner;
+        if make > 0 {
+            a.unmake_at = self.tick + make;
+            a.unmake_sell = true;
+            a.make_until = a.unmake_at;
+            return true;
+        }
+        self.finish_sale(b);
+        true
+    }
+
+    /// The Sell activity (OpenRA Activities/Sell): the refund for the health
+    /// the structure has now, to the player who sold it, INotifySold.Sold
+    /// (the crew walks out, the script's Sold event, the statistics) and the
+    /// Notification (StructureSold, with the refund for the cash tick); then
+    /// it is gone.
+    fn finish_sale(&mut self, b: usize) {
+        let refund = self.refund_now(b).unwrap_or(0);
+        let a = &self.actors[b];
+        let (seller, x, y, ty) = (a.unmake_seller, a.x, a.y, a.ty);
+        self.refund(seller, refund);
+        self.note_sold(seller, refund);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, seller, refund);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
         self.spawn_sell_survivors(b);
         let actor = self.make_ref(b);
         self.script_event(crate::mission::ScriptEvent::Sold { actor });
         self.remove(b);
-        true
     }
 
     /// Whether a click in sell mode sells structure `b` for `player`: their
     /// own structure in the world with OpenRA's Sellable (a refund percent),
-    /// not being captured or demolished (the checks of `sell`).
+    /// not being built, sold, captured or demolished (the checks of `sell`,
+    /// `sell_refund`).
     pub fn can_sell(&self, player: u8, b: usize) -> bool {
         let a = &self.actors[b];
         a.owner == player && a.in_world() && self.sell_refund(b).is_some()
     }
 
     /// Whether a box in sell mode (WebRA bulk sell) takes structure `b`:
-    /// `can_sell`, but never a structure that packs up into a unit (OpenRA
-    /// Transforms: the Construction Yard into an MCV), which only a single
-    /// click sells.
+    /// `can_sell` (so never one already being sold, whose reverse make
+    /// animation plays), but never a structure that packs up into a unit
+    /// (OpenRA Transforms: the Construction Yard into an MCV, also not while
+    /// it packs up), which only a single click sells.
     pub fn can_bulk_sell(&self, player: u8, b: usize) -> bool {
         self.can_sell(player, b) && self.rules.actors[self.actors[b].ty as usize].abilities.transforms.is_none()
     }
 
     /// `Order::SellBuildings` (WebRA bulk sell): sell each listed structure
-    /// that `can_bulk_sell` still allows, once, in the order listed.
+    /// that `can_bulk_sell` still allows, once, in the order listed; each
+    /// sale plays its reverse make animation and pays at its end (`sell`).
     pub(crate) fn sell_group(&mut self, player: u8, ids: &[u32]) {
         for &id in ids {
             if let Some(b) = self.resolve(id) {
@@ -1085,10 +1128,23 @@ impl World {
 
     /// Whether actor `i` can deploy (MCV) or pack up (Construction Yard) right now.
     pub fn can_deploy(&self, i: usize) -> bool {
-        // A Construction Yard being captured cannot pack up (Transforms PauseOnCondition being-captured).
-        if self.actors[i].kind == Kind::Building && self.being_captured(i) {
-            return false;
-        }
+        !self.transforms_paused(i) && self.deploy_spot_free(i)
+    }
+
+    /// A Construction Yard that cannot pack up now (OpenRA Transforms
+    /// PauseOnCondition `chrono-vortex || being-captured || being-demolished
+    /// || build-incomplete`; WebRA has no chrono vortex): its pack-up orders
+    /// are ignored without a word (Transforms.ResolveOrder skips a paused
+    /// trait). TransformsIntoTransforms only queues a deploy behind a pack-up
+    /// that already runs, so nothing waits for the make animation to end.
+    fn transforms_paused(&self, i: usize) -> bool {
+        self.actors[i].kind == Kind::Building && (self.being_captured(i) || self.being_demolished(i) || self.make_gates(i).transform)
+    }
+
+    /// Whether the new form of actor `i` fits where it would appear (OpenRA
+    /// Transforms.CanDeploy, also checked when a packing yard's reverse make
+    /// animation ends).
+    fn deploy_spot_free(&self, i: usize) -> bool {
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let a = &self.actors[i];
         match &self.rules.actors[into as usize].building {
@@ -1114,13 +1170,63 @@ impl World {
         })
     }
 
+    /// Deploy an MCV, or start packing up a Construction Yard: OpenRA's
+    /// Transform plays the yard's make animation backwards first (granting
+    /// build-incomplete again; the activity cannot be interrupted any more),
+    /// and only when it ended does the MCV appear (`tick_pack_up`).
     pub fn deploy(&mut self, i: usize) -> bool {
-        let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);
+        if self.actors[i].unmake_at > 0 {
+            return false; // already packing up: uninterruptible
+        }
+        // Nothing to turn into, or a paused yard: nothing to report.
+        if self.deploy_target(i).is_none() || self.transforms_paused(i) {
+            return false;
+        }
         if !self.can_deploy(i) {
             self.sound.push(SoundEventKind::DeployBlocked, from as i32, x, y, owner, 0);
             return false;
         }
+        let make = self.rules.actors[from as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        if self.actors[i].kind == Kind::Building && make > 0 {
+            let a = &mut self.actors[i];
+            a.unmake_at = self.tick + make;
+            a.make_until = a.unmake_at;
+            return true;
+        }
+        self.transform_now(i)
+    }
+
+    /// Structures whose reverse make animation ended: a sold one is sold
+    /// (`finish_sale`); a packing Construction Yard turns into the MCV or,
+    /// when it no longer fits, plays the make animation forwards again and
+    /// stays (OpenRA Transform.DoTransform).
+    pub(crate) fn tick_unmake(&mut self) {
+        for i in 0..self.actors.len() {
+            let a = &self.actors[i];
+            if !a.alive || a.unmake_at == 0 || self.tick < a.unmake_at {
+                continue;
+            }
+            self.actors[i].unmake_at = 0;
+            if std::mem::take(&mut self.actors[i].unmake_sell) {
+                self.finish_sale(i);
+                continue;
+            }
+            // Transforms.CanDeploy once build-incomplete is revoked: the MCV
+            // fits and no C4 ticks on the yard (it cannot be captured while
+            // packing up). Otherwise it unfolds again, silently.
+            if self.deploy_spot_free(i) && !self.being_captured(i) && !self.being_demolished(i) {
+                self.transform_now(i);
+            } else {
+                self.begin_make(i);
+            }
+        }
+    }
+
+    /// Turn actor `i` into its other form at once.
+    fn transform_now(&mut self, i: usize) -> bool {
+        let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
+        let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);
         let facing = self.rules.actors[from as usize].abilities.transforms.as_ref().unwrap().facing;
         let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[from as usize].hp as i64);
         // The new form first: should it not fit after all, the old one stays.
@@ -1131,6 +1237,8 @@ impl World {
                 self.sound.push(SoundEventKind::DeployBlocked, from as i32, x, y, owner, 0);
                 return false;
             };
+            // OpenRA Transform without SkipMakeAnims: the yard unfolds.
+            self.begin_make(j);
             j
         } else {
             self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)

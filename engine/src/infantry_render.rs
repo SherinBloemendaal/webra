@@ -152,6 +152,24 @@ impl World {
             push_fixed_rect(sink, rects, &[x, y, w, 2.0, 0.0, 0.0, 0.0, 0.7]);
             push_fixed_rect(sink, rects, &[x, y, w * f, 2.0, 1.0, 0.65, 0.0, 1.0]);
         }
+        // WithDecoration@fake: the fake tag over every fake structure for its
+        // owner and allies (and spectators), selected or not; enemies see none.
+        for (i, a) in self.actors.iter().enumerate() {
+            if !a.alive || a.kind != Kind::Building || !self.render_allied(a.owner, player) {
+                continue;
+            }
+            if !self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.fake_tag) {
+                continue;
+            }
+            if a.owner != player && !self.is_visible_to(i, player) {
+                continue;
+            }
+            let (anchor, _, h) = self.selection_anchor(i);
+            if sink.visible(anchor.from, anchor.to, 32.0) {
+                let r = SpriteRec::at(anchor.to[0], anchor.to[1], 32.0).look(ids.infantry_base + SPRITE_FAKE_TAG, 0.0, 1.0, 1.0, 0.0);
+                sink.sprite(sprites, r.offset(0.0, -h / 2.0 + 4.0));
+            }
+        }
         for &r in selected {
             let Some(i) = self.resolve(r) else { continue };
             let a = &self.actors[i];
@@ -159,10 +177,13 @@ impl World {
                 continue;
             }
             let (anchor, w, h) = self.selection_anchor(i);
-            // InfiltrateForDecoration: the fake tag for the spy's owner and allies.
+            // InfiltrateForDecoration: the fake tag for the spy's owner and allies
+            // (the owner's side has it already, WithDecoration@fake above).
             let infiltrated =
                 (0..self.players.len().min(32)).any(|p| a.inf.infiltrated_by & (1 << p) != 0 && self.render_allied(p as u8, player));
-            if infiltrated {
+            let tagged =
+                self.render_allied(a.owner, player) && self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|b| b.fake_tag);
+            if infiltrated && !tagged {
                 let r = SpriteRec::at(anchor.to[0], anchor.to[1], NO_CULL).look(ids.infantry_base + SPRITE_FAKE_TAG, 0.0, 1.0, 1.0, 0.0);
                 sink.sprite(sprites, r.offset(0.0, -h / 2.0 + 4.0));
             }

@@ -105,6 +105,70 @@ AIRSTRIKE_UNIT = 'badr.bomber'
 PARATROOPERS_UNIT = 'badr'
 POWER_SQUAD_OFFSET = [-1536, 1536]
 POWER_CAMERA_REMOVE_DELAY = 25
+
+# Frames of each structure image's `make` sequence (OpenRA WithMakeAnimation).
+# OpenRA's sequences say `Length: *` (every frame of the file), so the counts
+# come from the files themselves: read with tools/make-frames.mjs (file names
+# and frame counts only). Where OpenRA's own mods/ra/bits holds a file of the
+# same name it overrides Red Alert's (mod.yaml loads it after the content);
+# those counts were read from OpenRA's release-20250330 bits and are equal to
+# Red Alert's. The tileset variants (.tem, .sno, OpenRA's .des) have the
+# same count, so the build-up time does not depend on the map's tileset.
+# Every make sequence ticks every 40 ms (one frame per game tick).
+MAKE_SOURCE_RA = 'frame count read from the original Red Alert {} by tools/make-frames.mjs'
+MAKE_SOURCE_BITS = 'frame count read from OpenRA release-20250330 mods/ra/bits/{} by tools/make-frames.mjs'
+MAKE_FRAMES = {
+    'afld': (11, MAKE_SOURCE_RA.format('conquer.mix/afldmake.shp')),
+    'agun': (10, MAKE_SOURCE_RA.format('conquer.mix/agunmake.shp')),
+    'apwr': (13, MAKE_SOURCE_RA.format('conquer.mix/apwrmake.shp')),
+    'atek': (17, MAKE_SOURCE_RA.format('conquer.mix/atekmake.shp')),
+    'barr': (13, MAKE_SOURCE_RA.format('conquer.mix/barrmake.shp')),
+    'bio': (16, MAKE_SOURCE_RA.format('conquer.mix/biomake.shp')),
+    'dome': (17, MAKE_SOURCE_RA.format('conquer.mix/domemake.shp')),
+    'fact': (32, MAKE_SOURCE_BITS.format('factmake.shp') + ' (Red Alert conquer.mix/factmake.shp: 32 too)'),
+    'fcom': (9, MAKE_SOURCE_BITS.format('fcommake.shp') + ' (OpenRA\'s own file)'),
+    'fix': (14, MAKE_SOURCE_RA.format('conquer.mix/fixmake.shp')),
+    'ftur': (28, MAKE_SOURCE_RA.format('conquer.mix/fturmake.shp')),
+    'gap': (13, MAKE_SOURCE_BITS.format('gapmake.shp') + ' (Red Alert conquer.mix/gapmake.shp: 13 too)'),
+    'gun': (20, MAKE_SOURCE_RA.format('conquer.mix/gunmake.shp')),
+    'hbox': (13, MAKE_SOURCE_RA.format('temperat.mix/hboxmake.tem, snow.mix/hboxmake.sno') + '; OpenRA bits/desert/hboxmake.des: 13'),
+    'hosp': (20, MAKE_SOURCE_RA.format('conquer.mix/hospmake.shp')),
+    'hpad': (20, MAKE_SOURCE_RA.format('conquer.mix/hpadmake.shp')),
+    'iron': (14, MAKE_SOURCE_RA.format('conquer.mix/ironmake.shp')),
+    'kenn': (20, MAKE_SOURCE_RA.format('conquer.mix/kennmake.shp')),
+    'miss': (24, MAKE_SOURCE_BITS.format('missmake.shp') + ' (OpenRA\'s own file)'),
+    'mslo': (15, MAKE_SOURCE_RA.format('temperat.mix/mslomake.tem, snow.mix/mslomake.sno') + '; OpenRA bits/desert/mslomake.des: 15'),
+    'pbox': (13, MAKE_SOURCE_RA.format('conquer.mix/pboxmake.shp')),
+    'pdox': (18, MAKE_SOURCE_RA.format('conquer.mix/pdoxmake.shp')),
+    'powr': (13, MAKE_SOURCE_RA.format('conquer.mix/powrmake.shp')),
+    'proc': (10, MAKE_SOURCE_RA.format('conquer.mix/procmake.shp')),
+    'sam': (18, MAKE_SOURCE_RA.format('conquer.mix/sammake.shp')),
+    'silo': (14, MAKE_SOURCE_BITS.format('silomake.shp') + ' (Red Alert conquer.mix/silomake.shp: 14 too)'),
+    'spen': (14, MAKE_SOURCE_RA.format('conquer.mix/spenmake.shp')),
+    'stek': (20, MAKE_SOURCE_RA.format('conquer.mix/stekmake.shp')),
+    'syrd': (18, MAKE_SOURCE_RA.format('conquer.mix/syrdmake.shp')),
+    'tent': (13, MAKE_SOURCE_BITS.format('tentmake.tem, tentmake.sno, desert/tentmake.des') + ' (Red Alert conquer.mix/tentmake.shp: 13 too)'),
+    'tsla': (13, MAKE_SOURCE_RA.format('conquer.mix/tslamake.shp')),
+    'weap': (15, MAKE_SOURCE_RA.format('conquer.mix/weapmake.shp')),
+    # WebRA's own structure: its pixel art's make sequence (tools/gen_pixel_art.py LROD_MAKE).
+    'lrod': (12, 'frames of the make sequence of WebRA\'s own pixel art, tools/gen_pixel_art.py LROD_MAKE'),
+}
+# Ticks per frame of every make sequence (Tick 40 at 40 ms per game tick).
+MAKE_TICKS_PER_FRAME = 1
+# What the `build-incomplete` condition (WithMakeAnimation) switches off in
+# OpenRA's Red Alert rules (RequiresCondition / PauseOnCondition), by the
+# engine's name for it (rules `building.make_gates`, engine/src/world.rs
+# `build_incomplete`): selling, being captured, attacking (the turret holds
+# still too) and the Construction Yard packing up.
+MAKE_GATES = {'Sellable': 'sell', 'Capturable': 'capture', 'AttackTurreted': 'attack', 'AttackTesla': 'attack',
+              'AttackGarrisoned': 'attack', 'Turreted': 'attack', 'Transforms': 'transform'}
+# Traits gated by it that only draw (the renderer follows the make pose).
+MAKE_GATES_RENDER = {'WithSpriteTurret', 'WithProductionDoorOverlay', 'WithBuildingPlacedAnimation', 'WithIdleOverlay',
+                     'WithResupplyAnimation', 'WithSupportPowerActivationAnimation', 'RenderRangeCircle'}
+# Traits that need it on, not off: the Construction Yard's pack-up order
+# given while it is still being built (TransformsIntoTransforms with the
+# factundeploy lobby option); WebRA refuses the pack-up until it is built.
+MAKE_GATES_POSITIVE = {'TransformsIntoTransforms'}
 FACTIONS = ['allies', 'england', 'france', 'germany', 'soviet', 'russia', 'ukraine']
 ARMOR_TYPES = ['None', 'Wood', 'Light', 'Heavy', 'Concrete', 'Tree']
 # Locomotor speed columns (engine map.rs SPEED_*); Gems move like Ore. River,
@@ -1889,6 +1953,12 @@ def main():
                     power['camera_range'] = wdist(v.get('CameraRange', '0'))
                     power['camera_spawn_advance'] = int(v.get('CameraSpawnAdvance', 25))
                     power['camera_remove_delay'] = int(v.get('CameraRemoveDelay', 25))
+                    # The missile's flight (OpenRA NukeLaunch): FlightVelocity up and
+                    # down, from SpawnOffset on the silo; the beacon goes
+                    # BeaconRemoveAdvance before the flight time is up.
+                    power['flight_velocity'] = wdist(v.get('FlightVelocity', '512'))
+                    power['spawn_offset'] = [wdist(x) for x in str(v.get('SpawnOffset', '0,0,0')).split(',')]
+                    power['beacon_remove_advance'] = int(v.get('BeaconRemoveAdvance', 25))
                 if base == 'GpsPower':
                     power['reveal_delay'] = int(v.get('RevealDelay', 0))
                 if base == 'SpawnActorPower':
@@ -2006,6 +2076,34 @@ def main():
             # building like low power does (repair.rs).
             e['building']['power_down'] = any(isinstance(v, dict) and v.get('OrderName') == 'PowerDown'
                                               for v in trait(t, 'ToggleConditionOnOrder').values())
+            # Fakes (^FakeBuilding WithDecoration@fake: pips tag-fake, not only
+            # when selected): the FAKE tag over the structure for its owner
+            # and allies (infantry_render.rs; WithDecoration ValidRelationships
+            # default Ally), so enemies are fooled. Left out when false.
+            if any(isinstance(v, dict) and v.get('Sequence') == 'tag-fake' and str(v.get('RequiresSelection', 'False')).lower() != 'true'
+                   for v in trait(t, 'WithDecoration').values()):
+                e['building']['fake_tag'] = True
+            # Make animation (OpenRA WithMakeAnimation): how long a structure placed
+            # during the game is `build-incomplete`, and what that switches off.
+            if 'WithMakeAnimation' in t:
+                image = (t.get('RenderSprites') or {}).get('Image', aid).lower() if isinstance(t.get('RenderSprites'), dict) else aid.lower()
+                if image not in MAKE_FRAMES:
+                    raise SystemExit(f'{aid}: no make frame count for image {image} (MAKE_FRAMES)')
+                e['building']['make_ticks'] = MAKE_FRAMES[image][0] * MAKE_TICKS_PER_FRAME
+                gates = set()
+                for k, v in t.items():
+                    if not isinstance(v, dict):
+                        continue
+                    cond = ' '.join(str(v.get(f, '')) for f in ('RequiresCondition', 'PauseOnCondition'))
+                    if 'build-incomplete' not in cond:
+                        continue
+                    base = k.split('@')[0]
+                    if base in MAKE_GATES:
+                        gates.add(MAKE_GATES[base])
+                    elif base not in MAKE_GATES_RENDER and base not in MAKE_GATES_POSITIVE:
+                        raise SystemExit(f'{aid}: {k} depends on build-incomplete; add it to MAKE_GATES')
+                if gates:
+                    e['building']['make_gates'] = sorted(gates)
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
             # WebRA trait LightningRod (data/webra/rules.yaml): lightning that

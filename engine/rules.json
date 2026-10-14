@@ -249,6 +249,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 32,
+    "make_gates": [
+     "capture",
+     "sell",
+     "transform"
+    ],
     "center_offset": [
      0,
      -512
@@ -443,6 +449,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -638,6 +649,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -851,6 +867,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 10,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -1018,6 +1039,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 14,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -1250,6 +1276,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -1480,6 +1511,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -1727,6 +1763,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 20,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -1942,6 +1983,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 15,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -2129,6 +2175,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 14,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -2325,6 +2376,11 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 17,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -2535,6 +2591,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 20,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -2830,6 +2891,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 11,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -3124,6 +3190,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 11,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -3384,6 +3455,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 18,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -3666,6 +3742,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 14,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -3909,6 +3990,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 17,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -4118,6 +4204,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 20,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -4327,6 +4418,11 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -4589,6 +4685,11 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 18,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -4808,6 +4909,11 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 14,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -4899,6 +5005,13 @@
       "camera_range": 10240,
       "camera_spawn_advance": 25,
       "camera_remove_delay": 25,
+      "flight_velocity": 512,
+      "spawn_offset": [
+       1024,
+       427,
+       0
+      ],
+      "beacon_remove_advance": 25,
       "one_shot": false,
       "display_timer": [
        "ally",
@@ -5031,6 +5144,11 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 15,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -5595,6 +5713,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 13,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -5816,6 +5940,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 13,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -6023,6 +6153,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 20,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -6244,6 +6380,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 28,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -6460,6 +6602,12 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 13,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -6660,6 +6808,12 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 10,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -6860,6 +7014,12 @@
      "player_experience": 5
     },
     "power_down": true,
+    "make_ticks": 18,
+    "make_gates": [
+     "attack",
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -7025,6 +7185,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -7190,6 +7356,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -7354,6 +7526,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 18,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -7519,6 +7697,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 15,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -7684,6 +7868,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 17,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -7838,6 +8028,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 14,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -8003,6 +8199,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 13,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -8168,6 +8370,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 17,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -8332,6 +8540,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 18,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -8495,6 +8709,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 15,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -8650,6 +8870,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 32,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      -512
@@ -20038,6 +20264,12 @@
      "player_experience": 5
     },
     "power_down": false,
+    "fake_tag": true,
+    "make_ticks": 14,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0
@@ -39853,6 +40085,11 @@
      "player_experience": 5
     },
     "power_down": false,
+    "make_ticks": 12,
+    "make_gates": [
+     "capture",
+     "sell"
+    ],
     "center_offset": [
      0,
      0

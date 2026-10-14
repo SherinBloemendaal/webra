@@ -998,9 +998,14 @@ impl Ctx<'_> {
                 let b = self.w.rules.actors[t].building.as_ref().expect("structure");
                 // Actor.Create places structures by their top-left cell.
                 let _ = b;
-                self.w
+                let j = self
+                    .w
                     .spawn_building(t as u16, hd.owner, cx, cy)
-                    .ok_or_else(|| LuaError::runtime(format!("Actor.Create: cannot place {} here", hd.ty)))?
+                    .ok_or_else(|| LuaError::runtime(format!("Actor.Create: cannot place {} here", hd.ty)))?;
+                // OpenRA's Actor.Create adds no SkipMakeAnimsInit: the make
+                // animation plays, also for a structure created in WorldLoaded.
+                self.w.begin_make(j);
+                j
             }
             Kind::Proxy => return err("power proxies have no body"),
             Kind::Husk => {

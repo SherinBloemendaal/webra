@@ -198,6 +198,23 @@ pub struct Actor {
     /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
     /// of the state hash and nothing in the simulation depends on it.
     pub born: u32,
+    /// Last tick of a structure's make animation (OpenRA WithMakeAnimation's
+    /// `build-incomplete` condition, `World::build_incomplete`), 0 for none:
+    /// set by `World::begin_make` when it is placed, deployed or created by
+    /// a script; map actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
+    /// Simulation state (state hash).
+    pub make_until: u32,
+    /// A structure playing its make animation backwards before it goes
+    /// (OpenRA WithMakeAnimation.Reverse; uninterruptible): a Construction
+    /// Yard packing up (Transform, then the MCV) or a structure being sold
+    /// (`unmake_sell`; Sellable.Sell, then the Sell activity). The tick it
+    /// ends, 0 when it is not (production.rs `tick_unmake`). Simulation
+    /// state (state hash).
+    pub unmake_at: u32,
+    pub unmake_sell: bool,
+    /// The player who sold it (OpenRA's Sell activity pays the PlayerResources
+    /// of the owner when the sale started), paid and announced at the end.
+    pub unmake_seller: u8,
     /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
     pub fx: crate::fx::ActorFx,
 
@@ -304,6 +321,10 @@ impl Actor {
             prone_ticks: 0,
             rank_heal_timer: 0,
             born: 0,
+            make_until: 0,
+            unmake_at: 0,
+            unmake_sell: false,
+            unmake_seller: 0,
             fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
@@ -1622,6 +1643,18 @@ impl World {
         i
     }
 
+    /// Structure `i` starts its make animation now (OpenRA WithMakeAnimation
+    /// on a created actor without SkipMakeAnimsInit): it is `build-incomplete`
+    /// from this tick through `building.make_ticks` ticks after it (OpenRA
+    /// revokes the condition at the end of the last frame's tick). Placing,
+    /// an MCV deploying and a mission script's Actor.Create call it, also at
+    /// tick 0; the map's actors, the starting base and SpawnActorOnDeath do
+    /// not (`spawn_building` alone builds nothing).
+    pub(crate) fn begin_make(&mut self, i: usize) {
+        let ticks = self.rules.actors[self.actors[i].ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        self.actors[i].make_until = if ticks > 0 { self.tick + ticks } else { 0 };
+    }
+
     /// Put a structure with its top-left at (cx, cy). Returns None, and
     /// changes nothing, when `ty` is not a structure, its footprint does not
     /// fit inside the map (every footprint cell of a live structure indexes
@@ -2699,6 +2732,8 @@ impl World {
         self.retarget_memo.clear();
         section.next(crate::profile::Section::Orders);
         self.apply_orders();
+        // Reverse make animations that ended: yards turn into MCVs, sold structures go (production.rs).
+        self.tick_unmake();
         if self.tokens_dirty {
             self.refresh_tokens();
         }
@@ -2816,6 +2851,11 @@ impl World {
                 mix(a.repair_timer as i64);
                 a.svc.mix(&mut mix);
                 mix(a.dock_user as i64);
+                // The make animation's build-incomplete condition, forwards and back.
+                mix(a.make_until as i64);
+                mix(a.unmake_at as i64);
+                mix(a.unmake_sell as i64);
+                mix(a.unmake_seller as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
