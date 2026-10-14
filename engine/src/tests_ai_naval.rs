@@ -463,18 +463,20 @@ fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
     })
 }
 
-/// Generated maps where fleets used to pile up idle: in 15 minutes on 64
-/// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
-/// idle without a target, a Turtle AI on islands (seed 3) 12, while enemies
-/// were in reach. Three checks per scenario:
+/// Generated maps where fleets used to pile up idle: before 1cc2c93, in 15
+/// minutes on 64 cell maps a Naval AI on rivers with fords (seed 3)
+/// gathered 20 ships idle without a target, a Turtle AI on islands (seed 3)
+/// 12, while enemies were in reach. Three checks per scenario:
 /// - no naval squad idles without a target (`idle_naval_squads`) longer
 ///   than one squad update (AttackForceInterval) while one of its own
 ///   ships surely has an enemy to attack (`meets_enemy`);
 /// - fleets met enemies at all (`contested`), or the first check proves
 ///   nothing;
 /// - the most ships idle at once stays within the scenario's bound. A fleet
-///   with no enemy it can reach may wait: on the islands the Soviet bot's
-///   submarines wait at home while the enemy's destroyers sail in the fog.
+///   with no enemy it can reach may wait. Measured after the merge of main
+///   at 7d0ab43: in both scenarios the peak is the Soviet bot's submarines
+///   (4 on the rivers, 9 on the islands) with no enemy ship afloat or only
+///   one it does not see (a Gunboat in the fog).
 ///
 /// To recalibrate after a change to the bots or the map generator (or a
 /// merge with another branch that changes them), run this test with
