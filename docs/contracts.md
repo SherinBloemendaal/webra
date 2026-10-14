@@ -603,6 +603,54 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   warnings, skipped, not supported, and the validation errors when the
   converted map is not playable yet (the editor still opens it for fixing).
 
+### The map editor on big maps (`apps/game/editor`)
+
+The editor's work per frame and per edit follows what changed, not the size
+of the map (a 256 x 256 community map with hundreds of actors edits like a
+small one). `tools/editor-bench.mjs` times it headlessly (the real document,
+tools, view, engine preview, checks and tile planning; a stub renderer) on a
+generated map or a given `.oramap`; `apps/game/tests/editor-perf.test.mjs`
+guards it by counting reads, not by the clock.
+
+- One document version (`MapDoc.version`): it moves on when a transaction
+  that changed something closes, on rollback, undo, redo and load (a click
+  that changes nothing keeps it). Every change happens inside a
+  transaction, so outside one an equal version is the same document.
+  `MapDoc.snapshot()` is the map object and its JSON text made once per
+  version (frozen; `toMap()` for a copy to change), shared by the engine
+  preview, the checks, the thumbnail and the draft.
+- Undo steps hold the changed cells' before and after values and, for
+  actors, spawns and properties, their before and after state; undo and redo
+  write those back and rebuild nothing else of the document.
+- Placement checks go against an index of who stands where (`edits.js`
+  `Occupancy`: structure cells and other actors per cell index), built once
+  per pass and kept in step as actors are placed: the quick fixes, the red
+  ghosts of structures a game would refuse (found once per version), pasting,
+  symmetric placing and dragging a selection check each actor's footprint,
+  never every actor per actor. The results are those of `placementProblem`.
+- The shape preview (line, rectangle, ellipse while dragging) is made when
+  its corners, the brush, the fill or the symmetry change, as runs of cells
+  along each row (the same pixels as a rect per cell), not every frame.
+- After a burst of edits the editor runs, once and when the browser is idle
+  (`js/idle.js`): the checks (engine `validate_map`, the editor's checks and
+  quick fixes; 300 ms after the last change) and the draft save (800 ms).
+  The problem list and the thumbnail are drawn only while their tab shows
+  (else when it is opened); the fairness table waits for idle time too. Side
+  panels (owner lists, selection, history, undo buttons) update once per
+  frame however many changes it had (undoing several steps at once).
+- The engine keeps the rules it loaded last with their overrides
+  (`Rules::load_with`) and hands out a copy for the same overrides: the
+  preview, validation and games on one map load the same rules repeatedly.
+- Terrain tiles: WebRA's (`js/art/terrain.js` `cellTiles`) are made for the
+  whole map on the main thread (a few milliseconds; the decals follow a seed
+  of the whole map's terrain, as in a game). The original graphics' tiles are
+  planned in a worker (`editor/js/tiles-worker.js`, section 8) whenever the
+  terrain types change; meanwhile the editor draws the last plan, with the
+  cells whose type changed since in the tile most cells of that type have in
+  it, and WebRA's tiles until the first plan is in. The finished picture is
+  the one a game on the map draws. Texture packs tile cell by cell on the
+  main thread.
+
 ## 3. Game options (lobby to engine)
 
 `options` JSON as produced by `apps/game/js/lobby.js` (value sets in
@@ -3220,6 +3268,20 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).
+
+### The map editor's tile worker (`apps/game/editor/js/tiles-worker.js`)
+
+The map editor plans the original graphics' terrain tiles
+(`js/content/terrain.js` `originalTerrain`) in a module worker
+(`editor/js/tiles.js` `TileWorker`); without module workers, or when the
+worker fails, the plans run on the main thread.
+
+| Direction | Message | Meaning |
+|-----------|---------|---------|
+| to the worker | `{ t: 'theater', key, tileset, files: [name, bytes][] }` | The theater to tile with: the installed files `theaterFiles(tileset)` names (palette, templates, trees, smudges, ore and gems), sent once per `key` (art and biome) |
+| to the worker | `{ t: 'plan', id, key, bytes, w, h }` | Tile engine terrain bytes (RGBA per cell, R the type) |
+| from the worker | `{ t: 'planned', id, result }` | `originalTerrain`'s `{ atlas, cells, report }`, or null; the atlas pixels and cells are transferred |
+| from the worker | `{ t: 'failed', id, error }` | The plan failed (the editor keeps WebRA's tiles) |
 
 ## 9. Campaign missions (`engine/src/mission`, `engine/src/lua`, `apps/game/js/campaign`)
 

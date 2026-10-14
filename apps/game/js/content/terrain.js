@@ -577,6 +577,18 @@ export function theaterPools(tileset, sprite, lookup = null) {
 }
 
 /**
+ * Every file originalTerrain may read for `tileset`: the palette, the
+ * template images, and the tree, smudge, ore and gem sequences. A worker
+ * that tiles terrain gets these and nothing else (editor/js/tiles.js).
+ */
+export function theaterFiles(tileset) {
+  const info = TERRAIN[tileset];
+  if (!info) return [];
+  const defs = [...Object.values(TREES), ...(SMUDGES.scorch ?? []), ...(SMUDGES.crater ?? []), ...RESOURCES.ore, ...RESOURCES.gems];
+  return [...new Set([info.palette, ...info.images, ...defs.filter(Boolean).map((def) => sequenceFile(def, tileset))])];
+}
+
+/**
  * The tile atlas and per-cell tile layer of a map in the original theater
  * tiles: `{ atlas, cells, report }` or null when the theater is not
  * installed. `atlas` is ready for Renderer.setTerrainAtlas (flags for the

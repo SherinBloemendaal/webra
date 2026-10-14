@@ -23,7 +23,7 @@ import { openContentStore, storeError } from './store.js';
 import { installContent, contentSummary, baseName, wantedNames } from './install.js';
 import { QUICKINSTALL_BYTES } from './download.js';
 import { originalSlots, combineSlots, originalSlotInfo, TILESET_OF_BIOME } from './atlas.js';
-import { originalTerrain, packTerrain } from './terrain.js';
+import { originalTerrain, packTerrain, theaterFiles } from './terrain.js';
 import { cameoSource, originalCameoPixels } from './cameos.js';
 import { originalCursors } from './cursors.js';
 import { ACTOR_ART, ACTOR_PALETTE } from './tables.js';
@@ -300,17 +300,41 @@ export class ContentSystem {
    * terrain bytes.
    */
   terrain(biome, terrain, w, h) {
+    const pack = this.packTerrain(biome, terrain, w, h);
+    if (pack) return pack;
+    if (this.originalActive) {
+      const r = originalTerrain((n) => this.getFile(n), TILESET_OF_BIOME[biome] ?? 'TEMPERAT', terrain, w, h);
+      if (r) return { ...r, source: 'original' };
+    }
+    return null;
+  }
+
+  /** `terrain` from the first enabled texture pack with tiles for `biome` (quick), or null. */
+  packTerrain(biome, terrain, w, h) {
     for (const p of this.enabledPacks()) {
       const t = p.manifest.terrain;
       if (!t || !t.biomes.includes(biome)) continue;
       const r = packTerrain(t, p.images, terrain, w, h);
       if (r) return { ...r, source: p.manifest.name };
     }
-    if (this.originalActive) {
-      const r = originalTerrain((n) => this.getFile(n), TILESET_OF_BIOME[biome] ?? 'TEMPERAT', terrain, w, h);
-      if (r) return { ...r, source: 'original' };
-    }
     return null;
+  }
+
+  /**
+   * What `terrain` tiles with the original graphics when no pack does:
+   * `{ tileset, files }` (the installed theater files originalTerrain
+   * reads, by name), or null when they are not in use. The map editor
+   * tiles with them in a worker (editor/js/tiles.js).
+   */
+  theater(biome) {
+    if (!this.originalActive) return null;
+    const tileset = TILESET_OF_BIOME[biome] ?? 'TEMPERAT';
+    const files = new Map();
+    for (const name of theaterFiles(tileset)) {
+      const bytes = this.getFile(name);
+      if (bytes) files.set(name, bytes);
+    }
+    return { tileset, files };
   }
 
   /** Pack sounds by key (first enabled pack wins): key -> bytes. */

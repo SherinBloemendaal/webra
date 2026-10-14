@@ -6,6 +6,7 @@
 import { TEAM_COLORS } from '../../js/renderer.js';
 import { TERRAIN, catalogEntry } from './mapformat.js';
 import {
+  Occupancy,
   actorAt,
   actorCells,
   actorSize,
@@ -32,7 +33,7 @@ import {
   spawnPartners,
   thickLineCells,
 } from './edits.js';
-import { SPAWN_H, SPAWN_W, applyTransform, mirroredOwner, symmetricPositions, transformFacing } from './symmetry.js';
+import { SPAWN_H, SPAWN_W, applyTransform, mirroredOwner, symmetricPositions, transformFacing, transformsFor } from './symmetry.js';
 import { TOOLS } from './commands.js';
 import { CELL, NEUTRAL_TEAM } from './view.js';
 
@@ -68,6 +69,14 @@ export class Controller {
     this.selectedSpawn = -1;
     /** Engine overlay cells (Game.editor_cells) for the layers, or null. */
     this.analysis = null;
+    /** Who stands where (edits.js Occupancy) for doc version `occupancyVersion`. */
+    this.occupancyCache = null;
+    this.occupancyVersion = -1;
+    /** The structures the game would refuse where they stand, for doc version `refusedVersion`. */
+    this.refused = [];
+    this.refusedVersion = -1;
+    /** The shape preview's rects while its corners, tool settings and the map stay the same. */
+    this.shapePreview = null;
     doc.onChange(() => {
       // Undo/redo swap in fresh objects; drop selections that no longer exist.
       for (const a of this.selection) if (!doc.actors.includes(a)) this.selection.delete(a);
@@ -79,6 +88,43 @@ export class Controller {
 
   info(type) {
     return catalogEntry(this.catalog, type);
+  }
+
+  /**
+   * Who stands where now, for placement checks (edits.js Occupancy). Kept
+   * while the document's version stays the same; inside a transaction (a
+   * gesture changing the map as it goes) made afresh each time.
+   */
+  occupancy() {
+    const doc = this.doc;
+    if (doc.inTransaction) return new Occupancy(doc, this.catalog);
+    if (this.occupancyVersion !== doc.version) {
+      this.occupancyCache = new Occupancy(doc, this.catalog);
+      this.occupancyVersion = doc.version;
+    }
+    return this.occupancyCache;
+  }
+
+  /**
+   * The structures a game would refuse where they stand (no room, wrong
+   * ground): `[actor, info]`. Found once per document version (each check
+   * against an index of who stands where, not against every actor).
+   */
+  refusedStructures() {
+    const doc = this.doc;
+    if (!doc.inTransaction && this.refusedVersion === doc.version) return this.refused;
+    const occupancy = this.occupancy();
+    const out = [];
+    for (const a of doc.actors) {
+      const info = this.info(a.type);
+      if (info?.kind !== 'building') continue;
+      if (occupancy.problem(a.type, a.x, a.y, a)) out.push([a, info]);
+    }
+    if (!doc.inTransaction) {
+      this.refused = out;
+      this.refusedVersion = doc.version;
+    }
+    return out;
   }
 
   setRegion(r) {
@@ -437,8 +483,8 @@ export class Controller {
     const dx = x - g.x0;
     const dy = y - g.y0;
     if (dx === g.dx && dy === g.dy) return;
-    const ignore = this.selection;
-    const ok = [...g.origin].every(([a, [ox, oy]]) => !placementProblem(this.doc, this.catalog, a.type, ox + dx, oy + dy, ignore));
+    const others = new Occupancy(this.doc, this.catalog, this.selection);
+    const ok = [...g.origin].every(([a, [ox, oy]]) => !others.problem(a.type, ox + dx, oy + dy));
     if (!ok) return;
     for (const [a, [ox, oy]] of g.origin) {
       a.x = ox + dx;
@@ -571,13 +617,11 @@ export class Controller {
     // structure the game would refuse there (no room, wrong ground) is not
     // in it: shown here as a red ghost, so it can be found and moved.
     if (layers.actors !== false) {
-      for (const a of doc.actors) {
-        const info = this.info(a.type);
-        if (info?.kind !== 'building') continue;
+      for (const [a, info] of this.refusedStructures()) {
         const [fw, fh] = actorSize(info);
         const x = (a.x + fw / 2) * CELL;
         const y = (a.y + fh / 2) * CELL;
-        if (!visible(x, y, 96) || !placementProblem(doc, this.catalog, a.type, a.x, a.y, new Set([a]))) continue;
+        if (!visible(x, y, 96)) continue;
         this.ghost(sprite, info, x, y, 0, team(a.owner), 0.5);
         outline(a.x * CELL, a.y * CELL, fw * CELL, fh * CELL, [0.95, 0.25, 0.2, 0.9]);
       }
@@ -620,6 +664,8 @@ export class Controller {
     const L = this.state.layers;
     const a = this.analysis;
     const cellsOk = a && a.length === doc.width * doc.height;
+    // Nothing to draw per cell: no need to visit them (the whole map when zoomed out).
+    if (!L.resources && !(cellsOk && (L.zones || L.passability || L.buildable || L.reach || L.rush))) return;
     for (let y = cy0; y <= cy1; y++) {
       for (let x = cx0; x <= cx1; x++) {
         const i = y * doc.width + x;
@@ -685,7 +731,8 @@ export class Controller {
       });
     };
     if (g?.kind === 'shape') {
-      cellsAt(this.shapeCells(g.shape, g.x0, g.y0, g.x1, g.y1), g.right ? [1, 0.35, 0.3, 0.35] : paintColor);
+      const runs = this.shapeRects(g, g.right ? [1, 0.35, 0.3, 0.35] : paintColor);
+      for (let k = 0; k < runs.length; k += 8) rect(runs[k], runs[k + 1], runs[k + 2], runs[k + 3], runs.subarray(k + 4, k + 8));
       return;
     }
     if (g?.kind === 'box') {
@@ -720,8 +767,9 @@ export class Controller {
       if (!info) return;
       const [ax, ay] = this.anchor(s.actorType, x, y);
       const [fw, fh] = actorSize(info);
+      const occupancy = this.occupancy();
       for (const p of sym(ax, ay, fw, fh)) {
-        const bad = placementProblem(doc, this.catalog, s.actorType, p.x, p.y);
+        const bad = occupancy.problem(s.actorType, p.x, p.y);
         for (const [cx, cy, c] of actorCells({ type: s.actorType, x: p.x, y: p.y }, this.catalog)) {
           const col = bad ? [0.9, 0.2, 0.15, 0.4] : c === 2 ? [0.3, 0.8, 0.35, 0.18] : [0.3, 0.85, 0.35, 0.35];
           rect(cx * CELL, cy * CELL, CELL, CELL, col);
@@ -734,6 +782,53 @@ export class Controller {
         this.ghost(sprite, info, px, py, angle, teamOf(o), 0.6);
       }
     }
+  }
+
+  /**
+   * Rect floats of the shape being dragged: its cells at their symmetric
+   * positions (the copies fainter), drawn as runs of cells along each row
+   * (the same pixels as a rect per cell). Made again only when the corners,
+   * the tool settings or the map size change, not every frame.
+   */
+  shapeRects(g, c) {
+    const s = this.state;
+    const doc = this.doc;
+    const key = [g.shape, g.x0, g.y0, g.x1, g.y1, s.size, s.shapeFill, s.symmetry, doc.width, doc.height, ...c].join(',');
+    if (this.shapePreview?.key === key) return this.shapePreview.rects;
+    // Each painted cell at its symmetric positions; the first position to reach a cell gives its colour.
+    const shade = new Map();
+    const transforms = transformsFor(s.symmetry, doc.width, doc.height);
+    const seen = [];
+    for (const [cx, cy] of this.shapeCells(g.shape, g.x0, g.y0, g.x1, g.y1)) {
+      // As symmetricPositions: a position a later transform repeats counts once, as the earliest.
+      seen.length = 0;
+      for (const t of transforms) {
+        const [px, py] = applyTransform(t, cx, cy, doc.width, doc.height);
+        let repeated = false;
+        for (let k = 0; k < seen.length; k += 2) if (seen[k] === px && seen[k + 1] === py) repeated = true;
+        if (repeated) continue;
+        seen.push(px, py);
+        const at = py * doc.width + px;
+        if (!doc.inside(px, py) || shade.has(at)) continue;
+        shade.set(at, seen.length === 2 ? 0 : 1);
+      }
+    }
+    const colors = [c, [c[0], c[1], c[2], c[3] * 0.55]];
+    const cells = Float64Array.from(shade.keys()).sort();
+    const rects = [];
+    for (let k = 0; k < cells.length; ) {
+      const start = cells[k];
+      const shadeOf = shade.get(start);
+      const x = start % doc.width;
+      const y = (start - x) / doc.width;
+      let n = 1;
+      while (k + n < cells.length && cells[k + n] === start + n && x + n < doc.width && shade.get(start + n) === shadeOf) n++;
+      const col = colors[shadeOf];
+      rects.push(x * CELL, y * CELL, n * CELL, CELL, col[0], col[1], col[2], col[3]);
+      k += n;
+    }
+    this.shapePreview = { key, rects: Float32Array.from(rects) };
+    return this.shapePreview.rects;
   }
 
   /**

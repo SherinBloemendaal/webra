@@ -1368,6 +1368,11 @@ pub struct Rules {
     pub render: crate::fx::RenderData,
 }
 
+thread_local! {
+    /// The rules `Rules::load_with` loaded last and the overrides (JSON text) they were loaded with.
+    static LAST_LOADED: std::cell::RefCell<Option<(String, Rules)>> = const { std::cell::RefCell::new(None) };
+}
+
 pub const TOKEN_DISABLED: &str = "disabled";
 pub const TECH_LEVELS: [&str; 5] = ["infonly", "low", "medium", "high", "unrestricted"];
 
@@ -1379,7 +1384,18 @@ impl Rules {
     /// Load the built-in rules with optional overrides from a custom map
     /// (`{ "actors": { "1TNK": { "cost": 400 } }, "weapons": { "25mm": { "range": 6000 } } }`).
     /// Overrides may only change existing fields to values of the same type.
+    ///
+    /// The last rules loaded are kept with their overrides and handed out
+    /// again (a copy) for the same overrides: the map editor's preview and
+    /// checks, map validation and every game on a map load the same rules
+    /// over and over, and reading rules.json is most of that work.
     pub fn load_with(overrides: Option<&serde_json::Value>) -> Result<Rules, String> {
+        // Never empty for overrides (JSON text), so it cannot match "no overrides".
+        let key = overrides.map(|o| o.to_string()).unwrap_or_default();
+        let cached = LAST_LOADED.with(|last| last.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, r)| r.clone()));
+        if let Some(rules) = cached {
+            return Ok(rules);
+        }
         let mut base: serde_json::Value = serde_json::from_str(RULES_JSON).expect("rules.json is valid JSON");
         if let Some(o) = overrides {
             apply_overrides(&mut base, o)?;
@@ -1388,6 +1404,7 @@ impl Rules {
         let rules = Rules::from_raw(raw)?;
         // Custom maps come from strangers: every value must be safe to simulate.
         rules.validate()?;
+        LAST_LOADED.with(|last| *last.borrow_mut() = Some((key, rules.clone())));
         Ok(rules)
     }
 
@@ -2635,6 +2652,29 @@ mod tests {
         ] {
             assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn rules_loaded_again_are_the_same_and_never_mixed_up() {
+        let cost = |r: &Rules| r.actors[r.actor_index("1TNK").unwrap()].cost;
+        let a = serde_json::json!({ "actors": { "1TNK": { "cost": 111 } } });
+        let b = serde_json::json!({ "actors": { "1TNK": { "cost": 222 } } });
+        let base = cost(&Rules::load());
+        // Each load hands out its own copy: changing one changes no later load.
+        let mut first = Rules::load_with(Some(&a)).unwrap();
+        first.actors[0].cost = 1;
+        let again = Rules::load_with(Some(&a)).unwrap();
+        assert_eq!(cost(&again), 111);
+        assert_ne!(again.actors[0].cost, 1);
+        assert_eq!(cost(&Rules::load_with(Some(&b)).unwrap()), 222);
+        assert_eq!(cost(&Rules::load()), base);
+        assert_eq!(cost(&Rules::load_with(Some(&a)).unwrap()), 111);
+        // A refused override is refused every time and changes nothing kept.
+        let bad = serde_json::json!({ "actors": { "1TNK": { "cost": -1 } } });
+        assert!(Rules::load_with(Some(&bad)).is_err());
+        assert!(Rules::load_with(Some(&bad)).is_err());
+        assert_eq!(cost(&Rules::load_with(Some(&a)).unwrap()), 111);
+        assert_eq!(cost(&Rules::load_with(None).unwrap()), base);
     }
 
     #[test]

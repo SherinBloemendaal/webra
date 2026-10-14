@@ -4,7 +4,7 @@
 
 import { LIMITS, TERRAIN, canOccupy, catalogEntry, footprintOf, groundFor, isBuildable } from './mapformat.js';
 import { SPAWN_H, SPAWN_W } from './symmetry.js';
-import { actorCells, deleteActors, placementProblem } from './edits.js';
+import { Occupancy, actorCells, deleteActors } from './edits.js';
 
 const yardCells = (x, y) => {
   const out = [];
@@ -12,14 +12,19 @@ const yardCells = (x, y) => {
   return out;
 };
 
-/** Whether a construction yard fits at (x, y): inside, clear ground, no structure, no other yard. */
-function yardFits(doc, catalog, x, y, except) {
-  if (x < 0 || y < 0 || x + SPAWN_W > doc.width || y + SPAWN_H > doc.height) return false;
+/** Cells taken by structures (footprint kind 1, on the map), by cell index. */
+function structureCells(doc, catalog) {
   const taken = new Set();
   for (const a of doc.actors) {
     if (catalogEntry(catalog, a.type)?.kind !== 'building') continue;
     for (const [cx, cy, c] of actorCells(a, catalog)) if (c === 1 && doc.inside(cx, cy)) taken.add(doc.idx(cx, cy));
   }
+  return taken;
+}
+
+/** Whether a construction yard fits at (x, y): inside, clear ground, no structure (`taken`), no other yard. */
+function yardFits(doc, taken, x, y, except) {
+  if (x < 0 || y < 0 || x + SPAWN_W > doc.width || y + SPAWN_H > doc.height) return false;
   for (const [cx, cy] of yardCells(x, y)) {
     const i = doc.idx(cx, cy);
     if (!isBuildable(doc.terrain[i]) || taken.has(i)) return false;
@@ -30,11 +35,12 @@ function yardFits(doc, catalog, x, y, except) {
 /** The free yard position nearest to (x, y) (rings outwards), or null. */
 export function nearestYard(doc, catalog, x, y, except = -1) {
   const max = Math.max(doc.width, doc.height);
+  const taken = structureCells(doc, catalog);
   for (let r = 0; r <= max; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-        if (yardFits(doc, catalog, x + dx, y + dy, except)) return [x + dx, y + dy];
+        if (yardFits(doc, taken, x + dx, y + dy, except)) return [x + dx, y + dy];
       }
     }
   }
@@ -107,6 +113,8 @@ export function findFixes(doc, catalog) {
       ],
     });
   }
+  // Each actor is checked where it stands, against all the others.
+  const occupancy = new Occupancy(doc, catalog);
   doc.actors.forEach((a, i) => {
     const info = catalogEntry(catalog, a.type);
     const label = info?.name ?? a.type;
@@ -138,8 +146,7 @@ export function findFixes(doc, catalog) {
       out.push({ key: `actor-out-${i}`, level: 'error', message: `${label} at ${a.x},${a.y} does not fit inside the map.`, ...at, fixes: [remove] });
       return;
     }
-    const others = new Set([a]);
-    const problem = placementProblem(doc, catalog, a.type, a.x, a.y, others);
+    const problem = occupancy.problem(a.type, a.x, a.y, a);
     if (problem === 'needs clear ground' || problem === 'needs passable ground' || problem === 'needs water') {
       out.push({
         key: `actor-ground-${i}`,
