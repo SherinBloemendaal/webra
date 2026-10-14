@@ -2946,12 +2946,14 @@ fast without changing a result, and why it does not use more cores yet.
 test (`World::new_stress`: two armies of soldiers, light and heavy tanks,
 one tank or a pair of soldiers per cell, that attack-move across an open
 map into each other) and prints the average and worst tick per window, the
-units alive, flow fields and route searches, a digest of the state hashes
-(every 25 ticks, outside the timed ticks), the final state hash and the
-peak resident memory. With `--features profile` (and `--sections` per
+units alive, flow fields and route searches, the first tick and the ticks
+after it on their own (median, 95th percentile, worst), a digest of the
+state hashes (every 25 ticks, outside the timed ticks), the final state
+hash and the peak resident memory. With `--features profile` (and `--sections` per
 window) it also prints the time of each system: `profile::scope` timers in
 `World::step` and the hot functions, which compile to nothing without the
-feature (the game never builds it). `node tools/sim-tick-bench.mjs <units>
+feature (the game never builds it; the feature refuses to build for
+wasm32, where `std::time::Instant` panics). `node tools/sim-tick-bench.mjs <units>
 <ticks>` runs the same scenario on the game's wasm build in node and prints
 the same final state hash as the native run.
 
@@ -2975,8 +2977,9 @@ and every idle crowded unit searched ten rings of cells for a free one on
 every tick. The stress test now places one tank or a pair of soldiers per
 cell. There the route searches dominate, and nearly all of them fall in the
 first tick, when every unit of both armies starts its move: 34,500 searches
-expanding 37 million cells at 20,000 units, 6 to 10 s native (on a busy
-machine) and 7 s in wasm for that one tick (17 s in wasm before). Flow fields (the HUD's count
+expanding 37 million cells at 20,000 units, 6 to 10 s native and 7 to
+8 s in wasm for that one tick in the quieter runs on a busy machine (17 s
+in wasm before). Flow fields (the HUD's count
 is the fields computed since the start, not the fields kept) cost about
 2 % of a tick. The worker's render build (`build_render` with the whole map
 in view) is 1.9 ms per frame at 20,000 units in wasm; the GPU instance path
@@ -2988,10 +2991,14 @@ its plain definition on crowds of both sides, and the state hashes of the
 stress test (2,000 to 20,000 units, 1,500 ticks, every 25 ticks), the
 ai_vs_ai games and the native against the wasm build are identical.
 
-- Occupancy queries (movement/occupancy.rs `free_sub_cell`,
-  `can_enter_cell`, `available_sub_cell`) read a cell's holders once and
-  keep the sub-cells they take as bits, instead of one pass over the
-  holders per sub-cell.
+- Sub-cell questions (movement/occupancy.rs `free_sub_cell`, the
+  shared-cell check of `can_enter_cell`, the sub-cell choice of
+  `available_sub_cell` for soldiers) collect the sub-cells a cell's
+  holders take as bits in one pass over the holders, instead of one pass
+  per sub-cell. `can_enter_cell`'s blocking check (when no sub-cell is
+  free) and `available_sub_cell` for units that do not share cells still
+  make their own pass, as before; the blocking rule (`blocked_by`) only
+  looks up what the check needs.
 - A route search (movement/search.rs) asks each cell's can-enter answer
   and terrain cost once (a search reaches a cell from up to eight
   neighbours, and nothing moves while it runs), keeps a cell's bookkeeping

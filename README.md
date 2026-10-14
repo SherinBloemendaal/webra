@@ -451,16 +451,16 @@ Notes on browsers:
 - **Shared flow fields.** A crowd ordered to one goal costs one field, not one path search per unit.
 - **Cheap neighbourhood queries.** The per-tick spatial hash keeps separation, targeting and splash damage close to linear.
 - **Off the main thread.** The simulation runs in a Web Worker; instance buffers reach the main thread through shared memory (or transferred buffers) without JavaScript-side object churn.
-- **Numbers.** The lobby's stress test: two armies of tanks and soldiers that attack-move across an open map into each other, under the OpenRA movement model (the default), against a 40 ms tick budget. `cargo run -p webra-sim --release --example sim_bench -- <units> 1500` (native) and `node tools/sim-tick-bench.mjs <units> 600` (the game's wasm build in node), Apple Silicon Mac with other heavy jobs running, so two runs each:
+- **Numbers.** The lobby's stress test: two armies of tanks and soldiers that attack-move across an open map into each other, under the OpenRA movement model (the default), against a 40 ms tick budget. `cargo run -p webra-sim --release --example sim_bench -- <units> 1500` (native) and `node tools/sim-tick-bench.mjs <units> 600` (the game's wasm build in node) print the first tick on its own and the ticks after it. Measured on an Apple Silicon Mac while up to four other heavy jobs ran, so two runs each (run 1 / run 2):
 
-  | Units | Native average | Native worst (the first tick) | Wasm average | Wasm median | Wasm worst (the first tick) |
-  |------:|---------------:|------------------------------:|-------------:|------------:|----------------------------:|
-  | 2,000 | 1.5 / 1.7 ms | 0.7 / 0.8 s | 6.8 / 8.9 ms | 2.1 / 2.2 ms | 1.9 / 2.6 s |
-  | 5,000 | 2.8 / 3.2 ms | 0.4 / 0.4 s | 10.3 / 5.0 ms | 5.5 / 3.3 ms | 1.2 / 0.7 s |
-  | 10,000 | 8.5 / 34.8 ms | 1.7 / 8.1 s | 12.5 / 19.6 ms | 8.8 / 12.1 ms | 2.1 / 2.8 s |
-  | 20,000 | 17.8 / 29.0 ms | 5.9 / 10.7 s | 27.5 / 27.8 ms | 15.0 / 15.4 ms | 6.8 / 6.7 s |
+  | Units | Native first tick | Native after it: median, p95, worst | Wasm first tick | Wasm after it: median, p95, worst |
+  |------:|------------------:|------------------------------------:|----------------:|----------------------------------:|
+  | 2,000 | 0.8 / 0.8 s | 0.8 / 0.8, 3.1 / 3.3, 7.9 / 7.2 ms | 1.1 / 1.1 s | 1.6 / 1.7, 4.5 / 4.6, 8.3 / 7.9 ms |
+  | 5,000 | 0.5 / 0.5 s | 2.6 / 2.6, 6.9 / 6.8, 15.9 / 15.6 ms | 1.9 / 3.6 s | 12.8 / 15.5, 74.4 / 76.5, 158 / 188 ms |
+  | 10,000 | 2.1 / 2.4 s | 9.1 / 11.2, 15.7 / 82.7, 48 / 272 ms | 17.2 / 6.7 s | 52.3 / 31.1, 108 / 70.9, 219 / 178 ms |
+  | 20,000 | 35.6 / 7.9 s | 44.1 / 13.0, 112 / 24.4, 245 / 73 ms | 24.4 / 8.3 s | 25.9 / 19.6, 48.8 / 34.5, 117 / 76 ms |
 
-  After the first tick a tick stays well inside the budget; the first tick is long because every unit of both armies starts its move in it and searches its route around the others (34,500 route searches at 20,000 units). The breakdown per system, what was made faster and why the simulation stays on one core are in [docs/contracts.md](docs/contracts.md), section 8, "Simulation performance". The stress test HUD and the debug menu's performance stats show the live ms per tick.
+  The load on the machine moved these by a factor of two to three between runs (the 5,000 unit wasm runs were the most disturbed); the quieter run is the closer to an idle machine. The first tick is long because every unit of both armies starts its move in it and searches its route around the others (34,500 route searches at 20,000 units). The breakdown per system, what was made faster and why the simulation stays on one core are in [docs/contracts.md](docs/contracts.md), section 8, "Simulation performance". The stress test HUD and the debug menu's performance stats show the live ms per tick.
 - **Main thread per frame.** `node tools/sim-bench.mjs 20000` (after `npm run build:wasm`) runs the 20,000 unit stress test headless with the whole map in view (15,000 sprites) and times what the main thread does per frame: step the simulation or post the step, handle the frame message, and copy the render data as the renderer's `writeBuffer` does. Measured on an Apple Silicon Mac with Node 26 (no browser, no GPU), CPU instance path at 60 fps:
 
   | Simulation runs | Main thread per frame (avg / p95 / max) | Ticks per second |
