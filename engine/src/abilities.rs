@@ -650,7 +650,9 @@ impl World {
         true
     }
 
-    /// Minelayers standing still on an own rearm pad reload one mine per ReloadDelay.
+    /// Minelayers standing still on a service depot's pad they hold (called
+    /// to it in its line, service.rs) reload one mine per ReloadDelay (OpenRA
+    /// reloads only in Resupply).
     fn rearm_on_pad(&mut self, i: usize) {
         let a = &self.actors[i];
         let Some(ml) = self.rules.actors[a.ty as usize].abilities.minelayer.as_ref() else { return };
@@ -659,11 +661,12 @@ impl World {
         }
         let ci = self.cell_index(a.x, a.y);
         let b = self.building_at[ci];
-        let on_pad = b != NONE && {
+        let on_pad = b != NONE && self.on_repair_pad(i) && self.resolve(a.depot) == Some(b as usize) && {
             let bb = &self.actors[b as usize];
             bb.alive
                 && bb.owner == a.owner
                 && ml.rearm_actors.iter().any(|r| r.eq_ignore_ascii_case(&self.rules.actors[bb.ty as usize].id))
+                && self.repair_pad_cell(b as usize) == ci as u32
                 && self.on_cell(i, ci as u32)
         };
         let delay = ml.reload_delay.max(1);

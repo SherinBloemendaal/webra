@@ -1645,9 +1645,18 @@ models, single player, skirmish and multiplayer:
   a new repair order to the same depot keeps its place, and the unit on
   the pad keeps the pad (OpenRA queues the new Resupply on the same host;
   like OpenRA it starts the repair steps afresh, StartRepairing included).
+  The line state stays on the unit until an order that is not a repair
+  there (it is dead then: a later repair order or a repair started without
+  an order, a damaged vehicle left idle on the depot or a helicopter landed
+  on it, takes a fresh place at the end, unless the pad is still reserved
+  for it). Clicking the middle of the depot while a unit stands on the pad
+  targets that unit, as in OpenRA; clicking an arm of the depot gives the
+  repair order.
 - A minelayer out of mines with cells left to mine goes to reload in the
   depot's line like any unit sent for repair, and back to the minefield
-  once full (OpenRA Rearmable, Resupply).
+  once full (OpenRA Rearmable, Resupply). Minelayers reload only on the pad
+  they were called to (OpenRA reloads only in Resupply), and one that leaves
+  the line early goes back to its minefield with the mines it has.
 - Tickets, waiting cells and the pad reservation are part of the state
   hash. The lines and the waiting cells taken are gathered once a tick, so
   the work per unit follows the length of its line, not the number of

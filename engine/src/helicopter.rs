@@ -356,11 +356,7 @@ impl World {
         }
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.is_repair_depot_for(i, b) && self.actors[i].hp < max_hp {
-            let r = self.make_ref(b);
-            let a = &mut self.actors[i];
-            a.activity = Activity::Repair;
-            a.depot = r;
-            a.repair_timer = 0;
+            self.enter_service_line(i, b);
         }
     }
 

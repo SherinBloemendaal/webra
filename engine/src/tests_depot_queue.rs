@@ -554,3 +554,73 @@ fn a_minelayer_reloading_waits_in_the_line() {
     let max = w.rules.actors[w.actors[ml].ty as usize].abilities.minelayer.as_ref().unwrap().ammo;
     assert_eq!(w.actors[ml].ab.ammo, max - 1, "reloaded, then laid the second mine");
 }
+
+#[test]
+fn a_unit_that_left_the_line_and_stops_on_the_depot_gets_back_in_at_the_end() {
+    let mut w = arena(MovementModel::WebRA);
+    let fix = depot(&mut w);
+    let tanks = damaged(&mut w, "2TNK", 5, 8);
+    send(&mut w, &tanks, fix);
+    let waiting = |w: &World| -> Vec<usize> {
+        tanks
+            .iter()
+            .copied()
+            .filter(|&t| w.actors[t].svc.ticket != 0 && !w.on_repair_pad(t) && w.actors[t].activity == Activity::Repair)
+            .collect()
+    };
+    for _ in 0..25 * 60 {
+        w.step();
+        if waiting(&w).len() >= 3 {
+            break;
+        }
+    }
+    // The first in line (lowest ticket) moves off, onto the depot's left arm.
+    let first = waiting(&w).into_iter().min_by_key(|&t| w.actors[t].svc.ticket).unwrap();
+    let old_ticket = w.actors[first].svc.ticket;
+    move_to(&mut w, first, 30, 21);
+    let mut back = false;
+    for _ in 0..25 * 30 {
+        w.step();
+        if w.actors[first].activity == Activity::Repair && w.actors[first].svc.ticket != 0 {
+            back = true;
+            break;
+        }
+    }
+    assert!(back, "idle and damaged on the depot: it gets back in line");
+    let t = w.actors[first].svc.ticket;
+    assert!(t > old_ticket, "with a fresh ticket");
+    for &o in &waiting(&w) {
+        assert!(o == first || w.actors[o].svc.ticket < t, "behind everyone who was waiting");
+    }
+    run_line(&mut w, &tanks, 25 * 200);
+}
+
+fn move_to(w: &mut World, u: usize, cx: i32, cy: i32) {
+    let ids = vec![w.make_ref(u)];
+    w.queue_order(Order::Move { player: 0, ids, x: cell_center(cx), y: cell_center(cy), attack_move: false });
+}
+
+#[test]
+fn minelayers_reload_only_on_the_pad_they_hold() {
+    let mut w = arena(MovementModel::WebRA);
+    let fix = depot(&mut w);
+    // Idle on the depot's pad, out of mines: no reload (OpenRA reloads in Resupply only).
+    let a = w.spawn_unit(ty(&w, "MNLY"), 0, cell_center(31), cell_center(21), 0);
+    w.actors[a].ab.ammo = 0;
+    for _ in 0..25 * 10 {
+        w.step();
+        assert_eq!(w.actors[a].ab.ammo, 0, "no reload off a held pad");
+    }
+    // Sent to the depot to reload: it reloads once called to the pad.
+    let ids = vec![w.make_ref(a)];
+    let (x, y) = (w.actors[fix].x - CELL, w.actors[fix].y);
+    w.queue_order(Order::Smart { player: 0, ids, x, y });
+    for _ in 0..25 * 60 {
+        w.step();
+        if w.actors[a].ab.ammo > 0 {
+            assert!(w.on_repair_pad(a) || w.actors[a].activity != Activity::Repair, "reloads only holding the pad");
+        }
+    }
+    let max = w.rules.actors[w.actors[a].ty as usize].abilities.minelayer.as_ref().unwrap().ammo;
+    assert_eq!(w.actors[a].ab.ammo, max, "reloaded in the line");
+}

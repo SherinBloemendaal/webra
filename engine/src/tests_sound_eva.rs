@@ -305,15 +305,15 @@ fn the_service_depot_announces_the_start_and_the_end_of_a_repair() {
 #[test]
 fn minelayers_rearm_with_a_sound_per_mine() {
     let mut w = flat_world(["allies", "soviet"]);
-    // Parked on the pad: only WebRA's movement model lets an idle unit stand
-    // on the depot's pad (OpenRA's moves it off, movement/cellmove.rs).
-    w.options.movement = crate::movement::MovementModel::WebRA;
     let fix = w.spawn_building(ty(&w, "FIX"), 0, 30, 30).unwrap();
     w.refresh_tokens();
-    // Parked on the depot's pad, it reloads one mine per ReloadDelay.
+    // Sent to the depot (OpenRA reloads only in Resupply): on its pad it
+    // reloads one mine per ReloadDelay (service.rs, abilities.rs).
     let (fx, fy) = (w.actors[fix].x, w.actors[fix].y);
-    let ml = w.spawn_unit(ty(&w, "MNLY"), 0, fx, fy, 0);
+    let ml = w.spawn_unit(ty(&w, "MNLY"), 0, fx, fy + 3 * CELL, 0);
     w.actors[ml].ab.ammo = 3;
+    let ids = vec![w.make_ref(ml)];
+    w.queue_order(Order::Smart { player: 0, ids, x: fx - CELL, y: fy });
     w.sound.set_enabled(true);
     let ev = collect(&mut w, 25 * 30);
     assert_eq!(w.actors[ml].ab.ammo, 5);

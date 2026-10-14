@@ -291,6 +291,7 @@ impl World {
     /// Unit `i` leaves the line without being served (nothing to repair, the
     /// depot gone, the pad out of reach): it stops where it is.
     pub(crate) fn end_service(&mut self, i: usize) {
+        let mines = self.actors[i].svc.resume_mines;
         self.leave_line(i);
         self.release_dock(i);
         let a = &mut self.actors[i];
@@ -301,12 +302,34 @@ impl World {
         if a.kind == Kind::Aircraft {
             a.heli.landed = false;
         }
+        // A minelayer that came to reload goes back to its minefield with
+        // the mines it has (without any it keeps the cells for a later
+        // order; abilities.rs).
+        let has_mines = self.actors[i].ab.ammo > 0;
+        if mines && has_mines {
+            self.resume_minefield(i);
+        }
+    }
+
+    /// Unit `i` gets repaired at depot `d` without an order (a damaged
+    /// vehicle left idle on the depot, a helicopter landed on it): a fresh
+    /// place at the end of the line, unless the pad is still reserved for
+    /// it. Line state kept from an earlier visit never carries over.
+    pub(crate) fn enter_service_line(&mut self, i: usize, d: usize) {
+        let (me, dref) = (self.make_ref(i), self.make_ref(d));
+        let holds_pad = self.actors[d].dock_user == me;
+        let a = &mut self.actors[i];
+        let ticket = if holds_pad && a.svc.depot == dref { a.svc.ticket } else { 0 };
+        a.svc = ServiceState { depot: dref, ticket, ..Default::default() };
+        a.activity = Activity::Repair;
+        a.depot = dref;
+        a.repair_timer = 0;
     }
 
     /// Unit `i` is done at depot `d`: FinishRepairingNotification, then off
     /// to the rally point, or to a free spot next to the depot (ground units
     /// and helicopters). Planes without a rally point fly home (plane.rs).
-    /// The move frees the pad (`release_dock`).
+    /// It gives up its place and the pad first (`leave_line`).
     pub(crate) fn leave_depot(&mut self, i: usize, d: usize) {
         self.note_repaired(i, d);
         let mines = self.actors[i].svc.resume_mines;
@@ -728,8 +751,12 @@ impl World {
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
             a.stall_ticks = 0;
-            let s = if self.ground_spot_open(i, d, here) && !self.slot_taken(i, here, false) { here } else { NONE };
-            self.set_slot(i, s);
+            if self.ground_spot_open(i, d, here) && !self.slot_taken(i, here, false) {
+                self.set_slot(i, here);
+            } else {
+                // Another cell next tick (no retry wait: cells are free).
+                self.actors[i].svc.slot = NONE;
+            }
             return;
         }
         self.move_toward(i, slot);

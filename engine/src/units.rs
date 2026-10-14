@@ -170,11 +170,7 @@ impl World {
                 let b = b as usize;
                 let ba = &self.actors[b];
                 if ba.owner == a.owner && self.rules.actors[ba.ty as usize].building.as_ref().unwrap().repairs.is_some() {
-                    let r = self.make_ref(b);
-                    let a = &mut self.actors[i];
-                    a.activity = Activity::Repair;
-                    a.depot = r;
-                    a.repair_timer = 0;
+                    self.enter_service_line(i, b);
                 }
             }
         }

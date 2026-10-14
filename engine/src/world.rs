@@ -2224,8 +2224,13 @@ impl World {
         }
         // The service depot's pad and line (service.rs): a unit given a new
         // order while in a depot's line keeps its place and its hold on the
-        // pad until it ticks, so a new repair order to the same depot goes
-        // on where it was (OpenRA queues the new Resupply on the host).
+        // pad, so a new repair order to the same depot goes on where it was
+        // (OpenRA queues the new Resupply on the host). After any other
+        // order the kept state is dead: everything that reads it checks the
+        // Repair activity, the next repair order arrives here with another
+        // activity and clears it, a repair order to another depot starts
+        // afresh (`sync_service`), and units that start a repair without an
+        // order get a fresh place (`enter_service_line`).
         if self.actors[i].activity != Activity::Repair {
             if let Some(d) = self.resolve(self.actors[i].depot) {
                 if self.actors[d].dock_user == me {
