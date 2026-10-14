@@ -536,6 +536,8 @@ fn a_minelayer_reloading_waits_in_the_line() {
     assert!(tanks.iter().any(|&t| w.on_repair_pad(t)), "a tank holds the pad");
     let ml = w.spawn_unit(ty(&w, "MNLY"), 0, cell_center(20), cell_center(30), 0);
     w.actors[ml].ab.ammo = 1;
+    // OpenRA's minefield order keeps only explored cells (LayMines).
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
     let ids = vec![w.make_ref(ml)];
     w.queue_order(Order::LayMines { player: 0, ids, x0: 18, y0: 34, x1: 19, y1: 34 });
     let mut joined = false;
