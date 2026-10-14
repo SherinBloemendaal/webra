@@ -527,7 +527,7 @@ pub(crate) fn shuffle<T>(w: &mut World, v: &mut [T]) {
 fn area_givers(w: &World, player: u8) -> Vec<usize> {
     owned_buildings(w, player)
         .into_iter()
-        .filter(|&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.gives_buildable_area))
+        .filter(|&b| w.rules.actors[w.actors[b].ty as usize].building.as_ref().is_some_and(|x| x.gives_area != 0))
         .collect()
 }
 

@@ -446,14 +446,62 @@ impl World {
         self.mine_ref_at(ci).filter(|&m| self.actors[m].kind == Kind::Mine)
     }
 
-    /// Whether minelayer `i` may put a mine on cell `ci` (terrain, structures, no mine yet).
-    pub fn can_lay_mine(&self, i: usize, ci: usize) -> bool {
+    /// Whether cell `ci` is of a terrain minelayer `i` mines (OpenRA
+    /// Minelayer.IsCellAcceptable).
+    fn mine_terrain_ok(&self, i: usize, ci: usize) -> bool {
         let Some(ml) = self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.as_ref() else { return false };
-        ci < self.map.cells()
+        ci < self.map.cells() && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.resource(ci).map(|(r, _)| r))
+    }
+
+    /// Whether minelayer `i` could drive onto cell `ci` and stop there
+    /// (OpenRA CanEnterCell with BlockedByActor.Immovable and
+    /// CanStayInCell; Locomotor.IsBlockedBy): no structure footprint, husk
+    /// or blocking terrain (`pass`); every unit there either one of its own
+    /// side that can move out of the way (Mobile: aircraft have none, so a
+    /// landed one blocks) or one it crushes (enemy infantry under its
+    /// tracks, `crushable_by`); a crate only when its locomotor crushes
+    /// crates.
+    fn minelayer_can_enter(&self, i: usize, ci: usize) -> bool {
+        let owner = self.actors[i].owner;
+        !self.pass.blocked[ci]
+            && self.building_at[ci] == NONE
+            && self.units_in_cell(ci).iter().all(|&u| {
+                let u = u as usize;
+                let movable = self.actors[u].kind != Kind::Aircraft && self.is_movable(u);
+                u == i || !self.occupies_cell(u) || (movable && self.are_allies(owner, self.actors[u].owner)) || self.crushable_by(u, i)
+            })
+            && (self.crate_at(ci).is_none() || self.crushes_crates(i))
+    }
+
+    /// Whether minelayer `i` can put a mine on cell `ci` now (OpenRA
+    /// LayMines.CanLayMine): a terrain it mines and nothing but itself in
+    /// the ActorMap there: no structure, mine, husk, crate or unit that
+    /// takes the cell (`occupies_cell`).
+    pub fn can_lay_mine(&self, i: usize, ci: usize) -> bool {
+        self.mine_terrain_ok(i, ci)
             && !self.pass.blocked[ci]
             && self.building_at[ci] == NONE
-            && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.resource(ci).map(|(r, _)| r))
             && self.mine_at(ci).is_none()
+            && self.husk_at(ci).is_none()
+            && self.crate_at(ci).is_none()
+            && self.units_in_cell(ci).iter().all(|&u| u as usize == i || !self.occupies_cell(u as usize))
+    }
+
+    /// Whether minelayer `i` keeps cell `ci` in its minefield (OpenRA
+    /// LayMines.CleanMineField): a cell goes for good once a mine its owner
+    /// can see lies there, or once its owner sees the minelayer cannot get
+    /// onto it (`minelayer_can_enter`). Anything else (a unit of its own
+    /// side, a crate it crushes, a cell under the fog) keeps it: the
+    /// minelayer skips it while it cannot lay there and comes back.
+    fn keeps_mine_cell(&self, i: usize, ci: usize) -> bool {
+        let owner = self.actors[i].owner;
+        if !self.mine_terrain_ok(i, ci) {
+            return false;
+        }
+        if self.mine_at(ci).is_some_and(|m| self.is_visible_to(m, owner) && !self.is_cloaked_from(m, owner)) {
+            return false;
+        }
+        self.players[owner as usize].visible[ci] == 0 || self.minelayer_can_enter(i, ci)
     }
 
     /// Put one mine of minelayer `i` on cell `ci`; uses one ammo.
@@ -567,9 +615,19 @@ impl World {
             if self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.is_none() {
                 continue;
             }
+            // OpenRA Minelayer PlaceMinefield: cells of a terrain it mines,
+            // explored (Shroud.IsExplored: not under a Gap Generator's
+            // shroud either), that it can drive onto and stop on.
+            let owner = self.actors[i].owner;
+            let explored = |c: usize| self.players[owner as usize].explored[c] != 0 && !self.gen_shrouded(owner, c);
+            let field: Vec<u32> = cells
+                .iter()
+                .copied()
+                .filter(|&c| self.mine_terrain_ok(i, c as usize) && explored(c as usize) && self.minelayer_can_enter(i, c as usize))
+                .collect();
             self.start_task(i, Task::LayMines);
             let a = &mut self.actors[i];
-            a.ab.minefield = cells.clone();
+            a.ab.minefield = field;
             a.ab.mine_cell = NONE;
         }
     }
@@ -582,9 +640,14 @@ impl World {
         out
     }
 
+    /// OpenRA LayMines: drop the cells CleanMineField drops, then head for
+    /// the nearest cell a mine can go on now (NextValidCell) and lay it
+    /// there. Cells something stands on are skipped, not dropped; when no
+    /// cell can take a mine now the minelayer stops, as OpenRA's activity
+    /// ends.
     fn tick_lay_mines(&mut self, i: usize) {
         let field = std::mem::take(&mut self.actors[i].ab.minefield);
-        let field: Vec<u32> = field.into_iter().filter(|&c| self.can_lay_mine(i, c as usize)).collect();
+        let field: Vec<u32> = field.into_iter().filter(|&c| self.keeps_mine_cell(i, c as usize)).collect();
         self.actors[i].ab.minefield = field;
         if self.actors[i].ab.minefield.is_empty() {
             self.actors[i].ab.task = Task::None;
@@ -596,16 +659,26 @@ impl World {
             return;
         }
         let mut cell = self.actors[i].ab.mine_cell;
-        if cell == NONE || !self.actors[i].ab.minefield.contains(&cell) {
-            // Nearest remaining cell (ties: lowest index).
+        if cell == NONE || !self.actors[i].ab.minefield.contains(&cell) || !self.can_lay_mine(i, cell as usize) {
+            // Nearest cell a mine can go on now (ties: lowest index).
             let (ux, uy) = self.cell_of(self.actors[i].x, self.actors[i].y);
             let w = self.map.width;
-            cell = *self.actors[i]
+            let next = self.actors[i]
                 .ab
                 .minefield
                 .iter()
-                .min_by_key(|&&c| (((c as i32 % w) - ux).pow(2) + ((c as i32 / w) - uy).pow(2), c))
-                .unwrap();
+                .copied()
+                .filter(|&c| self.can_lay_mine(i, c as usize))
+                .min_by_key(|&c| (((c as i32 % w) - ux).pow(2) + ((c as i32 / w) - uy).pow(2), c));
+            let Some(next) = next else {
+                let a = &mut self.actors[i];
+                a.ab.minefield.clear();
+                a.ab.mine_cell = NONE;
+                a.ab.task = Task::None;
+                a.activity = Activity::Idle;
+                return;
+            };
+            cell = next;
             let goal = self.path_goal(i, cell as i32 % w, cell as i32 / w);
             if goal != cell {
                 self.actors[i].ab.minefield.retain(|&c| c != cell);
@@ -618,6 +691,7 @@ impl World {
             a.stuck_ticks = 0;
         }
         if self.on_cell(i, cell) {
+            // Checked above: ammo left and the cell free this tick.
             self.lay_mine(i, cell as usize);
             let a = &mut self.actors[i];
             a.ab.minefield.retain(|&c| c != cell);

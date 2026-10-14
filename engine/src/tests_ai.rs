@@ -419,12 +419,19 @@ fn ore_trucks_are_rebuilt_and_run_home_under_fire() {
     run(&mut w, 25 * 60 * 2);
     let trucks = crate::ai_harvest::trucks(&w, 0);
     assert!(trucks.len() >= 4, "InitialHarvesters 4: {}", trucks.len());
-    // Lose all of them: new ones come.
+    // Lose all of them: new ones come. The second one comes after about two
+    // minutes (at 121bb8b just at 2:00, with the bot's other production
+    // first); three minutes leave room for the bot's choices to shift.
     for &t in &trucks {
         w.actors[t].hp = 1;
         w.damage(t, 10);
     }
-    run(&mut w, 25 * 60 * 2);
+    for _ in 0..25 * 60 * 3 {
+        w.step();
+        if crate::ai_harvest::trucks(&w, 0).len() >= 2 {
+            break;
+        }
+    }
     assert!(crate::ai_harvest::trucks(&w, 0).len() >= 2, "trucks rebuilt");
     // A truck at the ore field comes under fire: home it goes.
     let truck = crate::ai_harvest::trucks(&w, 0)[0];
@@ -828,6 +835,8 @@ fn bots_train_engineers_for_neutral_structures_and_capture_them() {
 fn turtle_minelayers_lay_mines() {
     let mut w = arena(64, &[("england", Some((BotType::Turtle, AiDifficulty::Normal)), 0, (4, 4)), ("russia", None, 0, (52, 52))]);
     w.ai[0].passive = true;
+    // OpenRA's minefield order keeps only explored cells, for bots too.
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
     let layer = w.spawn_unit(ty(&w, "MNLY"), 0, cell_center(12), cell_center(12), 512);
     quiet_unit(&mut w, "1TNK", 1, 44, 44);
     run(&mut w, 25 * 60 * 2);

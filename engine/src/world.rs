@@ -2093,6 +2093,18 @@ impl World {
         &self.hash_items[s..e]
     }
 
+    /// Whether unit `u` takes the cell it is on (OpenRA ActorMap): every
+    /// living unit in the world does from its creation, a paratrooper still
+    /// on its parachute too; only aircraft in the air do not
+    /// (Aircraft.OccupiedCells holds just the cell they landed on). Mines,
+    /// husks and crates are kept per cell elsewhere (`leftover_at`,
+    /// abilities.rs).
+    #[inline]
+    pub(crate) fn occupies_cell(&self, u: usize) -> bool {
+        let a = &self.actors[u];
+        a.alive && a.is_unit() && a.in_world() && !(a.kind == Kind::Aircraft && a.altitude > 0)
+    }
+
     pub(crate) fn rebuild_hash(&mut self) {
         let cells = self.map.cells();
         // Counting sort into the buffers of the last rebuild (twice a tick).

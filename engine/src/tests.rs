@@ -599,18 +599,19 @@ fn walls_fill_the_gap_between_posts() {
     assert_eq!(walls.count(), 6, "the four cells between the posts were filled");
 }
 
+/// OpenRA GetLineBuildCells: a mine occupies its cell (ActorMap), so on an
+/// explored cell it ends the search like any other blocker, hidden or not:
+/// the gap behind it is not filled.
 #[test]
-fn walls_filled_into_a_gap_crush_mines_like_placed_ones() {
+fn a_mine_in_a_wall_gap_stops_the_line() {
     let mut w = World::new(10, 64, &[("allies", false), ("soviet", true)]);
     full_base(&mut w, 0);
     let (sx, sy) = w.players[0].start;
     let sbag = ty(&w, "SBAG");
     let y = sy - 2;
-    // A hidden enemy mine in the gap does not stop the wall (placement must not reveal it).
     let ml = w.spawn_unit(ty(&w, "MNLY"), 1, cell_center(sx + 2), cell_center(y), 0);
     let ci = w.map.idx(sx + 2, y);
     assert!(w.lay_mine(ml, ci));
-    let mine = w.mine_at(ci).unwrap();
     w.remove(ml);
     let place = |w: &mut World, x: i32| {
         w.queue_order(Order::StartProduction { player: 0, ty: sbag, count: 1 });
@@ -620,9 +621,9 @@ fn walls_filled_into_a_gap_crush_mines_like_placed_ones() {
     };
     place(&mut w, sx);
     place(&mut w, sx + 5);
-    let b = w.building_at[ci];
-    assert!(b != crate::world::NONE && w.actors[b as usize].ty == sbag, "the gap was filled");
-    assert!(!w.actors[mine].alive && w.mine_at(ci).is_none(), "the mine under the filled piece is gone");
+    assert!(w.players[0].explored[ci] != 0 && w.mine_at(ci).is_some());
+    let walls = (sx..=sx + 5).filter(|&x| w.building_at[w.map.idx(x, y)] != crate::world::NONE).count();
+    assert_eq!(walls, 2, "only the two posts: the mine ended the search");
 }
 
 #[test]

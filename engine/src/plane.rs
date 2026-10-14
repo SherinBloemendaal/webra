@@ -81,7 +81,8 @@ pub enum Mission {
     SpyPlane,
     Paradrop,
     Bombing,
-    /// The CrateSpawner's delivery plane (crates.rs): drops its crate over the target cell.
+    /// The CrateSpawner's delivery plane (crates.rs): drops its crate over
+    /// the first suitable cell within DropRange of the target cell.
     CrateDrop,
 }
 
@@ -1049,7 +1050,8 @@ impl World {
                 }
             }
             Mission::CrateDrop => {
-                if !a.air.cargo.is_empty() && self.cell_of(x, y) == self.cell_of(tx, ty) {
+                // ParaDrop: every tick within DropRange until a cell suits the crate.
+                if !a.air.cargo.is_empty() && d <= f.drop_range {
                     self.drop_crate(i);
                 }
             }

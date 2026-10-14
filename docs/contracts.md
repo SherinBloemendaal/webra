@@ -74,9 +74,11 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   bridge actor writes its template's terrain over them when it is placed,
   damaged, destroyed or repaired, so a destroyed span turns into river or
   water under it (`engine/src/bridges.rs`). Whatever cannot stand on a
-  span's new terrain dies: a tank on a fallen span, a boat in the water gap
-  of a long bridge when the span is repaired (OpenRA kills only when a span
-  falls or a dead one is repaired).
+  span's new terrain dies: a tank on a fallen span, a paratrooper coming
+  down onto it (OpenRA's ActorMap holds it already; aircraft in the air
+  fly on), a boat in the water gap of a long bridge when the span is
+  repaired (OpenRA kills only when a span falls or a dead one is
+  repaired).
 - The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
   to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
   (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
@@ -1695,6 +1697,53 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   for placement and the items behind it do not start until it is placed, so
   each structure queue has at most one ready structure. `place` only accepts
   the finished head of the queue.
+- Placement follows OpenRA's BuildingInfo.IsCloseEnoughToBase and
+  World.CanPlaceBuilding. A structure with RequiresBuildableArea needs a
+  footprint cell within `adjacent` cells (both axes) of a footprint cell (not
+  `_`) of an own structure, or an allied one with the "Ally build radius"
+  option, whose GivesBuildableArea types (`gives_area` in rules.json) share
+  one of its `requires_area` types: 2 cells for most structures, 7 for walls,
+  8 for naval yards and sub pens (and their fakes); fakes give and need only
+  `fake` area, so a real structure never goes next to fakes alone. With the
+  "Build radius" option a structure with `requires_base_provider` also needs
+  its OpenRA centre within a base provider's range of the provider's OpenRA
+  centre (both footprint centres plus LocalCenterOffset, `center_offset`;
+  the yard's is half a cell up), comparing squared lengths like OpenRA. A
+  structure without RequiresBuildableArea (`requires_area` null) goes
+  anywhere its terrain allows. Every footprint cell must be on the map, of
+  the structure's terrain (naval yards and sub pens: Water only, never
+  beach or river), without ore or gems, and empty: no structure, unit,
+  husk, crate or mine. A unit takes its cell like in OpenRA's ActorMap
+  (`occupies_cell`): from its creation, a paratrooper on its parachute
+  too, but an aircraft only when landed. The same rule decides where
+  crates drop (the spawner's target cell; the delivery plane drops the
+  crate over the first cell of its approach within DropRange that suits
+  it, the crate's TerrainTypes from ^Crate and no actor there, usually
+  before the chosen cell, as in OpenRA, and flies off with it when none
+  does; WaterChance only chooses the target), where a helicopter may land,
+  what a falling bridge kills and which units a mission's footprint
+  trigger sees. A crate landing on a unit whose locomotor crushes crates
+  (a paratrooper still on its parachute too) is collected by it; landing
+  on anything else (a landed aircraft, a structure, husk or mine)
+  destroys it (OpenRA Crate.OnLanded).
+- Like OpenRA (World.IsCellBuildable at b6fc03f), placement reads the true
+  world state and never the player's view: footprints may reach into the
+  shroud and the fog, and every occupant blocks its cell whether the player
+  can see it or not: enemy units and structures under the shroud or fog,
+  cloaked units (submarines, phase transports), hidden enemy mines, husks and
+  crates, and ore or gems under the shroud. The footprint preview
+  (`placement_preview`) asks the same check, so a blocked cell there tells
+  the player something occupies it; a structure destroyed under the fog
+  frees its cells at once. See docs/security.md.
+- Wall lines follow OpenRA GetLineBuildCells: from a placed piece each
+  direction is searched up to LineBuild Range - 1 cells (7 for Red Alert's
+  walls); free cells and unexplored cells are passed over, the first other
+  cell ends the search, and a piece of the same wall there (any owner) fills
+  the cells passed over (OpenRA joins a LineBuildNode whose Types match the
+  piece's NodeTypes; every Red Alert wall has its own node type, so WebRA
+  compares the wall type). OpenRA puts a piece on every passed cell, even an
+  unexplored occupied one; WebRA structures never share a cell, so such a
+  cell stays empty.
 - `cancel_production` removes the last queued item of that type and refunds
   what was paid for it (a finished structure refunds its full cost).
 - `pause_production` (OpenRA PauseProduction) puts the first queued item of
@@ -2634,6 +2683,24 @@ not now, 3 needs a target), `has_minelayer`; `actor_json(id).ability` holds
 detonatesIn, payload }` (only the fields that apply). Smart action 7 is
 "deliver cash" (supply truck onto an own or allied structure). Mines are
 actors of kind `mine` (`MINV`, `MINP`).
+
+A minefield follows OpenRA's Minelayer and LayMines. The order keeps the
+rectangle's cells of a terrain the Minelayer mines that its owner has
+explored (not under a Gap Generator's shroud either; bots too, so a bot
+mines nothing in the shroud) and the Minelayer can drive onto and stop on.
+While it works, a cell goes for good (CleanMineField) once a mine its
+owner sees lies there, or once its owner sees the Minelayer cannot get
+onto it (Locomotor.IsBlockedBy with BlockedByActor.Immovable): a
+structure, a husk, blocking terrain, an enemy vehicle or ship, or a landed
+aircraft (aircraft have no Mobile to move away). A cell with a unit of
+its own side, enemy infantry (its tracks crush infantry, as WebRA's
+movement does too), a crate it crushes or anything under the fog stays:
+the Minelayer skips it
+while a mine cannot go there now (CanLayMine: nothing but itself in the
+ActorMap, `occupies_cell` for units) and comes back once it is free. When
+no cell left can take a mine now, the Minelayer stops, as OpenRA's
+activity ends. Deploying lays a mine under the Minelayer only when one can
+go there now.
 
 Debug menu (engine/src/debug.rs, apps/game/js/debug.js, opened with the `
 key or the Debug button). Cheats are orders, so online they go through

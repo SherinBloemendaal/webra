@@ -95,6 +95,108 @@ fn minelayer_lays_a_minefield_and_enemy_tanks_set_mines_off() {
     assert_eq!(mines(&w, 0).len(), 2, "the mine is used up, the others stay");
 }
 
+/// OpenRA LayMines: NextValidCell skips a cell something stands on
+/// (CanLayMine reads the ActorMap) without dropping it, so the minelayer
+/// mines it once the unit has gone.
+#[test]
+fn a_minefield_cell_with_a_unit_on_it_is_mined_after_the_unit_leaves() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let ml = unit(&mut w, "MNLY", 0, 30, 30);
+    let e1 = passive(&mut w, "E1", 0, 32, 30);
+    let blocked = w.map.idx(32, 30) as u32;
+    let ids = refs(&w, &[ml]);
+    // Enough cells to keep it busy while the rifleman walks off (with only
+    // blocked cells left it would stop, as OpenRA's activity ends).
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 32, y0: 30, x1: 36, y1: 30 });
+    for _ in 0..25 * 20 {
+        w.step();
+        if !mines(&w, 0).is_empty() {
+            break;
+        }
+    }
+    assert_eq!(mines(&w, 0).len(), 1, "a mine beside the rifleman");
+    assert!(w.mine_at(blocked as usize).is_none());
+    assert!(w.actors[ml].ab.minefield.contains(&blocked), "the rifleman's cell stays in the minefield");
+    let r = w.make_ref(e1);
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: cell_center(32), y: cell_center(25), attack_move: false });
+    run(&mut w, 25 * 30);
+    assert_eq!(mines(&w, 0).len(), 5, "every cell mined");
+    assert!(w.mine_at(blocked as usize).is_some(), "the rifleman's cell too");
+    assert_eq!(w.actors[ml].activity, Activity::Idle);
+}
+
+/// OpenRA LayMines.CleanMineField drops for good the cells the owner sees
+/// the Minelayer cannot drive onto (Locomotor.IsBlockedBy with
+/// BlockedByActor.Immovable: a husk, an enemy vehicle, a landed aircraft
+/// of its own side, which has no Mobile to move away) and those with a mine
+/// it sees. A crate it crushes, a unit of its own side and enemy infantry
+/// (MNLY's tracks crush infantry: not blocking) only make it skip the cell
+/// while a mine cannot go there (CanLayMine). Minelayer.IsCellAcceptable
+/// keeps cells of a terrain it does not mine out of the field. With no
+/// cell left that can take a mine now, the Minelayer stops, as OpenRA's
+/// activity ends.
+#[test]
+fn minefields_drop_blocked_and_mined_cells_and_skip_occupied_ones() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let ml = unit(&mut w, "MNLY", 0, 34, 33);
+    // (30, 30): water; (31): own mine; (32): husk; (33): enemy tank;
+    // (34): own landed helicopter; (35): crate; (36): own rifleman;
+    // (37): enemy rifleman; (38), (39): free.
+    let water = w.map.idx(30, 30);
+    w.map.terrain[water] = crate::map::Terrain::Water;
+    w.set_cell_passability(water);
+    let ci = w.map.idx(31, 30);
+    assert!(w.lay_mine(ml, ci));
+    let husk = ty(&w, "2TNK.Husk") as usize;
+    w.place_husk(husk, 1, cell_center(32), cell_center(30), 0, 0);
+    passive(&mut w, "1TNK", 1, 33, 30);
+    let heli = unit(&mut w, "HELI", 0, 34, 30);
+    w.actors[heli].altitude = 0;
+    let neutral = w.neutral_player().unwrap_or(1);
+    let crate_ty = ty(&w, "MONEYCRATE") as usize;
+    w.place_crate(crate_ty, neutral, 35, 30, 0);
+    passive(&mut w, "E1", 0, 36, 30);
+    passive(&mut w, "E1", 1, 37, 30);
+    w.rebuild_hash();
+    assert!(w.crushes_crates(ml), "a Minelayer's tracks crush crates");
+    let ids = refs(&w, &[ml]);
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 30, y0: 30, x1: 39, y1: 30 });
+    w.step();
+    w.step();
+    let field = w.actors[ml].ab.minefield.clone();
+    let has = |x: i32| field.contains(&(w.map.idx(x, 30) as u32));
+    assert!(!has(30), "water is no minefield terrain");
+    assert!(!has(31), "a seen mine is there already");
+    assert!(!has(32) && !has(33), "a husk and an enemy tank block the Minelayer");
+    assert!(!has(34), "a landed helicopter cannot move out of the way");
+    assert!(has(35) && has(36) && has(37), "a crate, an own unit and enemy infantry only make it wait");
+    assert!(has(38) && has(39));
+    run(&mut w, 25 * 20);
+    let laid: Vec<i32> = (30..=39).filter(|&x| w.mine_at(w.map.idx(x, 30)).is_some()).collect();
+    assert_eq!(laid, vec![31, 38, 39], "the old mine and the two free cells");
+    assert_eq!(w.actors[ml].activity, Activity::Idle, "nothing left it can mine now");
+    assert!(w.actors[ml].ab.minefield.is_empty());
+}
+
+/// OpenRA Shroud.IsExplored is false under a Gap Generator's shroud, so a
+/// minefield order leaves those cells out (like the Chrono Tank's target
+/// check, `gen_shrouded`).
+#[test]
+fn minefields_leave_out_cells_under_a_gap_generators_shroud() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let ml = unit(&mut w, "MNLY", 0, 30, 34);
+    passive(&mut w, "MGG", 1, 44, 30);
+    run(&mut w, 2);
+    let shrouded = |w: &World, x: i32| w.gen_shrouded(0, w.map.idx(x, 30));
+    assert!(shrouded(&w, 40) && !shrouded(&w, 32), "the generator shrouds the east end");
+    let ids = refs(&w, &[ml]);
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 32, y0: 30, x1: 41, y1: 30 });
+    w.step();
+    let field: Vec<i32> = w.actors[ml].ab.minefield.iter().map(|&c| c as i32 % w.map.width).collect();
+    assert!(!field.is_empty() && field.iter().all(|&x| !shrouded(&w, x)), "only cells outside the shroud: {field:?}");
+    assert!(field.contains(&32));
+}
+
 #[test]
 fn own_units_set_off_mines_but_the_minelayer_does_not() {
     let mut w = flat_world(["allies", "soviet"]);
@@ -709,8 +811,11 @@ fn loading_uncloaks_the_phase_transport() {
     assert!(!w.actors[stnk].ab.cloaked, "loading reveals it (UncloakOn: Load)");
 }
 
+/// OpenRA: mines occupy their cell (Immobile OccupiesSpace, in the ActorMap),
+/// so World.IsCellBuildable refuses any mine, also a hidden enemy one: the
+/// footprint preview shows that cell blocked and the placement is refused.
 #[test]
-fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
+fn every_mine_blocks_placement_also_a_hidden_enemy_one() {
     let mut w = flat_world(["allies", "soviet"]);
     let (sx, sy) = w.players[0].start;
     w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy);
@@ -729,8 +834,8 @@ fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
     assert!(cells(&w, sx + 5, sy - 2), "the spot next to it is buildable (control)");
     assert!(!cells(&w, sx + 4, sy - 2), "own mine blocks the cell");
     assert!(w.is_cloaked_from(w.mine_at(enemy_cell).unwrap(), 0), "the enemy mine is hidden from player 0");
-    assert!(cells(&w, sx + 6, sy - 2), "a hidden enemy mine does not give itself away");
-    // Placing on it crushes the mine.
+    assert!(!cells(&w, sx + 6, sy - 2), "a hidden enemy mine blocks the cell too");
+    // The order is refused as well; the mine stays.
     w.players[0].cash = 10_000;
     w.spawn_building(ty(&w, "TENT"), 0, sx - 4, sy + 5);
     w.refresh_tokens();
@@ -738,6 +843,6 @@ fn visible_mines_block_placement_and_hidden_enemy_mines_do_not() {
     run(&mut w, 600);
     w.queue_order(Order::Place { player: 0, ty: gun, cx: sx + 6, cy: sy - 2 });
     run(&mut w, 2);
-    assert!(w.building_at[enemy_cell] != crate::world::NONE, "pillbox placed");
-    assert!(w.mine_at(enemy_cell).is_none(), "the hidden mine was crushed");
+    assert_eq!(w.building_at[enemy_cell], crate::world::NONE, "no pillbox on the mine");
+    assert!(w.mine_at(enemy_cell).is_some(), "the hidden mine is still there");
 }

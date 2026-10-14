@@ -328,6 +328,43 @@ fn script_activities_run_in_order_and_triggers_fire() {
     assert!(lua_in(&mut w, "return tostring(Jeep.IsDead) .. ' ' .. Jeep.Type").starts_with("true jeep"));
 }
 
+/// OpenRA cell triggers read the ActorMap, which holds a paratrooper from
+/// its creation but an aircraft only when landed (world.rs
+/// `occupies_cell`): a paratrooper still on its parachute enters a
+/// footprint, a helicopter flying over it does not.
+#[test]
+fn footprint_triggers_see_paratroopers_but_not_flying_aircraft() {
+    let mut w = start("allies-01", None);
+    lua_in(
+        &mut w,
+        r#"
+        Log = ''
+        local cells = { CPos.New(65, 50), CPos.New(66, 50) }
+        Trigger.OnEnteredFootprint(cells, function(a, id) Log = Log .. a.Type .. ' ' end)
+        local greece = Player.GetPlayer('Greece')
+        Actor.Create('e1', true, { Owner = greece, Location = CPos.New(65, 50) })
+        Actor.Create('heli', true, { Owner = greece, Location = CPos.New(66, 50) })
+        "#,
+    );
+    // The actors just created: the last of their types.
+    let last = |w: &World, id: &str| {
+        let t = w.rules.actor_index(id).unwrap() as u16;
+        (0..w.actors.len()).rev().find(|&i| w.actors[i].alive && w.actors[i].ty == t).unwrap()
+    };
+    let (e1, heli) = (last(&w, "E1"), last(&w, "HELI"));
+    w.actors[e1].altitude = 4096;
+    w.actors[e1].air.parachute = true;
+    w.actors[heli].altitude = 2048;
+    w.step();
+    assert_eq!(w.mission().unwrap().error, None);
+    assert!(w.actors[e1].altitude > 0 && w.actors[heli].altitude > 0, "both still in the air");
+    assert_eq!(w.mission_global("Log").unwrap(), "e1 ", "only the paratrooper entered");
+    // A trigger made now counts the paratrooper as inside already.
+    lua_in(&mut w, "Later = '' Trigger.OnEnteredFootprint({ CPos.New(65, 50) }, function(a, id) Later = Later .. a.Type end)");
+    w.step();
+    assert_eq!(w.mission_global("Later").unwrap(), "", "no enter event for an actor already inside");
+}
+
 /// A trigger that runs for the blow that killed an actor (OnDamaged runs at
 /// the end of the tick, after the death) may still change it, as in OpenRA,
 /// where the actor exists until the end of its tick: nothing happens, no error.

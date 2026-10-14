@@ -678,7 +678,8 @@ struct RawBuilding {
     /// Production types of each exit (OpenRA ExitInfo.ProductionTypes); absent when no exit has any.
     #[serde(default)]
     exit_types: Vec<Vec<String>>,
-    gives_buildable_area: bool,
+    gives_area: Vec<String>,
+    requires_area: Option<Vec<String>>,
     base_provider_range: i32,
     adjacent: i32,
     storage: i32,
@@ -1087,8 +1088,16 @@ pub struct BuildingInfo {
     /// `exits`): an exit with types only lets out units built as one of
     /// them (`ActorInfo::build_at`); empty lets out all.
     pub exit_types: Vec<Vec<String>>,
-    pub gives_buildable_area: bool,
+    /// OpenRA GivesBuildableArea.AreaTypes, as bits of `Rules::area_types`
+    /// (0: gives no buildable area).
+    pub gives_area: u32,
+    /// OpenRA RequiresBuildableArea.AreaTypes as bits of `Rules::area_types`;
+    /// None without the trait (placed anywhere its terrain allows, with no
+    /// base provider needed either: Building.IsCloseEnoughToBase).
+    pub requires_area: Option<u32>,
     pub base_provider_range: i32,
+    /// RequiresBuildableArea.Adjacent: how many cells from a structure that
+    /// gives a matching area type a footprint cell may be.
     pub adjacent: i32,
     pub storage: i32,
     pub sell_refund: i32,
@@ -1144,6 +1153,13 @@ impl BuildingInfo {
     /// including `Overlay` cells: what it is seen and hit by.
     pub fn area_cells(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         self.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1))
+    }
+
+    /// OpenRA's CenterPosition of the structure with its top-left at (cx, cy):
+    /// the footprint's centre plus LocalCenterOffset (Building.CenterOffset).
+    /// Actor positions (`Actor::x`, `y`) are the footprint's centre only.
+    pub fn openra_center(&self, cx: i32, cy: i32) -> (i32, i32) {
+        (cx * CELLS + self.width * CELLS / 2 + self.center_offset.0, cy * CELLS + self.height * CELLS / 2 + self.center_offset.1)
     }
 
     /// Whether the structure fits inside `map` with its top-left at (cx, cy).
@@ -1436,6 +1452,9 @@ pub struct Rules {
     /// to; bit `k` of a warhead's, TakeCover's or DeathInfo's damage type mask
     /// is `damage_types[k]`.
     pub damage_types: Vec<String>,
+    /// Buildable area type names (GivesBuildableArea, RequiresBuildableArea);
+    /// bit `k` of a structure's area masks is `area_types[k]`.
+    pub area_types: Vec<String>,
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
     pub obtainable: Vec<Vec<bool>>,
@@ -2148,6 +2167,19 @@ impl Rules {
             return Err(format!("take_cover: at most 32 different damage types, found {}", damage_types.len()));
         }
         let type_bit = |t: &str| damage_types.iter().position(|d| d == t).map_or(0, |k| 1u32 << k);
+        // Buildable area types get one bit each.
+        let mut area_types: Vec<String> = Vec::new();
+        for b in raw.actors.iter().filter_map(|a| a.building.as_ref()) {
+            for t in b.gives_area.iter().chain(b.requires_area.iter().flatten()) {
+                if !area_types.contains(t) {
+                    area_types.push(t.clone());
+                }
+            }
+        }
+        if area_types.len() > 32 {
+            return Err(format!("building: at most 32 different buildable area types, found {}", area_types.len()));
+        }
+        let area_mask = |ts: &[String]| ts.iter().fold(0u32, |m, t| m | area_types.iter().position(|a| a == t).map_or(0, |k| 1u32 << k));
         let index_of = |id: &str| ids.iter().position(|i| i.eq_ignore_ascii_case(id));
         let mut actors = Vec::new();
         for a in raw.actors {
@@ -2249,7 +2281,8 @@ impl Rules {
                         exits,
                         exit_priority,
                         exit_types,
-                        gives_buildable_area: b.gives_buildable_area,
+                        gives_area: area_mask(&b.gives_area),
+                        requires_area: b.requires_area.as_deref().map(area_mask),
                         base_provider_range: b.base_provider_range,
                         adjacent: b.adjacent,
                         storage: b.storage,
@@ -2451,6 +2484,7 @@ impl Rules {
             bots: raw.bots,
             tokens,
             damage_types,
+            area_types,
             obtainable: Vec::new(),
             render: Default::default(),
         };

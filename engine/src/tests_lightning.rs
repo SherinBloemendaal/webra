@@ -55,7 +55,7 @@ fn the_lightning_rod_is_a_cheap_defense_structure_for_both_sides() {
     assert_eq!((info.hp, info.build_ticks), (30000, 180));
     let b = info.building.as_ref().unwrap();
     assert_eq!((b.width, b.height, b.power, b.lightning_rod), (1, 1, 0, 6 * 1024), "1x1, needs no power, 6 cells");
-    assert!(b.repairable.is_some() && b.sell_refund == 50 && !b.gives_buildable_area);
+    assert!(b.repairable.is_some() && b.sell_refund == 50 && b.gives_area == 0);
     assert!(info.abilities.capturable.is_some(), "engineers capture it like other structures");
     // Its range circle, shown when selected and while placing (WithRangeCircle).
     let c = &info.range_circles[0];

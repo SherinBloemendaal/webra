@@ -1,7 +1,7 @@
 //! Prerequisites, power, classic per-category production queues and building placement.
 
 use crate::map::Terrain;
-use crate::math::{dist, CELL};
+use crate::math::{dist_sq, CELL};
 use crate::rules::{Kind, QueueType};
 use crate::sound_events::{SoundEventKind, SOLD_STARTED};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
@@ -811,48 +811,38 @@ impl World {
         let mut out = Vec::new();
         for (dx, dy) in b.cells() {
             let (x, y) = (cx + dx, cy + dy);
-            let ok = in_area && self.map.contains(x, y) && self.cell_free_for(player, b.on_water, self.map.idx(x, y), None);
+            let ok = in_area && self.map.contains(x, y) && self.cell_free_for(b.on_water, self.map.idx(x, y), None);
             out.push((x, y, ok));
         }
         out
     }
 
-    /// Whether a structure cell may go on map cell `i`: right terrain, no ore or gems,
-    /// no building, no units (except `ignore`), explored by the player.
-    fn cell_free_for(&self, player: u8, on_water: bool, i: usize, ignore: Option<usize>) -> bool {
+    /// Whether a structure cell may go on map cell `i` (OpenRA
+    /// World.IsCellBuildable): right terrain, no ore or gems (ResourceLayer
+    /// terrain), and nothing in the cell but `ignore`: no building, no unit on
+    /// the ground, husk, crate or mine (OpenRA ActorMap and BuildingInfluence).
+    /// Like OpenRA this is the true world state, whatever the player can see:
+    /// shroud, fog and cloaks do not change it (docs/contracts.md).
+    fn cell_free_for(&self, on_water: bool, i: usize, ignore: Option<usize>) -> bool {
         let terrain_ok = if on_water { self.map.terrain[i] == Terrain::Water } else { self.map.terrain[i].buildable() };
         terrain_ok
             && !self.map.has_resource(i)
             && self.building_at[i] == NONE
-            && self.units_in_cell(i).iter().all(|&u| !self.actors[u as usize].alive || Some(u as usize) == ignore)
-            // Husks and crates take the cell too (husks.rs, crates.rs).
+            // Units on the cell, but aircraft in the air (`occupies_cell`).
+            && self.units_in_cell(i).iter().all(|&u| !self.occupies_cell(u as usize) || Some(u as usize) == ignore)
+            // Husks, crates and mines take the cell too (husks.rs, crates.rs, abilities.rs).
             && self.husk_at(i).is_none()
             && self.crate_at(i).is_none()
-            && self.players[player as usize].explored[i] != 0
-            // A mine the player can see (own, allied or detected) blocks the cell;
-            // hidden enemy mines must not, or placement would reveal them.
-            && self.mine_at(i).is_none_or(|m| self.is_cloaked_from(m, player))
-    }
-
-    /// Mines under a new structure's footprint are crushed (hidden enemy mines included).
-    fn clear_mines_under(&mut self, b: usize) {
-        let a = &self.actors[b];
-        let info = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-        let cells: Vec<usize> = info.cells().map(|(dx, dy)| self.map.idx(a.cx + dx, a.cy + dy)).collect();
-        for ci in cells {
-            if let Some(m) = self.mine_at(ci) {
-                self.remove(m);
-            }
-        }
+            && self.mine_at(i).is_none()
     }
 
     /// Whether every footprint cell of `ty` at (cx, cy) is on the map and free
-    /// for `player` (placement without the build area rule; see `cell_free_for`).
-    fn footprint_free(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
+    /// (placement without the build area rule; see `cell_free_for`).
+    fn footprint_free(&self, ty: u16, cx: i32, cy: i32) -> bool {
         let Some(b) = self.rules.actors.get(ty as usize).and_then(|a| a.building.as_ref()) else { return false };
         b.cells().all(|(dx, dy)| {
             let (x, y) = (cx + dx, cy + dy);
-            self.map.contains(x, y) && self.cell_free_for(player, b.on_water, self.map.idx(x, y), None)
+            self.map.contains(x, y) && self.cell_free_for(b.on_water, self.map.idx(x, y), None)
         })
     }
 
@@ -861,44 +851,63 @@ impl World {
         !cells.is_empty() && cells.iter().all(|c| c.2)
     }
 
-    /// OpenRA rules: within `Adjacent` cells of an existing building that gives
-    /// buildable area, and (with the "Build radius" option) within range of a
-    /// base provider (construction yard).
+    /// OpenRA BuildingInfo.IsCloseEnoughToBase: with RequiresBuildableArea, a
+    /// footprint cell within `Adjacent` cells (both axes) of a cell of an own
+    /// (or, with the "Ally build radius" option, allied) structure that gives
+    /// one of the required area types; with the "Build radius" option also
+    /// within range of a base provider (construction yard).
     fn in_build_area(&self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
         // Debug menu "build anywhere" (debug.rs): no adjacency or build radius.
         if self.players[player as usize].dev.build_anywhere {
             return true;
         }
         let b = self.rules.actors[ty as usize].building.as_ref().unwrap();
-        let (x0, y0, x1, y1) = (cx, cy, cx + b.width - 1, cy + b.height - 1);
-        let mut adjacent = false;
-        let mut provider = !(self.options.build_radius && b.requires_base_provider);
-        for (k, a) in self.actors.iter().enumerate() {
-            // The "Ally build radius" option: allied structures count too (OpenRA MapBuildRadius).
-            let ally = self.options.ally_build_radius && a.owner != player && self.are_allies(a.owner, player);
-            if !a.alive || (a.owner != player && !ally) || a.kind != Kind::Building {
-                continue;
-            }
-            let ob = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-            // BaseProvider PauseOnCondition being-captured (infantry.rs).
-            if ob.base_provider_range > 0 && !self.being_captured(k) {
-                let center = (cx * CELL + b.width * CELL / 2, cy * CELL + b.height * CELL / 2);
-                if dist(center.0, center.1, a.x, a.y) <= ob.base_provider_range {
-                    provider = true;
-                }
-            }
-            if ob.gives_buildable_area && !adjacent {
-                let adj = b.adjacent;
-                let (ox0, oy0, ox1, oy1) = (a.cx, a.cy, a.cx + ob.width - 1, a.cy + ob.height - 1);
-                // Chebyshev gap between the two rectangles.
-                let gx = (ox0 - x1).max(x0 - ox1).max(0);
-                let gy = (oy0 - y1).max(y0 - oy1).max(0);
-                if gx.max(gy) <= adj {
-                    adjacent = true;
-                }
+        // Without RequiresBuildableArea a structure goes anywhere (no base provider either).
+        let Some(requires) = b.requires_area else { return true };
+        let ally = |a: &crate::world::Actor| self.options.ally_build_radius && a.owner != player && self.are_allies(a.owner, player);
+        if self.options.build_radius && b.requires_base_provider {
+            // FindBaseProvider: the candidate's and the provider's OpenRA
+            // centres (both with LocalCenterOffset) within the provider's
+            // range; BaseProvider PauseOnCondition being-captured (infantry.rs).
+            let center = b.openra_center(cx, cy);
+            let provider = self.actors.iter().enumerate().any(|(k, a)| {
+                a.alive
+                    && a.kind == Kind::Building
+                    && (a.owner == player || ally(a))
+                    && self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|ob| {
+                        let (px, py) = ob.openra_center(a.cx, a.cy);
+                        // HorizontalLengthSquared <= Range * Range (no rounded square root).
+                        let r = ob.base_provider_range as i64;
+                        ob.base_provider_range > 0 && dist_sq(center.0, center.1, px, py) <= r * r
+                    })
+                    && !self.being_captured(k)
+            });
+            if !provider {
+                return false;
             }
         }
-        adjacent && provider
+        let adj = b.adjacent;
+        // OpenRA scans the cells from Map.Clamp(topLeft - adjacent) up to, but
+        // not including, Map.Clamp(topLeft + Dimensions + adjacent): clamped to
+        // the last map cell, that end leaves out the last column and row.
+        let (sx0, sy0) = ((cx - adj).clamp(0, self.map.width - 1), (cy - adj).clamp(0, self.map.height - 1));
+        let (sx1, sy1) = ((cx + b.width + adj).clamp(0, self.map.width - 1), (cy + b.height + adj).clamp(0, self.map.height - 1));
+        let tiles: Vec<(i32, i32)> = b.cells().map(|(dx, dy)| (cx + dx, cy + dy)).collect();
+        self.actors.iter().any(|a| {
+            if !a.alive || a.kind != Kind::Building || (a.owner != player && !ally(a)) {
+                return false;
+            }
+            let ob = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            ob.gives_area & requires != 0
+                && ob.cells().any(|(dx, dy)| {
+                    let (x, y) = (a.cx + dx, a.cy + dy);
+                    x >= sx0
+                        && x < sx1
+                        && y >= sy0
+                        && y < sy1
+                        && tiles.iter().any(|&(tx, ty)| (x - tx).abs() <= adj && (y - ty).abs() <= adj)
+                })
+        })
     }
 
     pub fn place_building(&mut self, player: u8, ty: u16, cx: i32, cy: i32) -> bool {
@@ -925,7 +934,6 @@ impl World {
         self.script_event(crate::mission::ScriptEvent::Placed { player, building });
         // The construction yard's placement animation (fx.rs, presentation only).
         self.note_placed(player);
-        self.clear_mines_under(b);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
             self.fill_wall_line(player, ty, cx, cy, lb.range);
         }
@@ -958,38 +966,42 @@ impl World {
             .count()
     }
 
-    /// OpenRA LineBuild: a wall piece placed in line with another piece of the
-    /// same wall (within range) fills the gap between them.
+    /// OpenRA LineBuild (BuildingUtils.GetLineBuildCells): from a placed wall
+    /// piece, each direction is searched up to `range - 1` cells out. Cells a
+    /// piece could go on, and cells the player has not explored, are passed
+    /// over; the first other cell ends the search, and when a piece of the
+    /// same wall (any owner; OpenRA matches LineBuildNode Types, and every Red
+    /// Alert wall has its own) stands there, the cells passed over are
+    /// filled; a search that leaves the map finds no piece to join. OpenRA
+    /// puts a piece on every passed cell, even an unexplored one that
+    /// something occupies; WebRA structures never share a cell, so such a
+    /// cell stays empty.
     fn fill_wall_line(&mut self, player: u8, ty: u16, cx: i32, cy: i32, range: i32) {
+        let on_water = self.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.on_water);
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let mut gap = Vec::new();
-            for k in 1..=range {
+            for k in 1..range {
                 let (x, y) = (cx + dx * k, cy + dy * k);
+                // Off the map OpenRA's search finds no piece to join either.
                 if !self.map.contains(x, y) {
                     break;
                 }
                 let i = self.map.idx(x, y);
+                if self.cell_free_for(on_water, i, None) || self.players[player as usize].explored[i] == 0 {
+                    gap.push((x, y));
+                    continue;
+                }
                 let b = self.building_at[i];
-                if b != NONE {
-                    let o = &self.actors[b as usize];
-                    if o.alive && o.owner == player && o.ty == ty && !gap.is_empty() {
-                        for &(gx, gy) in &gap {
-                            // A piece may cover more than its gap cell (modded walls):
-                            // every cell must be free, also of pieces placed just now.
-                            if self.footprint_free(player, ty, gx, gy) {
-                                // Like a placed piece, a filled one crushes mines under it.
-                                if let Some(b) = self.spawn_building(ty, player, gx, gy) {
-                                    self.clear_mines_under(b);
-                                }
-                            }
+                if b != NONE && self.actors[b as usize].alive && self.actors[b as usize].ty == ty {
+                    for &(gx, gy) in &gap {
+                        // A piece may cover more than its gap cell (modded walls):
+                        // every cell must be free, also of pieces placed just now.
+                        if self.footprint_free(ty, gx, gy) {
+                            self.spawn_building(ty, player, gx, gy);
                         }
                     }
-                    break;
                 }
-                if !self.cell_free_for(player, false, i, None) {
-                    break;
-                }
-                gap.push((x, y));
+                break;
             }
         }
     }
@@ -1146,12 +1158,11 @@ impl World {
     /// animation ends).
     fn deploy_spot_free(&self, i: usize) -> bool {
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
-        let a = &self.actors[i];
         match &self.rules.actors[into as usize].building {
             // MCV: the yard's footprint must be free (the MCV itself may stand on it).
             Some(b) => b.cells().all(|(dx, dy)| {
                 let (x, y) = (cx + dx, cy + dy);
-                self.map.contains(x, y) && self.cell_free_for(a.owner, b.on_water, self.map.idx(x, y), Some(i))
+                self.map.contains(x, y) && self.cell_free_for(b.on_water, self.map.idx(x, y), Some(i))
             }),
             // Construction Yard: the MCV appears on its pad.
             None => self.map.contains(cx, cy),
@@ -1166,7 +1177,7 @@ impl World {
         let Some(b) = self.rules.actors[into].building.as_ref() else { return false };
         b.cells().all(|(dx, dy)| {
             let (x, y) = (cx + dx, cy + dy);
-            self.map.contains(x, y) && self.cell_free_for(a.owner, b.on_water, self.map.idx(x, y), Some(i))
+            self.map.contains(x, y) && self.cell_free_for(b.on_water, self.map.idx(x, y), Some(i))
         })
     }
 

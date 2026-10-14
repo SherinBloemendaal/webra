@@ -2012,9 +2012,13 @@ def main():
                 'power_scales_with_health': 'ScalePowerWithHealth' in t,
                 'produces': tokens(t.get('Production', {}).get('Produces', '')) if 'Production' in t else [],
                 'exits': [ints(x['ExitCell']) for k, x in exits],
-                'gives_buildable_area': 'GivesBuildableArea' in t,
+                # OpenRA GivesBuildableArea.AreaTypes (none without the trait).
+                'gives_area': tokens(t['GivesBuildableArea'].get('AreaTypes')) if isinstance(t.get('GivesBuildableArea'), dict) else [],
                 'base_provider_range': wdist(t['BaseProvider']['Range']) if 'BaseProvider' in t else 0,
-                'adjacent': int(b.get('Adjacent', 2)),
+                # OpenRA RequiresBuildableArea: AreaTypes and Adjacent (default 2).
+                # Without the trait a structure goes anywhere its terrain allows.
+                'requires_area': tokens(t['RequiresBuildableArea'].get('AreaTypes')) if isinstance(t.get('RequiresBuildableArea'), dict) else None,
+                'adjacent': int(t['RequiresBuildableArea'].get('Adjacent', 2)) if isinstance(t.get('RequiresBuildableArea'), dict) else 2,
                 'storage': int(t['StoresPlayerResources']['Capacity']) if isinstance(t.get('StoresPlayerResources'), dict) else 0,
                 'sell_refund': int(t['Sellable'].get('RefundPercent', 50)) if isinstance(t.get('Sellable'), dict) else (50 if 'Sellable' in t else 0),
                 'provides': {},
