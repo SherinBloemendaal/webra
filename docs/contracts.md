@@ -1468,8 +1468,11 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   19154; then the exit nearest the rally point): friendly idle ships on one
   are asked to make way, and the ship waits while every launch cell is
   taken. Aircraft are never held up.
-  Without a rally point a unit or ship stays where it came out (OpenRA:
-  RallyPointInit is its exit cell) until the next one asks it to make way;
+  Without a rally point a unit or ship stays where it came out until the
+  next one asks it to make way (OpenRA at b6fc03f: RallyPointInfo.Path is
+  empty by default and Red Alert sets none, so Production.DoProduction
+  gives the unit its exit cell as rally point; older OpenRA releases had a
+  default rally point offset);
   helicopters stay on their pad. In the WebRA movement model ground units
   and ships drive on to a cell below the structure instead, and only units
   standing idle on an exit block it (that model's crowd separation spreads

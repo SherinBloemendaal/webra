@@ -406,7 +406,7 @@ fn naval_yards_launch_ships_onto_the_open_sea_not_into_a_pond() {
         assert_ne!(w.pass_water.component[ci], pond, "launched into the pond at {:?}", w.cell_of(w.actors[boat].x, w.actors[boat].y));
         w.step();
     }
-    assert!(launched >= 1, "the sea side launches");
+    assert_eq!(launched, 2, "the two sea-side exits launch, then the yard waits");
     // A rally point in the pond is honoured (the player asked for it).
     w.actors[syrd].rally = Some((cell_center(25), cell_center(10)));
     let boat = w.produce_at(syrd, 0, pt).expect("launched");

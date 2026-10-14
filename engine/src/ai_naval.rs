@@ -169,7 +169,7 @@ fn producers(w: &World, player: u8, ty: u16) -> Vec<usize> {
 /// Whether a warship of type `ty` launched from yard `b` (onto the water
 /// naval.rs `naval_spawn_cell` picks) could attack an enemy.
 fn launches_into_reach(w: &mut World, player: u8, cfg: &BotConfig, ty: u16, b: usize) -> bool {
-    let Some((x, y, _)) = w.naval_spawn_cell(b) else { return false };
+    let Some((x, y, _)) = w.naval_spawn_cell(b, ty) else { return false };
     let c = w.pass_water.component[w.map.idx(x, y)];
     in_reach(w, player, cfg, ty, c)
 }

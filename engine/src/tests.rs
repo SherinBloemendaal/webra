@@ -844,10 +844,11 @@ fn four_player_free_for_all_ai_game_finishes() {
     let list = [("england", true, 0), ("russia", true, 0), ("germany", true, 0), ("ukraine", true, 0)];
     let mut w = World::with_options(12, 96, &setups(&list), opts());
     // OpenRA movement (the default) makes land games a few minutes longer
-    // than the WebRA model (docs/contracts.md, AI measurements). The first
-    // player falls after 44 minutes here since anti-air works and aircraft
-    // end their attack to rearm (31 before; seeds 10 to 17 still average 34
-    // minutes to the winner, as before; their first falls come at 11 to 26).
+    // than the WebRA model (docs/contracts.md, AI measurements). Measured
+    // with this setup, stepping each seed until a winner or 60 minutes:
+    // here the first player falls after 28 minutes and the winner stands
+    // after 45; over seeds 10 to 17 first falls come at 11 to 36 minutes
+    // (21 on average) and winners at 17 to 56 (38 on average).
     for _ in 0..(25 * 60 * 50) {
         w.step();
         if w.winner.is_some() {

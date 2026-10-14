@@ -241,9 +241,9 @@ fn the_kennel_uses_its_highest_priority_exit_first() {
 }
 
 /// An open 48 x 40 map whose right half (from column 16) is sea, with a
-/// naval yard of player 0 at (24, 18) and instant builds.
-fn harbour() -> (World, usize) {
-    let mut w = arena(MovementModel::OpenRA);
+/// naval yard (`id`) of player 0 at (24, 18) and instant builds.
+fn harbour_with(model: MovementModel, id: &str) -> (World, usize) {
+    let mut w = arena(model);
     for y in 0..40 {
         for x in 16..48 {
             let i = w.map.idx(x, y);
@@ -251,8 +251,12 @@ fn harbour() -> (World, usize) {
         }
     }
     w.reset_passability();
-    let yard = factory(&mut w, "SYRD", 24, 18);
+    let yard = factory(&mut w, id, 24, 18);
     (w, yard)
+}
+
+fn harbour() -> (World, usize) {
+    harbour_with(MovementModel::OpenRA, "SYRD")
 }
 
 /// Ships hold one cell each: no two ships may share one.
@@ -281,7 +285,7 @@ fn ships_leave_the_yard_one_at_a_time() {
 #[test]
 fn enemy_ships_on_every_launch_cell_keep_the_ship_inside() {
     let (mut w, yard) = harbour();
-    let cells = w.naval_launch_cells(yard);
+    let cells = w.naval_launch_cells(yard, ty(&w, "PT"));
     assert!(!cells.is_empty());
     for &(x, y, _) in &cells {
         unit(&mut w, "PT", 1, x, y);
@@ -295,4 +299,66 @@ fn enemy_ships_on_every_launch_cell_keep_the_ship_inside() {
     }
     assert_eq!(all_of(&w, "PT").iter().filter(|&&s| w.actors[s].owner == 0).count(), 0, "still inside");
     assert!(w.players[0].queues[QueueType::Ship as usize].items.first().is_some_and(|it| it.done), "finished");
+}
+
+/// The WebRA movement model: ships come out of the yard too, and twelve
+/// built instantly all get out onto the water.
+#[test]
+fn webra_model_ships_leave_the_yard() {
+    let (mut w, _) = harbour_with(MovementModel::WebRA, "SYRD");
+    let pt = ty(&w, "PT");
+    w.start_production(0, pt, 12);
+    for _ in 0..25 * 60 {
+        w.step();
+        for &s in &all_of(&w, "PT") {
+            assert_eq!(w.map.terrain[w.cell_index(w.actors[s].x, w.actors[s].y)], Terrain::Water, "on water");
+        }
+    }
+    assert_eq!(all_of(&w, "PT").len(), 12, "all launched");
+}
+
+/// OpenRA ExitInfo.ProductionTypes: the sub pen lets submarines (built as
+/// Submarine) out by its outer exits (-1, 2) and (3, 2), onto the water
+/// right there, and its corners; other ships (the transport, built as Ship)
+/// only by its corners. With the "all tech" cheat every unit is built as
+/// its queue's type (ClassicProductionQueue.BuildUnit), Ship.
+#[test]
+fn the_sub_pen_lets_submarines_out_by_their_own_exits() {
+    let (mut w, pen) = harbour_with(MovementModel::OpenRA, "SPEN");
+    w.players[0].dev.all_tech = false;
+    let (cx, cy) = (w.actors[pen].cx, w.actors[pen].cy);
+    let corners = [(cx - 1, cy + 3), (cx + 3, cy + 3), (cx - 1, cy - 1), (cx + 3, cy - 1)];
+    let cells = |w: &World, id: &str| -> Vec<(i32, i32)> { w.naval_launch_cells(pen, ty(w, id)).iter().map(|&(x, y, _)| (x, y)).collect() };
+    assert_eq!(cells(&w, "SS"), vec![(cx - 1, cy + 2), (cx + 3, cy + 2), corners[2], corners[3]], "the submarine exits, in rules order");
+    assert_eq!(cells(&w, "LST"), corners.to_vec(), "the ship exits");
+    w.players[0].dev.all_tech = true;
+    assert_eq!(cells(&w, "SS"), corners.to_vec(), "all tech: built as Ship");
+}
+
+/// OpenRA at b6fc03f: structures have no rally point to begin with
+/// (RallyPointInfo.Path is empty), so a new unit or ship stays on the cell
+/// it came out on; it moves only when the next one needs that cell.
+#[test]
+fn without_a_rally_point_new_units_stay_where_they_came_out() {
+    let mut w = arena(MovementModel::OpenRA);
+    factory(&mut w, "WEAP", 20, 10);
+    let t = ty(&w, "1TNK");
+    w.start_production(0, t, 1);
+    for _ in 0..25 * 40 {
+        w.step();
+    }
+    let tanks = all_of(&w, "1TNK");
+    assert_eq!(tanks.len(), 1);
+    assert_eq!(cell(&w, tanks[0]), weap_exit(20, 10), "on its exit");
+    assert_eq!(w.actors[tanks[0]].activity, Activity::Idle);
+    let (mut w, yard) = harbour();
+    let pt = ty(&w, "PT");
+    let launch = w.naval_spawn_cell(yard, pt).map(|(x, y, _)| (x, y));
+    w.start_production(0, pt, 1);
+    for _ in 0..25 * 40 {
+        w.step();
+    }
+    let boats = all_of(&w, "PT");
+    assert_eq!(boats.len(), 1);
+    assert_eq!(Some(cell(&w, boats[0])), launch, "on its launch cell");
 }

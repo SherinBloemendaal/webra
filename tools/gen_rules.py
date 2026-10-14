@@ -1874,6 +1874,8 @@ def main():
             # unit leaves by the highest priority exit it can use first.
             exits = [(k, x) for k, x in sorted(trait(t, 'Exit').items()) if isinstance(x, dict) and 'ExitCell' in x]
             exit_priorities = [int(x.get('Priority', 1)) for k, x in exits]
+            # ExitInfo.ProductionTypes: which units may use each exit (empty: all).
+            exit_types = [tokens(x.get('ProductionTypes')) for k, x in exits]
             e['building'] = {
                 'width': w,
                 'height': h,
@@ -1893,6 +1895,8 @@ def main():
             }
             if any(p != 1 for p in exit_priorities):
                 e['building']['exit_priorities'] = exit_priorities
+            if any(exit_types):
+                e['building']['exit_types'] = exit_types
             # Static prerequisite resolution per faction. A provider with
             # RequiresPrerequisites only counts when those tokens come from a
             # Factions-filtered provider of the same faction.

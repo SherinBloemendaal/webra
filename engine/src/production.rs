@@ -540,9 +540,12 @@ impl World {
         }
         let (rx, ry) = match rally {
             Some(r) => r,
-            // OpenRA: without a rally point the unit stays on its exit cell
-            // (RallyPointInit [exit]); the next one to come out asks it to make
-            // way, helicopters stay on their pad. In the WebRA movement model
+            // OpenRA (at the pinned b6fc03f): RallyPointInfo.Path defaults to
+            // empty and Red Alert's rules set none, so a new structure has no
+            // rally point and Production.DoProduction gives the unit its exit
+            // cell as the rally point (`rp.Path.Count > 0 ? rp.Path : [exit]`):
+            // it stays there, and the next one to come out asks it to make
+            // way; helicopters stay on their pad. In the WebRA movement model
             // (whose crowd would jam the door, see `exit_free_for`) ground
             // units and ships drive on to a cell below the structure.
             None if self.rules.actors[ty as usize].kind == Kind::Aircraft || self.cell_moves() => return Some(u),
@@ -568,7 +571,7 @@ impl World {
         let (bcx, bcy) = (self.actors[b].cx, self.actors[b].cy);
         let nudger = self.map.idx(bcx.clamp(0, self.map.width - 1), bcy.clamp(0, self.map.height - 1)) as u32;
         if self.is_water_type(ty) {
-            for (cx, cy, facing) in self.naval_launch_cells(b) {
+            for (cx, cy, facing) in self.naval_launch_cells(b, ty) {
                 let cell = self.map.idx(cx, cy) as u32;
                 self.notify_blockers_at(cell, player, nudger);
                 if self.exit_free_for(player, ty, cell) {
@@ -585,13 +588,18 @@ impl World {
             .exits
             .iter()
             .enumerate()
+            .filter(|&(k, _)| self.exit_lets_out(b, k, ty))
             .map(|(k, &(ex, ey))| (binfo.exit_priority.get(k).copied().unwrap_or(1), 0, bcx + ex, bcy + ey))
             .filter(|&(_, _, cx, cy)| self.map.contains(cx, cy))
             .map(|(p, _, cx, cy)| (p, crate::math::dist_sq(cell_center(cx), cell_center(cy), rx, ry), cx, cy))
             .collect();
-        if exits.is_empty() {
+        if binfo.exits.is_empty() {
             // A structure without exits: below its middle.
             return Some((bcx + width / 2, (bcy + height).min(self.map.height - 1), 512));
+        }
+        if exits.is_empty() {
+            // No exit for this kind of unit (OpenRA: no Exit, Produce fails).
+            return None;
         }
         // Stable: equal exits keep their order.
         exits.sort_by_key(|&(p, d, _, _)| (std::cmp::Reverse(p), d));
@@ -607,6 +615,22 @@ impl World {
             }
         }
         None
+    }
+
+    /// OpenRA ExitExts.Exits: whether exit `k` of structure `b` lets out a
+    /// unit of type `ty`, by its ExitInfo.ProductionTypes and the production
+    /// type the unit is built as (Buildable.BuildAtProductionType, else the
+    /// queue's; with the "all tech" cheat the queue's, as in
+    /// ClassicProductionQueue.BuildUnit). The sub pen's outer exits are for
+    /// submarines, its corners for other ships.
+    pub(crate) fn exit_lets_out(&self, b: usize, k: usize, ty: u16) -> bool {
+        let Some(binfo) = self.rules.actors[self.actors[b].ty as usize].building.as_ref() else { return true };
+        let Some(types) = binfo.exit_types.get(k).filter(|t| !t.is_empty()) else { return true };
+        let info = &self.rules.actors[ty as usize];
+        let queue_type = format!("{:?}", info.queue);
+        let owner = self.actors[b].owner as usize;
+        let built_as = if self.players.get(owner).is_some_and(|p| p.dev.all_tech) { queue_type.as_str() } else { info.build_at.as_str() };
+        types.iter().any(|t| t == built_as)
     }
 
     /// OpenRA MobileInfo.CanEnterCell for a unit of type `ty` of `player`

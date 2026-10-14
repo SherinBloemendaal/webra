@@ -63,21 +63,23 @@ impl World {
 
     /// Cell and facing where a ship built at naval yard `b` would enter the
     /// world when nothing is in the way: the first of `naval_launch_cells`.
-    pub(crate) fn naval_spawn_cell(&self, b: usize) -> Option<(i32, i32, i32)> {
-        self.naval_launch_cells(b).into_iter().next()
+    pub(crate) fn naval_spawn_cell(&self, b: usize, ty: u16) -> Option<(i32, i32, i32)> {
+        self.naval_launch_cells(b, ty).into_iter().next()
     }
 
-    /// The cells (with facings) where a ship built at naval yard `b` may
-    /// enter the world, best first: open water just outside each of the
-    /// yard's exits (the exit cells are the yard's own corners). Water
-    /// joined to the yard's rally point comes first, then the largest body
-    /// of water (a yard on a shore may touch a pond too, and a ship launched
-    /// into it could never leave; OpenRA issue 19154), then the exit nearest
-    /// the rally point (OpenRA Production.SelectExit; without one, the
-    /// exits in order), only cells on that first water. Production takes the first one a ship can enter now
-    /// (production.rs `select_exit`, OpenRA CanUseExit), so ships wait while
-    /// every one is taken.
-    pub(crate) fn naval_launch_cells(&self, b: usize) -> Vec<(i32, i32, i32)> {
+    /// The cells (with facings) where a ship of type `ty` built at naval
+    /// yard `b` may enter the world, best first: open water at each exit
+    /// that lets it out (`exit_lets_out`: the sub pen's outer exits are for
+    /// submarines), just outside the yard when the exit is one of its own
+    /// corners. Water joined to the yard's rally point comes first, then the
+    /// largest body of water (a yard on a shore may touch a pond too, and a
+    /// ship launched into it could never leave; OpenRA issue 19154), then
+    /// higher exit priority, then the exit nearest the rally point (OpenRA
+    /// Production.SelectExit; without one, the exits in order); only cells
+    /// on that first water count. Production takes the first one a ship can
+    /// enter now (production.rs `select_exit`, OpenRA CanUseExit), so ships
+    /// wait while every one is taken.
+    pub(crate) fn naval_launch_cells(&self, b: usize, ty: u16) -> Vec<(i32, i32, i32)> {
         let ya = &self.actors[b];
         let Some(binfo) = self.rules.actors[ya.ty as usize].building.as_ref() else { return Vec::new() };
         let (w, h) = (binfo.width, binfo.height);
@@ -87,8 +89,14 @@ impl World {
         type ExitKey = (bool, std::cmp::Reverse<u32>, std::cmp::Reverse<i32>, i64);
         let mut cells: Vec<(ExitKey, (i32, i32))> = Vec::new();
         for (k, &(ex, ey)) in binfo.exits.iter().enumerate() {
-            // Outward direction from the yard's centre through the exit cell.
-            let (dx, dy) = ((2 * ex + 1 - w).signum(), (2 * ey + 1 - h).signum());
+            if !self.exit_lets_out(b, k, ty) {
+                continue;
+            }
+            // Outward direction from the yard's centre through an exit on the
+            // yard's own corner; an exit already outside it (the sub pen's
+            // submarine exits) is the launch spot itself.
+            let outside = ex < 0 || ex >= w || ey < 0 || ey >= h;
+            let (dx, dy) = if outside { (0, 0) } else { ((2 * ex + 1 - w).signum(), (2 * ey + 1 - h).signum()) };
             let Some(c) = self.open_water_near(ya.cx + ex + dx, ya.cy + ey + dy, 3) else { continue };
             if cells.iter().any(|&(_, o)| o == c) {
                 continue;
