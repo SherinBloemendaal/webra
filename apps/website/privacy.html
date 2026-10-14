@@ -65,8 +65,9 @@
         <ul>
           <li>
             The game needs an account while the site says so (the admins can open it to everyone). Your settings, saves,
-            replays, installed original content and texture packs stay in your browser (local storage and IndexedDB).
-            Nothing of that is uploaded unless you sign in and sync your settings.
+            installed original content and texture packs stay in your browser (local storage and IndexedDB). Of these,
+            only your settings are uploaded, when you sign in (they sync to your account). Replays are uploaded while
+            you are signed in (see <a href="#replays">Replays in your account</a>).
           </li>
           <li>
             Rate limits (for example for map uploads, the content download and sign-in attempts) count requests per network
@@ -116,6 +117,28 @@
           It is HttpOnly, Secure and first party, holds nothing else, and is removed when you sign out.
         </p>
 
+        <h2 id="replays">Replays in your account</h2>
+        <p>
+          While you are signed in and "Save replays to my account" is on (it is on unless you switch it off in the game
+          menu's settings or on your account page), the game uploads the replay of every game you finish or leave:
+          skirmish, online games, missions and co-op. A replay holds the game's settings, the map, every order given and,
+          for online games, the <strong>names of the other players and the chat</strong> as you saw it. The server also
+          keeps a summary for your list: when it was uploaded and played, the title, map, mode, the players' names,
+          sides and teams, the game's length and result, the game version and the file's size and checksum.
+        </p>
+        <ul>
+          <li>Only you can list, watch, download or delete the replays in your account. Other players never see them,
+            not even the ones they played in; admins can see neither the list nor the files through WebRA.</li>
+          <li>Each replay is deleted <strong>30 days</strong> after its upload, automatically every day. Your account keeps
+            at most 100 replays and 100 MB; when a new one does not fit, the oldest go first.</li>
+          <li>You can delete any of them at any time. Deleting your account deletes all of them at once (not after the 30
+            days other account data waits).</li>
+          <li>The files are stored with Cloudflare R2 (Cloudflare runs WebRA's server), compressed, under a random name.
+            Your data export lists the replays; the files themselves download from the Replays list.</li>
+          <li>Switching the setting off stops new uploads (and drops replays still waiting to be uploaded in this
+            browser); replays already in your account stay until they expire or you delete them.</li>
+        </ul>
+
         <h2>Network addresses and bans</h2>
         <p>
           To stop abuse, moderators and admins can ban accounts, and admins can ban network addresses and ranges. To make
@@ -139,6 +162,7 @@
           <li>Failed sign-in counters: one day.</li>
           <li>Maps shared in online lobbies (not published): 30 days after a game last used them.</li>
           <li>Records of saved online games: 90 days (at most 20 per account).</li>
+          <li>Replays in your account: 30 days after the upload (at most 100 replays and 100 MB per account), and at once when you delete them or your account.</li>
           <li>Expired IP bans: 90 days after they end.</li>
           <li>The admin audit log (what admins and moderators changed): 365 days.</li>
           <li>

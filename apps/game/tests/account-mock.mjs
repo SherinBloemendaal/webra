@@ -32,7 +32,9 @@ export class MockAccountServer {
       contentRelay: true,
       motd: '',
     };
-    this.services = { email: false, discord: false };
+    this.services = { email: false, discord: false, replays: true };
+    /** Replays kept in accounts (docs/accounts-api.md 5.10): userId -> [{ view, text }], newest first. */
+    this.replays = new Map();
     /** The admin stats' daily outbound mail budget. */
     this.mailBudget = { sentToday: 0, dailyLimit: 300, limitReached: false };
     this.fetch = this.fetch.bind(this);
@@ -49,6 +51,30 @@ export class MockAccountServer {
         networks: [],
       }
     );
+  }
+
+  /** Keep a replay in an account (the list's view of it, and the file). */
+  addReplay(userId, fields = {}, text = '{}') {
+    const n = (this.replays.get(userId)?.length ?? 0) + 1;
+    const view = {
+      id: n.toString(16).padStart(16, '0'),
+      // The page counts the days left against the real clock.
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 30 * 86400000,
+      size: 2048,
+      rawSize: 8192,
+      engine: '0.14.0',
+      mode: 'skirmish',
+      title: `Game ${n}`,
+      mapName: 'Generated map',
+      players: [{ name: 'Tanya', type: 'human', faction: 'england', team: 0 }],
+      playedAt: this.now,
+      ticks: 1500,
+      result: 'won',
+      ...fields,
+    };
+    this.replays.set(userId, [{ view, text }, ...(this.replays.get(userId) ?? [])]);
+    return view;
   }
 
   addUser(fields) {
@@ -335,6 +361,30 @@ export class MockAccountServer {
         return reply(200, doc, { ETag: `"v${doc.version}"` });
       }
       if (key === 'PUT /api/account/settings') return this.putSettings(me, body, headers, { reply, fail });
+      if (key === 'GET /api/account/replays') {
+        const list = this.replays.get(me.id) ?? [];
+        return reply(200, {
+          replays: list.map((r) => r.view),
+          usage: { count: list.length, bytes: list.reduce((n, r) => n + r.view.size, 0) },
+          limits: { count: 100, bytes: 100 * 1024 * 1024, retentionMs: 30 * 86400000, uploadBytes: 16 * 1024 * 1024 },
+          available: this.services.replays,
+        });
+      }
+      if (key === 'POST /api/account/replays') {
+        if (!this.services.replays) return fail(503, 'unavailable', 'Replays cannot be kept in accounts on this server.');
+        return reply(201, { replay: this.addReplay(me.id, { result: q.get('result') ?? 'unknown' }, typeof body === 'string' ? body : JSON.stringify(body)), evicted: 0 });
+      }
+      const rep = /^\/api\/account\/replays\/([0-9a-f]{16})$/.exec(path);
+      if (rep) {
+        const list = this.replays.get(me.id) ?? [];
+        const i = list.findIndex((r) => r.view.id === rep[1]);
+        if (i < 0) return fail(404, 'not_found', 'No such replay.');
+        if (method === 'DELETE') {
+          list.splice(i, 1);
+          return reply(204);
+        }
+        return new Response(list[i].text, { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="webra-replay-${list[i].view.id}.json"` } });
+      }
       if (key === 'GET /api/account/export') {
         if (!reauthed) return needReauth();
         return new Response(JSON.stringify({ user: this.self(me) }), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="webra-account-${me.username}.json"` } });

@@ -284,7 +284,7 @@ export const GROUPS = deepFreeze({
   },
   privacy: {
     label: 'Privacy',
-    description: 'Error reports to WebRA\'s own Sentry (the privacy notice says what they hold).',
+    description: 'Error reports to WebRA\'s own Sentry and replays kept in your account (the privacy notice says what they hold).',
     scope: 'game',
     settings: {
       // js/telemetry/index.js reads it before the game loads and follows every change.
@@ -293,6 +293,13 @@ export const GROUPS = deepFreeze({
         default: true,
         label: 'Send error reports',
         help: 'When the site has error reporting on and something breaks, the game and the website in this browser send the error, the version and the browser to WebRA\'s own Sentry, without your name, chat or account. The server then reports its own errors either way, without player data.',
+      },
+      // js/account/replay-uploads.js: the replay of every game goes to the account (docs/accounts-api.md 5.10).
+      cloudReplays: {
+        type: 'boolean',
+        default: true,
+        label: 'Save replays to my account',
+        help: 'While you are signed in, the replay of every game you finish or leave is kept in your account for 30 days (at most 100 replays and 100 MB; the oldest go first). Online replays hold the other players\' names and the chat.',
       },
     },
   },

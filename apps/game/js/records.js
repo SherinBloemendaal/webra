@@ -1,7 +1,9 @@
 // Saves and replays in the UI: the lobby's Load game and Replays buttons
-// with their dialogs, the game menu's record actions, the replay viewer's
-// control bar, and the progress overlay shown while a game fast-forwards
-// (loading a save, rejoining an online game, seeking in a replay).
+// with their dialogs (Replays lists the replays kept in the signed-in
+// account, js/account/replays.js, next to opening a file), the game menu's
+// record actions, the replay viewer's control bar, and the progress overlay
+// shown while a game fast-forwards (loading a save, rejoining an online
+// game, seeking in a replay).
 //
 // Replay and save files are user files: every one goes through the
 // protocol's parseReplay (size, schema, map hash) before anything uses it,
@@ -12,6 +14,7 @@ import { downloadText, pickFile, readFileText, SaveStore } from './saves.js';
 import { MODDED_WARNING, parseReplay } from './protocol.js';
 import { styleSlider, syncSliderFill } from './ui/controls.js';
 import { blinkOn, completeText, replayStatus } from './gametimer.js';
+import { replayLine, usageText } from './account/replays.js';
 
 export { ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 
@@ -78,18 +81,31 @@ export async function openRecordFile(file, version = null) {
   }
 }
 
+/** The same check for a replay's text (a replay kept in the account). */
+export async function openRecordText(textValue, version = null) {
+  try {
+    const r = await parseReplay(textValue, { version });
+    return r.ok ? r : { ok: false, error: `This replay cannot be used: ${r.error}.` };
+  } catch (err) {
+    return { ok: false, error: err.message ?? String(err) };
+  }
+}
+
 /**
- * The lobby's Load game and Replays buttons.
+ * The lobby's Load game and Replays buttons. With `accountReplays` (the
+ * signed-in account keeps replays: `available()`, and its AccountApi `api`)
+ * Replays opens the list of the account's replays; otherwise it picks a file.
  * @param {HTMLElement} root the #records-entry element
  * @param {{ version: string, canPlay(): boolean, showError(msg: string): void,
- *   onLoadSave(replay: object): void, onWatchReplay(replay: object): void, store?: SaveStore }} ctx
+ *   onLoadSave(replay: object): void, onWatchReplay(replay: object): void, store?: SaveStore,
+ *   accountReplays?: { available(): boolean, api: import('./account/api.js').AccountApi } }} ctx
  */
 export function mountRecordEntries(root, ctx) {
   if (!root) return;
   const store = ctx.store ?? SaveStore.browser();
   root.replaceChildren(
     button('Load game', 'records-entry-button', () => loadDialog(store, ctx)),
-    button('Replays', 'records-entry-button', () => watchFile(ctx)),
+    button('Replays', 'records-entry-button', () => (ctx.accountReplays?.available() ? replaysDialog(ctx) : watchFile(ctx))),
   );
   root.hidden = false;
 }
@@ -101,6 +117,97 @@ async function watchFile(ctx) {
   const r = await openRecordFile(file, ctx.version);
   if (!r.ok) return ctx.showError(r.error);
   ctx.onWatchReplay(r.replay);
+}
+
+/**
+ * Download a replay kept in the account and check it like a file; resolves
+ * `{ ok, replay }` or `{ ok: false, error }`. A replay of another build
+ * resolves with its header (`foreign`): watching it explains the version.
+ */
+export async function openAccountReplay(api, id, version) {
+  try {
+    const { text } = await api.downloadReplay(id);
+    return await openRecordText(text, version);
+  } catch (err) {
+    return { ok: false, error: `The replay could not be loaded: ${err.message ?? err}` };
+  }
+}
+
+/** Replays: the signed-in account's replays (Watch, Download, Delete) and opening a file. */
+async function replaysDialog(ctx) {
+  if (!ctx.canPlay()) return ctx.showError('WebGPU is not available.');
+  const { api } = ctx.accountReplays;
+  const chosen = await dialog('Replays', (body, close) => {
+    const usage = el('p', 'records-muted', '');
+    const list = el('div', 'records-list');
+    list.setAttribute('role', 'list');
+    const status = el('p', 'records-muted', 'Loading your replays...');
+    status.setAttribute('role', 'status');
+    const render = async () => {
+      let data;
+      try {
+        data = await api.replays();
+      } catch (err) {
+        status.textContent = `Your replays could not be loaded: ${err.message ?? err}`;
+        return;
+      }
+      usage.textContent = `${usageText(data.usage, data.limits)}. Each one is kept for ${Math.round(data.limits.retentionMs / 86400000)} days.`;
+      list.replaceChildren();
+      status.textContent = data.replays.length ? '' : 'No replays in your account yet. Games you finish or leave are saved here while "Save replays to my account" is on (game menu, Settings).';
+      for (const r of data.replays) {
+        const row = el('div', 'records-row');
+        row.setAttribute('role', 'listitem');
+        const info = el('div', 'records-info');
+        info.append(el('strong', null, r.title), el('span', 'records-muted', replayLine(r)));
+        // Watching needs the version that recorded it (js/replay.js engineMismatch says why).
+        if (r.engine !== ctx.version) info.append(el('span', 'records-warning', `Made with WebRA ${r.engine}`));
+        const watch = button('Watch', 'records-primary', async () => {
+          watch.disabled = true;
+          status.textContent = 'Loading the replay...';
+          const o = await openAccountReplay(api, r.id, ctx.version);
+          watch.disabled = false;
+          if (!o.ok) {
+            status.textContent = o.error;
+            return;
+          }
+          close(o.replay);
+        });
+        const download = button('Download', null, async () => {
+          try {
+            const { text, name } = await api.downloadReplay(r.id);
+            downloadText(name, text);
+          } catch (err) {
+            status.textContent = `The replay could not be downloaded: ${err.message ?? err}`;
+          }
+        });
+        const del = button('Delete', null, async () => {
+          try {
+            await api.deleteReplay(r.id);
+          } catch (err) {
+            status.textContent = `The replay could not be deleted: ${err.message ?? err}`;
+            return;
+          }
+          render();
+        });
+        row.append(info, watch, download, del);
+        list.append(row);
+      }
+    };
+    const actions = el('div', 'records-actions');
+    actions.append(
+      button('Open a file', null, async () => {
+        const file = await pickFile();
+        if (!file) return;
+        const r = await openRecordFile(file, ctx.version);
+        if (!r.ok) status.textContent = r.error;
+        else close(r.replay);
+      }),
+      button('Close', null, () => close(null)),
+    );
+    body.append(usage, list, status, actions);
+    render();
+  });
+  if (chosen) ctx.onWatchReplay(chosen);
 }
 
 async function loadDialog(store, ctx) {

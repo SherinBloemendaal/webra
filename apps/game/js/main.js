@@ -73,6 +73,7 @@ import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
 import { AccountSession } from './account/session.js';
+import { browserQueue, GameReplay, ReplayUploads, replayResult, uploadEventText, uploadsWanted } from './account/replays.js';
 import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
 import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
@@ -132,6 +133,8 @@ let contentPanel = null;
 let contentNotice = null;
 /** The signed-in account (js/account/session.js): online play, settings sync, the one-click content install. */
 let account = null;
+/** Replays kept in the account (js/account/replays.js): the upload queue, while accounts work. */
+let replayUploads = null;
 /**
  * Loads of game files after the start (lazy modules, the simulation worker):
  * when the server stops serving them mid-session (js/account/gate.js), the
@@ -305,7 +308,33 @@ async function setupRecords(lobby, gpuError) {
     showError: (msg) => lobby.showError(msg),
     onLoadSave: (replay) => loadSave(replay, lobby),
     onWatchReplay: (replay) => watchReplay(replay, lobby),
+    // Replays kept in the signed-in account (js/account/replays.js).
+    accountReplays: account ? { available: () => !!account.user && account.site?.services?.replays !== false, api: account.api } : undefined,
   });
+  openReplayLink(lobby, gpuError);
+}
+
+/**
+ * Watch from the account page: /play/#replay=<id> opens that replay of the
+ * signed-in account (downloaded and checked like a file) in the viewer.
+ */
+async function openReplayLink(lobby, gpuError) {
+  const m = /^#replay=([0-9a-f]{16})$/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  if (gpuError || !renderer) return lobby.showError('WebGPU is not available.');
+  if (!account) return lobby.showError('Accounts are unavailable, so the replays in your account cannot be opened.');
+  if (!account.ready) await new Promise((resolve) => {
+    const off = account.onChange(() => {
+      if (!account.ready) return;
+      off();
+      resolve();
+    });
+  });
+  if (!account.user) return lobby.showError('Sign in to watch the replays in your account.');
+  const r = await records.openAccountReplay(account.api, m[1], version());
+  if (!r.ok) return lobby.showError(r.error);
+  watchReplay(r.replay, lobby);
 }
 
 function setupAudio() {
@@ -342,6 +371,26 @@ function setupAccount() {
       history.replaceState(null, '', location.pathname + location.search);
       if (discord[1] === 'error') showToast(`Discord sign-in did not work (${discord[2] ?? 'unknown'}). Try again, or use the account page.`);
     }
+    // Replays kept in the account (js/account/replays.js): uploads run while an active account
+    // is signed in with "Save replays to my account" on; switching it off drops the waiting ones.
+    replayUploads = new ReplayUploads({
+      api: account.api,
+      queue: browserQueue(),
+      onEvent: (e) => {
+        const text = uploadEventText(e);
+        if (text) showToast(text);
+      },
+    });
+    const followUploads = () => {
+      const user = account.user;
+      if (uploadsWanted({ user, site: account.site, enabled: settings.get('cloudReplays') })) replayUploads.start(user.id);
+      else replayUploads.stop();
+    };
+    account.onChange(followUploads);
+    settings.subscribe('cloudReplays', (on) => {
+      if (!on && account.user) replayUploads.clear(account.user.id).catch(() => {});
+      followUploads();
+    });
     account.refresh();
     // Back on the tab: settings changed on another device arrive.
     document.addEventListener('visibilitychange', () => {
@@ -1775,6 +1824,16 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // up), so there the menu opens over the running game. The debug menu can
   // also pause a local game without the menu (`paused` is declared above).
   let leaving = false;
+  /**
+   * Before the page reloads or goes (leave, exit, restart, rematch, next
+   * mission): the game's replay is queued for the account when it was not
+   * yet (js/account/replays.js, a moment at most), and a performance capture
+   * downloads.
+   */
+  const beforeLeaving = async () => {
+    await accountReplay?.leaving(replayOutcome());
+    await perfBeforeLeaving();
+  };
   // OpenRA IngameMenuLogic.OnQuit: "Battle control terminated" is heard before the game closes.
   const leave = async () => {
     leaving = true;
@@ -1783,7 +1842,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     await audio?.leave();
     // Out of a mission: back to the campaign screen, at that mission.
     if (mission?.entry && !replay) saveRestart(campaignRecord(mission.entry.id), sessionStore());
-    await perfBeforeLeaving();
+    await beforeLeaving();
     location.reload();
   };
   // Restart (js/restart.js): a replay plays again from 0 here; a single player
@@ -1795,7 +1854,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   if (rematch) {
     rematch.onLobby = async () => {
       leaving = true;
-      await perfBeforeLeaving();
+      await beforeLeaving();
       location.reload();
     };
   }
@@ -1817,7 +1876,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
             return;
           }
           leaving = true;
-          await perfBeforeLeaving();
+          await beforeLeaving();
           location.reload();
         }
       : null;
@@ -1825,7 +1884,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     leaving = true;
     online?.onQuit();
     await audio?.leave();
-    await perfBeforeLeaving();
+    await beforeLeaving();
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
@@ -2131,6 +2190,14 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       endDialog.render();
     },
   });
+  // Replays kept in the account (js/account/replays.js): every game the player plays or
+  // watches live (not a replay, not the stress test) is queued once, when it ends or when
+  // the player leaves it first.
+  const accountReplay =
+    replayUploads && recorder && !replay && !stress
+      ? new GameReplay({ recorder, uploads: replayUploads, account: () => account ?? {}, enabled: () => settings.get('cloudReplays') })
+      : null;
+  const replayOutcome = () => replayResult(flow, { spectator: !!viewer });
   const endDialog = new EndGameDialog($('gameover'), {
     flow,
     actions: {
@@ -2175,7 +2242,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       return;
     }
     leaving = true;
-    perfBeforeLeaving().then(() => location.reload());
+    beforeLeaving().then(() => location.reload());
   };
   // A rematch proposal changes what the end of game screens offer.
   rematch?.subscribe(() => {
@@ -2416,6 +2483,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
         if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
+        // The whole game ended (or this player won): its replay goes to the account, in the background.
+        if (accountReplay && (flow.over || flow.phase === 'won')) accountReplay.ended(replayOutcome());
       }
       // OpenRA IngameChatLogic: a defeated player's team chat goes to the
       // spectators (the server routes it, js/chatpanel.js labels it); nobody

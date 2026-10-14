@@ -348,3 +348,47 @@ test('account page: a clear Play button for accounts that may play (to the targe
   assert.equal(b.root.querySelector('a.btn-play').getAttribute('href'), '/play/editor/');
   assert.deepEqual(b.navigated, []);
 });
+
+// ---- Replays kept in the account (docs/accounts-api.md 5.10) ------------------------------------------
+
+test('account page replays: the list with usage, Watch opens the game, Delete asks first, the switch writes the setting', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  server.signIn(user);
+  server.addReplay(user.id, { title: 'Old game', result: 'lost' });
+  server.addReplay(user.id, { title: 'New game', mode: 'online', players: [{ name: 'Tanya', type: 'human' }, { name: 'Boris', type: 'human' }] });
+  const { root } = await page(server);
+  await settle(20);
+  const section = root.querySelector('#section-replays').closest('section');
+  assert.match(textOf(section), /2 of 100 replays, 4 KB of 100 MB\. Each replay is kept for 30 days/);
+  const items = section.querySelectorAll('li.item');
+  assert.deepEqual(items.map((li) => li.querySelector('strong').textContent), ['New game', 'Old game'], 'newest first');
+  assert.match(textOf(items[0]), /Online on Generated map with Tanya and Boris\. Won, 2 KB, 30 days left/);
+  const id = server.replays.get(user.id)[0].view.id;
+  assert.equal(items[0].querySelector('a').getAttribute('href'), `/play/#replay=${id}`);
+
+  click(byText(items[1], 'button', /^Delete$/));
+  await settle(5);
+  const confirm = doc.body.querySelector('[role="dialog"]');
+  assert.match(textOf(confirm), /Old game/);
+  click(byText(confirm, 'button', /^Delete$/));
+  await settle(20);
+  assert.deepEqual(server.replays.get(user.id).map((r) => r.view.title), ['New game']);
+
+  const toggle = inputByLabel(section, /Save replays to my account/);
+  assert.equal(toggle.checked, true, 'on by default');
+  check(toggle, false);
+  await settle(20);
+  assert.equal(server.settingsDocs.get(user.id).settings.privacy.cloudReplays, false);
+  assert.match(textOf(section), /no longer saved/);
+});
+
+test('account page replays: left out when the server keeps none', async () => {
+  const server = new MockAccountServer();
+  server.services.replays = false;
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  server.signIn(user);
+  const { root } = await page(server);
+  assert.equal(root.querySelector('#section-replays'), null);
+  assert.deepEqual(strayValues(root), []);
+});
