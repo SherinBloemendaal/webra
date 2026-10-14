@@ -32,6 +32,10 @@ pub enum Section {
     RouteSearch,
     /// Flow field computations (flowfield.rs).
     FlowFields,
+    /// Queues and crowds: whether a unit is boxed in (cellmove.rs
+    /// `boxed_in`) and whether the queue it waits in moves on
+    /// (occupancy.rs `queue_is_moving`).
+    Queues,
     /// Target scans (combat.rs `scan_for_target`).
     TargetScan,
     /// Projectiles and impacts.
@@ -45,7 +49,7 @@ pub enum Section {
 }
 
 /// Every section, in report order.
-pub const SECTIONS: [Section; 14] = [
+pub const SECTIONS: [Section; 15] = [
     Section::TickStart,
     Section::Orders,
     Section::Ai,
@@ -55,6 +59,7 @@ pub const SECTIONS: [Section; 14] = [
     Section::CellMove,
     Section::RouteSearch,
     Section::FlowFields,
+    Section::Queues,
     Section::TargetScan,
     Section::Projectiles,
     Section::Cleanup,
@@ -74,6 +79,7 @@ impl Section {
             Section::CellMove => "  cell moves",
             Section::RouteSearch => "    route searches",
             Section::FlowFields => "    flow fields",
+            Section::Queues => "    queues, boxed in",
             Section::TargetScan => "  target scans",
             Section::Projectiles => "projectiles",
             Section::Cleanup => "cleanup",

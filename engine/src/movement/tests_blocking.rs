@@ -89,7 +89,7 @@ fn cross_column(n: i32) -> (Option<u32>, (i32, i32), u64) {
 /// OpenRA Mobile.OnNotifyBlockingMove and Nudge: a column of idle tanks on
 /// a bridge one cell wide makes way one tank after another (each nudged one
 /// asks the next), and the tank behind waits while the column clears
-/// instead of giving up after WaitAverage (`cell_is_evacuating`). Before,
+/// instead of giving up after WaitAverage (`queue_is_moving`). Before,
 /// it gave up behind six or more.
 #[test]
 fn a_tank_crosses_a_bridge_past_a_column_of_idle_tanks() {
@@ -132,7 +132,7 @@ fn a_row_of_idle_tanks_in_a_narrow_gap_makes_way() {
 
 /// A group sent over the bridge files across one tank after another: the
 /// ones at the back wait while the queue ahead of them moves (WebRA, see
-/// `cell_is_evacuating`) instead of staying behind on the near bank.
+/// `queue_is_moving`) instead of staying behind on the near bank.
 #[test]
 fn a_group_files_over_a_bridge_without_stragglers() {
     let mut w = bridge();

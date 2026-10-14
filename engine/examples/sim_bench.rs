@@ -8,9 +8,11 @@
 //!   --sections     a per-system breakdown per window (needs `--features profile`)
 //!
 //! Prints the average and worst tick per window, the units alive, flow
-//! fields and route searches, a digest of the state hashes (every 25 ticks,
-//! outside the timed ticks) and the peak resident memory. Built with
-//! `--features profile` it also prints where the tick time goes (src/profile.rs).
+//! fields and route searches (with the searches that waited for a later
+//! tick, movement/search.rs `ROUTE_SEARCH_BUDGET`), a digest of the state
+//! hashes (every 25 ticks, outside the timed ticks) and the peak resident
+//! memory. Built with `--features profile` it also prints where the tick
+//! time goes (src/profile.rs).
 use webra_sim::profile;
 use webra_sim::world::World;
 
@@ -57,13 +59,14 @@ fn main() {
             let worst = win.iter().cloned().fold(0.0, f64::max);
             let alive = w.actors.iter().filter(|a| a.alive && a.is_unit()).count();
             println!(
-                "ticks {:5}-{:5}: avg {avg:6.2} ms, worst {worst:7.2} ms; {alive:6} units, {:6} flow fields, {:7} route searches ({} gave up, {} cells)",
+                "ticks {:5}-{:5}: avg {avg:6.2} ms, worst {worst:7.2} ms; {alive:6} units, {:6} flow fields, {:7} route searches ({} gave up, {} cells, {} over budget)",
                 t + 1 - win.len() as u32,
                 t,
                 w.flow.computed,
                 w.search.searches,
                 w.search.limited,
-                w.search.expanded
+                w.search.expanded,
+                w.search.deferred
             );
             let took = profile::take();
             for (k, (_, ns, _)) in took.iter().enumerate() {

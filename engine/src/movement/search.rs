@@ -25,11 +25,19 @@ use std::collections::BinaryHeap;
 
 /// Cells a single search may expand.
 pub const SEARCH_LIMIT: u32 = 4096;
+/// Cells the route searches of one tick may expand before further searches
+/// wait for a later tick (`World::route_budget_spent`): a safety net for
+/// huge armies (a 4096-cell search takes about a millisecond natively), far
+/// beyond what any normal game asks in a tick. WebRA addition.
+pub const ROUTE_SEARCH_BUDGET: u64 = 400_000;
 /// OpenRA PathFinderInfo.HeuristicWeightPercentage.
 pub(crate) const HEURISTIC_WEIGHT: u32 = 125;
 
 /// Per-cell bookkeeping reused by every search (never part of the game
 /// state): a cell's entries are valid when its stamp is the current one.
+/// Only `tick_expanded` decides anything: it is set to zero at the start of
+/// every tick and counts that tick's searches, so it is the same on every
+/// peer and in every replay without being saved.
 #[derive(Clone, Default)]
 pub struct Scratch {
     nodes: Vec<Node>,
@@ -42,6 +50,10 @@ pub struct Scratch {
     pub searches: u64,
     /// Searches that gave up at `SEARCH_LIMIT`.
     pub limited: u64,
+    /// Cells expanded by the searches of this tick (`ROUTE_SEARCH_BUDGET`).
+    pub tick_expanded: u64,
+    /// Searches that had to wait for a later tick (tests and the stress bench).
+    pub deferred: u64,
 }
 
 /// A cell's entries of the current search, side by side in memory: a
@@ -83,6 +95,14 @@ impl Scratch {
         self.searches += 1;
     }
 
+    /// Count `cells` expanded by a search: in all, and toward this tick's
+    /// `ROUTE_SEARCH_BUDGET` (`World::route_budget_spent`). Every search
+    /// that a unit's move asks for counts here.
+    pub(crate) fn note_expanded(&mut self, cells: u32) {
+        self.expanded += cells as u64;
+        self.tick_expanded += cells as u64;
+    }
+
     fn cost_of(&self, c: usize) -> u32 {
         let n = &self.nodes[c];
         if n.stamp == self.current {
@@ -112,6 +132,15 @@ impl Scratch {
 }
 
 impl World {
+    /// Whether this tick's route searches used up `ROUTE_SEARCH_BUDGET`:
+    /// a search asked for now waits for a later tick (counted in
+    /// `Scratch::deferred`).
+    pub(crate) fn route_budget_spent(&mut self) -> bool {
+        let spent = self.search.tick_expanded >= ROUTE_SEARCH_BUDGET;
+        self.search.deferred += spent as u64;
+        spent
+    }
+
     /// OpenRA Move.EvalPath: the route of unit `i` from the cell it is
     /// moving into to `dest` with the units `check` counts as obstacles,
     /// next cell last (`dest` first). None when there is none (the
@@ -230,7 +259,7 @@ impl World {
                 }
             }
         }
-        s.expanded += expanded as u64;
+        s.note_expanded(expanded);
         s.open = heap.into_vec();
         s.open.clear();
         if !found {
