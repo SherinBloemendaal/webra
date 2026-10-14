@@ -74,9 +74,11 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   bridge actor writes its template's terrain over them when it is placed,
   damaged, destroyed or repaired, so a destroyed span turns into river or
   water under it (`engine/src/bridges.rs`). Whatever cannot stand on a
-  span's new terrain dies: a tank on a fallen span, a boat in the water gap
-  of a long bridge when the span is repaired (OpenRA kills only when a span
-  falls or a dead one is repaired).
+  span's new terrain dies: a tank on a fallen span, a paratrooper coming
+  down onto it (OpenRA's ActorMap holds it already; aircraft in the air
+  fly on), a boat in the water gap of a long bridge when the span is
+  repaired (OpenRA kills only when a span falls or a dead one is
+  repaired).
 - The neutral world (`engine/src/neutral.rs`): actors with owner -1 belong
   to a neutral player that never attacks and never wins. Trees (`T01`...), civilians (`C1`...`C11`), civilian buildings
   (`V01`...`V37`, huts, windmill), tech buildings (`HOSP`, `BIO`, `MISS`,
@@ -1432,7 +1434,12 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   husk, crate or mine. A unit takes its cell like in OpenRA's ActorMap
   (`occupies_cell`): from its creation, a paratrooper on its parachute
   too, but an aircraft only when landed. The same rule decides where
-  crates drop and what a landing crate or a falling bridge hits.
+  crates drop (spawner and delivery plane), where a helicopter may land,
+  what a falling bridge kills and which units a mission's footprint
+  trigger sees. A crate landing on a unit whose locomotor crushes crates
+  (a paratrooper still on its parachute too) is collected by it; landing
+  on anything else (a landed aircraft, a structure, husk or mine)
+  destroys it (OpenRA Crate.OnLanded).
 - Like OpenRA (World.IsCellBuildable at b6fc03f), placement reads the true
   world state and never the player's view: footprints may reach into the
   shroud and the fog, and every occupant blocks its cell whether the player

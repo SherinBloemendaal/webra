@@ -146,8 +146,10 @@ fn driving_onto_a_crate_collects_it() {
 
 /// OpenRA's ActorMap holds a paratrooper from its creation, an aircraft
 /// only when landed (world.rs `occupies_cell`): no crate is dropped on a
-/// cell a paratrooper comes down on (ChooseDropCell), and a crate landing
-/// on one is taken or destroyed (Crate.OnLanded), never left beside it.
+/// cell a paratrooper comes down on (ChooseDropCell, and ParaDrop's
+/// suitable cell check for a delivery plane), and a crate landing on one
+/// is collected by it (Crate.OnLanded asks only for a Mobile actor whose
+/// locomotor crushes crates, wherever it hangs).
 #[test]
 fn crates_treat_a_descending_paratrooper_as_on_its_cell() {
     let mut w = world();
@@ -155,18 +157,46 @@ fn crates_treat_a_descending_paratrooper_as_on_its_cell() {
     let neutral = w.neutral_player().unwrap();
     let e1 = unit(&mut w, "E1", 0, 20, 20);
     w.actors[e1].altitude = 4096;
+    w.actors[e1].air.parachute = true;
     let heli = w.spawn_unit(ty(&w, "HELI"), 1, cell_center(22), cell_center(20), 0);
     w.rebuild_hash();
     assert!(w.actors[heli].altitude > 0, "spawned flying");
     assert!(w.cell_has_actor(w.map.idx(20, 20)), "no crate drop on the paratrooper");
     assert!(!w.cell_has_actor(w.map.idx(22, 20)), "a helicopter overhead takes no cell");
+    let cash = w.players[0].cash;
     let c = w.place_crate(ty(&w, "MONEYCRATE") as usize, neutral, 20, 20, crate::crates::CRATE_FALL_RATE);
     w.tick_falling_crate(c);
     assert!(!w.actors[c].alive, "landed on the paratrooper");
+    assert_eq!(w.players[0].cash - cash, 500, "and the paratrooper collected it");
     assert_eq!(w.crates.count, 0);
     let c = w.place_crate(ty(&w, "MONEYCRATE") as usize, neutral, 22, 20, crate::crates::CRATE_FALL_RATE);
     w.tick_falling_crate(c);
     assert!(w.actors[c].alive && w.actors[c].altitude == 0, "under the helicopter it stays");
+}
+
+/// OpenRA ParaDrop with checkForSuitableCell: a delivery plane keeps its
+/// crate over a cell with anything in the ActorMap, a paratrooper on its
+/// parachute too, and drops it over a free one (only a flying aircraft
+/// above it).
+#[test]
+fn a_delivery_plane_drops_no_crate_onto_a_paratrooper() {
+    let mut w = world();
+    w.crates = crate::crates::CrateState::new(&w.rules, false);
+    let e1 = unit(&mut w, "E1", 0, 20, 20);
+    w.actors[e1].altitude = 4096;
+    w.actors[e1].air.parachute = true;
+    let heli = w.spawn_unit(ty(&w, "HELI"), 1, cell_center(24), cell_center(20), 0);
+    w.rebuild_hash();
+    assert!(w.actors[heli].altitude > 0, "spawned flying");
+    let money = ty(&w, "MONEYCRATE");
+    for (cx, dropped) in [(20, false), (24, true)] {
+        let plane = w.spawn_unit(ty(&w, "BADR"), 1, cell_center(cx), cell_center(20), 0);
+        w.actors[plane].altitude = 2048;
+        w.actors[plane].air.cargo = vec![money];
+        w.drop_crate(plane);
+        assert!(w.actors[plane].air.cargo.is_empty(), "the plane gives up its cargo either way");
+        assert_eq!(w.crate_at(w.map.idx(cx, 20)).is_some(), dropped, "cell ({cx}, 20)");
+    }
 }
 
 #[test]

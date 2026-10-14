@@ -401,22 +401,28 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 /// Whether one of `ships` (of `player`) has an enemy it can surely attack
 /// from its body of water (`pass_water` component). A sufficient condition
 /// judged from the world, not from the bots' `enemy_in_reach` (ai_naval.rs)
-/// this test checks; it may miss enemies the bots reach (the safe side),
-/// never names one they cannot:
+/// this test checks; it may miss enemies the bots reach (the safe side):
 /// - an enemy ship on the same water: OpenRA's FindEnemies tries the
 ///   target's own position first;
-/// - an enemy structure on water with a footprint cell within the ship's
-///   weapon range of some cell of that water (every footprint cell is a
-///   target position, OpenRA Building.TargetablePositions).
+/// - an enemy structure on water when one of OpenRA's nine FindEnemies
+///   points (the structure's centre and eight points at the ship's range
+///   against it, ai.rs `offset_within`) lies on that water and a cell the
+///   structure can be hit on (`hit_cells`, Occupied cells, as combat.rs
+///   measures) is within the ship's weapon range of that point. The bots
+///   reach a structure only through those points, so this part applies the
+///   bots' rule (written out again here, not called) and adds the check
+///   that the ship can fire from there.
 ///
 /// Both count only targets `player` can target now: seen and not cloaked
 /// (the bots go for no unit they do not see, and a ship fires only at what
 /// its owner sees). This shares engine rules with the bots: `targetable`
 /// (`is_visible_to`, cloaks), `target_class` and the weapons' target
-/// classes and ranges (`can_attack_class`, `reaches_class`). A bug there
-/// misleads the bots and this oracle alike and is for the combat tests to
-/// find; what this guards is the bots' own reach and squad logic (water
-/// labels, FindEnemies points, preferred enemies, squad states).
+/// classes and ranges (`can_attack_class`, `range_against`,
+/// `reaches_class`), and for structures the nine-point rule. A bug there
+/// misleads the bots and this oracle alike and is for the combat and reach
+/// tests to find; what this guards is the rest of the bots' reach and
+/// squad logic (water labels, preferred enemies, blind targets, squad
+/// states).
 fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
     let water = |c: usize| (!w.pass_water.blocked[c]).then(|| w.pass_water.component[c]);
     let enemies: Vec<usize> = (0..w.actors.len())
@@ -440,17 +446,18 @@ fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
                 return water(w.cell_index(a.x, a.y)) == Some(comp);
             }
             let b = w.rules.actors[a.ty as usize].building.as_ref().unwrap();
-            let r = info.range_against(&w.rules, class) / CELL + 1;
-            b.cells().any(|(dx, dy)| {
-                let (fx, fy) = (a.cx + dx, a.cy + dy);
-                (fy - r..=fy + r).any(|y| {
-                    (fx - r..=fx + r).any(|x| {
-                        w.map.contains(x, y) && water(w.map.idx(x, y)) == Some(comp) && {
-                            let d = crate::math::dist_sq(cell_center(x), cell_center(y), cell_center(fx), cell_center(fy));
-                            info.reaches_class(&w.rules, class, d)
-                        }
+            let r = info.range_against(&w.rules, class);
+            let diag = r * 724 / 1024;
+            let points = [(0, 0), (r, 0), (-r, 0), (0, r), (0, -r), (diag, diag), (-diag, diag), (-diag, -diag), (diag, -diag)];
+            points.into_iter().any(|(ox, oy)| {
+                let (px, py) = (a.x + ox, a.y + oy);
+                let on_map = px >= 0 && py >= 0 && px < w.map.width * CELL && py < w.map.height * CELL;
+                on_map
+                    && water(w.cell_index(px, py)) == Some(comp)
+                    && b.hit_cells.iter().any(|&(dx, dy)| {
+                        let d = crate::math::dist_sq(px, py, cell_center(a.cx + dx), cell_center(a.cy + dy));
+                        info.reaches_class(&w.rules, class, d)
                     })
-                })
             })
         })
     })
