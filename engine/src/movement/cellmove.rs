@@ -36,6 +36,7 @@
 use crate::flowfield::{DIRS, DIR_GOAL, DIR_NONE};
 use crate::math::{angle_diff, dist, facing_of, turn_toward};
 use crate::movement::occupancy::{sub_cell_point, Blocking, FULL_CELL};
+use crate::movement::search::ROUTE_SEARCH_BUDGET;
 use crate::movement::MoveResult;
 use crate::world::{Activity, World, NONE};
 
@@ -111,6 +112,10 @@ pub struct Motion {
     pub queue_wait: i32,
     /// The route search of the move is still to come (`Pending`).
     pub pending: Pending,
+    /// The tick a search of the move first waited for the tick's budget
+    /// (`Pending::Search`, `Pending::Repath`): the oldest are served first
+    /// (`World::serve_deferred_searches`).
+    pub pending_since: u32,
     /// Turning on the spot to drive on (Mobile.TurnToMove).
     pub turning: bool,
     /// Moved in the last tick (Mobile.CurrentMovementTypes: Horizontal).
@@ -145,6 +150,7 @@ impl Default for Motion {
             waiting_for: NONE,
             queue_wait: 0,
             pending: Pending::None,
+            pending_since: 0,
             turning: false,
             moving: false,
             cooldown: 0,
@@ -202,7 +208,10 @@ impl Motion {
             Pending::None => 0,
             Pending::Boxed => 1,
             Pending::Search(check) => 2 + check as i64,
+            Pending::Repath => 6,
+            Pending::NoWay => 7,
         });
+        mix(self.pending_since as i64);
     }
 }
 
@@ -220,8 +229,15 @@ pub enum Pending {
     /// every unit and around standing ones fail at once.
     Boxed,
     /// The tick's route search budget was spent (`ROUTE_SEARCH_BUDGET`): it
-    /// searches from this check on at its next step.
+    /// searches from this check on when its turn comes
+    /// (`World::serve_deferred_searches`).
     Search(Blocking),
+    /// Move.PopPath's search for a way around every unit after waiting
+    /// for a blocker, held back by the budget like `Search`.
+    Repath,
+    /// That search found no way: the unit backs out of the way of others or
+    /// its move ends, at its next step.
+    NoWay,
 }
 
 /// What OpenRA's Move.PopPath decides about the next cell of the route.
@@ -346,7 +362,7 @@ impl World {
     /// (`Pending::Search`).
     fn find_route(&mut self, i: usize, first: Blocking) {
         if self.route_budget_spent() {
-            self.actors[i].mv.pending = Pending::Search(first);
+            self.defer_search(i, Pending::Search(first));
             return;
         }
         let dest = self.actors[i].mv.dest;
@@ -374,6 +390,19 @@ impl World {
         match self.actors[i].mv.pending {
             Pending::None => return None,
             Pending::Search(first) => self.find_route(i, first),
+            Pending::Repath => {
+                if self.route_budget_spent() {
+                    return Some(Next::Wait);
+                }
+                self.actors[i].mv.pending = Pending::None;
+                let pop = self.repath(i);
+                return Some(self.pop_to_next(i, NONE, pop));
+            }
+            Pending::NoWay => {
+                self.actors[i].mv.pending = Pending::None;
+                let pop = self.no_way_round(i);
+                return Some(self.pop_to_next(i, NONE, pop));
+            }
             Pending::Boxed => {
                 if self.boxed_in(i) && !self.boxed_wait_over(i) {
                     return Some(Next::Wait);
@@ -384,6 +413,64 @@ impl World {
         // The wait goes on where it was (`waited`, `wait`), as for a unit
         // that had its route from the start and waited for its next cell.
         (self.actors[i].mv.pending != Pending::None).then_some(Next::Wait)
+    }
+
+    /// The tick's route search budget is spent: unit `i` searches later
+    /// (`pending`), and the time it first had to wait is kept.
+    fn defer_search(&mut self, i: usize, pending: Pending) {
+        let tick = self.tick;
+        let m = &mut self.actors[i].mv;
+        if !matches!(m.pending, Pending::Search(_) | Pending::Repath) {
+            m.pending_since = tick;
+            self.search.deferred += 1;
+        }
+        m.pending = pending;
+        self.search.backlog = true;
+    }
+
+    /// WebRA addition: before units act, the searches that waited for the
+    /// budget in earlier ticks run, the oldest first, as long as the budget
+    /// lasts; what is left waits on, and searches asked for in this tick
+    /// only get what the older ones leave. Units act in an order that
+    /// alternates every tick, so without this the units at both ends of the
+    /// actor list would take the budget tick after tick while the ones in
+    /// the middle wait. Searches that have waited equally long go by actor.
+    /// The order depends only on the game state (`Motion::pending_since`).
+    pub(crate) fn serve_deferred_searches(&mut self) {
+        if !self.cell_moves() || !self.search.backlog {
+            return;
+        }
+        let mut waiting: Vec<(u32, usize)> = (0..self.actors.len())
+            .filter(|&i| {
+                let m = &self.actors[i].mv;
+                matches!(m.pending, Pending::Search(_) | Pending::Repath)
+                    && m.result == MoveResult::InProgress
+                    && m.dest != NONE
+                    && self.occupies_cells(i)
+            })
+            .map(|i| (self.actors[i].mv.pending_since, i))
+            .collect();
+        self.search.backlog = !waiting.is_empty();
+        waiting.sort_unstable();
+        for (_, i) in waiting {
+            if self.search.tick_expanded >= ROUTE_SEARCH_BUDGET {
+                break;
+            }
+            match self.actors[i].mv.pending {
+                Pending::Search(first) => self.find_route(i, first),
+                Pending::Repath => {
+                    // The way found is taken at the unit's next step.
+                    let dest = self.actors[i].mv.dest;
+                    let path = self.find_path(i, dest, Blocking::All).filter(|p| !p.is_empty());
+                    let m = &mut self.actors[i].mv;
+                    match path {
+                        Some(path) => (m.path, m.field, m.pending) = (path, false, Pending::None),
+                        None => m.pending = Pending::NoWay,
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Whether unit `i`, boxed in, is done waiting (see `pending_step`).
@@ -404,13 +491,18 @@ impl World {
             return false;
         }
         m.waited = false;
-        let next = m.waiting_for;
-        !(m.queue_wait < QUEUE_PATIENCE && next != NONE && self.queue_is_moving(next, i, false))
+        let (next, patient) = (m.waiting_for, m.queue_wait < QUEUE_PATIENCE);
+        !(patient && next != NONE && self.queue_is_moving(next, i, false))
     }
 
     /// WebRA addition: whether unit `i`, starting a move, is boxed in: every
     /// neighbouring cell it may step to is held, and only by friendly units
-    /// that are about to move (`about_to_move`). The front of a crowd drives
+    /// that are about to move (`about_to_move`). A soldier counts as boxed
+    /// in also when those cells have a free sub-cell: stepping in beside
+    /// soldiers of its own crowd gets it nowhere yet, and the searches of
+    /// the soldiers in the middle of a huge crowd (two to a cell in the
+    /// stress test) would hold back the units at its edge for seconds
+    /// (docs/contracts.md "Huge move orders"). The front of a crowd drives
     /// off first and the rows behind follow as cells come free, as they
     /// would anyway: their routes are searched then, not all at once.
     pub(crate) fn boxed_in(&self, i: usize) -> bool {
@@ -427,6 +519,8 @@ impl World {
             if !self.can_step(i, here, c) {
                 continue;
             }
+            // An empty cell, or one with a unit that is not about to move
+            // (a soldier may join idle soldiers there): not boxed in.
             let mut any = false;
             for o in self.others_at(c, i) {
                 if !self.about_to_move(i, o.actor as usize) {
@@ -614,9 +708,18 @@ impl World {
             }
             return Next::End(MoveResult::Blocked);
         };
-        match self.pop_path(i, next, false) {
+        let pop = self.pop_path(i, next, false);
+        self.pop_to_next(i, next, pop)
+    }
+
+    /// What unit `i` standing on its cell point does after `pop_path` (or
+    /// a search that waited for the budget) about `next`, the next cell of
+    /// its route (NONE: look it up).
+    fn pop_to_next(&mut self, i: usize, next: u32, pop: Pop) -> Next {
+        match pop {
             Pop::Next(c, sub) => self.turn_or_go(i, c, sub),
             Pop::Wait => {
+                let next = if next == NONE { self.route_next(i).unwrap_or(NONE) } else { next };
                 self.actors[i].mv.waiting_for = next;
                 Next::Wait
             }
@@ -657,7 +760,7 @@ impl World {
             let m = &mut self.actors[i].mv;
             m.path.clear();
             m.field = false;
-            m.pending = Pending::Search(Blocking::Immovable);
+            self.defer_search(i, Pending::Search(Blocking::Immovable));
             return;
         }
         let dest = self.actors[i].mv.dest;
@@ -825,11 +928,16 @@ impl World {
             return Pop::Wait;
         }
         if self.route_budget_spent() {
-            // The search waits for the next tick.
-            let m = &mut self.actors[i].mv;
-            (m.waited, m.wait) = (true, 0);
+            self.defer_search(i, Pending::Repath);
             return Pop::Wait;
         }
+        self.repath(i)
+    }
+
+    /// The end of Move.PopPath after waiting for a blocker: a way around
+    /// every unit, else `no_way_round`.
+    fn repath(&mut self, i: usize) -> Pop {
+        let dest = self.actors[i].mv.dest;
         if let Some(path) = self.find_path(i, dest, Blocking::All).filter(|p| !p.is_empty()) {
             let first = *path.last().unwrap();
             let m = &mut self.actors[i].mv;
@@ -840,8 +948,12 @@ impl World {
                 None => Pop::Wait,
             };
         }
-        // No way around a blocker that stays, and others wait for this
-        // unit: back out of their way.
+        self.no_way_round(i)
+    }
+
+    /// Move.PopPath without a way round a blocker that stays: when others
+    /// wait for this unit it backs out of their way, else the move ends.
+    fn no_way_round(&mut self, i: usize) -> Pop {
         if self.actors[i].mv.blocking {
             if let Some(c) = self.adjacent_enterable_cell(i, None) {
                 if let Some(sub) = self.available_sub_cell(i, c) {
@@ -933,7 +1045,13 @@ impl World {
     }
 
     /// Step into `cell`, after turning on the spot if the heading is far
-    /// off. The route only loses the cell once the step begins.
+    /// off. The route only loses the cell once the step begins. A cell off
+    /// the route (backing out of the way of others) goes onto it before the
+    /// turn, as OpenRA's Move.Tick adds it to its path before it queues the
+    /// Turn: else the unit would forget it after a tick of turning, wait
+    /// for its old next cell again, and a unit waiting head on for its own
+    /// cell would see it turn (leaving, Move.CellIsEvacuating) and wait on,
+    /// every WaitAverage, for good.
     fn turn_or_go(&mut self, i: usize, cell: u32, sub: u8) -> Next {
         let Some(drive) = self.unit_drive(i) else { return Next::Wait };
         let (x, y) = (self.actors[i].x, self.actors[i].y);
@@ -941,6 +1059,14 @@ impl World {
         if !drive.turn_in_place {
             if let Some(f) = facing_of(target.0 - x, target.1 - y) {
                 if angle_diff(self.actors[i].facing, f).abs() > TURN_ON_THE_SPOT {
+                    if self.route_next(i) != Some(cell) {
+                        let m = &mut self.actors[i].mv;
+                        if m.field {
+                            m.field = false;
+                            m.path.clear();
+                        }
+                        m.path.push(cell);
+                    }
                     return Next::Turn(f);
                 }
             }

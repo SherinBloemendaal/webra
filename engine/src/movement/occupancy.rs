@@ -388,7 +388,6 @@ impl World {
             }
             a.mv.stepped = false;
         }
-        self.search.tick_expanded = 0;
         let cells = self.map.cells();
         self.occupancy.clear(cells);
         let mut snap = Vec::new();
@@ -477,10 +476,30 @@ impl World {
     /// is longer than `QUEUE_DEPTH` cells or ends at a unit that does not
     /// move (an enemy, a unit that gave up, one that stands and fires) does
     /// not move.
-    pub(crate) fn queue_is_moving(&self, cell: u32, i: usize, need_pass: bool) -> bool {
+    pub(crate) fn queue_is_moving(&mut self, cell: u32, i: usize, need_pass: bool) -> bool {
         let _section = crate::profile::scope(crate::profile::Section::Queues);
+        // A cell was passed in this walk when its mark is the walk's stamp.
+        let mut marks = std::mem::take(&mut self.search.queue_marks);
+        if marks.len() != self.map.cells() {
+            marks = vec![0; self.map.cells()];
+            self.search.queue_stamp = 0;
+        }
+        self.search.queue_stamp = self.search.queue_stamp.wrapping_add(1);
+        if self.search.queue_stamp == 0 {
+            marks.iter_mut().for_each(|m| *m = 0);
+            self.search.queue_stamp = 1;
+        }
+        let moving = self.queue_walk(cell, i, need_pass, &mut marks, self.search.queue_stamp);
+        self.search.queue_marks = marks;
+        moving
+    }
+
+    /// The walk of `queue_is_moving`; `marks[c] == stamp` for passed cells.
+    fn queue_walk(&self, cell: u32, i: usize, need_pass: bool, marks: &mut [u32], stamp: u32) -> bool {
         let me = self.actors[i].mv.to;
         let mut seen = vec![me, cell];
+        marks[me as usize] = stamp;
+        marks[cell as usize] = stamp;
         let mut c = cell;
         let mut making_way = false;
         loop {
@@ -506,9 +525,10 @@ impl World {
                 // Everybody here is leaving (or nobody is left).
                 return !(need_pass || making_way) || seen.iter().any(|&c| self.pass_cell(i, c));
             }
-            if seen.contains(&next) || seen.len() > QUEUE_DEPTH {
+            if marks[next as usize] == stamp || seen.len() > QUEUE_DEPTH {
                 return false;
             }
+            marks[next as usize] = stamp;
             seen.push(next);
             c = next;
         }

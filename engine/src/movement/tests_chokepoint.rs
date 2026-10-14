@@ -255,3 +255,152 @@ fn a_huge_move_order_is_deterministic() {
     };
     assert_eq!(run(), run());
 }
+
+/// A soldier of a huge order counts as boxed in when the cells around it
+/// hold only units of its own crowd that are about to move, even with a
+/// free sub-cell beside them; once the soldiers in one of those cells are
+/// idle (not about to move), it may join them and searches at once.
+#[test]
+fn a_soldier_beside_idle_soldiers_is_not_boxed_in() {
+    let mut w = stress(2000);
+    w.step();
+    let wd = w.map.width;
+    let soldier_cell = |w: &World, c: u32, u: usize| {
+        let o: Vec<usize> = w.others_at(c, u).map(|o| o.actor as usize).collect();
+        (!o.is_empty() && o.len() < 5 && o.iter().all(|&j| w.shares_cell(j))).then_some(o)
+    };
+    // A boxed-in soldier with a neighbouring cell of soldiers that has room.
+    let (u, beside) = (0..w.actors.len())
+        .filter(|&u| w.actors[u].alive && w.shares_cell(u) && w.actors[u].mv.pending == Pending::Boxed)
+        .find_map(|u| {
+            let c = w.actors[u].mv.to as i32;
+            crate::flowfield::DIRS.iter().find_map(|&(dx, dy)| {
+                let n = ((c / wd + dy) * wd + c % wd + dx) as u32;
+                soldier_cell(&w, n, u).map(|o| (u, o))
+            })
+        })
+        .expect("a boxed-in soldier beside soldiers with room");
+    // The same game with those soldiers left idle.
+    let mut w = stress(2000);
+    for &j in &beside {
+        w.actors[j].activity = Activity::Idle;
+    }
+    w.step();
+    assert_ne!(w.actors[u].mv.pending, Pending::Boxed, "soldier {u} may join the idle soldiers {beside:?}");
+}
+
+/// The searches that wait for the tick's budget are served the oldest
+/// first (`World::serve_deferred_searches`): none waits longer than one
+/// asked for after it, and none waits long, in the first ticks of the
+/// stress test with 20,000 units, where the budget holds back thousands of
+/// searches for a dozen ticks. Without that order, units at both ends of
+/// the actor list take the budget and the ones between wait.
+#[test]
+fn deferred_route_searches_are_served_oldest_first() {
+    let mut w = stress(20_000);
+    let n = w.actors.len();
+    let (mut since, mut served) = (vec![None; n], Vec::new());
+    for t in 1..=150u32 {
+        w.step();
+        for (a, since) in w.actors.iter().zip(since.iter_mut()) {
+            let waiting = matches!(a.mv.pending, Pending::Search(_) | Pending::Repath);
+            match (waiting, *since) {
+                (true, None) => *since = Some(a.mv.pending_since),
+                (false, Some(s)) => {
+                    served.push((s, t));
+                    *since = None;
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(served.iter().any(|&(s, _)| s > 1), "searches waited in more than one tick");
+    assert!(since.iter().all(|s| s.is_none()), "every waiting search was served");
+    served.sort();
+    assert!(served.windows(2).all(|p| p[0].1 <= p[1].1), "served in the order they waited");
+    let longest = served.iter().map(|&(s, t)| t - s).max().unwrap();
+    assert!(longest <= 25, "a search waited {longest} ticks");
+}
+
+/// Two tanks each ordered to the other's cell, head on in a lane one cell
+/// wide and side by side in the open: each waits for a cell the other
+/// holds, a queue that leads back to itself (`queue_is_moving`), so
+/// neither waits for ever: both moves end (arrived, or given up) and the
+/// units stand idle. In the lane, also as part of a huge order, whose
+/// units wait in moving queues in the open too.
+#[test]
+fn units_wanting_each_others_cells_never_wait_for_ever() {
+    let swap = |lane: bool, huge: bool| {
+        let mut w = world_on(MovementModel::OpenRA, wall_map(1, false));
+        let (a, b) = if lane { ((42, 20), (49, 20)) } else { ((20, 30), (21, 30)) };
+        let ua = tank(&mut w, 0, a.0, a.1);
+        let ub = tank(&mut w, 0, b.0, b.1);
+        for (u, to) in [(ua, b), (ub, a)] {
+            let ids = vec![w.make_ref(u)];
+            w.queue_order(Order::Move { player: 0, ids, x: cell_center(to.0), y: cell_center(to.1), attack_move: false });
+        }
+        w.step();
+        if huge {
+            for u in [ua, ub] {
+                w.actors[u].group_size = 1000;
+            }
+        }
+        for _ in 0..25 * 90 {
+            w.step();
+            if [ua, ub].iter().all(|&u| w.actors[u].activity == Activity::Idle && !w.actors[u].moved) {
+                return true;
+            }
+        }
+        let state: Vec<_> =
+            [ua, ub].iter().map(|&u| (cell(&w, u), w.actors[u].activity, w.actors[u].mv.result, w.actors[u].mv.pending)).collect();
+        panic!("lane {lane}, huge {huge}: still busy after 90 s: {state:?}");
+    };
+    for (lane, huge) in [(true, false), (true, true), (false, false), (false, true)] {
+        assert!(swap(lane, huge));
+    }
+}
+
+/// The trace of work/attackrange: two tanks head on in a lane one cell
+/// wide, sent past each other (attacks on the ground beyond, whose moves
+/// try again after a block, and plain move orders). Each waits for the
+/// other's cell; the one asked to make way backs out (Move.PopPath with
+/// Mobile.IsBlocking). Before, it forgot the cell it backed out to while it
+/// turned toward it, and the other, seeing it turn (leaving, OpenRA
+/// CellIsEvacuating), waited on, every WaitAverage, for 35 seconds and
+/// more. Now neither stands with its move under way for long.
+#[test]
+fn a_unit_backing_out_of_a_lane_does_not_stall_the_other() {
+    for attack in [true, false] {
+        let mut map = wall_map(1, false);
+        for y in 0..H {
+            for x in 0..W {
+                let open = y == 20 && (2..62).contains(&x);
+                map.terrain[(y * W + x) as usize] = if open { Terrain::Clear } else { Terrain::Rock };
+            }
+        }
+        let mut w = world_on(MovementModel::OpenRA, map);
+        let (a, b) = (tank(&mut w, 0, 20, 20), tank(&mut w, 0, 24, 20));
+        for (u, x) in [(a, 60), (b, 3)] {
+            let (ids, y) = (vec![w.make_ref(u)], cell_center(20));
+            w.queue_order(if attack {
+                Order::AttackGround { player: 0, ids, x: cell_center(x), y }
+            } else {
+                Order::Move { player: 0, ids, x: cell_center(x), y, attack_move: false }
+            });
+        }
+        // Ticks each stood on one cell with its move under way.
+        let (mut stood, mut longest) = ([0u32; 2], [0u32; 2]);
+        let mut at = [cell(&w, a), cell(&w, b)];
+        for _ in 0..25 * 120 {
+            w.step();
+            for (k, &u) in [a, b].iter().enumerate() {
+                let m = &w.actors[u].mv;
+                let here = cell(&w, u);
+                stood[k] = if here == at[k] && m.stepped && m.result == crate::movement::MoveResult::InProgress { stood[k] + 1 } else { 0 };
+                at[k] = here;
+                longest[k] = longest[k].max(stood[k]);
+            }
+        }
+        assert!(longest.iter().all(|&t| t <= 25 * 8), "attack {attack}: stood with a move under way for {longest:?} ticks");
+    }
+}

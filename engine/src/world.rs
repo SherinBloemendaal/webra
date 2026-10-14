@@ -2655,6 +2655,9 @@ impl World {
         // The spectator view flag is render only (observer.rs).
         debug_assert!(!self.render_all, "render_all set while the simulation runs");
         self.tick += 1;
+        // This tick's route search budget (movement/search.rs), in either
+        // movement model.
+        self.search.tick_expanded = 0;
         let mut section = crate::profile::scope(crate::profile::Section::TickStart);
         let strike = self.env.tick(self.tick, self.map.width, self.map.height);
         for a in self.actors.iter_mut() {
@@ -2712,6 +2715,9 @@ impl World {
         // Delayed shots, C4, outages, sonar pulses, captures (infantry.rs).
         self.tick_infantry_world();
         section.next(crate::profile::Section::Units);
+        // Route searches that waited for the budget, the oldest first
+        // (movement/cellmove.rs).
+        self.serve_deferred_searches();
         self.tick_units();
         section.next(crate::profile::Section::Projectiles);
         self.tick_projectiles();
