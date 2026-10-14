@@ -1946,10 +1946,18 @@ at one frame per tick (every RA make sequence is `Length: *` at Tick 40);
 read once from Red Alert's files (and OpenRA's own `mods/ra/bits`, which
 override files of the same name) by `node tools/make-frames.mjs <files>`
 (it prints file names and frame counts only). The tileset variants have
-the same counts, so the time does not depend on the map. Not modelled:
-OpenRA's reverse make animation before a structure is sold or packs up,
-the ConyardChronoReturn of a chronoshifted MCV, and
-TransformsIntoTransforms (a pack-up order queued while being built).
+the same counts, so the time does not depend on the map.
+
+Packing up (OpenRA Transform on the Construction Yard): the pack-up order
+plays the make animation backwards first. From the order's tick the yard
+is `build-incomplete` again for `make_ticks` ticks (`unmake_at`, in the
+state hash; no selling, no capture, no second pack-up: the activity cannot
+be interrupted), and in the tick `make_ticks` after the order it turns into
+the MCV (production.rs `tick_pack_up`). Should the MCV no longer fit then,
+the yard plays its make animation forwards again and stays (OpenRA
+Transform.DoTransform). Not modelled: OpenRA's reverse make animation
+before a structure is sold, the ConyardChronoReturn of a chronoshifted MCV,
+and TransformsIntoTransforms (a pack-up order queued while being built).
 
 ### Pilots (`engine/src/plane.rs` `eject_pilot`)
 
@@ -2802,7 +2810,9 @@ harvester leaving the refinery played backwards), 15 the second stand
 sequence and 16, 17 the idle animations of a standing soldier (`age` = ticks
 into the animation), 18 to 23 death sequences die1 to die6 and 24 a crushed
 body (`age` = ticks since the death), 25 a soldier's second attack sequence
-(AttackSequences: picked per shot, Tanya's shoot-right). Dying soldiers are drawn with their
+(AttackSequences: picked per shot, Tanya's shoot-right), 26 a Construction
+Yard packing up (the make animation backwards, `age` = ticks since the
+pack-up order; art without one fades out). Dying soldiers are drawn with their
 death sequences only for actor types `Game.set_death_art(types, ticks)`
 names (the atlas's `deaths`; `ticks`, the atlas's `deathTicks`, has eight
 lengths per type: die1..die6, crushed and the longest idle animation, so a

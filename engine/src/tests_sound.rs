@@ -220,7 +220,9 @@ fn deploying_and_packing_up_report_the_transform() {
     events(&mut w);
     let r = w.make_ref(fact);
     w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
-    run(&mut w, 1);
+    // The reverse make animation plays first (OpenRA Transform).
+    let make = w.rules.actors[fact_t as usize].building.as_ref().unwrap().make_ticks;
+    run(&mut w, make + 1);
     let ev = events(&mut w);
     let t = ev.iter().find(|e| e[0] == K::Transformed as i32).expect("packed up");
     assert_eq!(*t, [K::Transformed as i32, fact_t, fx, fy, 0, mcv_t], "yard into MCV, where the yard stood");

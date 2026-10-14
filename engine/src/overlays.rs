@@ -554,8 +554,9 @@ impl World {
         let slot = a.ty as u32 * 2 + 1;
         let sprite = if still >= POSE_STRIDE && self.render_opts.poses {
             match self.building_pose(i) {
-                // OpenRA shows the layer once the structure is built.
-                (Pose::Make, _) => return,
+                // OpenRA shows the layer once the structure is built (and
+                // hides it again while a Construction Yard packs up).
+                (Pose::Make | Pose::Unmake, _) => return,
                 // A working animation of the layer, played from its start (fx.rs:
                 // WebRA's missile silo hatch opening for a launch).
                 (pose @ (Pose::Active | Pose::DamagedActive), age) => posed(slot, pose, age),

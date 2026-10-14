@@ -389,7 +389,17 @@ export function poseTable(have, { wall = false, door = false, level = false, act
   poses[POSE.DAMAGED_ACTIVE] = have['damaged-active'] ? working(have['damaged-active']) : have.active ? poses[POSE.ACTIVE] : poses[POSE.DAMAGED];
   poses[POSE.PARACHUTE] = have.parachute ? have.parachute.loop : poses[POSE.IDLE];
   poses[POSE.ACTIVE_END] = have['active-end'] ? have['active-end'].once : poses[POSE.IDLE];
+  // A Construction Yard packing up plays its make animation backwards
+  // (OpenRA WithMakeAnimation.Reverse), once from the age.
+  poses[POSE.UNMAKE] = have.make ? backwards(have.make.once) : main(idle);
   return poses;
+}
+
+/** A pose descriptor with the frames of each facing in reverse order. */
+function backwards(d) {
+  const frames = [];
+  for (let f = 0; f < d.facings; f++) frames.push(...d.frames.slice(f * d.length, (f + 1) * d.length).reverse());
+  return { ...d, frames };
 }
 
 /** Module order of the special slots after SPECIALS (js/sprites.js spriteList, engine/src/render.rs SpriteIds). */

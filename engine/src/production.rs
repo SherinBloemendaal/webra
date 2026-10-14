@@ -820,6 +820,13 @@ impl World {
         if self.actors[i].kind == Kind::Building && (self.being_captured(i) || self.make_gates(i).transform) {
             return false;
         }
+        self.deploy_spot_free(i)
+    }
+
+    /// Whether the new form of actor `i` fits where it would appear (OpenRA
+    /// Transforms.CanDeploy, also checked when a packing yard's reverse make
+    /// animation ends).
+    fn deploy_spot_free(&self, i: usize) -> bool {
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let a = &self.actors[i];
         match &self.rules.actors[into as usize].building {
@@ -845,13 +852,57 @@ impl World {
         })
     }
 
+    /// Deploy an MCV, or start packing up a Construction Yard: OpenRA's
+    /// Transform plays the yard's make animation backwards first (granting
+    /// build-incomplete again; the activity cannot be interrupted any more),
+    /// and only when it ended does the MCV appear (`tick_pack_up`).
     pub fn deploy(&mut self, i: usize) -> bool {
-        let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);
+        if self.actors[i].unmake_at > 0 {
+            return false; // already packing up: uninterruptible
+        }
+        // Nothing to turn into: nothing to report.
+        if self.deploy_target(i).is_none() {
+            return false;
+        }
         if !self.can_deploy(i) {
             self.sound.push(SoundEventKind::DeployBlocked, from as i32, x, y, owner, 0);
             return false;
         }
+        let make = self.rules.actors[from as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        if self.actors[i].kind == Kind::Building && make > 0 {
+            let a = &mut self.actors[i];
+            a.unmake_at = self.tick + make;
+            a.make_until = a.unmake_at;
+            return true;
+        }
+        self.transform_now(i)
+    }
+
+    /// Packing Construction Yards whose reverse make animation ended: they
+    /// turn into the MCV, or, when it no longer fits, play the make
+    /// animation forwards again and stay (OpenRA Transform.DoTransform).
+    pub(crate) fn tick_pack_up(&mut self) {
+        for i in 0..self.actors.len() {
+            let a = &self.actors[i];
+            if !a.alive || a.unmake_at == 0 || self.tick < a.unmake_at {
+                continue;
+            }
+            self.actors[i].unmake_at = 0;
+            if self.deploy_spot_free(i) {
+                self.transform_now(i);
+            } else {
+                let (ty, x, y, owner) = (self.actors[i].ty as i32, self.actors[i].x, self.actors[i].y, self.actors[i].owner);
+                self.sound.push(SoundEventKind::DeployBlocked, ty, x, y, owner, 0);
+                self.begin_make(i);
+            }
+        }
+    }
+
+    /// Turn actor `i` into its other form at once.
+    fn transform_now(&mut self, i: usize) -> bool {
+        let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
+        let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);
         let facing = self.rules.actors[from as usize].abilities.transforms.as_ref().unwrap().facing;
         let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[from as usize].hp as i64);
         // The new form first: should it not fit after all, the old one stays.

@@ -469,7 +469,9 @@ fn naval_bots_keep_every_ship_on_water() {
     // ticks in a 12 minute game, the only build-incomplete gate the bots
     // meet; no order of theirs is refused), which changes their target
     // scans and the game from then on. Ships built in 12 minutes by the 4
-    // bots, seeds 1 to 8, without the make time and with it: islands 7/3,
+    // Hard Naval bots of this test (96 cell maps), seeds 1 to 8, without
+    // the make time and with it (Construction Yards packing up backwards
+    // included; the same numbers): islands 7/3,
     // 2/0, 0/0, 2/2, 0/2, 4/4, 4/2, 0/0; rivers 2/2, 1/0, 3/0, 3/2, 6/4,
     // 2/2, 3/4, 8/7. First naval yard (seconds): islands 359/361, 441/695,
     // 708/none, 401/426, 647/390, 366/374, 388/411, 417/491; rivers

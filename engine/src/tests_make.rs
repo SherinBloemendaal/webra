@@ -179,3 +179,72 @@ fn the_make_time_is_simulation_state_the_same_for_everyone() {
     w.actors[p].make_until += 1;
     assert_ne!(w.state_hash(), h);
 }
+
+/// Packing up (OpenRA Transform on the Construction Yard): the make
+/// animation plays backwards first, uninterruptible, with build-incomplete
+/// granted again (no selling, no capture), and the MCV appears when it
+/// ended; the renderer shows the reverse make pose meanwhile.
+#[test]
+fn a_construction_yard_packs_up_by_playing_its_make_animation_backwards() {
+    use crate::render::Pose;
+    let mut w = world();
+    w.options.redeployable_mcv = true;
+    let fact = ty(&w, "FACT");
+    let mcv = ty(&w, "MCV");
+    let yard =
+        (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].ty == fact && w.actors[i].owner == 0).expect("a starting yard");
+    while w.tick < 5 {
+        w.step();
+    }
+    let e6 = w.spawn_unit(ty(&w, "E6"), 1, cell_center(w.actors[yard].cx - 2), cell_center(w.actors[yard].cy), 0);
+    assert!(w.can_capture(e6, yard) && w.can_sell(yard), "built: sellable and capturable");
+    let r = w.make_ref(yard);
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    w.step();
+    let start = w.tick;
+    let n = make_ticks(&w, "FACT");
+    assert_eq!(w.actors[yard].unmake_at, start + n);
+    assert!(w.build_incomplete(yard));
+    assert!(!w.can_sell(yard) && !w.can_capture(e6, yard) && !w.can_deploy(yard), "build-incomplete again");
+    assert_eq!(w.building_pose(yard), (Pose::Unmake, 0));
+    // Another pack-up order or a sale changes nothing (uninterruptible).
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    w.queue_order(Order::Sell { player: 0, building: r });
+    w.step();
+    assert_eq!((w.actors[yard].unmake_at, w.building_pose(yard)), (start + n, (Pose::Unmake, 1)));
+    while w.tick + 1 < start + n {
+        w.step();
+        assert!(w.actors[yard].alive, "still packing at {}", w.tick - start);
+    }
+    assert_eq!(w.actors.iter().filter(|a| a.alive && a.ty == mcv && a.owner == 0).count(), 0);
+    w.step();
+    assert!(!w.actors[yard].alive, "the yard is gone");
+    assert_eq!(w.actors.iter().filter(|a| a.alive && a.ty == mcv && a.owner == 0).count(), 1, "the MCV appeared {n} ticks after the order");
+}
+
+#[test]
+fn a_yard_whose_mcv_no_longer_fits_unfolds_again() {
+    let mut w = world();
+    w.options.redeployable_mcv = true;
+    let fact = ty(&w, "FACT");
+    let yard = placed(&mut w, "FACT", 0, 30, 20);
+    while w.build_incomplete(yard) {
+        w.step();
+    }
+    let r = w.make_ref(yard);
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    w.step();
+    let end = w.actors[yard].unmake_at;
+    assert!(w.deploy_target(yard).is_some_and(|(_, cx, cy)| w.map.contains(cx, cy)));
+    while w.tick + 1 < end {
+        w.step();
+    }
+    // The MCV's cell is off the map now (OpenRA Transforms.CanDeploy fails at the end).
+    let saved = w.rules.actors[fact as usize].abilities.transforms.clone().unwrap();
+    w.rules.actors[fact as usize].abilities.transforms.as_mut().unwrap().offset = vec![-100, -100];
+    w.step();
+    assert!(w.actors[yard].alive, "stays a yard");
+    assert_eq!(w.actors[yard].unmake_at, 0);
+    assert_eq!(w.actors[yard].make_until, w.tick + make_ticks(&w, "FACT"), "unfolds again (OpenRA makeAnimation.Forward)");
+    w.rules.actors[fact as usize].abilities.transforms = Some(saved);
+}

@@ -202,6 +202,11 @@ pub struct Actor {
     /// a script; map actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
     /// Simulation state (state hash).
     pub make_until: u32,
+    /// A Construction Yard packing up (OpenRA Transform: the make animation
+    /// played backwards, uninterruptible, then the MCV): the tick it turns
+    /// into the MCV, 0 when not packing (production.rs `tick_pack_up`).
+    /// Simulation state (state hash).
+    pub unmake_at: u32,
     /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
     pub fx: crate::fx::ActorFx,
 
@@ -308,6 +313,7 @@ impl Actor {
             rank_heal_timer: 0,
             born: 0,
             make_until: 0,
+            unmake_at: 0,
             fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
@@ -2598,6 +2604,8 @@ impl World {
         }
         self.retarget_memo.clear();
         self.apply_orders();
+        // Construction Yards whose reverse make animation ended turn into MCVs (production.rs).
+        self.tick_pack_up();
         if self.tokens_dirty {
             self.refresh_tokens();
         }
@@ -2702,8 +2710,9 @@ impl World {
                 }
                 mix(a.repair_ticks as i64);
                 mix(a.powered_off as i64);
-                // The make animation's build-incomplete condition.
+                // The make animation's build-incomplete condition, forwards and back.
                 mix(a.make_until as i64);
+                mix(a.unmake_at as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);

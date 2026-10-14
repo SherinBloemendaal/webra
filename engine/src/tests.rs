@@ -476,6 +476,10 @@ fn mcv_deploys_and_the_yard_packs_up_again() {
     }
     let r = w.make_ref(fact);
     w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    // The make animation backwards first (OpenRA Transform), then the MCV.
+    let make = w.rules.actors[fact_t as usize].building.as_ref().unwrap().make_ticks;
+    run(&mut w, make);
+    assert_eq!(count(&w, 0, "MCV"), 0, "still packing up");
     run(&mut w, 1);
     assert!(!w.has_producer(0, QueueType::Building), "yard packed up");
     assert_eq!(count(&w, 0, "MCV"), 1);

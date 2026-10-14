@@ -170,6 +170,10 @@ pub enum Pose {
     /// lists several, OpenRA picks one per shot: Tanya's shoot-left and
     /// shoot-right; infantry_render.rs `infantry_attack_pose`).
     Attack2 = 25,
+    /// A Construction Yard packing up: the make animation played backwards
+    /// (OpenRA Transform, WithMakeAnimation.Reverse), `age` = ticks since
+    /// it started.
+    Unmake = 26,
 }
 
 impl Pose {
@@ -278,8 +282,13 @@ impl World {
             // fading in over the make time instead.
             if self.tick < a.make_until && !self.render_opts.has_make_art(a.ty) {
                 let total = self.rules.actors[a.ty as usize].building.as_ref().map_or(1, |b| b.make_ticks.max(1));
-                let done = (self.tick - a.born + 1).min(total);
-                alpha *= MAKE_FADE_FROM + (1.0 - MAKE_FADE_FROM) * done as f32 / total as f32;
+                let done = if a.unmake_at > 0 {
+                    // Packing up: fading out again.
+                    a.unmake_at - self.tick
+                } else {
+                    (self.tick - a.born + 1).min(total)
+                };
+                alpha *= MAKE_FADE_FROM + (1.0 - MAKE_FADE_FROM) * done.min(total) as f32 / total as f32;
             }
             // Bridges show the template of their state (bridges.rs).
             let body = self.bridge_sprite(i).unwrap_or_else(|| self.body_sprite(i, a.ty as u32 * 2));
@@ -742,6 +751,11 @@ impl World {
         let damaged = self.heavily_damaged(i);
         if info.is_wall() {
             return (if damaged { Pose::Damaged } else { Pose::Idle }, self.wall_connections(i));
+        }
+        // Packing up: the make animation backwards until the MCV appears.
+        if a.unmake_at > 0 {
+            let total = self.rules.actors[a.ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+            return (Pose::Unmake, self.tick.saturating_sub(a.unmake_at.saturating_sub(total)));
         }
         // The make animation (OpenRA WithMakeAnimation) for as long as the
         // rules say (`make_until`, the simulation's build-incomplete time).

@@ -400,39 +400,52 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 
 /// Generated maps where fleets used to pile up idle: in 15 minutes on 64
 /// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
-/// idle without a target, a Turtle AI on islands (seed 3) 12. Now no
-/// fleet idles that large.
+/// idle without a target, a Turtle AI on islands (seed 3) 12: the fleets
+/// never set out, every ship built joined the idle squad (dc028b5). Now
+/// fleets go after what they can reach.
 ///
-/// The river game is seed 4 since structures wait for their make animation
-/// (build-incomplete): that briefly pauses new defences (the only gate the
-/// bots meet; they never order a sale, capture or pack-up that is refused),
-/// which changes their target scans and so the whole game from then on.
-/// Most idle ships and largest fleet, seeds 1 to 8, without the make time
-/// and with it: 3/4 and 1/4, 2/2 and 2/3, 4/6 and 8/11, 4/4 and 3/5, 0/0
-/// and 1/2, 0/0 and 1/1, 4/6 and 6/7, 0/0 and 1/2. Seed 3 now builds an 11
-/// ship fleet of which 8 wait at the worst moment; the idle share stays
-/// what it was.
+/// Rivers, seed 3, two Normal Naval bots: the fleet is measured by its idle
+/// share, not an absolute count, because how big it grows depends on the
+/// rest of the game (structures waiting for their make animation changed
+/// it: before, at most 4 of 6 ships idled; now the largest fleet has 8
+/// ships, all 8 idle at the worst moment, but in the 11351 player-ticks
+/// with a fleet of 6 or more 0.47 of its ships idle on average). A fleet
+/// that never sets out idles with all its ships all the time (share 1).
+/// Islands, seed 3, two Normal Turtle bots: at most 3 ships idle (fleet of
+/// 3; 12 before the fix).
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::mapgen::MapStyle;
     use crate::world::{GameOptions, PlayerSetup};
-    for (style, seed, bot) in [(MapStyle::Rivers, 4u64, BotType::Naval), (MapStyle::Islands, 3, BotType::Turtle)] {
+    for (style, seed, bot) in [(MapStyle::Rivers, 3u64, BotType::Naval), (MapStyle::Islands, 3, BotType::Turtle)] {
         let factions = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
         let players: Vec<PlayerSetup> =
             (0..2).map(|k| PlayerSetup { bot, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
         let mut w = World::with_options(seed, 64, &players, GameOptions { map_style: style, ..GameOptions::default() });
-        let mut idle_most = 0;
+        let (mut idle_most, mut big_ticks, mut big_idle, mut big_ships) = (0, 0, 0, 0);
         for _ in 0..25 * 60 * 15 {
             w.step();
             for p in 0..2 {
-                idle_most = idle_most.max(naval_report(&w, p).idle_ships);
+                let r = naval_report(&w, p);
+                idle_most = idle_most.max(r.idle_ships);
+                if r.ships >= 6 {
+                    big_ticks += 1;
+                    big_idle += r.idle_ships;
+                    big_ships += r.ships;
+                }
             }
             if w.winner.is_some() {
                 break;
             }
         }
-        // Before: 20 and 12.
-        assert!(idle_most <= 6, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle without a target");
+        let what = format!("{style:?} seed {seed} {bot:?}");
+        if style == MapStyle::Rivers {
+            // A real fleet for a good while, and not idling as a whole.
+            assert!(big_ticks >= 25 * 60, "{what}: a fleet of 6 or more for {big_ticks} player-ticks");
+            assert!(big_idle * 10 <= big_ships * 6, "{what}: {big_idle} of {big_ships} ship-ticks idle without a target");
+        } else {
+            assert!(idle_most <= 6, "{what}: {idle_most} ships idle without a target");
+        }
     }
 }
 

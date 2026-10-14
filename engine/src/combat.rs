@@ -59,12 +59,11 @@ impl World {
         }
     }
 
-    /// Structures that need power (Tesla Coil, AA, superweapons) shut down on
-    /// low power, and so does a structure its owner switched off with the
-    /// power down button (repair.rs; OpenRA's `disabled` condition).
-    /// Whether structure `i` still plays its make animation (OpenRA
-    /// WithMakeAnimation's `build-incomplete` condition): placed this game,
-    /// through `building.make_ticks` ticks (world.rs `make_until`).
+    /// Whether structure `i` plays its make animation now (OpenRA
+    /// WithMakeAnimation's `build-incomplete` condition), forwards after it
+    /// was placed, deployed from an MCV or created by a script
+    /// (`World::begin_make`), or backwards while a Construction Yard packs
+    /// up (`World::deploy`), until `make_until` (world.rs).
     pub fn build_incomplete(&self, i: usize) -> bool {
         let a = &self.actors[i];
         a.make_until > 0 && self.tick <= a.make_until
@@ -79,6 +78,9 @@ impl World {
         self.rules.actors[self.actors[i].ty as usize].building.as_ref().map_or_else(Default::default, |b| b.make_gates)
     }
 
+    /// Structures that need power (Tesla Coil, AA, superweapons) shut down on
+    /// low power, and so does a structure its owner switched off with the
+    /// power down button (repair.rs; OpenRA's `disabled` condition).
     pub fn is_powered_down(&self, i: usize) -> bool {
         let a = &self.actors[i];
         a.powered_off

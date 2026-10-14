@@ -70,8 +70,10 @@ export const POSE = Object.freeze({
   CRUSHED: 24,
   // A soldier's second attack sequence (AttackSequences: OpenRA picks one per shot).
   ATTACK2: 25,
+  /** A Construction Yard packing up: the make animation backwards (OpenRA Transform), once from the age. */
+  UNMAKE: 26,
 });
-export const POSE_COUNT = 26;
+export const POSE_COUNT = 27;
 /** Sprite ids carry the pose: id = slot + POSE_STRIDE * (pose + POSE_CODES * age). */
 export const POSE_STRIDE = 4096;
 export const POSE_CODES = 32;
