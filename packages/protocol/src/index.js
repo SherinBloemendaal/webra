@@ -129,6 +129,7 @@ export {
   REPLAY_TITLE_MAX,
   REPLAY_VERSION,
   replayOptions,
+  replaySummary,
   SAVE_SLOTS_MAX,
   validateReplay,
 } from './replay.js';

@@ -98,6 +98,29 @@ jobs:
             echo "No apps/server/migrations directory, skipping."
           fi
 
+      # Replays in accounts live in the R2 bucket bound as REPLAYS
+      # (wrangler.jsonc r2_buckets; apps/server/test/replays.test.mjs keeps
+      # the name here in step). The Worker cannot deploy with a binding to a
+      # missing bucket, so it is created once, here, before the deploy; on
+      # every later run it exists and nothing changes. The API token needs
+      # "Workers R2 Storage: Edit" (docs/deploy.md).
+      - name: Create the replays R2 bucket when missing
+        working-directory: apps/server
+        run: |
+          bucket=webra-replays
+          if npx --no-install wrangler r2 bucket info "$bucket" >/dev/null 2>&1; then
+            echo "R2 bucket $bucket exists."
+          elif out=$(npx --no-install wrangler r2 bucket create "$bucket" 2>&1); then
+            echo "$out"
+            echo "Created R2 bucket $bucket."
+          elif echo "$out" | grep -qi 'already exists'; then
+            echo "R2 bucket $bucket exists."
+          else
+            echo "$out"
+            echo "::error::Could not create the R2 bucket $bucket (the API token needs Workers R2 Storage: Edit, docs/deploy.md)."
+            exit 1
+          fi
+
       # Releases, source files and deploy markers in Sentry need an org auth
       # token (secret SENTRY_AUTH_TOKEN) and the variables SENTRY_ORG and
       # SENTRY_PROJECT; without the token these steps are skipped.

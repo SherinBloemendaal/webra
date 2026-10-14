@@ -107,6 +107,25 @@ export const ONLINE_SAVES_PER_ACCOUNT = 20;
 export const ONLINE_SAVE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const SAVE_ID_RE = /^[0-9a-f]{16}$/;
 
+// ---- Replays in accounts --------------------------------------------------------------
+
+/**
+ * Replays kept in a player's account (docs/accounts-api.md 5.10): every game
+ * the signed-in player finishes or leaves is uploaded while the account
+ * setting `privacy.cloudReplays` is on. At most ACCOUNT_REPLAYS_MAX replays
+ * and ACCOUNT_REPLAYS_BYTES_MAX stored bytes (gzip) per account, the oldest
+ * removed first when a new one does not fit; each one is deleted
+ * ACCOUNT_REPLAY_RETENTION_MS after its upload.
+ */
+export const ACCOUNT_REPLAYS_MAX = 100;
+export const ACCOUNT_REPLAYS_BYTES_MAX = 100 * 1024 * 1024;
+export const ACCOUNT_REPLAY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+/** Largest replay file one upload may carry (UTF-8 bytes, before compression). */
+export const ACCOUNT_REPLAY_MAX_BYTES = 16 * 1024 * 1024;
+/** How the game ended for the uploader: `left` the player left before the end, `spectated` a spectator's replay. */
+export const ACCOUNT_REPLAY_RESULTS = ['won', 'lost', 'left', 'spectated', 'unknown'];
+export const ACCOUNT_REPLAY_ID_RE = /^[0-9a-f]{16}$/;
+
 // ---- Lobby maps -----------------------------------------------------------------------
 
 /**

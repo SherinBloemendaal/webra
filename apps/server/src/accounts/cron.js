@@ -10,6 +10,7 @@ import { purgeStatements } from './routes-admin.js';
 import { IP_RETENTION_MS, SESSION_IDLE_MS } from './sessions.js';
 import { DELETED_RETENTION_MS, softDeleteStatement } from './users.js';
 import { effective, loadSite } from './site.js';
+import { deleteAccountReplaysStatement, expireReplays } from './replays.js';
 
 export const PRESENCE_RETENTION_MS = 24 * 60 * 60 * 1000;
 /**
@@ -47,6 +48,8 @@ export async function runRetention(env, now = Date.now()) {
     mapAliases: await run('DELETE FROM map_aliases WHERE hash NOT IN (SELECT hash FROM maps)'),
     expiredSignups: 0,
     purged: 0,
+    replays: 0,
+    replayObjects: 0,
   };
   out.expiredSignups = await expireUnconfirmedSignups(env, now);
   // Maps stored before a format version change: upgraded in batches (reads upgrade them too).
@@ -62,6 +65,11 @@ export async function runRetention(env, now = Date.now()) {
     ]);
     out.purged++;
   }
+  // Replays in accounts: 30 days after their upload; then the files of every removed replay
+  // (expired, deleted, or of an account deleted or purged above) leave the bucket.
+  const replays = await expireReplays(env, now);
+  out.replays = replays.expired;
+  out.replayObjects = replays.objects;
   await pruneQuotas(db, now);
   await pruneSessions(db, now);
   return out;
@@ -94,6 +102,7 @@ export async function expireUnconfirmedSignups(env, now = Date.now()) {
       softDeleteStatement(db, id, now, { clearEmail: true, onlyStatus: 'pending_email' }),
       db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(id),
       db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(id),
+      deleteAccountReplaysStatement(db, id),
       auditStatement(
         db,
         { actor: null, action: 'user.expire', targetType: 'user', targetId: id, targetLabel: username, before: { status: 'pending_email' }, after: { status: 'deleted' }, reason: 'Email address not confirmed within 7 days' },

@@ -79,6 +79,12 @@ dispatch (Actions, Deploy, Run workflow):
    and from `apps/server`:
    - `npx wrangler d1 migrations apply webra --remote`, only when
      `apps/server/migrations` exists
+   - creates the R2 bucket `webra-replays` (replays in accounts, binding
+     `REPLAYS` in `wrangler.jsonc`) when it is missing: `wrangler r2 bucket
+     info` first, `wrangler r2 bucket create` only when that fails, and an
+     "already exists" answer counts as success, so the step changes nothing
+     once the bucket exists. It runs before the deploy because a Worker
+     cannot deploy with a binding to a missing bucket.
    - with the secret `SENTRY_AUTH_TOKEN`: create the Sentry release and upload
      the JavaScript sources and source maps (skipped without it)
    - `npx wrangler deploy` with the Worker's `SENTRY_*` variables
@@ -113,6 +119,7 @@ Tokens, Create Token, Custom token) with exactly these permissions:
 |-------|----------|------------|
 | Account | Workers Scripts | Edit |
 | Account | D1 | Edit |
+| Account | Workers R2 Storage | Edit |
 | Account | Account Settings | Read |
 | Zone | Workers Routes | Edit |
 | Zone | Zone | Read |
@@ -137,9 +144,13 @@ Done once, by hand, by someone with access to the Cloudflare account:
    npx wrangler d1 create webra
    ```
 
-2. Make sure `webra.sherin.dev` has no existing DNS record that conflicts with
+2. Enable R2 on the account (dashboard, R2 Object Storage: accept the terms
+   once; the free tier covers WebRA's replays). The deploy then creates the
+   bucket `webra-replays` itself; by hand it is
+   `npx wrangler r2 bucket create webra-replays`.
+3. Make sure `webra.sherin.dev` has no existing DNS record that conflicts with
    the Worker custom domain (wrangler creates the record on the first deploy).
-3. Create the GitHub environment `production` (Settings, Environments) and add
+4. Create the GitHub environment `production` (Settings, Environments) and add
    the two secrets. Optionally add required reviewers to gate deploys.
 
 ## Manual deploy
@@ -157,6 +168,7 @@ npx wrangler login            # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_AC
 # several accounts they need it in the environment.
 export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
 npx wrangler d1 migrations apply webra --remote   # only when apps/server/migrations exists
+npx wrangler r2 bucket info webra-replays || npx wrangler r2 bucket create webra-replays
 npx wrangler deploy $(WEBRA_ENV=production node ../../tools/sentry-config.mjs worker-vars)
 ```
 
@@ -201,6 +213,10 @@ write migrations so that the previous Worker version still works with them.
   (`node tools/promote-admin.mjs <username> --local`) or switch
   "The game needs an account" off in the admin dashboard to load `/play/`.
   In production the gate needs `IP_HASH_SALT`; without it `/play` answers 503.
+  Replays in accounts work here too: wrangler dev gives the `REPLAYS`
+  binding a local bucket (kept under `.wrangler/state`, never the real one),
+  so nothing has to be created for it. The server tests use an in-memory
+  stand-in (`apps/server/test/fake-r2.mjs`).
 - End-to-end smoke test: start wrangler dev as above with
   `--var WEBRA_DEV_ROUTES:1` added, then `node test/e2e/smoke.mjs
   http://localhost:8799`. The variable enables the test-only

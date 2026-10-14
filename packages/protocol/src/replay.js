@@ -216,6 +216,26 @@ export async function parseReplay(raw, { version = null, maxBytes = REPLAY_MAX_B
 }
 
 /**
+ * What a list of replays shows about a validated replay (validateReplay or
+ * parseReplay without `version`): mode, title, engine version, when the game
+ * started, its length in ticks, the map's name (a mission's id, or
+ * "Generated map") and the players `{ name, type, faction, team }` (an AI
+ * without a name has `name: null`; a campaign mission lists none).
+ */
+export function replaySummary(replay) {
+  let mapName = 'Generated map';
+  if (replay.mission) mapName = replay.mission.id;
+  else if (replay.map !== null) {
+    const name = JSON.parse(replay.map).name;
+    if (typeof name === 'string' && name.trim()) mapName = name.trim().slice(0, 64);
+  }
+  const players = Array.isArray(replay.options?.players)
+    ? replay.options.players.map((p) => ({ name: p.name ?? null, type: p.type, faction: p.faction, team: p.team ?? 0 }))
+    : [];
+  return { mode: replay.mode, title: replay.title, engine: replay.engine, playedAt: replay.createdAt, ticks: replay.ticks, mapName, players };
+}
+
+/**
  * Bytes one frame takes in the server's order log (apps/server/src/orderlog.js)
  * and in an online save's orders budget: one definition for both, so a game
  * the server recorded as saved always fits when it is resumed.
