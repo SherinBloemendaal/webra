@@ -82,6 +82,26 @@
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 24px);
   --ui-hazard: repeating-linear-gradient(-45deg, var(--ui-accent) 0 6px, #0b0d10 6px 12px);
 
+  /* ---- Screens ----
+     Every menu screen outside the battlefield (the start screen with the
+     skirmish setup, online play, the campaign, the statistics, Load game)
+     is one card as wide and as tall as the window less --ui-screen-gap on
+     every side (at least the safe-area inset there), so the grid shows
+     around it. Plain pixels: the gap belongs to the window, not to the
+     scaled chrome. Small dialogs (confirmations, the game menu, sign in,
+     sound) stay compact cards in the middle. Text inside a screen card
+     keeps to --ui-measure per line. */
+  --ui-screen-gap: clamp(12px, 1.5vw, 24px);
+  --ui-screen-pad: max(var(--ui-screen-gap), env(safe-area-inset-top)) max(var(--ui-screen-gap), env(safe-area-inset-right))
+    max(var(--ui-screen-gap), env(safe-area-inset-bottom)) max(var(--ui-screen-gap), env(safe-area-inset-left));
+  --ui-screen-bg: var(--ui-scan), var(--ui-grid),
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--ui-accent-lo) 55%, var(--ui-bg)), var(--ui-bg) 70%);
+  --ui-measure: 75ch;
+  /* How far up the parts in the bottom left corner reach (the version tag,
+     css/style.css; on the online and campaign screens also Sound and
+     Original content): a screen card ends above them (css/style.css). */
+  --ui-corner-clear: 24px;
+
   /* ---- Older names kept for the stylesheets that use them ---- */
   --bg: var(--ui-bg);
   --panel: var(--ui-metal-1);
@@ -92,6 +112,14 @@
   --danger: var(--ui-bad);
 
   color-scheme: dark;
+}
+
+/* Phones: a narrow gap, so the card keeps the width (its own padding keeps
+   the text 16 px or more from the edge of the screen). */
+@media (max-width: 600px) {
+  :root {
+    --ui-screen-gap: 8px;
+  }
 }
 
 /* The scaled parts: the game screen, its menu and dialogs. Custom properties

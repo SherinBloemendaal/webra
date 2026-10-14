@@ -29,10 +29,14 @@ function button(text, className, onClick) {
   return b;
 }
 
-/** A modal dialog; `build(body, close)` fills it. Resolves with what close() got (null on Esc). */
-export function dialog(title, build) {
+/**
+ * A modal dialog; `build(body, close)` fills it. Resolves with what close() got (null on Esc).
+ * `screen`: a screen card the size of the window (css/records.css .records-screen) instead of
+ * a compact dialog, for lists such as Load game.
+ */
+export function dialog(title, build, { screen = false } = {}) {
   return new Promise((resolve) => {
-    const d = el('dialog', 'records-dialog');
+    const d = el('dialog', screen ? 'records-dialog records-screen' : 'records-dialog');
     d.append(el('h2', 'records-dialog-title', title));
     const body = el('div', 'records-dialog-body');
     d.append(body);
@@ -163,7 +167,7 @@ async function loadDialog(store, ctx) {
     );
     body.append(list, status, actions);
     render();
-  });
+  }, { screen: true });
   if (chosen) ctx.onLoadSave(chosen);
 }
 

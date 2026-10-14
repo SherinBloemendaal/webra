@@ -100,9 +100,58 @@ body {
   white-space: normal;
 }
 
-/* ---- Menu and game over -------------------------------------------------- */
+/* ---- Menu screens ---------------------------------------------------------
+   The start screen (#menu, its cards in css/startmenu.css and css/lobby.css),
+   online play (css/online.css), the campaign (css/campaign.css) and the
+   statistics (css/endgame.css): the screen card fills the window less
+   --ui-screen-gap (theme.css), and the screen scrolls when the card is
+   taller than the window. */
 
-#menu,
+#menu {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: auto;
+  padding: var(--ui-screen-pad);
+  padding-bottom: max(var(--ui-screen-gap), env(safe-area-inset-bottom), var(--ui-corner-clear));
+  background: var(--ui-screen-bg);
+}
+
+/* The corner buttons of the online and campaign screens (Sound,
+   css/audio.css, 24 px up; Original content above it, css/content.css,
+   52 px up; both about 24 px high, 44 px on touch screens, in the game's UI
+   scale): the screen card ends above the highest one shown. */
+#online-root:has(~ #audio-button:not([hidden])),
+#campaign-root:has(~ #audio-button:not([hidden])) {
+  --ui-corner-clear: calc(56px * var(--ui-scale));
+}
+
+#online-root:has(~ #content-button:not([hidden])),
+#campaign-root:has(~ #content-button:not([hidden])) {
+  --ui-corner-clear: calc(84px * var(--ui-scale));
+}
+
+/* In a game the Sound button stays on mouse devices (css/touch.css hides it
+   on touch screens and the phone layouts): the statistics card ends above it. */
+body:not(.touch) #app:not([data-layout='portrait']):not([data-layout='landscape']) ~ #stats-screen:has(~ #audio-button:not([hidden])) {
+  --ui-corner-clear: calc(56px * var(--ui-scale));
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  #online-root:has(~ #audio-button:not([hidden])),
+  #campaign-root:has(~ #audio-button:not([hidden])) {
+    --ui-corner-clear: calc(max(24px * var(--ui-scale), env(safe-area-inset-bottom)) + max(44px, 44px * var(--ui-scale)) + 8px);
+  }
+
+  #online-root:has(~ #content-button:not([hidden])),
+  #campaign-root:has(~ #content-button:not([hidden])) {
+    --ui-corner-clear: calc(max(24px * var(--ui-scale), env(safe-area-inset-bottom)) + 52px * var(--ui-scale) + max(44px, 44px * var(--ui-scale)) + 8px);
+  }
+}
+
+/* ---- Game over and the game menu: compact dialogs over the battlefield ---- */
+
 #gameover,
 #game-menu {
   position: fixed;
@@ -114,14 +163,6 @@ body {
   overflow: auto;
   padding: max(calc(16 * var(--ui-px)), env(safe-area-inset-top)) max(calc(16 * var(--ui-px)), env(safe-area-inset-right)) max(calc(16 * var(--ui-px)), env(safe-area-inset-bottom))
     max(calc(16 * var(--ui-px)), env(safe-area-inset-left));
-  background:
-    var(--ui-scan),
-    var(--ui-grid),
-    radial-gradient(ellipse at top, color-mix(in srgb, var(--ui-accent-lo) 55%, var(--ui-bg)), var(--ui-bg) 70%);
-}
-
-#gameover,
-#game-menu {
   background: var(--ui-scan), rgba(0, 0, 0, 0.62);
   z-index: 40;
 }
