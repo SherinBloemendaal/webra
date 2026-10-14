@@ -471,3 +471,19 @@ fn the_factory_loss_option_round_trips_through_game_options() {
     assert_eq!(replay(""), replay(r#", "factoryLoss": "webra""#), "absent is WebRA's rule");
     assert_ne!(replay(r#", "factoryLoss": "openra""#), replay(r#", "factoryLoss": "webra""#), "the rule is in the state hash");
 }
+
+/// The producers the sidebar names for a queue without one are those the
+/// player's faction can have (like `providers`): an Allied player without
+/// infantry structures is told about the Allied Barracks only, a Soviet
+/// one about the Soviet Barracks and the Kennel.
+#[test]
+fn missing_producers_are_named_for_the_faction() {
+    for (faction, want) in [("allies", "Allied Barracks"), ("soviet", "Soviet Barracks or Kennel")] {
+        let mut w = World::new(4, 80, &[(faction, false), ("allies", false)]);
+        w.options.factory_loss = crate::world::FactoryLoss::OpenRA;
+        w.players[0].dev.all_tech = true;
+        let e1 = ty(&w, "E1");
+        let labels: Vec<String> = w.requirements(0, e1).into_iter().map(|r| r.label).collect();
+        assert_eq!(labels, vec![want.to_string()], "{faction}");
+    }
+}

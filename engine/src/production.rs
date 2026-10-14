@@ -176,7 +176,7 @@ impl World {
         let q = self.rules.actors[ty as usize].queue;
         let shown = q.is_structure() || self.availability(player, ty).enabled;
         if shown && self.queue_needs_producer(q) && !self.has_producer(player, q) {
-            let names = self.queue_producer_names(q);
+            let names = self.queue_producer_names(p.faction, q);
             if !names.is_empty() {
                 out.push(Requirement { label: names.join(" or "), never: false });
             }
@@ -222,12 +222,14 @@ impl World {
         names
     }
 
-    /// Names of the buildings that produce queue `q` (the Construction Yard for
-    /// structures; it comes from an MCV, so it is not "obtainable" itself).
-    fn queue_producer_names(&self, q: QueueType) -> Vec<String> {
+    /// Names of the buildings that produce queue `q` and that `faction` can
+    /// have (`providers` likewise; the Construction Yard, where every game
+    /// starts, counts as obtainable for every faction).
+    fn queue_producer_names(&self, faction: usize, q: QueueType) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for a in &self.rules.actors {
-            if a.building.as_ref().is_some_and(|b| b.produces.contains(&q)) && !names.contains(&a.name) {
+        for (idx, a) in self.rules.actors.iter().enumerate() {
+            let produces = a.building.as_ref().is_some_and(|b| b.produces.contains(&q));
+            if produces && self.rules.obtainable[faction][idx] && !names.contains(&a.name) {
                 names.push(a.name.clone());
             }
         }
