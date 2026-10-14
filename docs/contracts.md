@@ -1915,7 +1915,13 @@ diagonal step never cuts a blocked corner.
   (the straight distance for cells farther from the goal than the unit, so
   that a route never depends on how far other units extended a partial
   field); one search expands at most 4096 cells (then it counts as no
-  route).
+  route). WebRA addition, a safety net for huge armies: the searches of
+  one tick expand at most 400,000 cells (`ROUTE_SEARCH_BUDGET`, about
+  70 ms natively); a search asked for after that waits for the unit's
+  next step in a later tick (a unit waiting for a blocker keeps waiting),
+  so which searches wait depends only on the order units act in. Normal
+  games never reach it; the first ticks of the stress test with 2,000
+  units or more do.
 - When the next cell is taken (Move.PopPath): within `near` cells of the
   destination the move gives up unless a free cell next to the blocker is
   as close (player and AI move orders: 8 cells, OpenRA's `Move` order; a
@@ -1930,21 +1936,51 @@ diagonal step never cuts a blocked corner.
   (repairs, docking, attacks) try again after 20 to 30 ticks (OpenRA
   MoveCooldownHelper).
 - Leaving blockers (OpenRA Move.CellIsEvacuating counts units moving or
-  turning in this tick). WebRA addition: in a passage one cell wide (a cell
-  with only two opposite side neighbours open: a bridge, a gap in a wall)
-  the holders also count as leaving when they wait in turn for a cell
-  further on whose holders leave in the same way (each waiting unit
-  remembers the cell it waits for, `Motion::waiting_for`): the queue ahead
-  is moving. So a tank behind a column of idle tanks on a bridge waits
-  while the column makes way one tank after another, and a group filing
-  over a bridge leaves no stragglers, where OpenRA's units give up once a
-  nudge chain or a queue takes longer than `WaitAverage` (in OpenRA, and in
-  WebRA before, behind six or more tanks). A queue that leads back to the
-  waiting unit, runs in a circle, is longer than 64 cells or ends at a unit
-  that does not move does not count, so units facing each other on a bridge
-  still wait, search, give up and stand still; a unit follows queues for at
-  most 160 ticks without a step (`QUEUE_PATIENCE`); and in the open (a crowd
-  around its goal) only OpenRA's rule holds, so crowds settle as in OpenRA.
+  turning in this tick). WebRA addition, queues through passes: the
+  holders also count as leaving when they wait in turn for a cell further
+  on whose holders leave or wait in the same way (each waiting unit
+  remembers the cell it waits for, `Motion::waiting_for`), and that queue
+  runs through a pass or the waiting unit's own route does within its next
+  24 cells (`queue_is_moving`, `pass_cell`: along a row, a column or a
+  diagonal, cells the unit may not enter close in on both sides within 4
+  cells, so bridges, gaps in walls or between buildings and valleys up to
+  7 cells wide). The unit then waits on instead of searching a way round
+  every unit: a column ordered through a gap files through it in turn, one
+  or seven cells wide. In OpenRA, and in WebRA before (which followed
+  queues on cells one cell wide only), the units at the back gave up or
+  drove round the map once `WaitAverage` ran out: 24 tanks ordered
+  through a gap one cell wide left 11 in front of it without a way round
+  and sent 10 round the map with one. A queue counts only while its head
+  moves on: one that leads back to the waiting unit, runs in a circle, is
+  longer than 256 cells or ends at a unit that does not move (an enemy, a
+  unit that gave up, one that stands and fires) does not, so a pass an
+  enemy blocks still sends the units round or makes them give up, and
+  units facing each other on a bridge still wait, search, give up and
+  stand still. A unit waits in a queue for at most 60 seconds without a
+  step (`QUEUE_PATIENCE`, a safety net). Units that only make way (asked
+  aside, scattered) count as a moving head only in a pass, and in the open
+  OpenRA's rule alone holds, so a crowd around its goal, whose units the
+  ones behind keep asking aside, settles as in OpenRA. A unit that started
+  a step in this tick counts as leaving too (OpenRA's flag is the last
+  tick's movement).
+- Huge move orders (WebRA addition, orders of at least 250 units,
+  `HUGE_ORDER`): a unit boxed in when its move starts, every neighbouring
+  cell it may step to held, and only by friendly units about to move
+  (driving, turning, waiting for their route or for a cell, or ordered and
+  not yet acting), does not search its route yet (`Pending::Boxed`): it
+  waits like a unit held up by a blocker (`WaitAverage`, then on while
+  the queue toward its goal moves, up to `QUEUE_PATIENCE`) until a
+  neighbouring cell comes free, then searches around the units that
+  cannot be asked to move (`Immovable`), the route OpenRA's search order
+  gives a boxed-in unit, whose searches around every unit and around
+  standing ones fail at the first cell. The front of a crowd drives off
+  first and the rows behind follow as cells come free, as they would
+  anyway; only the route searches move from the order's first tick to the
+  ticks the rows start in (34,506 searches in the first tick of the
+  stress test with 20,000 units before, 103 now). A unit of a huge order
+  held up in a queue that moves waits in the open too, not only in a pass
+  (a huge army files after its own head). Smaller orders search at once
+  and follow OpenRA's rule in the open, exactly as before.
 - Feedback (WebRA addition; OpenRA has none: its move cursor only shows
   terrain that cannot be reached when the order is given): a move order
   that ends short because the way stayed blocked, farther from its goal
@@ -1982,7 +2018,10 @@ diagonal step never cuts a blocked corner.
   sub-cell nearest to it (OpenRA: the first in index order); a cell left in
   a tick is free from the next tick on, and units that want the same free
   cell in a tick get it by a rank drawn from the game seed and the tick
-  (OpenRA: whoever acts first).
+  (OpenRA: whoever acts first). A unit that stands still when its route
+  turns bad (an enemy or a structure in its next cell) ends its move
+  without the new search OpenRA makes there, whose route the end of the
+  move throws away in both; one driving on searches it as in OpenRA.
 
 **`webra`: WebRA's soft crowd separation, damped** (`movement/soft.rs`).
 Overlapping units of a domain push each other apart at the end of every
@@ -3609,11 +3648,12 @@ a soldier in every cell (the type index skipped every other entry of its
 mix), which leaves the whole army crowded under the OpenRA movement model,
 and every idle crowded unit searched ten rings of cells for a free one on
 every tick. The stress test now places one tank or a pair of soldiers per
-cell. There the route searches dominate, and nearly all of them fall in the
-first tick, when every unit of both armies starts its move: 34,500 searches
-expanding 37 million cells at 20,000 units, 6 to 10 s native and 7 to
-8 s in wasm for that one tick in the quieter runs on a busy machine (17 s
-in wasm before). Flow fields (the HUD's count
+cell. There the route searches dominate, and nearly all of them fell in
+the first tick, when every unit of both armies starts its move: 34,500
+searches expanding 37 million cells at 20,000 units, 6 to 10 s native and
+7 to 8 s in wasm for that one tick in the quieter runs on a busy machine
+(17 s in wasm before); see "Huge move orders" below for how that tick
+went down to about 0.1 s. Flow fields (the HUD's count
 is the fields computed since the start, not the fields kept) cost about
 2 % of a tick. The worker's render build (`build_render` with the whole map
 in view) is 1.9 ms per frame at 20,000 units in wasm; the GPU instance path
@@ -3644,6 +3684,41 @@ ai_vs_ai games and the native against the wasm build are identical.
 - Vision (vision.rs) adds each sight circle as row spans to a difference
   array per player instead of writing every cell of every circle.
 
+**Huge move orders** (movement section 5, `Pending::Boxed`,
+`ROUTE_SEARCH_BUDGET`). A unit of an order of 250 units or more that is
+boxed in by its own units when its move starts searches its route once a
+neighbouring cell comes free, and the searches of one tick expand at most
+400,000 cells. The first tick of the stress test now searches the routes
+of the units at the edges of the two crowds only; the rows behind search
+as they start. Units of such an order also wait in a queue that moves on
+instead of searching a way round every unit after each `WaitAverage`.
+Measured with `sim_bench` (native, 1,500 ticks) and
+`tools/sim-tick-bench.mjs` (wasm in node 26, 600 ticks), seed 1, before
+and after, one run each on a busy machine (the state hashes of native and
+wasm agree, at tick 600: 2,000 units `69487e6d2c77b520`, 20,000 units
+`885f69d1739d84f8`):
+
+| Units | First tick, before | after | Ticks after it: median / p95 / worst, before | after |
+|------:|-------------------:|------:|----------------------------------------------:|------:|
+| 2,000 native | 682 ms | 58 ms | 0.68 / 2.41 / 5.3 ms | 0.68 / 3.05 / 37 ms |
+| 5,000 native | 408 ms | 64 ms | 1.88 / 4.97 / 12.7 ms | 2.20 / 6.12 / 41 ms |
+| 10,000 native | 1,604 ms | 77 ms | 6.38 / 10.6 / 29 ms | 4.68 / 13.0 / 63 ms |
+| 20,000 native | 5,068 ms | 101 ms | 7.93 / 15.7 / 65 ms | 9.66 / 30.1 / 86 ms |
+| 2,000 wasm | 953 ms | 119 ms | 1.27 / 3.62 / 6.8 ms | 0.99 / 5.38 / 62 ms |
+| 5,000 wasm | 525 ms | 105 ms | 2.74 / 5.89 / 8.7 ms | 3.57 / 7.56 / 49 ms |
+| 10,000 wasm | 1,980 ms | 115 ms | 7.91 / 11.9 / 17 ms | 7.21 / 17.2 / 78 ms |
+| 20,000 wasm | 6,220 ms | 144 ms | 12.3 / 20.6 / 49 ms | 18.8 / 45.3 / 107 ms |
+
+At 20,000 units the whole native run averages 13.4 ms a tick against 13.9
+before: the searches of the first tick are spread over the ticks the rows
+start in (worst ticks near 100 ms while the budget holds them back; 1,343
+searches waited for a later tick), and with fewer searches in all (18,519
+against 51,835, 40 against 46 million cells). The wasm runs of 600 ticks
+end before that evens out. The armies also play differently: before, the
+units behind the front gave up their move once `WaitAverage` ran out
+(12,000 of 20,000 stood idle by tick 1,500), now they keep filing after
+the units ahead.
+
 **Several cores.** The game page is already cross-origin isolated (COOP
 `same-origin`, COEP `require-corp`, docs/security.md), so
 `SharedArrayBuffer` is there; what is missing is a threaded wasm build and
@@ -3661,8 +3736,9 @@ work that can run side by side without changing a result.
   scan runs one unit after another and sees the moves of the units before
   it (OpenRA's order), which is most of the tick; running them side by side
   changes what happens.
-- The one large parallel win in sight is the first tick of a huge move
-  order: route searches could run on all cores against the occupancy at the
+- The one large parallel win once in sight, the first tick of a huge move
+  order, is mostly gone with the boxed-in units' deferred searches (above).
+  Route searches could still run on all cores against the occupancy at the
   start of the tick, each recording the cells it read, and the sequential
   pass would take a result only when none of those cells changed before
   that unit's turn (else it searches again itself). The results stay those
