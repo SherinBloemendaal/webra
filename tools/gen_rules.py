@@ -1926,6 +1926,12 @@ def main():
             elif e['world'].get('bridge_hut'):
                 # Bridge huts stand on the bridge's cells without occupying them.
                 rows = [r.replace('_', '-') for r in rows]
+            # Exit cells and their Priority (OpenRA ExitInfo, default 1): a
+            # unit leaves by the highest priority exit it can use first.
+            exits = [(k, x) for k, x in sorted(trait(t, 'Exit').items()) if isinstance(x, dict) and 'ExitCell' in x]
+            exit_priorities = [int(x.get('Priority', 1)) for k, x in exits]
+            # ExitInfo.ProductionTypes: which units may use each exit (empty: all).
+            exit_types = [tokens(x.get('ProductionTypes')) for k, x in exits]
             e['building'] = {
                 'width': w,
                 'height': h,
@@ -1935,7 +1941,7 @@ def main():
                 'power': sum(int(p.get('Amount', 0)) for p in trait(t, 'Power').values()),
                 'power_scales_with_health': 'ScalePowerWithHealth' in t,
                 'produces': tokens(t.get('Production', {}).get('Produces', '')) if 'Production' in t else [],
-                'exits': [ints(x['ExitCell']) for k, x in sorted(trait(t, 'Exit').items()) if isinstance(x, dict) and 'ExitCell' in x],
+                'exits': [ints(x['ExitCell']) for k, x in exits],
                 'gives_buildable_area': 'GivesBuildableArea' in t,
                 'base_provider_range': wdist(t['BaseProvider']['Range']) if 'BaseProvider' in t else 0,
                 'adjacent': int(b.get('Adjacent', 2)),
@@ -1943,6 +1949,10 @@ def main():
                 'sell_refund': int(t['Sellable'].get('RefundPercent', 50)) if isinstance(t.get('Sellable'), dict) else (50 if 'Sellable' in t else 0),
                 'provides': {},
             }
+            if any(p != 1 for p in exit_priorities):
+                e['building']['exit_priorities'] = exit_priorities
+            if any(exit_types):
+                e['building']['exit_types'] = exit_types
             # Static prerequisite resolution per faction. A provider with
             # RequiresPrerequisites only counts when those tokens come from a
             # Factions-filtered provider of the same faction.

@@ -577,11 +577,12 @@ export class Lobby {
   applyTestSetup(setup) {
     const me = this.state.players.find((p) => p.type === 'human');
     const players = setup.players.slice(0, this.spawnLimit()).map((p) => ({ ...p, name: p.type === 'human' ? me?.name : DEFAULT_NAME, color: p.type === 'human' ? me?.color : undefined }));
-    // The movement model the editor picked, unless the map locks its own.
-    const movement = optionLockedBy(this.state, this.mapFile?.info.setup ?? null, 'movement') ? this.state.movement : (setup.movement ?? this.state.movement);
-    const clean = sanitizeState({ ...this.state, players, movement }, this.colors.length);
+    // The movement model and factory loss rule the editor picked, unless the map locks its own.
+    const picked = (key) => (optionLockedBy(this.state, this.mapFile?.info.setup ?? null, key) ? this.state[key] : (setup[key] ?? this.state[key]));
+    const clean = sanitizeState({ ...this.state, players, movement: picked('movement'), factoryLoss: picked('factoryLoss') }, this.colors.length);
     this.state.players = clean.players;
     this.state.movement = clean.movement;
+    this.state.factoryLoss = clean.factoryLoss;
     this.renderAll();
     this.renderSlots();
     if (setup.autostart) queueMicrotask(() => this.start());

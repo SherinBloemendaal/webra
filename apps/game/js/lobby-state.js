@@ -73,6 +73,16 @@ export const MOVEMENT_MODELS = [
 ];
 
 /**
+ * What a production queue does when the last structure of its type is lost
+ * (engine/src/production.rs, packages/protocol FACTORY_LOSS_RULES): OpenRA's
+ * refunds and clears it, WebRA's unit queues wait for a new factory.
+ */
+export const FACTORY_LOSS_RULES = [
+  { value: 'openra', label: 'OpenRA' },
+  { value: 'webra', label: 'WebRA' },
+];
+
+/**
  * Tech buildings of a generated map (engine/src/mapgen/settlements.rs, OpenRA's
  * map generator option "Buildings").
  */
@@ -207,6 +217,7 @@ export const DEFAULTS = {
   allyBuildRadius: true,
   timeLimit: 0,
   movement: 'openra',
+  factoryLoss: 'openra',
 };
 
 const DEFAULT_PLAYERS = [
@@ -229,6 +240,7 @@ export const LOBBY_SELECT_OPTIONS = [
   { key: 'gameSpeed', label: 'Game speed', choices: GAME_SPEEDS },
   { key: 'timeLimit', label: 'Time limit', choices: TIME_LIMITS },
   { key: 'movement', label: 'Movement', choices: MOVEMENT_MODELS },
+  { key: 'factoryLoss', label: 'Factory loss', choices: FACTORY_LOSS_RULES },
 ];
 
 export const LOBBY_TOGGLE_OPTIONS = [
@@ -390,6 +402,7 @@ export function sanitizeState(stored, colorCount, seedFn = randomSeed) {
     gameSpeed: oneOf(s.gameSpeed, GAME_SPEEDS.map((o) => o.value), DEFAULTS.gameSpeed),
     timeLimit: oneOf(s.timeLimit, TIME_LIMITS.map((o) => o.value), DEFAULTS.timeLimit),
     movement: oneOf(s.movement, MOVEMENT_MODELS.map((o) => o.value), DEFAULTS.movement),
+    factoryLoss: oneOf(s.factoryLoss, FACTORY_LOSS_RULES.map((o) => o.value), DEFAULTS.factoryLoss),
     crates: bool('crates'),
     shortGame: bool('shortGame'),
     bounty: bool('bounty'),
@@ -649,6 +662,7 @@ export function buildOptions(state, mapJson = null) {
     gameSpeed: s.gameSpeed,
     timeLimit: s.timeLimit,
     movement: s.movement,
+    factoryLoss: s.factoryLoss,
     crates: s.crates,
     shortGame: s.shortGame,
     bounty: s.bounty,

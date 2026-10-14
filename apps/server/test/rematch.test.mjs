@@ -134,6 +134,35 @@ test('room: the lobby always shows the movement model the game will play', () =>
   assert.equal(third.options.movement, 'openra');
 });
 
+test('room: the lobby always shows the factory loss rule the game will play', () => {
+  const { factoryLoss: _f, ...old } = DEFAULT_OPTIONS;
+  assert.equal(parseClientMessage(JSON.stringify({ t: 'options', options: old })).ok, false);
+  const room = Room.create({ maxPlayers: 3, seed: 5 });
+  const host = room.join('Host', { host: true, account: 'acc-host' }).client;
+  const guest = room.join('Guest', { account: 'acc-guest' }).client;
+  assert.equal(room.options.factoryLoss, 'openra');
+  room.setOptions(host, { ...DEFAULT_OPTIONS, factoryLoss: 'webra' });
+  assert.equal(room.options.factoryLoss, 'webra');
+  room.setReady(guest, true, null);
+  const first = room.start(host, () => 0);
+  assert.equal(first.options.factoryLoss, 'webra');
+  // A save from before the option: the lobby shows WebRA's rule, which the
+  // saved options (without the key) play, and starts with them unchanged.
+  const { factoryLoss: _n, ...saved } = { ...first.options, factoryLoss: 'openra' };
+  const again = Room.create({ maxPlayers: 3, seed: 6 });
+  const h2 = again.join('Host', { host: true, account: 'acc-host' }).client;
+  again.loadResume(h2, { id: 'y'.repeat(16), title: 'Old save', createdAt: 1, ticks: 100, hash: 7, options: saved, seats: ['acc-host', 'acc-guest', null], chunks: 1 });
+  assert.equal(again.options.factoryLoss, 'webra');
+  again.join('Guest', { account: 'acc-guest' });
+  const resumed = again.startResume();
+  assert.equal('factoryLoss' in resumed.options, false);
+  // A save made with OpenRA's rule shows OpenRA's.
+  const third = Room.create({ maxPlayers: 3, seed: 7 });
+  const h3 = third.join('Host', { host: true, account: 'acc-host' }).client;
+  third.loadResume(h3, { id: 'z'.repeat(16), title: 'New save', createdAt: 1, ticks: 100, hash: 7, options: { ...saved, factoryLoss: 'openra' }, seats: ['acc-host', 'acc-guest', null], chunks: 1 });
+  assert.equal(third.options.factoryLoss, 'openra');
+});
+
 test('room: seats that are away still answer; gone seats do not; players who did not come lose their slot', () => {
   const { room, host, guest, eye } = started();
   const gSeat = room.seatOf(guest);

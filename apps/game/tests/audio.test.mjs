@@ -541,6 +541,21 @@ test('actor sounds and notifications of the rules play to the right player', () 
   ]);
 });
 
+test('a blocked route shows its line to the owner only, at most every 10 seconds (WebRA addition)', () => {
+  const { d, calls, advance } = harness();
+  assert.ok(EVA.routeBlocked.textOnly && EVA.routeBlocked.text === 'Route blocked.');
+  d.onEvents(ev([EV.ROUTE_BLOCKED, T['1TNK'], 10, 10, 1, 0]), VIEW);
+  assert.deepEqual(calls.announce, [], "another player's route");
+  d.onEvents(ev([EV.ROUTE_BLOCKED, T['1TNK'], 10, 10, 0, 0], [EV.ROUTE_BLOCKED, T['1TNK'], 20, 10, 0, 0]), VIEW);
+  assert.deepEqual(calls.announce, ['routeBlocked']);
+  advance(9);
+  d.onEvents(ev([EV.ROUTE_BLOCKED, T['1TNK'], 10, 10, 0, 0]), VIEW);
+  assert.deepEqual(calls.announce, ['routeBlocked']);
+  advance(2);
+  d.onEvents(ev([EV.ROUTE_BLOCKED, T['1TNK'], 10, 10, 0, 0]), VIEW);
+  assert.deepEqual(calls.announce, ['routeBlocked', 'routeBlocked']);
+});
+
 test('a spectator hears world sounds and the timer, no player notifications', () => {
   const { d, calls } = harness({ player: -1, allied: () => false });
   d.onEvents(

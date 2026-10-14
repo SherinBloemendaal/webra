@@ -531,6 +531,10 @@ pub struct GameOptions {
     /// How units move among each other (movement/): OpenRA's cell
     /// occupancy (the lobby default) or WebRA's soft crowd separation.
     pub movement: crate::movement::MovementModel,
+    /// What a production queue does when its player has no structure of
+    /// its type left (production.rs): OpenRA's (the lobby default) clears it
+    /// with a refund, WebRA's waits.
+    pub factory_loss: FactoryLoss,
 }
 
 impl Default for GameOptions {
@@ -563,7 +567,37 @@ impl Default for GameOptions {
             ally_build_radius: true,
             reusable_engineers: false,
             movement: crate::movement::MovementModel::OpenRA,
+            factory_loss: FactoryLoss::OpenRA,
         }
+    }
+}
+
+/// What a production queue does when its player loses the last structure
+/// of its type (lobby option `factoryLoss`, production.rs).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FactoryLoss {
+    /// OpenRA ClassicProductionQueue: the queue is disabled, cleared and
+    /// every item refunded (ClearQueue), and nothing can be queued there
+    /// until a structure of its type stands again.
+    OpenRA,
+    /// WebRA: unit queues wait for a new structure; structure queues cancel
+    /// their items with a refund (CancelledAudio).
+    WebRA,
+}
+
+impl FactoryLoss {
+    pub const ALL: [FactoryLoss; 2] = [FactoryLoss::OpenRA, FactoryLoss::WebRA];
+
+    /// Name in game options, saves and replays.
+    pub fn name(self) -> &'static str {
+        match self {
+            FactoryLoss::OpenRA => "openra",
+            FactoryLoss::WebRA => "webra",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<FactoryLoss> {
+        FactoryLoss::ALL.into_iter().find(|m| m.name() == s)
     }
 }
 
@@ -2810,6 +2844,7 @@ impl World {
         }
         mix(self.game_over as i64);
         mix(self.options.movement as i64);
+        mix(self.options.factory_loss as i64);
         mix(self.crates.hash());
         mix(self.env.weather as i64);
         for &t in &self.lightning_end {

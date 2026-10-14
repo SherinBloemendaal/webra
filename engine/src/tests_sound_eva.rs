@@ -218,19 +218,31 @@ fn build_limits_hold_owned_and_queued_ones() {
     assert_eq!(w.build_limit_left(0, mslo), i32::MAX);
 }
 
+/// Losing the only barracks: under WebRA's factory loss rule the items,
+/// now without their prerequisite, are cancelled with one announcement
+/// (OpenRA CancelUnbuildableItems); under OpenRA's the queue has no
+/// producer left and ClearQueue empties it first, silently.
 #[test]
 fn unbuildable_items_are_cancelled_with_one_announcement() {
-    let mut w = barracks_world();
-    let e1 = ty(&w, "E1");
-    w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 2 });
-    run(&mut w, 5);
-    w.sound.set_enabled(true);
-    let tent = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].ty == ty(&w, "TENT")).unwrap();
-    w.kill(tent);
-    let ev = collect(&mut w, 5);
-    let cancelled = of_kind(&ev, K::ProductionCancelled);
-    assert_eq!(cancelled.len(), 1, "once for the queue, not per item");
-    assert_eq!((cancelled[0][1], cancelled[0][4]), (e1 as i32, 0));
+    for rule in crate::world::FactoryLoss::ALL {
+        let mut w = barracks_world();
+        w.options.factory_loss = rule;
+        let e1 = ty(&w, "E1");
+        w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 2 });
+        run(&mut w, 5);
+        w.sound.set_enabled(true);
+        let tent = (0..w.actors.len()).find(|&i| w.actors[i].alive && w.actors[i].ty == ty(&w, "TENT")).unwrap();
+        w.kill(tent);
+        let ev = collect(&mut w, 5);
+        assert!(w.players[0].queues[QueueType::Infantry as usize].items.is_empty(), "{rule:?}: emptied");
+        let cancelled = of_kind(&ev, K::ProductionCancelled);
+        if rule == crate::world::FactoryLoss::OpenRA {
+            assert!(cancelled.is_empty(), "ClearQueue says nothing");
+        } else {
+            assert_eq!(cancelled.len(), 1, "once for the queue, not per item");
+            assert_eq!((cancelled[0][1], cancelled[0][4]), (e1 as i32, 0));
+        }
+    }
 }
 
 #[test]

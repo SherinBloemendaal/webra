@@ -659,6 +659,12 @@ struct RawBuilding {
     power_scales_with_health: bool,
     produces: Vec<String>,
     exits: Vec<Vec<i32>>,
+    /// Priority of each exit (OpenRA ExitInfo.Priority); absent when all are 1.
+    #[serde(default)]
+    exit_priorities: Vec<i32>,
+    /// Production types of each exit (OpenRA ExitInfo.ProductionTypes); absent when no exit has any.
+    #[serde(default)]
+    exit_types: Vec<Vec<String>>,
     gives_buildable_area: bool,
     base_provider_range: i32,
     adjacent: i32,
@@ -981,6 +987,19 @@ impl QueueType {
         }
     }
 
+    /// The queue's OpenRA ProductionQueue Type (also the production type a
+    /// unit without Buildable.BuildAtProductionType is built as).
+    pub fn name(self) -> &'static str {
+        match self {
+            QueueType::Building => "Building",
+            QueueType::Defense => "Defense",
+            QueueType::Infantry => "Infantry",
+            QueueType::Vehicle => "Vehicle",
+            QueueType::Aircraft => "Aircraft",
+            QueueType::Ship => "Ship",
+        }
+    }
+
     fn parse(s: &str) -> Option<QueueType> {
         match s {
             "Building" => Some(QueueType::Building),
@@ -1042,6 +1061,13 @@ pub struct BuildingInfo {
     /// Raw OpenRA production types, matched against `ActorInfo::build_at`.
     pub production_types: Vec<String>,
     pub exits: Vec<(i32, i32)>,
+    /// OpenRA ExitInfo.Priority of each exit (same order as `exits`): units
+    /// leave by an exit of the highest priority they can use (production.rs).
+    pub exit_priority: Vec<i32>,
+    /// OpenRA ExitInfo.ProductionTypes of each exit (same order as
+    /// `exits`): an exit with types only lets out units built as one of
+    /// them (`ActorInfo::build_at`); empty lets out all.
+    pub exit_types: Vec<Vec<String>>,
     pub gives_buildable_area: bool,
     pub base_provider_range: i32,
     pub adjacent: i32,
@@ -1709,6 +1735,14 @@ impl Rules {
         for &e in &b.exits {
             near("exits", e)?;
         }
+        count(&n("exit_priority"), b.exit_priority.len(), b.exits.len())?;
+        count(&n("exit_types"), b.exit_types.len(), b.exits.len())?;
+        for t in &b.exit_types {
+            count(&n("exit_types"), t.len(), 8)?;
+        }
+        for &p in &b.exit_priority {
+            within(&n("exit_priority"), p, -100, 100)?;
+        }
         within(&n("center_offset"), b.center_offset.0, -4 * CELLS, 4 * CELLS)?;
         within(&n("center_offset"), b.center_offset.1, -4 * CELLS, 4 * CELLS)?;
         if let Some(r) = &b.repairs {
@@ -2128,6 +2162,16 @@ impl Rules {
                     for e in &b.exits {
                         exits.push(pair(e).ok_or_else(|| n("building.exits: each exit must be [x, y]"))?);
                     }
+                    let exit_priority = match b.exit_priorities.len() {
+                        0 => vec![1; exits.len()],
+                        len if len == exits.len() => b.exit_priorities.clone(),
+                        _ => return Err(n("building.exit_priorities: one per exit")),
+                    };
+                    let exit_types = match b.exit_types.len() {
+                        0 => vec![Vec::new(); exits.len()],
+                        len if len == exits.len() => b.exit_types.clone(),
+                        _ => return Err(n("building.exit_types: one list per exit")),
+                    };
                     let refinery = match b.refinery {
                         None => None,
                         Some(r) => Some(RefineryInfo {
@@ -2150,6 +2194,8 @@ impl Rules {
                         produces,
                         production_types: b.produces.clone(),
                         exits,
+                        exit_priority,
+                        exit_types,
                         gives_buildable_area: b.gives_buildable_area,
                         base_provider_range: b.base_provider_range,
                         adjacent: b.adjacent,

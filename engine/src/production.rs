@@ -170,10 +170,13 @@ impl World {
     pub fn requirements(&self, player: u8, ty: u16) -> Vec<Requirement> {
         let p = &self.players[player as usize];
         let mut out: Vec<Requirement> = Vec::new();
-        // Structures also need a building that produces their queue (the Construction Yard).
+        // Structures also need a building that produces their queue (the
+        // Construction Yard); under OpenRA's factory loss rule so do units
+        // (shown once their prerequisites are met: those name the factory).
         let q = self.rules.actors[ty as usize].queue;
-        if q.is_structure() && !self.has_producer(player, q) {
-            let names = self.queue_producer_names(q);
+        let shown = q.is_structure() || self.availability(player, ty).enabled;
+        if shown && self.queue_needs_producer(q) && !self.has_producer(player, q) {
+            let names = self.queue_producer_names(p.faction, q);
             if !names.is_empty() {
                 out.push(Requirement { label: names.join(" or "), never: false });
             }
@@ -219,12 +222,14 @@ impl World {
         names
     }
 
-    /// Names of the buildings that produce queue `q` (the Construction Yard for
-    /// structures; it comes from an MCV, so it is not "obtainable" itself).
-    fn queue_producer_names(&self, q: QueueType) -> Vec<String> {
+    /// Names of the buildings that produce queue `q` and that `faction` can
+    /// have (`providers` likewise; the Construction Yard, where every game
+    /// starts, counts as obtainable for every faction).
+    fn queue_producer_names(&self, faction: usize, q: QueueType) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for a in &self.rules.actors {
-            if a.building.as_ref().is_some_and(|b| b.produces.contains(&q)) && !names.contains(&a.name) {
+        for (idx, a) in self.rules.actors.iter().enumerate() {
+            let produces = a.building.as_ref().is_some_and(|b| b.produces.contains(&q));
+            if produces && self.rules.obtainable[faction][idx] && !names.contains(&a.name) {
                 names.push(a.name.clone());
             }
         }
@@ -252,15 +257,31 @@ impl World {
         format!("{} only", names.join(" or "))
     }
 
-    /// Own buildings that can produce `ty` (OpenRA: Production types vs BuildAtProductionType).
-    fn producers_of(&self, player: u8, ty: u16) -> Vec<usize> {
+    /// The production type `player` builds a `ty` as (OpenRA
+    /// ClassicProductionQueue.BuildUnit): its Buildable.BuildAtProductionType
+    /// (the queue's type when it has none), but the queue's type under the
+    /// "all tech" cheat, so a submarine comes out of a naval yard and a dog
+    /// out of barracks then.
+    pub(crate) fn built_as(&self, player: u8, ty: u16) -> &str {
         let info = &self.rules.actors[ty as usize];
+        if self.players.get(player as usize).is_some_and(|p| p.dev.all_tech) {
+            info.queue.name()
+        } else {
+            info.build_at.as_str()
+        }
+    }
+
+    /// Own buildings that can produce `ty`: their Production types hold the
+    /// type it is built as (OpenRA ClassicProductionQueue.BuildUnit, `built_as`).
+    pub(crate) fn producers_of(&self, player: u8, ty: u16) -> Vec<usize> {
+        let queue = self.rules.actors[ty as usize].queue;
+        let built_as = self.built_as(player, ty);
         (0..self.actors.len())
             .filter(|&i| {
                 let a = &self.actors[i];
                 a.alive && a.owner == player && a.kind == Kind::Building && {
                     let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-                    b.produces.contains(&info.queue) && b.production_types.contains(&info.build_at)
+                    b.produces.contains(&queue) && b.production_types.iter().any(|t| t == built_as)
                 }
             })
             .collect()
@@ -290,7 +311,10 @@ impl World {
     }
 
     /// How many of `factories` can make `ty` (structures: one at most, the
-    /// queue's Construction Yard counts once like in the queue).
+    /// queue's Construction Yard counts once like in the queue). This counts
+    /// for the build time, by Buildable.BuildAtProductionType also under the
+    /// "all tech" cheat (OpenRA ClassicProductionQueue.GetBuildTime); which
+    /// structures may make it is `producers_of`.
     pub(crate) fn producer_count_in(&self, factories: &[usize], ty: u16) -> usize {
         let info = &self.rules.actors[ty as usize];
         let makes = |&&i: &&usize| {
@@ -305,11 +329,6 @@ impl World {
         }
     }
 
-    /// How many buildings `player` has that can make `ty`.
-    pub(crate) fn producer_count(&self, player: u8, ty: u16) -> usize {
-        self.producer_count_in(&self.factories(player), ty)
-    }
-
     pub fn has_producer(&self, player: u8, q: QueueType) -> bool {
         self.actors.iter().any(|a| {
             a.alive
@@ -319,13 +338,22 @@ impl World {
         })
     }
 
+    /// Whether queue `q` takes items only while a structure of its type
+    /// stands: structure queues always, unit queues under OpenRA's factory
+    /// loss rule (OpenRA ClassicProductionQueue: BuildableItems is empty
+    /// while the queue is not Enabled). Under WebRA's a unit queue waits.
+    fn queue_needs_producer(&self, q: QueueType) -> bool {
+        q.is_structure() || self.options.factory_loss == crate::world::FactoryLoss::OpenRA
+    }
+
     /// Whether `player` may produce `ty` right now: every prerequisite is met
-    /// and, for structures, a building that produces its queue (the
-    /// Construction Yard) stands. OpenRA: the item is in `BuildableItems()`,
-    /// which is empty while a classic queue has no producer.
+    /// and, where the queue needs one (`queue_needs_producer`), a building
+    /// that produces its queue (for structures the Construction Yard)
+    /// stands. OpenRA: the item is in `BuildableItems()`, which is empty
+    /// while a classic queue has no producer.
     pub fn can_produce(&self, player: u8, ty: u16) -> bool {
         let q = self.rules.actors[ty as usize].queue;
-        self.availability(player, ty).enabled && (!q.is_structure() || self.has_producer(player, q))
+        self.availability(player, ty).enabled && (!self.queue_needs_producer(q) || self.has_producer(player, q))
     }
 
     /// Whether `player` can queue one more `ty`: `can_produce` within its
@@ -396,11 +424,35 @@ impl World {
         }
     }
 
+    /// OpenRA ClassicProductionQueue.Tick under OpenRA's factory loss rule: a
+    /// queue whose player has no structure of its type left is not Enabled
+    /// and ClearQueue empties it, refunding everything paid for every item
+    /// (a finished one in full), without a notification.
+    fn clear_disabled_queues(&mut self, player: u8) {
+        if self.options.factory_loss != crate::world::FactoryLoss::OpenRA {
+            return;
+        }
+        for qi in 0..crate::rules::QUEUE_COUNT {
+            let q = QueueType::from_index(qi);
+            if self.players[player as usize].queues[qi].items.is_empty() || self.has_producer(player, q) {
+                continue;
+            }
+            let items = std::mem::take(&mut self.players[player as usize].queues[qi].items);
+            for item in items {
+                self.refund(player, item.paid);
+                self.note_production_refund(player, item.paid);
+            }
+            self.sound.unblock(player, qi);
+        }
+    }
+
     /// OpenRA `CancelUnbuildableItems`: every queued item that can no longer
     /// be produced is removed and what was paid for it refunded. That covers
     /// items whose prerequisites were destroyed (a half-built tank after its
     /// service depot died) and, for the Building and Defense queues, every item
-    /// once the last Construction Yard is gone. Nothing else in the queue is
+    /// once the last Construction Yard is gone (under WebRA's factory loss
+    /// rule; OpenRA's has already cleared those queues silently,
+    /// `clear_disabled_queues`). Nothing else in the queue is
     /// held up, and the items can be queued again once the prerequisites (or a
     /// new Construction Yard) are back.
     fn cancel_unbuildable(&mut self, player: u8) {
@@ -438,6 +490,7 @@ impl World {
         }
         let tick = self.tick;
         self.sound.flush_new_options(player, tick);
+        self.clear_disabled_queues(player);
         self.cancel_unbuildable(player);
         for qi in 0..crate::rules::QUEUE_COUNT {
             let q = QueueType::from_index(qi);
@@ -445,10 +498,20 @@ impl World {
                 continue;
             }
             let first_ty = self.players[player as usize].queues[qi].items[0].ty;
-            let producers = self.producer_count(player, first_ty);
-            // No factory (or it was destroyed): the queue waits. (Structure
-            // queues without a Construction Yard were emptied above.)
-            if producers == 0 {
+            // Queues without a structure of their type were emptied above
+            // (structure queues always, unit queues under OpenRA's factory
+            // loss rule). A unit queue builds while a structure of its type
+            // stands (OpenRA ClassicProductionQueue.Enabled); without one,
+            // under WebRA's rule, it waits. The
+            // build time counts the structures of the item's build_at type
+            // (`producer_count_in`, one at most for structures).
+            let (has_factory, producers) = if q.is_structure() {
+                let has = self.has_producer(player, q);
+                (has, usize::from(has))
+            } else {
+                self.unit_factories(player, first_ty)
+            };
+            if !has_factory {
                 continue;
             }
             let cost = self.rules.actors[first_ty as usize].cost;
@@ -502,60 +565,90 @@ impl World {
                 }
             }
             // Finished unit: spawn it at a producer.
-            if self.spawn_produced(player, first_ty) {
-                self.players[player as usize].queues[qi].items.remove(0);
-                self.note_built(player, first_ty);
-                self.sound.unblock(player, qi);
-            } else if !fast_build {
-                // OpenRA: BlockedAudio once while the unit cannot leave (not for instant builds).
-                self.sound.push_blocked(player, qi, first_ty);
+            match self.spawn_produced(player, first_ty) {
+                Some(true) => {
+                    self.players[player as usize].queues[qi].items.remove(0);
+                    self.note_built(player, first_ty);
+                    self.sound.unblock(player, qi);
+                }
+                produced => {
+                    // OpenRA BuildUnit without any structure that makes the
+                    // unit: CancelProduction(unit, 1) cancels the last item of
+                    // that type in the queue and refunds what was paid for it
+                    // (the finished one itself once it is the last).
+                    let cancelled_first = produced.is_none() && self.cancel_last_of(player, qi, first_ty);
+                    if !fast_build {
+                        // OpenRA: BlockedAudio once while the unit cannot leave
+                        // or was not made (not for instant builds).
+                        self.sound.push_blocked(player, qi, first_ty);
+                    }
+                    if cancelled_first {
+                        self.sound.unblock(player, qi);
+                    }
+                }
             }
         }
     }
 
-    fn spawn_produced(&mut self, player: u8, ty: u16) -> bool {
-        // The primary structure first (primary.rs, OpenRA ClassicProductionQueue);
-        // one being captured has its exits shut (Exit RequiresCondition !being-captured, infantry.rs).
-        let producers: Vec<usize> = self.producers_of(player, ty).into_iter().filter(|&b| !self.being_captured(b)).collect();
-        let Some(&b) = producers.iter().find(|&&b| self.actors[b].primary).or(producers.first()) else { return false };
-        self.produce_at(b, player, ty).is_some()
+    /// OpenRA ClassicProductionQueue.BuildUnit: the finished unit leaves the
+    /// primary structure, else the first other one whose exit it can use
+    /// (OpenRA: the newest first). One being captured has its exits shut
+    /// (Exit RequiresCondition !being-captured, infantry.rs). Some(false)
+    /// while every producer's exits are blocked: the item stays done and
+    /// tries again next tick. None when no structure makes it at all.
+    fn spawn_produced(&mut self, player: u8, ty: u16) -> Option<bool> {
+        let producers = self.producers_of(player, ty);
+        if producers.is_empty() {
+            return None;
+        }
+        let mut producers: Vec<usize> = producers.into_iter().filter(|&b| !self.being_captured(b)).collect();
+        // Stable: the primary one first, the others in actor order.
+        producers.sort_by_key(|&b| !self.actors[b].primary);
+        Some(producers.into_iter().any(|b| self.produce_at(b, player, ty).is_some()))
     }
 
-    /// A unit of type `ty` for `player` leaves structure `b` (at its least
-    /// crowded exit, toward its rally point). None when it cannot get out
-    /// (a ship yard with every exit blocked). Missions use it directly
-    /// (OpenRA Production.Produce, `actor.Produce`).
+    /// OpenRA ProductionQueue.CancelProductionInner: the last item of type
+    /// `ty` in queue `qi` is removed and what was paid for it refunded.
+    /// Whether that was the queue's first item.
+    fn cancel_last_of(&mut self, player: u8, qi: usize, ty: u16) -> bool {
+        let Some(i) = self.players[player as usize].queues[qi].items.iter().rposition(|it| it.ty == ty) else { return false };
+        let item = self.players[player as usize].queues[qi].items.remove(i);
+        self.refund(player, item.paid);
+        self.note_production_refund(player, item.paid);
+        i == 0
+    }
+
+    /// One scan of `player`'s structures for a unit of type `ty`: whether any
+    /// makes its queue (OpenRA ClassicProductionQueue.Enabled) and how many
+    /// make its build_at type (`producer_count_in`, for the build time).
+    fn unit_factories(&self, player: u8, ty: u16) -> (bool, usize) {
+        let info = &self.rules.actors[ty as usize];
+        let mut any = false;
+        let mut count = 0;
+        for a in self.actors.iter().filter(|a| a.alive && a.owner == player && a.kind == Kind::Building) {
+            let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            if b.produces.contains(&info.queue) {
+                any = true;
+                count += usize::from(b.production_types.contains(&info.build_at));
+            }
+        }
+        (any, count)
+    }
+
+    /// A unit of type `ty` for `player` leaves structure `b` (OpenRA
+    /// Production.Produce, `actor.Produce` of missions): by the exit
+    /// `select_exit` picks, toward the rally point. None when it cannot get
+    /// out (every exit blocked, a ship yard without open water next to it).
     pub(crate) fn produce_at(&mut self, b: usize, player: u8, ty: u16) -> Option<usize> {
-        let (bcx, bcy, rally) = (self.actors[b].cx, self.actors[b].cy, self.actors[b].rally);
-        let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
-        let exits = binfo.exits.clone();
-        let height = binfo.height;
-        let width = binfo.width;
-        // Pick the exit with the fewest units on it; among those, the one
-        // nearest the rally point (so mirrored bases use mirrored exits).
-        let mut best: Option<((usize, i64), (i32, i32))> = None;
-        for &(ex, ey) in &exits {
-            let (cx, cy) = (bcx + ex, bcy + ey);
-            if !self.map.contains(cx, cy) {
-                continue;
-            }
-            let n = self.units_in_cell(self.map.idx(cx, cy)).len();
-            let to_rally = rally.map_or(0, |(rx, ry)| crate::math::dist_sq(cell_center(cx), cell_center(cy), rx, ry));
-            if best.is_none_or(|(bk, _)| (n, to_rally) < bk) {
-                best = Some(((n, to_rally), (cx, cy)));
-            }
-        }
-        let (mut ex, mut ey) = match best {
-            Some((_, c)) => c,
-            None => (bcx + width / 2, (bcy + height).min(self.map.height - 1)),
-        };
-        let mut facing = 512;
-        // Ships launch onto open water next to the yard (naval.rs); they wait while every exit is blocked.
-        if self.is_water_type(ty) {
-            let (cx, cy, f) = self.naval_spawn_cell(b)?;
-            (ex, ey, facing) = (cx, cy, f);
-        }
+        let (bcy, rally) = (self.actors[b].cy, self.actors[b].rally);
+        let height = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap().height;
+        let (ex, ey, facing) = self.select_exit(b, player, ty)?;
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        // OpenRA LocationInit(exit): the unit holds its exit cell from the
+        // tick it is made, so the next one waits until it has driven off.
+        if self.cell_moves() && self.occupies_cells(u) {
+            self.place_on_cell(u);
+        }
         let (ux, uy) = (self.actors[u].x, self.actors[u].y);
         // OpenRA INotifyProduction: the factory's door opens for it (doors.rs).
         self.door_unit_produced(b, u);
@@ -572,11 +665,139 @@ impl World {
         if self.is_harvester(u) {
             return Some(u);
         }
-        let (rx, ry) = rally.unwrap_or((cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))));
+        let (rx, ry) = match rally {
+            Some(r) => r,
+            // OpenRA (at the pinned b6fc03f): RallyPointInfo.Path defaults to
+            // empty and Red Alert's rules set none, so a new structure has no
+            // rally point and Production.DoProduction gives the unit its exit
+            // cell as the rally point (`rp.Path.Count > 0 ? rp.Path : [exit]`):
+            // it stays there, and the next one to come out asks it to make
+            // way; helicopters stay on their pad. In the WebRA movement model
+            // (whose crowd would jam the door, see `exit_free_for`) ground
+            // units and ships drive on to a cell below the structure.
+            None if self.rules.actors[ty as usize].kind == Kind::Aircraft || self.cell_moves() => return Some(u),
+            None => (cell_center(ex), cell_center((bcy + height + 1).min(self.map.height - 1))),
+        };
         self.order_move(&[u], rx, ry, false);
         // OpenRA LeaveProductionActivity: MoveTo(rally point, 1) (movement/cellmove.rs).
         self.actors[u].mv.order_near = 1;
         Some(u)
+    }
+
+    /// OpenRA Production.SelectExit with CanUseExit: the exits by priority
+    /// (ExitInfo.Priority, highest first), then nearest the rally point (the
+    /// default one below the structure when none is set; OpenRA shuffles
+    /// those), and the first a unit of `ty` can enter. Each exit looked at
+    /// first tells the friendly units on it that they are in the way (idle
+    /// ones step aside, movement/cellmove.rs). Aircraft (helipads,
+    /// airfields) are not held up by units. Ships take the same rule on the
+    /// open water just outside the yard's exits (naval.rs
+    /// `naval_launch_cells`). The cell and facing, None while every exit is
+    /// blocked.
+    fn select_exit(&mut self, b: usize, player: u8, ty: u16) -> Option<(i32, i32, i32)> {
+        let (bcx, bcy) = (self.actors[b].cx, self.actors[b].cy);
+        let nudger = self.map.idx(bcx.clamp(0, self.map.width - 1), bcy.clamp(0, self.map.height - 1)) as u32;
+        if self.is_water_type(ty) {
+            for (cx, cy, facing) in self.naval_launch_cells(b, ty) {
+                let cell = self.map.idx(cx, cy) as u32;
+                self.notify_blockers_at(cell, player, nudger);
+                if self.exit_free_for(player, ty, cell) {
+                    return Some((cx, cy, facing));
+                }
+            }
+            return None;
+        }
+        let binfo = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap();
+        let (width, height) = (binfo.width, binfo.height);
+        let (rx, ry) =
+            self.actors[b].rally.unwrap_or((bcx * CELL + width * CELL / 2, cell_center((bcy + height + 1).min(self.map.height - 1))));
+        let mut exits: Vec<(i32, i64, i32, i32)> = binfo
+            .exits
+            .iter()
+            .enumerate()
+            .filter(|&(k, _)| self.exit_lets_out(b, k, ty))
+            .map(|(k, &(ex, ey))| (binfo.exit_priority.get(k).copied().unwrap_or(1), 0, bcx + ex, bcy + ey))
+            .filter(|&(_, _, cx, cy)| self.map.contains(cx, cy))
+            .map(|(p, _, cx, cy)| (p, crate::math::dist_sq(cell_center(cx), cell_center(cy), rx, ry), cx, cy))
+            .collect();
+        if binfo.exits.is_empty() {
+            // A structure without exits: below its middle.
+            return Some((bcx + width / 2, (bcy + height).min(self.map.height - 1), 512));
+        }
+        if exits.is_empty() {
+            // No exit for this kind of unit (OpenRA: no Exit, Produce fails).
+            return None;
+        }
+        // Stable: equal exits keep their order.
+        exits.sort_by_key(|&(p, d, _, _)| (std::cmp::Reverse(p), d));
+        let ground = self.rules.actors[ty as usize].kind != Kind::Aircraft;
+        if !ground {
+            return exits.first().map(|&(_, _, cx, cy)| (cx, cy, 512));
+        }
+        for (_, _, cx, cy) in exits {
+            let cell = self.map.idx(cx, cy) as u32;
+            self.notify_blockers_at(cell, player, nudger);
+            if self.exit_free_for(player, ty, cell) {
+                return Some((cx, cy, 512));
+            }
+        }
+        None
+    }
+
+    /// OpenRA ExitExts.Exits: whether exit `k` of structure `b` lets out a
+    /// unit of type `ty`, by its ExitInfo.ProductionTypes and the production
+    /// type the unit is built as (Buildable.BuildAtProductionType, else the
+    /// queue's; with the "all tech" cheat the queue's, as in
+    /// ClassicProductionQueue.BuildUnit). The sub pen's Submarine exits are
+    /// (-1, 2), (3, 2) and its top corners; its Ship exits, on all four
+    /// corners, let out only units built as Ship (the transport, or any
+    /// ship under all tech).
+    pub(crate) fn exit_lets_out(&self, b: usize, k: usize, ty: u16) -> bool {
+        let Some(binfo) = self.rules.actors[self.actors[b].ty as usize].building.as_ref() else { return true };
+        let Some(types) = binfo.exit_types.get(k).filter(|t| !t.is_empty()) else { return true };
+        let built_as = self.built_as(self.actors[b].owner, ty);
+        types.iter().any(|t| t == built_as)
+    }
+
+    /// OpenRA MobileInfo.CanEnterCell for a unit of type `ty` of `player`
+    /// that is not made yet, under BlockedByActor.All: the terrain lets it
+    /// in, and nobody holds the cell that it could not run over (infantry:
+    /// a sub-cell is free). In the WebRA movement model units hold no cells:
+    /// there only units standing idle in the cell (when the tick began)
+    /// keep it, as crowd separation pushes the ones on the move apart (a
+    /// door that waited for those would jam behind the crowd that the
+    /// model's arrival rule gathers in front of it).
+    fn exit_free_for(&self, player: u8, ty: u16, cell: u32) -> bool {
+        let ci = cell as usize;
+        if self.pass_of_type(ty as usize).blocked[ci] {
+            return false;
+        }
+        let shares = self.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].shares_cell);
+        if self.cell_moves() {
+            let held: Vec<crate::movement::occupancy::Occupant> =
+                self.occupancy.at(cell).iter().copied().filter(|o| self.occupies_cells(o.actor as usize)).collect();
+            if shares {
+                return held.iter().all(|o| o.sub != crate::movement::occupancy::FULL_CELL)
+                    && (1..crate::movement::occupancy::SUB_CELL_OFFSETS.len() as u8).any(|s| held.iter().all(|o| o.sub != s));
+            }
+            return held.iter().all(|o| self.crushable_by_type(o.actor as usize, ty, player));
+        }
+        // WebRA model: only units standing idle in the cell keep it; ones on
+        // the move are pushed apart by the crowd separation (soft.rs).
+        let standing: Vec<usize> = self
+            .units_in_cell(ci)
+            .iter()
+            .map(|&u| u as usize)
+            .filter(|&u| {
+                let a = &self.actors[u];
+                a.alive && a.kind != Kind::Aircraft && !a.air.parachute && a.activity == Activity::Idle
+            })
+            .collect();
+        if shares {
+            return standing.len() < crate::movement::occupancy::SUB_CELL_OFFSETS.len() - 1
+                && standing.iter().all(|&u| self.shares_cell(u));
+        }
+        standing.iter().all(|&u| self.crushable_by_type(u, ty, player))
     }
 
     // ---- Placement ---------------------------------------------------------

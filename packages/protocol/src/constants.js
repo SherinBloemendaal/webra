@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -185,6 +185,20 @@ export const MOVEMENT_MODELS = ['openra', 'webra'];
 /** The model of games, saves and replays without the `movement` option. */
 export const LEGACY_MOVEMENT = 'webra';
 
+/**
+ * What a production queue does when its player loses the last structure of
+ * its type (engine/src/production.rs): `openra`, OpenRA's
+ * ClassicProductionQueue (the queue is cleared and everything paid
+ * refunded, silently, and takes nothing until such a structure stands
+ * again), or `webra` (unit queues wait for a new factory; structure queues
+ * cancel their items with a refund). Games, saves and replays without the
+ * option are played with `webra`, the rule they were made with.
+ */
+export const FACTORY_LOSS_RULES = ['openra', 'webra'];
+
+/** The rule of games, saves and replays without the `factoryLoss` option. */
+export const LEGACY_FACTORY_LOSS = 'webra';
+
 /** Time limits in minutes, 0 for none (OpenRA TimeLimitManager TimeLimitOptions). */
 export const TIME_LIMITS = [0, 10, 20, 30, 40, 60, 90];
 /** Handicaps in percent: less firepower and armour, slower production (OpenRA: 0 to 95 in steps of 5). */
@@ -237,6 +251,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
   allyBuildRadius: true,
   timeLimit: 0,
   movement: 'openra',
+  factoryLoss: 'openra',
 });
 
 /** Slot types in an online lobby. */

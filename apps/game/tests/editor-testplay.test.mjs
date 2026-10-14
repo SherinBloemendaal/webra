@@ -22,9 +22,10 @@ const players = [
 ];
 
 test('the setup is read only for editor test play, and only in a sane shape', () => {
-  const ok = JSON.stringify({ players, movement: 'webra', camera: [120.5, 300], autostart: true });
+  const ok = JSON.stringify({ players, movement: 'webra', factoryLoss: 'webra', camera: [120.5, 300], autostart: true });
   const s = loadTestSetup(params('editorTest=1'), storage(ok));
   assert.equal(s.movement, 'webra');
+  assert.equal(s.factoryLoss, 'webra');
   assert.deepEqual(s.camera, [120.5, 300]);
   assert.equal(s.autostart, true);
   assert.equal(s.players.length, 3);
@@ -36,6 +37,7 @@ test('the setup is read only for editor test play, and only in a sane shape', ()
   assert.equal(odd.camera, null);
   assert.equal(odd.autostart, false);
   assert.equal(odd.movement, null, 'no movement model: the lobby keeps its own');
+  assert.equal(odd.factoryLoss, null, 'no factory loss rule: the lobby keeps its own');
   assert.deepEqual(odd.players[3], {});
   assert.equal(loadTestSetup(params('editorTest=1'), { getItem: () => { throw new Error('blocked'); } }), null, 'blocked storage: the lobby opens as usual');
 });
@@ -117,6 +119,27 @@ test('test play plays the movement model the editor picked, unless the map locks
     lobby.offerMapText(JSON.stringify(locked), 'editor', { players: players.slice(0, 2), movement: 'webra', camera: null, autostart: true });
     await Promise.resolve();
     assert.equal(started.at(-1).movement, 'openra', 'the map locks OpenRA movement');
+  } finally {
+    delete globalThis.requestAnimationFrame;
+    uninstallDom();
+  }
+});
+
+test('test play plays the factory loss rule the editor picked, unless the map locks its own', async () => {
+  const { lobby, started } = await mountLobby();
+  try {
+    lobby.offerMapText(mapJson(), 'editor', { players: players.slice(0, 2), factoryLoss: 'webra', camera: null, autostart: true });
+    await Promise.resolve();
+    assert.equal(started[0].factoryLoss, 'webra');
+    lobby.offerMapText(mapJson(), 'editor', { players: players.slice(0, 2), factoryLoss: 'never', camera: null, autostart: true });
+    await Promise.resolve();
+    assert.equal(started[1].factoryLoss, 'openra', 'an unknown rule: the default');
+    const locked = JSON.parse(mapJson());
+    locked.options = { factoryLoss: 'openra' };
+    locked.lockedOptions = ['factoryLoss'];
+    lobby.offerMapText(JSON.stringify(locked), 'editor', { players: players.slice(0, 2), factoryLoss: 'webra', camera: null, autostart: true });
+    await Promise.resolve();
+    assert.equal(started.at(-1).factoryLoss, 'openra', 'the map locks OpenRA factory loss');
   } finally {
     delete globalThis.requestAnimationFrame;
     uninstallDom();

@@ -438,7 +438,13 @@ impl World {
         // Blocked for good (enemies in a gap, a wall of units that does not
         // move). Waiting in a moving queue does not count: a big army
         // funnelling through a gap takes its time.
-        stall > STUCK_LIMIT * 6
+        if stall <= STUCK_LIMIT * 6 {
+            return false;
+        }
+        if crowd && rest > crate::movement::cellmove::ORDER_NEAR_ENOUGH * CELL {
+            self.note_route_blocked(i);
+        }
+        true
     }
 
     /// Whether unit `i` touches an idle unit of its owner (one that already

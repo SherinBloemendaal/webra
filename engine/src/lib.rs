@@ -109,6 +109,8 @@ mod tests_doors;
 #[cfg(test)]
 mod tests_editor;
 #[cfg(test)]
+mod tests_exits;
+#[cfg(test)]
 mod tests_fx;
 #[cfg(test)]
 mod tests_gamerules;
@@ -2034,6 +2036,10 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         // were played with WebRA's soft crowd separation and replay with it.
         movement: movement::MovementModel::from_name(&name("movement", "webra")?)
             .ok_or_else(|| "options.movement must be openra or webra".to_string())?,
+        // Absent in games from before the option (saves, replays): their
+        // unit queues waited for a new factory, and replay that way.
+        factory_loss: world::FactoryLoss::from_name(&name("factoryLoss", "webra")?)
+            .ok_or_else(|| "options.factoryLoss must be openra or webra".to_string())?,
     };
     Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
 }

@@ -21,6 +21,7 @@ import {
   TIME_LIMITS,
   WEATHER_MODES,
   MOVEMENT_MODELS,
+  FACTORY_LOSS_RULES,
 } from './constants.js';
 import { bool, fail, isPlainObject, object, oneOf, ProtocolError, text } from './check.js';
 
@@ -36,6 +37,7 @@ export const PRESET_KEYS = Object.freeze([
   'gameSpeed',
   'timeLimit',
   'movement',
+  'factoryLoss',
   ...BOOLEAN_OPTIONS,
 ]);
 
@@ -56,6 +58,8 @@ export const ADDED_PRESET_KEYS = Object.freeze([
   'techBuildings',
   // The movement model (engine/src/movement): modes saved before it take OpenRA's.
   'movement',
+  // The factory loss rule (engine/src/production.rs): likewise OpenRA's.
+  'factoryLoss',
 ]);
 
 /** Most saved modes per account. */
@@ -146,6 +150,7 @@ export function validatePresetOptions(raw, what = 'options') {
     gameSpeed: oneOf(v.gameSpeed, GAME_SPEEDS, `${what}.gameSpeed`),
     timeLimit: oneOf(v.timeLimit, TIME_LIMITS, `${what}.timeLimit`),
     movement: oneOf(v.movement, MOVEMENT_MODELS, `${what}.movement`),
+    factoryLoss: oneOf(v.factoryLoss, FACTORY_LOSS_RULES, `${what}.factoryLoss`),
   };
   for (const k of BOOLEAN_OPTIONS) out[k] = bool(v[k], `${what}.${k}`);
   return out;

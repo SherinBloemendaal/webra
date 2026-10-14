@@ -33,11 +33,21 @@ pub struct MissionOptions {
     /// How units move among each other (movement/). Missions started now
     /// play OpenRA's; saves and replays from before the option keep WebRA's.
     pub movement: crate::movement::MovementModel,
+    /// What a production queue does without a structure of its type
+    /// (production.rs). Missions started now play OpenRA's; saves and
+    /// replays from before the option keep WebRA's.
+    pub factory_loss: crate::world::FactoryLoss,
 }
 
 impl Default for MissionOptions {
     fn default() -> Self {
-        MissionOptions { options: BTreeMap::new(), humans: Vec::new(), local_player: 0, movement: crate::movement::MovementModel::OpenRA }
+        MissionOptions {
+            options: BTreeMap::new(),
+            humans: Vec::new(),
+            local_player: 0,
+            movement: crate::movement::MovementModel::OpenRA,
+            factory_loss: crate::world::FactoryLoss::OpenRA,
+        }
     }
 }
 
@@ -124,6 +134,7 @@ impl World {
             separate_team_spawns: false,
             tech_buildings: crate::mapgen::settlements::TechBuildings::None,
             movement: chosen.movement,
+            factory_loss: chosen.factory_loss,
         };
         let mut w = World::empty(rules, map, seed);
         w.options = options.clone();

@@ -395,12 +395,18 @@ fn naval_yards_launch_ships_onto_the_open_sea_not_into_a_pond() {
     let pond = w.pass_water.component[w.map.idx(25, 10)];
     assert_ne!(pond, w.pass_water.component[w.map.idx(40, 10)]);
     let pt = ty(&w, "PT");
+    // Without a rally point each boat stays where it came out (OpenRA): the
+    // yard launches the next one onto the sea while a cell there is free,
+    // and then waits rather than use the pond.
+    let mut launched = 0;
     for _ in 0..4 {
-        let boat = w.produce_at(syrd, 0, pt).expect("launched");
+        let Some(boat) = w.produce_at(syrd, 0, pt) else { break };
+        launched += 1;
         let ci = w.cell_index(w.actors[boat].x, w.actors[boat].y);
         assert_ne!(w.pass_water.component[ci], pond, "launched into the pond at {:?}", w.cell_of(w.actors[boat].x, w.actors[boat].y));
         w.step();
     }
+    assert_eq!(launched, 2, "the two sea-side exits launch, then the yard waits");
     // A rally point in the pond is honoured (the player asked for it).
     w.actors[syrd].rally = Some((cell_center(25), cell_center(10)));
     let boat = w.produce_at(syrd, 0, pt).expect("launched");
