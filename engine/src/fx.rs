@@ -59,6 +59,10 @@ pub const FX_ZAP_DIM: f32 = 2.0;
 /// The anti-air missile (OpenRA Image MISSILE: Nike, RedEye, SubMissileAA;
 /// `RenderData::sam_missile`), drawn pointing east like the `missile` special.
 pub const FX_SAM_MISSILE: f32 = 3.0;
+/// The atom bomb rising and falling (OpenRA NukePower MissileImage atomic,
+/// sequences `up` and `down`; abilities.rs), drawn as they are, unturned.
+pub const FX_NUKE_UP: f32 = 4.0;
+pub const FX_NUKE_DOWN: f32 = 5.0;
 
 /// OpenRA's damage states the smoke starts at (WithDamageOverlay.MinimumDamageState).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

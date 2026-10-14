@@ -99,6 +99,11 @@ const QUARTER_TURN: f32 = std::f32::consts::FRAC_PI_2;
 /// part of an offset along the body is shortened by it on screen, the way
 /// the pre-rendered sprites are foreshortened.
 pub const CLASSIC_PITCH_SIN: f32 = 654.0 / 1024.0;
+/// Opacity a structure without a make animation in its art starts its
+/// build-up at (render.rs: it fades in over the rules' make time).
+pub const MAKE_FADE_FROM: f32 = 0.25;
+/// The same sine in 1024ths (OpenRA `CameraPitch.Sin()`), for world offsets.
+pub const CLASSIC_PITCH_SIN_1024: i32 = 654;
 
 /// Screen offset (world pixels) of a part `fwd` world units ahead of and
 /// `side` to the right of a body facing `facing` (WebRA angle units), the
@@ -165,6 +170,10 @@ pub enum Pose {
     /// lists several, OpenRA picks one per shot: Tanya's shoot-left and
     /// shoot-right; infantry_render.rs `infantry_attack_pose`).
     Attack2 = 25,
+    /// The make animation played backwards (OpenRA WithMakeAnimation.Reverse):
+    /// a structure being sold, a Construction Yard packing up; `age` =
+    /// ticks since it started.
+    Unmake = 26,
 }
 
 impl Pose {
@@ -268,7 +277,19 @@ impl World {
             let Some(at) = sink.group([x, y], [x, y], 96.0) else { continue };
             let flash = (a.flash > 0) as i32 as f32;
             // Cloaked structures (Camo Pillbox) are drawn faint for their owner and allies.
-            let alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
+            let mut alpha = if a.ab.cloaked { 0.45 } else { 1.0 };
+            // Art without a make animation (WebRA's drawings) builds up by
+            // fading in over the make time instead.
+            if self.tick < a.make_until && !self.render_opts.has_make_art(a.ty) {
+                let total = self.rules.actors[a.ty as usize].building.as_ref().map_or(1, |b| b.make_ticks.max(1));
+                let done = if a.unmake_at > 0 {
+                    // Packing up: fading out again.
+                    a.unmake_at - self.tick
+                } else {
+                    self.make_age(i) + 1
+                };
+                alpha *= MAKE_FADE_FROM + (1.0 - MAKE_FADE_FROM) * done.min(total) as f32 / total as f32;
+            }
             // Bridges show the template of their state (bridges.rs).
             let body = self.bridge_sprite(i).unwrap_or_else(|| self.body_sprite(i, a.ty as u32 * 2));
             sink.sprite(sprites, at.look(body, a.owner as f32, 1.0, alpha, flash));
@@ -731,9 +752,17 @@ impl World {
         if info.is_wall() {
             return (if damaged { Pose::Damaged } else { Pose::Idle }, self.wall_connections(i));
         }
-        let age = self.tick.saturating_sub(a.born);
-        if a.born > 0 && age < MAX_POSE_AGE {
-            return (Pose::Make, age);
+        // Packing up: the make animation backwards until the MCV appears.
+        if a.unmake_at > 0 {
+            let total = self.rules.actors[a.ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+            return (Pose::Unmake, self.tick.saturating_sub(a.unmake_at.saturating_sub(total)));
+        }
+        // The make animation (OpenRA WithMakeAnimation) for as long as the
+        // rules say (`make_until`, the simulation's build-incomplete time),
+        // from when it started (`World::begin_make`: placed, or unfolding
+        // again after a pack-up that could not finish).
+        if self.tick < a.make_until {
+            return (Pose::Make, self.make_age(i));
         }
         // Working animations (fx.rs): resupplying, the Tesla charge, a launch, placing.
         if let Some(working) = self.fx_building_pose(i, damaged) {
@@ -750,6 +779,14 @@ impl World {
             return (if damaged { Pose::DamagedStill } else { Pose::Still }, 0);
         }
         (if damaged { Pose::Damaged } else { Pose::Idle }, 0)
+    }
+
+    /// Ticks since structure `i` started its forward make animation (its
+    /// `make_until` less the rules' `make_ticks`).
+    fn make_age(&self, i: usize) -> u32 {
+        let a = &self.actors[i];
+        let total = self.rules.actors[a.ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        self.tick.saturating_sub(a.make_until.saturating_sub(total))
     }
 
     /// The pose of a unit's body sprite: walking, firing, harvesting or docking.

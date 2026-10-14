@@ -162,4 +162,39 @@ export const EFFECT_SPECIALS = [
     poly(ctx, P.c('#8a8f96'), [6, 0.8, 7, 1.3, 6, 1.3]);
     poly(ctx, P.c('#8a8f96'), [6, 3.2, 7, 2.7, 6, 2.7]);
   }],
+  // 4, 5: the atom bomb (OpenRA NukePower MissileImage atomic, sequences up
+  // and down; engine/src/abilities.rs): rising nose up on its exhaust flame,
+  // then falling nose down with the flame trailing above it
+  [12, 34, (ctx, P) => atomBomb(ctx, P, false)],
+  [12, 34, (ctx, P) => atomBomb(ctx, P, true)],
 ];
+
+/**
+ * The atom bomb in a 12 x 34 box, nose up (or down when `falling`): a
+ * dark olive body with a red warhead band and a pale nose, four fins at the
+ * tail and the rocket flame below the tail (above it when falling).
+ */
+function atomBomb(ctx, P, falling) {
+  ctx.save();
+  if (falling) {
+    ctx.translate(12, 34);
+    ctx.rotate(Math.PI);
+  }
+  // Exhaust: a long soft plume, then the hot core at the nozzle.
+  poly(ctx, P.c('rgba(255,140,40,0.35)'), [3, 22, 9, 22, 7.5, 34, 4.5, 34]);
+  poly(ctx, P.c('rgba(255,190,80,0.75)'), [4, 22, 8, 22, 6.8, 30, 5.2, 30]);
+  poly(ctx, P.c('#fff4c8'), [4.8, 22, 7.2, 22, 6.4, 26, 5.6, 26]);
+  // Fins.
+  poly(ctx, P.c('#3c4230'), [3.6, 16, 3.6, 22, 0.6, 23, 0.6, 20]);
+  poly(ctx, P.c('#3c4230'), [8.4, 16, 8.4, 22, 11.4, 23, 11.4, 20]);
+  // Body, lit from the left, and the nozzle.
+  poly(ctx, P.c('#2a2d24'), [4.4, 21, 7.6, 21, 7.2, 23, 4.8, 23]);
+  poly(ctx, P.c('#5d6648'), [3.6, 6, 8.4, 6, 8.4, 21.5, 3.6, 21.5]);
+  poly(ctx, P.c('#7f8a62'), [3.6, 6, 5.4, 6, 5.4, 21.5, 3.6, 21.5]);
+  poly(ctx, P.c('#3c4230'), [7.4, 6, 8.4, 6, 8.4, 21.5, 7.4, 21.5]);
+  // Warhead band and nose cone.
+  poly(ctx, P.c('#b8261c'), [3.6, 6, 8.4, 6, 8.4, 8, 3.6, 8]);
+  poly(ctx, P.c('#d9d6c4'), [3.6, 6, 6, 0.4, 8.4, 6]);
+  poly(ctx, P.c('#9a978a'), [6, 0.4, 8.4, 6, 6.8, 6]);
+  ctx.restore();
+}

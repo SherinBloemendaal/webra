@@ -141,6 +141,8 @@ pub struct Actor {
     // Repair
     pub depot: u32,
     pub repair_timer: i32,
+    /// Place in the service depot's line (service.rs).
+    pub svc: crate::service::ServiceState,
 
     // Buildings
     pub cx: i32,
@@ -196,6 +198,23 @@ pub struct Actor {
     /// only: the sprite poses (render.rs `Pose::Make`) read it; it is not part
     /// of the state hash and nothing in the simulation depends on it.
     pub born: u32,
+    /// Last tick of a structure's make animation (OpenRA WithMakeAnimation's
+    /// `build-incomplete` condition, `World::build_incomplete`), 0 for none:
+    /// set by `World::begin_make` when it is placed, deployed or created by
+    /// a script; map actors and the starting base skip it (OpenRA SkipMakeAnimsInit).
+    /// Simulation state (state hash).
+    pub make_until: u32,
+    /// A structure playing its make animation backwards before it goes
+    /// (OpenRA WithMakeAnimation.Reverse; uninterruptible): a Construction
+    /// Yard packing up (Transform, then the MCV) or a structure being sold
+    /// (`unmake_sell`; Sellable.Sell, then the Sell activity). The tick it
+    /// ends, 0 when it is not (production.rs `tick_unmake`). Simulation
+    /// state (state hash).
+    pub unmake_at: u32,
+    pub unmake_sell: bool,
+    /// The player who sold it (OpenRA's Sell activity pays the PlayerResources
+    /// of the owner when the sale started), paid and announced at the end.
+    pub unmake_seller: u8,
     /// When it fired, smoked, worked (fx.rs): presentation only, not in the state hash.
     pub fx: crate::fx::ActorFx,
 
@@ -276,6 +295,7 @@ impl Actor {
             refinery: NONE,
             depot: NONE,
             repair_timer: 0,
+            svc: Default::default(),
             cx: 0,
             cy: 0,
             rally: None,
@@ -301,6 +321,10 @@ impl Actor {
             prone_ticks: 0,
             rank_heal_timer: 0,
             born: 0,
+            make_until: 0,
+            unmake_at: 0,
+            unmake_sell: false,
+            unmake_seller: 0,
             fx: Default::default(),
             repairers: Vec::new(),
             repair_ticks: 0,
@@ -1076,6 +1100,8 @@ pub struct World {
     /// crowd separation, so it waits in a queue rather than being blocked for
     /// good (units.rs).
     pub(crate) jammed: Vec<bool>,
+    /// The service depots' lines, gathered once a tick (service.rs; derived, not hashed).
+    pub(crate) svc_index: crate::service::ServiceIndex,
     /// This tick's answers of `keep_goal_reachable` (units.rs): goal cell,
     /// connectivity label, passability (0 ground, 1 water, 2 landing
     /// craft), crush mask, and the cell found. A cut-off group asks the
@@ -1430,6 +1456,7 @@ impl World {
             hash_owners_valid: true,
             terrain_dirty: true,
             jammed: Vec::new(),
+            svc_index: Default::default(),
             retarget_memo: Vec::new(),
             occupancy: Default::default(),
             search: Default::default(),
@@ -1614,6 +1641,18 @@ impl World {
         // ProducibleWithLevel (infantry.rs).
         self.on_created(i);
         i
+    }
+
+    /// Structure `i` starts its make animation now (OpenRA WithMakeAnimation
+    /// on a created actor without SkipMakeAnimsInit): it is `build-incomplete`
+    /// from this tick through `building.make_ticks` ticks after it (OpenRA
+    /// revokes the condition at the end of the last frame's tick). Placing,
+    /// an MCV deploying and a mission script's Actor.Create call it, also at
+    /// tick 0; the map's actors, the starting base and SpawnActorOnDeath do
+    /// not (`spawn_building` alone builds nothing).
+    pub(crate) fn begin_make(&mut self, i: usize) {
+        let ticks = self.rules.actors[self.actors[i].ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        self.actors[i].make_until = if ticks > 0 { self.tick + ticks } else { 0 };
     }
 
     /// Put a structure with its top-left at (cx, cy). Returns None, and
@@ -2054,6 +2093,18 @@ impl World {
         &self.hash_items[s..e]
     }
 
+    /// Whether unit `u` takes the cell it is on (OpenRA ActorMap): every
+    /// living unit in the world does from its creation, a paratrooper still
+    /// on its parachute too; only aircraft in the air do not
+    /// (Aircraft.OccupiedCells holds just the cell they landed on). Mines,
+    /// husks and crates are kept per cell elsewhere (`leftover_at`,
+    /// abilities.rs).
+    #[inline]
+    pub(crate) fn occupies_cell(&self, u: usize) -> bool {
+        let a = &self.actors[u];
+        a.alive && a.is_unit() && a.in_world() && !(a.kind == Kind::Aircraft && a.altitude > 0)
+    }
+
     pub(crate) fn rebuild_hash(&mut self) {
         let cells = self.map.cells();
         // Counting sort into the buffers of the last rebuild (twice a tick).
@@ -2315,11 +2366,22 @@ impl World {
                 self.actors[r].dock_user = NONE;
             }
         }
-        // The service depot's pad (units.rs tick_repair).
-        if let Some(d) = self.resolve(self.actors[i].depot) {
-            if self.actors[d].dock_user == me {
-                self.actors[d].dock_user = NONE;
+        // The service depot's pad and line (service.rs): a unit given a new
+        // order while in a depot's line keeps its place and its hold on the
+        // pad, so a new repair order to the same depot goes on where it was
+        // (OpenRA queues the new Resupply on the host). After any other
+        // order the kept state is dead: everything that reads it checks the
+        // Repair activity, the next repair order arrives here with another
+        // activity and clears it, a repair order to another depot starts
+        // afresh (`sync_service`), and units that start a repair without an
+        // order get a fresh place (`enter_service_line`).
+        if self.actors[i].activity != Activity::Repair {
+            if let Some(d) = self.resolve(self.actors[i].depot) {
+                if self.actors[d].dock_user == me {
+                    self.actors[d].dock_user = NONE;
+                }
             }
+            self.actors[i].svc = Default::default();
         }
         self.heli_cancel(i);
     }
@@ -2535,9 +2597,15 @@ impl World {
                     if b.refinery.is_some() && any_harv {
                         return SmartAction::Dock;
                     }
-                    // Vehicles repair on a service depot pad, ships near a naval yard (Repairable(Near).RepairActors).
+                    // Vehicles and planes repair on a service depot pad, ships near a naval
+                    // yard (Repairable(Near).RepairActors); with nothing to repair or rearm
+                    // there the cursor is blocked and the click does nothing (OpenRA
+                    // EnterBlockedCursor, Repairable ignores the order).
                     if b.repairs.is_some() && units.iter().any(|&u| self.repairs_at(u, t)) {
-                        return SmartAction::Repair;
+                        if units.iter().any(|&u| self.repairs_at(u, t) && self.needs_service(u, t)) {
+                            return SmartAction::Repair;
+                        }
+                        return SmartAction::EnterBlocked;
                     }
                 }
             }
@@ -2676,6 +2744,8 @@ impl World {
         self.retarget_memo.clear();
         section.next(crate::profile::Section::Orders);
         self.apply_orders();
+        // Reverse make animations that ended: yards turn into MCVs, sold structures go (production.rs).
+        self.tick_unmake();
         if self.tokens_dirty {
             self.refresh_tokens();
         }
@@ -2789,6 +2859,15 @@ impl World {
                 }
                 mix(a.repair_ticks as i64);
                 mix(a.powered_off as i64);
+                // The service depot's line and pad reservation (service.rs).
+                mix(a.repair_timer as i64);
+                a.svc.mix(&mut mix);
+                mix(a.dock_user as i64);
+                // The make animation's build-incomplete condition, forwards and back.
+                mix(a.make_until as i64);
+                mix(a.unmake_at as i64);
+                mix(a.unmake_sell as i64);
+                mix(a.unmake_seller as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);

@@ -351,6 +351,319 @@ fn the_ai_rebuilds_after_losing_a_prerequisite() {
     assert!(buildings >= 8, "the AI kept building: {buildings}");
 }
 
+// ---- Placement near the base (OpenRA BuildingInfo.IsCloseEnoughToBase) ------------
+
+/// A 48x24 map: land west of x = 18, a two cell beach, open water from x = 20.
+/// Player 0 owns a Construction Yard at (12, 10) (cells 12..14, 10..13) and
+/// has explored the whole map.
+fn shore_world() -> World {
+    use crate::map::{Map, Terrain};
+    let mut m = Map::filled(48, 24, Terrain::Water);
+    m.spawns = vec![(12, 10), (40, 2)];
+    for y in 0..24 {
+        for x in 0..20 {
+            let i = m.idx(x, y);
+            m.terrain[i] = if x < 18 { Terrain::Clear } else { Terrain::Beach };
+        }
+    }
+    let mut w = World::empty(crate::rules::Rules::load(), m, 5);
+    for (f, start) in [("allies", (12, 10)), ("soviet", (40, 2))] {
+        let fi = w.rules.faction_index(f).unwrap();
+        w.add_player(fi, false, start);
+    }
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 1);
+    }
+    let fact = ty(&w, "FACT");
+    w.spawn_building(fact, 0, 12, 10).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    w
+}
+
+/// OpenRA SYRD and SPEN: RequiresBuildableArea Adjacent 8. Past a beach the
+/// first all-water 3x3 spot lies more than two cells from the base; it must
+/// still take a naval yard, up to eight cells from a structure that gives
+/// buildable area (and no further).
+#[test]
+fn naval_yards_and_sub_pens_go_up_to_eight_cells_from_the_base() {
+    let w = shore_world();
+    for id in ["SYRD", "SPEN"] {
+        let t = ty(&w, id);
+        assert_eq!(w.rules.actors[t as usize].building.as_ref().unwrap().adjacent, 8, "{id}");
+        // The yard's east edge is x = 14: a gap of 5 (x = 20, by the beach) to 8 (x = 22).
+        for cx in 20..=22 {
+            assert!(w.can_place(0, t, cx, 10), "{id} at x {cx}");
+        }
+        assert!(!w.can_place(0, t, 23, 10), "{id} nine cells out");
+        // The footprint must be all water: not on the beach.
+        assert!(!w.can_place(0, t, 19, 10), "{id} on the beach");
+        // The placement preview (lib.rs placement_preview) agrees cell by cell.
+        assert!(w.placement_cells(0, t, 22, 10).iter().all(|c| c.2), "{id} preview");
+        assert!(w.placement_cells(0, t, 23, 10).iter().all(|c| !c.2), "{id} preview nine cells out");
+    }
+}
+
+/// The whole order path: a finished naval yard placed by its order.
+#[test]
+fn a_finished_naval_yard_is_placed_by_its_order() {
+    let mut w = shore_world();
+    let syrd = ty(&w, "SYRD");
+    for (id, x, y) in [("POWR", 8, 10), ("PROC", 8, 14)] {
+        w.spawn_building(ty(&w, id), 0, x, y).unwrap();
+    }
+    w.players[0].cash = 100_000;
+    w.refresh_tokens();
+    w.update_power();
+    w.queue_order(Order::StartProduction { player: 0, ty: syrd, count: 1 });
+    run_until_done(&mut w, 0, BQ);
+    w.queue_order(Order::Place { player: 0, ty: syrd, cx: 21, cy: 12 });
+    run(&mut w, 2);
+    let yard = find(&w, 0, "SYRD");
+    assert_eq!((w.actors[yard].cx, w.actors[yard].cy), (21, 12));
+}
+
+/// OpenRA ^Wall: RequiresBuildableArea Adjacent 7.
+#[test]
+fn walls_go_up_to_seven_cells_from_the_base() {
+    let w = shore_world();
+    let brik = ty(&w, "BRIK");
+    assert!(w.can_place(0, brik, 5, 11), "seven cells west of the yard");
+    assert!(!w.can_place(0, brik, 4, 11), "eight cells west of the yard");
+}
+
+/// OpenRA AreaTypes: fakes give and need only `fake` area; real structures
+/// give `building, fake` and need `building`. So a real structure cannot go
+/// next to a fake alone, a fake can.
+#[test]
+fn fake_structures_give_area_only_to_fakes() {
+    let mut w = shore_world();
+    w.spawn_building(ty(&w, "FPWR"), 0, 2, 18).unwrap();
+    assert!(!w.can_place(0, ty(&w, "POWR"), 5, 18), "a power plant next to a fake only");
+    assert!(w.can_place(0, ty(&w, "FPWR"), 5, 18), "a fake next to a fake");
+    // A real structure gives fakes their area too.
+    assert!(w.can_place(0, ty(&w, "FPWR"), 16, 10), "a fake next to the yard");
+}
+
+/// OpenRA counts footprint cells, not the bounding box: the empty corners of
+/// the service depot (`_+_ +++ _+_`) give no buildable area.
+#[test]
+fn empty_footprint_corners_give_no_buildable_area() {
+    let mut w = shore_world();
+    // FIX at (4, 2): its south-east corner (6, 4) is empty.
+    w.spawn_building(ty(&w, "FIX"), 0, 4, 2).unwrap();
+    let powr = ty(&w, "POWR");
+    assert!(w.can_place(0, powr, 7, 6), "two cells from the depot's pad (5, 4)");
+    assert!(!w.can_place(0, powr, 8, 6), "two cells from the empty corner only");
+}
+
+/// OpenRA scans up to, not including, Map.Clamp(topLeft + Dimensions +
+/// Adjacent): on the map's last row a structure gives no area to a
+/// footprint below the scan end.
+#[test]
+fn the_last_map_row_is_left_out_of_the_buildable_area_scan() {
+    let mut w = shore_world();
+    let (sbag, powr) = (ty(&w, "SBAG"), ty(&w, "POWR"));
+    // A one cell structure that gives buildable area (synthetic rules).
+    let area = w.rules.actors[powr as usize].building.as_ref().unwrap().gives_area;
+    w.rules.actors[sbag as usize].building.as_mut().unwrap().gives_area = area;
+    w.spawn_building(sbag, 0, 2, 22).unwrap();
+    assert!(w.can_place(0, powr, 2, 19), "two rows above a giver on row 22");
+    let b = w.building_at[w.map.idx(2, 22)] as usize;
+    w.remove(b);
+    w.spawn_building(sbag, 0, 2, 23).unwrap();
+    assert!(!w.can_place(0, powr, 2, 20), "two rows above a giver on the last row");
+}
+
+// ---- Shroud, fog and hidden actors (OpenRA World.IsCellBuildable) ------------------
+
+/// Finish a `q` item of `id` for player 0 and place it at (x, y) by order.
+fn build_and_place(w: &mut World, id: &str, q: usize, x: i32, y: i32) {
+    let t = ty(w, id);
+    w.players[0].cash = 100_000;
+    w.queue_order(Order::StartProduction { player: 0, ty: t, count: 1 });
+    run_until_done(w, 0, q);
+    w.queue_order(Order::Place { player: 0, ty: t, cx: x, cy: y });
+    run(w, 2);
+}
+
+/// OpenRA never asks the shroud when placing: a footprint may reach into
+/// cells the player has not explored, in the preview and by order.
+#[test]
+fn structures_go_into_the_shroud_like_openra() {
+    let mut w = shore_world();
+    w.spawn_building(ty(&w, "POWR"), 0, 8, 10).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 0);
+    }
+    let syrd = ty(&w, "SYRD");
+    assert!(w.placement_cells(0, syrd, 21, 12).iter().all(|c| c.2), "preview over unexplored water");
+    build_and_place(&mut w, "SYRD", BQ, 21, 12);
+    assert_eq!(count(&w, 0, "SYRD"), 1, "placed into the shroud");
+}
+
+/// OpenRA checks the true world state (ActorMap), so an enemy unit the
+/// player cannot see still blocks its cell: the preview shows that cell
+/// blocked (it gives the unit away) and the order is refused. Cloaked units
+/// (a submarine under a naval yard's footprint) block the same way.
+#[test]
+fn hidden_actors_block_their_cells_like_openra() {
+    let mut w = shore_world();
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 0);
+    }
+    let syrd = ty(&w, "SYRD");
+    let sub = w.spawn_unit(ty(&w, "SS"), 1, cell_center(22), cell_center(11), 0);
+    w.rebuild_hash();
+    assert!(w.players[0].explored[w.map.idx(22, 11)] == 0, "the player has not seen the cell");
+    let cells = w.placement_cells(0, syrd, 21, 10);
+    let blocked: Vec<(i32, i32)> = cells.iter().filter(|c| !c.2).map(|c| (c.0, c.1)).collect();
+    assert_eq!(blocked, vec![(22, 11)], "only the submarine's cell is blocked");
+    w.remove(sub);
+    w.rebuild_hash();
+    assert!(w.can_place(0, syrd, 21, 10), "free once it is gone");
+}
+
+/// A paratrooper on its parachute occupies its cell from its creation
+/// (OpenRA: every Mobile actor is in the ActorMap; only Aircraft keep no
+/// cell in the air).
+#[test]
+fn a_descending_paratrooper_blocks_placement() {
+    let mut w = shore_world();
+    let powr = ty(&w, "POWR");
+    let e1 = w.spawn_unit(ty(&w, "E1"), 1, cell_center(9), cell_center(11), 0);
+    w.actors[e1].altitude = 4096;
+    w.rebuild_hash();
+    assert!(!w.can_place(0, powr, 9, 11), "a paratrooper still in the air");
+    w.remove(e1);
+    w.rebuild_hash();
+    assert!(w.can_place(0, powr, 9, 11), "free once it is gone");
+}
+
+/// A crate on its parachute takes its cell too (OpenRA Crate is in the
+/// ActorMap from its creation, falling or landed).
+#[test]
+fn a_falling_crate_blocks_placement() {
+    let mut w = shore_world();
+    let powr = ty(&w, "POWR");
+    let c = w.place_crate(ty(&w, "CRATE") as usize, 1, 9, 11, 4096);
+    w.rebuild_hash();
+    assert!(w.actors[c].altitude > 0 && w.actors[c].air.parachute);
+    assert!(!w.can_place(0, powr, 9, 11), "a crate still in the air");
+    w.remove(c);
+    w.rebuild_hash();
+    assert!(w.can_place(0, powr, 9, 11), "free once it is gone");
+}
+
+/// Aircraft in the air occupy no cell (OpenRA Aircraft.OccupiedCells holds
+/// only landing cells); a landed one blocks.
+#[test]
+fn only_landed_aircraft_block_placement() {
+    let mut w = shore_world();
+    let powr = ty(&w, "POWR");
+    let heli = w.spawn_unit(ty(&w, "HELI"), 1, cell_center(9), cell_center(11), 0);
+    w.rebuild_hash();
+    assert!(w.actors[heli].altitude > 0, "spawned flying");
+    assert!(w.can_place(0, powr, 9, 11), "a helicopter overhead");
+    w.actors[heli].altitude = 0;
+    assert!(!w.can_place(0, powr, 9, 11), "a landed helicopter");
+}
+
+/// OpenRA LineBuild Range 8 searches cells 1 to 7 out: posts seven cells
+/// apart are joined, eight apart are not.
+#[test]
+fn wall_lines_reach_seven_cells() {
+    for (gap, joined) in [(7, true), (8, false)] {
+        let mut w = shore_world();
+        build_and_place(&mut w, "SBAG", DQ, 6, 8);
+        build_and_place(&mut w, "SBAG", DQ, 6 + gap, 8);
+        assert_eq!(count(&w, 0, "SBAG"), if joined { gap as usize + 1 } else { 2 }, "posts {gap} apart");
+    }
+}
+
+/// OpenRA GetLineBuildCells passes over unexplored cells, also occupied
+/// ones: the line is filled through the shroud. An occupied unexplored cell
+/// stays empty (OpenRA puts a piece over what is there; WebRA structures
+/// never share a cell).
+#[test]
+fn wall_lines_are_filled_through_the_shroud() {
+    let mut w = shore_world();
+    build_and_place(&mut w, "SBAG", DQ, 6, 8);
+    let rifle = w.spawn_unit(ty(&w, "E1"), 1, cell_center(9), cell_center(8), 0);
+    for x in 8..=10 {
+        let i = w.map.idx(x, 8);
+        w.players[0].explored[i] = 0;
+    }
+    build_and_place(&mut w, "SBAG", DQ, 12, 8);
+    let walls: Vec<i32> = (6..=12).filter(|&x| w.building_at[w.map.idx(x, 8)] != crate::world::NONE).collect();
+    assert_eq!(walls, vec![6, 7, 8, 10, 11, 12], "all but the rifleman's cell");
+    assert!(w.actors[rifle].alive);
+}
+
+/// OpenRA's line search connects to any LineBuildNode of the wall's type,
+/// whoever owns it.
+#[test]
+fn wall_lines_join_another_players_wall() {
+    let mut w = shore_world();
+    w.spawn_building(ty(&w, "SBAG"), 1, 11, 8).unwrap();
+    build_and_place(&mut w, "SBAG", DQ, 7, 8);
+    let owners: Vec<u8> = (7..=11).map(|x| w.actors[w.building_at[w.map.idx(x, 8)] as usize].owner).collect();
+    assert_eq!(owners, vec![0, 0, 0, 0, 1]);
+}
+
+/// OpenRA Building.FindBaseProvider measures from the candidate's centre to
+/// the provider's CenterPosition, both with LocalCenterOffset: the yard's
+/// centre is half a cell above its footprint's (FACT 0,-512). Power plants
+/// next to a giver, near the edge of the yard's 16c0 build radius.
+#[test]
+fn the_build_radius_is_measured_from_the_yards_openra_centre() {
+    use crate::map::{Map, Terrain};
+    let mut m = Map::filled(48, 24, Terrain::Clear);
+    m.spawns = vec![(12, 10), (40, 2)];
+    let mut w = World::empty(crate::rules::Rules::load(), m, 5);
+    for (f, start) in [("allies", (12, 10)), ("soviet", (40, 2))] {
+        let fi = w.rules.faction_index(f).unwrap();
+        w.add_player(fi, false, start);
+    }
+    assert!(w.options.build_radius);
+    let (fact, powr) = (ty(&w, "FACT"), ty(&w, "POWR"));
+    w.spawn_building(fact, 0, 12, 10).unwrap();
+    // Givers of buildable area that give no build radius.
+    w.spawn_building(powr, 0, 25, 4).unwrap();
+    w.spawn_building(powr, 0, 24, 19).unwrap();
+    // (25, 1): 16077 from the yard's OpenRA centre (16392 from its footprint's).
+    assert!(w.can_place(0, powr, 25, 1), "north of the yard, inside the radius");
+    // (24, 22): 16654 from the yard's OpenRA centre (16296 from its footprint's).
+    assert!(!w.can_place(0, powr, 24, 22), "south of the yard, outside the radius");
+}
+
+/// OpenRA FindBaseProvider compares squared lengths (HorizontalLengthSquared
+/// <= Range * Range), not a rounded square root. Red Alert's centres lie on
+/// a 512 grid where the two never differ, so a synthetic LocalCenterOffset
+/// puts a pillbox 16384.3 from the yard's centre: the rounded root (16384)
+/// would let it in.
+#[test]
+fn the_build_radius_compares_squared_lengths() {
+    use crate::map::{Map, Terrain};
+    let mut m = Map::filled(48, 24, Terrain::Clear);
+    m.spawns = vec![(12, 10), (40, 2)];
+    let mut w = World::empty(crate::rules::Rules::load(), m, 5);
+    for (f, start) in [("allies", (12, 10)), ("soviet", (40, 2))] {
+        let fi = w.rules.faction_index(f).unwrap();
+        w.add_player(fi, false, start);
+    }
+    let (fact, powr, pbox) = (ty(&w, "FACT"), ty(&w, "POWR"), ty(&w, "PBOX"));
+    w.spawn_building(fact, 0, 12, 10).unwrap();
+    // A giver of buildable area next to the spot, out of the radius itself.
+    w.spawn_building(powr, 0, 30, 10).unwrap();
+    // The pillbox's centre at (29, 11) is 16384 east of the yard's OpenRA centre.
+    assert!(w.can_place(0, pbox, 29, 11), "exactly at the radius");
+    w.rules.actors[pbox as usize].building.as_mut().unwrap().center_offset = (0, 100);
+    assert!(!w.can_place(0, pbox, 29, 11), "100 further down: 16384.3 away");
+}
+
 // ---- Losing the last factory of a queue (lobby option `factoryLoss`) ---------------------
 
 /// A partly built harvester and a queued one, every prerequisite met (the

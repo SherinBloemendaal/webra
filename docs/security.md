@@ -1112,6 +1112,13 @@ syncs with the account; the privacy notice (`apps/website/privacy.html`,
   client-side view. A modified client can reveal the map. Preventing this
   needs a server-authoritative simulation, which this design avoids. The wire
   carries only orders.
+- **Placement preview (like OpenRA):** structure placement checks the true
+  world state, as OpenRA's World.IsCellBuildable does, so the footprint
+  preview of an unmodified client shows a cell blocked when an enemy unit,
+  structure, cloaked unit, hidden mine, husk, crate or ore lies there under
+  the shroud or fog. A player can probe hidden cells near the base with it.
+  This matches OpenRA's rules by choice (docs/contracts.md, production
+  queues).
 - **Shared fate:** an input that crashes one engine crashes all, which is why
   validation happens at the engine boundary (not only in the protocol) and is
   fuzz tested.

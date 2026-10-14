@@ -1218,16 +1218,7 @@ export const BUILDING_DRAW = {
     band(ctx, P, D, T(0.5), 0.6, 1.4);
     // hazard frame around the hatch
     for (let k = 0; k < 28; k++) patch(ctx, P.c(k % 2 ? C.track : C.yellow), D, 'roof', 6 + k * 1.2, 1, 7.2 + k * 1.2, 16);
-    // armoured hatch doors with ribs
-    for (const u of [8.4, 23.2]) {
-      patch(ctx, P.c(C.steelDark), D, 'roof', u - 0.4, 2.2, u + 12.6, 15);
-      patch(ctx, grad(ctx, P, K(C.steel), 0, D.roof(0, 2.6)[1], 0, D.roof(0, 14.6)[1], [[0, 0.28], [1, -0.12]]), D, 'roof', u, 2.6, u + 12.2, 14.6);
-      for (let i = 1; i < 4; i++) mark(ctx, P.c('#46484c'), 0.6, D, 'roof', u + i * 3.05, 3.4, u + i * 3.05, 13.8);
-    }
-    patch(ctx, P.c('#3b1a12'), D, 'roof', 20.7, 2.4, 22.3, 14.8);
-    patch(ctx, P.c('#e8641c'), D, 'roof', 21.2, 4, 21.8, 13);
-    const [tx, ty] = D.roof(21.5, 8.4);
-    trefoil(ctx, P, tx, ty, 3.8);
+    siloHatch(ctx, P, 0);
     // team pylons and warning lights
     for (const x of [2, 40]) {
       const Pl = box(ctx, P, x, 5.5, 4, 4, 5, K('#6c7076'), T(0.68));
@@ -1242,6 +1233,38 @@ export const BUILDING_DRAW = {
   // the taller box pixelBox gives (js/sprites.js actorSprites).
   LROD: pixelDraw({ id: 'LROD', width: BUILDING_SIZE.LROD[0], height: BUILDING_SIZE.LROD[1] }),
 };
+
+/** The missile silo's roof (MSLO: box at (1, 3), 44 x 17, 3.4 high). */
+const SILO_ROOF = { roof: (u, t) => at(1 + u, 3 + t, 3.4) };
+
+/**
+ * The missile silo's armoured hatch, `open` from 0 (shut: two ribbed doors
+ * with the warning seam and trefoil over the middle) to 1 (both doors slid
+ * under the hazard frame, the dark shaft between them). The structure draws
+ * it shut; WebRA's launch layer (art/animated.js BUILDING_WORKING) draws it
+ * opening and closing over the structure when the atom bomb leaves.
+ */
+export function siloHatch(ctx, P, open) {
+  const D = SILO_ROOF;
+  if (open > 0) {
+    // The shaft: dark, its north wall lit a little.
+    patch(ctx, P.c('#141210'), D, 'roof', 8, 2.2, 35.8, 15);
+    patch(ctx, P.c('#2c2722'), D, 'roof', 8, 2.2, 35.8, 4.2);
+  }
+  // The doors slide apart under the frame: each keeps its outer part.
+  const width = 13 * (1 - open);
+  for (const [u0, u1] of [[8, 8 + width], [35.8 - width, 35.8]]) {
+    if (u1 - u0 < 0.2) continue;
+    patch(ctx, P.c(C.steelDark), D, 'roof', u0, 2.2, u1, 15);
+    patch(ctx, grad(ctx, P, K(C.steel), 0, D.roof(0, 2.6)[1], 0, D.roof(0, 14.6)[1], [[0, 0.28], [1, -0.12]]), D, 'roof', u0 + 0.4, 2.6, u1 - 0.4, 14.6);
+    for (let u = u0 + 3.45; u < u1 - 0.6; u += 3.05) mark(ctx, P.c('#46484c'), 0.6, D, 'roof', u, 3.4, u, 13.8);
+  }
+  if (open > 0) return;
+  patch(ctx, P.c('#3b1a12'), D, 'roof', 20.7, 2.4, 22.3, 14.8);
+  patch(ctx, P.c('#e8641c'), D, 'roof', 21.2, 4, 21.8, 13);
+  const [tx, ty] = D.roof(21.5, 8.4);
+  trefoil(ctx, P, tx, ty, 3.8);
+}
 
 /** Building turrets, centred on the building centre and facing north. */
 export const BUILDING_TURRET = {

@@ -128,8 +128,21 @@ export function graphSeries(report, graphId) {
 }
 
 /**
+ * Time labels under a graph: one per 80 px of plot at most, and at most 12
+ * however wide the statistics screen is (it fills the window).
+ */
+export const TIME_LABEL_GAP = 80;
+export const TIME_LABELS_MAX = 12;
+
+/** How many intervals the time axis of a plot `plotWidth` px wide is cut into. */
+export function timeSteps(plotWidth) {
+  return Math.max(1, Math.min(TIME_LABELS_MAX, Math.floor(plotWidth / TIME_LABEL_GAP)));
+}
+
+/**
  * Where a graph draws: the value scale and the functions from tick and value
- * to canvas pixels inside `pad` ({ left, right, top, bottom }).
+ * to canvas pixels inside `pad` ({ left, right, top, bottom }), and the
+ * number of time label intervals (timeSteps).
  */
 export function graphLayout(series, ticks, width, height, pad = { left: 56, right: 12, top: 10, bottom: 24 }) {
   let min = Infinity;
@@ -148,7 +161,7 @@ export function graphLayout(series, ticks, width, height, pad = { left: 56, righ
   const xOf = (t) => plot.x0 + ((t - t0) / Math.max(1, t1 - t0)) * (plot.x1 - plot.x0);
   const yOf = (v) => plot.y1 - ((v - scale.min) / (scale.max - scale.min)) * (plot.y1 - plot.y0);
   const tickOf = (x) => t0 + ((x - plot.x0) / Math.max(1, plot.x1 - plot.x0)) * (t1 - t0);
-  return { scale, plot, xOf, yOf, tickOf, t0, t1 };
+  return { scale, plot, xOf, yOf, tickOf, t0, t1, steps: timeSteps(plot.x1 - plot.x0) };
 }
 
 /** Thin a history to at most `max` rows for the accessible table: indices to show (last always included). */
@@ -464,7 +477,7 @@ export class StatsGraph {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     const span = Math.max(1, L.t1 - L.t0);
-    const steps = Math.max(1, Math.min(6, Math.floor((L.plot.x1 - L.plot.x0) / 80)));
+    const steps = L.steps;
     for (let k = 0; k <= steps; k++) {
       const t = L.t0 + (span * k) / steps;
       ctx.fillText(formatDuration(t, tps), L.xOf(t), L.plot.y1 + 6);

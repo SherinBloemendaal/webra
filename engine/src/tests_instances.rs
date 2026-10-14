@@ -184,9 +184,11 @@ fn zoo() -> World {
         weapon: 0,
         launch: w.tick,
         impact: w.tick + 100,
+        top: 25_600,
         camera_range: 0,
-        camera_advance: 0,
-        camera_remove: 0,
+        camera_at: 0,
+        camera_ticks: 0,
+        beacon_until: w.tick + 75,
     });
     // Health bars everywhere, a hovered actor and an animated building layer table.
     w.render_opts.health_bars = crate::overlays::HealthBars::All;

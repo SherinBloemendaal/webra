@@ -213,7 +213,8 @@ export class BattleFx {
           if (this.allied(owner)) this.texts.add(tick, cashText(a), x * k, y * k, this.colorOf(owner));
           break;
         case FX.SOLD:
-          // b: the refund (OpenRA Sell activity: ShowTicks, refund > 0, allies of the seller).
+          // b: the refund when the sale is done, -1 when it starts (OpenRA Sell
+          // activity: ShowTicks, refund > 0, allies of the seller).
           if (b > 0 && this.allied(owner)) this.texts.add(tick, cashText(b), x * k, y * k, this.colorOf(owner));
           break;
         case FX.CASH_TICK:

@@ -17,6 +17,10 @@
 //!   ticks. With AttackAircraft AbortOnResupply false (WebRA's default) it
 //!   takes off again once full and resumes the attack if the target still
 //!   lives; with it true (OpenRA's default) the attack ends there.
+//! - Damaged planes are repaired on the service depot (OpenRA `^Plane`
+//!   Repairable RepairActors: fix): they circle it while they wait their
+//!   turn in its line (service.rs), glide down onto the pad, and take off
+//!   again once repaired, for the depot's rally point or home to an airfield.
 //! - Airborne planes are only hit by anti-air weapons; landed ones count as
 //!   ground vehicles (OpenRA `Targetable@GROUND` / `Targetable@AIRBORNE`).
 //! - Shot down in the air they fall (`FallsToEarth` of `^PlaneHusk`) and
@@ -77,7 +81,8 @@ pub enum Mission {
     SpyPlane,
     Paradrop,
     Bombing,
-    /// The CrateSpawner's delivery plane (crates.rs): drops its crate over the target cell.
+    /// The CrateSpawner's delivery plane (crates.rs): drops its crate over
+    /// the first suitable cell within DropRange of the target cell.
     CrateDrop,
 }
 
@@ -385,6 +390,10 @@ impl World {
             self.tick_support_aircraft(i);
             return;
         }
+        if self.actors[i].activity == Activity::Repair {
+            self.tick_plane_repair(i);
+            return;
+        }
         match self.actors[i].air.phase {
             Phase::Parked => self.tick_parked(i),
             Phase::Returning => self.tick_returning(i),
@@ -544,6 +553,21 @@ impl World {
             return;
         };
         let (px, py) = (self.actors[b].x, self.actors[b].y);
+        if self.plane_glide_to(i, &f, px, py) {
+            let a = &mut self.actors[i];
+            a.air.phase = Phase::Parked;
+            a.air.rearm_timer = 0;
+            a.air.overshoot = false;
+            a.air.rtb = false;
+            if a.activity != Activity::Attack {
+                a.activity = Activity::Idle;
+            }
+        }
+    }
+
+    /// Fly one tick toward (px, py) on the glide path and touch down there
+    /// (altitude 0) once close and low enough. True on touching down.
+    fn plane_glide_to(&mut self, i: usize, f: &Flight, px: i32, py: i32) -> bool {
         let a = &self.actors[i];
         let d = dist(a.x, a.y, px, py);
         if d <= f.speed && a.altitude <= 2 * f.climb {
@@ -552,19 +576,102 @@ impl World {
             a.y = py;
             a.altitude = 0;
             a.moved = true;
-            a.air.phase = Phase::Parked;
-            a.air.rearm_timer = 0;
-            a.air.overshoot = false;
-            a.air.rtb = false;
-            if a.activity != Activity::Attack {
-                a.activity = Activity::Idle;
-            }
-            return;
+            return true;
         }
         // Glide path: descend at the maximum pitch over the last stretch.
         let glide = f.cruise as i64 * f.speed as i64 / f.climb as i64 + CELL as i64;
         let alt = (d as i64 * f.cruise as i64 / glide.max(1)).min(f.cruise as i64) as i32;
-        self.fly_toward(i, &f, px, py, alt);
+        self.fly_toward(i, f, px, py, alt);
+        false
+    }
+
+    /// A plane sent to the service depot (OpenRA ^Plane Repairable
+    /// RepairActors: fix; service.rs): circle the depot until it is first in
+    /// line and the pad is free, land on the pad, get repaired, then take off
+    /// for the rally point, else home to an airfield.
+    fn tick_plane_repair(&mut self, i: usize) {
+        self.sync_service(i);
+        let f = self.flight(i);
+        let depot = self.service_depot(i);
+        let (px, py) = depot.map_or((0, 0), |d| self.repair_pad_point(d));
+        let on_pad = self.actors[i].air.phase == Phase::Parked && (self.actors[i].x, self.actors[i].y) == (px, py) && depot.is_some();
+        if self.actors[i].air.phase == Phase::Parked && !on_pad {
+            // Parked elsewhere (an airfield, or the depot is gone): take off.
+            self.take_off(i);
+        }
+        if self.actors[i].air.phase == Phase::Returning {
+            self.actors[i].air.phase = Phase::Flying;
+        }
+        let Some(d) = depot else {
+            self.end_service(i);
+            return;
+        };
+        self.refresh_service_index();
+        if on_pad && self.pad_holder(d).is_none() {
+            // Still on the pad it held (a new order to this depot): hold it again.
+            self.actors[d].dock_user = self.make_ref(i);
+        }
+        if on_pad && self.pad_holder(d) != Some(i) {
+            // Someone else was called meanwhile: take off and wait in line.
+            self.take_off(i);
+            return;
+        }
+        if on_pad {
+            if self.needs_service(i, d) {
+                // The depot's repair animation (fx.rs, presentation only).
+                self.note_service(d);
+                let rep = self.rules.actors[self.actors[d].ty as usize].building.as_ref().unwrap().repairs.clone().unwrap();
+                self.repair_step(i, d, &rep);
+                return;
+            }
+            self.leave_depot(i, d);
+            if self.actors[i].activity == Activity::Repair {
+                // No rally point: take off and fly home to a free airfield
+                // (WebRA difference, design request: OpenRA's planes take off
+                // and circle over the depot, TakeOff and FlyIdle). Without
+                // one free they circle and look again (`tick_returning`).
+                self.release_dock(i);
+                self.actors[i].activity = Activity::Idle;
+                self.take_off(i);
+                self.plane_return_to_base(i, None);
+            }
+            return;
+        }
+        if !self.needs_service(i, d) {
+            self.end_service(i);
+            return;
+        }
+        let wait = self.rules.actors[self.actors[i].ty as usize]
+            .unit
+            .as_ref()
+            .and_then(|u| u.aircraft.as_ref())
+            .map_or(3 * CELL, |ac| ac.wait_distance);
+        let near = dist(self.actors[i].x, self.actors[i].y, px, py);
+        if self.pad_holder(d) != Some(i) {
+            if self.actors[i].svc.ticket == 0 {
+                if near > wait + 2 * CELL {
+                    self.fly_toward(i, &f, px, py, f.cruise);
+                    return;
+                }
+                self.join_service_line(i);
+            }
+            if !self.call_to_pad(i, d) {
+                // Circle the depot while waiting.
+                if near > wait {
+                    self.fly_toward(i, &f, px, py, f.cruise);
+                } else {
+                    self.fly_circle(i, &f);
+                }
+                return;
+            }
+        }
+        if self.plane_glide_to(i, &f, px, py) {
+            let a = &mut self.actors[i];
+            a.air.phase = Phase::Parked;
+            a.air.base = NONE;
+            a.air.overshoot = false;
+            a.air.rtb = false;
+        }
     }
 
     /// One tick of an attack run against actor `t`.
@@ -943,7 +1050,8 @@ impl World {
                 }
             }
             Mission::CrateDrop => {
-                if !a.air.cargo.is_empty() && self.cell_of(x, y) == self.cell_of(tx, ty) {
+                // ParaDrop: every tick within DropRange until a cell suits the crate.
+                if !a.air.cargo.is_empty() && d <= f.drop_range {
                     self.drop_crate(i);
                 }
             }

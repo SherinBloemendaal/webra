@@ -328,6 +328,43 @@ fn script_activities_run_in_order_and_triggers_fire() {
     assert!(lua_in(&mut w, "return tostring(Jeep.IsDead) .. ' ' .. Jeep.Type").starts_with("true jeep"));
 }
 
+/// OpenRA cell triggers read the ActorMap, which holds a paratrooper from
+/// its creation but an aircraft only when landed (world.rs
+/// `occupies_cell`): a paratrooper still on its parachute enters a
+/// footprint, a helicopter flying over it does not.
+#[test]
+fn footprint_triggers_see_paratroopers_but_not_flying_aircraft() {
+    let mut w = start("allies-01", None);
+    lua_in(
+        &mut w,
+        r#"
+        Log = ''
+        local cells = { CPos.New(65, 50), CPos.New(66, 50) }
+        Trigger.OnEnteredFootprint(cells, function(a, id) Log = Log .. a.Type .. ' ' end)
+        local greece = Player.GetPlayer('Greece')
+        Actor.Create('e1', true, { Owner = greece, Location = CPos.New(65, 50) })
+        Actor.Create('heli', true, { Owner = greece, Location = CPos.New(66, 50) })
+        "#,
+    );
+    // The actors just created: the last of their types.
+    let last = |w: &World, id: &str| {
+        let t = w.rules.actor_index(id).unwrap() as u16;
+        (0..w.actors.len()).rev().find(|&i| w.actors[i].alive && w.actors[i].ty == t).unwrap()
+    };
+    let (e1, heli) = (last(&w, "E1"), last(&w, "HELI"));
+    w.actors[e1].altitude = 4096;
+    w.actors[e1].air.parachute = true;
+    w.actors[heli].altitude = 2048;
+    w.step();
+    assert_eq!(w.mission().unwrap().error, None);
+    assert!(w.actors[e1].altitude > 0 && w.actors[heli].altitude > 0, "both still in the air");
+    assert_eq!(w.mission_global("Log").unwrap(), "e1 ", "only the paratrooper entered");
+    // A trigger made now counts the paratrooper as inside already.
+    lua_in(&mut w, "Later = '' Trigger.OnEnteredFootprint({ CPos.New(65, 50) }, function(a, id) Later = Later .. a.Type end)");
+    w.step();
+    assert_eq!(w.mission_global("Later").unwrap(), "", "no enter event for an actor already inside");
+}
+
 /// A trigger that runs for the blow that killed an actor (OnDamaged runs at
 /// the end of the tick, after the death) may still change it, as in OpenRA,
 /// where the actor exists until the end of its tick: nothing happens, no error.
@@ -601,4 +638,32 @@ fn mission_bots_play_the_campaign_bot_of_their_rules() {
     // The skirmish AI only runs for players whose bot the script switched on.
     let greece = w.mission().unwrap().player_slot("Greece").unwrap();
     assert!(w.scripted_player(greece));
+}
+
+/// OpenRA's Actor.Create adds no SkipMakeAnimsInit: a structure a script
+/// creates plays its make animation (build-incomplete), also in WorldLoaded
+/// at tick 0, while the map's own structures skip it.
+#[test]
+fn script_created_structures_are_built_and_map_structures_are_not() {
+    let mut w = start("allies-01", None);
+    assert_eq!(w.tick, 0);
+    let map_structures: Vec<usize> =
+        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].kind == crate::rules::Kind::Building).collect();
+    assert!(!map_structures.is_empty());
+    assert!(map_structures.iter().all(|&i| w.actors[i].make_until == 0 && !w.build_incomplete(i)), "map actors skip the make animation");
+    let powr = w.rules.actor_index("powr").unwrap() as u16;
+    let before = w.actors.iter().filter(|a| a.alive && a.ty == powr).count();
+    // The first spot (in the script's map coordinates) where it fits.
+    lua_in(
+        &mut w,
+        "for y = 30, 90 do for x = 30, 90 do \
+           if pcall(Actor.Create, 'powr', true, { Owner = Player.GetPlayer('Greece'), Location = CPos.New(x, y) }) then return end \
+         end end",
+    );
+    let made: Vec<usize> =
+        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].ty == powr && !map_structures.contains(&i)).collect();
+    assert_eq!((before + 1, made.len()), (w.actors.iter().filter(|a| a.alive && a.ty == powr).count(), 1));
+    let p = made[0];
+    assert_eq!(w.actors[p].make_until, 13, "created at tick 0: being built through tick 13");
+    assert!(w.build_incomplete(p));
 }

@@ -138,6 +138,7 @@ fn buildings_report_make_damage_and_power() {
     // Placed during the game: make, with the ticks since placement as the age.
     w.tick = 500;
     let i = w.spawn_building(dome, 0, 30, 30).unwrap();
+    w.begin_make(i);
     w.update_vision();
     w.tick = 510;
     assert_eq!(pose_of(&w, body), Some((Pose::Make as u32, 10)));
@@ -193,6 +194,10 @@ fn remembered_buildings_stand_still() {
     assert_eq!(pose_of(&w, powr as u32 * 2), Some((Pose::Still as u32, 0)));
 }
 
+/// The art's render settings (poses, the make animation lengths of
+/// Game.set_make_art, pose layers, original slots) are read by drawing
+/// only: two players with different art (original graphics, WebRA's, a
+/// texture pack, another tileset) keep the same simulation and state hash.
 #[test]
 fn poses_never_change_the_simulation() {
     let players = [PlayerSetup::new("england", Some(AiDifficulty::Hard)), PlayerSetup::new("russia", Some(AiDifficulty::Hard))];
@@ -204,8 +209,18 @@ fn poses_never_change_the_simulation() {
     for t in 0..1500 {
         plain.step();
         posed_world.step();
-        // One world draws every tick with poses switching on and off, the other never draws.
+        // One world draws every tick with poses switching on and off and the
+        // art's settings changing, the other never draws.
         posed_world.render_opts.poses = t % 3 != 0;
+        let n = posed_world.rules.actors.len();
+        posed_world.render_opts.make_art = match t % 3 {
+            0 => Vec::new(),
+            1 => vec![true; n],
+            _ => (0..n).map(|k| k % 2 == 0).collect(),
+        };
+        posed_world.render_opts.building_overlays =
+            (0..n as u32).map(|k| if t % 2 == 0 { 0 } else { posed(2 * k + 1, Pose::Still, 4) as u32 }).collect();
+        posed_world.render_opts.set_original_art(&(0..2 * n as u32).filter(|k| t % 5 == 0 && k % 3 == 0).collect::<Vec<_>>(), &[]);
         posed_world.build_render(0, 0.5, &view, &[], &mut s, &mut r);
         posed_world.build_render_records(1, &[], &mut recs, &mut extras, &mut rects);
         assert_eq!(plain.state_hash(), posed_world.state_hash(), "tick {t}");
@@ -223,8 +238,9 @@ fn records_with_poses_match_the_cpu_path() {
     w.actors[a].px -= 120;
     let h = w.spawn_unit(harv, 0, cell_center(14), cell_center(8), 300);
     w.actors[h].harv = HarvState::Harvesting;
-    w.spawn_building(ty(&w, "WEAP"), 0, 20, 20).unwrap();
-    w.tick = 230;
+    let f = w.spawn_building(ty(&w, "WEAP"), 0, 20, 20).unwrap();
+    w.begin_make(f);
+    w.tick = 210;
     w.update_vision();
     let (mut recs, mut extras, mut rect_recs) = (Vec::new(), Vec::new(), Vec::new());
     w.build_render_records(0, &[], &mut recs, &mut extras, &mut rect_recs);
@@ -255,6 +271,7 @@ fn structure_layers_hide_while_built_and_show_the_door_frame_by_damage_state() {
     w.players[0].power_gen = 100;
     w.tick = 500;
     let f = w.spawn_building(weap, 0, 30, 30).unwrap();
+    w.begin_make(f);
     w.update_vision();
     // Hidden while the structure is built (OpenRA: RequiresCondition !build-incomplete).
     w.tick = 510;
@@ -300,6 +317,53 @@ fn structure_layers_hide_while_built_and_show_the_door_frame_by_damage_state() {
     assert!(sprite_ids(&w).contains(&(posed(layer, Pose::Still, 4))));
     w.players[0].power_gen = 2000;
     assert!(sprite_ids(&w).contains(&(layer as f32)));
+}
+
+/// The War Factory's roof and door show as soon as its make animation ended
+/// (OpenRA WithMakeAnimation revokes `build-incomplete`, the layer requires
+/// `!build-incomplete`), not after the longest pose age: placed, the factory
+/// showed its body without the roof for seconds.
+#[test]
+fn structure_layers_show_when_the_make_animation_ends() {
+    let mut w = world();
+    w.render_opts.poses = true;
+    let weap = ty(&w, "WEAP");
+    let layer = weap as u32 * 2 + 1;
+    let mut table = vec![0u32; w.rules.actors.len()];
+    table[weap as usize] = posed(layer, Pose::Still, 4) as u32;
+    w.render_opts.building_overlays = table;
+    // The War Factory's make animation: 15 frames (rules building.make_ticks).
+    assert_eq!(w.rules.actors[weap as usize].building.as_ref().unwrap().make_ticks, 15);
+    w.render_opts.make_art = vec![true; w.rules.actors.len()];
+    w.players[0].power_gen = 100;
+    w.tick = 500;
+    let f = w.spawn_building(weap, 0, 30, 30).unwrap();
+    w.begin_make(f);
+    w.update_vision();
+    for age in [0, 10, 14] {
+        w.tick = 500 + age;
+        assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Make as u32, age)), "making, age {age}");
+        assert_eq!(pose_of(&w, layer), None, "no roof while it is made");
+    }
+    w.tick = 515;
+    assert_eq!(pose_of(&w, weap as u32 * 2), Some((Pose::Idle as u32, 0)), "built");
+    assert_eq!(pose_of(&w, layer), Some((Pose::Idle as u32, 0)), "the roof and the shut door at once");
+    // Art without a make animation fades the structure in over the same time.
+    let body_alpha = |w: &World| {
+        let view = View { x0: -100.0, y0: -100.0, x1: 64.0 * 24.0 + 100.0, y1: 64.0 * 24.0 + 100.0 };
+        let (mut sprites, mut rects) = (Vec::new(), Vec::new());
+        w.build_render(0, 1.0, &view, &[], &mut sprites, &mut rects);
+        sprites.chunks(SPRITE_FLOATS).filter(|c| unpack(c[3]).0 == weap as u32 * 2).map(|c| c[6]).collect::<Vec<f32>>()
+    };
+    w.render_opts.make_art = Vec::new();
+    w.tick = 500;
+    let a0 = body_alpha(&w)[0];
+    w.tick = 507;
+    let a7 = body_alpha(&w)[0];
+    w.tick = 515;
+    let a15 = body_alpha(&w)[0];
+    assert!(a0 < a7 && a7 < a15 && (a15 - 1.0).abs() < 1e-6, "{a0} {a7} {a15}");
+    assert!((a0 - (crate::render::MAKE_FADE_FROM + (1.0 - crate::render::MAKE_FADE_FROM) / 15.0)).abs() < 1e-6);
 }
 
 #[test]

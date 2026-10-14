@@ -10,7 +10,8 @@
 //! an empty helicopter flies back to a free helipad (`Rearmable`, one
 //! helicopter per pad through `Reservable`), lands and reloads `ReloadCount`
 //! rounds every `ReloadDelay` ticks, then takes off (`TakeOffOnResupply`).
-//! Damaged helicopters land on the service depot (`Repairable`). Shot down in
+//! Damaged helicopters land on the service depot (`Repairable`), in turn
+//! (service.rs: they hover nearby while they wait). Shot down in
 //! the air, the husk falls (`FallsToEarth`) and explodes on the ground.
 
 use crate::combat::FireTarget;
@@ -153,7 +154,7 @@ impl World {
     }
 
     /// Where helicopters touch down on a service depot: the middle of the pad
-    /// (the cell units.rs repairs on).
+    /// (`repair_pad_cell`, service.rs).
     fn depot_point(&self, d: usize) -> (i32, i32) {
         let a = &self.actors[d];
         let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
@@ -355,11 +356,7 @@ impl World {
         }
         let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
         if self.is_repair_depot_for(i, b) && self.actors[i].hp < max_hp {
-            let r = self.make_ref(b);
-            let a = &mut self.actors[i];
-            a.activity = Activity::Repair;
-            a.depot = r;
-            a.repair_timer = 0;
+            self.enter_service_line(i, b);
         }
     }
 
@@ -613,17 +610,64 @@ impl World {
         }
     }
 
+    /// A helicopter sent to the service depot (service.rs): hover over its
+    /// waiting cell until it is first in line and the pad is free, then land
+    /// on the pad, get repaired, and leave for the rally point or a free spot
+    /// nearby.
     fn tick_heli_repair(&mut self, i: usize) {
-        let Some(d) = self.resolve(self.actors[i].depot) else {
-            self.actors[i].activity = Activity::Idle;
+        self.sync_service(i);
+        let Some(d) = self.service_depot(i) else {
+            self.end_service(i);
             return;
         };
+        self.refresh_service_index();
         let (x, y) = self.depot_point(d);
-        if self.heli_approach_and_land(i, x, y) {
-            // On the pad: the shared repair activity takes over (and sends the
-            // helicopter to the rally point when done).
-            self.tick_unit_activity(i);
+        if self.pad_holder(d) != Some(i) {
+            if !self.needs_service(i, d) {
+                self.end_service(i);
+                return;
+            }
+            if self.actors[i].svc.ticket == 0 {
+                let join = self.heli_air(i).wait_distance + 2 * CELL;
+                if dist(self.actors[i].x, self.actors[i].y, x, y) > join {
+                    if self.heli_climb(i) {
+                        self.heli_fly(i, x, y);
+                    }
+                    return;
+                }
+                self.join_service_line(i);
+            }
+            if !self.call_to_pad(i, d) {
+                // Hover over the waiting cell (OpenRA waits WaitDistanceFromResupplyBase away).
+                if self.actors[i].svc.slot == NONE && self.may_pick_slot(i) {
+                    let s = self.pick_slot(i, d);
+                    self.set_slot(i, s);
+                }
+                if !self.heli_climb(i) {
+                    return;
+                }
+                let slot = self.actors[i].svc.slot;
+                if slot != NONE {
+                    let (sx, sy) = self.cell_point(slot);
+                    self.heli_fly(i, sx, sy);
+                }
+                return;
+            }
         }
+        if !self.heli_approach_and_land(i, x, y) {
+            if !self.needs_service(i, d) {
+                self.end_service(i);
+            }
+            return;
+        }
+        if !self.needs_service(i, d) {
+            self.leave_depot(i, d);
+            return;
+        }
+        // The depot's repair animation (fx.rs, presentation only).
+        self.note_service(d);
+        let rep = self.rules.actors[self.actors[d].ty as usize].building.as_ref().unwrap().repairs.clone().unwrap();
+        self.repair_step(i, d, &rep);
     }
 
     /// Unload (Chinook): land on (or next to) the current spot, let the
@@ -837,8 +881,7 @@ impl World {
         }
         for &u in self.units_in_cell(ci) {
             let u = u as usize;
-            let o = &self.actors[u];
-            if u != i && o.alive && (o.kind != Kind::Aircraft || o.altitude == 0) {
+            if u != i && self.occupies_cell(u) {
                 return false;
             }
         }
@@ -892,6 +935,9 @@ impl World {
         }
     }
 
+    /// Send aircraft `i` (helicopter or plane) to service depot `d`: it
+    /// joins the depot's line (service.rs). Also the bulk repair order's way
+    /// to send aircraft.
     pub(crate) fn heli_send_to_depot(&mut self, i: usize, d: usize) {
         self.release_dock(i);
         let r = self.make_ref(d);
@@ -920,7 +966,7 @@ impl World {
                         self.heli_send_to_pad(i, b);
                         continue;
                     }
-                    if self.is_repair_depot_for(i, b) {
+                    if self.is_repair_depot_for(i, b) && self.needs_service(i, b) {
                         self.heli_send_to_depot(i, b);
                         continue;
                     }
@@ -1003,7 +1049,12 @@ impl World {
             return Some(SmartAction::Dock);
         }
         if units.iter().any(|&i| self.is_heli(i) && self.is_repair_depot_for(i, b)) {
-            return Some(SmartAction::Repair);
+            // Undamaged: the blocked cursor, and the click does nothing
+            // (OpenRA Aircraft Enter order: AircraftCanResupplyAt).
+            if units.iter().any(|&i| self.is_heli(i) && self.is_repair_depot_for(i, b) && self.needs_service(i, b)) {
+                return Some(SmartAction::Repair);
+            }
+            return Some(SmartAction::EnterBlocked);
         }
         None
     }
@@ -1020,7 +1071,10 @@ impl World {
             if self.is_heli(i) && self.is_rearm_pad_for(i, b) {
                 self.heli_send_to_pad(i, b);
             } else if self.is_heli(i) && self.is_repair_depot_for(i, b) {
-                self.heli_send_to_depot(i, b);
+                // Nothing to repair: the order does nothing (OpenRA).
+                if self.needs_service(i, b) {
+                    self.heli_send_to_depot(i, b);
+                }
             } else {
                 rest.push(i);
             }

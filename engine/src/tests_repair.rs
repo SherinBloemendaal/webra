@@ -613,16 +613,18 @@ fn bulk_repair_sorts_units_into_combat_ore_trucks_and_other() {
     let all: Vec<usize> = vec![tank, harv, mcv, tran, rifle, yak, enemy, healthy, fix];
     let v = w.repair_groups_json(0, all.iter().copied());
     let r = |i: usize| w.make_ref(i);
-    assert_eq!(ids_of(&v, "combat"), vec![r(tank)]);
+    // The armed Yak is a combat unit: planes land on the service depot (OpenRA ^Plane Repairable, service.rs).
+    assert_eq!(ids_of(&v, "combat"), vec![r(tank), r(yak)]);
     assert_eq!(ids_of(&v, "harvesters"), vec![r(harv)]);
     assert_eq!(ids_of(&v, "other"), vec![r(mcv), r(tran)], "MCV and the unarmed Chinook");
     assert!(ids_of(&v, "noFacility").is_empty(), "the service depot repairs them all");
     assert!(ids_of(&v, "buildings").is_empty(), "the depot is undamaged");
-    // Infantry have no repair structure, WebRA planes neither, enemy and healthy units are not ours to repair.
-    for i in [rifle, yak, enemy, healthy] {
+    // Infantry have no repair structure, enemy and healthy units are not ours to repair.
+    for i in [rifle, enemy, healthy] {
         assert_eq!(w.repair_category(0, i), None);
     }
     assert_eq!(w.repair_category(0, tank), Some(RepairCategory::Combat));
+    assert_eq!(w.repair_category(0, yak), Some(RepairCategory::Combat));
 }
 
 #[test]
@@ -716,14 +718,24 @@ fn bulk_sell_sells_own_sellable_structures_but_never_the_construction_yard() {
     let ids = vec![r(&g, fact), r(&g, a), r(&g, ally), r(&g, hosp), r(&g, b), r(&g, a)];
     g.world.queue_order(Order::SellBuildings { player: 0, ids });
     g.world.step();
+    // Each sale plays its make animation backwards first (production.rs `sell`).
+    assert!(g.world.actors[a].unmake_sell && g.world.actors[b].unmake_sell);
+    assert_eq!(g.world.players[0].funds(), 0, "paid at the end of each sale");
+    let make = |g: &Game, i: usize| g.world.rules.actors[g.world.actors[i].ty as usize].building.as_ref().unwrap().make_ticks;
+    for _ in 0..make(&g, a).max(make(&g, b)) {
+        g.world.step();
+    }
     let w = &g.world;
     assert!(!w.actors[a].alive && !w.actors[b].alive);
     assert!(w.actors[fact].alive && w.actors[ally].alive && w.actors[hosp].alive);
     assert_eq!(w.players[0].funds(), refund, "the refund of the two");
     // A single click still sells the Construction Yard.
     let f = r(&g, fact);
+    let n = make(&g, fact);
     g.sell(0, f);
-    g.world.step();
+    for _ in 0..=n {
+        g.world.step();
+    }
     assert!(!g.world.actors[fact].alive);
 }
 
@@ -850,11 +862,71 @@ fn wrench_power_off_icon_and_darkening_show_on_structures() {
     assert_eq!((o.len(), r.len()), (1, 1));
     assert_eq!(r[0][4], 1.0, "the wrench in the repairing player's colour");
     assert!(r[0][0] < o[0][0], "side by side: wrench left, power off icon right");
-    // Off frames of the blink: nothing.
+    // Off frames of the power off icon's blink: the wrench alone, still at its side.
     while (w.tick / crate::repair::DECORATION_FRAME_TICKS).is_multiple_of(2) {
         w.step();
     }
-    assert!(sprites(&w, wrench).is_empty() && sprites(&w, off).is_empty());
+    assert!(sprites(&w, off).is_empty());
+    let r2 = sprites(&w, wrench);
+    assert_eq!((r2.len(), r2[0][0]), (1, r[0][0]), "the wrench does not blink (OpenRA loops allyrepair)");
+}
+
+/// Allies repairing one structure together: the wrench shows steadily in
+/// the colour of each repairer in turn, one per loop of the animation
+/// (OpenRA WithBuildingRepairDecoration: `allyrepair` looping in the player
+/// palette of `Repairers[shownPlayer]`, CycleRepairer after every loop), so
+/// every repairer's colour shows. Enemies who see the structure see no wrench
+/// (WithDecorationBase.ValidRelationships, default Ally).
+#[test]
+fn the_wrench_cycles_through_the_colours_of_every_repairer() {
+    use crate::render::{SpriteIds, SPRITE_FLOATS};
+    use crate::repair::DECORATION_FRAME_TICKS;
+    let mut w = world(true);
+    let b = building(&mut w, "TSLA", 0, 30, 30);
+    w.actors[b].hp = 100;
+    set_cash(&mut w, 0, 50_000);
+    set_cash(&mut w, 1, 50_000);
+    for p in w.players.iter_mut() {
+        p.explored.iter_mut().for_each(|e| *e = 1);
+    }
+    w.queue_order(Order::RepairBuilding { player: 1, building: w.make_ref(b) });
+    w.queue_order(Order::RepairBuilding { player: 0, building: w.make_ref(b) });
+    w.step();
+    assert_eq!(w.actors[b].repairers, vec![1, 0]);
+    let wrench = SpriteIds::new(w.rules.actors.len()).decorations_base + crate::repair::DECORATION_WRENCH;
+    // The colour (team field) of the wrench each viewer sees, or None on an off frame.
+    let colour = |w: &World, viewer: u8| {
+        let sprites = render_for(w, viewer).0;
+        let found: Vec<f32> = sprites.chunks(SPRITE_FLOATS).filter(|c| c[3] == wrench).map(|c| c[4]).collect();
+        assert!(found.len() <= 1, "one wrench at a time: {found:?}");
+        found.first().copied()
+    };
+    // Every tick shows the wrench; within a loop the colour holds.
+    let mut seen = Vec::new();
+    for _ in 0..(4 * 2 * DECORATION_FRAME_TICKS) {
+        w.step();
+        // The enemy sees the whole map, the structure included.
+        w.players[2].visible.iter_mut().for_each(|v| *v = 1);
+        assert_eq!(colour(&w, 2), None, "no wrench for the enemy");
+        let shown = colour(&w, 0);
+        assert!(shown.is_some(), "the wrench never blinks out");
+        if let Some(c) = shown {
+            let cycle = w.tick / (2 * DECORATION_FRAME_TICKS);
+            if seen.last().is_none_or(|&(k, _)| k != cycle) {
+                seen.push((cycle, c));
+            } else {
+                assert_eq!(seen.last().unwrap().1, c, "one colour per cycle");
+            }
+            // The ally sees the same wrench.
+            assert_eq!(colour(&w, 1), Some(c));
+        }
+    }
+    let colours: Vec<f32> = seen.iter().map(|&(_, c)| c).collect();
+    assert!(colours.len() >= 3, "{seen:?}");
+    for pair in colours.windows(2) {
+        assert_ne!(pair[0], pair[1], "the next cycle shows the next repairer: {colours:?}");
+    }
+    assert!(colours.contains(&0.0) && colours.contains(&1.0), "both repairers' colours: {colours:?}");
 }
 
 #[test]
