@@ -2557,7 +2557,8 @@ open; it takes every key meanwhile, and the view does not scroll at the
 screen edges (js/main.js `holdsEdgeScroll`). With the mouse captured
 (js/mouselock.js) the browser keeps Esc to let the mouse go: with "Esc also
 opens the menu" on, that Esc ends the mode and so the question; off, the
-question stays and the next Esc cancels it. There is no separate "repair
+question stays and the next Esc (after the 250 ms release guard) cancels
+it. There is no separate "repair
 all damaged structures" hotkey: OpenRA's hotkey set has no such command to
 name it after, and a box in repair mode or selecting the base and pressing
 Repair does the same. Wasm for the hotkeys:

@@ -394,7 +394,7 @@ function fakeGame(actors) {
       return Uint32Array.from(entries().filter(([, a]) => owners.includes(a.owner) && types.includes(a.type) && inRect(a, x0, y0, x1, y1)).map(([i]) => i));
     },
     placement_preview: (_p, _id, cx, cy) => Int32Array.from([cx, cy, cx >= 0 && cy >= 0 ? 1 : 0]),
-    // Repair mode: own damaged structures (bulk repair, engine repair_box).
+    // Repair mode: own damaged structures (bulk repair, engine repair_box_json).
     repair_cursor: (_p, id) => (actors[id]?.owner === 0 && actors[id].building && actors[id].damaged ? 1 : 0),
     repair_box_json: (_p, x0, y0, x1, y1) =>
       JSON.stringify({
