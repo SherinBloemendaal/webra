@@ -242,9 +242,63 @@ fn a_yard_whose_mcv_no_longer_fits_unfolds_again() {
     // The MCV's cell is off the map now (OpenRA Transforms.CanDeploy fails at the end).
     let saved = w.rules.actors[fact as usize].abilities.transforms.clone().unwrap();
     w.rules.actors[fact as usize].abilities.transforms.as_mut().unwrap().offset = vec![-100, -100];
+    w.sound.set_enabled(true);
     w.step();
     assert!(w.actors[yard].alive, "stays a yard");
     assert_eq!(w.actors[yard].unmake_at, 0);
     assert_eq!(w.actors[yard].make_until, w.tick + make_ticks(&w, "FACT"), "unfolds again (OpenRA makeAnimation.Forward)");
+    let ev = w.sound.take();
+    assert!(
+        !ev.chunks(crate::sound_events::EVENT_STRIDE).any(|e| e[0] == crate::sound_events::SoundEventKind::DeployBlocked as i32),
+        "silently"
+    );
+    // The renderer plays the make animation forwards from now on, not from
+    // when the yard was first built.
+    assert_eq!(w.building_pose(yard), (crate::render::Pose::Make, 0));
+    w.step();
+    assert_eq!(w.building_pose(yard), (crate::render::Pose::Make, 1));
     w.rules.actors[fact as usize].abilities.transforms = Some(saved);
+}
+
+/// A yard's pack-up order is ignored without a word while its Transforms
+/// is paused (OpenRA PauseOnCondition being-captured || being-demolished ||
+/// build-incomplete): still being built, or with C4 ticking on it; C4
+/// planted while it packs up keeps it a yard at the end.
+#[test]
+fn a_paused_yard_ignores_pack_up_orders_silently() {
+    use crate::sound_events::{SoundEventKind, EVENT_STRIDE};
+    let mut w = world();
+    w.options.redeployable_mcv = true;
+    w.sound.set_enabled(true);
+    let blocked = |w: &mut World| w.sound.take().chunks(EVENT_STRIDE).any(|e| e[0] == SoundEventKind::DeployBlocked as i32);
+    // Still being built.
+    let yard = placed(&mut w, "FACT", 0, 30, 20);
+    let r = w.make_ref(yard);
+    w.sound.take();
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    w.step();
+    assert!(w.build_incomplete(yard) && w.actors[yard].unmake_at == 0 && !blocked(&mut w), "ignored silently, not queued");
+    while w.build_incomplete(yard) {
+        w.step();
+    }
+    assert_eq!(w.actors[yard].unmake_at, 0, "nothing waited for the make animation");
+    // C4 ticking on it.
+    let t = w.make_ref(yard);
+    w.actors[yard].inf.demolish = Some(crate::infantry::Demolishing { at: w.tick + 1000, by: t, owner: 1 });
+    assert!(!w.can_deploy(yard));
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    w.step();
+    assert!(w.actors[yard].unmake_at == 0 && !blocked(&mut w));
+    // C4 planted while it packs up: it unfolds again at the end.
+    w.actors[yard].inf.demolish = None;
+    w.queue_order(Order::Deploy { player: 0, ids: vec![r] });
+    w.step();
+    let end = w.actors[yard].unmake_at;
+    assert!(end > 0);
+    w.actors[yard].inf.demolish = Some(crate::infantry::Demolishing { at: w.tick + 1000, by: t, owner: 1 });
+    while w.tick < end {
+        w.step();
+    }
+    assert!(w.actors[yard].alive && w.actors[yard].unmake_at == 0 && w.build_incomplete(yard), "stays and unfolds again");
+    assert!(!blocked(&mut w));
 }

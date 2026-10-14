@@ -1954,8 +1954,14 @@ is `build-incomplete` again for `make_ticks` ticks (`unmake_at`, in the
 state hash; no selling, no capture, no second pack-up: the activity cannot
 be interrupted), and in the tick `make_ticks` after the order it turns into
 the MCV (production.rs `tick_pack_up`). Should the MCV no longer fit then,
-the yard plays its make animation forwards again and stays (OpenRA
-Transform.DoTransform). Not modelled: OpenRA's reverse make animation
+or C4 tick on the yard, it plays its make animation forwards again (the
+make pose from that tick) and stays, silently (OpenRA
+Transform.DoTransform). A pack-up order is ignored without a word while
+the yard cannot pack up (OpenRA Transforms PauseOnCondition
+being-captured, being-demolished, build-incomplete; WebRA has no chrono
+vortex): it is not remembered for later (TransformsIntoTransforms only
+queues a deploy behind a pack-up that already runs). Only a yard whose MCV
+would not fit reports a blocked deploy. Not modelled: OpenRA's reverse make animation
 before a structure is sold, the ConyardChronoReturn of a chronoshifted MCV,
 and TransformsIntoTransforms (a pack-up order queued while being built).
 

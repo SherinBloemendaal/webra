@@ -286,7 +286,7 @@ impl World {
                     // Packing up: fading out again.
                     a.unmake_at - self.tick
                 } else {
-                    (self.tick - a.born + 1).min(total)
+                    self.make_age(i) + 1
                 };
                 alpha *= MAKE_FADE_FROM + (1.0 - MAKE_FADE_FROM) * done.min(total) as f32 / total as f32;
             }
@@ -758,10 +758,11 @@ impl World {
             return (Pose::Unmake, self.tick.saturating_sub(a.unmake_at.saturating_sub(total)));
         }
         // The make animation (OpenRA WithMakeAnimation) for as long as the
-        // rules say (`make_until`, the simulation's build-incomplete time).
-        let age = self.tick.saturating_sub(a.born);
+        // rules say (`make_until`, the simulation's build-incomplete time),
+        // from when it started (`World::begin_make`: placed, or unfolding
+        // again after a pack-up that could not finish).
         if self.tick < a.make_until {
-            return (Pose::Make, age);
+            return (Pose::Make, self.make_age(i));
         }
         // Working animations (fx.rs): resupplying, the Tesla charge, a launch, placing.
         if let Some(working) = self.fx_building_pose(i, damaged) {
@@ -778,6 +779,14 @@ impl World {
             return (if damaged { Pose::DamagedStill } else { Pose::Still }, 0);
         }
         (if damaged { Pose::Damaged } else { Pose::Idle }, 0)
+    }
+
+    /// Ticks since structure `i` started its forward make animation (its
+    /// `make_until` less the rules' `make_ticks`).
+    fn make_age(&self, i: usize) -> u32 {
+        let a = &self.actors[i];
+        let total = self.rules.actors[a.ty as usize].building.as_ref().map_or(0, |b| b.make_ticks);
+        self.tick.saturating_sub(a.make_until.saturating_sub(total))
     }
 
     /// The pose of a unit's body sprite: walking, firing, harvesting or docking.

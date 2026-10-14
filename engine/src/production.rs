@@ -815,12 +815,17 @@ impl World {
 
     /// Whether actor `i` can deploy (MCV) or pack up (Construction Yard) right now.
     pub fn can_deploy(&self, i: usize) -> bool {
-        // A Construction Yard being captured or still being built cannot pack up
-        // (Transforms PauseOnCondition being-captured || build-incomplete).
-        if self.actors[i].kind == Kind::Building && (self.being_captured(i) || self.make_gates(i).transform) {
-            return false;
-        }
-        self.deploy_spot_free(i)
+        !self.transforms_paused(i) && self.deploy_spot_free(i)
+    }
+
+    /// A Construction Yard that cannot pack up now (OpenRA Transforms
+    /// PauseOnCondition `chrono-vortex || being-captured || being-demolished
+    /// || build-incomplete`; WebRA has no chrono vortex): its pack-up orders
+    /// are ignored without a word (Transforms.ResolveOrder skips a paused
+    /// trait). TransformsIntoTransforms only queues a deploy behind a pack-up
+    /// that already runs, so nothing waits for the make animation to end.
+    fn transforms_paused(&self, i: usize) -> bool {
+        self.actors[i].kind == Kind::Building && (self.being_captured(i) || self.being_demolished(i) || self.make_gates(i).transform)
     }
 
     /// Whether the new form of actor `i` fits where it would appear (OpenRA
@@ -861,8 +866,8 @@ impl World {
         if self.actors[i].unmake_at > 0 {
             return false; // already packing up: uninterruptible
         }
-        // Nothing to turn into: nothing to report.
-        if self.deploy_target(i).is_none() {
+        // Nothing to turn into, or a paused yard: nothing to report.
+        if self.deploy_target(i).is_none() || self.transforms_paused(i) {
             return false;
         }
         if !self.can_deploy(i) {
@@ -889,11 +894,12 @@ impl World {
                 continue;
             }
             self.actors[i].unmake_at = 0;
-            if self.deploy_spot_free(i) {
+            // Transforms.CanDeploy once build-incomplete is revoked: the MCV
+            // fits and no C4 ticks on the yard (it cannot be captured while
+            // packing up). Otherwise it unfolds again, silently.
+            if self.deploy_spot_free(i) && !self.being_captured(i) && !self.being_demolished(i) {
                 self.transform_now(i);
             } else {
-                let (ty, x, y, owner) = (self.actors[i].ty as i32, self.actors[i].x, self.actors[i].y, self.actors[i].owner);
-                self.sound.push(SoundEventKind::DeployBlocked, ty, x, y, owner, 0);
                 self.begin_make(i);
             }
         }

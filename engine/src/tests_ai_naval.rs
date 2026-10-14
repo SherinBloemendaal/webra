@@ -409,8 +409,10 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
 /// rest of the game (structures waiting for their make animation changed
 /// it: before, at most 4 of 6 ships idled; now the largest fleet has 8
 /// ships, all 8 idle at the worst moment, but in the 11351 player-ticks
-/// with a fleet of 6 or more 0.47 of its ships idle on average). A fleet
-/// that never sets out idles with all its ships all the time (share 1).
+/// with a fleet of 6 or more, summed over both players, 0.47 of its ships
+/// idle on average; the test allows 0.55). A fleet that never sets out
+/// idles with all its ships all the time (share 1). The fleet must last
+/// at least 1500 such player-ticks (both players together).
 /// Islands, seed 3, two Normal Turtle bots: at most 3 ships idle (fleet of
 /// 3; 12 before the fix).
 #[test]
@@ -442,7 +444,7 @@ fn generated_naval_maps_keep_no_idle_fleets() {
         if style == MapStyle::Rivers {
             // A real fleet for a good while, and not idling as a whole.
             assert!(big_ticks >= 25 * 60, "{what}: a fleet of 6 or more for {big_ticks} player-ticks");
-            assert!(big_idle * 10 <= big_ships * 6, "{what}: {big_idle} of {big_ships} ship-ticks idle without a target");
+            assert!(big_idle * 20 <= big_ships * 11, "{what}: {big_idle} of {big_ships} ship-ticks idle without a target");
         } else {
             assert!(idle_most <= 6, "{what}: {idle_most} ships idle without a target");
         }
