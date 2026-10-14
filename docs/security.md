@@ -1040,6 +1040,65 @@ link until the next hour; earlier links stay valid); a verification link
 opened while signed in to another account verifies the account it was made
 for.
 
+## Replays in accounts (2026-10-14)
+
+The game keeps the replay of every game a signed-in player finishes or
+leaves in the player's account (docs/accounts-api.md 5.10). The setting
+"Save replays to my account" (`privacy.cloudReplays`) is on by default and
+syncs with the account; the privacy notice (`apps/website/privacy.html`,
+"Replays in your account") says what is kept.
+
+- **What is stored.** The replay file as the player's client recorded it:
+  the game options (every player's name, faction, colour and team), the map,
+  every order and, for online games, the chat lines the player received
+  (names and text of other players and spectators, team chat of the
+  player's own team). The file is a gzip object in the R2 bucket `REPLAYS`
+  under `replays/<user id>/<random id>`; D1 (`account_replays`) holds the
+  list entry: upload and expiry time, sizes, SHA-256, game version, mode,
+  title, map name, the players' names, factions and teams, when the game was
+  played, its length and the result the uploader's client reported. Other
+  players are not asked: it is the uploader's own view of a game they took
+  part in, which their browser could already download as a file.
+- **Who can access.** Only the account that uploaded it: every route reads
+  the row by id and the caller's user id together and answers an unknown,
+  expired or foreign id the same `404`, so ids are never confirmed. There is
+  no admin or public route to replays, and players of the same game cannot
+  see each other's copies. Downloads carry `Cache-Control: private,
+  no-store` and the API's `nosniff` and same-origin resource policy; the
+  JSON is served as a download, never rendered. Reads need the CSRF header,
+  writes the full CSRF rules (Origin, Fetch Metadata, header), like every
+  account route.
+- **Validation and limits.** An upload needs an active account (not banned,
+  not pending), 60 uploads per hour per account (counted before the body is
+  read), `Content-Type: application/json` and at most 16 MiB
+  (Content-Length checked first, then while reading). The file goes through
+  the protocol's `parseReplay` (size, schema, orders, options, map hash)
+  before anything is stored, saves are refused, and only validated values
+  reach the list entry. Per account at most 100 replays and 100 MiB of
+  stored objects: the oldest are deleted in the same D1 batch that adds a
+  new one, so the limits hold under concurrent uploads, and one file is
+  stored once per account (a unique index on the SHA-256).
+- **Retention and deletion.** A replay is deleted 30 days after its upload
+  (daily job), by its owner, by the limits, and when the account is deleted
+  (self-deletion, admin deletion, rejection and expired signups delete the
+  replays at once, not after the 30 days the rest of a deleted account
+  waits; the purge deletes any left). The R2 object of every removed row is
+  queued by a trigger (`replay_object_trash`) and deleted right after the
+  change and again by the daily job until R2 confirms, so a failed delete
+  never leaves a file behind for more than a day. An upload that fails after
+  writing its object leaves it queued and it is deleted within the hour.
+- **Client.** Uploads run in the background after the game ended or while
+  the player leaves (the replay is queued in IndexedDB first, at most 3 s,
+  so leaving never hangs), only for the account that played the game, and
+  never while the setting is off; switching it off drops the replays still
+  waiting. Server text in the lists goes in with `textContent`. A replay
+  watched from the account is checked like a file (`parseReplay`, engine
+  version) before the viewer runs it.
+- **Infrastructure.** The bucket is private (no public access, no custom
+  domain); only the Worker binding reads or writes it. The deploy creates it
+  when missing (docs/deploy.md); the deploy token needs Workers R2 Storage
+  Edit for that.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a

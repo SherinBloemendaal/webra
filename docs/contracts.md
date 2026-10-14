@@ -1010,6 +1010,8 @@ travel over the network. The server never runs the simulation.
 | `GET` | `/api/content/ra-scores` | A byte range of `scores.mix` (the Red Alert music) read from the freeware Red Alert CD images on the Internet Archive, see below |
 | `GET` | `/api/content/ra-movies/allied`, `/api/content/ra-movies/soviet` | A byte range of `movies1.mix` or `movies2.mix` (the mission movies) from the same CD images, see below |
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
+| `GET`, `POST` | `/api/account/replays` | The signed-in account's replays (list) and uploading one (the replay file, section 7): [accounts API](accounts-api.md) 5.10 |
+| `GET`, `DELETE` | `/api/account/replays/:id` | One replay of the signed-in account: the file, or deleting it (5.10) |
 
 Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
 `Sec-Fetch-Site` same-origin or absent, and the header `X-WebRA-CSRF: 1`
@@ -3125,6 +3127,22 @@ mission of `COOP_MISSIONS` with this version's file, every player a person.
 - An online save (mode `online`, with `online.id`) ends right after a hash
   tick (`ticks - 1` is a multiple of 25) and is never loaded alone: it is
   resumed online with its players (section 4, "Online saves").
+- Replays in the account (accounts API 5.10, `apps/game/js/account/replays.js`):
+  while a signed-in, active account has "Save replays to my account"
+  (`privacy.cloudReplays`, on by default) on, the game encodes the replay of
+  every skirmish, online game, mission and co-op game once, when the whole
+  game ended (or this player won) or when the player leaves it first, with
+  the result `won`, `lost`, `left` or `spectated`. It is queued in IndexedDB
+  (database `webra-replay-uploads`, store `pending`, keyed by account, start
+  time and title; at most 10, dropped after 7 days) and uploaded in the
+  background (`POST /api/account/replays`), never in the game's frame. The
+  server validates it with `parseReplay` (refusing saves), keeps it 30 days,
+  at most 100 replays and 100 MiB per account, and lists a summary
+  (`replaySummary` in the protocol package: mode, title, engine, start time,
+  ticks, map name, players). Watching one downloads the file and checks it
+  like a file (above): one made by another engine version shows the version
+  message. `/play/#replay=<id>` opens a replay of the account directly (the
+  account page's Watch).
 
 ## 8. Simulation worker (`apps/game/js/sim`)
 
