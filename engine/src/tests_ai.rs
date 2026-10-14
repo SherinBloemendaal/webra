@@ -823,6 +823,8 @@ fn bots_train_engineers_for_neutral_structures_and_capture_them() {
 fn turtle_minelayers_lay_mines() {
     let mut w = arena(64, &[("england", Some((BotType::Turtle, AiDifficulty::Normal)), 0, (4, 4)), ("russia", None, 0, (52, 52))]);
     w.ai[0].passive = true;
+    // OpenRA's minefield order keeps only explored cells, for bots too.
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
     let layer = w.spawn_unit(ty(&w, "MNLY"), 0, cell_center(12), cell_center(12), 512);
     quiet_unit(&mut w, "1TNK", 1, 44, 44);
     run(&mut w, 25 * 60 * 2);

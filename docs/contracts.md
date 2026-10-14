@@ -2093,6 +2093,20 @@ detonatesIn, payload }` (only the fields that apply). Smart action 7 is
 "deliver cash" (supply truck onto an own or allied structure). Mines are
 actors of kind `mine` (`MINV`, `MINP`).
 
+A minefield follows OpenRA's Minelayer and LayMines. The order keeps the
+rectangle's cells of a terrain the Minelayer mines that its owner has
+explored and the Minelayer can drive onto and stop on (bots too, so a bot
+mines nothing in the shroud). While it works, a cell goes for good
+(CleanMineField) once a mine its owner sees lies there, or once its owner
+sees the Minelayer cannot get onto it: a structure, a husk, blocking
+terrain or a unit of another side. A cell with a unit of its own side, a
+crate it crushes or anything under the fog stays: the Minelayer skips it
+while a mine cannot go there now (CanLayMine: nothing but itself in the
+ActorMap, `occupies_cell` for units) and comes back once it is free. When
+no cell left can take a mine now, the Minelayer stops, as OpenRA's
+activity ends. Deploying lays a mine under the Minelayer only when one can
+go there now.
+
 Debug menu (engine/src/debug.rs, apps/game/js/debug.js, opened with the `
 key or the Debug button). Cheats are orders, so online they go through
 lockstep: `{"o": "dev_flag", player, flag, on}` with `flag` one of

@@ -291,7 +291,7 @@ impl World {
 
     /// Whether unit `u` has Mobile with a locomotor that crushes `crate`
     /// (aircraft have no Mobile).
-    fn crushes_crates(&self, u: usize) -> bool {
+    pub(crate) fn crushes_crates(&self, u: usize) -> bool {
         let a = &self.actors[u];
         if !a.is_unit() || !a.in_world() || a.kind == Kind::Aircraft {
             return false;

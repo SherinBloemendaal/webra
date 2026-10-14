@@ -95,6 +95,83 @@ fn minelayer_lays_a_minefield_and_enemy_tanks_set_mines_off() {
     assert_eq!(mines(&w, 0).len(), 2, "the mine is used up, the others stay");
 }
 
+/// OpenRA LayMines: NextValidCell skips a cell something stands on
+/// (CanLayMine reads the ActorMap) without dropping it, so the minelayer
+/// mines it once the unit has gone.
+#[test]
+fn a_minefield_cell_with_a_unit_on_it_is_mined_after_the_unit_leaves() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let ml = unit(&mut w, "MNLY", 0, 30, 30);
+    let e1 = passive(&mut w, "E1", 0, 32, 30);
+    let blocked = w.map.idx(32, 30) as u32;
+    let ids = refs(&w, &[ml]);
+    // Enough cells to keep it busy while the rifleman walks off (with only
+    // blocked cells left it would stop, as OpenRA's activity ends).
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 32, y0: 30, x1: 36, y1: 30 });
+    for _ in 0..25 * 20 {
+        w.step();
+        if !mines(&w, 0).is_empty() {
+            break;
+        }
+    }
+    assert_eq!(mines(&w, 0).len(), 1, "a mine beside the rifleman");
+    assert!(w.mine_at(blocked as usize).is_none());
+    assert!(w.actors[ml].ab.minefield.contains(&blocked), "the rifleman's cell stays in the minefield");
+    let r = w.make_ref(e1);
+    w.queue_order(Order::Move { player: 0, ids: vec![r], x: cell_center(32), y: cell_center(25), attack_move: false });
+    run(&mut w, 25 * 30);
+    assert_eq!(mines(&w, 0).len(), 5, "every cell mined");
+    assert!(w.mine_at(blocked as usize).is_some(), "the rifleman's cell too");
+    assert_eq!(w.actors[ml].activity, Activity::Idle);
+}
+
+/// OpenRA LayMines.CleanMineField drops for good the cells the owner sees
+/// it cannot drive onto (a husk, an enemy unit: Immovable to it) and those
+/// with a mine it sees; a crate its locomotor crushes and a unit of its
+/// own side only make it skip the cell. Minelayer.IsCellAcceptable keeps
+/// cells of a terrain it does not mine out of the field. With no cell left
+/// that can take a mine now, the minelayer stops, as OpenRA's activity
+/// ends.
+#[test]
+fn minefields_drop_blocked_and_mined_cells_and_skip_occupied_ones() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let ml = unit(&mut w, "MNLY", 0, 30, 34);
+    let idx = |w: &World, x: i32| w.map.idx(x, 30) as u32;
+    // (30, 30): water; (31): own mine; (32): husk; (33): enemy rifleman;
+    // (34): crate; (35): own rifleman; (36), (37): free.
+    let water = idx(&w, 30) as usize;
+    w.map.terrain[water] = crate::map::Terrain::Water;
+    w.set_cell_passability(water);
+    w.actors[ml].ab.ammo = 5;
+    let ci = idx(&w, 31) as usize;
+    assert!(w.lay_mine(ml, ci));
+    let husk = ty(&w, "2TNK.Husk") as usize;
+    w.place_husk(husk, 1, cell_center(32), cell_center(30), 0, 0);
+    passive(&mut w, "E1", 1, 33, 30);
+    let neutral = w.neutral_player().unwrap_or(1);
+    let crate_ty = ty(&w, "MONEYCRATE") as usize;
+    w.place_crate(crate_ty, neutral, 34, 30, 0);
+    passive(&mut w, "E1", 0, 35, 30);
+    w.rebuild_hash();
+    assert!(w.crushes_crates(ml), "a Minelayer's tracks crush crates");
+    let ids = refs(&w, &[ml]);
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 30, y0: 30, x1: 37, y1: 30 });
+    w.step();
+    w.step();
+    let field = w.actors[ml].ab.minefield.clone();
+    let has = |x: i32| field.contains(&(w.map.idx(x, 30) as u32));
+    assert!(!has(30), "water is no minefield terrain");
+    assert!(!has(31), "a seen mine is there already");
+    assert!(!has(32) && !has(33), "a husk and an enemy unit block the minelayer");
+    assert!(has(34) && has(35), "a crate and an own unit only make it wait");
+    assert!(has(36) && has(37));
+    run(&mut w, 25 * 20);
+    let laid: Vec<i32> = (30..=37).filter(|&x| w.mine_at(w.map.idx(x, 30)).is_some()).collect();
+    assert_eq!(laid, vec![31, 36, 37], "the old mine and the two free cells");
+    assert_eq!(w.actors[ml].activity, Activity::Idle, "nothing left it can mine now");
+    assert!(w.actors[ml].ab.minefield.is_empty());
+}
+
 #[test]
 fn own_units_set_off_mines_but_the_minelayer_does_not() {
     let mut w = flat_world(["allies", "soviet"]);
