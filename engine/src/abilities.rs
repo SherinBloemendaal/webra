@@ -411,18 +411,22 @@ impl World {
         ci < self.map.cells() && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.resource(ci).map(|(r, _)| r))
     }
 
-    /// Whether minelayer `i` could drive onto cell `ci` and stop there, with
-    /// units of its own side moving out of the way (OpenRA CanEnterCell with
-    /// BlockedByActor.Immovable and CanStayInCell): no structure footprint,
-    /// husk or blocking terrain (`pass`), no unit of another side, and a
-    /// crate only when its locomotor crushes crates.
+    /// Whether minelayer `i` could drive onto cell `ci` and stop there
+    /// (OpenRA CanEnterCell with BlockedByActor.Immovable and
+    /// CanStayInCell; Locomotor.IsBlockedBy): no structure footprint, husk
+    /// or blocking terrain (`pass`); every unit there either one of its own
+    /// side that can move out of the way (Mobile: aircraft have none, so a
+    /// landed one blocks) or one it crushes (enemy infantry under its
+    /// tracks, `crushable_by`); a crate only when its locomotor crushes
+    /// crates.
     fn minelayer_can_enter(&self, i: usize, ci: usize) -> bool {
         let owner = self.actors[i].owner;
         !self.pass.blocked[ci]
             && self.building_at[ci] == NONE
             && self.units_in_cell(ci).iter().all(|&u| {
                 let u = u as usize;
-                u == i || !self.occupies_cell(u) || self.are_allies(owner, self.actors[u].owner)
+                let movable = self.actors[u].kind != Kind::Aircraft && self.is_movable(u);
+                u == i || !self.occupies_cell(u) || (movable && self.are_allies(owner, self.actors[u].owner)) || self.crushable_by(u, i)
             })
             && (self.crate_at(ci).is_none() || self.crushes_crates(i))
     }
@@ -571,12 +575,14 @@ impl World {
                 continue;
             }
             // OpenRA Minelayer PlaceMinefield: cells of a terrain it mines,
-            // explored, that it can drive onto and stop on.
-            let explored = &self.players[self.actors[i].owner as usize].explored;
+            // explored (Shroud.IsExplored: not under a Gap Generator's
+            // shroud either), that it can drive onto and stop on.
+            let owner = self.actors[i].owner;
+            let explored = |c: usize| self.players[owner as usize].explored[c] != 0 && !self.gen_shrouded(owner, c);
             let field: Vec<u32> = cells
                 .iter()
                 .copied()
-                .filter(|&c| self.mine_terrain_ok(i, c as usize) && explored[c as usize] != 0 && self.minelayer_can_enter(i, c as usize))
+                .filter(|&c| self.mine_terrain_ok(i, c as usize) && explored(c as usize) && self.minelayer_can_enter(i, c as usize))
                 .collect();
             self.start_task(i, Task::LayMines);
             let a = &mut self.actors[i];

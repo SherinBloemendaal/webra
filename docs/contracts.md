@@ -1434,7 +1434,9 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   husk, crate or mine. A unit takes its cell like in OpenRA's ActorMap
   (`occupies_cell`): from its creation, a paratrooper on its parachute
   too, but an aircraft only when landed. The same rule decides where
-  crates drop (spawner and delivery plane), where a helicopter may land,
+  crates drop (spawner, and the delivery plane, which keeps its crate
+  over a taken cell and drops it on the first free cell of its flight
+  within DropRange, else flies off with it), where a helicopter may land,
   what a falling bridge kills and which units a mission's footprint
   trigger sees. A crate landing on a unit whose locomotor crushes crates
   (a paratrooper still on its parachute too) is collected by it; landing
@@ -2095,12 +2097,16 @@ actors of kind `mine` (`MINV`, `MINP`).
 
 A minefield follows OpenRA's Minelayer and LayMines. The order keeps the
 rectangle's cells of a terrain the Minelayer mines that its owner has
-explored and the Minelayer can drive onto and stop on (bots too, so a bot
-mines nothing in the shroud). While it works, a cell goes for good
-(CleanMineField) once a mine its owner sees lies there, or once its owner
-sees the Minelayer cannot get onto it: a structure, a husk, blocking
-terrain or a unit of another side. A cell with a unit of its own side, a
-crate it crushes or anything under the fog stays: the Minelayer skips it
+explored (not under a Gap Generator's shroud either; bots too, so a bot
+mines nothing in the shroud) and the Minelayer can drive onto and stop on.
+While it works, a cell goes for good (CleanMineField) once a mine its
+owner sees lies there, or once its owner sees the Minelayer cannot get
+onto it (Locomotor.IsBlockedBy with BlockedByActor.Immovable): a
+structure, a husk, blocking terrain, an enemy vehicle or ship, or a landed
+aircraft (aircraft have no Mobile to move away). A cell with a unit of
+its own side, enemy infantry (its tracks crush infantry, as WebRA's
+movement does too), a crate it crushes or anything under the fog stays:
+the Minelayer skips it
 while a mine cannot go there now (CanLayMine: nothing but itself in the
 ActorMap, `occupies_cell` for units) and comes back once it is free. When
 no cell left can take a mine now, the Minelayer stops, as OpenRA's

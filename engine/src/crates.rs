@@ -215,22 +215,28 @@ impl World {
         a.air.cargo = vec![crate_ty as u16];
     }
 
-    /// Called by a delivery plane over its drop cell (plane.rs): the crate
-    /// leaves the plane when the cell is still free (OpenRA ParaDrop with
-    /// checkForSuitableCell: Crate GetAvailableSubCell, the crate's terrain
-    /// and nothing in the ActorMap there, `cell_has_actor`), at the plane's
-    /// height, and parachutes down.
+    /// Called every tick a delivery plane with its crate is within
+    /// DropRange of its drop cell (plane.rs; OpenRA ParaDrop with
+    /// checkForSuitableCell): the crate leaves the plane over the first cell
+    /// on its way that suits it (Crate GetAvailableSubCell: on the map, the
+    /// crate's terrain and nothing in the ActorMap there, `cell_has_actor`),
+    /// at the plane's height, and parachutes down. Over any other cell the
+    /// plane keeps it and tries again the next tick; one that leaves the
+    /// DropRange still loaded takes the crate off the map with it.
     pub(crate) fn drop_crate(&mut self, plane: usize) {
         let a = &self.actors[plane];
         let Some(&ty) = a.air.cargo.first() else { return };
-        let (cx, cy) = self.cell_of(a.x, a.y);
         let (alt, owner) = (a.altitude, a.owner);
+        let (cx, cy) = (a.x.div_euclid(CELL), a.y.div_euclid(CELL));
+        if !self.map.contains(cx, cy) {
+            return;
+        }
         let ci = self.map.idx(cx, cy);
-        self.actors[plane].air.cargo.clear();
         let info = self.rules.actors[ty as usize].options.crate_info.as_ref();
         if info.is_none_or(|c| !matches(&c.terrain, terrain_names(self, ci))) || self.cell_has_actor(ci) {
             return;
         }
+        self.actors[plane].air.cargo.clear();
         self.place_crate(ty as usize, owner, cx, cy, alt);
     }
 

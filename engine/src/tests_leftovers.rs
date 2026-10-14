@@ -174,12 +174,12 @@ fn crates_treat_a_descending_paratrooper_as_on_its_cell() {
     assert!(w.actors[c].alive && w.actors[c].altitude == 0, "under the helicopter it stays");
 }
 
-/// OpenRA ParaDrop with checkForSuitableCell: a delivery plane keeps its
-/// crate over a cell with anything in the ActorMap, a paratrooper on its
-/// parachute too, and drops it over a free one (only a flying aircraft
-/// above it).
+/// OpenRA ParaDrop with checkForSuitableCell: over a cell with anything in
+/// the ActorMap (a paratrooper on its parachute too) a delivery plane keeps
+/// its crate and tries again; over a free one (only a flying aircraft above
+/// it) the crate goes.
 #[test]
-fn a_delivery_plane_drops_no_crate_onto_a_paratrooper() {
+fn a_delivery_plane_keeps_its_crate_over_a_paratrooper() {
     let mut w = world();
     w.crates = crate::crates::CrateState::new(&w.rules, false);
     let e1 = unit(&mut w, "E1", 0, 20, 20);
@@ -188,14 +188,68 @@ fn a_delivery_plane_drops_no_crate_onto_a_paratrooper() {
     let heli = w.spawn_unit(ty(&w, "HELI"), 1, cell_center(24), cell_center(20), 0);
     w.rebuild_hash();
     assert!(w.actors[heli].altitude > 0, "spawned flying");
-    let money = ty(&w, "MONEYCRATE");
-    for (cx, dropped) in [(20, false), (24, true)] {
-        let plane = w.spawn_unit(ty(&w, "BADR"), 1, cell_center(cx), cell_center(20), 0);
-        w.actors[plane].altitude = 2048;
-        w.actors[plane].air.cargo = vec![money];
-        w.drop_crate(plane);
-        assert!(w.actors[plane].air.cargo.is_empty(), "the plane gives up its cargo either way");
-        assert_eq!(w.crate_at(w.map.idx(cx, 20)).is_some(), dropped, "cell ({cx}, 20)");
+    let plane = w.spawn_unit(ty(&w, "BADR"), 1, cell_center(20), cell_center(20), 0);
+    w.actors[plane].altitude = 2048;
+    w.actors[plane].air.cargo = vec![ty(&w, "MONEYCRATE")];
+    w.drop_crate(plane);
+    assert!(w.crate_at(w.map.idx(20, 20)).is_none(), "nothing onto the paratrooper");
+    assert_eq!(w.actors[plane].air.cargo.len(), 1, "the plane keeps its crate");
+    (w.actors[plane].x, w.actors[plane].y) = (cell_center(24), cell_center(20));
+    w.drop_crate(plane);
+    assert!(w.crate_at(w.map.idx(24, 20)).is_some(), "under the helicopter it goes");
+    assert!(w.actors[plane].air.cargo.is_empty());
+}
+
+/// A delivery plane on its way: when a unit (a harvester here) has driven
+/// onto the drop cell, the crate lands on the first free cell of the flight
+/// within DropRange (BADR 4c0); with every cell there taken the plane flies
+/// off with it (OpenRA ParaDrop.Tick retries while in DropRange and never
+/// unloads elsewhere).
+#[test]
+fn a_delivery_plane_drops_its_crate_beside_a_blocked_drop_cell() {
+    for blocked_around in [false, true] {
+        let mut w = world();
+        w.crates = crate::crates::CrateState::new(&w.rules, false);
+        let neutral = w.neutral_player().unwrap();
+        let badr = ty(&w, "BADR") as usize;
+        let drop_range = w.rules.actors[badr].unit.as_ref().unwrap().aircraft.as_ref().unwrap().drop_range;
+        assert_eq!(drop_range, 4 * crate::math::CELL, "BADR ParaDrop DropRange 4c0");
+        let money = ty(&w, "MONEYCRATE") as usize;
+        w.launch_crate_plane(badr, neutral, money, 20, 20);
+        let harv = unit(&mut w, "HARV", 0, 20, 20);
+        if blocked_around {
+            for y in 15..=25 {
+                for x in 15..=25 {
+                    if (x, y) != (20, 20) {
+                        unit(&mut w, "E1", 0, x, y);
+                    }
+                }
+            }
+        }
+        for p in w.players.iter_mut() {
+            p.explored.iter_mut().for_each(|e| *e = 1);
+        }
+        let mut landed = None;
+        for _ in 0..25 * 60 {
+            w.step();
+            if let Some(c) = (0..w.actors.len()).find(|&c| w.actors[c].alive && w.actors[c].kind == Kind::Crate) {
+                landed = Some(w.cell_of(w.actors[c].x, w.actors[c].y));
+                break;
+            }
+            if !w.actors.iter().any(|a| a.alive && a.ty as usize == badr) {
+                break;
+            }
+        }
+        assert_eq!(w.cell_of(w.actors[harv].x, w.actors[harv].y), (20, 20), "the harvester still on the drop cell");
+        if blocked_around {
+            assert_eq!(landed, None, "nowhere free within DropRange: the crate flew off");
+            assert_eq!(w.crates.count, 0);
+        } else {
+            let (cx, cy) = landed.expect("the crate came down beside the harvester");
+            assert_ne!((cx, cy), (20, 20));
+            let d = crate::math::dist(cell_center(cx), cell_center(cy), cell_center(20), cell_center(20));
+            assert!(d <= drop_range + crate::math::CELL, "within DropRange: ({cx}, {cy})");
+        }
     }
 }
 
