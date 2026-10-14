@@ -232,8 +232,25 @@ test('corner parts: the online and campaign cards end above Sound and Original c
   assert.ok(clear('#online-root:has(~ #audio-button:not([hidden]))') >= bottom(audio) + height(audio) + 4);
   assert.ok(clear('#online-root:has(~ #content-button:not([hidden]))') >= bottom(content) + height(content) + 4);
   for (const sel of ['#campaign-root:has(~ #audio-button:not([hidden]))', '#campaign-root:has(~ #content-button:not([hidden]))']) assert.ok(ALL.some((r) => r.sel === sel));
-  // The version tag (6 px up, one 11 px line) on every screen.
+  // The version tag (6 px up, one 11 px line) on every screen, Load game too (top layer).
   assert.ok(px(ROOT['--ui-corner-clear']) >= 6 + 11 * 1.4);
+  assert.equal(base('.records-dialog.records-screen').bottom, 'max(var(--ui-screen-gap), env(safe-area-inset-bottom), var(--ui-corner-clear))');
+  // The statistics over a game on a mouse device: the Sound button stays there (css/touch.css hides it on touch).
+  const stats = ALL.find((r) => /#stats-screen:has\(~ #audio-button:not\(\[hidden\]\)\)$/.test(r.sel) && !r.at.length);
+  assert.ok(stats, 'the statistics clear the Sound button');
+  assert.match(stats.sel, /^body:not\(\.touch\) #app:not\(\[data-layout='portrait'\]\):not\(\[data-layout='landscape'\]\) ~ /);
+  assert.ok(clear(stats.sel) >= bottom(audio) + height(audio) + 4);
+  const touchHides = SHEETS['touch.css'];
+  for (const s of ["body.touch #app:not([hidden]) ~ #audio-button", "#app[data-layout='portrait']:not([hidden]) ~ #audio-button", "#app[data-layout='landscape']:not([hidden]) ~ #audio-button"]) {
+    assert.ok(touchHides.includes(s), `touch.css still hides the Sound button: ${s}`);
+  }
+});
+
+test('server browser: the session list takes the height of the card, its status under it', () => {
+  const list = base('.online-page > .online-sessions');
+  assert.equal(list.flex, '1 0 auto');
+  assert.equal(list['align-content'], 'start', 'rows stay at the top of the well');
+  assert.ok(ALL.some((r) => r.sel === '.online-page > .online-sessions + .online-muted'));
 });
 
 test('statistics graph: time labels at least 80 px apart, at most 12 however wide the screen', () => {

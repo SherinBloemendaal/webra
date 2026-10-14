@@ -64,6 +64,21 @@
   min-width: 0;
 }
 
+/* The server browser: the session list is a well that takes the rest of the
+   card's height; its status line sits under it, at the bottom. */
+.online-page > .online-sessions {
+  flex: 1 0 auto;
+  align-content: start;
+  min-height: calc(6 * 36px);
+  padding: 2px;
+  background: var(--o-field);
+  border: 1px solid var(--o-edge);
+}
+
+.online-page > .online-sessions + .online-muted {
+  margin: 8px 0 0;
+}
+
 /* Lines of text keep a readable length in the wide card. */
 .online-page p:not(.online-caption) {
   max-width: var(--ui-measure);

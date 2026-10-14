@@ -132,6 +132,12 @@ body {
   --ui-corner-clear: calc(84px * var(--ui-scale));
 }
 
+/* In a game the Sound button stays on mouse devices (css/touch.css hides it
+   on touch screens and the phone layouts): the statistics card ends above it. */
+body:not(.touch) #app:not([data-layout='portrait']):not([data-layout='landscape']) ~ #stats-screen:has(~ #audio-button:not([hidden])) {
+  --ui-corner-clear: calc(56px * var(--ui-scale));
+}
+
 @media (pointer: coarse), (max-width: 600px) {
   #online-root:has(~ #audio-button:not([hidden])),
   #campaign-root:has(~ #audio-button:not([hidden])) {

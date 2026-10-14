@@ -113,6 +113,8 @@
 .records-dialog.records-screen {
   position: fixed;
   inset: var(--ui-screen-pad);
+  /* Above the version tag in the bottom left corner (theme.css --ui-corner-clear). */
+  bottom: max(var(--ui-screen-gap), env(safe-area-inset-bottom), var(--ui-corner-clear));
   width: auto;
   height: auto;
   max-width: none;

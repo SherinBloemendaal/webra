@@ -3020,16 +3020,29 @@ the rules below.
   statistics (`#stats-screen`, over the dimmed battlefield) and Load game
   (`js/records.js` `dialog(..., { screen: true })`). Their cards have no
   width cap; the screen pads them by `--ui-screen-pad` (theme.css), and the
-  card stretches to the rest of the window, its footer bar at the bottom.
+  card stretches to the rest of the window, its footer bar at the bottom
+  (the server browser's session list grows into a well with its status
+  line under it).
   A card taller than the window scrolls with the screen (the statistics
   scroll inside the card, so the tabs and buttons stay in view).
 - **The gap**: `--ui-screen-gap` is `clamp(12px, 1.5vw, 24px)` (12 px up to
   an 800 px window, 24 px from 1600 px) and 8 px on phones (600 px and
   less), in plain pixels at any UI scale. Each side is at least the
-  safe-area inset there. At the bottom the gap also clears the parts in
-  the bottom left corner (`--ui-corner-clear`): the version tag, and on the
-  online and campaign screens the Sound and Original content buttons
-  (their height follows the UI scale, 44 px rows on touch screens).
+  safe-area inset there. At the bottom the gap is at least
+  `--ui-corner-clear`, so a card ends above the parts in the bottom left
+  corner: 24 px for the version tag on every screen (Load game too); 56 px
+  times the UI scale while the Sound button shows on the online and
+  campaign screens, 84 px times the UI scale while Original content shows
+  above it (on touch screens and phones the safe-area inset or 24 px, the
+  buttons' offsets and a 44 px row, plus 8 px); and 56 px times the UI
+  scale on the statistics over a game on a mouse device in the desktop
+  layout, where the Sound button stays (touch screens and the phone
+  layouts hide it).
+- **Fallbacks**: the corner clearance needs `:has()` (Chrome 105, Safari
+  15.4, Firefox 121; older browsers keep the 24 px and the buttons may
+  overlap the card), and Load game's grid backdrop needs a `::backdrop`
+  that inherits custom properties (Chrome 122, Firefox 120, Safari 17.4;
+  older ones show the plain dark background).
 - **Inside a card**: the parts are laid out by the card's width through
   named container queries, never unnamed ones, so a wider card cannot
   change what a query measures:
