@@ -259,7 +259,7 @@ webra/
 ├── engine/                 webra-sim: deterministic simulation (Rust, compiled to WebAssembly)
 │   ├── rules.json          generated rules, embedded in the wasm
 │   ├── src/                world, units, combat, production, map, flowfield, vision, ai, render, tests
-│   └── examples/           ai_vs_ai.rs (headless match), stress.rs (benchmark), fairness_n.rs (N-player fairness probe), ai_probe.rs
+│   └── examples/           ai_vs_ai.rs (headless match), stress.rs and sim_bench.rs (benchmarks), fairness_n.rs (N-player fairness probe), ai_probe.rs
 ├── apps/
 │   ├── game/               browser client, served at /play (ES modules, WebGPU, no bundler)
 │   ├── website/            landing site, served at /
@@ -301,6 +301,8 @@ Python's server sends no COOP/COEP headers, so the simulation worker uses transf
 | Who the AIs gang up on: 8-player FFAs with one passive slot, 6 seeds x 8 slots | `cargo run -p webra-sim --release --example target_sweep` |
 | Equal mirrored armies under different orders (tick shift with `PRE_STEPS`) | `cargo run -p webra-sim --release --example mirror_fight -- am_vs_am 25` |
 | Headless stress benchmark | `cargo run -p webra-sim --release --example stress -- 20000` |
+| Stress test ms per tick by window, state hash digest, memory; with `--features profile --sections` where the tick's time goes | `cargo run -p webra-sim --release --example sim_bench -- 20000 1500` |
+| The same stress test on the game's wasm build in node, final state hash to compare with the native run (after `npm run build:wasm`) | `node tools/sim-tick-bench.mjs 20000 600` |
 | Render data cost per frame: simulation in a worker or not, CPU or GPU instance path, 60 and 144 fps (after `npm run build:wasm`) | `node tools/sim-bench.mjs 20000` |
 | Make an existing account an admin (local wrangler dev or production) | `node tools/promote-admin.mjs <username> --local` |
 | End-to-end smoke test (accounts, lobby, game) against local `wrangler dev` | see [docs/deploy.md](docs/deploy.md), Local development |
@@ -459,17 +461,16 @@ Notes on browsers:
 - **Shared flow fields.** A crowd ordered to one goal costs one field, not one path search per unit.
 - **Cheap neighbourhood queries.** The per-tick spatial hash keeps separation, targeting and splash damage close to linear.
 - **Off the main thread.** The simulation runs in a Web Worker; instance buffers reach the main thread through shared memory (or transferred buffers) without JavaScript-side object churn.
-- **Numbers.** Native benchmark of two armies attack-moving into each other (`cargo run -p webra-sim --release --example stress -- 20000`), against a 40 ms tick budget:
+- **Numbers.** The lobby's stress test: two armies of tanks and soldiers that attack-move across an open map into each other, under the OpenRA movement model (the default), against a 40 ms tick budget. `cargo run -p webra-sim --release --example sim_bench -- <units> 1500` (native) and `node tools/sim-tick-bench.mjs <units> 600` (the game's wasm build in node) print the first tick on its own and the ticks after it. Measured on an Apple Silicon Mac while up to four other heavy jobs ran, so two runs each (run 1 / run 2):
 
-  | Units | Average | Worst tick |
-  |------:|--------:|-----------:|
-  | 10,000 | 3.5 ms | 11 ms |
-  | 20,000 | 6.9 ms | 37 ms |
-  | 50,000 | 18.6 ms | 74 ms |
+  | Units | Native first tick | Native after it: median, p95, worst | Wasm first tick | Wasm after it: median, p95, worst |
+  |------:|------------------:|------------------------------------:|----------------:|----------------------------------:|
+  | 2,000 | 0.8 / 0.8 s | 0.8 / 0.8, 3.1 / 3.3, 7.9 / 7.2 ms | 1.1 / 1.1 s | 1.6 / 1.7, 4.5 / 4.6, 8.3 / 7.9 ms |
+  | 5,000 | 0.5 / 0.5 s | 2.6 / 2.6, 6.9 / 6.8, 15.9 / 15.6 ms | 1.9 / 3.6 s | 12.8 / 15.5, 74.4 / 76.5, 158 / 188 ms |
+  | 10,000 | 2.1 / 2.4 s | 9.1 / 11.2, 15.7 / 82.7, 48 / 272 ms | 17.2 / 6.7 s | 52.3 / 31.1, 108 / 70.9, 219 / 178 ms |
+  | 20,000 | 35.6 / 7.9 s | 44.1 / 13.0, 112 / 24.4, 245 / 73 ms | 24.4 / 8.3 s | 25.9 / 19.6, 48.8 / 34.5, 117 / 76 ms |
 
-  These are the WebRA movement model (`STRESS_MOVEMENT=webra`). The OpenRA model (the default) also searches routes around units and builds a flow field toward each unit's own destination for them: measured side by side on one machine it costs 11 % more per tick on average at 10,000 units, 26 % at 20,000 and 40 % at 50,000, with worst ticks 1.3 to 1.6 times as long; at 2,000 units it is 24 % cheaper on average (1.27 against 1.66 ms) with a worst tick of 21 ms against 9 ms.
-
-  WebAssembly runs the same code somewhat slower than native; the stress test HUD and the debug menu's performance stats show the live ms per tick.
+  The load on the machine moved these by a factor of two to three between runs (the 5,000 unit wasm runs were the most disturbed); the quieter run is the closer to an idle machine. The first tick is long because every unit of both armies starts its move in it and searches its route around the others (34,500 route searches at 20,000 units). The breakdown per system, what was made faster and why the simulation stays on one core are in [docs/contracts.md](docs/contracts.md), section 8, "Simulation performance". The stress test HUD and the debug menu's performance stats show the live ms per tick.
 - **Main thread per frame.** `node tools/sim-bench.mjs 20000` (after `npm run build:wasm`) runs the 20,000 unit stress test headless with the whole map in view (15,000 sprites) and times what the main thread does per frame: step the simulation or post the step, handle the frame message, and copy the render data as the renderer's `writeBuffer` does. Measured on an Apple Silicon Mac with Node 26 (no browser, no GPU), CPU instance path at 60 fps:
 
   | Simulation runs | Main thread per frame (avg / p95 / max) | Ticks per second |

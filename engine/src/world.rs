@@ -1008,6 +1008,13 @@ pub struct World {
     // Spatial hash of units by cell, rebuilt every tick (counting sort).
     pub(crate) hash_start: Vec<u32>,
     pub(crate) hash_items: Vec<u32>,
+    /// Per cell: the owners of the units the spatial hash lists there, one
+    /// bit per player slot (`owner_bit`), so target scans skip cells
+    /// without enemies (combat.rs). Current while `hash_owners_valid`
+    /// holds; an owner change or a freed actor slot (which a new actor of
+    /// another owner may take) clears that until the next rebuild.
+    pub(crate) hash_owners: Vec<u32>,
+    pub(crate) hash_owners_valid: bool,
     pub terrain_dirty: bool,
     /// Per actor: pressed against a friendly unit that moved in the last
     /// crowd separation, so it waits in a queue rather than being blocked for
@@ -1363,6 +1370,8 @@ impl World {
             dying: Vec::new(),
             hash_start: vec![0; cells + 1],
             hash_items: Vec::new(),
+            hash_owners: vec![0; cells],
+            hash_owners_valid: true,
             terrain_dirty: true,
             jammed: Vec::new(),
             retarget_memo: Vec::new(),
@@ -1757,6 +1766,9 @@ impl World {
             }
             self.actors[i].gen = self.actors[i].gen.wrapping_add(1);
             self.free.push(i as u32);
+            // The spatial hash may list the slot until its next rebuild, and
+            // a new actor may take it under another owner.
+            self.hash_owners_valid = false;
         }
         self.pass.refresh(&self.map);
         self.pass_water.refresh(&self.map);
@@ -1988,36 +2000,50 @@ impl World {
 
     pub(crate) fn rebuild_hash(&mut self) {
         let cells = self.map.cells();
-        let mut counts = vec![0u32; cells + 1];
-        let mut cell_of = Vec::with_capacity(self.actors.len());
+        // Counting sort into the buffers of the last rebuild (twice a tick).
+        let mut counts = std::mem::take(&mut self.hash_start);
+        counts.clear();
+        counts.resize(cells + 1, 0);
+        self.hash_owners.clear();
+        self.hash_owners.resize(cells, 0);
+        let mut cell_of = std::mem::take(&mut self.hash_items);
+        cell_of.clear();
         for a in &self.actors {
             // Mines are tracked per cell by abilities.rs, husks and crates by
             // `leftover_at` (husks.rs, crates.rs): not in the unit hash.
             if a.alive && a.is_unit() && a.in_world() {
                 let ci = self.cell_index(a.x, a.y);
                 counts[ci] += 1;
+                self.hash_owners[ci] |= owner_bit(a.owner);
                 cell_of.push(ci as u32);
             } else {
                 cell_of.push(NONE);
             }
         }
+        self.hash_owners_valid = true;
         let mut acc = 0u32;
         for c in counts.iter_mut() {
             let n = *c;
             *c = acc;
             acc += n;
         }
-        self.hash_start = counts.clone();
-        self.hash_items.clear();
-        self.hash_items.resize(acc as usize, 0);
-        let mut fill = counts;
+        // `counts` holds each cell's start and serves as its fill cursor.
+        let mut items = vec![0u32; acc as usize];
         for (i, &ci) in cell_of.iter().enumerate() {
             if ci != NONE {
-                let p = fill[ci as usize] as usize;
-                self.hash_items[p] = i as u32;
-                fill[ci as usize] += 1;
+                let p = counts[ci as usize] as usize;
+                items[p] = i as u32;
+                counts[ci as usize] += 1;
             }
         }
+        // Every cursor now stands at the start of the next cell: shift
+        // them back by one cell to get the starts again.
+        for c in (1..=cells).rev() {
+            counts[c] = counts[c - 1];
+        }
+        counts[0] = 0;
+        self.hash_start = counts;
+        self.hash_items = items;
     }
 
     // ---- Economy -----------------------------------------------------------
@@ -2579,6 +2605,7 @@ impl World {
         // The spectator view flag is render only (observer.rs).
         debug_assert!(!self.render_all, "render_all set while the simulation runs");
         self.tick += 1;
+        let mut section = crate::profile::scope(crate::profile::Section::TickStart);
         let strike = self.env.tick(self.tick, self.map.width, self.map.height);
         for a in self.actors.iter_mut() {
             a.px = a.x;
@@ -2597,10 +2624,12 @@ impl World {
             self.occupancy_begin_tick();
         }
         self.retarget_memo.clear();
+        section.next(crate::profile::Section::Orders);
         self.apply_orders();
         if self.tokens_dirty {
             self.refresh_tokens();
         }
+        section.next(crate::profile::Section::Economy);
         self.update_power();
         // Production doors (doors.rs, presentation only): the frame steps
         // before this tick's production, like OpenRA's door animation runs
@@ -2608,12 +2637,14 @@ impl World {
         self.tick_doors();
         // Landing craft doors (fx.rs, presentation only).
         self.tick_fx();
+        section.next(crate::profile::Section::Ai);
         for p in 0..self.players.len() {
             // Mission players follow their scripts, not the skirmish AI (mission/).
             if self.players[p].is_ai && !self.players[p].defeated && !self.scripted_player(p as u8) {
                 crate::ai::think(self, p as u8);
             }
         }
+        section.next(crate::profile::Section::Economy);
         for p in 0..self.players.len() {
             self.tick_production(p as u8);
             self.tick_powers(p as u8);
@@ -2630,10 +2661,14 @@ impl World {
         self.tick_husks();
         // Delayed shots, C4, outages, sonar pulses, captures (infantry.rs).
         self.tick_infantry_world();
+        section.next(crate::profile::Section::Units);
         self.tick_units();
+        section.next(crate::profile::Section::Projectiles);
         self.tick_projectiles();
         self.tick_crashes();
+        section.next(crate::profile::Section::Cleanup);
         self.cleanup_dead();
+        section.next(crate::profile::Section::Rest);
         // Husks, the hospital, oil derricks, ore mines (with the "Ore
         // regrowth" option), panics and bridge repairs (neutral.rs).
         self.tick_neutral();
@@ -2646,7 +2681,9 @@ impl World {
             self.refresh_tokens();
         }
         if self.tick.is_multiple_of(VISION_INTERVAL) {
+            section.next(crate::profile::Section::Vision);
             self.update_vision();
+            section.next(crate::profile::Section::Rest);
         }
         for e in self.effects.iter_mut() {
             e.ttl -= 1;
@@ -2760,6 +2797,17 @@ impl World {
 
     pub fn queue_type_index(q: QueueType) -> usize {
         q as usize
+    }
+}
+
+/// A player slot as a bit of `World::hash_owners`; every bit for slots past
+/// 31, so a scan never skips their units.
+#[inline]
+pub(crate) fn owner_bit(owner: u8) -> u32 {
+    if owner < 32 {
+        1 << owner
+    } else {
+        u32::MAX
     }
 }
 
