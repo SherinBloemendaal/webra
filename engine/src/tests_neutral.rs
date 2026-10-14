@@ -585,6 +585,28 @@ fn bridges_fall_kill_what_is_on_them_and_engineers_repair_them_at_a_hut() {
     assert!(!w.can_demolish_bridge_at_hut(huts[1]));
 }
 
+/// OpenRA KillUnitsOnBridge kills what the ActorMap holds on the span: a
+/// paratrooper on its parachute over the deck falls with it, a helicopter
+/// in the air flies on (world.rs `occupies_cell`).
+#[test]
+fn a_falling_bridge_takes_a_descending_paratrooper_along() {
+    let mut w = bridge_world();
+    let br = find(&w, "BRIDGE1")[0];
+    let b = w.bridge_of(br).expect("a bridge span");
+    let deck = deck_cells(&w, b);
+    let (dx, dy) = (deck[0] as i32 % w.map.width, deck[0] as i32 / w.map.width);
+    let e1 = unit(&mut w, "E1", 1, dx, dy);
+    w.actors[e1].altitude = 4096;
+    let heli = unit(&mut w, "HELI", 1, dx, dy);
+    w.rebuild_hash();
+    assert!(w.actors[heli].altitude > 0, "spawned flying");
+    let max = w.actors[br].hp;
+    w.damage(br, max);
+    assert_eq!(w.bridge_look(br), Some(BridgeLook::Destroyed));
+    assert!(!w.actors[e1].alive, "the paratrooper fell with the bridge");
+    assert!(w.actors[heli].alive, "the helicopter flies on");
+}
+
 #[test]
 fn an_engineer_repairs_a_fallen_bridge_through_its_hut() {
     let mut w = bridge_world();

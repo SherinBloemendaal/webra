@@ -398,29 +398,60 @@ fn naval_yards_are_built_only_on_water_that_reaches_an_enemy() {
     assert!(n >= 1 && reach.iter().all(|&r| r), "{n} yards, reaching {reach:?}");
 }
 
-/// Whether one of `player`'s ships has an enemy ship it can hit and target
-/// (seen, not cloaked) on its body of water (`pass_water` component), judged
-/// from the world alone (not the bots' `enemy_in_reach`, which this test
-/// checks). Such a ship is always in reach: OpenRA's FindEnemies tries the
-/// target's own position first. Ships in the fog do not count: the bots
-/// go only for enemies they see (ai.rs `is_preferred_enemy`).
-/// Structures are left out: OpenRA reaches them only from eight points at
-/// weapon range around them, so a naval yard by the map edge can be out of
-/// reach with water next to it, and judging that would repeat the bots' code.
-fn enemy_ship_on_its_water(w: &World, player: u8) -> bool {
-    let comp = |i: usize| {
-        let c = w.cell_index(w.actors[i].x, w.actors[i].y);
-        (!w.pass_water.blocked[c]).then(|| w.pass_water.component[c])
-    };
-    let ships = |owner: &dyn Fn(u8) -> bool| -> Vec<usize> {
-        (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].kind == Kind::Ship && owner(w.actors[i].owner)).collect()
-    };
-    let own = ships(&|o| o == player);
-    // The engine's own targeting rule (combat.rs): seen and not cloaked.
-    let enemies: Vec<usize> = ships(&|o| w.are_enemies(player, o)).into_iter().filter(|&t| w.targetable(t, player)).collect();
-    own.iter().any(|&s| {
+/// Whether one of `ships` (of `player`) has an enemy it can surely attack
+/// from its body of water (`pass_water` component). A sufficient condition
+/// judged from the world, not from the bots' `enemy_in_reach` (ai_naval.rs)
+/// this test checks; it may miss enemies the bots reach (the safe side),
+/// never names one they cannot:
+/// - an enemy ship on the same water: OpenRA's FindEnemies tries the
+///   target's own position first;
+/// - an enemy structure on water with a footprint cell within the ship's
+///   weapon range of some cell of that water (every footprint cell is a
+///   target position, OpenRA Building.TargetablePositions).
+///
+/// Both count only targets `player` can target now: seen and not cloaked
+/// (the bots go for no unit they do not see, and a ship fires only at what
+/// its owner sees). This shares engine rules with the bots: `targetable`
+/// (`is_visible_to`, cloaks), `target_class` and the weapons' target
+/// classes and ranges (`can_attack_class`, `reaches_class`). A bug there
+/// misleads the bots and this oracle alike and is for the combat tests to
+/// find; what this guards is the bots' own reach and squad logic (water
+/// labels, FindEnemies points, preferred enemies, squad states).
+fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
+    let water = |c: usize| (!w.pass_water.blocked[c]).then(|| w.pass_water.component[c]);
+    let enemies: Vec<usize> = (0..w.actors.len())
+        .filter(|&t| w.actors[t].alive && w.are_enemies(player, w.actors[t].owner) && w.targetable(t, player))
+        .filter(|&t| match w.actors[t].kind {
+            Kind::Ship => true,
+            Kind::Building => w.rules.actors[w.actors[t].ty as usize].building.as_ref().is_some_and(|b| b.on_water),
+            _ => false,
+        })
+        .collect();
+    ships.iter().any(|&s| {
+        let Some(comp) = water(w.cell_index(w.actors[s].x, w.actors[s].y)) else { return false };
+        let info = &w.rules.actors[w.actors[s].ty as usize];
         enemies.iter().any(|&t| {
-            comp(s).is_some() && comp(s) == comp(t) && w.rules.actors[w.actors[s].ty as usize].can_attack_class(&w.rules, w.target_class(t))
+            let class = w.target_class(t);
+            if !info.can_attack_class(&w.rules, class) {
+                return false;
+            }
+            let a = &w.actors[t];
+            if a.kind == Kind::Ship {
+                return water(w.cell_index(a.x, a.y)) == Some(comp);
+            }
+            let b = w.rules.actors[a.ty as usize].building.as_ref().unwrap();
+            let r = info.range_against(&w.rules, class) / CELL + 1;
+            b.cells().any(|(dx, dy)| {
+                let (fx, fy) = (a.cx + dx, a.cy + dy);
+                (fy - r..=fy + r).any(|y| {
+                    (fx - r..=fx + r).any(|x| {
+                        w.map.contains(x, y) && water(w.map.idx(x, y)) == Some(comp) && {
+                            let d = crate::math::dist_sq(cell_center(x), cell_center(y), cell_center(fx), cell_center(fy));
+                            info.reaches_class(&w.rules, class, d)
+                        }
+                    })
+                })
+            })
         })
     })
 }
@@ -428,23 +459,26 @@ fn enemy_ship_on_its_water(w: &World, player: u8) -> bool {
 /// Generated maps where fleets used to pile up idle: in 15 minutes on 64
 /// cell maps a Naval AI on rivers with fords (seed 3) gathered 20 ships
 /// idle without a target, a Turtle AI on islands (seed 3) 12, while enemies
-/// were in reach. Two checks per scenario:
-/// - a naval squad never idles longer than one squad update
-///   (AttackForceInterval) while an enemy ship is on its ships' water
-///   (`enemy_ship_on_its_water`);
+/// were in reach. Three checks per scenario:
+/// - no naval squad idles without a target (`idle_naval_squads`) longer
+///   than one squad update (AttackForceInterval) while one of its own
+///   ships surely has an enemy to attack (`meets_enemy`);
+/// - fleets met enemies at all (`contested`), or the first check proves
+///   nothing;
 /// - the most ships idle at once stays within the scenario's bound. A fleet
-///   with nothing on its water may wait: on the islands the Soviet bot's
-///   submarines, which only hit ships and structures on water, wait
-///   between the enemy's destroyers.
+///   with no enemy it can reach may wait: on the islands the Soviet bot's
+///   submarines wait at home while the enemy's destroyers sail in the fog.
 ///
 /// To recalibrate after a change to the bots or the map generator (or a
 /// merge with another branch that changes them), run this test with
 /// `--nocapture`, read the printed `idle_most` per scenario and set each
-/// bound to that peak; the interval check must hold as it is.
+/// bound to that peak; the other two checks must hold as they are.
 #[test]
 fn generated_naval_maps_keep_no_idle_fleets() {
+    use crate::ai_squads::idle_naval_squads;
     use crate::mapgen::MapStyle;
     use crate::world::{GameOptions, PlayerSetup};
+    use std::collections::BTreeMap;
     // Style, seed, bot and the most ships idle at once (measured).
     let scenarios = [(MapStyle::Rivers, 3u64, BotType::Naval, 4), (MapStyle::Islands, 3, BotType::Turtle, 9)];
     for (style, seed, bot, idle_bound) in scenarios {
@@ -453,32 +487,37 @@ fn generated_naval_maps_keep_no_idle_fleets() {
             (0..2).map(|k| PlayerSetup { bot, ..PlayerSetup::new(factions[k], Some(AiDifficulty::Normal)) }).collect();
         let mut w = World::with_options(seed, 64, &players, GameOptions { map_style: style, ..GameOptions::default() });
         let mut idle_most = 0;
-        // Per player: consecutive ticks a naval squad idled with an enemy ship on its water.
-        let mut waited = [0i32; 2];
+        // Per (player, squad id): consecutive ticks the squad idled with an
+        // enemy its own ships surely reach.
+        let mut waited: BTreeMap<(u8, u32), i32> = BTreeMap::new();
         let mut waited_most = 0;
-        // Ticks with an enemy ship on some fleet's water: the interval check
-        // means nothing unless fleets meet.
+        // Ticks a player's naval squads (idle or not) had such an enemy.
         let mut contested = 0;
         for _ in 0..25 * 60 * 15 {
             w.step();
+            let mut now = BTreeMap::new();
             for p in 0..2u8 {
-                let idle = naval_report(&w, p).idle_ships;
-                idle_most = idle_most.max(idle);
-                let met = enemy_ship_on_its_water(&w, p);
-                contested += met as u32;
-                waited[p as usize] = if idle > 0 && met { waited[p as usize] + 1 } else { 0 };
-                waited_most = waited_most.max(waited[p as usize]);
+                idle_most = idle_most.max(naval_report(&w, p).idle_ships);
+                contested += meets_enemy(&w, p, &squad_units(&w, p, SquadType::Naval)) as u32;
+                for (id, ships) in idle_naval_squads(&w, p) {
+                    if meets_enemy(&w, p, &ships) {
+                        let n = waited.get(&(p, id)).copied().unwrap_or(0) + 1;
+                        waited_most = waited_most.max(n);
+                        now.insert((p, id), n);
+                    }
+                }
             }
+            waited = now;
             if w.winner.is_some() {
                 break;
             }
         }
         eprintln!("{style:?} seed {seed} {bot:?}: idle_most {idle_most} waited_most {waited_most} contested {contested}");
-        assert!(contested > 0, "{style:?} seed {seed} {bot:?}: no fleet ever had an enemy ship on its water");
+        assert!(contested > 0, "{style:?} seed {seed} {bot:?}: no fleet ever had an enemy to attack");
         let interval = w.ai[0].cfg.info.squads.attack_force_interval;
         assert!(
             waited_most <= interval,
-            "{style:?} seed {seed} {bot:?}: a fleet idled {waited_most} ticks with an enemy ship on its water (squads update every {interval})"
+            "{style:?} seed {seed} {bot:?}: a fleet idled {waited_most} ticks with an enemy to attack (squads update every {interval})"
         );
         assert!(idle_most <= idle_bound, "{style:?} seed {seed} {bot:?}: {idle_most} ships idle at once (bound {idle_bound})");
     }

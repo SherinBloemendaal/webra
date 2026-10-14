@@ -94,10 +94,10 @@ impl World {
         self.resolve(r).filter(|&c| self.actors[c].kind == Kind::Crate)
     }
 
-    /// Whether anything stands on cell `ci` (OpenRA ActorMap: units, structures,
-    /// husks, mines, crates).
+    /// Whether anything stands on cell `ci` (OpenRA ActorMap: units that
+    /// take their cell (`occupies_cell`), structures, husks, mines, crates).
     pub(crate) fn cell_has_actor(&self, ci: usize) -> bool {
-        self.units_in_cell(ci).iter().any(|&u| self.actors[u as usize].alive && self.actors[u as usize].altitude == 0)
+        self.units_in_cell(ci).iter().any(|&u| self.occupies_cell(u as usize))
             || self.building_at[ci] != NONE
             || self.husk_at(ci).is_some()
             || self.mine_at(ci).is_some()
@@ -255,14 +255,10 @@ impl World {
         a.altitude = 0;
         a.air.parachute = false;
         let ci = self.cell_index(self.actors[c].x, self.actors[c].y);
-        let collector = self
-            .units_in_cell(ci)
-            .iter()
-            .map(|&u| u as usize)
-            .find(|&u| self.actors[u].alive && self.actors[u].altitude == 0 && self.collects_crates(u));
+        let collector = self.units_in_cell(ci).iter().map(|&u| u as usize).find(|&u| self.occupies_cell(u) && self.collects_crates(u));
         if let Some(u) = collector {
             self.collect_crate(c, u);
-        } else if self.units_in_cell(ci).iter().any(|&u| self.actors[u as usize].alive && self.actors[u as usize].altitude == 0)
+        } else if self.units_in_cell(ci).iter().any(|&u| self.occupies_cell(u as usize))
             || self.building_at[ci] != NONE
             || self.husk_at(ci).is_some()
             || self.mine_at(ci).is_some()

@@ -837,8 +837,7 @@ impl World {
         }
         for &u in self.units_in_cell(ci) {
             let u = u as usize;
-            let o = &self.actors[u];
-            if u != i && o.alive && (o.kind != Kind::Aircraft || o.altitude == 0) {
+            if u != i && self.occupies_cell(u) {
                 return false;
             }
         }

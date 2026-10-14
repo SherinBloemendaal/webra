@@ -589,14 +589,8 @@ impl World {
         terrain_ok
             && !self.map.has_resource(i)
             && self.building_at[i] == NONE
-            // Aircraft in the air occupy no cell (OpenRA Aircraft.OccupiedCells
-            // holds only the landing cells); anything else does from its
-            // creation, a paratrooper still on its parachute too.
-            && self.units_in_cell(i).iter().all(|&u| {
-                let a = &self.actors[u as usize];
-                let flying = a.altitude > 0 && self.rules.actors[a.ty as usize].unit.as_ref().is_some_and(|ui| ui.aircraft.is_some());
-                !a.alive || flying || Some(u as usize) == ignore
-            })
+            // Units on the cell, but aircraft in the air (`occupies_cell`).
+            && self.units_in_cell(i).iter().all(|&u| !self.occupies_cell(u as usize) || Some(u as usize) == ignore)
             // Husks, crates and mines take the cell too (husks.rs, crates.rs, abilities.rs).
             && self.husk_at(i).is_none()
             && self.crate_at(i).is_none()

@@ -144,6 +144,31 @@ fn driving_onto_a_crate_collects_it() {
     assert_eq!(w.actors[e1].hp, w.rules.actors[ty(&w, "E1") as usize].hp, "healed");
 }
 
+/// OpenRA's ActorMap holds a paratrooper from its creation, an aircraft
+/// only when landed (world.rs `occupies_cell`): no crate is dropped on a
+/// cell a paratrooper comes down on (ChooseDropCell), and a crate landing
+/// on one is taken or destroyed (Crate.OnLanded), never left beside it.
+#[test]
+fn crates_treat_a_descending_paratrooper_as_on_its_cell() {
+    let mut w = world();
+    w.crates = crate::crates::CrateState::new(&w.rules, false);
+    let neutral = w.neutral_player().unwrap();
+    let e1 = unit(&mut w, "E1", 0, 20, 20);
+    w.actors[e1].altitude = 4096;
+    let heli = w.spawn_unit(ty(&w, "HELI"), 1, cell_center(22), cell_center(20), 0);
+    w.rebuild_hash();
+    assert!(w.actors[heli].altitude > 0, "spawned flying");
+    assert!(w.cell_has_actor(w.map.idx(20, 20)), "no crate drop on the paratrooper");
+    assert!(!w.cell_has_actor(w.map.idx(22, 20)), "a helicopter overhead takes no cell");
+    let c = w.place_crate(ty(&w, "MONEYCRATE") as usize, neutral, 20, 20, crate::crates::CRATE_FALL_RATE);
+    w.tick_falling_crate(c);
+    assert!(!w.actors[c].alive, "landed on the paratrooper");
+    assert_eq!(w.crates.count, 0);
+    let c = w.place_crate(ty(&w, "MONEYCRATE") as usize, neutral, 22, 20, crate::crates::CRATE_FALL_RATE);
+    w.tick_falling_crate(c);
+    assert!(w.actors[c].alive && w.actors[c].altitude == 0, "under the helicopter it stays");
+}
+
 #[test]
 fn crate_shares_follow_openra() {
     let mut w = world();

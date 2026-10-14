@@ -1426,11 +1426,13 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   centre (both footprint centres plus LocalCenterOffset, `center_offset`;
   the yard's is half a cell up), comparing squared lengths like OpenRA. A
   structure without RequiresBuildableArea (`requires_area` null) goes
-  anywhere its terrain allows. Every footprint
-  cell must be on the map, of the structure's terrain (naval yards and sub
-  pens: Water only, never beach or river), without ore or gems, and empty:
-  no structure, unit (aircraft in the air do not count, paratroopers on their parachute do), husk,
-  crate or mine.
+  anywhere its terrain allows. Every footprint cell must be on the map, of
+  the structure's terrain (naval yards and sub pens: Water only, never
+  beach or river), without ore or gems, and empty: no structure, unit,
+  husk, crate or mine. A unit takes its cell like in OpenRA's ActorMap
+  (`occupies_cell`): from its creation, a paratrooper on its parachute
+  too, but an aircraft only when landed. The same rule decides where
+  crates drop and what a landing crate or a falling bridge hits.
 - Like OpenRA (World.IsCellBuildable at b6fc03f), placement reads the true
   world state and never the player's view: footprints may reach into the
   shroud and the fog, and every occupant blocks its cell whether the player
