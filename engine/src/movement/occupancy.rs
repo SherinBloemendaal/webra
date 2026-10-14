@@ -24,8 +24,12 @@ pub const DEFAULT_SUB_CELL: u8 = 3;
 /// mirrored map stands nearer its enemies.
 pub const SUB_CELL_OFFSETS: [(i32, i32); 6] = [(0, 0), (-256, -256), (256, -256), (0, 0), (-256, 256), (256, 256)];
 
-/// Cells of a queue of waiting units `World::cell_is_evacuating` follows at most.
-const QUEUE_DEPTH: usize = 64;
+/// Cells of a queue of waiting units `World::queue_is_moving` follows at
+/// most: the depth of a block of 20,000 units is under a hundred cells.
+const QUEUE_DEPTH: usize = 256;
+/// How far from a cell the closed cells on both sides of a pass may be
+/// (`World::pass_cell`): passes up to seven cells wide.
+const PASS_REACH: i32 = 4;
 
 /// OpenRA BlockedByActor: which units count as blocking a cell.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -445,29 +449,59 @@ impl World {
         overlaps(o.sub, sub) && !self.crushable_by(i, j) && !self.crushable_by(j, i)
     }
 
-    /// Whether every unit holding `cell` is on its way out, so that unit
-    /// `i` waiting for it should wait on (OpenRA Move.CellIsEvacuating:
-    /// moving, or turning to move).
-    ///
-    /// WebRA addition, with `follow_queue`: also when the holders wait in
-    /// turn for a cell further on that clears in the same way, and that
-    /// queue runs through a narrow passage (`narrow_cell`: a bridge, a gap
-    /// one cell wide). OpenRA counts only units moving or turning in this
-    /// tick, so a unit behind a column on a bridge that makes way one unit
-    /// after another (each nudged one asking the next), or at the back of a
-    /// group filing over it, gives up when WaitAverage runs out although
-    /// the way is clearing. A queue that leads back to `i`, runs in a
-    /// circle, is longer than `QUEUE_DEPTH` cells or ends at a unit that
-    /// does not move is not clearing, so units facing each other still give
-    /// up; in the open (a crowd shuffling around its goal) OpenRA's rule
-    /// alone holds, so such a crowd settles as fast as in OpenRA. The caller
-    /// stops following queues after a while (`QUEUE_PATIENCE`).
-    pub(crate) fn cell_is_evacuating(&self, cell: u32, i: usize, follow_queue: bool) -> bool {
+    /// OpenRA Move.CellIsEvacuating: whether every unit holding `cell` is
+    /// on its way out (moving, or turning to move), so that unit `i`
+    /// waiting for it should wait on.
+    pub(crate) fn cell_is_evacuating(&self, cell: u32, i: usize) -> bool {
+        self.others_at(cell, i).all(|o| {
+            let j = o.actor as usize;
+            let m = &self.actors[j].mv;
+            self.is_movable(j) && (m.moving || m.turning)
+        })
+    }
+
+    /// WebRA addition: whether the queue that unit `i` waits in moves on.
+    /// The holders of `cell` either leave (`cell_is_evacuating`) or wait in
+    /// turn for a cell further on (`Motion::waiting_for`) whose holders
+    /// leave or wait in the same way, and the queue ends at units that
+    /// leave or at a free cell: the line ahead is progressing. With
+    /// `need_pass` the queue must also run through a pass (`pass_cell`);
+    /// the caller passes false when it knows that the unit's own way leads
+    /// through one, or when no pass is needed. Units that only make way
+    /// (`making_way`: asked aside by the units waiting behind them) count
+    /// as leaving only in a queue through a pass, such as a column of idle
+    /// units on a bridge that gives way one unit after another: in the
+    /// open, a crowd around its goal that the units behind keep asking
+    /// aside is no queue. A queue that leads back to `i`, runs in a circle,
+    /// is longer than `QUEUE_DEPTH` cells or ends at a unit that does not
+    /// move (an enemy, a unit that gave up, one that stands and fires) does
+    /// not move.
+    pub(crate) fn queue_is_moving(&mut self, cell: u32, i: usize, need_pass: bool) -> bool {
+        let _section = crate::profile::scope(crate::profile::Section::Queues);
+        // A cell was passed in this walk when its mark is the walk's stamp.
+        let mut marks = std::mem::take(&mut self.search.queue_marks);
+        if marks.len() != self.map.cells() {
+            marks = vec![0; self.map.cells()];
+            self.search.queue_stamp = 0;
+        }
+        self.search.queue_stamp = self.search.queue_stamp.wrapping_add(1);
+        if self.search.queue_stamp == 0 {
+            marks.iter_mut().for_each(|m| *m = 0);
+            self.search.queue_stamp = 1;
+        }
+        let moving = self.queue_walk(cell, i, need_pass, &mut marks, self.search.queue_stamp);
+        self.search.queue_marks = marks;
+        moving
+    }
+
+    /// The walk of `queue_is_moving`; `marks[c] == stamp` for passed cells.
+    fn queue_walk(&self, cell: u32, i: usize, need_pass: bool, marks: &mut [u32], stamp: u32) -> bool {
         let me = self.actors[i].mv.to;
         let mut seen = vec![me, cell];
+        marks[me as usize] = stamp;
+        marks[cell as usize] = stamp;
         let mut c = cell;
-        let mut followed = false;
-        let mut narrow = false;
+        let mut making_way = false;
         loop {
             let mut next = NONE;
             for o in self.others_at(c, i) {
@@ -476,37 +510,52 @@ impl World {
                 if !self.is_movable(j) {
                     return false;
                 }
-                if m.moving || m.turning {
+                // Driving, turning, or between two cells (a step begun in
+                // this tick: `moving` tells of the last tick only).
+                if m.moving || m.turning || m.from != m.to {
+                    making_way |= self.making_way(j);
                     continue;
                 }
-                if !follow_queue || m.result != MoveResult::InProgress || m.waiting_for == NONE || (next != NONE && next != m.waiting_for) {
+                if m.result != MoveResult::InProgress || m.waiting_for == NONE || (next != NONE && next != m.waiting_for) {
                     return false;
                 }
                 next = m.waiting_for;
             }
             if next == NONE {
                 // Everybody here is leaving (or nobody is left).
-                return !followed || narrow;
+                return !(need_pass || making_way) || seen.iter().any(|&c| self.pass_cell(i, c));
             }
-            if seen.contains(&next) || seen.len() > QUEUE_DEPTH {
+            if marks[next as usize] == stamp || seen.len() > QUEUE_DEPTH {
                 return false;
             }
-            followed = true;
-            narrow = narrow || self.narrow_cell(i, c) || self.narrow_cell(i, next);
+            marks[next as usize] = stamp;
             seen.push(next);
             c = next;
         }
     }
 
-    /// Whether `cell` is part of a passage one cell wide for unit `i`: of
-    /// its four side neighbours only two opposite ones are open to it (a
-    /// bridge, a gap in a wall).
-    fn narrow_cell(&self, i: usize, cell: u32) -> bool {
+    /// Whether unit `j` only moves to make way: nudged aside, scattered or
+    /// stepping off a cell it may not stay on (an order that may stop
+    /// nowhere short of its cell, cellmove.rs `nudge`).
+    fn making_way(&self, j: usize) -> bool {
+        let a = &self.actors[j];
+        a.activity == crate::world::Activity::Move && a.mv.order_near == 0
+    }
+
+    /// Whether `cell` lies in a pass for unit `i`: along a row, a column or
+    /// a diagonal, cells it may not enter (terrain, structures, the map's
+    /// edge) close in on both sides within `PASS_REACH` cells. A bridge, a
+    /// gap in a wall or between buildings, a valley.
+    pub(crate) fn pass_cell(&self, i: usize, cell: u32) -> bool {
         let w = self.map.width;
         let (x, y) = (cell as i32 % w, cell as i32 / w);
-        let open = |dx: i32, dy: i32| self.map.contains(x + dx, y + dy) && self.terrain_allows(i, self.map.idx(x + dx, y + dy) as u32);
-        let (n, s, e, west) = (open(0, -1), open(0, 1), open(1, 0), open(-1, 0));
-        (n && s && !e && !west) || (e && west && !n && !s)
+        let closed = |dx: i32, dy: i32| {
+            (1..=PASS_REACH).any(|k| {
+                let (cx, cy) = (x + dx * k, y + dy * k);
+                !self.map.contains(cx, cy) || !self.terrain_allows(i, self.map.idx(cx, cy) as u32)
+            })
+        };
+        [(1, 0), (0, 1), (1, 1), (1, -1)].iter().any(|&(dx, dy)| closed(dx, dy) && closed(-dx, -dy))
     }
 
     /// The cell of point (x, y) as an index.

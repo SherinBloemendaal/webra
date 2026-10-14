@@ -4,25 +4,27 @@
    account and the More list. Phones stack it in rows: the name, the account
    and More; the three Play entries side by side; Load game and Replays. */
 
-/* The start screen scrolls as one column: the menu bar, then the lobby. */
+/* The start screen is one column as wide as the window (less the screen
+   gap, css/style.css #menu): the menu bar, then the skirmish setup card,
+   which takes the rest of the height. Taller than the window, it scrolls. */
 #menu {
-  align-content: start;
-  gap: 12px;
+  grid-template-rows: auto 1fr;
+  gap: var(--ui-screen-gap);
 }
 
 #menu #skirmish {
-  width: min(1080px, 100%);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
 #menu #skirmish > .lobby {
-  width: 100%;
+  flex: 1 0 auto;
 }
 
 .start-nav {
   position: relative;
   z-index: 3;
-  width: min(1080px, 100%);
   min-width: 0;
   box-sizing: border-box;
   display: flex;

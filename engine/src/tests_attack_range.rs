@@ -483,22 +483,32 @@ fn a_unit_queued_behind_firing_units_waits_on_cheaply() {
 }
 
 /// Two tanks in a one-cell lane, each told to shell a spot beyond the
-/// other: each waits for the other's cell. Neither waits for good: they
-/// give up after `RANGE_PATIENCE` (nobody of theirs fires in front of
-/// them), and the searches meanwhile stay few.
+/// other: each needs the other's cell. Neither waits for good: one backs
+/// out of the other's way (movement/cellmove.rs), the other gets in range
+/// and fires, and the one now stuck behind a unit that fires at another
+/// target gives up after `RANGE_PATIENCE`. The searches meanwhile stay few.
 #[test]
-fn two_units_waiting_for_each_other_give_up() {
+fn two_units_needing_each_others_cell_do_not_wait_for_good() {
     let mut w = arena(MovementModel::OpenRA, 64, 40);
     carve(&mut w, (2..62).map(|x| (x, 20)));
     let a = unit(&mut w, "2TNK", 0, 20, 20, 256);
     let b = unit(&mut w, "2TNK", 0, 24, 20, 768);
     w.queue_order(Order::AttackGround { player: 0, ids: refs(&w, &[a]), x: cell_center(60), y: cell_center(20) });
     w.queue_order(Order::AttackGround { player: 0, ids: refs(&w, &[b]), x: cell_center(3), y: cell_center(20) });
-    let (_, total) = expanded_per_tick(&mut w, crate::attack_range::RANGE_PATIENCE + 300);
-    for u in [a, b] {
-        assert_eq!(w.actors[u].activity, Activity::Idle, "gave up the attack");
+    let (mut total, mut ticks) = (0, 0);
+    while ticks < 25 * 120 {
+        let e0 = w.search.expanded;
+        w.step();
+        total += w.search.expanded - e0;
+        ticks += 1;
+        let firing = [a, b].iter().filter(|&&u| w.attack_firing(u)).count();
+        let idle = [a, b].iter().filter(|&&u| w.actors[u].activity == Activity::Idle).count();
+        if firing == 1 && idle == 1 {
+            break;
+        }
     }
-    assert!(total <= 100_000, "{total} cells expanded");
+    assert!(ticks < 25 * 120, "one fires and the other gave up: {:?} {:?}", w.actors[a].activity, w.actors[b].activity);
+    assert!(total <= 200_000, "{total} cells expanded in {ticks} ticks");
 }
 
 // ---- Following a target -----------------------------------------------------------------

@@ -14,7 +14,7 @@
 
 import { C, circle, poly } from './kit.js';
 import { K, at, box, col, radial, stroke } from './volume.js';
-import { fan, lamp, teamLamp, puff, STEEL, STEEL_D } from './buildings.js';
+import { fan, lamp, teamLamp, puff, siloHatch, STEEL, STEEL_D } from './buildings.js';
 
 const TAU = Math.PI * 2;
 
@@ -201,6 +201,32 @@ export const BUILDING_ANIM = {
       box(ctx, P, 27, 49.5, 2, 1.6, 2.4, STEEL_D, STEEL, { z0: z });
       const [lx, ly] = at(49, 50, 33.5);
       beacon(ctx, P, lx, ly, 1.2, f % 4 < 2);
+    },
+  },
+};
+
+/** How far the silo hatch is open in each frame of its launch layer. */
+const SILO_OPEN = [0, 0.25, 0.55, 0.85, 1, 0.85, 0.55, 0.25];
+
+/**
+ * Working layers: drawn over a structure like the animated layers, but the
+ * engine says when they play (engine/src/overlays.rs: the structure's
+ * working pose, fx.rs), the way the original art plays its working
+ * sequence. Each entry is { box, frames, draw(ctx, P, f), active: { start,
+ * length, fps } }: frame 0 is the layer at rest (the still frame), the
+ * active frames play once from the moment the engine names. Keyed by
+ * sprite key; a structure has either one of these or an animated layer.
+ */
+export const BUILDING_WORKING = {
+  // Missile silo: the hatch opens for the atom bomb and shuts again (OpenRA
+  // WithSupportPowerActivationAnimation, sequence active: seven frames at
+  // 80 ms). Frame 0 draws nothing over the shut hatch of the structure.
+  MSLO: {
+    box: [6, 0, 36, 20],
+    frames: SILO_OPEN.length,
+    active: { start: 1, length: SILO_OPEN.length - 1, fps: 1000 / 80 },
+    draw: (ctx, P, f) => {
+      if (SILO_OPEN[f] > 0) siloHatch(ctx, P, SILO_OPEN[f]);
     },
   },
 };

@@ -59,6 +59,26 @@ impl World {
         }
     }
 
+    /// Whether structure `i` plays its make animation now (OpenRA
+    /// WithMakeAnimation's `build-incomplete` condition), forwards after it
+    /// was placed, deployed from an MCV or created by a script
+    /// (`World::begin_make`), or backwards while it is sold (`World::sell`)
+    /// or a Construction Yard packs up (`World::deploy`), until
+    /// `make_until` (world.rs).
+    pub fn build_incomplete(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        a.make_until > 0 && self.tick <= a.make_until
+    }
+
+    /// The `build-incomplete` gates of structure `i` while it is incomplete
+    /// (rules `building.make_gates`), else none.
+    pub fn make_gates(&self, i: usize) -> crate::rules::MakeGates {
+        if !self.build_incomplete(i) {
+            return crate::rules::MakeGates::default();
+        }
+        self.rules.actors[self.actors[i].ty as usize].building.as_ref().map_or_else(Default::default, |b| b.make_gates)
+    }
+
     /// Structures that need power (Tesla Coil, AA, superweapons) shut down on
     /// low power, and so does a structure its owner switched off with the
     /// power down button (repair.rs; OpenRA's `disabled` condition).
@@ -559,6 +579,12 @@ impl World {
     /// Defences: keep a target, aim the turret and fire. Unpowered ones idle.
     pub(crate) fn tick_defense(&mut self, i: usize) {
         if !self.has_weapons(i) || self.is_powered_down(i) {
+            return;
+        }
+        // Still being built: the attack is paused and the turret disabled
+        // (AttackTurreted, AttackTesla, AttackGarrisoned PauseOnCondition,
+        // Turreted RequiresCondition build-incomplete). It keeps its target.
+        if self.make_gates(i).attack {
             return;
         }
         let keep = self.live_target(i).filter(|&t| self.in_reach(i, t));

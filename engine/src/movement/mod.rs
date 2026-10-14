@@ -5,9 +5,10 @@
 //!   Locomotor and Move activity: every unit holds the cells it stands on
 //!   and drives into (`occupancy.rs`), steps from cell to cell, and never
 //!   pushes anyone. A unit whose next cell is taken asks a friendly idle
-//!   blocker to step aside (a nudge), waits for it, then looks for another
-//!   way or gives up when it is close enough (`cellmove.rs`, routes from
-//!   `search.rs`). Infantry share a cell, up to five per cell.
+//!   blocker to step aside (a nudge), waits for it (and, in a pass, for
+//!   the queue ahead while it moves), then looks for another way or gives
+//!   up when it is close enough (`cellmove.rs`, routes from `search.rs`).
+//!   Infantry share a cell, up to five per cell.
 //! - `MovementModel::WebRA` keeps WebRA's free positions with soft crowd
 //!   separation, damped so that units which arrived stay put and queues at
 //!   service depots and refineries wait their turn (`soft.rs`).
@@ -26,6 +27,8 @@ pub mod soft;
 mod tests;
 #[cfg(test)]
 mod tests_blocking;
+#[cfg(test)]
+mod tests_chokepoint;
 
 pub use cellmove::Motion;
 

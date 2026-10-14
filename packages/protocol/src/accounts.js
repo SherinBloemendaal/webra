@@ -450,7 +450,8 @@ const SETTINGS_SECTIONS = {
     },
   },
   // Error reports (docs/security.md, "Error reports"): on unless the player switched them off.
-  privacy: { errorReports: boolean },
+  // cloudReplays: the game keeps replays in the account (docs/accounts-api.md 5.10), on unless switched off.
+  privacy: { errorReports: boolean, cloudReplays: boolean },
 };
 
 /**

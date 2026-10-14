@@ -18,14 +18,14 @@ beforeEach(() => {
 });
 afterEach(() => uninstallDom());
 
-async function page(server, hash = '', search = '') {
+async function page(server, hash = '', search = '', storage = null) {
   const root = doc.createElement('div');
   doc.body.append(root);
   const replaced = [];
   const navigated = [];
   const location = { hash, pathname: '/account/', search, assign: (u) => navigated.push(u) };
   const history = { replaceState: (_s, _t, url) => replaced.push(url) };
-  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u) });
+  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u), storage });
   await settle(10);
   return { root, view, replaced, navigated };
 }
@@ -347,4 +347,57 @@ test('account page: a clear Play button for accounts that may play (to the targe
   const b = await page(server, '', '?returnTo=%2Fplay%2Feditor%2F');
   assert.equal(b.root.querySelector('a.btn-play').getAttribute('href'), '/play/editor/');
   assert.deepEqual(b.navigated, []);
+});
+
+// ---- Replays kept in the account (docs/accounts-api.md 5.10) ------------------------------------------
+
+test('account page replays: the list with usage, Watch opens the game, Delete asks first, the switch writes the setting', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  server.signIn(user);
+  server.addReplay(user.id, { title: 'Old game', result: 'lost' });
+  server.addReplay(user.id, { title: 'New game', mode: 'online', players: [{ name: 'Tanya', type: 'human' }, { name: 'Boris', type: 'human' }] });
+  const { root } = await page(server);
+  await settle(20);
+  const section = root.querySelector('#section-replays').closest('section');
+  assert.match(textOf(section), /2 of 100 replays, 4 KB of 100 MB\. Each replay is kept for 30 days/);
+  const items = section.querySelectorAll('li.item');
+  assert.deepEqual(items.map((li) => li.querySelector('strong').textContent), ['New game', 'Old game'], 'newest first');
+  assert.match(textOf(items[0]), /Online on Generated map with Tanya and Boris\. Won, 2 KB, 30 days left/);
+  const id = server.replays.get(user.id)[0].view.id;
+  assert.equal(items[0].querySelector('a').getAttribute('href'), `/play/#replay=${id}`);
+
+  click(byText(items[1], 'button', /^Delete$/));
+  await settle(5);
+  const confirm = doc.body.querySelector('[role="dialog"]');
+  assert.match(textOf(confirm), /Old game/);
+  click(byText(confirm, 'button', /^Delete$/));
+  await settle(20);
+  assert.deepEqual(server.replays.get(user.id).map((r) => r.view.title), ['New game']);
+
+  const toggle = inputByLabel(section, /Save replays to my account/);
+  assert.equal(toggle.checked, true, 'on by default');
+  check(toggle, false);
+  await settle(20);
+  assert.equal(server.settingsDocs.get(user.id).settings.privacy.cloudReplays, false);
+  assert.match(textOf(section), /no longer saved/);
+});
+
+test('account page replays: left out when the server keeps none', async () => {
+  const server = new MockAccountServer();
+  server.services.replays = false;
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  server.signIn(user);
+  const { root } = await page(server);
+  assert.equal(root.querySelector('#section-replays'), null);
+  assert.deepEqual(strayValues(root), []);
+});
+
+test('account page: a replay link from the play gate is kept for the game until after the sign-in', async () => {
+  const server = new MockAccountServer();
+  const kept = new Map();
+  const storage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v), removeItem: (k) => kept.delete(k) };
+  const { replaced } = await page(server, '#replay=0123456789abcdef', '?returnTo=%2Fplay%2F', storage);
+  assert.equal(kept.get('webra.replayLink.v1'), '0123456789abcdef');
+  assert.deepEqual(replaced, ['/account/?returnTo=%2Fplay%2F'], 'the fragment leaves the address');
 });

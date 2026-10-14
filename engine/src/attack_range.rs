@@ -377,6 +377,17 @@ impl World {
             return false;
         }
         if self.chase_replan(i, tcell) || blocked || retry || taken || followed {
+            // The tick's route search budget is spent (movement/search.rs
+            // `ROUTE_SEARCH_BUDGET`): search next tick, meanwhile on toward
+            // the old goal (if any).
+            if self.route_budget_spent() {
+                self.actors[i].range_retry = self.tick + 1;
+                let goal = self.actors[i].goal;
+                if goal != NONE && !self.goal_reached(i, goal, 0, false) {
+                    self.move_toward(i, goal);
+                }
+                return true;
+            }
             let Some(plan) = self.plan_range(i, ft, min, max) else { return false };
             let tick = self.tick;
             let a = &mut self.actors[i];

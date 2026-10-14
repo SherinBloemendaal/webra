@@ -575,7 +575,9 @@ impl World {
         let doomed: Vec<usize> = (0..self.actors.len())
             .filter(|&i| {
                 let a = &self.actors[i];
-                if !a.alive || !a.is_unit() || !a.in_world() || a.altitude > 0 || a.kind == crate::rules::Kind::Mine {
+                // What is in the ActorMap: a paratrooper on its parachute
+                // too, not an aircraft in the air (world.rs `occupies_cell`).
+                if !self.occupies_cell(i) {
                     return false;
                 }
                 let ci = self.cell_index(a.x, a.y);

@@ -32,13 +32,15 @@ export function emailSender(env) {
 
 /**
  * Which configured services exist (independent of the settings). Email
- * needs both the Email Sending binding EMAIL and a sender address.
+ * needs both the Email Sending binding EMAIL and a sender address; replays
+ * in accounts the R2 bucket REPLAYS.
  */
 export function services(env) {
   const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
   return {
     email: Boolean(env?.EMAIL) && typeof env.EMAIL.send === 'function' && emailSender(env) !== null,
     discord: nonEmpty(env?.DISCORD_CLIENT_ID) && nonEmpty(env?.DISCORD_CLIENT_SECRET),
+    replays: Boolean(env?.REPLAYS) && typeof env.REPLAYS.put === 'function',
   };
 }
 

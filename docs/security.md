@@ -342,7 +342,8 @@ data, admins only), roles (admin powers), and the right to play online.
   16-byte salt per hash, iteration count stored per hash (default 40,000,
   sized so one derivation takes about 3 to 6 ms of the Workers Free plan's
   10 ms per request; raised with `PASSWORD_ITERATIONS` up to the Workers
-  maximum of 100,000, at most 50,000 on the Free plan), optional pepper from
+  maximum of 100,000, at most 50,000 on the Free plan; the deployment
+  uses 100,000 on the Workers Paid plan), optional pepper from
   a Worker secret recorded per hash. No request derives more than one key;
   hashes are upgraded when the password is next set, never at sign-in.
   Sign-in throttling resolves the login to its account first (username and
@@ -1040,12 +1041,85 @@ link until the next hour; earlier links stay valid); a verification link
 opened while signed in to another account verifies the account it was made
 for.
 
+## Replays in accounts (2026-10-14)
+
+The game keeps the replay of every game a signed-in player finishes or
+leaves in the player's account (docs/accounts-api.md 5.10). The setting
+"Save replays to my account" (`privacy.cloudReplays`) is on by default and
+syncs with the account; the privacy notice (`apps/website/privacy.html`,
+"Replays in your account") says what is kept.
+
+- **What is stored.** The replay file as the player's client recorded it:
+  the game options (every player's name, faction, colour and team), the map,
+  every order and, for online games, the chat lines the player received
+  (names and text of other players and spectators, team chat of the
+  player's own team). The file is a gzip object in the R2 bucket `REPLAYS`
+  under `replays/<user id>/<random id>`; D1 (`account_replays`) holds the
+  list entry: upload and expiry time, sizes, SHA-256, game version, mode,
+  title, map name, the players' names, factions and teams, when the game was
+  played, its length and the result the uploader's client reported. Other
+  players are not asked: it is the uploader's own view of a game they took
+  part in, which their browser could already download as a file.
+- **Who can access.** Only the account that uploaded it: every route reads
+  the row by id and the caller's user id together and answers an unknown,
+  expired or foreign id the same `404`, so ids are never confirmed. There is
+  no admin or public route to replays, and players of the same game cannot
+  see each other's copies. Downloads carry `Cache-Control: private,
+  no-store` and the API's `nosniff` and same-origin resource policy; the
+  JSON is served as a download, never rendered. Reads need the CSRF header,
+  writes the full CSRF rules (Origin, Fetch Metadata, header), like every
+  account route.
+- **Memory.** The Worker hashes and compresses the uploaded bytes as they
+  came, drops the text once it is parsed and the parsed replay once it is
+  summarized, so a 16 MiB upload holds the bytes plus one transient copy.
+  `createdAt` must be a time the Date range holds (protocol
+  `REPLAY_TIME_MAX`), so formatting it never throws.
+- **Validation and limits.** An upload needs an active account (not banned,
+  not pending), 60 uploads per hour per account (counted before the body is
+  read), `Content-Type: application/json` and at most 16 MiB
+  (Content-Length checked first, then while reading). The file goes through
+  the protocol's `parseReplay` (size, schema, orders, options, map hash)
+  before anything is stored, saves are refused, and only validated values
+  reach the list entry. Per account at most 100 replays and 100 MiB of
+  stored objects: the oldest are deleted in the same D1 batch that adds a
+  new one, so the limits hold under concurrent uploads, and one file is
+  stored once per account (a unique index on the SHA-256).
+- **Retention and deletion.** A replay is deleted 30 days after its upload
+  (daily job), by its owner, by the limits, and when the account is deleted
+  (self-deletion, admin deletion, rejection and expired signups delete the
+  replays at once, not after the 30 days the rest of a deleted account
+  waits; the purge deletes any left). The R2 object of every removed row is
+  queued by a trigger (`replay_object_trash`) and deleted right after the
+  change and again by the daily job until R2 confirms, so a failed delete
+  never leaves a file behind for more than a day. An upload that fails after
+  writing its object leaves it queued and it is deleted within the hour.
+- **Client.** Uploads run in the background after the game ended or while
+  the player leaves (the replay is queued in IndexedDB first, at most 3 s,
+  so leaving never hangs), only for the account that played the game, and
+  never while the setting is off; switching it off drops the replays still
+  waiting, and so does signing out (a session that ends by itself keeps
+  them for that account's next sign-in, at most 7 days). A sign-in or
+  refusal answer for one account never stops another account's uploads. Server text in the lists goes in with `textContent`. A replay
+  watched from the account is checked like a file (`parseReplay`, engine
+  version) before the viewer runs it.
+- **Infrastructure.** The bucket is private (no public access, no custom
+  domain); only the Worker binding reads or writes it. The deploy creates it
+  when missing (docs/deploy.md); the deploy token needs Workers R2 Storage
+  Edit for that.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a
   client-side view. A modified client can reveal the map. Preventing this
   needs a server-authoritative simulation, which this design avoids. The wire
   carries only orders.
+- **Placement preview (like OpenRA):** structure placement checks the true
+  world state, as OpenRA's World.IsCellBuildable does, so the footprint
+  preview of an unmodified client shows a cell blocked when an enemy unit,
+  structure, cloaked unit, hidden mine, husk, crate or ore lies there under
+  the shroud or fog. A player can probe hidden cells near the base with it.
+  This matches OpenRA's rules by choice (docs/contracts.md, production
+  queues).
 - **Shared fate:** an input that crashes one engine crashes all, which is why
   validation happens at the engine boundary (not only in the protocol) and is
   fuzz tested.

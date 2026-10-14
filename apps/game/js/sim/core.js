@@ -42,7 +42,7 @@ export const BACKGROUND_MAX_MS = 1000;
 const REPORT_HASHES = 4;
 
 /** Calls the main thread may make besides orders and UI state. */
-const SETTINGS = new Set(["set_audio_events", "set_health_bars", "set_building_overlays", "set_sprite_poses", "set_original_slots", "set_death_art"]);
+const SETTINGS = new Set(["set_audio_events", "set_health_bars", "set_building_overlays", "set_sprite_poses", "set_original_slots", "set_death_art", "set_make_art"]);
 
 export class SimCore {
   /**

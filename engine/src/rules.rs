@@ -623,6 +623,19 @@ pub struct SupportPowerInfo {
     /// Nuke: the target camera appears this many ticks before impact.
     #[serde(default)]
     pub camera_spawn_advance: i32,
+    /// Nuke: how fast the missile rises and falls (FlightVelocity, world
+    /// units per tick): it turns at that speed times half the flight time up.
+    #[serde(default)]
+    pub flight_velocity: i32,
+    /// Nuke: where the missile leaves the silo (SpawnOffset: forward, right,
+    /// up from its centre, world units; turned into the world like OpenRA's
+    /// BodyOrientation.LocalToWorld).
+    #[serde(default)]
+    pub spawn_offset: Vec<i32>,
+    /// Nuke: the target beacon goes this many ticks before the flight time
+    /// ends (BeaconRemoveAdvance).
+    #[serde(default)]
+    pub beacon_remove_advance: i32,
     /// GPS: ticks from launch until the map is revealed.
     #[serde(default)]
     pub reveal_delay: i32,
@@ -665,7 +678,8 @@ struct RawBuilding {
     /// Production types of each exit (OpenRA ExitInfo.ProductionTypes); absent when no exit has any.
     #[serde(default)]
     exit_types: Vec<Vec<String>>,
-    gives_buildable_area: bool,
+    gives_area: Vec<String>,
+    requires_area: Option<Vec<String>>,
     base_provider_range: i32,
     adjacent: i32,
     storage: i32,
@@ -675,6 +689,12 @@ struct RawBuilding {
     repairs: Option<RepairInfo>,
     repairable: Option<RepairableInfo>,
     power_down: bool,
+    #[serde(default)]
+    fake_tag: bool,
+    #[serde(default)]
+    make_ticks: i32,
+    #[serde(default)]
+    make_gates: Vec<String>,
     center_offset: Vec<i32>,
     #[serde(default)]
     lightning_rod: i32,
@@ -1068,8 +1088,16 @@ pub struct BuildingInfo {
     /// `exits`): an exit with types only lets out units built as one of
     /// them (`ActorInfo::build_at`); empty lets out all.
     pub exit_types: Vec<Vec<String>>,
-    pub gives_buildable_area: bool,
+    /// OpenRA GivesBuildableArea.AreaTypes, as bits of `Rules::area_types`
+    /// (0: gives no buildable area).
+    pub gives_area: u32,
+    /// OpenRA RequiresBuildableArea.AreaTypes as bits of `Rules::area_types`;
+    /// None without the trait (placed anywhere its terrain allows, with no
+    /// base provider needed either: Building.IsCloseEnoughToBase).
+    pub requires_area: Option<u32>,
     pub base_provider_range: i32,
+    /// RequiresBuildableArea.Adjacent: how many cells from a structure that
+    /// gives a matching area type a footprint cell may be.
     pub adjacent: i32,
     pub storage: i32,
     pub sell_refund: i32,
@@ -1081,10 +1109,36 @@ pub struct BuildingInfo {
     pub repairable: Option<RepairableInfo>,
     /// The power down button works on it (repair.rs).
     pub power_down: bool,
+    /// A fake (OpenRA WithDecoration@fake): its owner and allies see the FAKE
+    /// tag over it (infantry_render.rs).
+    pub fake_tag: bool,
+    /// Ticks a structure placed during the game plays its make animation
+    /// (OpenRA WithMakeAnimation: the frames of its `make` sequence, one per
+    /// tick; tools/gen_rules.py MAKE_FRAMES), 0 for none. Meanwhile it is
+    /// `build-incomplete` (world.rs `build_incomplete`) and `make_gates`
+    /// are off.
+    pub make_ticks: u32,
+    pub make_gates: MakeGates,
     pub center_offset: (i32, i32),
     /// WebRA's Lightning Rod (data/webra/rules.yaml `LightningRod`, lightning.rs):
     /// lightning that would land within this range (world units) is grounded on it; 0 for none.
     pub lightning_rod: i32,
+}
+
+/// What a structure's `build-incomplete` condition switches off (OpenRA's
+/// RequiresCondition / PauseOnCondition `!build-incomplete`; rules
+/// `building.make_gates`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MakeGates {
+    /// Sellable: no selling.
+    pub sell: bool,
+    /// Capturable: engineers cannot take it.
+    pub capture: bool,
+    /// AttackTurreted, AttackTesla, AttackGarrisoned (paused) and Turreted:
+    /// it neither turns its turret nor fires.
+    pub attack: bool,
+    /// Transforms: the Construction Yard does not pack up.
+    pub transform: bool,
 }
 
 impl BuildingInfo {
@@ -1099,6 +1153,13 @@ impl BuildingInfo {
     /// including `Overlay` cells: what it is seen and hit by.
     pub fn area_cells(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         self.footprint.iter().filter(|c| c.2 != FootCell::Empty).map(|c| (c.0, c.1))
+    }
+
+    /// OpenRA's CenterPosition of the structure with its top-left at (cx, cy):
+    /// the footprint's centre plus LocalCenterOffset (Building.CenterOffset).
+    /// Actor positions (`Actor::x`, `y`) are the footprint's centre only.
+    pub fn openra_center(&self, cx: i32, cy: i32) -> (i32, i32) {
+        (cx * CELLS + self.width * CELLS / 2 + self.center_offset.0, cy * CELLS + self.height * CELLS / 2 + self.center_offset.1)
     }
 
     /// Whether the structure fits inside `map` with its top-left at (cx, cy).
@@ -1391,6 +1452,9 @@ pub struct Rules {
     /// to; bit `k` of a warhead's, TakeCover's or DeathInfo's damage type mask
     /// is `damage_types[k]`.
     pub damage_types: Vec<String>,
+    /// Buildable area type names (GivesBuildableArea, RequiresBuildableArea);
+    /// bit `k` of a structure's area masks is `area_types[k]`.
+    pub area_types: Vec<String>,
     /// `obtainable[faction][actor]`: reachable through the tech tree at all
     /// (unrestricted tech level), starting from a Construction Yard.
     pub obtainable: Vec<Vec<bool>>,
@@ -2003,6 +2067,14 @@ impl Rules {
         within(&n("missile_delay"), p.missile_delay, 0, TIMER)?;
         within(&n("flight_delay"), p.flight_delay, 0, TIMER)?;
         within(&n("camera_spawn_advance"), p.camera_spawn_advance, 0, TIMER)?;
+        within(&n("flight_velocity"), p.flight_velocity, 0, 4 * CELLS)?;
+        if !p.spawn_offset.is_empty() {
+            count(&n("spawn_offset"), p.spawn_offset.len(), 3)?;
+            for &o in &p.spawn_offset {
+                within(&n("spawn_offset"), o, -16 * CELLS, 16 * CELLS)?;
+            }
+        }
+        within(&n("beacon_remove_advance"), p.beacon_remove_advance, -TIMER, TIMER)?;
         within(&n("reveal_delay"), p.reveal_delay, 0, TIMER)
     }
 
@@ -2095,6 +2167,19 @@ impl Rules {
             return Err(format!("take_cover: at most 32 different damage types, found {}", damage_types.len()));
         }
         let type_bit = |t: &str| damage_types.iter().position(|d| d == t).map_or(0, |k| 1u32 << k);
+        // Buildable area types get one bit each.
+        let mut area_types: Vec<String> = Vec::new();
+        for b in raw.actors.iter().filter_map(|a| a.building.as_ref()) {
+            for t in b.gives_area.iter().chain(b.requires_area.iter().flatten()) {
+                if !area_types.contains(t) {
+                    area_types.push(t.clone());
+                }
+            }
+        }
+        if area_types.len() > 32 {
+            return Err(format!("building: at most 32 different buildable area types, found {}", area_types.len()));
+        }
+        let area_mask = |ts: &[String]| ts.iter().fold(0u32, |m, t| m | area_types.iter().position(|a| a == t).map_or(0, |k| 1u32 << k));
         let index_of = |id: &str| ids.iter().position(|i| i.eq_ignore_ascii_case(id));
         let mut actors = Vec::new();
         for a in raw.actors {
@@ -2196,7 +2281,8 @@ impl Rules {
                         exits,
                         exit_priority,
                         exit_types,
-                        gives_buildable_area: b.gives_buildable_area,
+                        gives_area: area_mask(&b.gives_area),
+                        requires_area: b.requires_area.as_deref().map(area_mask),
                         base_provider_range: b.base_provider_range,
                         adjacent: b.adjacent,
                         storage: b.storage,
@@ -2206,6 +2292,24 @@ impl Rules {
                         repairs: b.repairs,
                         repairable: b.repairable,
                         power_down: b.power_down,
+                        fake_tag: b.fake_tag,
+                        make_ticks: u32::try_from(b.make_ticks)
+                            .ok()
+                            .filter(|&t| t <= TIMER as u32)
+                            .ok_or_else(|| n("building.make_ticks must be between 0 and 100000"))?,
+                        make_gates: {
+                            let mut g = MakeGates::default();
+                            for name in &b.make_gates {
+                                match name.as_str() {
+                                    "sell" => g.sell = true,
+                                    "capture" => g.capture = true,
+                                    "attack" => g.attack = true,
+                                    "transform" => g.transform = true,
+                                    _ => return Err(n("building.make_gates: unknown gate (sell, capture, attack, transform)")),
+                                }
+                            }
+                            g
+                        },
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
                         lightning_rod: b.lightning_rod,
                     })
@@ -2380,6 +2484,7 @@ impl Rules {
             bots: raw.bots,
             tokens,
             damage_types,
+            area_types,
             obtainable: Vec::new(),
             render: Default::default(),
         };

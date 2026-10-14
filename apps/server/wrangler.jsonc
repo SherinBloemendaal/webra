@@ -37,7 +37,12 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Daily retention job for accounts data (src/accounts/cron.js).
+  // Replays kept in accounts (src/accounts/replays.js): gzip objects under
+  // replays/<user id>/<replay id>, listed from D1 (account_replays). The
+  // deploy workflow creates the bucket when it is missing (docs/deploy.md);
+  // wrangler dev and the tests use a local stand-in.
+  "r2_buckets": [{ "binding": "REPLAYS", "bucket_name": "webra-replays" }],
+  // Daily retention job for accounts data (src/accounts/cron.js), replays included.
   "triggers": { "crons": ["17 3 * * *"] },
   // Discord OAuth client id (public). The secret DISCORD_CLIENT_SECRET is a
   // Worker secret set by the owner; without both, Discord sign-in is
@@ -55,6 +60,9 @@
   "vars": {
     "SITE_ORIGIN": "https://webra.sherin.dev",
     "EMAIL_DAILY_LIMIT": "300",
+    // PBKDF2 iterations for new password hashes (src/accounts/password.js):
+    // the Workers Paid plan has the CPU room for the maximum, 100,000.
+    "PASSWORD_ITERATIONS": "100000",
     "DISCORD_CLIENT_ID": "",
     "SENTRY_DSN": "",
     "SENTRY_ENVIRONMENT": "dev",

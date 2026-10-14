@@ -37,8 +37,6 @@ pub enum Task {
     None,
     /// Minelayer working through `ActorAbility::minefield`.
     LayMines,
-    /// Minelayer driving to a rearm pad (Service Depot) to reload.
-    Rearm,
     /// Supply truck driving into an own or allied structure.
     DeliverCash,
     /// MAD tank deployed: thumping, then detonating. Cannot be cancelled.
@@ -102,23 +100,67 @@ pub struct AbilityState {
     pub gps_at: Vec<Option<u32>>,
 }
 
-/// An atom bomb (NukePower) on its way: up from the silo, down on the target.
+/// An atom bomb (NukePower) on its way (OpenRA NukeLaunch): straight up
+/// from the silo for half the flight time, then straight down on the target,
+/// at FlightVelocity both ways.
 #[derive(Clone, Debug)]
 pub struct Nuke {
     pub owner: u8,
-    /// Launch point (the silo) and target, world units.
+    /// Where it rises (the silo's centre plus SpawnOffset) and the target, world units.
     pub sx: i32,
     pub sy: i32,
     pub x: i32,
     pub y: i32,
     pub weapon: u16,
-    /// Tick it leaves the silo, tick it lands.
+    /// Tick it leaves the silo (MissileDelay after the order) and tick it
+    /// lands (FlightDelay after that); it turns halfway, `top` world units up.
     pub launch: u32,
     pub impact: u32,
-    /// Target camera for the owner (CameraRange) and its timing.
+    pub top: i32,
+    /// The target camera for the owner and allies (CameraRange): from
+    /// `camera_at` for `camera_ticks` ticks.
     pub camera_range: i32,
-    pub camera_advance: i32,
-    pub camera_remove: i32,
+    pub camera_at: u32,
+    pub camera_ticks: i32,
+    /// Last tick the target beacon shows (DisplayBeacon: FlightDelay less
+    /// BeaconRemoveAdvance after the order; `beacon_until`).
+    pub beacon_until: u32,
+}
+
+/// Last tick the target beacon shows: `FlightDelay - BeaconRemoveAdvance`
+/// ticks after the order (OpenRA Beacon.Tick removes it when that duration
+/// has passed). OpenRA's Beacon only removes itself for a positive duration,
+/// so a BeaconRemoveAdvance of FlightDelay or more keeps it up: WebRA then
+/// shows it while the missile flies (the beacon belongs to the missile).
+pub(crate) fn beacon_until(fired: u32, flight: u32, remove_advance: i32) -> u32 {
+    let duration = flight as i64 - remove_advance as i64;
+    if duration <= 0 {
+        u32::MAX
+    } else {
+        (fired as i64 + duration).min(u32::MAX as i64) as u32
+    }
+}
+
+impl Nuke {
+    /// Ticks of the climb (OpenRA NukeLaunch `turn`: half the flight time).
+    pub fn turn(&self) -> u32 {
+        (self.impact - self.launch) / 2
+    }
+
+    /// Where the missile is after tick `tick` (OpenRA NukeLaunch.Tick with
+    /// `ticks = tick - launch`): x, y and height in world units, and whether
+    /// it falls. None before it left the silo.
+    pub fn position(&self, tick: u32) -> Option<(i32, i32, i32, bool)> {
+        let j = tick.checked_sub(self.launch)?.min(self.impact - self.launch) as i64;
+        let (turn, flight) = (self.turn() as i64, (self.impact - self.launch) as i64);
+        let top = self.top as i64;
+        Some(if j < turn {
+            // WPos.LerpQuadratic(ascendSource, ascendTarget, 0, ticks, turn): a straight line.
+            (self.sx, self.sy, (top * j / turn) as i32, false)
+        } else {
+            (self.x, self.y, (top - top * (j - turn) / (flight - turn).max(1)) as i32, true)
+        })
+    }
 }
 
 /// OpenRA terrain type name of a WebRA terrain class (map.rs `Terrain::name`).
@@ -404,14 +446,62 @@ impl World {
         self.mine_ref_at(ci).filter(|&m| self.actors[m].kind == Kind::Mine)
     }
 
-    /// Whether minelayer `i` may put a mine on cell `ci` (terrain, structures, no mine yet).
-    pub fn can_lay_mine(&self, i: usize, ci: usize) -> bool {
+    /// Whether cell `ci` is of a terrain minelayer `i` mines (OpenRA
+    /// Minelayer.IsCellAcceptable).
+    fn mine_terrain_ok(&self, i: usize, ci: usize) -> bool {
         let Some(ml) = self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.as_ref() else { return false };
-        ci < self.map.cells()
+        ci < self.map.cells() && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.resource(ci).map(|(r, _)| r))
+    }
+
+    /// Whether minelayer `i` could drive onto cell `ci` and stop there
+    /// (OpenRA CanEnterCell with BlockedByActor.Immovable and
+    /// CanStayInCell; Locomotor.IsBlockedBy): no structure footprint, husk
+    /// or blocking terrain (`pass`); every unit there either one of its own
+    /// side that can move out of the way (Mobile: aircraft have none, so a
+    /// landed one blocks) or one it crushes (enemy infantry under its
+    /// tracks, `crushable_by`); a crate only when its locomotor crushes
+    /// crates.
+    fn minelayer_can_enter(&self, i: usize, ci: usize) -> bool {
+        let owner = self.actors[i].owner;
+        !self.pass.blocked[ci]
+            && self.building_at[ci] == NONE
+            && self.units_in_cell(ci).iter().all(|&u| {
+                let u = u as usize;
+                let movable = self.actors[u].kind != Kind::Aircraft && self.is_movable(u);
+                u == i || !self.occupies_cell(u) || (movable && self.are_allies(owner, self.actors[u].owner)) || self.crushable_by(u, i)
+            })
+            && (self.crate_at(ci).is_none() || self.crushes_crates(i))
+    }
+
+    /// Whether minelayer `i` can put a mine on cell `ci` now (OpenRA
+    /// LayMines.CanLayMine): a terrain it mines and nothing but itself in
+    /// the ActorMap there: no structure, mine, husk, crate or unit that
+    /// takes the cell (`occupies_cell`).
+    pub fn can_lay_mine(&self, i: usize, ci: usize) -> bool {
+        self.mine_terrain_ok(i, ci)
             && !self.pass.blocked[ci]
             && self.building_at[ci] == NONE
-            && terrain_allowed(&ml.terrain, self.map.terrain[ci], self.map.resource(ci).map(|(r, _)| r))
             && self.mine_at(ci).is_none()
+            && self.husk_at(ci).is_none()
+            && self.crate_at(ci).is_none()
+            && self.units_in_cell(ci).iter().all(|&u| u as usize == i || !self.occupies_cell(u as usize))
+    }
+
+    /// Whether minelayer `i` keeps cell `ci` in its minefield (OpenRA
+    /// LayMines.CleanMineField): a cell goes for good once a mine its owner
+    /// can see lies there, or once its owner sees the minelayer cannot get
+    /// onto it (`minelayer_can_enter`). Anything else (a unit of its own
+    /// side, a crate it crushes, a cell under the fog) keeps it: the
+    /// minelayer skips it while it cannot lay there and comes back.
+    fn keeps_mine_cell(&self, i: usize, ci: usize) -> bool {
+        let owner = self.actors[i].owner;
+        if !self.mine_terrain_ok(i, ci) {
+            return false;
+        }
+        if self.mine_at(ci).is_some_and(|m| self.is_visible_to(m, owner) && !self.is_cloaked_from(m, owner)) {
+            return false;
+        }
+        self.players[owner as usize].visible[ci] == 0 || self.minelayer_can_enter(i, ci)
     }
 
     /// Put one mine of minelayer `i` on cell `ci`; uses one ammo.
@@ -464,7 +554,6 @@ impl World {
         match self.actors[i].ab.task {
             Task::None => self.actors[i].activity = Activity::Idle,
             Task::LayMines => self.tick_lay_mines(i),
-            Task::Rearm => self.tick_rearm(i),
             Task::DeliverCash => self.tick_deliver_cash(i),
             Task::MadDeploy => self.tick_mad_tank(i),
         }
@@ -526,9 +615,19 @@ impl World {
             if self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.is_none() {
                 continue;
             }
+            // OpenRA Minelayer PlaceMinefield: cells of a terrain it mines,
+            // explored (Shroud.IsExplored: not under a Gap Generator's
+            // shroud either), that it can drive onto and stop on.
+            let owner = self.actors[i].owner;
+            let explored = |c: usize| self.players[owner as usize].explored[c] != 0 && !self.gen_shrouded(owner, c);
+            let field: Vec<u32> = cells
+                .iter()
+                .copied()
+                .filter(|&c| self.mine_terrain_ok(i, c as usize) && explored(c as usize) && self.minelayer_can_enter(i, c as usize))
+                .collect();
             self.start_task(i, Task::LayMines);
             let a = &mut self.actors[i];
-            a.ab.minefield = cells.clone();
+            a.ab.minefield = field;
             a.ab.mine_cell = NONE;
         }
     }
@@ -541,9 +640,14 @@ impl World {
         out
     }
 
+    /// OpenRA LayMines: drop the cells CleanMineField drops, then head for
+    /// the nearest cell a mine can go on now (NextValidCell) and lay it
+    /// there. Cells something stands on are skipped, not dropped; when no
+    /// cell can take a mine now the minelayer stops, as OpenRA's activity
+    /// ends.
     fn tick_lay_mines(&mut self, i: usize) {
         let field = std::mem::take(&mut self.actors[i].ab.minefield);
-        let field: Vec<u32> = field.into_iter().filter(|&c| self.can_lay_mine(i, c as usize)).collect();
+        let field: Vec<u32> = field.into_iter().filter(|&c| self.keeps_mine_cell(i, c as usize)).collect();
         self.actors[i].ab.minefield = field;
         if self.actors[i].ab.minefield.is_empty() {
             self.actors[i].ab.task = Task::None;
@@ -555,16 +659,26 @@ impl World {
             return;
         }
         let mut cell = self.actors[i].ab.mine_cell;
-        if cell == NONE || !self.actors[i].ab.minefield.contains(&cell) {
-            // Nearest remaining cell (ties: lowest index).
+        if cell == NONE || !self.actors[i].ab.minefield.contains(&cell) || !self.can_lay_mine(i, cell as usize) {
+            // Nearest cell a mine can go on now (ties: lowest index).
             let (ux, uy) = self.cell_of(self.actors[i].x, self.actors[i].y);
             let w = self.map.width;
-            cell = *self.actors[i]
+            let next = self.actors[i]
                 .ab
                 .minefield
                 .iter()
-                .min_by_key(|&&c| (((c as i32 % w) - ux).pow(2) + ((c as i32 / w) - uy).pow(2), c))
-                .unwrap();
+                .copied()
+                .filter(|&c| self.can_lay_mine(i, c as usize))
+                .min_by_key(|&c| (((c as i32 % w) - ux).pow(2) + ((c as i32 / w) - uy).pow(2), c));
+            let Some(next) = next else {
+                let a = &mut self.actors[i];
+                a.ab.minefield.clear();
+                a.ab.mine_cell = NONE;
+                a.ab.task = Task::None;
+                a.activity = Activity::Idle;
+                return;
+            };
+            cell = next;
             let goal = self.path_goal(i, cell as i32 % w, cell as i32 / w);
             if goal != cell {
                 self.actors[i].ab.minefield.retain(|&c| c != cell);
@@ -577,6 +691,7 @@ impl World {
             a.stuck_ticks = 0;
         }
         if self.on_cell(i, cell) {
+            // Checked above: ammo left and the cell free this tick.
             self.lay_mine(i, cell as usize);
             let a = &mut self.actors[i];
             a.ab.minefield.retain(|&c| c != cell);
@@ -612,6 +727,9 @@ impl World {
         best.map(|(_, j)| j)
     }
 
+    /// Out of mines with cells left to mine: to the nearest rearm structure
+    /// (the Service Depot), in its line like a unit sent there for repair
+    /// (service.rs), then back to the minefield (`resume_minefield`).
     fn go_rearm(&mut self, i: usize) {
         let Some(b) = self.rearm_building(i) else {
             // Nowhere to reload: keep the remaining minefield for a later order.
@@ -620,49 +738,39 @@ impl World {
             return;
         };
         let field = std::mem::take(&mut self.actors[i].ab.minefield);
-        self.start_task(i, Task::Rearm);
+        self.release_dock(i);
         let r = self.make_ref(b);
-        let pad = self.repair_pad_cell(b);
+        let a = &mut self.actors[i];
+        a.ab.task = Task::None;
+        a.ab.minefield = field;
+        a.activity = Activity::Repair;
+        a.depot = r;
+        a.repair_timer = 0;
+        a.target = NONE;
+        a.attack_move = false;
+        a.group_size = 1;
+        a.best_dist = i32::MAX;
+        a.stuck_ticks = 0;
+        a.svc = crate::service::ServiceState { depot: r, resume_mines: true, ..Default::default() };
+    }
+
+    /// A minelayer done at the Service Depot with cells left to mine goes
+    /// back to work on them. True when it does.
+    pub(crate) fn resume_minefield(&mut self, i: usize) -> bool {
+        if self.actors[i].ab.minefield.is_empty() || self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.is_none() {
+            return false;
+        }
+        let field = std::mem::take(&mut self.actors[i].ab.minefield);
+        self.start_task(i, Task::LayMines);
         let a = &mut self.actors[i];
         a.ab.minefield = field;
-        a.ab.target = r;
-        a.goal = pad;
+        a.ab.mine_cell = NONE;
+        true
     }
 
-    fn tick_rearm(&mut self, i: usize) {
-        let Some(b) = self.resolve(self.actors[i].ab.target) else {
-            self.actors[i].ab.task = Task::None;
-            self.actors[i].activity = Activity::Idle;
-            return;
-        };
-        let max = self.rules.actors[self.actors[i].ty as usize].abilities.minelayer.as_ref().map_or(0, |m| m.ammo);
-        if self.actors[i].ab.ammo >= max {
-            // Full again: back to the minefield, if any is left.
-            if self.actors[i].ab.minefield.is_empty() {
-                self.actors[i].ab.task = Task::None;
-                self.actors[i].activity = Activity::Idle;
-            } else {
-                let field = std::mem::take(&mut self.actors[i].ab.minefield);
-                self.start_task(i, Task::LayMines);
-                let a = &mut self.actors[i];
-                a.ab.minefield = field;
-                a.ab.mine_cell = NONE;
-            }
-            return;
-        }
-        let pad = self.repair_pad_cell(b);
-        if self.on_cell(i, pad) {
-            return; // rearm_on_pad reloads
-        }
-        if self.stuck_toward(i, pad) {
-            self.actors[i].ab.task = Task::None;
-            self.actors[i].activity = Activity::Idle;
-            return;
-        }
-        self.move_toward(i, pad);
-    }
-
-    /// Minelayers standing still on an own rearm pad reload one mine per ReloadDelay.
+    /// Minelayers standing still on a service depot's pad they hold (called
+    /// to it in its line, service.rs) reload one mine per ReloadDelay (OpenRA
+    /// reloads only in Resupply).
     fn rearm_on_pad(&mut self, i: usize) {
         let a = &self.actors[i];
         let Some(ml) = self.rules.actors[a.ty as usize].abilities.minelayer.as_ref() else { return };
@@ -671,11 +779,12 @@ impl World {
         }
         let ci = self.cell_index(a.x, a.y);
         let b = self.building_at[ci];
-        let on_pad = b != NONE && {
+        let on_pad = b != NONE && self.on_repair_pad(i) && self.resolve(a.depot) == Some(b as usize) && {
             let bb = &self.actors[b as usize];
             bb.alive
                 && bb.owner == a.owner
                 && ml.rearm_actors.iter().any(|r| r.eq_ignore_ascii_case(&self.rules.actors[bb.ty as usize].id))
+                && self.repair_pad_cell(b as usize) == ci as u32
                 && self.on_cell(i, ci as u32)
         };
         let delay = ml.reload_delay.max(1);
@@ -1038,30 +1147,32 @@ impl World {
                 sink.sprite(sprites, r.radians((self.tick % 64) as f32 * 0.1));
             }
         }
-        // Atom bombs: up from the silo, then down on the target; a beacon marks
-        // the target for the owner and allies (DisplayBeacon).
+        // Atom bombs: up from the silo, then down on the target (the `up` and
+        // `down` sequences of MissileImage, OpenRA NukeLaunch); a beacon marks
+        // the target for the owner and allies until BeaconRemoveAdvance
+        // before the flight time is up (DisplayBeacon).
         for n in &self.abil.nukes {
-            if self.render_allied(n.owner, player) {
+            if self.render_allied(n.owner, player) && self.tick <= n.beacon_until {
                 let (bx, by) = (px(n.x), px(n.y));
                 if sink.visible([bx, by], [bx, by], 32.0) {
                     let pulse = 0.6 + 0.4 * ((self.tick % 20) as f32 / 20.0);
                     sink.sprite(sprites, SpriteRec::at(bx, by, 32.0).look(ids.abilities_base + 5.0, n.owner as f32, 1.0, pulse, 0.0));
                 }
             }
-            if self.tick < n.launch {
+            let Some((mx, my, z, falling)) = n.position(self.tick) else { continue };
+            // Screen point of a world position: the height lifts it (classic 2D view).
+            let at = |(x, y, z): (i32, i32, i32)| [px(x), px(y) - px(z)];
+            let to = at((mx, my, z));
+            // From last tick's point, unless it just left the silo or turned over the target.
+            let from = match n.position(self.tick.wrapping_sub(1)) {
+                Some((x, y, z, f)) if f == falling && self.tick > n.launch => at((x, y, z)),
+                _ => to,
+            };
+            if !self.render_sees_cell(player, self.cell_index(mx, my)) || !sink.visible(from, to, 48.0) {
                 continue;
             }
-            let half = (n.impact - n.launch) / 2;
-            let t = self.tick - n.launch;
-            let (mx, my, ang, lift) = if t < half {
-                (n.sx, n.sy, -std::f32::consts::FRAC_PI_2, px(CELL * 12) * t as f32 / half.max(1) as f32)
-            } else {
-                (n.x, n.y, std::f32::consts::FRAC_PI_2, px(CELL * 12) * (n.impact - self.tick) as f32 / half.max(1) as f32)
-            };
-            let (x, y) = (px(mx), px(my) - lift);
-            if self.render_sees_cell(player, self.cell_index(mx, my)) && sink.visible([x, y], [x, y], 32.0) {
-                sink.sprite(sprites, SpriteRec::at(x, y, 32.0).look(ids.missile, n.owner as f32, 2.0, 1.0, 0.0).radians(ang));
-            }
+            let sprite = ids.fx_base + if falling { crate::fx::FX_NUKE_DOWN } else { crate::fx::FX_NUKE_UP };
+            sink.sprite(sprites, SpriteRec::moving(from, to, 48.0).look(sprite, n.owner as f32, 1.0, 1.0, 0.0));
         }
         // GPS: enemy units under fog show as dots (GpsDot).
         if self.has_gps(player) {
@@ -1309,8 +1420,12 @@ impl World {
         fired
     }
 
-    /// Atom bomb (NukePower): leaves a powered silo after MissileDelay and
-    /// lands FlightDelay ticks later.
+    /// Atom bomb (NukePower, OpenRA NukeLaunch): leaves a powered silo
+    /// MissileDelay ticks after the effect's first tick (the tick after the
+    /// order) and lands FlightDelay ticks after that. The camera over the
+    /// target (RevealShroudEffect) and the beacon count from the order:
+    /// the camera opens FlightDelay less CameraSpawnAdvance ticks after it
+    /// and stays CameraSpawnAdvance plus CameraRemoveDelay ticks.
     pub(crate) fn fire_nuke(&mut self, player: u8, info: &SupportPowerInfo, x: i32, y: i32) -> bool {
         let Some(w) = info.missile_weapon else { return false };
         let silo = (0..self.actors.len()).find(|&i| {
@@ -1322,21 +1437,30 @@ impl World {
                 && self.rules.actors[a.ty as usize].abilities.support_powers.as_ref().is_some_and(|l| l.iter().any(|p| p.key == info.key))
         });
         let Some(silo) = silo else { return false };
-        // The silo opens (fx.rs, presentation only).
+        // The silo opens (WithSupportPowerActivationAnimation; fx.rs, presentation only).
         self.note_launch(silo);
-        let launch = self.tick + info.missile_delay.max(0) as u32;
+        let flight = info.flight_delay.max(2) as u32;
+        let turn = flight / 2;
+        // SpawnOffset through BodyOrientation.LocalToWorld (classic perspective
+        // fudge, CameraPitch 40 degrees): (right, -sin(pitch) * forward).
+        let off = |k: usize| info.spawn_offset.get(k).copied().unwrap_or(0);
+        let (sx, sy) = (self.actors[silo].x + off(1), self.actors[silo].y - crate::render::CLASSIC_PITCH_SIN_1024 * off(0) / 1024);
+        let fired = self.tick;
+        let launch = fired + info.missile_delay.max(0) as u32 + 1;
         self.abil.nukes.push(Nuke {
             owner: player,
-            sx: self.actors[silo].x,
-            sy: self.actors[silo].y,
+            sx,
+            sy,
             x,
             y,
             weapon: w as u16,
             launch,
-            impact: launch + info.flight_delay.max(1) as u32,
+            impact: launch + flight,
+            top: (info.flight_velocity as i64 * (flight - turn) as i64).min(i32::MAX as i64) as i32,
             camera_range: info.camera_range,
-            camera_advance: info.camera_spawn_advance,
-            camera_remove: info.camera_remove_delay,
+            camera_at: (fired + flight + 1).saturating_sub(info.camera_spawn_advance.max(0) as u32),
+            camera_ticks: info.camera_spawn_advance + info.camera_remove_delay - 1,
+            beacon_until: beacon_until(fired, flight, info.beacon_remove_advance),
         });
         true
     }
@@ -1346,8 +1470,8 @@ impl World {
         let mut k = 0;
         while k < self.abil.nukes.len() {
             let n = self.abil.nukes[k].clone();
-            if n.camera_range > 0 && tick + n.camera_advance.max(0) as u32 == n.impact {
-                self.add_reveal(n.owner, n.x, n.y, n.camera_range, n.camera_advance + n.camera_remove);
+            if n.camera_range > 0 && tick == n.camera_at {
+                self.add_reveal(n.owner, n.x, n.y, n.camera_range, n.camera_ticks);
             }
             if tick >= n.impact {
                 self.abil.nukes.swap_remove(k);

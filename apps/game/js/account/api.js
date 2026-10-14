@@ -66,14 +66,15 @@ export class AccountApi {
   }
 
   /**
-   * One request. `body` is sent as JSON; `ifMatch` a version number; `raw`
-   * returns the Response (downloads). Returns `{ body, etag, status }`.
+   * One request. `body` is sent as JSON; `json` is JSON text sent as it is
+   * (a replay file); `ifMatch` a version number; `raw` returns the Response
+   * (downloads). Returns `{ body, etag, status }`.
    */
-  async send(method, path, { body, ifMatch, raw = false } = {}) {
+  async send(method, path, { body, json, ifMatch, raw = false } = {}) {
     // Names, emails and other players' text are cut out of error reports (js/telemetry).
     if (body !== undefined) noteUserText(body);
     const headers = { Accept: 'application/json' };
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (body !== undefined || json !== undefined) headers['Content-Type'] = 'application/json';
     if (needsCsrf(method, path)) headers[CSRF_HEADER] = '1';
     if (ifMatch !== undefined && ifMatch !== null) headers['If-Match'] = etagOf(ifMatch);
     let res;
@@ -81,7 +82,7 @@ export class AccountApi {
       res = await this.fetchImpl(this.base + path, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: json !== undefined ? json : body === undefined ? undefined : JSON.stringify(body),
         credentials: 'same-origin',
         cache: 'no-store',
       });
@@ -165,6 +166,24 @@ export class AccountApi {
     return { blob: await res.blob(), name };
   }
   deleteAccount = (confirm) => this.del('/api/account', { confirm });
+
+  // ---- Replays in the account (5.10) ------------------------------------------------------
+  /** `{ replays, usage: { count, bytes }, limits: { count, bytes, retentionMs, uploadBytes }, available }`. */
+  replays = () => this.get('/api/account/replays');
+  /**
+   * Upload a replay file (its JSON text) with how the game ended for this
+   * player (`won`, `lost`, `left`, `spectated` or `unknown`): `{ replay,
+   * evicted }` (201), or `{ replay, duplicate: true }` when the account has it.
+   */
+  uploadReplay = async (text, result = 'unknown') => (await this.send('POST', `/api/account/replays${queryString({ result })}`, { json: text })).body;
+  /** A replay file: `{ text, name }` (the JSON text and a file name). */
+  async downloadReplay(id) {
+    const { res } = await this.send('GET', `/api/account/replays/${enc(id)}`, { raw: true });
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'webra-replay.json';
+    return { text: await res.text(), name };
+  }
+  deleteReplay = (id) => this.del(`/api/account/replays/${enc(id)}`);
 
   // ---- Admin (8) ----------------------------------------------------------------------------
   stats = () => this.get('/api/admin/stats');

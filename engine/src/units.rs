@@ -139,6 +139,10 @@ impl World {
         if self.cell_moves() && self.cell_idle(i) {
             return;
         }
+        // Out of the way onto a busy service depot's pad (service.rs).
+        if self.clear_service_way(i) {
+            return;
+        }
         if self.try_idle_target(i) {
             return;
         }
@@ -166,11 +170,7 @@ impl World {
                 let b = b as usize;
                 let ba = &self.actors[b];
                 if ba.owner == a.owner && self.rules.actors[ba.ty as usize].building.as_ref().unwrap().repairs.is_some() {
-                    let r = self.make_ref(b);
-                    let a = &mut self.actors[i];
-                    a.activity = Activity::Repair;
-                    a.depot = r;
-                    a.repair_timer = 0;
+                    self.enter_service_line(i, b);
                 }
             }
         }
@@ -1194,11 +1194,13 @@ impl World {
 
     // ---- Repair ------------------------------------------------------------
 
-    /// Whether unit `u` (vehicle or ship) is repaired by building `b`
-    /// (OpenRA Repairable / RepairableNear RepairActors).
+    /// Whether unit `u` (vehicle, ship or plane) is repaired by building `b`
+    /// (OpenRA Repairable / RepairableNear RepairActors; helicopters:
+    /// helicopter.rs `heli_repairs_at`). Support power aircraft never land.
     pub(crate) fn repairs_at(&self, u: usize, b: usize) -> bool {
         let (ua, ba) = (&self.actors[u], &self.actors[b]);
-        if !matches!(ua.kind, Kind::Vehicle | Kind::Ship) || ba.kind != Kind::Building {
+        let plane = ua.kind == Kind::Aircraft && self.is_plane(u) && !self.is_support_aircraft(u);
+        if !(matches!(ua.kind, Kind::Vehicle | Kind::Ship) || plane) || ba.kind != Kind::Building {
             return false;
         }
         let binfo = &self.rules.actors[ba.ty as usize];
@@ -1209,124 +1211,42 @@ impl World {
                 .is_some_and(|un| un.repair_at.iter().any(|id| id.eq_ignore_ascii_case(&binfo.id)))
     }
 
-    /// The vehicle (or landed helicopter) that holds depot `d`'s pad, if it
-    /// is not `i` (OpenRA Reservable: a service depot serves one at a time).
-    fn pad_holder(&self, d: usize, i: usize) -> Option<usize> {
-        self.resolve(self.actors[d].dock_user).filter(|&u| {
-            u != i && self.actors[u].alive && (self.actors[u].kind == Kind::Aircraft || self.actors[u].activity == Activity::Repair)
-        })
-    }
-
-    /// The cell in the middle of the pad of service depot `d`, where
-    /// vehicles are repaired and minelayers rearm.
-    pub(crate) fn repair_pad_cell(&self, d: usize) -> u32 {
-        let depot = &self.actors[d];
-        let binfo = self.rules.actors[depot.ty as usize].building.as_ref().unwrap();
-        self.map.idx(depot.cx + binfo.width / 2, depot.cy + binfo.height / 2) as u32
-    }
-
-    /// Whether vehicle `i` is being serviced on its depot's pad (it holds
-    /// the pad): the crowd does not push it off.
-    pub(crate) fn on_repair_pad(&self, i: usize) -> bool {
-        let a = &self.actors[i];
-        a.activity == Activity::Repair && self.resolve(a.depot).is_some_and(|d| self.actors[d].dock_user == self.make_ref(i))
-    }
-
-    fn tick_repair(&mut self, i: usize) {
-        let Some(d) = self.resolve(self.actors[i].depot) else {
-            self.actors[i].activity = Activity::Idle;
-            return;
-        };
-        let depot = &self.actors[d];
-        let binfo = self.rules.actors[depot.ty as usize].building.as_ref().unwrap();
-        let rep = binfo.repairs.clone().unwrap();
-        let pad = self.repair_pad_cell(d);
-        let holder = self.pad_holder(d, i);
-        if !self.at_cell_center(i, pad) {
-            if self.cell_moves() && self.occupies_cells(i) {
-                // OpenRA Resupply: onto the pad. The vehicle on it holds the
-                // cell; the others wait next to it and try again
-                // (MoveCooldownHelper), unless the pad cannot be reached.
-                if self.goal_reached(i, pad, 0, false) {
-                    self.actors[i].activity = Activity::Idle;
-                    return;
-                }
-                self.move_toward(i, pad);
-                return;
-            }
-            if holder.is_some() {
-                // Another vehicle is on the pad: wait close by for its turn
-                // (OpenRA Resupply waits for the reservation), without the
-                // stuck rules that would end the visit.
-                let (px, py) = (cell_center(pad as i32 % self.map.width), cell_center(pad as i32 / self.map.width));
-                let a = &mut self.actors[i];
-                a.best_dist = i32::MAX;
-                a.stuck_ticks = 0;
-                a.stall_ticks = 0;
-                if dist(a.x, a.y, px, py) > crate::movement::soft::QUEUE_RANGE * CELL {
-                    self.move_toward(i, pad);
-                }
-                return;
-            }
-            // Next in line: reserve the pad before driving onto it, so the
-            // others wait instead of shoving each other over it (movement/soft.rs).
-            let (px, py) = (cell_center(pad as i32 % self.map.width), cell_center(pad as i32 / self.map.width));
-            if dist(self.actors[i].x, self.actors[i].y, px, py) <= crate::movement::soft::QUEUE_RANGE * CELL {
-                self.actors[d].dock_user = self.make_ref(i);
-            }
-            if self.goal_reached(i, pad, 0, false) {
-                self.actors[i].activity = Activity::Idle;
-                return;
-            }
-            self.move_toward(i, pad);
-            return;
-        }
-        if holder.is_some() {
-            return;
-        }
-        self.actors[d].dock_user = self.make_ref(i);
-        let max_hp = self.rules.actors[self.actors[i].ty as usize].hp;
-        if self.actors[i].hp >= max_hp {
-            let (width, height) = (binfo.width, binfo.height);
-            self.note_repaired(i, d);
-            // Done: leave the pad toward the depot's rally point (or just
-            // below it); the move frees the pad (`release_dock`).
-            let (rx, ry) =
-                self.actors[d].rally.unwrap_or((cell_center(self.actors[d].cx + width / 2), cell_center(self.actors[d].cy + height + 1)));
-            self.order_move(&[i], rx, ry, false);
-            return;
-        }
-        // The depot's repair animation (fx.rs, presentation only).
-        self.note_service(d);
-        self.repair_step(i, d, &rep);
-    }
-
-    /// One RepairsUnits interval on unit `i` at structure `by`: heal HpPerStep
-    /// when the owner can pay. `repair_timer` is 0 until the first step.
+    /// One tick of OpenRA Resupply.RepairTick on unit `i` at structure `by`.
+    /// `repair_timer` is 0 until the first step, then one more than the
+    /// ticks left to the next: a step every `Interval + 1` ticks heals the
+    /// full HpPerStep for `max(1, HpPerStep * Cost * ValuePercentage /
+    /// (MaxHP * 100))`; without the money (TakeCash with notifyLowFunds)
+    /// it tries again two ticks later and the unit waits on the pad.
     pub(crate) fn repair_step(&mut self, i: usize, by: usize, rep: &crate::rules::RepairInfo) {
         let ty = self.actors[i].ty as usize;
         let (max_hp, cost) = (self.rules.actors[ty].hp, self.rules.actors[ty].cost);
         let a = &mut self.actors[i];
-        let first = a.repair_timer <= 0;
-        a.repair_timer -= 1;
-        if a.repair_timer > 0 {
+        let started = a.repair_timer > 0;
+        if a.repair_timer > 1 {
+            a.repair_timer -= 1;
             return;
         }
-        a.repair_timer = rep.interval;
-        let (hp, owner, x, y) = (a.hp, a.owner, a.x, a.y);
-        if first {
+        let (owner, x, y) = (a.owner, a.x, a.y);
+        if !started {
             // OpenRA Resupply: StartRepairingNotification at the first step, before paying.
             let by_ty = self.actors[by].ty as i32;
             self.sound.push(SoundEventKind::UnitRepairStarted, ty as i32, x, y, owner, by_ty);
         }
-        let step = rep.hp_per_step.min(max_hp - hp);
-        // OpenRA RepairsUnits: repair costs ValuePercent of the unit's value, pro rata.
-        let price = ((cost as i64 * rep.value_percent as i64 * step as i64 + 100 * max_hp as i64 - 1) / (100 * max_hp as i64)) as i32;
-        if self.spend(owner, price) {
-            self.note_repair(owner, price);
-            self.actors[i].hp += step;
-            self.uncloak_on(i, "Heal");
+        let step = rep.hp_per_step;
+        let value = cost as i64 * rep.value_percent as i64;
+        let price = if value == 0 { 0 } else { (step as i64 * value / (max_hp.max(1) as i64 * 100)).max(1) as i32 };
+        if !self.spend(owner, price) {
+            let tick = self.tick;
+            self.sound.push_funds(tick, owner, ty as u16);
+            // remainingTicks = 1: counted down next tick, tried the tick after.
+            self.actors[i].repair_timer = 2;
+            return;
         }
+        self.note_repair(owner, price);
+        let a = &mut self.actors[i];
+        a.hp = (a.hp + step).min(max_hp);
+        a.repair_timer = rep.interval + 1;
+        self.uncloak_on(i, "Heal");
     }
 
     /// Unit `i` is fully repaired at structure `by`: FinishRepairingNotification,

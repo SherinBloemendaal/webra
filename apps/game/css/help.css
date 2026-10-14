@@ -223,7 +223,7 @@
    The slot tables drop their header row when they stack into cards; the
    column names stay as a row of help chips so the help is still there. */
 
-@container (max-width: 560px) {
+@container lobby-panel (max-width: 560px) {
   #menu .lobby-slot.lobby-slot-head {
     display: flex;
     flex-wrap: wrap;

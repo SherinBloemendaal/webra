@@ -464,21 +464,24 @@ fn naval_bots_keep_every_ship_on_water() {
         w.state_hash()
     };
     let minutes = 25 * 60;
-    // How many ships Naval bots build in twelve minutes swings with any
-    // change to their economy: on many seeds they spend everything on a land
-    // war and place no naval yard in time (rivers seeds 2 and 3: no bot has
-    // a naval yard or a ship queued by minute 12). Measured after merging the
-    // production exits (exit queue, exit production types) with lightning
-    // (ai_lightning.rs), most ships alive at once over seeds 1 to 11: lakes
-    // 3, 2, 2, 4, 1, 0, 6, 5, 2, 3, 2; rivers 3, 0, 0, 2, 1, 2, 6, 1, 1, 1,
-    // 3; islands 2, 2, 0, 2, 0, 3, 3, 2, 0, 1, 0. Again after units moving
-    // into weapon range head for the nearest cell in range (attack_range.rs):
-    // lakes 1, 3, 5, 1, 4, 0, 2, 1, 1, 2, 4; rivers 3, 4, 2, 1, 0, 0, 2, 2,
-    // 2, 0, 1; islands 3, 3, 0, 2, 0, 0, 1, 4, 2, 2, 1. Islands seed 6 and
-    // rivers seed 7, used before, now build none and two; the seeds below
-    // build four or five.
-    game(MapStyle::Islands, 8, 12 * minutes);
-    let lakes = game(MapStyle::Lakes, 3, 12 * minutes);
-    game(MapStyle::Rivers, 2, 12 * minutes);
-    assert_eq!(game(MapStyle::Lakes, 3, 12 * minutes), lakes, "deterministic");
+    // How many ships these bots float swings with any change to their
+    // economy: on many seeds they spend everything on a land war and place
+    // no naval yard in time. Measured after merging the production exits
+    // (exit queue, exit production types) and lightning (ai_lightning.rs)
+    // with structures waiting for their make animation and playing it
+    // backwards when sold or packed up. Ships built in 12 minutes / most
+    // afloat at once by the 4 Hard Naval bots of this test (96 cell maps),
+    // seeds 1 to 10, without the make time and with it: islands 2/2 and 2/2,
+    // 2/2 and 1/1, 0/0 and 0/0, 2/2 and 2/2, 0/0 and 1/1, 4/3 and 0/0, 3/3
+    // and 5/3, 2/2 and 3/2, 0/0 and 3/2, 3/1 and 1/1; lakes 3/3 and 0/0,
+    // 2/2 and 3/2, 2/2 and 0/0, 4/4 and 6/4, 1/1 and 2/2, 0/0 and 0/0, 6/6
+    // and 2/2, 6/5 and 4/3, 2/2 and 4/4, 3/3 and 0/0; rivers 6/3 and 4/3
+    // (148 ford cells), 0/0 and 2/2, 0/0 and 3/2, 2/2 and 3/2, 1/1 and 1/1,
+    // 2/2 and 2/2, 6/6 and 2/2, 1/1 and 4/2, 1/1 and 0/0, 1/1 and 0/0. A
+    // seed whose bots float fewer than 2 ships at once cannot check fleets:
+    // islands 7, lakes 4 and rivers 1 float 3 to 4.
+    game(MapStyle::Islands, 7, 12 * minutes);
+    let lakes = game(MapStyle::Lakes, 4, 12 * minutes);
+    game(MapStyle::Rivers, 1, 12 * minutes);
+    assert_eq!(game(MapStyle::Lakes, 4, 12 * minutes), lakes, "deterministic");
 }

@@ -1319,6 +1319,20 @@ pub fn naval_report(w: &World, player: u8) -> NavalReport {
     r
 }
 
+/// Each naval squad that idles without a target (the squads
+/// `naval_report` counts as idle): its id and its ships (tests).
+#[cfg(test)]
+pub(crate) fn idle_naval_squads(w: &World, player: u8) -> Vec<(u32, Vec<usize>)> {
+    let st = &w.ai[player as usize].squads;
+    st.squads
+        .iter()
+        .enumerate()
+        .filter(|(k, s)| s.kind == SquadType::Naval && s.state == State::GroundIdle && target_actor(w, player, *k).is_none())
+        .map(|(_, s)| (s.id, units_of(w, player, s)))
+        .filter(|(_, ships)| !ships.is_empty())
+        .collect()
+}
+
 /// The target actor of `player`'s first naval squad (tests).
 #[cfg(test)]
 pub(crate) fn naval_target(w: &World, player: u8) -> Option<usize> {

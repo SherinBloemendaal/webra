@@ -4,9 +4,12 @@
 //! With the crates lobby option the spawner waits `initial_delay` ticks, then
 //! every `spawn_interval` ticks tops the crates on the map up to `minimum`
 //! and adds one more while there are fewer than `maximum`. Each new crate
-//! goes to a random free cell (land, or water with `water_chance` percent)
-//! and is flown in by a Badger of the neutral player, dropped over its cell
-//! and lands on a parachute. A crate lies for `duration` ticks. A unit whose
+//! is aimed at a random free cell (land, or water with `water_chance`
+//! percent; that only chooses the target) and flown in by a Badger of the
+//! neutral player. Like OpenRA's ParaDrop, the Badger drops it over the
+//! first cell of its approach within DropRange that suits it (the crate's
+//! TerrainTypes and nothing in the ActorMap), usually before the chosen
+//! cell, and it lands on a parachute. A crate lies for `duration` ticks. A unit whose
 //! locomotor crushes `crate` picks it up by driving onto it; the crate rolls
 //! one of its actions weighted by their shares for that collector (cash,
 //! a level up, an explosion, the map hidden or revealed, healing, copies of
@@ -94,10 +97,10 @@ impl World {
         self.resolve(r).filter(|&c| self.actors[c].kind == Kind::Crate)
     }
 
-    /// Whether anything stands on cell `ci` (OpenRA ActorMap: units, structures,
-    /// husks, mines, crates).
+    /// Whether anything stands on cell `ci` (OpenRA ActorMap: units that
+    /// take their cell (`occupies_cell`), structures, husks, mines, crates).
     pub(crate) fn cell_has_actor(&self, ci: usize) -> bool {
-        self.units_in_cell(ci).iter().any(|&u| self.actors[u as usize].alive && self.actors[u as usize].altitude == 0)
+        self.units_in_cell(ci).iter().any(|&u| self.occupies_cell(u as usize))
             || self.building_at[ci] != NONE
             || self.husk_at(ci).is_some()
             || self.mine_at(ci).is_some()
@@ -215,21 +218,28 @@ impl World {
         a.air.cargo = vec![crate_ty as u16];
     }
 
-    /// Called by a delivery plane over its drop cell (plane.rs): the crate
-    /// leaves the plane when the cell is still free (OpenRA ParaDrop with
-    /// checkForSuitableCell), at the plane's height, and parachutes down.
+    /// Called every tick a delivery plane with its crate is within
+    /// DropRange of its drop cell (plane.rs; OpenRA ParaDrop with
+    /// checkForSuitableCell): the crate leaves the plane over the first cell
+    /// on its way that suits it (Crate GetAvailableSubCell: on the map, the
+    /// crate's terrain and nothing in the ActorMap there, `cell_has_actor`),
+    /// at the plane's height, and parachutes down. Over any other cell the
+    /// plane keeps it and tries again the next tick; one that leaves the
+    /// DropRange still loaded takes the crate off the map with it.
     pub(crate) fn drop_crate(&mut self, plane: usize) {
         let a = &self.actors[plane];
         let Some(&ty) = a.air.cargo.first() else { return };
-        let (cx, cy) = self.cell_of(a.x, a.y);
         let (alt, owner) = (a.altitude, a.owner);
-        let ci = self.map.idx(cx, cy);
-        self.actors[plane].air.cargo.clear();
-        let info = self.rules.actors[ty as usize].options.crate_info.as_ref();
-        if info.is_none_or(|c| !matches(&c.terrain, terrain_names(self, ci))) || self.crate_at(ci).is_some() || self.building_at[ci] != NONE
-        {
+        let (cx, cy) = (a.x.div_euclid(CELL), a.y.div_euclid(CELL));
+        if !self.map.contains(cx, cy) {
             return;
         }
+        let ci = self.map.idx(cx, cy);
+        let info = self.rules.actors[ty as usize].options.crate_info.as_ref();
+        if info.is_none_or(|c| !matches(&c.terrain, terrain_names(self, ci))) || self.cell_has_actor(ci) {
+            return;
+        }
+        self.actors[plane].air.cargo.clear();
         self.place_crate(ty as usize, owner, cx, cy, alt);
     }
 
@@ -244,8 +254,11 @@ impl World {
         c
     }
 
-    /// Parachute: sink at FallRate, then OpenRA Crate.OnLanded: a unit that
-    /// can collect it there does; anything else there destroys the crate.
+    /// Parachute: sink at FallRate, then OpenRA Crate.OnLanded: a unit with
+    /// Mobile there whose locomotor crushes crates collects it, even one
+    /// still on its own parachute (OnLanded checks only the crate is at
+    /// ground level); anything else there (`occupies_cell`, structures,
+    /// husks, mines) destroys the crate.
     pub(crate) fn tick_falling_crate(&mut self, c: usize) {
         let a = &mut self.actors[c];
         a.altitude -= CRATE_FALL_RATE;
@@ -255,14 +268,10 @@ impl World {
         a.altitude = 0;
         a.air.parachute = false;
         let ci = self.cell_index(self.actors[c].x, self.actors[c].y);
-        let collector = self
-            .units_in_cell(ci)
-            .iter()
-            .map(|&u| u as usize)
-            .find(|&u| self.actors[u].alive && self.actors[u].altitude == 0 && self.collects_crates(u));
+        let collector = self.units_in_cell(ci).iter().map(|&u| u as usize).find(|&u| self.occupies_cell(u) && self.crushes_crates(u));
         if let Some(u) = collector {
             self.collect_crate(c, u);
-        } else if self.units_in_cell(ci).iter().any(|&u| self.actors[u as usize].alive && self.actors[u as usize].altitude == 0)
+        } else if self.units_in_cell(ci).iter().any(|&u| self.occupies_cell(u as usize))
             || self.building_at[ci] != NONE
             || self.husk_at(ci).is_some()
             || self.mine_at(ci).is_some()
@@ -282,14 +291,22 @@ impl World {
         }
     }
 
-    /// Whether unit `u` picks up crates (its locomotor crushes `crate`).
+    /// Whether unit `u` picks up crates it drives onto (its locomotor
+    /// crushes `crate`; OpenRA crushes only while Mobile moves, so not on a
+    /// parachute).
     pub(crate) fn collects_crates(&self, u: usize) -> bool {
+        !self.actors[u].air.parachute && self.crushes_crates(u)
+    }
+
+    /// Whether unit `u` has Mobile with a locomotor that crushes `crate`
+    /// (aircraft have no Mobile).
+    pub(crate) fn crushes_crates(&self, u: usize) -> bool {
         let a = &self.actors[u];
-        if !a.is_unit() || !a.in_world() || a.air.parachute {
+        if !a.is_unit() || !a.in_world() || a.kind == Kind::Aircraft {
             return false;
         }
         let Some(info) = self.rules.actors[a.ty as usize].unit.as_ref() else { return false };
-        a.kind != Kind::Aircraft && self.rules.locomotor_crushes_crates.get(info.locomotor).copied().unwrap_or(false)
+        self.rules.locomotor_crushes_crates.get(info.locomotor).copied().unwrap_or(false)
     }
 
     /// Per unit after its activity (units.rs): a unit reaching a cell with a

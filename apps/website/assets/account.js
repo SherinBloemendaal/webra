@@ -1,7 +1,8 @@
 // The account page (/account/): sign in, sign up, email verification and
 // password reset links, Discord returns, and for a signed-in player the
-// profile, password, email, passkeys, Discord, sessions, data export and
-// account deletion (docs/accounts-api.md 3 to 5).
+// profile, password, email, passkeys, Discord, sessions, the replays kept
+// in the account, data export and account deletion (docs/accounts-api.md 3
+// to 5).
 //
 // Links from emails land here with the token in the fragment
 // (#verify=<token>, #reset=<token>); Discord comes back with #discord=ok or
@@ -15,6 +16,7 @@ import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/acc
 import { checkInput } from '/lib/js/ui/controls.js';
 import { AccountSession, accountState, signInMethods } from '/lib/js/account/session.js';
 import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/lib/js/account/passkey.js';
+import { clearQueuedReplays, REPLAY_LINK_RE, replayLine, replayLink, usageText } from '/lib/js/account/replays.js';
 import {
   ACCOUNT_PASSWORD_MAX,
   ACCOUNT_PASSWORD_MIN,
@@ -62,6 +64,15 @@ export function discordReturn(target) {
   return withTarget.length <= 200 ? withTarget : `/account/?returnTo=${encodeURIComponent(DEFAULT_RETURN)}`;
 }
 
+/** This tab's sessionStorage, or null when the browser blocks it. */
+function sessionStore() {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The message of a protocol check that fails, or null. */
 function check(fn) {
   try {
@@ -103,7 +114,9 @@ export const DISCORD_ERRORS = {
 /**
  * Build the page into `root`.
  * @param {HTMLElement} root
- * @param {{ api?: AccountApi, location?: Location, history?: History, navigate?: (url: string) => void }} [deps]
+ * `storage` (sessionStorage) keeps a replay link (`#replay=<id>`, from the
+ * game's Watch through the play gate) until the game opens it after sign-in.
+ * @param {{ api?: AccountApi, location?: Location, history?: History, navigate?: (url: string) => void, storage?: Storage | null }} [deps]
  */
 export async function mountAccountPage(root, deps = {}) {
   const api = deps.api ?? new AccountApi();
@@ -111,10 +124,18 @@ export async function mountAccountPage(root, deps = {}) {
   const hist = deps.history ?? globalThis.history;
   const navigate = deps.navigate ?? ((url) => loc.assign(url));
   const session = new AccountSession({ api });
+  // Signing out here drops the replays this account left waiting in this browser (js/account/replays.js).
+  session.onSignOut((userId) => clearQueuedReplays(userId));
   const notice = statusLine();
   const view = el('div', { class: 'account-view' });
   root.replaceChildren(notice.node, view);
 
+  // A replay to watch (the play gate sent a signed-out player here from /play/#replay=<id>):
+  // kept for this tab, so the game opens it after the sign-in.
+  if (REPLAY_LINK_RE.test(loc.hash ?? '')) {
+    replayLink(loc.hash, deps.storage !== undefined ? deps.storage : sessionStore());
+    hist.replaceState(null, '', loc.pathname + loc.search);
+  }
   const fragment = parseFragment(loc.hash);
   if (fragment.kind) hist.replaceState(null, '', loc.pathname + loc.search);
   const target = returnTarget(loc.search);
@@ -515,7 +536,7 @@ export async function mountAccountPage(root, deps = {}) {
       }
       parts.push(box);
     }
-    parts.push(profileSection(user), emailSection(user), passwordSection(user), passkeySection(), discordSection(user), sessionsSection(), dataSection(user));
+    parts.push(profileSection(user), emailSection(user), passwordSection(user), passkeySection(), discordSection(user), sessionsSection(), replaysSection(user), dataSection(user));
     view.replaceChildren(...present(parts));
   }
 
@@ -753,6 +774,97 @@ export async function mountAccountPage(root, deps = {}) {
       }, errorText),
     );
     return section('Devices', status.node, list, el('div', { class: 'form-actions' }, others));
+  }
+
+  /**
+   * Replays kept in the account (docs/accounts-api.md 5.10): the switch
+   * `privacy.cloudReplays` of the settings document (the game follows it),
+   * what the account uses, and each replay with Watch (in the game),
+   * Download and Delete.
+   */
+  function replaysSection(user) {
+    if (session.site?.services?.replays === false) return null;
+    const status = statusLine();
+    const usage = el('p', { class: 'form-help', text: 'Loading...' });
+    const list = el('ul', { class: 'item-list', 'aria-label': 'Replays' });
+    const toggleRow = switchRow('Save replays to my account', {
+      help: 'While you are signed in, the game uploads the replay of every game you finish or leave. Online replays hold the other players\' names and the chat.',
+    });
+    toggleRow.input.disabled = true;
+    // The switch lives in the account's settings document: read it, and write it with the version read.
+    let doc = null;
+    const loadSetting = async () => {
+      try {
+        doc = await api.settings();
+        toggleRow.input.checked = doc.settings?.privacy?.cloudReplays !== false;
+        toggleRow.input.disabled = false;
+      } catch (err) {
+        status.show(errorText(err), 'error');
+      }
+    };
+    const saveSetting = async (on, attempt = 0) => {
+      const settings = { ...(doc.settings ?? {}), privacy: { ...(doc.settings?.privacy ?? {}), cloudReplays: on } };
+      try {
+        const r = await api.putSettings(doc.version, settings);
+        doc = r;
+        status.show(on ? 'New games are saved to your account.' : 'New games are no longer saved to your account.', 'ok');
+      } catch (err) {
+        // Changed on another device meanwhile: apply the switch to the newer document.
+        if (err instanceof AccountError && err.code === 'version_conflict' && err.detail?.current && attempt < 2) {
+          doc = err.detail.current;
+          return saveSetting(on, attempt + 1);
+        }
+        throw err;
+      }
+    };
+    toggleRow.input.addEventListener('change', () =>
+      busy(toggleRow.input, status, async () => {
+        try {
+          await saveSetting(toggleRow.input.checked);
+        } catch (err) {
+          toggleRow.input.checked = !toggleRow.input.checked;
+          throw err;
+        }
+      }, errorText),
+    );
+    const load = async () => {
+      try {
+        const data = await api.replays();
+        usage.textContent = `${usageText(data.usage, data.limits)}. Each replay is kept for ${Math.round(data.limits.retentionMs / 86400000)} days; when a new one does not fit, the oldest go first.`;
+        if (!data.replays.length) return list.replaceChildren(el('li', { class: 'form-help', text: 'No replays yet.' }));
+        list.replaceChildren(
+          ...data.replays.map((r) => {
+            // Watch opens the game, which loads the replay from the account (#replay=<id>).
+            const watch = user.canPlay ? el('a', { class: 'btn btn-small btn-primary', href: `/play/#replay=${r.id}`, text: 'Watch' }) : null;
+            const download = el('button', { type: 'button', class: 'btn btn-small', text: 'Download' });
+            const del = el('button', { type: 'button', class: 'btn btn-small btn-danger', text: 'Delete' });
+            download.addEventListener('click', () =>
+              busy(download, status, async () => {
+                const { text, name } = await api.downloadReplay(r.id);
+                saveBlob(new Blob([text], { type: 'application/json' }), name);
+              }, errorText),
+            );
+            del.addEventListener('click', async () => {
+              if (!(await confirmDialog('Delete replay', `Delete the replay "${r.title}" from your account?`, { confirmText: 'Delete', danger: true }))) return;
+              await busy(del, status, async () => (await api.deleteReplay(r.id), load()), errorText);
+            });
+            return el(
+              'li',
+              { class: 'item' },
+              el('div', {}, el('strong', { text: r.title }), el('span', { class: 'form-help', text: ` WebRA ${r.engine}` })),
+              el('p', { class: 'form-help', text: `${replayLine(r)}.` }),
+              el('div', { class: 'form-actions' }, watch, download, del),
+            );
+          }),
+        );
+      } catch (err) {
+        usage.textContent = '';
+        list.replaceChildren(el('li', { class: 'form-status form-status-error', text: errorText(err) }));
+      }
+    };
+    loadSetting();
+    load();
+    return section('Replays', toggleRow.row, status.node, usage, list);
   }
 
   function dataSection(user) {

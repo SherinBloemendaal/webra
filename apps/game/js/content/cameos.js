@@ -5,15 +5,18 @@
 import { ACTOR_ART, ACTOR_PALETTE, SEQUENCES } from './tables.js';
 import { decodeSprite } from './shp.js';
 import { decodePalette, paletteLookup } from './palette.js';
+import { paintFakeMark } from '../art/cameo.js';
 
 /** Cameo source names of support power icons: `icon:<SupportPowerInfo.Icon>`. */
 export const POWER_ICON_PREFIX = 'icon:';
 
 /**
- * RGBA pixels of an actor's original cameo: `{ width, height, rgba, labelled }`
- * or null. Cameos keep their own colours (OpenRA draws them with the chrome
- * palette, no team remap). Red Alert's cameos have the name in the picture
- * (`labelled`), so the sidebar leaves out its own label.
+ * RGBA pixels of an actor's original cameo: `{ width, height, rgba, labelled,
+ * fake }` or null. Cameos keep their own colours (OpenRA draws them with the
+ * chrome palette, no team remap). Red Alert's cameos have the name in the
+ * picture (`labelled`), so the sidebar leaves out its own label. `fake`: a
+ * fake structure Red Alert has no fake cameo for (ACTOR_ART fakeMark, the
+ * ones OpenRA drew itself), shown as the real cameo with WebRA's FAKE mark.
  */
 export function originalCameoPixels(actorId, getFile) {
   const id = String(actorId);
@@ -21,7 +24,9 @@ export function originalCameoPixels(actorId, getFile) {
   if (id.startsWith(POWER_ICON_PREFIX)) return originalPowerIconPixels(id.slice(POWER_ICON_PREFIX.length), getFile);
   const entry = ACTOR_ART[id] ?? ACTOR_ART[id.toUpperCase()];
   if (!entry?.cameo) return null;
-  return iconPixels(SEQUENCES[entry.image]?.[entry.cameo], getFile);
+  const pic = iconPixels(SEQUENCES[entry.image]?.[entry.cameo], getFile);
+  if (pic && entry.fakeMark) pic.fake = true;
+  return pic;
 }
 
 /**
@@ -59,9 +64,10 @@ function iconPixels(def, getFile) {
  * A cameo source for js/cameo.js: `(typeName, width, height) => canvas | null`.
  * `sources` are tried in order: each `(typeName) => { width, height, rgba }
  * | ImageBitmap-like { width, height, image } | null`, with `labelled` when the
- * picture shows the name. Pictures are scaled to the button with
- * nearest-neighbour sampling and cached per size; the canvas carries
- * `labelled` on to js/cameo.js.
+ * picture shows the name and `fake` when it needs the FAKE mark (drawn over
+ * it at the button's size, art/cameo.js paintFakeMark). Pictures are scaled
+ * to the button with nearest-neighbour sampling and cached per size; the
+ * canvas carries `labelled` on to js/cameo.js.
  */
 export function cameoSource(sources, doc = globalThis.document) {
   const cache = new Map();
@@ -90,6 +96,7 @@ export function cameoSource(sources, doc = globalThis.document) {
       const w = Math.round(pic.width * scale);
       const h = Math.round(pic.height * scale);
       ctx.drawImage(src, Math.floor((width - w) / 2), Math.floor((height - h) / 2), w, h);
+      if (pic.fake) paintFakeMark(ctx, width, height);
       canvas.labelled = !!pic.labelled;
       break;
     }

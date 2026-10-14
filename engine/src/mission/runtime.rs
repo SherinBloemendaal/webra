@@ -269,6 +269,7 @@ impl Ctx<'_> {
         let (cx, cy) = ((snap.x - w * CELL / 2).div_euclid(CELL), (snap.y - h * CELL / 2).div_euclid(CELL));
         match self.w.rules.actors[t].kind {
             crate::rules::Kind::Building => {
+                // SpawnActorOnDeath.SkipMakeAnimations (default true): built at once.
                 self.w.spawn_building(t as u16, snap.owner, cx, cy);
             }
             _ => {
@@ -353,7 +354,9 @@ impl Ctx<'_> {
         }
     }
 
-    /// Ground actors on cells (OpenRA ActorMap cell triggers: actors that occupy cells, not flying aircraft).
+    /// Units on cells (OpenRA ActorMap cell triggers: actors that occupy
+    /// cells, `occupies_cell`: a paratrooper on its parachute too, not a
+    /// flying aircraft).
     fn tick_cells(&mut self, lua: &mut Lua) {
         if self.m.triggers.cells.is_empty() {
             return;
@@ -365,9 +368,7 @@ impl Ctx<'_> {
             let mut now = std::collections::BTreeSet::new();
             for i in 0..self.w.actors.len() {
                 let a = &self.w.actors[i];
-                if !a.alive
-                    || !a.in_world()
-                    || a.altitude > 0
+                if !self.w.occupies_cell(i)
                     || !matches!(
                         a.kind,
                         crate::rules::Kind::Infantry
@@ -892,7 +893,7 @@ impl Ctx<'_> {
                 let inside: std::collections::BTreeSet<u32> = if enter {
                     let found = self.actors_matching(|w, i| {
                         let a = &w.actors[i];
-                        a.altitude == 0 && a.is_unit() && cells.contains(&w.cell_index(a.x, a.y))
+                        w.occupies_cell(i) && cells.contains(&w.cell_index(a.x, a.y))
                     });
                     found.into_iter().collect()
                 } else {

@@ -24,12 +24,16 @@ fn building(w: &mut World, id: &str, dx: i32) -> usize {
     (0..40).find_map(|k| w.spawn_building(t, 0, sx + dx + k % 8, sy + 6 + k / 8)).unwrap_or_else(|| panic!("no room for {id}"))
 }
 
-/// Cash player 0 got for selling `b` through the lockstep order.
+/// Cash player 0 got for selling `b` through the lockstep order (after the
+/// reverse make animation, production.rs `sell`).
 fn sell(w: &mut World, b: usize) -> i32 {
     let r = w.make_ref(b);
     let cash = w.players[0].cash;
+    let make = w.rules.actors[w.actors[b].ty as usize].building.as_ref().unwrap().make_ticks;
     w.queue_order(Order::Sell { player: 0, building: r });
-    w.step();
+    for _ in 0..=make {
+        w.step();
+    }
     assert!(w.resolve(r).is_none(), "sold");
     w.players[0].cash - cash
 }
@@ -91,8 +95,11 @@ fn the_game_api_shows_the_refund_the_sale_pays() {
     assert_eq!(sell(&mut w, b), 150);
     // The Sold event carries the refund for the floating "+$150" (OpenRA Sell ShowTicks).
     let ev: Vec<[i32; EVENT_STRIDE]> = w.sound.take().chunks(EVENT_STRIDE).map(|c| c.try_into().unwrap()).collect();
-    let sold = ev.iter().find(|e| e[0] == SoundEventKind::Sold as i32).expect("sold event");
-    assert_eq!((sold[1], sold[4], sold[5]), (ty(&w, "PBOX") as i32, 0, 150));
+    // The first event starts the sale (b -1: the sell sound), the second carries the refund.
+    let sold: Vec<_> = ev.iter().filter(|e| e[0] == SoundEventKind::Sold as i32).collect();
+    assert_eq!(sold.len(), 2);
+    assert_eq!((sold[0][1], sold[0][4], sold[0][5]), (ty(&w, "PBOX") as i32, 0, crate::sound_events::SOLD_STARTED));
+    assert_eq!((sold[1][1], sold[1][4], sold[1][5]), (ty(&w, "PBOX") as i32, 0, 150));
     assert_eq!(w.player_stats(0).sold, 150, "the statistics count what was paid");
 }
 

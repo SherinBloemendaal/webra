@@ -532,9 +532,12 @@ export class Director {
           }
           break;
         case EV.SOLD:
+          // b: -1 the sale starts (OpenRA Sellable.SellSounds at once), else
+          // the refund when it is done after the reverse make animation (the
+          // Sell activity's Notification).
           if (own) {
-            this.announce(speechKey(actorSounds(this.actor(a).id).sellNotification ?? 'StructureSold'));
-            this.queue(sellSound(this.actor(a).id), x, y);
+            if (b < 0) this.queue(sellSound(this.actor(a).id), x, y);
+            else this.announce(speechKey(actorSounds(this.actor(a).id).sellNotification ?? 'StructureSold'));
           }
           break;
         case EV.INSUFFICIENT_FUNDS:

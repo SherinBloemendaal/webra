@@ -1,8 +1,10 @@
 // Test harness for the Worker's account API: the real Worker entry
-// (src/index.js) over a SQLite-backed D1 (fake-d1.mjs), a recording email
+// (src/index.js) over a SQLite-backed D1 (fake-d1.mjs), an in-memory R2
+// bucket (fake-r2.mjs), a recording email
 // binding, a fake session namespace, a controllable clock and browser-like
 // clients with cookie jars.
 import { FakeD1 } from './fake-d1.mjs';
+import { FakeR2 } from './fake-r2.mjs';
 
 globalThis.WEBRA_TEST_REAL_ENGINE = true;
 await import('./fake-do.mjs'); // module hooks for cloudflare:workers
@@ -87,9 +89,11 @@ export class FakeSessions {
   }
 }
 
-export function makeEnv({ email = true, discord = false, vars = {} } = {}) {
+export function makeEnv({ email = true, discord = false, replays = true, vars = {} } = {}) {
   return {
     DB: new FakeD1(),
+    // Replays in accounts (src/accounts/replays.js): an in-memory bucket.
+    ...(replays ? { REPLAYS: new FakeR2() } : {}),
     EMAIL: email ? new FakeEmail() : undefined,
     ...(email ? { EMAIL_FROM: 'noreply@webra.sherin.dev' } : {}),
     SESSION: new FakeSessions(),

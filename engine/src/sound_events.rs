@@ -30,6 +30,9 @@ pub const ROUTE_BLOCKED_INTERVAL: u32 = 250;
 /// A structure that was hit within this many ticks does not report again
 /// (one "under attack" event per burst of fire, not per bullet).
 pub const DAMAGE_EVENT_QUIET_TICKS: u32 = 50;
+/// `SoundEventKind::Sold` b when a sale starts (the sell sound); the event
+/// when it is done carries the refund (0 or more) in b instead.
+pub const SOLD_STARTED: i32 = -1;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(i32)]
@@ -47,8 +50,11 @@ pub enum SoundEventKind {
     UnitProduced = 5,
     /// a = actor type of a structure placed by its owner.
     BuildingPlaced = 6,
-    /// a = actor type of a structure sold; b = the refund paid (the client
-    /// floats it for the seller's allies, OpenRA Sell activity ShowTicks).
+    /// a = actor type of a structure sold; b = `SOLD_STARTED` (-1) when the
+    /// sale starts (the sell sound, OpenRA Sellable.SellSounds), else the
+    /// refund paid when it is done after the reverse make animation (the
+    /// StructureSold announcement; the client floats it for the seller's
+    /// allies, OpenRA Sell activity ShowTicks).
     Sold = 7,
     /// Production stalled for lack of money; a = actor type being built.
     InsufficientFunds = 8,

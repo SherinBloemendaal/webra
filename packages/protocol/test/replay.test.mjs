@@ -11,6 +11,8 @@ import {
   REPLAY_MAX_BYTES,
   REPLAY_VERSION,
   replayOptions,
+  replaySummary,
+  REPLAY_TIME_MAX,
   sha256Hex,
   validateReplay,
 } from '../src/index.js';
@@ -257,4 +259,35 @@ test('online co-op missions carry their mission and options', async () => {
   ]) {
     assert.equal((await check(bad)).ok, false, JSON.stringify(bad.mission));
   }
+});
+
+test('replaySummary: what an account replay list shows', async () => {
+  const plain = replaySummary((await check(base())).replay);
+  assert.deepEqual(plain, {
+    mode: 'skirmish',
+    title: 'Skirmish vs Computer',
+    engine: '0.3.0+abcdef12',
+    playedAt: 1_760_000_000_000,
+    ticks: 600,
+    mapName: 'Generated map',
+    players: [
+      { name: 'Me', type: 'human', faction: 'germany', team: 0 },
+      { name: null, type: 'ai', faction: 'russia', team: 0 },
+    ],
+  });
+  const w = 32;
+  const terrain = Buffer.alloc(w * w).toString('base64');
+  const map = canonicalMapJson(parseMap(JSON.stringify({ format: 1, name: 'Tiny', author: 'T', width: w, height: w, terrain, ore: terrain, spawns: [[2, 2], [20, 20]] })).map);
+  assert.equal(replaySummary((await check({ ...base(), map, mapHash: await sha256Hex(map) })).replay).mapName, 'Tiny');
+  const mission = replaySummary((await check(missionReplay())).replay);
+  assert.equal(mission.mapName, missionReplay().mission.id);
+  assert.deepEqual(mission.players, [], 'a campaign mission lists no players');
+});
+
+test('createdAt stays within the Date range, so every reader can format it', async () => {
+  assert.ok((await check({ ...base(), createdAt: REPLAY_TIME_MAX })).ok);
+  assert.equal(new Date(REPLAY_TIME_MAX).toISOString(), '+275760-09-13T00:00:00.000Z');
+  assert.match((await check({ ...base(), createdAt: REPLAY_TIME_MAX + 1 })).error, /createdAt/);
+  assert.match((await check({ ...base(), createdAt: Number.MAX_SAFE_INTEGER })).error, /createdAt/);
+  assert.match((await parseReplay(JSON.stringify({ ...base(), engine: '9.9.9', createdAt: Number.MAX_SAFE_INTEGER }), { version: '0.3.0+abcdef12' })).error, /createdAt/, 'the header check too');
 });
