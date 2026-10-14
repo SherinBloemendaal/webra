@@ -636,3 +636,20 @@ fn minelayers_reload_only_on_the_pad_they_hold() {
     let max = w.rules.actors[w.actors[a].ty as usize].abilities.minelayer.as_ref().unwrap().ammo;
     assert_eq!(w.actors[a].ab.ammo, max, "reloaded in the line");
 }
+
+/// The bulk repair order sends aircraft through `heli_send_to_depot`, all
+/// at once: planes and helicopters sent that way join the one line and are
+/// repaired one at a time, first come first served.
+#[test]
+fn aircraft_sent_together_by_the_bulk_path_queue_one_at_a_time() {
+    let mut w = arena(MovementModel::WebRA);
+    let fix = depot(&mut w);
+    let mut units = damaged(&mut w, "YAK", 3, 6);
+    units.extend(damaged(&mut w, "HIND", 3, 10));
+    w.step();
+    for &u in &units {
+        w.heli_send_to_depot(u, fix);
+    }
+    let run = run_line(&mut w, &units, 25 * 120);
+    assert_first_come_first_served(&run);
+}

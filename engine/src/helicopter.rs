@@ -936,7 +936,10 @@ impl World {
         }
     }
 
-    fn heli_send_to_depot(&mut self, i: usize, d: usize) {
+    /// Send aircraft `i` (helicopter or plane) to service depot `d`: it
+    /// joins the depot's line (service.rs). Also the bulk repair order's way
+    /// to send aircraft.
+    pub(crate) fn heli_send_to_depot(&mut self, i: usize, d: usize) {
         self.release_dock(i);
         let r = self.make_ref(d);
         let a = &mut self.actors[i];
