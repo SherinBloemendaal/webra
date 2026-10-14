@@ -36,6 +36,32 @@
   height: 100%;
 }
 
+/* "Hold Ctrl to magnify" (js/maplens/lens.js lensHint): at the bottom
+   centre of a preview with a lens while the mouse is over it and the lens
+   is not shown. Small and click-through, so it never covers a click. */
+.map-lens-hint {
+  --map-lens-hint-x: 0px;
+  --map-lens-hint-y: 0px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 189;
+  max-width: 90vw;
+  padding: calc(2 * var(--ui-px)) calc(6 * var(--ui-px));
+  border: 1px solid var(--ui-edge);
+  border-radius: calc(3 * var(--ui-px));
+  background: rgba(10, 12, 15, 0.78);
+  color: var(--ui-text);
+  font: 600 var(--ui-fs-xs) / 1.3 var(--ui-font);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(var(--map-lens-hint-x), var(--map-lens-hint-y)) translate(-50%, calc(-100% - 4 * var(--ui-px)));
+}
+
+.map-lens-hint[hidden] {
+  display: none;
+}
+
 /* A preview with a lens: a long press shows the lens, not the browser's
    callout or a text selection. Taps and scrolling stay as they are. */
 .map-lens-target {

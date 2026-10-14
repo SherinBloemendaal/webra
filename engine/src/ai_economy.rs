@@ -211,7 +211,7 @@ fn needs_refinery(w: &World, player: u8) -> bool {
 }
 
 /// The structure to sell first, or None when only the essentials are left.
-fn surplus_structure(w: &World, player: u8) -> Option<usize> {
+pub(crate) fn surplus_structure(w: &World, player: u8) -> Option<usize> {
     let buildings = own_buildings(w, player);
     let info = |b: usize| &w.rules.actors[w.actors[b].ty as usize];
     let has_units = |kind: Kind| w.actors.iter().any(|a| a.alive && a.owner == player && a.kind == kind);
@@ -246,19 +246,22 @@ fn surplus_structure(w: &World, player: u8) -> Option<usize> {
         // Tech centers, radar, service depot, second factories.
         Some(2)
     };
+    // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
+    let power_gen = crate::ai_lightning::power_gen(w, player);
     let mut best: Option<(u32, i32, usize)> = None;
     for &b in &buildings {
         let Some(r) = rank(b) else { continue };
+        // What the sale pays (CustomSellValue, health); None while it cannot be sold.
+        let Some(refund) = w.sell_refund(b) else { continue };
         // Power plants only while the rest keeps enough power.
         if r == 3 {
-            let p = &w.players[player as usize];
             let power = info(b).building.as_ref().map_or(0, |x| x.power);
-            if p.power_gen - power < p.power_use {
+            if power_gen - power < w.players[player as usize].power_use {
                 continue;
             }
         }
-        // Dearest first within a rank (more money back).
-        let key = (r, -info(b).cost, b);
+        // Most money back first within a rank.
+        let key = (r, -refund, b);
         if best.is_none_or(|bk| key < bk) {
             best = Some(key);
         }

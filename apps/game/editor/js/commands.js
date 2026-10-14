@@ -76,3 +76,9 @@ export const MATERIAL_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
 /** The hotkey registry name of a tool or command. */
 export const actionName = (id) => `editor.${id}`;
+
+/** The help's introduction (the Shortcuts dialog): what the mouse and touch do beyond the tools. */
+export const HELP_TEXT =
+  'Tools paint with symmetry: every edit also lands at its mirror images. Right drag undoes what a tool does (paints clear ground, removes ore). ' +
+  'Middle drag, Space and drag, two fingers or the arrow keys move the map; the wheel and pinching zoom. ' +
+  'On the minimap any mouse button (left, right or middle) moves the view to that spot and dragging keeps moving it; the wheel zooms there.';

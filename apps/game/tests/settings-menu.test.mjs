@@ -467,8 +467,8 @@ test('the Sound dialog stays without help buttons (only the game menu asks for t
 
 test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists, none without it', () => {
   const { settings, root, menu } = setup();
-  // The game registers the capture hotkey (js/gamekeys.js): the section names its key.
-  menu.opts.hotkeys.registerAction('toggleMouseCapture', ['Alt+M'], () => {});
+  // The game registers the release hotkey (js/gamekeys.js): the section names its key.
+  menu.opts.hotkeys.registerAction('toggleMouseCapture', ['Alt+E'], () => {});
   menu.render();
   const texts = root.querySelectorAll('h2').map((h) => h.textContent);
   assert.ok(texts.includes('Mouse capture'));
@@ -482,12 +482,33 @@ test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists,
   assert.ok(escMenu.checked, 'Esc also opens the menu by default');
   check(escMenu, false);
   assert.equal(settings.get('mouseCaptureEscMenu'), false);
-  assert.match(textOf(root), /(Alt|Option)\+M or Esc releases it/);
+  assert.match(textOf(root), /(Alt|Option)\+E releases it and the game plays on; Esc releases it too\. A click into the game captures it again\./);
+  // The "Mouse captured" notice: every time by default, the first 3 times, or never.
+  assert.ok(root.querySelector('#game-menu-mouseCaptureNotice-always').checked);
+  check(root.querySelector('#game-menu-mouseCaptureNotice-first'));
+  assert.equal(settings.get('mouseCaptureNotice'), 'first');
+  check(root.querySelector('#game-menu-mouseCaptureNotice-off'));
+  assert.equal(settings.get('mouseCaptureNotice'), 'off');
+  assert.ok(MENU_HELP_KEYS.includes('mouseCaptureNotice') && HELP['settings.mouseCaptureNotice'], 'a "?" with help');
   uninstallDom();
   doc = installDom();
   const none = setup({ pointerLock: false });
   assert.ok(!none.root.querySelectorAll('h2').some((h) => h.textContent === 'Mouse capture'), 'phones and iOS Safari: no section');
   assert.equal(none.root.querySelector('#game-menu-mouseCapture-always'), null);
+  assert.equal(none.root.querySelector('#game-menu-mouseCaptureNotice-always'), null, 'no notice setting without capture');
+  assert.ok(none.root.querySelector('#game-menu-pauseWhenHidden'), 'pausing a hidden game is for every device');
+});
+
+test('settings page: Pause when the game is hidden, off by default, with help that names browser throttling', () => {
+  const { settings, root } = setup();
+  const box = root.querySelector('#game-menu-pauseWhenHidden');
+  assert.ok(box);
+  assert.equal(box.checked, false, 'a hidden single-player game plays on by default');
+  check(box);
+  assert.equal(settings.get('pauseWhenHidden'), true);
+  assert.ok(MENU_HELP_KEYS.includes('pauseWhenHidden') && MENU_SETTINGS.includes('pauseWhenHidden'));
+  assert.match(HELP['settings.pauseWhenHidden'], /Browsers slow down hidden pages/);
+  assert.match(HELP['settings.pauseWhenHidden'], /Losing the focus to another window never pauses it/);
 });
 
 test('settings page: Raw mouse input, off by default, with help, after the speed', () => {

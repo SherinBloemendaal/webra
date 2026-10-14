@@ -8,6 +8,7 @@
 import { decodeAud } from './aud.js';
 import { MUSIC_FILES, OPENRA_MADE } from './catalog.js';
 import { render, variantRate, VARIANTS } from './synth.js';
+import { perfTrace } from '../perfcapture.js';
 
 /** Sound files in the content store (graphics share it): .aud files and voice variants. */
 export const isSoundName = (name) => /\.(aud|[vr]0\d)$/i.test(name);
@@ -98,7 +99,8 @@ export class SoundBank {
     if (!this.decoded.has(name)) {
       let buf = null;
       try {
-        const { sampleRate, samples } = decodeAud(this.originals.get(name));
+        // Decoded on first use, on the main thread: the performance capture times it (js/perfcapture.js).
+        const { sampleRate, samples } = perfTrace.span('audio.decode', () => decodeAud(this.originals.get(name)), { name });
         buf = this.mixer.buffer(samples, sampleRate);
       } catch {
         buf = null; // checked at install time; a broken record just falls back to the synthesized sound
@@ -114,7 +116,8 @@ export class SoundBank {
     if (!this.synth.has(key)) {
       if (!this.mixer.ctx) return null;
       const sr = this.mixer.ctx.sampleRate;
-      const samples = render(id, sr, variant);
+      // Rendered on first use, on the main thread: the performance capture times it (js/perfcapture.js).
+      const samples = perfTrace.span('audio.synth', () => render(id, sr, variant), { id, variant });
       if (!samples) return null;
       this.synth.set(key, this.mixer.buffer(samples, sr));
     }

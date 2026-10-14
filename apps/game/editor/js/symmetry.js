@@ -88,12 +88,10 @@ export function transformFacing(tr, facing) {
  */
 export function symmetricPositions(mode, x, y, w, h, fw = 1, fh = 1) {
   const out = [];
-  const seen = new Set();
   for (const tr of transformsFor(mode, w, h)) {
     const [px, py] = applyTransform(tr, x, y, w, h, fw, fh);
-    const key = `${px},${py}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    // At most eight positions: comparing them is quicker than a set (shapes call this per cell).
+    if (out.some((p) => p.x === px && p.y === py)) continue;
     out.push({ x: px, y: py, t: tr });
   }
   return out;

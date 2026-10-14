@@ -3,7 +3,7 @@
 
 import { base_rules_json } from '../../pkg/webra_sim.js';
 import { rulesBaseFrom } from './rulesbase.js';
-import { countOverrides, getPath, pruneOverrides, validateOverrides } from './overrides.js';
+import { SELL_VALUE, countOverrides, getPath, pruneOverrides, validateOverrides } from './overrides.js';
 import { el } from './ui.js';
 
 export const MODDED_WARNING = 'This map changes game rules (costs, damage, speed...). It can be unfair or act as a cheat.';
@@ -16,6 +16,9 @@ const seconds = (v) => `${(v / TICKS_PER_SECOND).toFixed(1)} s`;
 
 const ACTOR_FIELDS = [
   { path: 'cost', label: 'Cost', min: 0 },
+  // OpenRA CustomSellValue: sell, repair and bounty value instead of the cost (pillboxes, refineries,
+  // walls). Every actor can get one; its default is the built-in one, else the cost (see renderForm).
+  { path: SELL_VALUE, label: 'Sell value', min: 0, max: 1_000_000, sellValue: true },
   { path: 'build_ticks', label: 'Build time (ticks)', min: 0, hint: seconds },
   { path: 'hp', label: 'Hit points', min: 1 },
   { path: 'armor', label: 'Armor', kind: 'armor' },
@@ -176,6 +179,10 @@ export class RulesPanel {
     const rows = [];
     const fields = section === 'actors' ? ACTOR_FIELDS : WEAPON_FIELDS;
     for (const f of fields) {
+      if (f.sellValue) {
+        rows.push(...this.sellValueRows(f, id, base, over));
+        continue;
+      }
       const b = getPath(base, f.path);
       if (typeof b !== 'number') continue; // unset optional fields cannot be overridden
       rows.push(this.fieldRow(f, b, getPath(over, f.path), (v) => this.setField(section, id, f.path, v)));
@@ -234,8 +241,9 @@ export class RulesPanel {
           const raw = input.value.trim();
           if (raw === '') return onSet(undefined);
           const n = Number(raw);
-          if (!Number.isInteger(n) || (f.min !== undefined && n < f.min)) {
-            input.setCustomValidity(`Whole number${f.min !== undefined ? ` of at least ${f.min}` : ''}`);
+          if (!Number.isInteger(n) || (f.min !== undefined && n < f.min) || (f.max !== undefined && n > f.max)) {
+            const range = [f.min !== undefined ? ` of at least ${f.min}` : '', f.max !== undefined ? ` and at most ${f.max}` : ''].join('');
+            input.setCustomValidity(`Whole number${range}`);
             input.reportValidity();
             return;
           }
@@ -256,6 +264,27 @@ export class RulesPanel {
         changed ? el('button', { type: 'button', class: 'link', title: 'Reset to default', onclick: (e) => (e.preventDefault(), onSet(undefined)) }, 'reset') : null,
       ]),
     ]);
+  }
+
+  /**
+   * The sell value (OpenRA GetSellValue): a number for any actor, and for one
+   * with a built-in CustomSellValue a switch that takes it away (null, OpenRA
+   * `-CustomSellValue`), so the cost counts again.
+   */
+  sellValueRows(f, id, base, over) {
+    const builtIn = typeof base[SELL_VALUE] === 'number';
+    const removed = builtIn && over[SELL_VALUE] === null;
+    const cost = typeof over.cost === 'number' ? over.cost : base.cost;
+    const rows = [];
+    if (!removed) {
+      const value = typeof over[SELL_VALUE] === 'number' ? over[SELL_VALUE] : undefined;
+      rows.push(this.fieldRow(f, builtIn ? base[SELL_VALUE] : cost, value, (v) => this.setField('actors', id, f.path, v)));
+    }
+    if (builtIn) {
+      const box = el('input', { type: 'checkbox', checked: removed, onchange: () => this.setField('actors', id, f.path, box.checked ? null : undefined) });
+      rows.push(el('label', { class: `field${removed ? ' changed' : ''}` }, [box, ` Sell for the cost (${cost}), not the built-in sell value ${base[SELL_VALUE]}`]));
+    }
+    return rows;
   }
 
   jumpWeapon(name) {
@@ -283,7 +312,7 @@ export class RulesPanel {
     let obj = rules[section][key];
     for (const p of parts.slice(0, -1)) obj = obj[p] ??= {};
     const last = parts[parts.length - 1];
-    if (value === undefined || value === getPath(base, path)) delete obj[last];
+    if (value === undefined || (value !== null && value === getPath(base, path))) delete obj[last];
     else obj[last] = value;
     this.commit(rules, `Override ${id} ${path}`, `rules.${section}.${id}.${path}`);
   }

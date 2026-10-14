@@ -14,6 +14,7 @@ mod ai_economy;
 mod ai_fuzzy;
 mod ai_harvest;
 mod ai_infantry;
+mod ai_lightning;
 mod ai_mcv;
 mod ai_mines;
 mod ai_naval;
@@ -43,6 +44,7 @@ pub mod infantry;
 mod infantry_combat;
 mod infantry_render;
 pub mod instances;
+pub mod lightning;
 pub mod lua;
 pub mod map;
 pub mod mapdata;
@@ -61,6 +63,7 @@ mod plane;
 mod powers;
 mod primary;
 mod production;
+pub mod profile;
 pub mod range_circles;
 pub mod render;
 mod repair;
@@ -118,6 +121,8 @@ mod tests_instances;
 #[cfg(test)]
 mod tests_leftovers;
 #[cfg(test)]
+mod tests_lightning;
+#[cfg(test)]
 mod tests_mapsetup;
 #[cfg(test)]
 mod tests_minimap;
@@ -157,6 +162,10 @@ mod tests_replay;
 mod tests_security;
 #[cfg(test)]
 mod tests_selection;
+#[cfg(test)]
+mod tests_sell;
+#[cfg(test)]
+mod tests_simperf;
 #[cfg(test)]
 mod tests_sound;
 #[cfg(test)]
@@ -396,6 +405,15 @@ impl Game {
         Ok(preview_rgba(&map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style), biome))
     }
 
+    /// The start positions of a generated map, as `generated_map_styled`
+    /// places them, flat (x0, y0, x1, y1, ...). Only the map is generated (no
+    /// actors, no map file): the lobby previews' markers (js/mappreview.js).
+    pub fn map_spawns_styled(seed: u32, size: i32, players: u32, style: &str) -> Result<Vec<i32>, JsError> {
+        let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
+        let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, parse_style(style)?);
+        Ok(m.spawns.iter().flat_map(|&(x, y)| [x, y]).collect())
+    }
+
     /// The style a seed gives a generated map (`style` may be "random").
     pub fn resolved_style(seed: u32, style: &str) -> Result<String, JsError> {
         Ok(parse_style(style)?.resolve(seed as u64).name().to_string())
@@ -562,7 +580,8 @@ impl Game {
 
     /// `{ biome, mode, weather, since, until, tick, sightPct, flash }`: the
     /// sky for the HUD and the weather renderer. `flash` is the latest
-    /// lightning `[tick, x, y]` (world pixels) or null; `sightPct` is what
+    /// lightning `[tick, x, y, kind]` (world pixels; kind: 0 ground, 1
+    /// grounded on a Lightning Rod, 2 hit, 3 hit a power plant) or null; `sightPct` is what
     /// weather does to sight right now (100 when effects are off).
     pub fn weather_json(&self) -> String {
         let env = &self.world.env;
@@ -575,7 +594,7 @@ impl Game {
             "until": env.until,
             "tick": self.world.tick,
             "sightPct": if env.effects() { env.weather.sight_pct() } else { 100 },
-            "flash": env.flash.map(|(t, x, y)| json!([t, px(x), px(y)])),
+            "flash": env.flash.map(|(t, x, y, kind)| json!([t, px(x), px(y), kind as u8])),
         })
         .to_string()
     }
@@ -872,7 +891,8 @@ impl Game {
         self.paths.len() / paths::LINE_FLOATS
     }
 
-    /// Every line the map shows this frame: the range circles of the
+    /// Every line the map shows this frame: the latest lightning bolt
+    /// (lightning.rs), the range circles of the
     /// selected actors and of the structure being placed (range_circles.rs),
     /// the rally lines of the selected
     /// structures (OpenRA RallyPointIndicator, overlays.rs), then, with
@@ -890,6 +910,7 @@ impl Game {
             self.world.build_paths(player, alpha, &self.selection, &mut route);
         }
         self.paths.clear();
+        self.world.build_lightning_bolt(player, alpha, &mut self.paths);
         self.world.build_range_circles(player, alpha, &self.selection, self.placing, &mut self.paths);
         self.world.build_rally_lines(player, &self.selection, &mut self.paths);
         self.paths.extend_from_slice(&route);
@@ -1307,16 +1328,15 @@ impl Game {
         self.submit(Order::Sell { player, building });
     }
 
-    /// Refund a structure would give right now (0 if it cannot be sold).
+    /// Refund selling an own structure would give right now, or -1 while
+    /// `player` cannot sell it (the sell cursor and the "Refund: $" tooltip
+    /// line, OpenRA Sellable). Walls sell for 0.
     pub fn sell_value(&self, player: u8, building: u32) -> i32 {
-        let Some(b) = self.world.resolve(building) else { return 0 };
-        let a = &self.world.actors[b];
-        if a.owner != player || a.kind != Kind::Building {
-            return 0;
+        let Some(b) = self.world.resolve(building) else { return -1 };
+        if self.world.actors[b].owner != player {
+            return -1;
         }
-        let info = &self.world.rules.actors[a.ty as usize];
-        let pct = info.building.as_ref().unwrap().sell_refund;
-        (info.cost as i64 * pct as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32
+        self.world.sell_refund(b).unwrap_or(-1)
     }
 
     // ---- Sidebar buttons: repair, power down, beacon (repair.rs, beacons.rs) -----------
@@ -1324,6 +1344,29 @@ impl Game {
     /// Start or stop repairing an own or allied structure.
     pub fn repair_building(&mut self, player: u8, building: u32) {
         self.submit(Order::RepairBuilding { player, building });
+    }
+
+    /// WebRA bulk repair: start repairing the listed own damaged structures,
+    /// or stop all of them when every one is being repaired already
+    /// (`World::toggle_repair_group`).
+    pub fn repair_buildings(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::RepairBuildings { player, ids });
+    }
+
+    /// The own damaged repairable structures among `ids` (the selection) that
+    /// the Repair button toggles together; empty when it opens repair mode.
+    pub fn repair_targets(&self, player: u8, ids: Vec<u32>) -> Vec<u32> {
+        let w = &self.world;
+        w.bulk_repair_targets(player, &ids).into_iter().map(|i| w.make_ref(i)).collect()
+    }
+
+    /// The own damaged repairable structures whose selection bounds touch the
+    /// world-pixel box (a drag in repair mode), in actor order.
+    pub fn repair_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+        let w = &self.world;
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        let ids: Vec<u32> = w.selectable_actors(&[player], Some(area), None).into_iter().map(|i| w.make_ref(i)).collect();
+        w.bulk_repair_targets(player, &ids).into_iter().map(|i| w.make_ref(i)).collect()
     }
 
     /// Switch an own structure off, or on again.
@@ -1579,7 +1622,7 @@ impl Game {
         // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
         let factories = w.factories(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
-            .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
+            .filter(|&t| w.in_game_mode(t as u16))
             .map(|t| {
                 let reqs = w.requirements(player, t as u16);
                 json!({
@@ -1797,6 +1840,7 @@ impl World {
         for side in 0..2u8 {
             let (sx, sy) = spawns[side as usize];
             let mut placed = Vec::new();
+            let mut cells = 0usize;
             let mut r: i32 = 0;
             'outer: loop {
                 for dy in -r..=r {
@@ -1808,10 +1852,17 @@ impl World {
                         if !w.map.contains(cx, cy) || w.pass.blocked[w.map.idx(cx, cy)] {
                             continue;
                         }
-                        // Two units per cell: one tank or a pair of soldiers.
-                        for k in 0..2 {
-                            let ty = types[(placed.len() + k) % types.len()];
-                            let off = if k == 0 { -256 } else { 256 };
+                        // One tank or a pair of soldiers per cell, the cells
+                        // taking turns through the mix. (A tank and a soldier
+                        // squeezed into every cell, as this once placed them,
+                        // left the whole army crowded under the OpenRA
+                        // movement model: movement/cellmove.rs `cell_idle`.)
+                        let ty = types[cells % types.len()];
+                        cells += 1;
+                        let soldiers =
+                            w.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| w.rules.locomotors[u.locomotor].shares_cell);
+                        let offsets: &[i32] = if soldiers { &[-256, 256] } else { &[0] };
+                        for &off in offsets {
                             let u = w.spawn_unit(ty, side, cx * CELL + 512 + off, cy * CELL + 512, if side == 0 { 384 } else { 896 });
                             placed.push(u);
                             if placed.len() >= per_side {

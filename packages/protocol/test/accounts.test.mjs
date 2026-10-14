@@ -18,6 +18,7 @@ import {
   validNewPassword,
   validUsername,
   validateSettingsDocument,
+  PERF_CAPTURE_SECONDS,
   ZOOM_FACTOR_LIMITS,
   UI_SCALE_LIMITS,
   GAME_SCALE_LIMITS,
@@ -86,6 +87,11 @@ test('settings document: every section optional, strict keys, free-form extra wi
   throwsField(() => validateSettingsDocument({ extra: { 'bad key': 1 } }), 'settings.extra');
   throwsField(() => validateSettingsDocument({ extra: { a: Array(65).fill(0) } }), 'settings.extra.a');
   throwsField(() => validateSettingsDocument({ lobby: { color: 8 } }), 'settings.lobby.color');
+  // The performance capture: one of its lengths, and the start-of-game switch.
+  for (const seconds of PERF_CAPTURE_SECONDS) assert.deepEqual(validateSettingsDocument({ debug: { perfCaptureSeconds: seconds } }), { debug: { perfCaptureSeconds: seconds } });
+  for (const bad of [5, 45, 121, '30', 30.5, null]) throwsField(() => validateSettingsDocument({ debug: { perfCaptureSeconds: bad } }), 'settings.debug.perfCaptureSeconds');
+  assert.deepEqual(validateSettingsDocument({ debug: { perfCaptureStart: true } }), { debug: { perfCaptureStart: true } });
+  throwsField(() => validateSettingsDocument({ debug: { perfCaptureStart: 'yes' } }), 'settings.debug.perfCaptureStart');
   throwsField(() => validateSettingsDocument({ game: { hotkeys: { a: ['Ctrl A'] } } }), 'settings.game.hotkeys.a[0]');
   throwsField(() => validateSettingsDocument({ content: { packs: [{ id: 'x\u0007', enabled: true }] } }), 'settings.content.packs[0].id');
   const many = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`a${i}`, []]));
@@ -126,6 +132,13 @@ test('settings document: the remembered zoom factor and raw mouse input', () => 
   assert.throws(() => validateSettingsDocument({ game: { zoomFactor: 3 } }), /from 1\/3 to 8\/3/);
   assert.deepEqual(validateSettingsDocument({ game: { mouseCaptureRaw: false } }), { game: { mouseCaptureRaw: false } });
   for (const bad of ['yes', 1, null]) throwsField(() => validateSettingsDocument({ game: { mouseCaptureRaw: bad } }), 'settings.game.mouseCaptureRaw');
+});
+
+test('settings document: the mouse captured notice and pausing a hidden game', () => {
+  for (const mode of ['always', 'first', 'off']) assert.deepEqual(validateSettingsDocument({ game: { mouseCaptureNotice: mode } }), { game: { mouseCaptureNotice: mode } });
+  for (const bad of ['never', true, 3, null]) throwsField(() => validateSettingsDocument({ game: { mouseCaptureNotice: bad } }), 'settings.game.mouseCaptureNotice');
+  for (const ok of [true, false]) assert.deepEqual(validateSettingsDocument({ game: { pauseWhenHidden: ok } }), { game: { pauseWhenHidden: ok } });
+  for (const bad of ['yes', 1, null]) throwsField(() => validateSettingsDocument({ game: { pauseWhenHidden: bad } }), 'settings.game.pauseWhenHidden');
 });
 
 test('site settings: merge, validation, stored values over defaults', () => {

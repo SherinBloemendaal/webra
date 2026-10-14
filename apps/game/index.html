@@ -28,20 +28,44 @@
     <link rel="stylesheet" href="css/campaign.css" />
     <link rel="stylesheet" href="css/maplens.css" />
     <link rel="stylesheet" href="css/spawns.css" />
+    <link rel="stylesheet" href="css/startmenu.css" />
   </head>
   <body>
-    <!-- Pre-game lobby, built by js/lobby.js -->
-    <section id="menu"></section>
+    <!-- The start screen: the main menu (js/startmenu.js) over the skirmish lobby (js/lobby.js) -->
+    <section id="menu" aria-label="Start screen">
+      <nav id="start-nav" class="start-nav" aria-label="Main menu">
+        <h1 class="start-logo">WEB<span>RA</span></h1>
+        <!-- Play: the skirmish below, online play (js/online.js, loaded on demand) and the campaign -->
+        <div class="start-group start-play" role="group" aria-label="Play">
+          <button id="start-skirmish" class="start-item" type="button" aria-current="page" title="Set up a game against the AI (this screen)">Skirmish</button>
+          <button id="online-button" class="start-item start-primary" type="button" title="Play against other people over the internet" hidden>Play online</button>
+          <button id="campaign-button" class="start-item" type="button" title="Play the Allied and Soviet campaigns and the expansion missions" hidden>Campaign</button>
+        </div>
+        <!-- Saved games and replays (js/records.js) -->
+        <div id="records-entry" class="start-group start-records" role="group" aria-label="Saved games" hidden></div>
+        <div class="start-end">
+          <!-- The account: sign in, who is signed in, message of the day (js/account/ui.js) -->
+          <div id="account-entry" aria-label="Account" hidden></div>
+          <div class="start-more">
+            <button id="start-more-button" class="start-item" type="button" aria-expanded="false" aria-controls="start-more-list">More</button>
+            <div id="start-more-list" class="start-more-list" role="group" aria-label="More" hidden>
+              <!-- Original content (graphics and sounds from the player's own copy) and texture packs (js/content/panel.js) -->
+              <button id="start-content" class="start-more-item" type="button" title="Original Red Alert graphics and sounds, texture packs" aria-haspopup="dialog" aria-expanded="false" hidden>Original content</button>
+              <button id="start-sound" class="start-more-item" type="button" aria-haspopup="dialog" hidden>Sound and music</button>
+              <button id="start-notes" class="start-more-item" type="button" aria-haspopup="dialog" hidden>Release notes</button>
+              <button id="start-stress" class="start-more-item" type="button" title="Spawn many units to measure performance">Stress test</button>
+            </div>
+          </div>
+        </div>
+      </nav>
+      <div id="skirmish"></div>
+    </section>
 
     <!-- Online multiplayer (js/online.js, loaded on demand by js/main.js) -->
-    <button id="online-button" type="button" title="Play against other people over the internet" hidden>Play online</button>
     <section id="online-root" hidden></section>
 
     <!-- The campaign's mission browser (js/campaign/menu.js) -->
     <section id="campaign-root" hidden></section>
-
-    <!-- Saved games and replays (js/records.js) -->
-    <div id="records-entry" hidden></div>
 
     <div id="app" hidden>
       <main id="field">
@@ -74,9 +98,6 @@
 
     <div id="version" title="WebRA version"></div>
 
-    <!-- The account on the start screen: sign in, who is signed in, message of the day (js/account/ui.js) -->
-    <aside id="account-entry" aria-label="Account" hidden></aside>
-
     <!-- Short messages, over the lobby and the game (js/main.js showToast) -->
     <div id="toast" role="status" hidden></div>
 
@@ -86,7 +107,8 @@
     <!-- Music player (js/audio/musicplayer.js), opened from the Sound dialog -->
     <section id="music-panel" hidden></section>
 
-    <!-- Original content (graphics and sounds from the player's own copy) and texture packs (js/content/panel.js) -->
+    <!-- Original content (graphics and sounds from the player's own copy) and texture packs (js/content/panel.js):
+         the corner button on the online and campaign screens; the start screen has it in More, a game in its menu -->
     <button id="content-button" type="button" title="Original Red Alert graphics and sounds, texture packs" aria-haspopup="dialog" aria-expanded="false" hidden>Original content</button>
     <section id="content-panel" hidden></section>
 

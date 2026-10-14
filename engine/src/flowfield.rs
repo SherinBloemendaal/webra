@@ -540,6 +540,7 @@ fn compute(
     dist: &mut [u16],
     target: Option<(usize, u32)>,
 ) -> (bool, u32, u64) {
+    let _section = crate::profile::scope(crate::profile::Section::FlowFields);
     let n = map.cells();
     dirs.iter_mut().for_each(|d| *d = DIR_NONE);
     dist.iter_mut().for_each(|d| *d = DIST_NONE);

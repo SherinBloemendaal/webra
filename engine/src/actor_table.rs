@@ -91,17 +91,24 @@ mod tests {
     #[test]
     fn actor_table_marks_dead_slots_free() {
         let mut game = Game::wrap(World::new_stress(3, 400, 96));
-        for _ in 0..400 {
+        // Until the armies have met and units died (some 300 ticks).
+        for _ in 0..1500 {
             game.tick();
+            if game.world.actors.iter().filter(|a| !a.alive).count() >= 5 {
+                break;
+            }
         }
         let table = game.actor_table();
+        let mut dead = 0;
         for (i, slot) in table.chunks(ACTOR_TABLE_STRIDE).enumerate() {
             let a = &game.world.actors[i];
             if a.alive {
                 assert_eq!(slot[0], game.world.make_ref(i));
             } else {
                 assert_eq!(slot[0], NONE);
+                dead += 1;
             }
         }
+        assert!(dead > 0 && dead < table.len() / ACTOR_TABLE_STRIDE, "{dead} dead slots");
     }
 }

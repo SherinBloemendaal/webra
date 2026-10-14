@@ -16,6 +16,10 @@
 //   actor tags and health numbers, performance stats and a frame graph. They
 //   read engine state through read-only calls (Game.debug_cells, debug_flow,
 //   debug_actors, debug_stats) and only show what the player may see.
+// - The performance capture (js/perfcapture.js) records frame and simulation
+//   timings for a few seconds and saves them as a JSON file to send along
+//   with a report of a slow game (also Alt+P, and the start of every game
+//   when its switch is on).
 //
 // The pure helpers at the top have no DOM and are unit tested
 // (apps/game/tests/debug.test.mjs).
@@ -23,7 +27,9 @@
 import { instanceLines } from './crowd.js';
 import { defaultRegistry } from './registry.js';
 import { VIEWS } from './debug-views.js';
-import { switchInput } from './ui/controls.js';
+import { segmented, switchInput } from './ui/controls.js';
+import { infoTip } from './infotip.js';
+import { CAPTURE_SECONDS } from './perfcapture.js';
 
 /** Cheat flags (engine/src/debug.rs DevFlag), in menu order. */
 export const CHEATS = [
@@ -60,6 +66,9 @@ export const DIRS = [
   [-1, -1],
 ];
 export const DIR_GOAL = 8;
+
+/** The debug menu's "?" help texts (js/help.js). */
+export const DEBUG_HELP_KEYS = Object.freeze(['debug.perfCapture']);
 
 /** Settings registry group of the view choices (js/registry.js). */
 const PREFS_GROUP = 'debug';
@@ -124,6 +133,23 @@ export class PerfHistory {
     }
     return { avg: sum / s.length, max };
   }
+}
+
+/**
+ * The status line of the performance capture: what it is recording, or what
+ * the last capture holds. `progress` is PerfRecorder.progress(), `last` the
+ * last capture's file (or null).
+ */
+export function captureStatus(progress, last) {
+  if (progress) {
+    const what = progress.reason === 'start' ? 'Recording the start of the game' : 'Recording';
+    return `${what}: ${Math.min(progress.of, Math.floor(progress.seconds))} of ${progress.of} s`;
+  }
+  if (!last) return 'No capture yet.';
+  const c = last.capture;
+  const f = last.summary?.frameMs;
+  const worst = f ? `, worst frame ${Math.round(f.max)} ms` : '';
+  return `Last capture: ${(c.durationMs / 1000).toFixed(1)} s, ${c.frames} frames${worst}.`;
 }
 
 /** Lines of the performance panel. */
@@ -191,9 +217,11 @@ export class DebugMenu {
    *   game: any, input: any, player: number, rules: any, colors: number[][],
    *   online: boolean, tickMs: number, memoryBytes?: () => number, sim?: () => object,
    *   step?: () => boolean, isPaused?: () => boolean, setPaused?: (on: boolean) => void,
-   *   instances?: () => object,
+   *   instances?: () => object, perf?: object,
    * }} ctx `step` runs one simulation tick while paused (local games only);
-   *   `instances` describes the instance path for the stats (js/crowd.js instanceLines)
+   *   `instances` describes the instance path for the stats (js/crowd.js instanceLines);
+   *   `perf` the performance capture: `{ recorder (js/perfcapture.js PerfRecorder),
+   *   toggle(), download(), settings (js/settings.js) }`
    */
   constructor(field, ctx) {
     this.ctx = ctx;
@@ -335,6 +363,9 @@ export class DebugMenu {
       panel.append(sim);
     }
 
+    // Performance capture (js/perfcapture.js).
+    if (this.ctx.perf) panel.append(this.buildCapture(this.ctx.perf));
+
     this.statsBox = el('pre', 'debug-stats');
     this.graph = el('canvas', 'debug-graph');
     this.graph.width = HISTORY;
@@ -343,6 +374,54 @@ export class DebugMenu {
     this.graph.setAttribute('aria-label', 'Frame time graph');
     panel.append(this.statsBox, this.graph);
     return panel;
+  }
+
+  buildCapture(perf) {
+    const box = el('div', 'debug-section');
+    // The "?" sits beside the heading, not in it (the heading is upper case).
+    const head = el('div', 'debug-capture-head');
+    head.append(el('h3', 'debug-heading', 'Performance capture'), infoTip(DEBUG_HELP_KEYS[0], { label: 'Performance capture' }).root);
+    box.append(head, el('p', 'debug-note', 'Records how long frames, the simulation and loading took, as a JSON file to send with a report of a slow game.'));
+    const s = perf.settings;
+    const length = segmented({
+      name: 'debug-perf-seconds',
+      label: 'Capture length',
+      value: String(s.get('perfCaptureSeconds')),
+      options: CAPTURE_SECONDS.map((n) => ({ value: String(n), label: `${n} s` })),
+      onChange: (v) => length.set(String(s.set('perfCaptureSeconds', Number(v)))),
+    });
+    const lengthRow = el('div', 'debug-capture-row');
+    lengthRow.append(el('span', null, 'Length'), length.root);
+    this.captureButton = this.action('Record performance', 'Record for the chosen length (Alt+P); press again to stop early. The file downloads when it ends.', () => {
+      perf.toggle();
+      this.refreshCapture();
+    });
+    this.captureDownload = this.action('Download last capture', 'Save the last capture as a JSON file again.', () => perf.download());
+    const actions = el('div', 'debug-actions');
+    actions.append(this.captureButton, this.captureDownload);
+    this.captureStatus = el('p', 'debug-note debug-capture-status');
+    this.captureStatus.setAttribute('role', 'status');
+    const startRow = el('label', 'debug-check');
+    startRow.title = 'Record the first 60 seconds of every game from now on; download the file here afterwards.';
+    const startBox = switchInput({ small: true, checked: !!s.get('perfCaptureStart') });
+    startBox.addEventListener('change', () => {
+      startBox.checked = s.set('perfCaptureStart', startBox.checked);
+    });
+    startRow.append(startBox, el('span', null, 'Record the start of every game (60 s)'));
+    box.append(lengthRow, actions, this.captureStatus, startRow);
+    this.refreshCapture();
+    return box;
+  }
+
+  /** The capture's button and status line. */
+  refreshCapture() {
+    const perf = this.ctx.perf;
+    if (!perf || !this.captureButton) return;
+    const rec = perf.recorder;
+    this.captureButton.textContent = rec.recording ? 'Stop and save' : 'Record performance';
+    this.captureDownload.disabled = !rec.last;
+    const text = captureStatus(rec.progress(), rec.last?.file ?? null);
+    if (this.captureStatus.textContent !== text) this.captureStatus.textContent = text;
   }
 
   action(label, title, onClick) {
@@ -367,6 +446,7 @@ export class DebugMenu {
   }
 
   refreshPanel() {
+    this.refreshCapture();
     const isPaused = this.ctx.isPaused?.() ?? false;
     if (this.stepBtn) this.stepBtn.disabled = !isPaused;
     if (this.pauseBtn) this.pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';

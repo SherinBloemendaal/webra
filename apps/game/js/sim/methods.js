@@ -35,6 +35,8 @@ export const ORDERS = Object.freeze([
   'sell',
   // Sidebar buttons (engine/src/repair.rs, beacons.rs).
   'repair_building',
+  // WebRA bulk repair: the Repair button with structures selected, a box in repair mode.
+  'repair_buildings',
   'power_down',
   'place_beacon',
   // The game menu's Surrender (engine/src/gamerules.rs).
@@ -82,10 +84,14 @@ export const QUERY_DEFAULTS = Object.freeze({
   can_attack_actor: () => false,
   // Whether a plain move passes visible enemies (the attack-move tip, js/hints.js).
   move_hint: () => false,
-  sell_value: () => 0,
+  // The refund, or -1 while it cannot be sold.
+  sell_value: () => -1,
   // Sidebar modes and the hotkeys that cycle through actors (js/input.js).
   repair_cursor: () => 0,
   repair_unit_target: EMPTY_F32,
+  // Bulk repair: the selected own damaged structures, and those in a box dragged in repair mode.
+  repair_targets: EMPTY_U32,
+  repair_box: EMPTY_U32,
   can_power_down: () => false,
   base_actors: EMPTY_U32,
   harvesters: EMPTY_U32,
@@ -175,6 +181,8 @@ export const FOLLOW_LATEST = Object.freeze(
     // The sidebar mode cursors ask about the actor under the mouse.
     'repair_cursor',
     'can_power_down',
+    // The repair mode's box follows the mouse.
+    'repair_box',
   ]),
 );
 

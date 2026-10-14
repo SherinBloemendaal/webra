@@ -1,0 +1,273 @@
+/* The start screen's main menu (index.html #start-nav, js/startmenu.js): one
+   riveted bar over the skirmish lobby. Play first (Skirmish, Play online in
+   the red of the main actions, Campaign), then the saved games, then the
+   account and the More list. Phones stack it in rows: the name, the account
+   and More; the three Play entries side by side; Load game and Replays. */
+
+/* The start screen scrolls as one column: the menu bar, then the lobby. */
+#menu {
+  align-content: start;
+  gap: 12px;
+}
+
+#menu #skirmish {
+  width: min(1080px, 100%);
+  min-width: 0;
+}
+
+#menu #skirmish > .lobby {
+  width: 100%;
+}
+
+.start-nav {
+  position: relative;
+  z-index: 3;
+  width: min(1080px, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 16px;
+  background:
+    var(--ui-rivet) left 4px top 4px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px top 4px / 8px 8px no-repeat,
+    var(--ui-rivet) left 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-rivet) right 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    0 12px 40px rgba(0, 0, 0, 0.55);
+  color: var(--ui-text);
+  font: var(--ui-fs-m) / 1.4 var(--ui-font);
+}
+
+/* The WebRA name on a bevelled steel plate (the lobby's former title). */
+.start-logo {
+  margin: 0;
+  padding: 5px 14px 3px;
+  background:
+    var(--ui-brushed),
+    linear-gradient(180deg, #67717c, #3a414a 48%, #2a3037 52%, #424a54);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.28),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.6),
+    0 2px 0 rgba(0, 0, 0, 0.45);
+  font: 900 28px/1 var(--ui-font-display);
+  letter-spacing: 3px;
+  color: #dfe4ea;
+  text-shadow:
+    0 -1px 0 rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.start-logo span {
+  color: var(--ui-accent-hi);
+}
+
+.start-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.start-group[hidden],
+.start-nav [hidden] {
+  display: none;
+}
+
+/* The saved games sit apart from Play: a separator line before them. */
+.start-records {
+  padding-left: 14px;
+  border-left: 1px solid var(--ui-line);
+}
+
+.start-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+/* Every entry: a metal button with the label in capitals. */
+.start-item,
+#records-entry button,
+.start-more-item {
+  min-height: 34px;
+  padding: 6px 14px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 var(--ui-fs-s) / 1.4 var(--ui-font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.start-item:hover,
+#records-entry button:hover,
+.start-more-item:hover {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+.start-item:active,
+#records-entry button:active,
+.start-more-item:active {
+  box-shadow: var(--ui-bevel-in);
+}
+
+.start-item:focus-visible,
+#records-entry button:focus-visible,
+.start-more-item:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* The screen on show: pressed in, with the accent under it. */
+.start-item[aria-current='page'] {
+  background: var(--ui-metal-0);
+  box-shadow:
+    var(--ui-bevel-in),
+    inset 0 -3px 0 var(--ui-accent);
+}
+
+/* Play online: the red of the main actions (theme.css --ui-primary-fill). */
+.start-item.start-primary {
+  background: var(--ui-primary-fill);
+  color: #fff;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.start-item.start-primary:hover {
+  background: var(--ui-primary-fill-hover);
+}
+
+.start-item.start-primary:active {
+  background: var(--ui-primary-fill-active);
+}
+
+/* More: a small list under its button. */
+.start-more {
+  position: relative;
+}
+
+#start-more-button::after {
+  content: '';
+  display: inline-block;
+  margin-left: 8px;
+  border: 4px solid transparent;
+  border-top-color: currentColor;
+  border-bottom-width: 0;
+  vertical-align: middle;
+}
+
+#start-more-button[aria-expanded='true'] {
+  background: var(--ui-metal-0);
+  box-shadow: var(--ui-bevel-in);
+}
+
+.start-more-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  padding: 6px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--ui-edge);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    var(--ui-shadow);
+}
+
+.start-more-item {
+  text-align: left;
+}
+
+/* The start screen has Sound and music and Original content in More; the
+   corner buttons stay for the online screen and the campaign (and Sound
+   for the game, whose menu has Original content). */
+#menu:not([hidden]) ~ #campaign-root[hidden] ~ #audio-button,
+#menu:not([hidden]) ~ #campaign-root[hidden] ~ #content-button {
+  display: none;
+}
+
+/* The installed state on the More entry, like the corner button (css/content.css). */
+#start-content[data-state='complete']::before {
+  content: '\2713 ';
+  color: var(--ui-ok);
+}
+
+#start-content[data-state='partial']::before {
+  content: '! ';
+  color: var(--ui-warn);
+}
+
+@media (pointer: coarse) {
+  .start-item,
+  #records-entry button,
+  .start-more-item {
+    min-height: 44px;
+  }
+}
+
+/* Phones: rows instead of one bar. */
+@media (max-width: 600px) {
+  .start-nav {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .start-logo {
+    font-size: 22px;
+  }
+
+  .start-end {
+    order: 1;
+  }
+
+  .start-play,
+  .start-records {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    flex: 1 1 100%;
+  }
+
+  .start-play {
+    order: 2;
+  }
+
+  .start-records {
+    order: 3;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .start-item,
+  #records-entry button {
+    padding: 6px 8px;
+  }
+
+  #account-entry {
+    max-width: 100%;
+  }
+}

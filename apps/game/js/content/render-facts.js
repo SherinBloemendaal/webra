@@ -297,6 +297,13 @@ export const RENDER_FACTS = {
 export const MISSION_ACTORS = {"ANT":"infantry","CHAN":"infantry","DELPHI":"infantry","EINSTEIN":"infantry","FIREANT":"infantry","GNRL":"infantry","SCOUTANT":"infantry","TRAN1HUSK":"husk","TRAN2HUSK":"husk"};
 
 /**
+ * WebRA's own actors (data/webra/rules.yaml): not OpenRA actors, so no
+ * RENDER_FACTS. Neither OpenRA nor Red Alert has art for them; WebRA
+ * always draws its own (art/pixel.js), the audit lists them as webra-only.
+ */
+export const WEBRA_ACTORS = ["LROD"];
+
+/**
  * OpenRA's own files (data/source/bits.txt) the tables treat as missing
  * from Red Alert -> the actor sequences (image.sequence) that use them.
  * Found in a player's Red Alert files, one is a wrong decision

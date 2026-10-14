@@ -74,6 +74,32 @@ test('edge scrolling: direction from the mouse, blocked at the camera limits', a
   assert.equal(scrollBlocked(1, 1, { x: -48, y: -48 }, small), true);
 });
 
+test('edge scrolling: the zone is EDGE px on every side of the window, and what holds it', async () => {
+  const { EDGE, edgeDirection, edgeScrollAllowed } = await import('../js/input.js');
+  // Window 1280 x 720 with the sidebar on its right: the edge is the window's, not the battlefield's.
+  assert.deepEqual(edgeDirection(1280 - EDGE, 300, 1280, 720), { dx: 1, dy: 0 }, 'right zone starts EDGE px in');
+  assert.deepEqual(edgeDirection(1280 - EDGE - 1, 300, 1280, 720), { dx: 0, dy: 0 });
+  assert.deepEqual(edgeDirection(EDGE - 1, 300, 1280, 720), { dx: -1, dy: 0 });
+  assert.deepEqual(edgeDirection(EDGE, 300, 1280, 720), { dx: 0, dy: 0 }, 'as wide on the left');
+  assert.deepEqual(edgeDirection(640, 720 - EDGE, 1280, 720), { dx: 0, dy: 1 });
+  assert.deepEqual(edgeDirection(640, EDGE - 1, 1280, 720), { dx: 0, dy: -1 });
+  const free = { speed: 1, inWindow: true };
+  assert.equal(edgeScrollAllowed(free), true);
+  assert.equal(edgeScrollAllowed(), false, 'no mouse seen yet');
+  for (const [k, v] of [
+    ['speed', 0],
+    ['inWindow', false],
+    ['touch', true],
+    ['focused', false],
+    ['suspended', true],
+    ['busy', true],
+    ['typing', true],
+    ['held', true],
+  ]) {
+    assert.equal(edgeScrollAllowed({ ...free, [k]: v }), false, k);
+  }
+});
+
 test('chrome icons: every sidebar icon has path data and builds an inert SVG', async () => {
   const { ICON_PATHS, icon } = await import('../js/ui-icons.js');
   for (const name of ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft', 'naval', 'sell', 'deploy', 'options', 'power', 'beacon', 'repair', 'powerDown']) {

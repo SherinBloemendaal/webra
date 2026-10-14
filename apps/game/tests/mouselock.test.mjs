@@ -2,14 +2,16 @@
 // (clicks, fullscreen, menus, blur, the browser's cooldown), Esc, the capture
 // hotkey, the virtual pointer (clamping, speed, the events it fires, focus,
 // wheel, pointer capture, cursor art) and edge scrolling and box selection
-// through js/input.js with it. Fake DOM, no browser.
+// through js/input.js with it, edge scrolling with the OS cursor too (the
+// window's edge over the sidebar, what holds it). Fake DOM, no browser.
 // Run with: node --test apps/game/tests/*.test.mjs
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { installDom, uninstallDom, FakeEvent, FakeElement, memoryStorage } from './dom-fixtures.mjs';
 import { createRegistry, specOf, defaultValues } from '../js/registry.js';
 import { createSettings } from '../js/settings.js';
-import { HotkeyRegistry } from '../js/hotkeys.js';
+import { formatCombo, HotkeyRegistry, openraDefaults, RELEASE_MOUSE_KEYS, releaseMouseKey, WEBRA_SUBSTITUTES } from '../js/hotkeys.js';
 import { GAME_KEYS, registerGameKeys } from '../js/gamekeys.js';
 import { OPENRA_HOTKEYS } from '../js/openra-hotkeys.js';
 import { CURSORS } from '../js/cursors.js';
@@ -17,10 +19,12 @@ import { validateSettingsDocument } from '../protocol/accounts.js';
 import {
   CAPTURE_ACTION,
   CAPTURE_MODES,
+  DETACHED_ESC_TEXT,
   ESC_GUARD_MS,
   FIRST_MOVE_JUMP,
   HINT_LIMIT,
   MouseCapture,
+  NOTICE_MODES,
   RAW_ACCEL,
   RELOCK_COOLDOWN_MS,
   VIRTUAL_POINTER_ID,
@@ -131,6 +135,9 @@ function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr 
   const t = clock();
   const hints = [];
   const escapes = [];
+  // Timers the capture sets (the focus check after the browser let go): run by `flush`.
+  const pending = [];
+  const flush = () => pending.splice(0).forEach((fn) => fn());
   let fs = fullscreen;
   const capture = new MouseCapture({
     root: app,
@@ -143,6 +150,7 @@ function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr 
     isFullscreen: () => fs,
     onHint: (text) => hints.push(text),
     onEscape: () => escapes.push(t.now()),
+    later: (fn) => pending.push(fn),
     makeEvent: (type, init) => new FakeEvent(type, init),
   });
   registerGameKeys(hotkeys, { toggleMouseCapture: () => capture.toggle() });
@@ -167,7 +175,7 @@ function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr 
     fs = on;
     capture.fullscreenChanged(on);
   };
-  return { app, view, sidebar, card, chat, list, panel, row, radar, menuButton, outside, capture, settings, hotkeys, requests, grant, refuse, browserExit, exits: () => exits, real, clickInto, hints, escapes, seen, t, setFullscreen };
+  return { app, view, sidebar, card, chat, list, panel, row, radar, menuButton, outside, capture, settings, hotkeys, requests, grant, refuse, browserExit, exits: () => exits, real, clickInto, hints, escapes, seen, t, setFullscreen, flush, pending };
 }
 
 /** Events of `types` dispatched at `el`, recorded as [type, details]. */
@@ -189,6 +197,13 @@ function lockAt(p, x = 100, y = 100) {
   assert.equal(p.capture.state, 'locked');
 }
 
+/** The release key of this platform (RELEASE_MOUSE_KEYS), as the keydown a keyboard sends: Option+E on macOS is a dead key, its code is still KeyE. */
+const RELEASE = releaseMouseKey();
+const pressRelease = (p, key = 'Dead') =>
+  p.hotkeys.handle({ type: 'keydown', key, code: 'KeyE', altKey: true, shiftKey: RELEASE.includes('Shift'), target: doc.body, preventDefault() {} });
+/** The notice with the default key (the test pages format keys the Windows / Linux way). */
+const NOTICE = `Mouse captured. Press ${formatCombo(RELEASE, false)} to release.`;
+
 /** A real mouse move while locked; a first one after locking that jumps (Chromium) is skipped. */
 const move = (p, dx, dy, mods = {}) => p.real('mousemove', { movementX: dx, movementY: dy, ...mods });
 
@@ -200,7 +215,10 @@ test('settings: capture in fullscreen by default, speed 1, the first Esc only re
   assert.equal(s.get('mouseCaptureSpeed'), 1);
   assert.equal(s.get('mouseCaptureEscMenu'), true);
   assert.equal(s.get('mouseCaptureHints'), 0);
+  assert.equal(s.get('mouseCaptureNotice'), 'always', 'the notice shows on every capture, like cloud gaming services');
+  assert.equal(s.get('pauseWhenHidden'), false, 'a hidden single-player game plays on');
   assert.deepEqual(specOf('game', 'mouseCapture').options, CAPTURE_MODES);
+  assert.deepEqual(specOf('game', 'mouseCaptureNotice').options, NOTICE_MODES);
   assert.equal(s.set('mouseCapture', 'sometimes'), 'fullscreen', 'not a mode: the default');
   assert.equal(s.set('mouseCaptureSpeed', 9), 3, 'clamped');
   assert.equal(s.set('mouseCaptureSpeed', 0), 0.25);
@@ -209,7 +227,7 @@ test('settings: capture in fullscreen by default, speed 1, the first Esc only re
   assert.equal(d.game.mouseCapture, 'fullscreen');
   assert.equal(d.extra.mouseCaptureHints, 0);
   // The account accepts them (and refuses bad values), so they follow the player.
-  const game = { mouseCapture: 'always', mouseCaptureSpeed: 1.5, mouseCaptureEscMenu: true };
+  const game = { mouseCapture: 'always', mouseCaptureSpeed: 1.5, mouseCaptureEscMenu: true, mouseCaptureNotice: 'first', pauseWhenHidden: true };
   assert.deepEqual(validateSettingsDocument({ game }).game, game);
   const field = (doc) => {
     try {
@@ -225,34 +243,180 @@ test('settings: capture in fullscreen by default, speed 1, the first Esc only re
   assert.deepEqual(validateSettingsDocument({ extra: { mouseCaptureHints: 2 } }).extra, { mouseCaptureHints: 2 });
 });
 
-test('hotkey: Alt+M (Option+M) captures and releases, listed and rebindable, clashing with no OpenRA default', () => {
+test('hotkey: Option+E on macOS, Alt+Shift+E on Windows and Linux; releases and captures, listed and rebindable', () => {
+  assert.deepEqual(RELEASE_MOUSE_KEYS, { mac: 'Alt+E', other: 'Alt+Shift+E' });
+  assert.equal(releaseMouseKey(true), 'Alt+E', "macOS: Option+E, like cloud gaming services");
+  assert.equal(releaseMouseKey(false), 'Alt+Shift+E', 'Windows and Linux: Alt+E opens the browser menu, Ctrl+Alt+E is AltGr+E');
+  assert.equal(formatCombo(releaseMouseKey(true), true), 'Option+E');
+  assert.ok(!Object.values(OPENRA_HOTKEYS).some((h) => h.key === 'Alt+Shift+E'), 'no OpenRA hotkey has Alt+Shift+E');
+  // OpenRA's Alt+E (jump to bookmark 3) gives way on macOS only.
+  assert.equal(OPENRA_HOTKEYS.MapBookmarkRestore03.key, 'Alt+E');
+  assert.equal(WEBRA_SUBSTITUTES.MapBookmarkRestore03.macOnly, true);
+  assert.deepEqual(openraDefaults('MapBookmarkRestore03', true), [], 'macOS: no default key, bindable in Controls');
+  assert.deepEqual(openraDefaults('MapBookmarkRestore03', false), ['Alt+E'], "Windows and Linux: OpenRA's key");
   const entry = GAME_KEYS.find((e) => e.name === CAPTURE_ACTION);
-  assert.deepEqual(entry.keys, ['Alt+M']);
-  assert.ok(!Object.values(OPENRA_HOTKEYS).some((h) => h.key === 'Alt+M'), 'no OpenRA hotkey has Alt+M');
-  assert.equal(OPENRA_HOTKEYS.MapBookmarkRestore03.key, 'Alt+E', 'why not Alt+E: it is bookmark 3');
-  assert.ok(!GAME_KEYS.some((e) => e !== entry && (e.keys ?? []).includes('Alt+M')));
+  assert.deepEqual(entry.keys, [RELEASE]);
+  assert.ok(!GAME_KEYS.some((e) => e !== entry && (e.keys ?? []).includes(RELEASE)));
   const p = page({ fullscreen: false });
   const listed = p.hotkeys.list().find((a) => a.name === CAPTURE_ACTION);
-  assert.deepEqual(listed.keys, ['Alt+M']);
+  assert.deepEqual(listed.keys, [RELEASE]);
+  assert.equal(listed.label, 'Release or capture the mouse');
   assert.equal(listed.group, 'Game Commands');
-  // Option+M on a Mac types "µ"; the key code is still M.
-  const press = () => p.hotkeys.handle({ type: 'keydown', key: 'µ', code: 'KeyM', altKey: true, target: doc.body, preventDefault() {} });
-  assert.equal(press(), true);
-  assert.equal(p.requests.length, 1, 'captures even outside fullscreen: the press is the player asking');
+  assert.equal(pressRelease(p), true);
+  assert.equal(p.requests.length, 1, 'released: captures, even outside fullscreen (the press is the player asking)');
   p.grant();
   assert.equal(p.capture.state, 'locked');
-  press();
-  assert.equal(p.capture.state, 'off');
+  pressRelease(p, '\u00b4');
+  assert.equal(p.capture.state, 'off', 'captured: releases');
   assert.equal(p.exits(), 1);
-  // Turned off by hand: clicks do not capture until the key turns it on again.
-  p.setFullscreen(true);
-  p.clickInto(p.view);
-  assert.equal(p.requests.length, 1);
-  press();
-  assert.equal(p.requests.length, 2);
+  assert.equal(p.capture.lastRelease, 'hotkey');
   // Rebindable like every hotkey.
   assert.equal(p.hotkeys.rebind(CAPTURE_ACTION, 'Ctrl+Shift+M').ok, true);
   assert.equal(p.hotkeys.actionFor('Ctrl+Shift+M'), CAPTURE_ACTION);
+  assert.equal(p.hotkeys.actionFor(RELEASE), null);
+});
+
+test('detached: the release hotkey opens no menu, Esc opens none until a click captures again, then Esc works as usual', () => {
+  const p = page();
+  lockAt(p);
+  const hotkey = () => pressRelease(p);
+  const esc = () => p.real('keydown', { key: 'Escape' }, doc.body);
+  hotkey();
+  p.flush();
+  assert.equal(p.capture.state, 'off');
+  assert.deepEqual(p.escapes, [], 'the hotkey opens no menu');
+  assert.equal(p.capture.isDetached(), true);
+  // The window loses the focus (another monitor): nothing changes, no menu.
+  win.dispatchEvent(new FakeEvent('blur', { bubbles: false }));
+  assert.equal(p.capture.isDetached(), true);
+  // Esc reaches the game (it cancels a mode there), which asks isDetached before opening the menu.
+  const e = esc();
+  assert.equal(e.defaultPrevented, false, 'not swallowed here: js/input.js cancels modes with it');
+  assert.equal(p.seen.filter(([type]) => type === 'keydown').length, 1);
+  assert.equal(p.capture.isDetached(), true, 'still detached: js/main.js shows DETACHED_ESC_TEXT instead of the menu');
+  assert.match(DETACHED_ESC_TEXT, /Click into the game/);
+  // No cooldown after the hotkey (the page let go, not the browser's Esc): one click captures again.
+  p.clickInto(p.view);
+  p.grant();
+  assert.equal(p.capture.state, 'locked');
+  assert.equal(p.capture.isDetached(), false, 'captured again');
+  // Esc as usual: releases and (Esc also opens the menu) goes on to the game's menu.
+  esc();
+  assert.equal(p.capture.state, 'off');
+  assert.equal(p.capture.isDetached(), false);
+  assert.equal(p.seen.filter(([type]) => type === 'keydown').length, 2);
+});
+
+test('detached: Esc works as usual wherever a click would not capture again; the menu ends it', () => {
+  const p = page();
+  lockAt(p);
+  const hotkey = () => p.capture.toggle();
+  hotkey();
+  assert.equal(p.capture.isDetached(), true);
+  // Capture the mouse turned off: nothing would capture again.
+  p.settings.set('mouseCapture', 'off');
+  assert.equal(p.capture.isDetached(), false);
+  p.settings.set('mouseCapture', 'fullscreen');
+  assert.equal(p.capture.isDetached(), true);
+  // 'In fullscreen' outside fullscreen: likewise.
+  p.setFullscreen(false);
+  assert.equal(p.capture.isDetached(), false);
+  p.setFullscreen(true);
+  p.grant();
+  hotkey();
+  assert.equal(p.capture.isDetached(), true);
+  // A menu or dialog (the Menu button, an end of game dialog): the game's own UI again.
+  p.capture.setBlocked(true);
+  assert.equal(p.capture.isDetached(), false);
+  p.capture.setBlocked(false);
+  assert.equal(p.capture.isDetached(), false, 'after the menu closes Esc opens it again');
+  // Pressed while released, the hotkey captures: not detached.
+  hotkey();
+  assert.equal(p.capture.isDetached(), false);
+});
+
+test('losing the focus never opens the menu; the browser letting go with the focus kept is Esc (menu)', () => {
+  const p = page({ settingsInit: { mouseCaptureEscMenu: true } });
+  lockAt(p);
+  // Alt-tab or a click on another monitor: the browser lets go, blur follows a moment later.
+  p.browserExit();
+  let focused = true;
+  doc.hasFocus = () => focused;
+  focused = false;
+  win.dispatchEvent(new FakeEvent('blur', { bubbles: false }));
+  p.flush();
+  assert.deepEqual(p.escapes, [], 'no menu for another window');
+  // Blur first, then the lock goes.
+  focused = true;
+  p.t.advance(RELOCK_COOLDOWN_MS + 1);
+  p.clickInto(p.view);
+  p.grant();
+  focused = false;
+  win.dispatchEvent(new FakeEvent('blur', { bubbles: false }));
+  p.browserExit();
+  p.flush();
+  assert.deepEqual(p.escapes, []);
+  // A hidden page (another tab): no menu from here either (js/main.js decides: Pause when the game is hidden).
+  focused = true;
+  p.t.advance(RELOCK_COOLDOWN_MS + 1);
+  p.clickInto(p.view);
+  p.grant();
+  p.browserExit();
+  doc.hidden = true;
+  p.flush();
+  assert.deepEqual(p.escapes, []);
+  doc.hidden = false;
+  // The focus kept: the browser's Esc, and the menu opens.
+  p.t.advance(RELOCK_COOLDOWN_MS + 1);
+  p.clickInto(p.view);
+  p.grant();
+  p.browserExit();
+  assert.deepEqual(p.escapes, [], 'asked a moment later');
+  p.flush();
+  assert.equal(p.escapes.length, 1);
+  // A new lock before the check: the old one's check is dropped.
+  p.t.advance(RELOCK_COOLDOWN_MS + 1);
+  p.clickInto(p.view);
+  p.grant();
+  p.browserExit();
+  p.t.advance(RELOCK_COOLDOWN_MS + 1);
+  p.clickInto(p.view);
+  p.grant();
+  p.flush();
+  assert.equal(p.escapes.length, 1);
+});
+
+test('notice: names the bound key every capture by default; the first 3 times, or never, by the setting', () => {
+  const p = page();
+  const capture = () => {
+    p.setFullscreen(true);
+    p.grant();
+    p.setFullscreen(false);
+  };
+  for (let i = 0; i < HINT_LIMIT + 2; i++) capture();
+  assert.equal(p.hints.length, HINT_LIMIT + 2, 'every time');
+  assert.ok(p.hints.every((h) => h === NOTICE));
+  assert.equal(p.settings.get('mouseCaptureHints'), HINT_LIMIT, 'counted only as far as "first" needs (no settings write per capture)');
+  // The key the player bound.
+  p.hotkeys.rebind(CAPTURE_ACTION, 'Alt+M');
+  capture();
+  assert.equal(p.hints.at(-1), 'Mouse captured. Press Alt+M to release.');
+  p.hotkeys.unbind(CAPTURE_ACTION);
+  capture();
+  assert.equal(p.hints.at(-1), 'Mouse captured. Press Esc to release.', 'no key bound: Esc');
+  p.hotkeys.reset(CAPTURE_ACTION);
+  // Never.
+  p.settings.set('mouseCaptureNotice', 'off');
+  const shown = p.hints.length;
+  capture();
+  assert.equal(p.hints.length, shown);
+  // The first 3 times: counted over every capture so far (mouseCaptureHints), so none now.
+  p.settings.set('mouseCaptureNotice', 'first');
+  capture();
+  assert.equal(p.hints.length, shown);
+  p.settings.set('mouseCaptureHints', 0);
+  for (let i = 0; i < HINT_LIMIT + 2; i++) capture();
+  assert.equal(p.hints.length, shown + HINT_LIMIT);
 });
 
 // ---- Helpers --------------------------------------------------------------------------------
@@ -281,14 +445,16 @@ test('helpers: availability, speed, clamping, cursor art and the hint text', () 
   assert.deepEqual(cursorArt('not-allowed'), parseCursor(CURSORS.blocked));
   assert.match(cursorArt('text').src, /^data:image\/svg\+xml,/);
   assert.deepEqual(cursorArt(CURSORS.sellBlocked), parseCursor(CURSORS.sellBlocked));
-  assert.equal(hintText('Alt+M', false), 'Mouse captured. Alt+M or Esc to release.');
-  assert.equal(hintText('Alt+M', true), 'Mouse captured. Option+M or Esc to release.');
-  assert.equal(hintText(null, true), 'Mouse captured. Esc to release.');
+  assert.equal(hintText('Alt+E', false), 'Mouse captured. Press Alt+E to release.');
+  assert.equal(hintText('Alt+E', true), 'Mouse captured. Press Option+E to release.', 'the macOS name');
+  assert.equal(hintText('Alt+Shift+E', false), 'Mouse captured. Press Alt+Shift+E to release.');
+  assert.equal(hintText('Ctrl+Shift+M', true), 'Mouse captured. Press Cmd+Shift+M to release.');
+  assert.equal(hintText(null, true), 'Mouse captured. Press Esc to release.');
 });
 
 // ---- The state machine ----------------------------------------------------------------------
 
-test('capture: in fullscreen by default; a click into the game asks for the plain (accelerated) lock; the hint shows the first times', () => {
+test('capture: in fullscreen by default; a click into the game asks for the plain (accelerated) lock; the notice shows', () => {
   const p = page();
   p.clickInto(p.view);
   assert.equal(p.requests.length, 0, 'not fullscreen: no capture');
@@ -299,20 +465,13 @@ test('capture: in fullscreen by default; a click into the game asks for the plai
   p.grant();
   assert.equal(p.capture.state, 'locked');
   assert.equal(p.capture.raw, false);
-  assert.deepEqual(p.hints, ['Mouse captured. Alt+M or Esc to release.']);
+  assert.deepEqual(p.hints, [NOTICE]);
   assert.equal(p.settings.get('mouseCaptureHints'), 1);
   // Leaving fullscreen lets go; clicks there do not capture.
   p.setFullscreen(false);
   assert.equal(p.capture.state, 'off');
   p.clickInto(p.view);
   assert.equal(p.requests.length, 1);
-  // The hint stops after HINT_LIMIT times.
-  for (let i = 0; i < HINT_LIMIT + 2; i++) {
-    p.setFullscreen(true);
-    p.grant();
-    p.setFullscreen(false);
-  }
-  assert.equal(p.hints.length, HINT_LIMIT);
 });
 
 test('capture: what a click captures (the game, not Menu, text fields, lists or the lobby; no touch)', () => {
@@ -438,6 +597,7 @@ test('Esc kept by the browser with "Esc also opens the menu": the game gets its 
   const p = page({ settingsInit: { mouseCaptureEscMenu: true } });
   lockAt(p);
   p.browserExit();
+  p.flush();
   assert.equal(p.escapes.length, 1);
   p.real('keydown', { key: 'Escape' }, doc.body);
   assert.equal(p.escapes.length, 1);
@@ -838,11 +998,166 @@ test('edge scrolling with the virtual pointer: the window edge scrolls, wherever
   move(p, 0, 100000);
   input.update(0.1);
   assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [-1, 1]);
-  // Released: the canvas is left, the scrolling stops.
+  // Across to the right edge, over the sidebar (x >= 800): the window edge scrolls there too.
+  move(p, 100000, -100000);
+  move(p, 0, 250); // y 250: the list's band
+  assert.deepEqual([input.windowMouse.x, input.windowMouse.y], [999, 250]);
+  assert.equal(input.mouse.inside, false, 'off the battlefield canvas');
+  const x1 = input.camera.x;
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  assert.ok(input.camera.x > x1, 'scrolled right');
+  // Released: the window is left (mouseout to nowhere), the scrolling stops.
   p.capture.release();
   assert.equal(input.mouse.inside, false);
+  assert.equal(input.windowMouse.inside, false);
   input.update(0.1);
   assert.equal(input.edgeScroll, null);
+});
+
+/** A real mouse move (no capture) to window point (x, y) over `at`. */
+const realMove = (p, x, y, at) => p.real('mousemove', { clientX: x, clientY: y }, at);
+
+test('edge scrolling with the OS cursor: measured against the window, over the sidebar, radar and HUD too', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  const root = doc.documentElement;
+  // The middle of the sidebar: no edge.
+  realMove(p, 900, 50, p.card);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+  assert.equal(root.classList.contains('edge-scroll'), false);
+  // The window's right edge over a sidebar button: scrolls right, the page shows the scroll arrow.
+  const x0 = input.camera.x;
+  realMove(p, 995, 50, p.card);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  assert.ok(input.camera.x > x0, 'scrolled right');
+  assert.equal(input.cursor, CURSORS.scrollE);
+  assert.equal(root.classList.contains('edge-scroll'), true, 'the arrow over the whole page (css/style.css)');
+  // The button at the edge still takes its click while the map scrolls.
+  const clicks = record(p.card, ['click']);
+  p.real('click', { clientX: 995, clientY: 50 }, p.card);
+  assert.equal(clicks.length, 1);
+  input.update(0.1);
+  assert.ok(input.edgeScroll, 'still scrolling');
+  // Bottom right corner over the Menu button (y 500..599 in the hit map), bottom edge over the radar.
+  realMove(p, 999, 599, p.menuButton);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 1]);
+  realMove(p, 900, 595, p.radar);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [0, 1]);
+  // The battlefield's own right side (x 799) is no edge any more: the window's is.
+  realMove(p, 799, 300, p.view);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+  assert.equal(root.classList.contains('edge-scroll'), false, 'the arrow goes again');
+  // Top and left edges on the battlefield as before.
+  realMove(p, 0, 0, p.view);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [-1, -1]);
+  // Out of the window (mouseout to nowhere): browsers report nothing more, so it stops.
+  realMove(p, 999, 300, p.sidebar);
+  input.update(0.1);
+  assert.ok(input.edgeScroll);
+  p.real('mouseout', { clientX: 1000, clientY: 300, relatedTarget: null }, p.sidebar);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+  // Back in (mouseover from nowhere) at the edge: scrolls again at once.
+  p.real('mouseover', { clientX: 998, clientY: 300, relatedTarget: null }, p.sidebar);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // Moves outside the window while a button is held come with positions outside it: not inside.
+  p.real('mousemove', { clientX: 1200, clientY: 300 }, p.sidebar);
+  assert.equal(input.windowMouse.inside, false);
+});
+
+test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, focus and the release hotkey', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  const atRightEdge = () => {
+    realMove(p, 999, 50, p.card);
+    input.update(0.1);
+    return input.edgeScroll;
+  };
+  assert.ok(atRightEdge(), 'scrolls with nothing in the way');
+  // The game menu (suspended): no scrolling and the page arrow goes.
+  input.setSuspended(true);
+  assert.equal(atRightEdge(), null);
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), false);
+  input.setSuspended(false);
+  assert.ok(atRightEdge());
+  // js/main.js holdsEdgeScroll: a dialog open, the radar dragged, the mouse released with the hotkey.
+  let held = true;
+  input.hooks.holdsEdgeScroll = () => held;
+  assert.equal(atRightEdge(), null);
+  held = false;
+  assert.ok(atRightEdge());
+  // Typing in the chat line.
+  p.chat.focus();
+  assert.equal(atRightEdge(), null);
+  p.chat.blur();
+  assert.ok(atRightEdge());
+  // A box selection under way.
+  p.real('mousedown', { clientX: 400, clientY: 300, button: 0, buttons: 1 }, p.view);
+  assert.ok(input.drag);
+  assert.equal(atRightEdge(), null);
+  p.real('mouseup', { clientX: 999, clientY: 50, button: 0, buttons: 0 }, p.card);
+  assert.ok(atRightEdge());
+  // A touch (js/touch.js) and the window without the input focus (OpenRA WindowHasInputFocus).
+  input.mouse.touch = true;
+  assert.equal(atRightEdge(), null);
+  input.mouse.touch = false;
+  doc.hasFocus = () => false;
+  assert.equal(atRightEdge(), null);
+  doc.hasFocus = () => true;
+  assert.ok(atRightEdge());
+  // Edge scroll speed 0 turns it off.
+  input.settings.set('edgeScrollSpeed', 0);
+  assert.equal(atRightEdge(), null);
+});
+
+test('edge scrolling: the pointer events of a finger (window, capture phase) drop the position until a mouse moves again', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  // A tap on a sidebar button at the right edge: the pointer events of the
+  // finger, then the browser's compatibility mouse events at the same spot.
+  p.real('pointerdown', { clientX: 995, clientY: 50, pointerType: 'touch' }, p.card);
+  p.real('pointerup', { clientX: 995, clientY: 50, pointerType: 'touch' }, p.card);
+  realMove(p, 995, 50, p.card);
+  assert.equal(input.windowMouse.finger, true);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null, 'a tap at the edge does not scroll');
+  // The mouse moves again (hybrid device): pointermove of the mouse, then its mousemove.
+  p.real('pointermove', { clientX: 996, clientY: 50, pointerType: 'mouse' }, p.card);
+  realMove(p, 996, 50, p.card);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // A pen counts as a finger: the scrolling stops at once.
+  p.real('pointermove', { clientX: 996, clientY: 50, pointerType: 'pen' }, p.card);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+});
+
+test('Input.dispose removes every listener it added to the window and the canvas', async () => {
+  const p = page();
+  const count = (node) => [...node.listeners.values()].reduce((n, l) => n + l.length, 0);
+  const winBefore = count(win);
+  const viewBefore = count(p.view);
+  const { input } = await withInput(p);
+  assert.ok(count(win) > winBefore, 'bind added window listeners');
+  assert.ok(count(p.view) > viewBefore, 'and canvas listeners');
+  realMove(p, 999, 50, p.card);
+  input.update(0.1);
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), true);
+  input.dispose();
+  assert.equal(count(win), winBefore, 'no window listener is left');
+  assert.equal(count(p.view), viewBefore, 'no canvas listener is left');
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), false, 'the page arrow goes');
+  // A later game's events reach the disposed view no more.
+  realMove(p, 0, 0, p.view);
+  assert.equal(input.windowMouse.x, 999);
 });
 
 test('box selection, orders and the wheel through js/input.js with the virtual pointer', async () => {
@@ -869,4 +1184,25 @@ test('box selection, orders and the wheel through js/input.js with the virtual p
   const zoom = input.camera.zoom;
   p.real('wheel', { deltaY: -200 });
   assert.ok(input.camera.zoom > zoom);
+});
+
+// ---- A hidden page and the focus (js/background.js, js/main.js) ------------------------------
+
+test('a hidden page: single player plays on (background ticks) unless "Pause when the game is hidden" is on; online, replays and stress never', async () => {
+  const { pausesWhenHidden, runsInBackground } = await import('../js/background.js');
+  const local = { stress: false, online: false, replay: false };
+  assert.equal(pausesWhenHidden(local, false), false, 'default: no menu, no pause');
+  assert.equal(pausesWhenHidden(local, true), true, 'the setting on: the menu opens (and pauses)');
+  assert.equal(runsInBackground(local, { hidden: true, paused: false }), true, 'plays on while hidden');
+  assert.equal(runsInBackground(local, { hidden: true, paused: true }), false, 'paused (the menu the setting opened, Pause): stands still');
+  assert.equal(runsInBackground(local, { hidden: false, paused: false }), false, 'shown: animation frames drive it');
+  for (const other of [{ online: true }, { replay: true }, { stress: true }]) {
+    assert.equal(pausesWhenHidden({ ...local, ...other }, true), false, JSON.stringify(other));
+    assert.equal(runsInBackground({ ...local, ...other }, { hidden: true }), false, JSON.stringify(other));
+  }
+  // Losing the focus is not hiding: js/main.js listens to visibilitychange only, never blur.
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  assert.ok(!/addEventListener\('blur'/.test(main), 'no blur handler in the game screen');
+  assert.match(main, /if \(document\.hidden && pausesWhenHidden\(gameKind, settings\.get\('pauseWhenHidden'\)\)\) menu\.open\(\);/);
+  assert.match(main, /if \(mouseCapture\?\.isDetached\(\)\) showToast\(DETACHED_ESC_TEXT\);\s*else menu\.open\(\);/, 'Esc while detached opens no menu');
 });

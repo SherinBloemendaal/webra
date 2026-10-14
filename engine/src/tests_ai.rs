@@ -815,7 +815,7 @@ fn bots_train_engineers_for_neutral_structures_and_capture_them() {
     assert!(captured, "the neutral power plant was captured");
     assert!(count(&w, 0, "FACT") >= 2, "and the neutral Construction Yard: {}", count(&w, 0, "FACT"));
     let value = crate::ai_infantry::capture_value(&w, target);
-    assert!(value > w.rules.actors[w.actors[target].ty as usize].building.as_ref().unwrap().value as i64, "power counts as a benefit");
+    assert!(value > w.rules.actors[w.actors[target].ty as usize].sell_value() as i64, "power counts as a benefit");
 }
 
 /// The Turtle AI's Minelayers mine the way to the enemy.
@@ -1064,6 +1064,20 @@ fn a_broke_ai_without_income_sells_its_surplus_for_an_army() {
         .filter(|a| a.alive && a.owner == 0 && a.kind != Kind::Building && !w.rules.actors[a.ty as usize].weapons.is_empty())
         .count();
     assert!(army >= 4, "the money went into an army: {army}");
+}
+
+/// A broke AI sells what pays the most first: the refund (sell value scaled
+/// by health), not the cost of a structure.
+#[test]
+fn a_broke_ai_sells_what_pays_the_most_first() {
+    let mut w = arena(64, &[("england", normal(), 0, (4, 4)), ("russia", None, 0, (40, 44))]);
+    let wrecked = put(&mut w, "DOME", 0, 12, 4);
+    let whole = put(&mut w, "DOME", 0, 12, 10);
+    w.actors[wrecked].hp /= 4;
+    w.refresh_tokens();
+    w.update_power();
+    assert!(w.sell_refund(wrecked) < w.sell_refund(whole));
+    assert_eq!(crate::ai_economy::surplus_structure(&w, 0), Some(whole), "the same cost, more money back");
 }
 
 /// With money and ore it sells nothing.

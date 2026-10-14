@@ -26,7 +26,8 @@
 //! skirmish AIs it knows where enemy structures are (OpenRA's squads only see
 //! what is visible; without the bases known, games on large maps could stall).
 //! When its economy runs dry it sells surplus structures for one more army
-//! (ai_economy.rs).
+//! (ai_economy.rs). While thunderstorms can strike it covers its power plants
+//! with WebRA's Lightning Rods (ai_lightning.rs).
 
 use crate::ai_bots::{BotConfig, BotType, Difficulty};
 use crate::math::{dist, CELL};
