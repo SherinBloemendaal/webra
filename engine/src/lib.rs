@@ -1328,6 +1328,24 @@ impl Game {
         self.submit(Order::Sell { player, building });
     }
 
+    /// WebRA bulk sell: sell the listed own sellable structures, never a
+    /// Construction Yard (`World::sell_group`).
+    pub fn sell_buildings(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::SellBuildings { player, ids });
+    }
+
+    /// The structures a box dragged in sell mode sells (`World::can_bulk_sell`):
+    /// the player's whose selection bounds touch the world-pixel box, in actor order.
+    pub fn sell_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+        let w = &self.world;
+        let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
+        w.selectable_actors(&[player], Some(area), None)
+            .into_iter()
+            .filter(|&b| w.can_bulk_sell(player, b))
+            .map(|b| w.make_ref(b))
+            .collect()
+    }
+
     /// Refund selling an own structure would give right now, or -1 while
     /// `player` cannot sell it (the sell cursor and the "Refund: $" tooltip
     /// line, OpenRA Sellable). Walls sell for 0.
@@ -1353,20 +1371,27 @@ impl Game {
         self.submit(Order::RepairBuildings { player, ids });
     }
 
-    /// The own damaged repairable structures among `ids` (the selection) that
-    /// the Repair button toggles together; empty when it opens repair mode.
-    pub fn repair_targets(&self, player: u8, ids: Vec<u32>) -> Vec<u32> {
-        let w = &self.world;
-        w.bulk_repair_targets(player, &ids).into_iter().map(|i| w.make_ref(i)).collect()
+    /// WebRA bulk repair: each listed own damaged unit goes to the nearest own
+    /// structure that repairs it (`World::send_units_to_repair`).
+    pub fn repair_units(&mut self, player: u8, ids: Vec<u32>) {
+        self.submit(Order::RepairUnits { player, ids });
     }
 
-    /// The own damaged repairable structures whose selection bounds touch the
-    /// world-pixel box (a drag in repair mode), in actor order.
-    pub fn repair_box(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<u32> {
+    /// What the Repair button or key repairs of `ids` (the selection), by
+    /// category (`World::repair_groups_json`): the own damaged structures it
+    /// toggles and the own damaged units it sends to repair.
+    pub fn repair_selection_json(&self, player: u8, ids: Vec<u32>) -> String {
+        let w = &self.world;
+        w.repair_groups_json(player, ids.into_iter().filter_map(|id| w.resolve(id))).to_string()
+    }
+
+    /// What a box dragged in repair mode holds to repair, by category
+    /// (`World::repair_groups_json`): the player's actors whose selection
+    /// bounds touch the world-pixel box, in actor order.
+    pub fn repair_box_json(&self, player: u8, x0: f32, y0: f32, x1: f32, y1: f32) -> String {
         let w = &self.world;
         let area = selection::Rect::new(to_wu(x0), to_wu(y0), to_wu(x1), to_wu(y1));
-        let ids: Vec<u32> = w.selectable_actors(&[player], Some(area), None).into_iter().map(|i| w.make_ref(i)).collect();
-        w.bulk_repair_targets(player, &ids).into_iter().map(|i| w.make_ref(i)).collect()
+        w.repair_groups_json(player, w.selectable_actors(&[player], Some(area), None)).to_string()
     }
 
     /// Switch an own structure off, or on again.

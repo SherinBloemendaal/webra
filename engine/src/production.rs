@@ -814,6 +814,34 @@ impl World {
         true
     }
 
+    /// Whether a click in sell mode sells structure `b` for `player`: their
+    /// own structure in the world with OpenRA's Sellable (a refund percent),
+    /// not being captured or demolished (the checks of `sell`).
+    pub fn can_sell(&self, player: u8, b: usize) -> bool {
+        let a = &self.actors[b];
+        a.owner == player && a.in_world() && self.sell_refund(b).is_some()
+    }
+
+    /// Whether a box in sell mode (WebRA bulk sell) takes structure `b`:
+    /// `can_sell`, but never a structure that packs up into a unit (OpenRA
+    /// Transforms: the Construction Yard into an MCV), which only a single
+    /// click sells.
+    pub fn can_bulk_sell(&self, player: u8, b: usize) -> bool {
+        self.can_sell(player, b) && self.rules.actors[self.actors[b].ty as usize].abilities.transforms.is_none()
+    }
+
+    /// `Order::SellBuildings` (WebRA bulk sell): sell each listed structure
+    /// that `can_bulk_sell` still allows, once, in the order listed.
+    pub(crate) fn sell_group(&mut self, player: u8, ids: &[u32]) {
+        for &id in ids {
+            if let Some(b) = self.resolve(id) {
+                if self.can_bulk_sell(player, b) {
+                    self.sell(b);
+                }
+            }
+        }
+    }
+
     /// Where actor `i` would deploy to: (target actor type, top-left cell or unit cell).
     pub fn deploy_target(&self, i: usize) -> Option<(u16, i32, i32)> {
         let a = &self.actors[i];
