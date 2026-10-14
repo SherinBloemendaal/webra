@@ -234,15 +234,31 @@ impl World {
         format!("{} only", names.join(" or "))
     }
 
-    /// Own buildings that can produce `ty` (OpenRA: Production types vs BuildAtProductionType).
-    fn producers_of(&self, player: u8, ty: u16) -> Vec<usize> {
+    /// The production type `player` builds a `ty` as (OpenRA
+    /// ClassicProductionQueue.BuildUnit): its Buildable.BuildAtProductionType
+    /// (the queue's type when it has none), but the queue's type under the
+    /// "all tech" cheat, so a submarine comes out of a naval yard and a dog
+    /// out of barracks then.
+    pub(crate) fn built_as(&self, player: u8, ty: u16) -> &str {
         let info = &self.rules.actors[ty as usize];
+        if self.players.get(player as usize).is_some_and(|p| p.dev.all_tech) {
+            info.queue.name()
+        } else {
+            info.build_at.as_str()
+        }
+    }
+
+    /// Own buildings that can produce `ty`: their Production types hold the
+    /// type it is built as (OpenRA ClassicProductionQueue.BuildUnit, `built_as`).
+    pub(crate) fn producers_of(&self, player: u8, ty: u16) -> Vec<usize> {
+        let queue = self.rules.actors[ty as usize].queue;
+        let built_as = self.built_as(player, ty);
         (0..self.actors.len())
             .filter(|&i| {
                 let a = &self.actors[i];
                 a.alive && a.owner == player && a.kind == Kind::Building && {
                     let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-                    b.produces.contains(&info.queue) && b.production_types.contains(&info.build_at)
+                    b.produces.contains(&queue) && b.production_types.iter().any(|t| t == built_as)
                 }
             })
             .collect()
@@ -272,7 +288,10 @@ impl World {
     }
 
     /// How many of `factories` can make `ty` (structures: one at most, the
-    /// queue's Construction Yard counts once like in the queue).
+    /// queue's Construction Yard counts once like in the queue). This counts
+    /// for the build time, by Buildable.BuildAtProductionType also under the
+    /// "all tech" cheat (OpenRA ClassicProductionQueue.GetBuildTime); which
+    /// structures may make it is `producers_of`.
     pub(crate) fn producer_count_in(&self, factories: &[usize], ty: u16) -> usize {
         let info = &self.rules.actors[ty as usize];
         let makes = |&&i: &&usize| {
@@ -427,12 +446,15 @@ impl World {
                 continue;
             }
             let first_ty = self.players[player as usize].queues[qi].items[0].ty;
-            let producers = self.producer_count(player, first_ty);
             // No factory (or it was destroyed): the queue waits. (Structure
-            // queues without a Construction Yard were emptied above.)
-            if producers == 0 {
+            // queues without a Construction Yard were emptied above.) Units
+            // need one that makes them (`producers_of`, which follows the
+            // "all tech" cheat like OpenRA BuildUnit).
+            let has_factory = if q.is_structure() { self.has_producer(player, q) } else { !self.producers_of(player, first_ty).is_empty() };
+            if !has_factory {
                 continue;
             }
+            let producers = self.producer_count(player, first_ty);
             let cost = self.rules.actors[first_ty as usize].cost;
             let build_total = self.build_time_with(player, first_ty, producers);
             let low_power_mod = self.rules.player.low_power_modifier;
@@ -626,10 +648,7 @@ impl World {
     pub(crate) fn exit_lets_out(&self, b: usize, k: usize, ty: u16) -> bool {
         let Some(binfo) = self.rules.actors[self.actors[b].ty as usize].building.as_ref() else { return true };
         let Some(types) = binfo.exit_types.get(k).filter(|t| !t.is_empty()) else { return true };
-        let info = &self.rules.actors[ty as usize];
-        let queue_type = format!("{:?}", info.queue);
-        let owner = self.actors[b].owner as usize;
-        let built_as = if self.players.get(owner).is_some_and(|p| p.dev.all_tech) { queue_type.as_str() } else { info.build_at.as_str() };
+        let built_as = self.built_as(self.actors[b].owner, ty);
         types.iter().any(|t| t == built_as)
     }
 

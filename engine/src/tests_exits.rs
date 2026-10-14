@@ -362,3 +362,50 @@ fn without_a_rally_point_new_units_stay_where_they_came_out() {
     assert_eq!(boats.len(), 1);
     assert_eq!(Some(cell(&w, boats[0])), launch, "on its launch cell");
 }
+
+/// OpenRA ClassicProductionQueue.BuildUnit: with the "all tech" cheat a unit
+/// is built as its queue's type, at any structure of that type. A submarine
+/// (Buildable.BuildAtProductionType Submarine) queued with only a naval yard
+/// (Produces Ship, Boat) is made there and launched onto the water instead
+/// of blocking the Ship queue; without the cheat the yard does not make it.
+#[test]
+fn all_tech_builds_a_submarine_at_the_naval_yard() {
+    let (mut w, yard) = harbour();
+    let ss = ty(&w, "SS");
+    w.players[0].dev.all_tech = false;
+    assert!(w.producers_of(0, ss).is_empty(), "the yard makes no submarines");
+    w.players[0].dev.all_tech = true;
+    assert_eq!(w.producers_of(0, ss), vec![yard], "all tech: built as Ship");
+    let launch: Vec<(i32, i32)> = w.naval_launch_cells(yard, ss).iter().map(|&(x, y, _)| (x, y)).collect();
+    w.start_production(0, ss, 1);
+    for _ in 0..25 * 20 {
+        w.step();
+    }
+    let subs = all_of(&w, "SS");
+    assert_eq!(subs.len(), 1, "made");
+    assert!(launch.contains(&cell(&w, subs[0])), "launched by the yard's exits");
+    assert!(w.players[0].queues[QueueType::Ship as usize].items.is_empty(), "the queue moved on");
+}
+
+/// The same for a dog (BuildAtProductionType Dog) with only barracks
+/// (Produces Infantry, Soldier): under all tech it comes out of a barracks exit.
+#[test]
+fn all_tech_builds_a_dog_at_the_barracks() {
+    let mut w = arena(MovementModel::OpenRA);
+    let barr = factory(&mut w, "BARR", 20, 10);
+    let dog = ty(&w, "DOG");
+    w.players[0].dev.all_tech = false;
+    assert!(w.producers_of(0, dog).is_empty(), "barracks make no dogs");
+    w.players[0].dev.all_tech = true;
+    assert_eq!(w.producers_of(0, dog), vec![barr], "all tech: built as Infantry");
+    let binfo = w.rules.actors[w.actors[barr].ty as usize].building.as_ref().unwrap();
+    let exits: Vec<(i32, i32)> = binfo.exits.iter().map(|&(ex, ey)| (20 + ex, 10 + ey)).collect();
+    w.start_production(0, dog, 1);
+    for _ in 0..25 * 5 {
+        w.step();
+    }
+    let dogs = all_of(&w, "DOG");
+    assert_eq!(dogs.len(), 1, "made");
+    assert!(exits.contains(&cell(&w, dogs[0])), "out of a barracks exit, at {:?}", cell(&w, dogs[0]));
+    assert!(w.players[0].queues[QueueType::Infantry as usize].items.is_empty(), "the queue moved on");
+}

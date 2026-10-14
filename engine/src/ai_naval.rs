@@ -146,19 +146,7 @@ pub(crate) fn reaching(w: &mut World, player: u8, cfg: &BotConfig, types: &[u16]
 /// `producers_of`), the one new units leave first: the primary one, else
 /// the first (production.rs `spawn_produced`).
 fn producers(w: &World, player: u8, ty: u16) -> Vec<usize> {
-    let info = &w.rules.actors[ty as usize];
-    let mut out: Vec<usize> = (0..w.actors.len())
-        .filter(|&i| {
-            let a = &w.actors[i];
-            a.alive
-                && a.owner == player
-                && a.kind == Kind::Building
-                && w.rules.actors[a.ty as usize]
-                    .building
-                    .as_ref()
-                    .is_some_and(|b| b.produces.contains(&info.queue) && b.production_types.contains(&info.build_at))
-        })
-        .collect();
+    let mut out = w.producers_of(player, ty);
     if let Some(k) = out.iter().position(|&b| w.actors[b].primary) {
         let p = out.remove(k);
         out.insert(0, p);

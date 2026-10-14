@@ -1446,9 +1446,18 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
   sidebar's production tooltip shows both (OpenRA ProductionTooltipLogic).
 - Leaving the factory (OpenRA Production.Produce, SelectExit, CanUseExit;
-  ClassicProductionQueue.BuildUnit): a finished unit tries the primary
-  structure, then the others that make it (OpenRA: the newest first; WebRA:
-  in actor order). A structure's exits are tried by `exit_priority` (OpenRA
+  ClassicProductionQueue.BuildUnit): a unit is built as its
+  `build_at` production type (OpenRA Buildable.BuildAtProductionType, else
+  the queue's type; under the debug menu's "all tech" the queue's type, so
+  a submarine comes out of a naval yard and a dog out of barracks then).
+  The structures whose Production types hold that type make it; a finished
+  unit tries the primary one, then the others (OpenRA: the newest first;
+  WebRA: in actor order). The build time still counts the structures by
+  `build_at` (OpenRA GetBuildTime). A structure's exits are those whose
+  `exit_types` (OpenRA ExitInfo.ProductionTypes, empty for any) hold the
+  type the unit is built as: the sub pen's outer exits (-1, 2) and (3, 2)
+  are for submarines, its corners for any ship. They are tried by
+  `exit_priority` (OpenRA
   ExitInfo.Priority, highest first: the Kennel's down-left exit), then
   nearest the rally point (without one, nearest a point below the structure;
   OpenRA shuffles them). Each exit tried first tells the friendly units on
@@ -1461,8 +1470,10 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   every exit of every producer is blocked (an enemy, a unit that does not
   move, a husk) the item stays finished, the queue says so once
   (ProductionBlocked) and tries again every tick. Ships follow the same
-  rule on their launch cells: the open water just outside each corner exit
-  of the naval yard or sub pen (`naval_launch_cells`; water joined to the
+  rule on their launch cells: the open water at each exit that lets them
+  out, just outside the structure for an exit on its own corner and the
+  exit cell itself for one already outside it (the sub pen's submarine
+  exits) (`naval_launch_cells`; water joined to the
   rally point first, else the largest water, and only cells on that water,
   so a ship is never launched into a pond it cannot leave, OpenRA issue
   19154; then the exit nearest the rally point): friendly idle ships on one
@@ -1479,8 +1490,8 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   the ones on the move; waiting for those would jam the door behind the
   crowd its arrival rule gathers in front of it). Differences: units appear
   on the exit cell instead of inside the structure at the Exit's
-  SpawnOffset (ships on the water outside the yard's corner instead of on
-  the corner itself), and the Exit's Facing is not used.
+  SpawnOffset (ships launched from a corner exit on the water just outside
+  it instead of on the corner itself), and the Exit's Facing is not used.
 
 ## 5. Domains for units
 

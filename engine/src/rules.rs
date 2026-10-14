@@ -983,6 +983,19 @@ impl QueueType {
         }
     }
 
+    /// The queue's OpenRA ProductionQueue Type (also the production type a
+    /// unit without Buildable.BuildAtProductionType is built as).
+    pub fn name(self) -> &'static str {
+        match self {
+            QueueType::Building => "Building",
+            QueueType::Defense => "Defense",
+            QueueType::Infantry => "Infantry",
+            QueueType::Vehicle => "Vehicle",
+            QueueType::Aircraft => "Aircraft",
+            QueueType::Ship => "Ship",
+        }
+    }
+
     fn parse(s: &str) -> Option<QueueType> {
         match s {
             "Building" => Some(QueueType::Building),
