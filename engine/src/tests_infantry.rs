@@ -504,10 +504,9 @@ fn ai_trains_dogs_and_grenadiers_within_limits() {
     // The Normal AI builds its kennel after BuildingDelays kenn 7000, when
     // BuildingFractions pick it (in random order among the others): at
     // minute 14 on this seed (12 before the first skirmish, at minute 5,
-    // went otherwise once anti-air and missile fuel came in; 9 later, and
-    // 18 since units moving into weapon range head for the nearest cell in
-    // range), the first dogs a minute later.
-    run(&mut w, 25 * 60 * 20);
+    // went otherwise once anti-air and missile fuel came in), the first
+    // dogs a minute later.
+    run(&mut w, 25 * 60 * 16);
     let count = |id: &str| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == ty(&w, id)).count();
     assert!(count("E2") > 0, "grenadiers");
     assert!(count("DOG") > 0 && count("DOG") <= 4, "dogs, UnitLimits 4: {}", count("DOG"));

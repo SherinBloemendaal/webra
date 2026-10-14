@@ -473,11 +473,12 @@ fn naval_bots_keep_every_ship_on_water() {
     // 3, 2, 2, 4, 1, 0, 6, 5, 2, 3, 2; rivers 3, 0, 0, 2, 1, 2, 6, 1, 1, 1,
     // 3; islands 2, 2, 0, 2, 0, 3, 3, 2, 0, 1, 0. Again after units moving
     // into weapon range head for the nearest cell in range (attack_range.rs):
-    // lakes 4, 0, 1, 2, 2, 1, 0, 2, 3, 1, 2; rivers 2, 1, 0, 3, 2, 1, 1, 3,
-    // 1, 0, 6; islands 4, 2, 0, 1, 0, 2, 3, 1, 2, 2, 2. Rivers seed 7, used
-    // before, now builds one; the seeds below build four to six.
-    game(MapStyle::Islands, 1, 12 * minutes);
-    let lakes = game(MapStyle::Lakes, 1, 12 * minutes);
-    game(MapStyle::Rivers, 11, 12 * minutes);
-    assert_eq!(game(MapStyle::Lakes, 1, 12 * minutes), lakes, "deterministic");
+    // lakes 1, 3, 5, 1, 4, 0, 2, 1, 1, 2, 4; rivers 3, 4, 2, 1, 0, 0, 2, 2,
+    // 2, 0, 1; islands 3, 3, 0, 2, 0, 0, 1, 4, 2, 2, 1. Islands seed 6 and
+    // rivers seed 7, used before, now build none and two; the seeds below
+    // build four or five.
+    game(MapStyle::Islands, 8, 12 * minutes);
+    let lakes = game(MapStyle::Lakes, 3, 12 * minutes);
+    game(MapStyle::Rivers, 2, 12 * minutes);
+    assert_eq!(game(MapStyle::Lakes, 3, 12 * minutes), lakes, "deterministic");
 }

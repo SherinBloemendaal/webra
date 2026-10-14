@@ -780,8 +780,11 @@ pub(crate) fn naval_retreat(w: &mut World, player: u8, units: &[usize]) -> Optio
     Some((cell_center(x), cell_center(y)))
 }
 
+/// A member busy with an attack: firing, or on its way into range. One that
+/// waits short of range (behind other units, or for a short way to show up)
+/// is not, so the squad gives it new orders (attack_range.rs).
 fn busy_attack(w: &World, i: usize) -> bool {
-    w.actors[i].activity == Activity::Attack
+    w.actors[i].activity == Activity::Attack && !w.range_waiting(i)
 }
 
 // ---- Squad updates --------------------------------------------------------------------
@@ -879,7 +882,10 @@ fn ground_idle(w: &mut World, player: u8, cfg: &BotConfig, k: usize) {
     }
     let units = units_k(w, player, k);
     if fuzzy_attack(w, Fuzzy::Default, &units, &enemies) {
-        move_to_target(w, player, k, &units, tp, true);
+        // WebRA: members firing at a target in reach keep firing (a stuck
+        // leader sends the squad back here; OpenRA orders every unit on).
+        let movers: Vec<usize> = units.iter().copied().filter(|&u| !w.attack_firing(u)).collect();
+        move_to_target(w, player, k, &movers, tp, true);
         if sq(w, player).squads[k].kind == SquadType::Naval {
             sq(w, player).naval_attacks += 1;
         }
@@ -897,7 +903,7 @@ fn stuck(w: &mut World, player: u8, k: usize, l: usize) -> bool {
     // WebRA: a naval squad's leader that is firing makes progress too
     // (OpenRA counts it stuck after 63 ticks in place, which drops a fleet
     // shelling the shore back to idle and orders every ship to move again).
-    let firing = sq(w, player).squads[k].kind == SquadType::Naval && busy_attack(w, l);
+    let firing = sq(w, player).squads[k].kind == SquadType::Naval && w.attack_firing(l);
     let s = &mut sq(w, player).squads[k];
     if firing {
         s.last_updated = tick;
@@ -1333,4 +1339,55 @@ pub(crate) fn naval_target_check(w: &mut World, player: u8, t: usize) {
 #[cfg(test)]
 pub(crate) fn squad_units(w: &World, player: u8, kind: SquadType) -> Vec<usize> {
     w.ai[player as usize].squads.squads.iter().filter(|s| s.kind == kind).flat_map(|s| units_of(w, player, s)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A member of an attacking squad that waits short of range (behind
+    /// other units, or for a short way) is not busy: the squad orders it on
+    /// toward the target. A member firing at a target in reach keeps firing.
+    #[test]
+    fn a_squad_re_tasks_members_that_wait_short_of_range() {
+        let mut w = World::new(5, 64, &[("russia", true), ("england", false)]);
+        let ty = |w: &World, id: &str| w.rules.actor_index(id).unwrap() as u16;
+        let (sx, sy) = w.players[0].start;
+        let foe = w.spawn_unit(ty(&w, "2TNK"), 1, cell_center(sx + 12), cell_center(sy + 6), 0);
+        w.actors[foe].hp = 1_000_000;
+        w.actors[foe].reload = [1_000_000; crate::world::MAX_WEAPONS];
+        let firing = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(sx + 9), cell_center(sy + 6), 256);
+        let waiting = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(sx + 2), cell_center(sy + 6), 256);
+        w.players[0].explored.iter_mut().for_each(|e| *e = 1);
+        w.add_reveal(0, w.actors[foe].x, w.actors[foe].y, 6 * CELL, 25 * 600);
+        w.update_vision();
+        w.step();
+        let tr = w.make_ref(foe);
+        for &u in &[firing, waiting] {
+            let a = &mut w.actors[u];
+            a.activity = Activity::Attack;
+            a.target = tr;
+            a.forced = false;
+        }
+        // The rear tank waits for a short way into range to show up.
+        let tick = w.tick;
+        let a = &mut w.actors[waiting];
+        a.chase_cell = w.map.idx(sx + 12, sy + 6) as u32;
+        a.goal = w.map.idx(sx + 3, sy + 6) as u32;
+        a.range_retry = tick + crate::attack_range::RETRY_TICKS;
+        assert!(w.attack_firing(firing) && busy_attack(&w, firing));
+        assert!(w.range_waiting(waiting) && !busy_attack(&w, waiting) && !w.attack_firing(waiting));
+        let k = new_squad(&mut w, 0, SquadType::Assault, Some((foe, (0, 0))));
+        let refs: Vec<u32> = [firing, waiting].iter().map(|&u| w.make_ref(u)).collect();
+        let s = &mut sq(&mut w, 0).squads[k];
+        s.units = refs;
+        s.state = State::GroundAttack;
+        s.last_updated = tick;
+        let cfg = w.ai[0].cfg.clone();
+        ground_attack(&mut w, 0, &cfg, k);
+        w.step();
+        assert_eq!(w.actors[firing].activity, Activity::Attack, "the firing tank keeps firing");
+        assert_ne!(w.actors[waiting].activity, Activity::Attack, "the waiting tank got a new order");
+        assert!(w.actors[waiting].attack_move, "an attack move toward the target");
+    }
 }

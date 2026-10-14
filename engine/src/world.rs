@@ -101,6 +101,10 @@ pub struct Actor {
     /// the flow field), 0 while it follows a route it found
     /// (attack_range.rs).
     pub range_retry: u32,
+    /// The cell the unit stood on when it last moved into range, and the
+    /// tick it got there: how long it has waited (attack_range.rs).
+    pub range_cell: u32,
+    pub range_since: u32,
     /// The move's goal is a stand-in for `dest`, the nearest cell that could
     /// be reached when the way was cut (a husk in a gap, a fallen bridge);
     /// the move goes back to `dest` when a later passability change opens
@@ -259,6 +263,8 @@ impl Actor {
             forced: false,
             chase_cell: NONE,
             range_retry: 0,
+            range_cell: NONE,
+            range_since: 0,
             retargeted: false,
             goal_version: 0,
             reload: [0; MAX_WEAPONS],
@@ -2437,6 +2443,7 @@ impl World {
             a.attack_move = false;
             a.chase_cell = NONE;
             a.range_retry = 0;
+            a.range_cell = NONE;
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
@@ -2811,6 +2818,8 @@ impl World {
                 mix(a.stall_ticks as i64);
                 // Moving into weapon range (attack_range.rs).
                 mix(a.range_retry as i64);
+                mix(a.range_cell as i64);
+                mix(a.range_since as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
                 // Burning husks and crate timers (husks.rs, crates.rs), primary structures (primary.rs).
                 mix(a.leftover.ticks as i64);

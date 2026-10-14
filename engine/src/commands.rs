@@ -150,6 +150,7 @@ impl World {
             a.attack_move = false;
             a.chase_cell = NONE;
             a.range_retry = 0;
+            a.range_cell = NONE;
             a.goal = NONE;
             a.group_size = 1;
             a.best_dist = i32::MAX;
@@ -217,6 +218,7 @@ impl World {
             a.goal = NONE;
             a.chase_cell = NONE;
             a.range_retry = 0;
+            a.range_cell = NONE;
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
@@ -264,6 +266,7 @@ impl World {
         a.goal = NONE;
         a.chase_cell = NONE;
         a.range_retry = 0;
+        a.range_cell = NONE;
         true
     }
 

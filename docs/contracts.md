@@ -2056,7 +2056,8 @@ Close to OpenRA, and the same for every player whatever its slot:
   target's hit shape from the point the unit stands on; for infantry from
   every sub-cell), that it can enter, stay in and reach (water for ships).
   A unit in range does not move; the cell is found again when the target
-  moves on (`chase_replan`). Cells another unit stands in, or another unit
+  moves on (`chase_replan`), and at once when the unit stands on its cell,
+  still out of range, and the target's cell changed (OpenRA repaths then). Cells another unit stands in, or another unit
   moving into range is heading for, do not count, so a row of artillery or
   ships told to fire shifts up beside its front units. Routes: in the
   OpenRA movement model around every unit, then standing ones, then those
@@ -2072,7 +2073,14 @@ Close to OpenRA, and the same for every player whatever its slot:
   with no such route at all (a target far round a lake) it follows the flow
   field toward the cell in range nearest it and searches again every 25
   ticks. A target with no reachable cell in range is let go (as before:
-  across a river, on an island). The cells in range of a target are worked
+  across a river, on an island). A unit that stays in one cell for 20
+  seconds while moving into range, with no own or allied unit firing at the
+  same target, gives up too (`Actor.range_cell`, `range_since`, in the state
+  hash): a jam that does not clear, or two units each waiting for the
+  other's cell. Bot squads count a member waiting short of range as free
+  and order it on, and a stuck squad's new orders leave members that fire
+  at a target in reach alone (`ai_squads.rs` `busy_attack`,
+  `World::attack_firing`). The cells in range of a target are worked
   out once per tick per kind of unit (`World::range_memo`).
 - **Lost targets.** An attack whose target goes out of sight (or cloaks)
   keeps the target and heads for where it was last seen (`Actor.target_seen`,

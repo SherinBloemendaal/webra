@@ -33,6 +33,10 @@
 //!   it, and searches again every `RETRY_TICKS` until the short search
 //!   succeeds on the way. OpenRA's hierarchical path finder searches the
 //!   whole way at once.
+//! - A unit that stays in one cell for `RANGE_PATIENCE` while moving into
+//!   range, with no own unit firing at the same target (whose end would
+//!   free the way), gives up: a jam that does not clear, two units each
+//!   waiting for the other's cell. OpenRA's Attack retries for good.
 //! - The cells in range of one target are worked out once per tick for all
 //!   units of the same kind (`World::range_memo`), as OpenRA caches them
 //!   per activity and tick.
@@ -43,7 +47,7 @@ use crate::math::{dist, CELL};
 use crate::movement::occupancy::Blocking;
 use crate::movement::MoveResult;
 use crate::rules::Domain;
-use crate::world::{cell_center, World, NONE};
+use crate::world::{cell_center, Activity, World, NONE};
 
 /// Route cost a detour to a free cell in range may add beyond twice the
 /// straight way (ten straight cells).
@@ -51,6 +55,9 @@ const DETOUR_SLACK: u32 = 10 * COST_STRAIGHT;
 /// Ticks before a unit that is waiting short of range (or heading for a
 /// far one along the flow field) searches for a way into range again.
 pub(crate) const RETRY_TICKS: u32 = 25;
+/// Ticks a unit moving into range may stay in one cell, with no own unit
+/// firing at the same target, before it gives up (20 seconds).
+pub(crate) const RANGE_PATIENCE: u32 = 25 * 20;
 /// How far infantry may stand from the centre of their cell (a corner
 /// sub-cell, movement/occupancy.rs): a cell counts as in range for them
 /// only when every point of it does.
@@ -212,7 +219,50 @@ impl World {
             a.chase_cell = NONE;
             a.goal = NONE;
             a.range_retry = 0;
+            a.range_cell = NONE;
         }
+    }
+
+    /// Whether unit `i` waits short of range: behind other units, or
+    /// heading for a far cell in range until a short way shows up (the AI
+    /// re-tasks such units, ai_squads.rs).
+    pub(crate) fn range_waiting(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        matches!(a.activity, Activity::Attack | Activity::AttackGround) && a.chase_cell != NONE && a.range_retry != 0
+    }
+
+    /// Whether unit `i` attacks and has its target in reach now: it fires
+    /// (or aims), as opposed to moving into range or waiting.
+    pub(crate) fn attack_firing(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        match a.activity {
+            Activity::Attack => self.live_target(i).is_some_and(|t| self.in_reach(i, t)),
+            Activity::AttackGround => {
+                let (x, y) = a.fire_at;
+                let class = self.ground_class(x, y);
+                let d = dist(a.x, a.y, x, y) as i64;
+                self.rules.actors[a.ty as usize].reaches_class(&self.rules, class, d * d)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether an own or allied unit other than `i` fires at the target of
+    /// `i` (the same actor, or the same spot on the ground) from where it
+    /// stands: `i` may be queued behind it.
+    fn target_fired_by_others(&self, i: usize) -> bool {
+        let me = &self.actors[i];
+        self.actors.iter().enumerate().any(|(u, a)| {
+            u != i
+                && a.alive
+                && a.activity == me.activity
+                && self.are_allies(me.owner, a.owner)
+                && match me.activity {
+                    Activity::Attack => a.target == me.target,
+                    _ => a.fire_at == me.fire_at,
+                }
+                && self.attack_firing(u)
+        })
     }
 
     /// Where unit `i` goes to get `ft` within `min` and `max`; None when no
@@ -262,7 +312,9 @@ impl World {
         // the nearer ones, to wait there.
         let last = if cell_model { Blocking::Immovable } else { Blocking::None };
         if free.len() < cells.len() {
-            if let Some(path) = self.find_path_to_cells(i, from, &cells, cap, last) {
+            // Not behind what will not make way (an enemy, a structure).
+            let behind: Vec<u32> = cells.iter().copied().filter(|&c| c == from || !cell_model || self.can_enter_cell(i, c, last)).collect();
+            if let Some(path) = self.find_path_to_cells(i, from, &behind, cap, last) {
                 let goal = path.first().copied().unwrap_or(from);
                 return Some(Plan::Behind(goal, path));
             }
@@ -295,11 +347,36 @@ impl World {
         let a = &self.actors[i];
         let cell_model = self.cell_moves() && self.occupies_cells(i);
         // Waited for a cell that stayed taken (Move ended Blocked): look again.
-        let blocked = cell_model && a.goal != NONE && a.mv.dest == a.goal && a.mv.result == MoveResult::Blocked;
+        // Only a move to a free cell: a stand-in goal (waiting behind
+        // others, heading for a far cell) is looked at again on its timer,
+        // and its move may stay Blocked meanwhile.
+        let blocked = cell_model && a.range_retry == 0 && a.goal != NONE && a.mv.dest == a.goal && a.mv.result == MoveResult::Blocked;
         let retry = a.range_retry != 0 && self.tick >= a.range_retry;
         // Another unit got to the free cell first and stays there.
         let taken = a.range_retry == 0 && a.goal != NONE && a.chase_cell != NONE && !self.range_goal_still_free(i, a.goal);
-        if self.chase_replan(i, tcell) || blocked || retry || taken {
+        // On its goal and still out of range, while the target moved on:
+        // after it at once (OpenRA MoveWithinRange repaths whenever the
+        // target's cell changed and it is not at the right range).
+        let here = self.cell_index(ux, uy) as u32;
+        let on_goal = a.goal != NONE && if cell_model { a.mv.to == a.goal && a.mv.from == a.mv.to } else { here == a.goal };
+        let followed = on_goal && a.chase_cell != NONE && a.chase_cell != tcell;
+        // Waiting time: ticks since the unit last changed cells.
+        if a.range_cell != here {
+            let tick = self.tick;
+            let a = &mut self.actors[i];
+            a.range_cell = here;
+            a.range_since = tick;
+        }
+        // Stuck in one cell for long, with nobody of its own firing at the
+        // same target (whose end would free the way): a jam that does not
+        // clear, two units each waiting for the other's cell. It gives up,
+        // as a unit whose move into range falls short does. Looked at once
+        // per `RETRY_TICKS` past the patience.
+        let waited = self.tick - self.actors[i].range_since;
+        if waited >= RANGE_PATIENCE && (waited - RANGE_PATIENCE).is_multiple_of(RETRY_TICKS) && !self.target_fired_by_others(i) {
+            return false;
+        }
+        if self.chase_replan(i, tcell) || blocked || retry || taken || followed {
             let Some(plan) = self.plan_range(i, ft, min, max) else { return false };
             let tick = self.tick;
             let a = &mut self.actors[i];

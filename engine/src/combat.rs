@@ -359,6 +359,7 @@ impl World {
         a.hold = hold;
         a.chase_cell = NONE;
         a.range_retry = 0;
+        a.range_cell = NONE;
         if a.kind != Kind::Building {
             a.activity = Activity::Attack;
         }

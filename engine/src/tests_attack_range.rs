@@ -398,3 +398,156 @@ fn a_big_army_moving_into_range_keeps_route_searches_bounded() {
         assert!(total <= 3_000_000, "{model:?}: {total} cells expanded in all");
     }
 }
+
+// ---- Waiting short of range ----------------------------------------------------------
+
+/// Rock everywhere but the given open cells, passability rebuilt.
+fn carve(w: &mut World, open: impl IntoIterator<Item = (i32, i32)>) {
+    let (mw, mh) = (w.map.width, w.map.height);
+    paint(w, Terrain::Rock, (0..mw).flat_map(|x| (0..mh).map(move |y| (x, y))));
+    paint(w, Terrain::Clear, open);
+}
+
+/// Search work of a tick: cells expanded.
+fn expanded_per_tick(w: &mut World, ticks: u32) -> (u64, u64) {
+    let (mut worst, mut total) = (0, 0);
+    for _ in 0..ticks {
+        let e0 = w.search.expanded;
+        w.step();
+        let e = w.search.expanded - e0;
+        worst = worst.max(e);
+        total += e;
+    }
+    (worst, total)
+}
+
+/// A tank in a walled yard whose only gate an enemy truck blocks, told to
+/// shell a spot far outside: no short way (it heads for the gate along the
+/// flow field and stands there, its move Blocked). It searches again every
+/// `RETRY_TICKS`, not every tick of its move's retry cooldown, and gives up
+/// once it has waited `RANGE_PATIENCE` with nobody of its own firing in
+/// front of it.
+#[test]
+fn a_unit_blocked_on_its_way_to_a_far_range_searches_on_a_timer_and_gives_up() {
+    let mut w = arena(MovementModel::OpenRA, 96, 64);
+    // The yard (columns 2 to 21, rows 2 to 21), its gate at (22, 12), and
+    // the open land beyond (columns 23 to 95).
+    let yard = (2..22).flat_map(|x| (2..22).map(move |y| (x, y)));
+    let land = (23..96).flat_map(|x| (0..64).map(move |y| (x, y)));
+    carve(&mut w, yard.chain(land).chain([(22, 12)]));
+    let truck = unit(&mut w, "TRUK", 1, 22, 12, 0);
+    let tank = unit(&mut w, "2TNK", 0, 12, 12, 256);
+    w.queue_order(Order::AttackGround { player: 0, ids: refs(&w, &[tank]), x: cell_center(90), y: cell_center(50) });
+    w.step();
+    let (_, settle) = expanded_per_tick(&mut w, 150);
+    let (worst, total) = expanded_per_tick(&mut w, 200);
+    assert!(w.actors[truck].alive);
+    assert_eq!(w.actors[tank].activity, Activity::AttackGround, "still waiting at the gate");
+    assert!(w.range_waiting(tank), "waiting for a short way");
+    // Each search may flood the land outside up to its limit; once per
+    // `RETRY_TICKS` that averages a few hundred cells a tick.
+    assert!(total <= 200 * 1_500, "{total} cells in 200 ticks (worst tick {worst}, settling {settle})");
+    // Then it gives up, as a move into range that falls short does.
+    run_until_idle(&mut w, tank, crate::attack_range::RANGE_PATIENCE + 100);
+}
+
+fn run_until_idle(w: &mut World, u: usize, ticks: u32) {
+    for _ in 0..ticks {
+        w.step();
+        if w.actors[u].activity == Activity::Idle {
+            return;
+        }
+    }
+    panic!("still {:?} after {ticks} more ticks", w.actors[u].activity);
+}
+
+/// A tank queued in a lane behind its own tanks, which hold every cell in
+/// range and fire, waits behind them (searching on a timer) for as long as
+/// they fire.
+#[test]
+fn a_unit_queued_behind_firing_units_waits_on_cheaply() {
+    let mut w = arena(MovementModel::OpenRA, 64, 40);
+    carve(&mut w, (2..40).map(|x| (x, 20)));
+    let (_, range) = weapon_range(&w, "90mm");
+    let (tx, ty) = (cell_center(39), cell_center(20));
+    // Tanks on every cell of the lane in range, then two more behind.
+    let first = (cell_center(39) - range + CELL - 1) / CELL;
+    let units: Vec<usize> = (first - 2..39).map(|x| unit(&mut w, "2TNK", 0, x, 20, 256)).collect();
+    w.queue_order(Order::AttackGround { player: 0, ids: refs(&w, &units), x: tx, y: ty });
+    w.step();
+    let (_, total) = expanded_per_tick(&mut w, crate::attack_range::RANGE_PATIENCE + 200);
+    let rear = units[0];
+    assert_eq!(w.actors[rear].activity, Activity::AttackGround, "the rear tank still waits its turn");
+    assert!(w.range_waiting(rear) || w.attack_firing(rear));
+    assert!(total <= 50_000, "{total} cells expanded while waiting");
+}
+
+/// Two tanks in a one-cell lane, each told to shell a spot beyond the
+/// other: each waits for the other's cell. Neither waits for good: they
+/// give up after `RANGE_PATIENCE` (nobody of theirs fires in front of
+/// them), and the searches meanwhile stay few.
+#[test]
+fn two_units_waiting_for_each_other_give_up() {
+    let mut w = arena(MovementModel::OpenRA, 64, 40);
+    carve(&mut w, (2..62).map(|x| (x, 20)));
+    let a = unit(&mut w, "2TNK", 0, 20, 20, 256);
+    let b = unit(&mut w, "2TNK", 0, 24, 20, 768);
+    w.queue_order(Order::AttackGround { player: 0, ids: refs(&w, &[a]), x: cell_center(60), y: cell_center(20) });
+    w.queue_order(Order::AttackGround { player: 0, ids: refs(&w, &[b]), x: cell_center(3), y: cell_center(20) });
+    let (_, total) = expanded_per_tick(&mut w, crate::attack_range::RANGE_PATIENCE + 300);
+    for u in [a, b] {
+        assert_eq!(w.actors[u].activity, Activity::Idle, "gave up the attack");
+    }
+    assert!(total <= 100_000, "{total} cells expanded");
+}
+
+// ---- Following a target -----------------------------------------------------------------
+
+/// A cruiser after a destroyer that slowly sails off. The cruiser stops
+/// as soon as the destroyer is in range (OpenRA MoveWithinRange), so the
+/// destroyer slips a cell out again and again; each time, the cruiser on
+/// its goal goes after it at once (OpenRA repaths when the target's cell
+/// changed), instead of waiting `RETRY_TICKS`, so it never falls behind.
+fn cruiser_follows(model: MovementModel) {
+    let mut w = arena(model, 120, 40);
+    paint(&mut w, Terrain::Water, (0..120).flat_map(|x| (0..40).map(move |y| (x, y))));
+    let (_, range) = weapon_range(&w, "8Inch");
+    let ca = unit(&mut w, "CA", 0, 5, 20, 256);
+    let dd = unit(&mut w, "DD", 1, 5 + range / CELL + 2, 20, 256);
+    w.actors[dd].hp = 100_000_000;
+    w.players[0].explored.iter_mut().for_each(|e| *e = 1);
+    w.add_reveal(0, w.actors[dd].x, w.actors[dd].y, 3 * CELL, 2);
+    w.update_vision();
+    w.step();
+    w.queue_order(Order::Attack { player: 0, ids: refs(&w, &[ca]), target: w.make_ref(dd) });
+    let (mut worst, mut in_range) = (i32::MIN, 0);
+    let ticks = 25 * 60;
+    for t in 0..ticks {
+        // One cell east every 30 ticks: about three quarters of the
+        // cruiser's speed.
+        if t % 30 == 0 {
+            let (x, y) = w.cell_of(w.actors[dd].x, w.actors[dd].y);
+            w.queue_order(Order::Move { player: 1, ids: refs(&w, &[dd]), x: cell_center(x + 1), y: cell_center(y), attack_move: false });
+        }
+        w.add_reveal(0, w.actors[dd].x, w.actors[dd].y, 3 * CELL, 2);
+        w.step();
+        if t >= 300 {
+            let d = w.hit_distance(dd, w.actors[ca].x, w.actors[ca].y);
+            worst = worst.max(d - range);
+            in_range += (d <= range) as u32;
+        }
+    }
+    assert!(worst <= CELL, "{model:?}: the destroyer got {} cells out of range", worst / CELL);
+    assert!(in_range * 100 / (ticks - 300) >= 15, "{model:?}: in range {in_range} ticks");
+    assert_eq!(w.actors[ca].activity, Activity::Attack);
+}
+
+#[test]
+fn a_cruiser_keeps_a_slowly_retreating_destroyer_in_range_openra() {
+    cruiser_follows(MovementModel::OpenRA);
+}
+
+#[test]
+fn a_cruiser_keeps_a_slowly_retreating_destroyer_in_range_webra() {
+    cruiser_follows(MovementModel::WebRA);
+}
