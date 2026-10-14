@@ -342,7 +342,8 @@ data, admins only), roles (admin powers), and the right to play online.
   16-byte salt per hash, iteration count stored per hash (default 40,000,
   sized so one derivation takes about 3 to 6 ms of the Workers Free plan's
   10 ms per request; raised with `PASSWORD_ITERATIONS` up to the Workers
-  maximum of 100,000, at most 50,000 on the Free plan), optional pepper from
+  maximum of 100,000, at most 50,000 on the Free plan; the deployment
+  uses 100,000 on the Workers Paid plan), optional pepper from
   a Worker secret recorded per hash. No request derives more than one key;
   hashes are upgraded when the password is next set, never at sign-in.
   Sign-in throttling resolves the login to its account first (username and

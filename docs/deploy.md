@@ -264,7 +264,7 @@ settings.
 | `EMAIL_FROM` | repository variable, passed by the deploy (absent locally) | Sender of account mail; set, the deploy also adds the `send_email` binding `EMAIL` (see Email). Unset: no email |
 | `SITE_ORIGIN` | variable in `wrangler.jsonc` | Where links in account mail point (`https://webra.sherin.dev`); `wrangler dev` links to its own local address |
 | `EMAIL_DAILY_LIMIT` | variable in `wrangler.jsonc` | Most account mails per UTC day, whoever asks (default 300, 1 to 100,000); over it nothing is sent until the next day and the admin overview warns |
-| `PASSWORD_ITERATIONS` | variable, optional | PBKDF2 iterations for new hashes, 10,000 to 100,000 (default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
+| `PASSWORD_ITERATIONS` | variable in `wrangler.jsonc` (100,000 since 0.15.0, on the Workers Paid plan) | PBKDF2 iterations for new hashes, 10,000 to 100,000 (code default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
 
 Secrets are set by the owner, never committed:
 

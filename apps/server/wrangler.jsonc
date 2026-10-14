@@ -60,6 +60,9 @@
   "vars": {
     "SITE_ORIGIN": "https://webra.sherin.dev",
     "EMAIL_DAILY_LIMIT": "300",
+    // PBKDF2 iterations for new password hashes (src/accounts/password.js):
+    // the Workers Paid plan has the CPU room for the maximum, 100,000.
+    "PASSWORD_ITERATIONS": "100000",
     "DISCORD_CLIENT_ID": "",
     "SENTRY_DSN": "",
     "SENTRY_ENVIRONMENT": "dev",
