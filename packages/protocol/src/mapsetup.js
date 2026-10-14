@@ -22,6 +22,7 @@ import {
   TIME_LIMITS,
   WEATHER_MODES,
   MOVEMENT_MODELS,
+  FACTORY_LOSS_RULES,
 } from './constants.js';
 import { excerpt, fail, int, isPlainObject, object, oneOf } from './check.js';
 
@@ -38,6 +39,7 @@ export const MAP_OPTION_VALUES = Object.freeze({
   gameSpeed: GAME_SPEEDS,
   timeLimit: TIME_LIMITS,
   movement: MOVEMENT_MODELS,
+  factoryLoss: FACTORY_LOSS_RULES,
   ...Object.fromEntries(BOOLEAN_OPTIONS.map((k) => [k, [true, false]])),
 });
 /** Keys of MAP_OPTION_VALUES, in the order the lobby lists them. */

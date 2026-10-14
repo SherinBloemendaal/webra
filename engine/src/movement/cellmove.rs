@@ -40,6 +40,12 @@ pub const ORDER_NEAR_ENOUGH: i32 = 8;
 /// OpenRA Crushable.WarnProbability: the chance (percent) that a soldier
 /// about to be run over jumps aside.
 const WARN_PROBABILITY: i32 = 75;
+/// Ticks a unit waits without a step for a queue ahead of it in a narrow
+/// passage (`World::cell_is_evacuating`), before only units leaving the cell
+/// itself count (OpenRA): long enough for a column of a dozen tanks to make
+/// way cell by cell, short enough that a queue which never gets anywhere
+/// gives up.
+const QUEUE_PATIENCE: i32 = 160;
 /// OpenRA MoveCooldownHelper.Cooldown: ticks before a move that ended
 /// short is tried again (activities that keep trying, such as repairs).
 const RETRY_COOLDOWN: (i32, i32) = (20, 31);
@@ -76,6 +82,13 @@ pub struct Motion {
     pub result: MoveResult,
     /// Asked to make way while busy (Mobile.IsBlocking).
     pub blocking: bool,
+    /// The cell it waits to step into while its move is held up (Move.PopPath
+    /// waiting), NONE otherwise: units waiting behind it follow the queue
+    /// (`World::cell_is_evacuating`).
+    pub waiting_for: u32,
+    /// Ticks it has waited since its last step in this move: past
+    /// `QUEUE_PATIENCE` a queue ahead no longer counts as leaving.
+    pub queue_wait: i32,
     /// Turning on the spot to drive on (Mobile.TurnToMove).
     pub turning: bool,
     /// Moved in the last tick (Mobile.CurrentMovementTypes: Horizontal).
@@ -107,6 +120,8 @@ impl Default for Motion {
             wait: 0,
             result: MoveResult::None,
             blocking: false,
+            waiting_for: NONE,
+            queue_wait: 0,
             turning: false,
             moving: false,
             cooldown: 0,
@@ -126,6 +141,8 @@ impl Motion {
         self.field = false;
         self.waited = false;
         self.cooldown = 0;
+        self.waiting_for = NONE;
+        self.queue_wait = 0;
     }
 
     /// Other code put the unit at `pos` on `cell`: it stands there now. A
@@ -140,6 +157,7 @@ impl Motion {
         self.pos = pos;
         self.blocking = false;
         self.turning = false;
+        self.waiting_for = NONE;
     }
 
     pub fn mix(&self, mix: &mut impl FnMut(i64)) {
@@ -151,6 +169,8 @@ impl Motion {
             mix(c as i64);
         }
         mix(self.field as i64 | (self.waited as i64) << 1 | (self.blocking as i64) << 2 | (self.crowded as i64) << 3);
+        mix(self.waiting_for as i64);
+        mix(self.queue_wait as i64);
         mix(self.wait as i64);
         mix(self.cooldown as i64);
         mix(self.result as i64);
@@ -297,7 +317,16 @@ impl World {
             if self.actors[i].mv.result != MoveResult::InProgress {
                 return;
             }
-            match self.next_step(i) {
+            let next = self.next_step(i);
+            match next {
+                Next::Wait => self.actors[i].mv.queue_wait += 1,
+                Next::Go(..) => {
+                    let m = &mut self.actors[i].mv;
+                    (m.waiting_for, m.queue_wait) = (NONE, 0);
+                }
+                _ => self.actors[i].mv.waiting_for = NONE,
+            }
+            match next {
                 Next::Go(cell, sub) => {
                     let m = &self.actors[i].mv;
                     let from = (m.to, m.to_sub);
@@ -418,7 +447,10 @@ impl World {
         };
         match self.pop_path(i, next) {
             Pop::Next(c, sub) => self.turn_or_go(i, c, sub),
-            Pop::Wait => Next::Wait,
+            Pop::Wait => {
+                self.actors[i].mv.waiting_for = next;
+                Next::Wait
+            }
             Pop::Stop => Next::End(MoveResult::Blocked),
         }
     }
@@ -593,7 +625,7 @@ impl World {
         }
         m.waited = false;
         // The blockers are leaving already: wait a little longer.
-        if self.cell_is_evacuating(next, i) {
+        if self.cell_is_evacuating(next, i, self.actors[i].mv.queue_wait < QUEUE_PATIENCE) {
             return Pop::Wait;
         }
         if let Some(path) = self.find_path(i, dest, Blocking::All).filter(|p| !p.is_empty()) {
@@ -691,9 +723,16 @@ impl World {
     /// they are in the way (Mobile.IsBlocking).
     fn notify_blocker(&mut self, i: usize, cell: u32) {
         let blockers: Vec<usize> = self.others_at(cell, i).map(|o| o.actor as usize).collect();
-        let from = self.actors[i].mv.to;
+        let (owner, from) = (self.actors[i].owner, self.actors[i].mv.to);
+        self.notify_blockers(blockers, owner, from);
+    }
+
+    /// OpenRA Mobile.OnNotifyBlockingMove of each of `blockers`, asked by
+    /// an actor of `owner` on cell `from`: friendly idle ones step aside
+    /// (Nudge), friendly busy ones note that they are in the way.
+    fn notify_blockers(&mut self, blockers: Vec<usize>, owner: u8, from: u32) {
         for o in blockers {
-            if !self.are_allies(self.actors[o].owner, self.actors[i].owner) {
+            if !self.are_allies(self.actors[o].owner, owner) {
                 continue;
             }
             if self.idle_on_cell(o) {
@@ -702,6 +741,60 @@ impl World {
                 self.actors[o].mv.blocking = true;
             }
         }
+    }
+
+    /// OpenRA Actor.NotifyBlocker of a structure of `owner` whose top-left
+    /// cell is `from` (a factory about to let a unit out of `cell`,
+    /// production.rs). In the WebRA movement model, where units hold no
+    /// cells and a nudge to a neighbouring cell would only push into the
+    /// crowd at the door, idle friendly units standing in `cell` move to the
+    /// nearest cell nobody stands in instead.
+    pub(crate) fn notify_blockers_at(&mut self, cell: u32, owner: u8, from: u32) {
+        if self.cell_moves() {
+            let blockers: Vec<usize> = self.others_at(cell, usize::MAX).map(|o| o.actor as usize).collect();
+            self.notify_blockers(blockers, owner, from);
+            return;
+        }
+        let here: Vec<usize> = self.units_in_cell(cell as usize).iter().map(|&u| u as usize).collect();
+        for o in here {
+            let a = &self.actors[o];
+            let idle = a.alive && a.activity == Activity::Idle && a.waypoints.is_empty();
+            if !idle || a.kind == crate::rules::Kind::Aircraft || !self.is_movable(o) || !self.are_allies(a.owner, owner) {
+                continue;
+            }
+            if let Some(c) = self.nearest_empty_cell(o, cell) {
+                let (x, y) = self.cell_point(c);
+                self.order_move(&[o], x, y, false);
+            }
+        }
+    }
+
+    /// WebRA movement model: a cell around `cell` (the nearest ring of up to
+    /// ten, a random one of that ring) that unit `i` can reach and where no
+    /// unit stands.
+    fn nearest_empty_cell(&self, i: usize, cell: u32) -> Option<u32> {
+        let w = self.map.width;
+        let (x, y) = (cell as i32 % w, cell as i32 / w);
+        let pass = self.pass_of(i);
+        let here = self.cell_at(self.actors[i].x, self.actors[i].y) as usize;
+        for r in 1..=10i32 {
+            let mut ring = Vec::new();
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if (dx.abs() != r && dy.abs() != r) || !self.map.contains(x + dx, y + dy) {
+                        continue;
+                    }
+                    let c = self.map.idx(x + dx, y + dy);
+                    if !pass.blocked[c] && pass.component[c] == pass.component[here] && self.units_in_cell(c).is_empty() {
+                        ring.push(c as u32);
+                    }
+                }
+            }
+            if !ring.is_empty() {
+                return Some(ring[self.movement_roll(i, Roll::NudgeCell, ring.len() as u64) as usize]);
+            }
+        }
+        None
     }
 
     /// OpenRA Nudge: unit `o` moves to a free neighbouring cell (else next
@@ -873,11 +966,28 @@ impl World {
         match self.cell_move_ended(i, goal) {
             Some(MoveResult::Reached) => true,
             Some(MoveResult::Blocked) if crowd => {
+                let m = &self.actors[i].mv;
+                if m.near > 0 && self.cell_dist2(m.to, goal) > m.near * m.near {
+                    self.note_route_blocked(i);
+                }
                 self.actors[i].mv.cancel();
                 true
             }
             _ => false,
         }
+    }
+
+    /// WebRA addition: a move order that ended short of its goal because the
+    /// way stayed blocked (farther out than it may stop short: units that do
+    /// not make way, a jam on a bridge) tells its owner
+    /// (`SoundEventKind::RouteBlocked`: a feedback line and a radar ping in
+    /// the client, at most one per player every few seconds). OpenRA gives
+    /// no feedback; its move cursor only shows terrain that cannot be
+    /// reached when the order is given.
+    pub(crate) fn note_route_blocked(&mut self, i: usize) {
+        let a = &self.actors[i];
+        let (tick, owner, ty, x, y) = (self.tick, a.owner, a.ty, a.x, a.y);
+        self.sound.push_route_blocked(tick, owner, ty, x, y);
     }
 
     /// Whether the move of unit `i` toward `goal` is over, reached or

@@ -62,6 +62,7 @@ import {
   TECH_LEVELS,
   TIME_LIMITS,
   MOVEMENT_MODELS,
+  FACTORY_LOSS_RULES,
   HANDICAPS,
   MAP_STYLES,
   BIOMES,
@@ -133,6 +134,7 @@ const LABELS = {
   weather: { full: 'On', cosmetic: 'Cosmetic only', off: 'Off' },
   techBuildings: { none: 'None', standard: 'Standard', extra: 'Extra', oilonly: 'Oil only', oilrush: 'Oil rush' },
   movement: { openra: 'OpenRA', webra: 'WebRA' },
+  factoryLoss: { openra: 'OpenRA', webra: 'WebRA' },
 };
 // Option rows: key (also the help text key in js/help.js), label, choices.
 // The World group holds the climate of the battlefield.
@@ -149,7 +151,10 @@ const SELECT_OPTIONS = [
   ['gameSpeed', 'Game speed', GAME_SPEEDS.map((v) => [v, LABELS.gameSpeed[v]])],
   ['timeLimit', 'Time limit', TIME_LIMITS.map((v) => [v, v === 0 ? 'No limit' : `${v} minutes`])],
   ['movement', 'Movement', MOVEMENT_MODELS.map((v) => [v, LABELS.movement[v]])],
+  ['factoryLoss', 'Factory loss', FACTORY_LOSS_RULES.map((v) => [v, LABELS.factoryLoss[v]])],
 ];
+// The select options a co-op mission takes (protocol mission.js MISSION_OPTION_KEYS).
+const MISSION_SELECT_OPTIONS = ['gameSpeed', 'movement', 'factoryLoss'];
 const TOGGLES = [
   ['crates', 'Crates'],
   ['shortGame', 'Short game'],
@@ -1473,14 +1478,14 @@ export class OnlineUI {
     this.optionRows.techBuildings.hidden = !!this.state.map;
     this.cheatsWarning.hidden = !o.cheats;
     this.modePicker.render(o, { editable: host });
-    // A co-op mission brings its own world and rules: only the game speed and the movement model apply.
+    // A co-op mission brings its own world and rules: only the game speed, the movement model and the factory loss rule apply.
     const mission = !!this.state.mission;
     this.modePicker.root.hidden = mission;
     this.optionWorld.hidden = mission;
     this.optionToggles.hidden = mission;
     if (mission) this.cheatsWarning.hidden = true;
-    // The game speed and how units move apply to a co-op mission too.
-    for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && key !== 'gameSpeed' && key !== 'movement';
+    // The game speed, how units move and what a lost factory does apply to a co-op mission too.
+    for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && !MISSION_SELECT_OPTIONS.includes(key);
   }
 
   renderMap() {

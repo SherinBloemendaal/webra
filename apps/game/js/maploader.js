@@ -33,7 +33,8 @@ export function loadTestSetup(params = new URLSearchParams(location.search), sto
   const camera = Array.isArray(raw.camera) && raw.camera.length === 2 && raw.camera.every((v) => Number.isFinite(v)) ? [raw.camera[0], raw.camera[1]] : null;
   const players = raw.players.map((p) => (p && typeof p === 'object' ? { type: p.type, faction: p.faction, difficulty: p.difficulty, bot: p.bot, team: p.team } : {}));
   const movement = typeof raw.movement === 'string' ? raw.movement : null;
-  return { players, movement, camera, autostart: raw.autostart === true };
+  const factoryLoss = typeof raw.factoryLoss === 'string' ? raw.factoryLoss : null;
+  return { players, movement, factoryLoss, camera, autostart: raw.autostart === true };
 }
 
 /**

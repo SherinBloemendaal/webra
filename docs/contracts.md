@@ -481,7 +481,7 @@ refused (protocol and engine alike); leave it out for its default.
   the same team (`mapSlotsProblem`, the engine's `validate_setup`).
 - `options`: lobby options the map starts with, from `weather`,
   `startingCash`, `startingUnits`, `techLevel`, `gameSpeed`, `timeLimit`,
-  `movement` and the boolean options (section 3), with their section 3 values; not
+  `movement`, `factoryLoss` and the boolean options (section 3), with their section 3 values; not
   the generator options (seed, size, style, biome, tech buildings).
   `lockedOptions`: options the lobbies keep at the map's value (each one
   the map sets, once).
@@ -661,7 +661,7 @@ human|ai|closed, name, faction, color, team, difficulty, bot?, handicap?, spawn?
 startingCash, startingUnits, techLevel, gameSpeed, crates, shortGame, fog,
 explored, buildRadius, allyBuildRadius, separateTeamSpawns, redeployableMcv,
 reusableEngineers, bounty, oreRegrowth, timeLimit, cheats, mapStyle, biome,
-weather, techBuildings, movement, map`.
+weather, techBuildings, movement, factoryLoss, map`.
 `mapStyle` (`random`, `land`, `rivers`, `lakes`, `islands`) and `biome`
 (`random`, `temperate`, `snow`, `desert`) shape a generated map; `random`
 is resolved by the engine from the seed, so every peer gets the same map and
@@ -702,7 +702,17 @@ and the lobby state) always carry it. Start options, saves and replays may
 leave it out, and the engine then plays `webra`: those from before the
 option were made with WebRA's model and replay with it; a lobby resuming
 such a save shows `webra`. Game modes include it; a mode saved before it
-existed takes `openra`. `team` 0 means no team (free for all);
+existed takes `openra`. `factoryLoss` is what a production queue does
+when its player loses the last structure of its type ("Factory loss" in
+the lobbies, "Production queues" below): `openra` (the default,
+OpenRA's ClassicProductionQueue: the queue is cleared and refunded) or
+`webra` (unit queues wait for a new factory). It is part of the game's
+state and follows `movement` in everything else: live lobby options carry
+it, start options, saves and replays may leave it out and then play
+`webra` (the rule of games from before the option; a lobby resuming such a
+save shows `webra`), game modes saved before it take `openra`, and maps may
+set and lock it. Both defaults are `openra` for the same reason: new games
+play like OpenRA, old ones replay as they were made. `team` 0 means no team (free for all);
 players with the same non-zero team are allies (shared vision, no
 auto-targeting, win together). 2..8 players. Closed slots are listed as
 `{slot, type: "closed"}` and do not play: engine player N is the N-th slot
@@ -1118,9 +1128,15 @@ orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 6
+{player, client, name, tick}`, `error {code, message}`. Protocol version 7
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello`. Version 6 added lobby maps (the map details, `mapState`,
+at `hello` with "Protocol 7 required. Reload the page.", which the client
+shows in its error banner. Version 7 made live
+lobby messages stricter: lobby options must carry `factoryLoss` (section
+3), and the host may change several slots at once (`slots`) and edit
+other players' team, handicap and spawn; frames may carry the bulk orders
+`repair_buildings`, `repair_units` and `sell_buildings`, which a version 6 client would refuse
+to parse. Version 6 added lobby maps (the map details, `mapState`,
 `mapstate`, `kick`), the rematch (`rematch` both ways, rejoining the lobby),
 online saves (`save` both ways, `start.resume`, `lobby.resume`, online save
 files) and OpenRA's other lobby options (section 3: the option keys and the
@@ -1754,12 +1770,87 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   queue carries on; the items can be queued again once the prerequisites (or
   a deployed MCV) are back. Unit queues keep going from their own factories.
   `start_production` and `place` are refused for such items.
+- Losing the last factory (lobby option `factoryLoss`, section 3): a queue
+  builds while the player has a structure of its type (OpenRA
+  ClassicProductionQueue.Enabled). Under `openra` (OpenRA at b6fc03f) a
+  queue without one is not Enabled: every tick, before anything else,
+  ClearQueue empties it and refunds everything paid for each item (a
+  finished one, also a structure waiting for placement, in full; partly
+  built ones what they cost so far), with no notification, and nothing can
+  be queued there (`can_produce` is false, `requirements` names the
+  producers) until such a structure stands again. That holds for every
+  queue: structures and defences after the last Construction Yard, units
+  after the last barracks or kennel, war factory, airfield or helipad,
+  naval yard or sub pen. Under `webra` a unit queue keeps its items and
+  waits, paying nothing, and builds on once a structure of its type stands;
+  structure items are cancelled with a refund and one ProductionCancelled
+  (`CancelUnbuildableItems` above). WebRA refunds everything to cash
+  (OpenRA returns the stored-ore share of a payment to the silos). A unit
+  that finishes while structures of its queue's type stand but none makes
+  its `build_at` type is not made
+  (OpenRA BuildUnit with CancelProduction(unit, 1)): the last item of that
+  type in the queue is cancelled and refunded, one per tick, so the finished
+  one goes once it is the last, and the queue says ProductionBlocked once
+  (not for instant builds).
 - `player_json().buildable[].enabled` is false for structures without a
-  Construction Yard, and their `requires` lists `Construction Yard`.
+  Construction Yard, and their `requires` lists `Construction Yard`; under
+  the `openra` factory loss rule likewise for units without a structure of
+  their queue's type (once their prerequisites are met: those already
+  name it).
 - `player_json().buildable[].buildTicks` is the time the item takes with the
   player's current factories (BuildTimeSpeedReduction), before the low power
   slowdown; `rules_json().lowPowerModifier` is that slowdown in percent. The
   sidebar's production tooltip shows both (OpenRA ProductionTooltipLogic).
+- Leaving the factory (OpenRA Production.Produce, SelectExit, CanUseExit;
+  ClassicProductionQueue.BuildUnit): a unit is built as its
+  `build_at` production type (OpenRA Buildable.BuildAtProductionType, else
+  the queue's type; under the debug menu's "all tech" the queue's type, so
+  a submarine comes out of a naval yard and a dog out of barracks then).
+  The structures whose Production types hold that type make it; a finished
+  unit tries the primary one, then the others (OpenRA: the newest first;
+  WebRA: in actor order). The build time still counts the structures by
+  `build_at` (OpenRA GetBuildTime). A structure's exits are those whose
+  `exit_types` (OpenRA ExitInfo.ProductionTypes, empty for any) hold the
+  type the unit is built as. The sub pen has four Submarine exits, (-1, 2)
+  and (3, 2) beside it and its top corners (0, 0) and (2, 0), and four Ship
+  exits on all four corners; the Ship exits let out only units built as
+  Ship (the transport, which has no BuildAtProductionType, and under "all
+  tech" every ship). They are tried by
+  `exit_priority` (OpenRA
+  ExitInfo.Priority, highest first: the Kennel's down-left exit), then
+  nearest the rally point (without one, nearest a point below the structure;
+  OpenRA shuffles them). Each exit tried first tells the friendly units on
+  it that they are in the way (idle ones step aside, see the movement
+  models), and the unit leaves by the first exit cell it can enter now:
+  nobody holds it that it could not run over, infantry need a free
+  sub-cell. The new unit holds its exit cell at once (OpenRA LocationInit),
+  so the next one waits until it has driven off: units come out one at a
+  time, also with the debug menu's instant build, and never stack. While
+  every exit of every producer is blocked (an enemy, a unit that does not
+  move, a husk) the item stays finished, the queue says so once
+  (ProductionBlocked) and tries again every tick. Ships follow the same
+  rule on their launch cells: the open water at each exit that lets them
+  out, just outside the structure for an exit on its own corner and the
+  exit cell itself for one already outside it (the sub pen's submarine
+  exits) (`naval_launch_cells`; water joined to the
+  rally point first, else the largest water, and only cells on that water,
+  so a ship is never launched into a pond it cannot leave, OpenRA issue
+  19154; then the exit nearest the rally point): friendly idle ships on one
+  are asked to make way, and the ship waits while every launch cell is
+  taken. Aircraft are never held up.
+  Without a rally point a unit or ship stays where it came out until the
+  next one asks it to make way (OpenRA at b6fc03f: RallyPointInfo.Path is
+  empty by default and Red Alert sets none, so Production.DoProduction
+  gives the unit its exit cell as rally point; older OpenRA releases had a
+  default rally point offset);
+  helicopters stay on their pad. In the WebRA movement model ground units
+  and ships drive on to a cell below the structure instead, and only units
+  standing idle on an exit block it (that model's crowd separation spreads
+  the ones on the move; waiting for those would jam the door behind the
+  crowd its arrival rule gathers in front of it). Differences: units appear
+  on the exit cell instead of inside the structure at the Exit's
+  SpawnOffset (ships launched from a corner exit on the water just outside
+  it instead of on the corner itself), and the Exit's Facing is not used.
 - Selling (`{"o": "sell", player, building}`, `World::sell_refund`) pays
   OpenRA's Sell activity refund: `sell_value * sell_refund * hp / (100 *
   max_hp)`, rounded down, where `sell_value` is OpenRA GetSellValue
@@ -1879,14 +1970,39 @@ diagonal step never cuts a blocked corner.
   as close (player and AI move orders: 8 cells, OpenRA's `Move` order; a
   rally point 1); an enemy or a unit that cannot move ends the move; else
   the unit tells the blockers (idle allies step aside to a random free
-  neighbouring cell, OpenRA Nudge; busy ones are marked as blocking), waits
-  up to the locomotor's `WaitAverage` (40 ticks), and then searches a way
-  around every unit. Without one it backs out of the way if others wait for
-  it, else the move ends. A move that ended short is over for move orders;
-  other activities (repairs, docking, attacks) try again after 20 to 30
-  ticks (OpenRA MoveCooldownHelper). As in OpenRA, a unit kept waiting
-  behind units that do not move gives up once its destination is taken,
-  so a long column may leave a straggler.
+  neighbouring cell, else toward a neighbouring idle ally that is asked in
+  turn, OpenRA Nudge and GetAdjacentCell; busy ones are marked as
+  blocking), waits up to the locomotor's `WaitAverage` (40 ticks), and
+  then, unless the blockers are leaving, searches a way around every unit.
+  Without one it backs out of the way if others wait for it, else the move
+  ends. A move that ended short is over for move orders; other activities
+  (repairs, docking, attacks) try again after 20 to 30 ticks (OpenRA
+  MoveCooldownHelper).
+- Leaving blockers (OpenRA Move.CellIsEvacuating counts units moving or
+  turning in this tick). WebRA addition: in a passage one cell wide (a cell
+  with only two opposite side neighbours open: a bridge, a gap in a wall)
+  the holders also count as leaving when they wait in turn for a cell
+  further on whose holders leave in the same way (each waiting unit
+  remembers the cell it waits for, `Motion::waiting_for`): the queue ahead
+  is moving. So a tank behind a column of idle tanks on a bridge waits
+  while the column makes way one tank after another, and a group filing
+  over a bridge leaves no stragglers, where OpenRA's units give up once a
+  nudge chain or a queue takes longer than `WaitAverage` (in OpenRA, and in
+  WebRA before, behind six or more tanks). A queue that leads back to the
+  waiting unit, runs in a circle, is longer than 64 cells or ends at a unit
+  that does not move does not count, so units facing each other on a bridge
+  still wait, search, give up and stand still; a unit follows queues for at
+  most 160 ticks without a step (`QUEUE_PATIENCE`); and in the open (a crowd
+  around its goal) only OpenRA's rule holds, so crowds settle as in OpenRA.
+- Feedback (WebRA addition; OpenRA has none: its move cursor only shows
+  terrain that cannot be reached when the order is given): a move order
+  that ends short because the way stayed blocked, farther from its goal
+  than it may stop short (8 cells), sends the owner the audio event 49
+  RouteBlocked at the unit, at most once every 250 ticks per player
+  (`ROUTE_BLOCKED_INTERVAL`); the WebRA model sends it when a move gives up
+  as blocked for good more than 8 cells (of path) out. The client shows
+  the line "Route blocked." (at most every 10 seconds) and a yellow radar
+  ping at the unit for the player who gave the order (Space jumps there).
 - Half way into a cell a moving unit already looks at the cell after it
   (MoveFirstHalf.OnComplete): a route that a new structure cut is searched
   again while it drives on.
@@ -1901,8 +2017,8 @@ diagonal step never cuts a blocked corner.
   Ore trucks dock the same way; an empty truck that finds no ore leaves the
   dock for a cell near four cells below it (Harvester.UnblockCell), and a
   refinery's free truck belongs to that refinery.
-- A unit that other code placed (unloaded, teleported, landed from a leap,
-  produced on a crowded exit) takes the cell it stands on; when it may not
+- A unit that other code placed (unloaded, teleported, landed from a leap)
+  takes the cell it stands on; when it may not
   share it, it steps off once idle.
 - Differences from OpenRA: no arcs between cells; a vehicle turns while it
   drives when the next cell is at most 45 degrees off its heading and on
@@ -2704,7 +2820,10 @@ defeated." and "X is victorious." as system lines), 48 LightningStrike
 a: its type, owner: its owner, b: the strike kind, 2 a unit or structure, 3
 a power plant, whose owner hears the WebRA line "Power plant struck by
 lightning. Power outage." (EVA key `lightningOutage`, chime and text, no
-original), 1 grounded on a Lightning Rod, a: the rod's type). Kinds 32 to 36
+original), 1 grounded on a Lightning Rod, a: the rod's type), 49
+RouteBlocked (a: the unit's type, at the unit; WebRA addition, see the
+movement models: the line "Route blocked." and a radar ping for its
+owner). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.
@@ -3030,8 +3149,9 @@ A mission replay or save (`mode: "mission"`) has no `map` (null) and names
 its mission file instead: `mission.id` (`[a-z0-9][a-z0-9-]{0,63}`, the file
 `apps/game/missions/<id>.json`) and `mission.hash` (SHA-256 of the file's
 text). Its `options` are the mission's start options, `{ seed, gameSpeed,
-options, movement }` (`movement` as in section 3: missions started now play
-`openra`; left out by saves and replays from before it, which play `webra`)
+options, movement, factoryLoss }` (`movement` and `factoryLoss` as in
+section 3: missions started now play `openra`; left out by saves and
+replays from before them, which play `webra`)
 with at most 8 mission options (`options.difficulty`: `easy`,
 ...; keys and values `[a-z0-9][a-z0-9_-]{0,31}`, case-insensitive), not
 the game options of section 3. The person playing is player 0, so `player`
@@ -3796,14 +3916,15 @@ server share.
   message, validated against `COOP_MISSIONS`: a file of another version is
   refused). The first slots become the mission's playable players, people
   only (OpenRA `AllowBots: False`); later slots close; faction, colour and
-  team are the mission's. Only the game speed and the movement model of the
-  lobby options apply.
+  team are the mission's. Only the game speed, the movement model and the
+  factory loss rule of the lobby options apply.
   The game starts when every place holds a ready person. Choosing a map or
   a generated map goes back to a skirmish.
 - **Start.** `start.mission` names the mission; every client loads its own
   copy of the mission file from its own server, checks the hash and starts
   `Game.from_mission` with `humans` (the playable players, engine players 0
-  and 1), `localPlayer` (its own seat) and the lobby's `movement`. No client
+  and 1), `localPlayer` (its own seat) and the lobby's `movement` and
+  `factoryLoss`. No client
   ever sends a script or a mission file to another.
 - **Lockstep.** The scripts run on every client. `IsLocalPlayer` is true for
   each client's own player only, and the scripts use it for presentation

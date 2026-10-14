@@ -364,4 +364,18 @@ test('co-op missions: the catalog matches the mission files, and both players co
   };
   assert.equal(run(undefined), run('webra'));
   assert.notEqual(run('openra'), run('webra'));
+  // Likewise the factory loss rule.
+  assert.equal(JSON.parse(coopStart(mission, 9, 0, 'openra', 'webra')).factoryLoss, 'webra');
+  assert.equal('factoryLoss' in JSON.parse(coopStart(mission, 9, 0, 'openra')), false);
+  const rule = (factoryLoss) => {
+    const g = Game.from_mission(missionText(m.id), coopStart(mission, 9, 0, 'openra', factoryLoss));
+    g.set_lockstep(true);
+    for (let t = 0; t < 100; t++) g.tick();
+    const h = g.state_hash();
+    g.free();
+    return h;
+  };
+  assert.equal(rule(undefined), rule('webra'));
+  assert.notEqual(rule('openra'), rule('webra'));
+  assert.throws(() => Game.from_mission(missionText(m.id), JSON.stringify({ seed: 9, factoryLoss: 'never' })), /factoryLoss/);
 });

@@ -13,6 +13,7 @@ import {
   FACTION_GROUPS,
   MAP_STYLES,
   MOVEMENT_MODELS,
+  FACTORY_LOSS_RULES,
   TECH_BUILDINGS,
   TEAMS,
   SEED_MAX,
@@ -172,11 +173,12 @@ export async function mapSizeDialog({ width, height, region }) {
 
 /**
  * Test play: who plays at which slot (you, AI with difficulty and bot type,
- * or closed), factions and teams, how units move (the lobby option
- * `movement`; the map's own when it locks it), whether the game starts
- * where the view is and whether it starts right away. `spawns` is the
- * map's start count. Resolves { players, movement, camera: boolean,
- * autostart } or null.
+ * or closed), factions and teams, how units move and what losing a
+ * factory does (the lobby options `movement` and `factoryLoss`; the map's
+ * own when it locks one), whether the game starts where the view is and
+ * whether it starts right away. `spawns` is the map's start count.
+ * Resolves { players, movement, factoryLoss, camera: boolean, autostart }
+ * or null.
  */
 export async function testPlayDialog({ spawns, last, setup = null }) {
   const n = Math.max(2, Math.min(8, spawns));
@@ -198,10 +200,16 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
     syncBot();
     rows.push({ type, bot, faction, team, tr: el('tr', {}, [el('th', {}, `Slot ${k + 1}`), el('td', {}, type), el('td', {}, bot), el('td', {}, faction), el('td', {}, team)]) });
   }
-  const locked = setup?.lockedOptions?.includes('movement') ?? false;
-  const movement = select(MOVEMENT_MODELS, (locked ? setup.options.movement : last?.movement) ?? setup?.options?.movement ?? 'openra');
-  movement.disabled = locked;
-  movement.title = locked ? 'Locked by the map' : '';
+  // A lobby option picker: the map's value when it locks the option, else the last pick, the map's, OpenRA's.
+  const option = (key, choices) => {
+    const locked = setup?.lockedOptions?.includes(key) ?? false;
+    const s = select(choices, (locked ? setup.options[key] : last?.[key]) ?? setup?.options?.[key] ?? 'openra');
+    s.disabled = locked;
+    s.title = locked ? 'Locked by the map' : '';
+    return s;
+  };
+  const movement = option('movement', MOVEMENT_MODELS);
+  const factoryLoss = option('factoryLoss', FACTORY_LOSS_RULES);
   const camera = toggle({ label: 'Start where the editor view is', checked: last?.camera ?? true, hint: 'Else the camera starts at your base.' });
   const autostart = toggle({ label: 'Start right away', checked: last?.autostart ?? true, hint: 'Else the lobby opens with these slots set.' });
   const error = el('p', { class: 'error', role: 'alert' });
@@ -212,6 +220,7 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
     body: [
       el('table', { class: 'slots' }, [el('thead', {}, el('tr', {}, [el('th', {}, ''), el('th', {}, 'Player'), el('th', {}, 'Bot'), el('th', {}, 'Faction'), el('th', {}, 'Team')])), el('tbody', {}, rows.map((r) => r.tr))]),
       el('label', { class: 'field', title: 'How units make room for each other: OpenRA (units hold their cells) or WebRA (soft crowd separation).' }, ['Movement', movement]),
+      el('label', { class: 'field', title: 'When the last factory of a kind is lost: OpenRA (its queue is refunded and emptied) or WebRA (unit queues wait for a new factory).' }, ['Factory loss', factoryLoss]),
       camera.row,
       autostart.row,
       el('p', { class: 'hint' }, 'The game opens in a new tab with this map; the editor keeps your work.'),
@@ -235,7 +244,7 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
           error.textContent = humans !== 1 ? 'Exactly one slot must be you.' : 'A game needs at least two players.';
           return;
         }
-        out = { players, movement: movement.value, camera: camera.get(), autostart: autostart.get() };
+        out = { players, movement: movement.value, factoryLoss: factoryLoss.value, camera: camera.get(), autostart: autostart.get() };
       }),
   });
   return result === 'ok' ? out : null;
