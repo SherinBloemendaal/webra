@@ -2,6 +2,7 @@
 //! beacons (beacons.rs).
 
 use crate::beacons::{arrow_height, ARROW_MAX_HEIGHT};
+use crate::repair::RepairCategory;
 use crate::sound_events::{SoundEventKind, EVENT_STRIDE};
 use crate::world::{cell_center, Order, World, MAX_WEAPONS, NONE};
 use crate::Game;
@@ -548,6 +549,14 @@ fn bulk_repair_orders_cross_the_wire_and_are_capped() {
     assert!(!Order::RepairBuildings { player: 0, ids: vec![1; 2001] }.is_reasonable());
 }
 
+fn groups(json: &str) -> serde_json::Value {
+    serde_json::from_str(json).unwrap()
+}
+
+fn ids_of(v: &serde_json::Value, key: &str) -> Vec<u32> {
+    v[key].as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect()
+}
+
 #[test]
 fn bulk_repair_queries_for_the_selection_and_the_repair_box() {
     let mut w = world(true);
@@ -562,18 +571,172 @@ fn bulk_repair_queries_for_the_selection_and_the_repair_box() {
     w.step();
     let mut g = Game::wrap(w);
     let r = |g: &Game, i: usize| g.world.make_ref(i);
-    let sel = vec![r(&g, tank), r(&g, b), r(&g, full), r(&g, ally), r(&g, a)];
-    assert_eq!(g.repair_targets(0, sel.clone()), vec![r(&g, b), r(&g, a)], "own damaged structures, in selection order");
-    assert_eq!(g.repair_targets(1, sel), vec![r(&g, ally)], "for player 1 only their own structure");
+    let sel = vec![r(&g, tank), r(&g, b), r(&g, full), r(&g, ally), r(&g, a), r(&g, b)];
+    let v = groups(&g.repair_selection_json(0, sel.clone()));
+    assert_eq!(ids_of(&v, "buildings"), vec![r(&g, b), r(&g, a)], "own damaged structures, in selection order, once");
+    assert_eq!(ids_of(&v, "combat"), vec![r(&g, tank)]);
+    assert_eq!(ids_of(&v, "noFacility"), vec![r(&g, tank)], "no service depot yet");
+    let v = groups(&g.repair_selection_json(1, sel));
+    assert_eq!(ids_of(&v, "buildings"), vec![r(&g, ally)], "for player 1 only their own structure");
     // A box around cells 18..30 x 18..30: a, full, ally and the tank, not b.
     let c = 24.0;
-    let boxed = g.repair_box(0, 18.0 * c, 18.0 * c, 30.0 * c, 30.0 * c);
-    assert_eq!(boxed, vec![r(&g, a)]);
-    assert!(g.repair_box(0, 50.0 * c, 50.0 * c, 51.0 * c, 51.0 * c).is_empty());
+    let v = groups(&g.repair_box_json(0, 18.0 * c, 18.0 * c, 30.0 * c, 30.0 * c));
+    assert_eq!((ids_of(&v, "buildings"), ids_of(&v, "combat")), (vec![r(&g, a)], vec![r(&g, tank)]));
+    let v = groups(&g.repair_box_json(0, 50.0 * c, 50.0 * c, 51.0 * c, 51.0 * c));
+    assert!(["buildings", "combat", "harvesters", "other", "noFacility"].iter().all(|k| ids_of(&v, k).is_empty()));
     // Through the Game API: the order queues and toggles both.
     g.repair_buildings(0, vec![r(&g, a), r(&g, b)]);
     g.world.step();
     assert_eq!((g.world.actors[a].repairers.clone(), g.world.actors[b].repairers.clone()), (vec![0], vec![0]));
+}
+
+#[test]
+fn bulk_repair_sorts_units_into_combat_ore_trucks_and_other() {
+    let mut w = world(false);
+    let fix = building(&mut w, "FIX", 0, 30, 30);
+    let spawn = |w: &mut World, id: &str, owner: u8, cx: i32| {
+        let t = ty(w, id);
+        let i = w.spawn_unit(t, owner, cell_center(cx), cell_center(40), 0);
+        w.actors[i].hp = max_hp(w, i) / 2;
+        i
+    };
+    let tank = spawn(&mut w, "2TNK", 0, 10);
+    let harv = spawn(&mut w, "HARV", 0, 13);
+    let mcv = spawn(&mut w, "MCV", 0, 16);
+    let tran = spawn(&mut w, "TRAN", 0, 19);
+    let rifle = spawn(&mut w, "E1", 0, 22);
+    let yak = spawn(&mut w, "YAK", 0, 25);
+    let enemy = spawn(&mut w, "1TNK", 1, 28);
+    let healthy = spawn(&mut w, "1TNK", 0, 31);
+    w.actors[healthy].hp = max_hp(&w, healthy);
+    w.step();
+    let all: Vec<usize> = vec![tank, harv, mcv, tran, rifle, yak, enemy, healthy, fix];
+    let v = w.repair_groups_json(0, all.iter().copied());
+    let r = |i: usize| w.make_ref(i);
+    assert_eq!(ids_of(&v, "combat"), vec![r(tank)]);
+    assert_eq!(ids_of(&v, "harvesters"), vec![r(harv)]);
+    assert_eq!(ids_of(&v, "other"), vec![r(mcv), r(tran)], "MCV and the unarmed Chinook");
+    assert!(ids_of(&v, "noFacility").is_empty(), "the service depot repairs them all");
+    assert!(ids_of(&v, "buildings").is_empty(), "the depot is undamaged");
+    // Infantry have no repair structure, WebRA planes neither, enemy and healthy units are not ours to repair.
+    for i in [rifle, yak, enemy, healthy] {
+        assert_eq!(w.repair_category(0, i), None);
+    }
+    assert_eq!(w.repair_category(0, tank), Some(RepairCategory::Combat));
+}
+
+#[test]
+fn bulk_repair_sends_units_to_the_nearest_depot_like_a_click_on_it() {
+    let mut w = world(false);
+    let near = building(&mut w, "FIX", 0, 30, 30);
+    let far = building(&mut w, "FIX", 0, 46, 30);
+    let tank = w.spawn_unit(ty(&w, "2TNK"), 0, cell_center(24), cell_center(40), 0);
+    let tran = w.spawn_unit(ty(&w, "TRAN"), 0, cell_center(54), cell_center(40), 0);
+    let rifle = w.spawn_unit(ty(&w, "E1"), 0, cell_center(12), cell_center(42), 0);
+    let healthy = w.spawn_unit(ty(&w, "1TNK"), 0, cell_center(16), cell_center(42), 0);
+    for i in [tank, tran, rifle] {
+        w.actors[i].hp = max_hp(&w, i) / 2;
+    }
+    w.step();
+    let before = (w.actors[rifle].activity, w.actors[healthy].activity);
+    let ids = refs(&w, &[tank, tran, rifle, healthy, tank]);
+    let depot_before = w.actors[tank].depot;
+    w.queue_order(Order::RepairUnits { player: 1, ids: ids.clone() });
+    w.step();
+    assert_eq!(w.actors[tank].depot, depot_before, "another player's order does nothing");
+    w.queue_order(Order::RepairUnits { player: 0, ids });
+    w.step();
+    // The synthetic map may give the tank no way onto the pad (then it gives
+    // up at once, as after a click on the depot); the depot it was sent to stays.
+    assert_eq!(w.actors[tank].depot, w.make_ref(near), "the nearest depot");
+    assert_eq!(w.actors[tran].activity, crate::world::Activity::Repair);
+    assert_eq!(w.actors[tran].depot, w.make_ref(far), "the helicopter to its nearest depot");
+    assert_eq!((w.actors[rifle].activity, w.actors[healthy].activity), before, "infantry and undamaged units stay");
+    // The same as a click on the depot with the tank selected (OpenRA's Repair order).
+    let mut a = world(false);
+    let mut b = world(false);
+    for x in [&mut a, &mut b] {
+        building(x, "FIX", 0, 30, 30);
+        let t = x.spawn_unit(ty(x, "2TNK"), 0, cell_center(10), cell_center(40), 0);
+        x.actors[t].hp = max_hp(x, t) / 2;
+        x.step();
+    }
+    let t = refs(&a, &[a.actors.len() - 1])[0];
+    let d = a.actors.iter().position(|x| x.alive && x.ty == ty(&a, "FIX")).unwrap();
+    a.queue_order(Order::RepairUnits { player: 0, ids: vec![t] });
+    b.queue_order(Order::Smart { player: 0, ids: vec![t], x: a.actors[d].x, y: a.actors[d].y });
+    for _ in 0..300 {
+        a.step();
+        b.step();
+    }
+    assert_eq!(a.state_hash(), b.state_hash());
+}
+
+#[test]
+fn bulk_repair_skips_units_without_a_depot() {
+    let mut w = world(false);
+    let tank = w.spawn_unit(ty(&w, "2TNK"), 0, cell_center(10), cell_center(40), 0);
+    w.actors[tank].hp = max_hp(&w, tank) / 2;
+    w.step();
+    let before = w.actors[tank].activity;
+    w.queue_order(Order::RepairUnits { player: 0, ids: refs(&w, &[tank]) });
+    w.step();
+    assert_eq!(w.actors[tank].activity, before);
+    let o = Order::RepairUnits { player: 2, ids: vec![5] };
+    let json = serde_json::to_string(&o).unwrap();
+    assert_eq!(json, r#"{"o":"repair_units","player":2,"ids":[5]}"#);
+    assert!(!Order::RepairUnits { player: 0, ids: vec![1; 2001] }.is_reasonable());
+}
+
+// ---- Bulk sell (WebRA addition, Order::SellBuildings) ----------------------------------------
+
+#[test]
+fn bulk_sell_sells_own_sellable_structures_but_never_the_construction_yard() {
+    let mut w = world(true);
+    w.sound.set_enabled(true);
+    let fact = building(&mut w, "FACT", 0, 20, 20);
+    let a = building(&mut w, "POWR", 0, 26, 20);
+    let b = building(&mut w, "TENT", 0, 30, 20);
+    let ally = building(&mut w, "POWR", 1, 20, 26);
+    let hosp = building(&mut w, "HOSP", 0, 26, 26);
+    set_cash(&mut w, 0, 0);
+    w.step();
+    let mut g = Game::wrap(w);
+    let r = |g: &Game, i: usize| g.world.make_ref(i);
+    let c = 24.0;
+    let boxed = g.sell_box(0, 18.0 * c, 18.0 * c, 34.0 * c, 30.0 * c);
+    let mut sorted = boxed.clone();
+    sorted.sort_unstable();
+    let mut want = vec![r(&g, a), r(&g, b)];
+    want.sort_unstable();
+    assert_eq!(sorted, want, "no Construction Yard, no ally's structure, no unsellable Hospital");
+    let refund = g.sell_value(0, r(&g, a)) + g.sell_value(0, r(&g, b));
+    assert!(refund > 0);
+    // The engine checks again: the yard, the ally's and the hospital stay even when listed.
+    let ids = vec![r(&g, fact), r(&g, a), r(&g, ally), r(&g, hosp), r(&g, b), r(&g, a)];
+    g.world.queue_order(Order::SellBuildings { player: 0, ids });
+    g.world.step();
+    let w = &g.world;
+    assert!(!w.actors[a].alive && !w.actors[b].alive);
+    assert!(w.actors[fact].alive && w.actors[ally].alive && w.actors[hosp].alive);
+    assert_eq!(w.players[0].funds(), refund, "the refund of the two");
+    // A single click still sells the Construction Yard.
+    let f = r(&g, fact);
+    g.sell(0, f);
+    g.world.step();
+    assert!(!g.world.actors[fact].alive);
+}
+
+#[test]
+fn bulk_sell_ignores_other_players_and_crosses_the_wire() {
+    let mut w = world(false);
+    let a = building(&mut w, "POWR", 0, 26, 20);
+    w.queue_order(Order::SellBuildings { player: 1, ids: refs(&w, &[a]) });
+    w.step();
+    assert!(w.actors[a].alive);
+    let o = Order::SellBuildings { player: 1, ids: vec![3] };
+    assert_eq!(serde_json::to_string(&o).unwrap(), r#"{"o":"sell_buildings","player":1,"ids":[3]}"#);
+    assert!(!Order::SellBuildings { player: 0, ids: vec![1; 2001] }.is_reasonable());
 }
 
 // ---- Game API -----------------------------------------------------------------------------

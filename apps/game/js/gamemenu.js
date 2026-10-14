@@ -103,9 +103,11 @@ export function fixedControls(mac = isMac()) {
     ['Mouse wheel', 'Zoom'],
     ['Screen edges', 'Scroll the map'],
     [`${ctrl} + drag`, 'Lay a minefield (Minelayers selected)'],
-    // WebRA bulk repair (js/input.js): a box in repair mode, or the Repair key with structures selected.
-    ['Drag in repair mode', 'Repair all your damaged structures in the box (all repairing already: stop them)'],
-    ['Repair key, structures selected', 'Repair all selected damaged structures at once (all repairing already: stop them)'],
+    // WebRA bulk repair and sell (js/input.js): boxes in repair and sell mode, the Repair key with a selection.
+    ['Drag in repair mode', 'Repair what is damaged in the box: choose structures, combat units, ore trucks, other units or all (structures that all repair already stop)'],
+    ['Shift + drag in repair mode', 'The same with your last choice, without asking'],
+    ['Repair key, own actors selected', 'Repair the selected damaged structures and send the selected damaged units to repair'],
+    ['Drag in sell mode', 'Sell your structures in the box, never a Construction Yard (more than one: click Sell or press S or Y; Enter or Esc cancels)'],
     ['Shift + production key', 'Build 5 (production slots, numpad)'],
   ];
 }

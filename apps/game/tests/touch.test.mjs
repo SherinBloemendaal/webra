@@ -396,8 +396,16 @@ function fakeGame(actors) {
     placement_preview: (_p, _id, cx, cy) => Int32Array.from([cx, cy, cx >= 0 && cy >= 0 ? 1 : 0]),
     // Repair mode: own damaged structures (bulk repair, engine repair_box).
     repair_cursor: (_p, id) => (actors[id]?.owner === 0 && actors[id].building && actors[id].damaged ? 1 : 0),
-    repair_box: (_p, x0, y0, x1, y1) =>
-      Uint32Array.from(entries().filter(([, a]) => a.owner === 0 && a.building && a.damaged && inRect(a, x0, y0, x1, y1)).map(([id]) => id)),
+    repair_box_json: (_p, x0, y0, x1, y1) =>
+      JSON.stringify({
+        buildings: entries().filter(([, a]) => a.owner === 0 && a.building && a.damaged && inRect(a, x0, y0, x1, y1)).map(([id]) => id),
+        combat: [],
+        harvesters: [],
+        other: [],
+        noFacility: [],
+      }),
+    sell_box: (_p, x0, y0, x1, y1) => Uint32Array.from(entries().filter(([, a]) => a.owner === 0 && a.building && a.type !== 'fact' && inRect(a, x0, y0, x1, y1)).map(([id]) => id)),
+    sell_buildings: rec('sell_buildings'),
     repair_building: rec('repair_building'),
     repair_buildings: rec('repair_buildings'),
     order_smart: rec('order_smart'),
@@ -660,10 +668,10 @@ test('touch: in repair mode a drag repairs the damaged own structures in the box
   input.setMode('repair');
   await p.down(1, 80, 80);
   await p.move(1, 150, 120);
-  assert.ok(input.repairDrag && !input.drag, 'a repair box, not a selection box');
+  assert.ok(input.modeDrag && !input.drag, 'a repair box, not a selection box');
   await p.move(1, 200, 160);
   await p.up(1, 200, 160);
-  assert.deepEqual(game.calls.at(-1), ['repair_buildings', 0, [1, 2]]);
+  assert.deepEqual(game.calls.at(-1), ['repair_buildings', 0, [1, 2]], 'only structures in the box: no chooser');
   assert.equal(input.mode, 'repair', 'the mode stays on');
   await p.tap(600, 400);
   assert.deepEqual(game.calls.at(-1), ['repair_building', 0, 4]);
@@ -672,10 +680,27 @@ test('touch: in repair mode a drag repairs the damaged own structures in the box
   await p.down(1, 80, 80);
   await p.move(1, 200, 160);
   await p.down(2, 500, 500);
-  assert.equal(input.repairDrag, null);
+  assert.equal(input.modeDrag, null);
   await p.up(1, 200, 160);
   await p.up(2, 500, 500);
   assert.equal(game.calls.length, n);
+});
+
+test('touch: in sell mode a drag sells the structures in the box, never the Construction Yard', async () => {
+  const BASE = {
+    1: { owner: 0, type: 'fact', building: true, x: 100, y: 100 },
+    2: { owner: 0, type: 'powr', building: true, x: 160, y: 100 },
+    3: { owner: 1, type: 'powr', building: true, x: 130, y: 140 },
+  };
+  const { input, game, p } = await setup(BASE);
+  input.setMode('sell');
+  await p.down(1, 80, 80);
+  await p.move(1, 150, 120);
+  assert.ok(input.modeDrag && !input.drag, 'a sell box, not a selection box');
+  await p.move(1, 200, 160);
+  await p.up(1, 200, 160);
+  assert.deepEqual(game.calls.at(-1), ['sell_buildings', 0, [2]], 'one structure: sold without asking');
+  assert.equal(input.mode, 'sell');
 });
 
 test('touch: placement shows the footprint mid-view, tap and drag move it, Place builds', async () => {

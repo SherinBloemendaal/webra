@@ -184,14 +184,20 @@ export class Sidebar {
       return btn;
     };
     mode('beacon', 'beacon', 'Place beacon', 'placeBeacon', 'Click the map to mark a spot for your allies.');
-    mode('sell', 'sell', 'Sell', 'sell', 'Click your structures to sell them for half their value (scaled by health). Right click or Esc ends it.');
+    mode(
+      'sell',
+      'sell',
+      'Sell',
+      'sell',
+      'Click your structures to sell them for half their value (scaled by health). Drag a box to sell every structure in it except Construction Yards (asks first when it is more than one). Right click or Esc ends it.',
+    );
     mode('powerDown', 'powerDown', 'Power down', 'powerDown', 'Click your defences, radar and superweapons to switch them off (freeing their power) or on again.');
     mode(
       'repair',
       'repair',
       'Repair',
       'repair',
-      'Click your or allied damaged structures to start or stop repairing them, or a damaged unit to send it to the repair depot. Drag a box to repair all your damaged structures in it. With your structures selected, repairs all selected damaged ones at once (again: stops them).',
+      'Click your or allied damaged structures to start or stop repairing them, or a damaged unit to send it to the repair depot. Drag a box to repair what is damaged in it: pick structures, combat units, ore trucks, other units or all (Shift: your last pick). With your structures or units selected, repairs all selected damaged ones at once; when all selected structures are already repairing, it stops them instead.',
     );
     this.deployBtn = tool(
       'deploy',
