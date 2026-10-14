@@ -291,11 +291,17 @@ export class Input {
     this.settings.reset('zoomFactor');
   }
 
-  /** Stop following the remembered zoom (the view is gone). A zoom that waits is stored first. */
+  /**
+   * The view is gone: stop following the remembered zoom (a zoom that waits
+   * is stored first) and drop every listener bind() added to the canvas and
+   * the window.
+   */
   dispose() {
     this.flushZoom();
     this.offZoomFactor?.();
     this.offZoomFactor = null;
+    for (const off of this.offs) off();
+    this.offs = [];
     this.setPageCursor('');
   }
 
@@ -632,35 +638,41 @@ export class Input {
 
   bind() {
     const c = this.canvas;
-    c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('mousedown', (e) => this.onMouseDown(e));
-    window.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    // What dispose() takes away again: the canvas outlives a game, and the window too.
+    this.offs = [];
+    const on = (target, type, fn, options) => {
+      target.addEventListener(type, fn, options);
+      this.offs.push(() => target.removeEventListener(type, fn, options));
+    };
+    on(c, 'contextmenu', (e) => e.preventDefault());
+    on(c, 'mousedown', (e) => this.onMouseDown(e));
+    on(window, 'mousemove', (e) => this.onMouseMove(e));
+    on(window, 'mouseup', (e) => this.onMouseUp(e));
     // Take the position from the enter event itself: until the first move the
     // stored position would be stale (-1, -1 at start), which reads as "at the
     // top-left edge" and scrolled the view by itself.
-    c.addEventListener('mouseenter', (e) => {
+    on(c, 'mouseenter', (e) => {
       const p = this.local(e);
       this.mouse.x = p.x;
       this.mouse.y = p.y;
       this.mouse.inside = true;
     });
-    c.addEventListener('mouseleave', () => (this.mouse.inside = false));
+    on(c, 'mouseleave', () => (this.mouse.inside = false));
     // Into the window from outside, and out of it (relatedTarget null; the
     // virtual pointer of js/mouselock.js sends that too when it lets go).
-    window.addEventListener('mouseover', (e) => this.trackWindowMouse(e));
+    on(window, 'mouseover', (e) => this.trackWindowMouse(e));
     // Pointer events come before their mouse events: they say whether a mouse or a finger moved.
-    for (const type of ['pointerdown', 'pointermove', 'pointerup']) window.addEventListener(type, (e) => this.notePointerType(e), true);
-    window.addEventListener('mouseout', (e) => {
+    for (const type of ['pointerdown', 'pointermove', 'pointerup']) on(window, type, (e) => this.notePointerType(e), true);
+    on(window, 'mouseout', (e) => {
       if (!e.relatedTarget) this.windowMouse.inside = false;
     });
-    c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
-    window.addEventListener('keydown', (e) => this.onKeyDown(e));
-    window.addEventListener('keyup', (e) => {
+    on(c, 'wheel', (e) => this.onWheel(e), { passive: false });
+    on(window, 'keydown', (e) => this.onKeyDown(e));
+    on(window, 'keyup', (e) => {
       this.keys.delete(e.key);
       this.hotkeys.release(e);
     });
-    window.addEventListener('blur', () => {
+    on(window, 'blur', () => {
       this.keys.clear();
       this.hotkeys.releaseAll();
     });

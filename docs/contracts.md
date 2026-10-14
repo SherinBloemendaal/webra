@@ -2280,22 +2280,22 @@ sidebar, radar, HUD buttons and chat included, and clicks there still work.
 The zone is `EDGE` (12) CSS px on each side, a deliberate difference from
 OpenRA's `ViewportEdgeScrollMargin` of 5: a browser window that is not
 maximised lets the mouse leave, and a quick move skips a narrow zone. It
-covers the rightmost 12 px of the sidebar buttons, which still take clicks. While it scrolls the
-whole page shows the scroll arrow (`html.edge-scroll`, css/style.css); OpenRA
-keeps the widget's own cursor off the battlefield, WebRA follows Red Alert
-there. It holds while the speed setting is 0, the mouse is outside the
-window (browsers report no position there, so leaving the window, even
-through an edge, stops it; a maximised or fullscreen window has its edge at
-the screen's, and mouse capture keeps the pointer inside), the window has no
-input focus (as OpenRA), for a touch (a finger or pen leaves no position:
-the mouse-like events js/touch.js feeds in carry `pointerType: 'touch'`, and
-the browser's compatibility mouse events after a pointer event of a finger
-are ignored until a mouse moves again, `Input.notePointerType`), while the game menu, end of game,
-statistics or a modal dialog is open, during a box selection, repair box,
-middle button pan or radar drag, while a text field has the focus (the chat
-line), and while the mouse is released with the release hotkey
-(`MouseCapture.isDetached`, where it exists). The map editor has no edge
-scrolling.
+covers the rightmost 12 px of the sidebar buttons, which still take clicks.
+While it scrolls the whole page shows the scroll arrow (`html.edge-scroll`,
+css/style.css); OpenRA keeps the widget's own cursor off the battlefield,
+WebRA follows Red Alert there. It holds while the speed setting is 0, the
+mouse is outside the window (browsers report no position there, so leaving
+the window, even through an edge, stops it; a maximised or fullscreen window
+has its edge at the screen's, and mouse capture keeps the pointer inside),
+the window has no input focus (as OpenRA), for a touch (a finger or pen
+leaves no position: the mouse-like events js/touch.js feeds in carry
+`pointerType: 'touch'`, and the browser's compatibility mouse events after a
+pointer event of a finger are ignored until a mouse moves again,
+`Input.notePointerType`), while the game menu, end of game, statistics or a
+modal dialog is open, during a box selection, repair box, middle button pan
+or radar drag, while a text field has the focus (the chat line), and while
+the mouse is released with the release hotkey (`MouseCapture.isDetached`,
+where it exists). The map editor has no edge scrolling.
 
 Command bar (engine/src/commands.rs, apps/game/js/commandbar.js): orders
 `{"o": "attack_ground", player, ids, x, y}` (force-fire on the ground until

@@ -959,6 +959,48 @@ test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, 
   assert.equal(atRightEdge(), null);
 });
 
+test('edge scrolling: the pointer events of a finger (window, capture phase) drop the position until a mouse moves again', async () => {
+  const p = page();
+  const { input } = await withInput(p);
+  // A tap on a sidebar button at the right edge: the pointer events of the
+  // finger, then the browser's compatibility mouse events at the same spot.
+  p.real('pointerdown', { clientX: 995, clientY: 50, pointerType: 'touch' }, p.card);
+  p.real('pointerup', { clientX: 995, clientY: 50, pointerType: 'touch' }, p.card);
+  realMove(p, 995, 50, p.card);
+  assert.equal(input.windowMouse.finger, true);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null, 'a tap at the edge does not scroll');
+  // The mouse moves again (hybrid device): pointermove of the mouse, then its mousemove.
+  p.real('pointermove', { clientX: 996, clientY: 50, pointerType: 'mouse' }, p.card);
+  realMove(p, 996, 50, p.card);
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // A pen counts as a finger: the scrolling stops at once.
+  p.real('pointermove', { clientX: 996, clientY: 50, pointerType: 'pen' }, p.card);
+  input.update(0.1);
+  assert.equal(input.edgeScroll, null);
+});
+
+test('Input.dispose removes every listener it added to the window and the canvas', async () => {
+  const p = page();
+  const count = (node) => [...node.listeners.values()].reduce((n, l) => n + l.length, 0);
+  const winBefore = count(win);
+  const viewBefore = count(p.view);
+  const { input } = await withInput(p);
+  assert.ok(count(win) > winBefore, 'bind added window listeners');
+  assert.ok(count(p.view) > viewBefore, 'and canvas listeners');
+  realMove(p, 999, 50, p.card);
+  input.update(0.1);
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), true);
+  input.dispose();
+  assert.equal(count(win), winBefore, 'no window listener is left');
+  assert.equal(count(p.view), viewBefore, 'no canvas listener is left');
+  assert.equal(doc.documentElement.classList.contains('edge-scroll'), false, 'the page arrow goes');
+  // A later game's events reach the disposed view no more.
+  realMove(p, 0, 0, p.view);
+  assert.equal(input.windowMouse.x, 999);
+});
+
 test('box selection, orders and the wheel through js/input.js with the virtual pointer', async () => {
   const p = page();
   const { input, boxes } = await withInput(p);
