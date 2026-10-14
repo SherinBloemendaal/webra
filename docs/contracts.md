@@ -3007,6 +3007,56 @@ model, like cloud gaming services:
   menu opens (and so pauses) when the page is hidden. Online games never
   pause.
 
+### Menu screens and dialogs (`apps/game/css`)
+
+Every menu screen outside the battlefield is one card as wide and as tall
+as the window, with the grid background showing around it; small dialogs
+stay compact cards in the middle. `tests/screens-layout.test.mjs` checks
+the rules below.
+
+- **Screens**: the start screen (main menu bar over the skirmish setup,
+  `#menu`), online play (server browser and online lobby, `#online-root`),
+  the campaign's mission browser (`#campaign-root`), the end-game
+  statistics (`#stats-screen`, over the dimmed battlefield) and Load game
+  (`js/records.js` `dialog(..., { screen: true })`). Their cards have no
+  width cap; the screen pads them by `--ui-screen-pad` (theme.css), and the
+  card stretches to the rest of the window, its footer bar at the bottom.
+  A card taller than the window scrolls with the screen (the statistics
+  scroll inside the card, so the tabs and buttons stay in view).
+- **The gap**: `--ui-screen-gap` is `clamp(12px, 1.5vw, 24px)` (12 px up to
+  an 800 px window, 24 px from 1600 px) and 8 px on phones (600 px and
+  less), in plain pixels at any UI scale. Each side is at least the
+  safe-area inset there. At the bottom the gap also clears the parts in
+  the bottom left corner (`--ui-corner-clear`): the version tag, and on the
+  online and campaign screens the Sound and Original content buttons
+  (their height follows the UI scale, 44 px rows on touch screens).
+- **Inside a card**: the parts are laid out by the card's width through
+  named container queries, never unnamed ones, so a wider card cannot
+  change what a query measures:
+  - `lobby` (the skirmish card): one column up to 930 px; map | players
+    over options from there; map | players | options from 1440 px (the
+    map column 26% of the card, 300 to 440 px), where the players panel
+    stays wider than the 560 px at which its slots turn into cards.
+  - `lobby-panel` (each lobby panel): the player slots become cards and
+    the option grid one column at 560 px and less.
+  - `online` (the online card): from 1440 px the game options get a column
+    of their own next to the slots; the map and the chat stay on the right.
+  - `campaign` (the mission browser): the mission list takes 40% of the
+    card, at most 420 px; from 1200 px (a mission column of 760 px or more)
+    the map preview goes beside the briefing.
+  - `records` (Load game): from 720 px a save's name and details share a
+    line.
+  Viewport media queries stay for phone sizes (touch targets, padding).
+- **Line length**: running text in a screen card (briefings, notes,
+  warnings, errors) keeps to `--ui-measure` (75ch); the card is not capped
+  for it.
+- **Compact dialogs**: the game menu (with its Settings, Controls and
+  Hotkeys pages, over the running game), victory and defeat, the modded map
+  question, the online host, password and resume dialogs, sign in and the
+  settings conflict, Sound and music, the music player, Original content,
+  release notes, the bulk repair and sell chooser, help tips and tooltips,
+  and the map editor's dialogs keep their widths.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
