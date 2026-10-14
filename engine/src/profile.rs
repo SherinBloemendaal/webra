@@ -83,6 +83,10 @@ impl Section {
     }
 }
 
+// The timers read `std::time::Instant`, which panics on wasm32-unknown-unknown.
+#[cfg(all(feature = "profile", target_arch = "wasm32"))]
+compile_error!("the `profile` feature is native only: std::time::Instant panics on wasm32");
+
 #[cfg(feature = "profile")]
 mod imp {
     use super::{Section, SECTIONS};

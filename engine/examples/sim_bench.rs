@@ -78,16 +78,11 @@ fn main() {
             }
         }
     }
-    let mut sorted = all.clone();
-    sorted.sort_by(|a, b| a.total_cmp(b));
-    let avg = all.iter().sum::<f64>() / all.len().max(1) as f64;
-    let pct = |p: f64| sorted[((sorted.len() - 1) as f64 * p) as usize];
-    println!(
-        "{ticks} ticks: avg {avg:.2} ms/tick, median {:.2}, p95 {:.2}, worst {:.2}; budget 40 ms",
-        pct(0.5),
-        pct(0.95),
-        sorted.last().copied().unwrap_or(0.0)
-    );
+    println!("{ticks} ticks: {}; budget 40 ms", summary(&all));
+    // The first tick starts every unit's move at once (all route searches).
+    if all.len() > 1 {
+        println!("after the first tick ({:.2} ms): {}", all[0], summary(&all[1..]));
+    }
     println!("state hash digest {digest:016x} (final tick {}, hash {:016x})", w.tick, w.state_hash());
     if let Some(rss) = peak_rss {
         println!("peak resident memory {rss:.0} MiB (sampled after every window)");
@@ -99,6 +94,15 @@ fn main() {
     if let Some(path) = hashes {
         std::fs::write(&path, hash_lines).expect("write the hashes");
     }
+}
+
+/// Average, median, 95th percentile and worst of tick times.
+fn summary(ms: &[f64]) -> String {
+    let mut sorted = ms.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let avg = ms.iter().sum::<f64>() / ms.len().max(1) as f64;
+    let pct = |p: f64| sorted[((sorted.len() - 1) as f64 * p) as usize];
+    format!("avg {avg:.2} ms/tick, median {:.2}, p95 {:.2}, worst {:.2}", pct(0.5), pct(0.95), sorted.last().copied().unwrap_or(0.0))
 }
 
 fn print_sections(ns: &[u64], ticks: u32) {

@@ -51,10 +51,16 @@ for (let t = 1; t <= ticks; t++) {
     win = [];
   }
 }
-const sorted = all.slice().sort((a, b) => a - b);
-const avg = all.reduce((a, b) => a + b, 0) / all.length;
-const pct = (p) => sorted[Math.floor((sorted.length - 1) * p)];
-console.log(`${ticks} ticks: avg ${avg.toFixed(2)} ms/tick, median ${pct(0.5).toFixed(2)}, p95 ${pct(0.95).toFixed(2)}, worst ${sorted.at(-1).toFixed(2)}; budget 40 ms`);
+/** Average, median, 95th percentile and worst of tick times. */
+function summary(ms) {
+  const sorted = ms.slice().sort((a, b) => a - b);
+  const avg = ms.reduce((a, b) => a + b, 0) / ms.length;
+  const pct = (p) => sorted[Math.floor((sorted.length - 1) * p)];
+  return `avg ${avg.toFixed(2)} ms/tick, median ${pct(0.5).toFixed(2)}, p95 ${pct(0.95).toFixed(2)}, worst ${sorted.at(-1).toFixed(2)}`;
+}
+console.log(`${ticks} ticks: ${summary(all)}; budget 40 ms`);
+// The first tick starts every unit's move at once (all route searches).
+if (all.length > 1) console.log(`after the first tick (${all[0].toFixed(2)} ms): ${summary(all.slice(1))}`);
 // The CPU instance path's per-frame build with the whole map in view.
 const rect = [0, 0, size * 24, size * 24];
 const build = [];

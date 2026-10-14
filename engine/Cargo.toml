@@ -23,7 +23,8 @@ libm = "0.2"
 # in the game's build.
 stack-probe = []
 # Per-system timers of the tick (src/profile.rs) for the headless benchmark
-# (examples/sim_bench.rs). Native only; never in the game's build.
+# (examples/sim_bench.rs). Native only (std::time::Instant panics on wasm32,
+# so the feature refuses to build there); never in the game's build.
 profile = []
 
 # The interpreter's stack use per level, built for wasm32 and run by node
