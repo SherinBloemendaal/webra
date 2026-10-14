@@ -1,6 +1,6 @@
 // The menu screens outside the battlefield are full-width cards: the start
 // screen (main menu bar and skirmish setup), online play, the campaign, the
-// statistics and the Load game list fill the window less one gap
+// statistics, the Load game list and the account's Replays list fill the window less one gap
 // (css/theme.css --ui-screen-gap), so the grid background shows around them.
 // Small dialogs stay compact. There is no layout engine here: the tests read
 // the stylesheets, check the rules that make each screen a card, and work
@@ -271,7 +271,7 @@ test('statistics graph: time labels at least 80 px apart, at most 12 however wid
   assert.equal(L.steps, timeSteps(L.plot.x1 - L.plot.x0));
 });
 
-test('Load game is a screen card; other record dialogs stay compact', () => {
+test('Load game and the account\'s Replays are screen cards; other record dialogs stay compact', () => {
   const doc = installDom();
   try {
     dialog('Modded map', () => {});
@@ -289,6 +289,15 @@ test('Load game is a screen card; other record dialogs stay compact', () => {
     root.childNodes.find((b) => b.textContent === 'Load game').click();
     const load = doc.body.childNodes.find((n) => n.localName === 'dialog');
     assert.equal(load.className, 'records-dialog records-screen');
+    load.remove();
+
+    // Replays with an account (the account's list) is a list screen too.
+    const signedIn = doc.createElement('div');
+    const api = { replays: () => new Promise(() => {}) };
+    mountRecordEntries(signedIn, { version: 'test', canPlay: () => true, showError: () => {}, onLoadSave: () => {}, onWatchReplay: () => {}, store: new SaveStore(new MemoryBackend()), accountReplays: { available: () => true, api } });
+    signedIn.childNodes.find((b) => b.textContent === 'Replays').click();
+    const replays = doc.body.childNodes.find((n) => n.localName === 'dialog');
+    assert.equal(replays.className, 'records-dialog records-screen');
   } finally {
     uninstallDom();
   }

@@ -210,7 +210,8 @@ async function replaysDialog(ctx) {
     );
     body.append(usage, list, status, actions);
     render();
-  });
+    // A list like Load game: a screen card the size of the window (css/records.css .records-screen).
+  }, { screen: true });
   if (chosen) ctx.onWatchReplay(chosen);
 }
 
