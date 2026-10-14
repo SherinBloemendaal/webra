@@ -1439,6 +1439,14 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   queue carries on; the items can be queued again once the prerequisites (or
   a deployed MCV) are back. Unit queues keep going from their own factories.
   `start_production` and `place` are refused for such items.
+- A unit queue builds while the player has a structure of its type (OpenRA
+  ClassicProductionQueue.Enabled). Without one it waits; that is a WebRA
+  difference, OpenRA clears the queue with a refund (ClearQueue). A unit
+  that finishes while no structure makes its `build_at` type is not made
+  (OpenRA BuildUnit with CancelProduction(unit, 1)): the last item of that
+  type in the queue is cancelled and refunded, one per tick, so the finished
+  one goes once it is the last, and the queue says ProductionBlocked once
+  (not for instant builds).
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`.
 - `player_json().buildable[].buildTicks` is the time the item takes with the
@@ -1455,8 +1463,11 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   WebRA: in actor order). The build time still counts the structures by
   `build_at` (OpenRA GetBuildTime). A structure's exits are those whose
   `exit_types` (OpenRA ExitInfo.ProductionTypes, empty for any) hold the
-  type the unit is built as: the sub pen's outer exits (-1, 2) and (3, 2)
-  are for submarines, its corners for any ship. They are tried by
+  type the unit is built as. The sub pen has four Submarine exits, (-1, 2)
+  and (3, 2) beside it and its top corners (0, 0) and (2, 0), and four Ship
+  exits on all four corners; the Ship exits let out only units built as
+  Ship (the transport, which has no BuildAtProductionType, and under "all
+  tech" every ship). They are tried by
   `exit_priority` (OpenRA
   ExitInfo.Priority, highest first: the Kennel's down-left exit), then
   nearest the rally point (without one, nearest a point below the structure;

@@ -69,8 +69,9 @@ impl World {
 
     /// The cells (with facings) where a ship of type `ty` built at naval
     /// yard `b` may enter the world, best first: open water at each exit
-    /// that lets it out (`exit_lets_out`: the sub pen's outer exits are for
-    /// submarines), just outside the yard when the exit is one of its own
+    /// that lets it out (`exit_lets_out`: the sub pen's Submarine exits are
+    /// (-1, 2), (3, 2) and its top corners, its Ship exits all four corners
+    /// for units built as Ship), just outside the yard when the exit is one of its own
     /// corners. Water joined to the yard's rally point comes first, then the
     /// largest body of water (a yard on a shore may touch a pond too, and a
     /// ship launched into it could never leave; OpenRA issue 19154), then

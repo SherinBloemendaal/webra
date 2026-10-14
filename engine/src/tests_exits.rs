@@ -409,3 +409,47 @@ fn all_tech_builds_a_dog_at_the_barracks() {
     assert!(exits.contains(&cell(&w, dogs[0])), "out of a barracks exit, at {:?}", cell(&w, dogs[0]));
     assert!(w.players[0].queues[QueueType::Infantry as usize].items.is_empty(), "the queue moved on");
 }
+
+/// OpenRA ClassicProductionQueue.BuildUnit: a finished unit that no
+/// structure makes (here a dog without prerequisites, with only barracks)
+/// is not made: CancelProduction(unit, 1) cancels the last item of its type
+/// and refunds what was paid, one per tick, so the second dog goes first
+/// and the finished one next; the queue says Blocked once, and the money
+/// comes back in full.
+#[test]
+fn a_finished_unit_without_a_producer_is_cancelled_and_refunded() {
+    let mut w = arena(MovementModel::OpenRA);
+    factory(&mut w, "BARR", 20, 10);
+    let dog = ty(&w, "DOG");
+    w.rules.actors[dog as usize].prerequisites.clear();
+    w.players[0].dev.all_tech = false;
+    w.players[0].dev.fast_build = false;
+    w.refresh_tokens();
+    w.sound.set_enabled(true);
+    assert!(w.producers_of(0, dog).is_empty(), "barracks make no dogs");
+    let cash = w.players[0].cash;
+    w.start_production(0, dog, 2);
+    let qi = QueueType::Infantry as usize;
+    assert_eq!(w.players[0].queues[qi].items.len(), 2);
+    events(&mut w, SoundEventKind::ProductionBlocked);
+    let mut blocked = 0;
+    let mut lengths = Vec::new();
+    for _ in 0..25 * 60 {
+        w.step();
+        blocked += events(&mut w, SoundEventKind::ProductionBlocked);
+        let items = &w.players[0].queues[qi].items;
+        if lengths.last() != Some(&items.len()) {
+            lengths.push(items.len());
+            if items.len() == 1 {
+                assert!(items[0].done, "the second dog went first: the finished one is left");
+            }
+        }
+        if items.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(lengths, vec![2, 1, 0], "one cancelled per tick");
+    assert!(all_of(&w, "DOG").is_empty(), "no dog made");
+    assert_eq!(w.players[0].cash, cash, "refunded in full");
+    assert_eq!(blocked, 1, "Blocked once");
+}
