@@ -1,33 +1,7 @@
 /* Saves, replays and spectating: lobby buttons, dialogs, the observer panel,
    the replay bar and the progress overlay (js/records.js, js/observer.js). */
 
-#records-entry {
-  position: fixed;
-  right: 16px;
-  top: 58px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: stretch;
-}
-
-.records-entry-button {
-  padding: 7px 14px;
-  background: #2a3123;
-  color: var(--text);
-  border: 1px solid #4a5540;
-  border-top-color: #66735a;
-  border-radius: 2px;
-  font: 700 12px system-ui, sans-serif;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.records-entry-button:hover {
-  filter: brightness(1.2);
-}
+/* Load game and Replays are entries of the start screen's main menu (css/startmenu.css). */
 
 .records-dialog {
   width: min(560px, calc(100vw - 32px));
@@ -410,6 +384,10 @@
   top: 45%;
   transform: translate(-50%, -50%);
   z-index: 8;
+  /* One line where it fits: from left: 50% the box would shrink to half the screen on phones. */
+  width: max-content;
+  max-width: calc(100% - 32px);
+  text-align: center;
   padding: 10px 18px;
   background: rgba(0, 0, 0, 0.8);
   border: 1px solid color-mix(in srgb, var(--ui-accent) 60%, transparent);
@@ -428,27 +406,60 @@
   }
 }
 
-/* Spectators and replays: no build sidebar and no drawer toggle (js/main.js). */
+/* Spectators and replays: no build sidebar and no drawer toggle (js/main.js),
+   and no touch action bar or placement buttons: they give no orders, and the
+   bottom of a phone is the replay bar's and the chat's. */
 #app.viewer #sidebar,
-#app.viewer #sidebar-toggle {
+#app.viewer #sidebar-toggle,
+#app.viewer #touch-bar,
+#app.viewer #touch-place {
   display: none !important;
 }
 
+/* Touch screens: the HUD buttons are 44 px high, so the observer panel starts
+   below them (it covered the Menu button), and it scrolls instead of running
+   off a short screen. */
+body.touch .observer-panel {
+  /* The HUD buttons' bottom (top 6 * ui-px, at least 44 px high at any UI scale) plus a gap. */
+  top: calc(6 * var(--ui-px) + max(44px, 44 * var(--ui-px)) + 6px);
+  max-height: calc(100% - (6 * var(--ui-px) + max(44px, 44 * var(--ui-px)) + 14px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Phones (js/layout.js compact layouts): the view buttons stay one row that
+   scrolls sideways instead of wrapping into rows of 44 px buttons over the
+   battlefield; the panel is as wide as the screen allows. */
+#app[data-layout='portrait'] .observer-views,
+#app[data-layout='landscape'] .observer-views {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+#app[data-layout='portrait'] .observer-view,
+#app[data-layout='portrait'] .observer-toggle,
+#app[data-layout='landscape'] .observer-view,
+#app[data-layout='landscape'] .observer-toggle {
+  flex: none;
+}
+
+#app[data-layout='portrait'] .observer-panel {
+  left: 8px;
+  max-width: none;
+}
+
+/* Landscape phones: the panel takes at most half the width, the battlefield the rest. */
+#app[data-layout='landscape'] .observer-panel {
+  max-width: min(640px, 50%);
+}
+
 @media (pointer: coarse) {
-  .records-entry-button,
   .replay-bar button,
   .observer-view,
   .observer-toggle {
     min-height: 44px;
-  }
-}
-
-@media (max-width: 600px) {
-  /* Next to the Play online entry, which moves to the bottom corner. */
-  #records-entry {
-    top: auto;
-    right: max(12px, env(safe-area-inset-right));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px);
-    flex-direction: row;
   }
 }

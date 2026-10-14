@@ -188,8 +188,12 @@ export const RECIPES = {
   torpedo: (sr, r) => normalize(bubbles(sr, r, 0.6, 380), 0.55),
   depth_charge: (sr, r) => normalize(sweep(sr, 260, 90, 0.25, 0.08), 0.5),
   bomb: (sr, r) => normalize(whistle(sr, r, 1.0), 0.45),
-  // Thunder after a lightning flash (weather, js/weather-fx.js): a crack, then a long low rumble.
-  thunder: (sr, r) => normalize(boom(sr, r, { seconds: 2.6, cutoff: 240, tau: 0.85, sub: 52, subEnd: 28, subTau: 0.9, subGain: 1, crackle: 0.03 }), 0.8),
+  // Thunder after a lightning flash (weather, js/weather-fx.js; the cue by distance is director.js
+  // thunderCue): close, a tearing crack with echoes and then heavy rolls; medium, a dull clap and rolls;
+  // distant, no crack, a soft rumble that swells and rolls.
+  thunder_close: (sr, r) => normalize(thunderClap(sr, r, THUNDER.close), 1),
+  thunder: (sr, r) => normalize(thunderClap(sr, r, THUNDER.medium), 0.75),
+  thunder_distant: (sr, r) => normalize(thunderClap(sr, r, THUNDER.distant), 0.5),
   thump: (sr, r) => normalize(boom(sr, r, { seconds: 0.5, cutoff: 200, tau: 0.08, sub: 60, subEnd: 40, subTau: 0.15, subGain: 1.2 }), 0.7),
 
   // Impacts and deaths
@@ -311,6 +315,116 @@ export const RECIPES = {
   eva_cash: (sr) => chime(sr, [1319, 1760], 0.08, 0.4, 0.35),
   eva_alarm: (sr) => chime(sr, [880, 622, 880, 622], 0.17, 0.5, 0.1, 'square'),
 };
+
+/**
+ * Thunder shapes (thunderClap): `crack` is the opening snap's level against
+ * the rumble (0: none), low-passed at `dull` Hz when set (heard from further
+ * away, the snap loses its highs), `echoes` its reflections, `rolls` the overlapping swells of rumble spread over
+ * `spread` seconds, each rising in `swell` seconds and dying away in about
+ * `ring` seconds; the rumble's low-pass falls from `bright` to `dark` Hz and
+ * a sub-bass tone (`sub`) gives it body.
+ */
+const THUNDER = {
+  close: { seconds: 4.6, crack: 1.2, dull: 0, echoes: 3, rolls: 6, start: 0.06, spread: 2.4, swell: 0.08, ring: 0.9, bright: 900, dark: 160, sub: 0.3 },
+  medium: { seconds: 4.4, crack: 0.45, dull: 1500, echoes: 2, rolls: 5, start: 0.1, spread: 2.2, swell: 0.25, ring: 0.85, bright: 500, dark: 140, sub: 0.28 },
+  distant: { seconds: 4.2, crack: 0, dull: 0, echoes: 0, rolls: 5, start: 0.1, spread: 2.0, swell: 0.7, ring: 0.8, bright: 320, dark: 125, sub: 0.22 },
+};
+
+/**
+ * Thunder: a crack (a broadband snap with a tearing chain of bursts,
+ * high crackle and a few duller echoes off the land), then several rolls of
+ * low-passed noise, each with its own swell, with a slow irregular flutter
+ * on top and a falling sub-bass tone underneath. Crack and rumble are scaled
+ * separately so `crack` sets their balance whatever the filters do.
+ */
+function thunderClap(sr, r, { seconds, crack, dull, echoes, rolls, start, spread, swell, ring, bright, dark, sub }) {
+  const out = buffer(sr, seconds);
+  // Rolls: the first right after the crack, then later and mostly weaker ones.
+  const parts = [];
+  for (let k = 0; k < rolls; k++) {
+    const at = k === 0 ? start * (0.8 + r() * 0.4) : start + spread * (k / (rolls - 1)) ** 1.25 * (0.75 + r() * 0.4);
+    const gain = (k === 0 ? 1 : 0.45 + r() * 0.55) * (1 - (0.45 * k) / rolls);
+    parts.push({ at, gain, rise: swell * (0.6 + r() * 0.8), tau: ring * (0.6 + r() * 0.7) });
+  }
+  // Below the sub tone the noise only muddies it: the rumble starts at 50 Hz.
+  const hp = highpass(sr, 50);
+  const lpA = lowpass(sr, bright);
+  const lpB = lowpass(sr, bright);
+  const lpC = lowpass(sr, bright);
+  const flutterLp = lowpass(sr, 5);
+  const bodyLp = lowpass(sr, 3);
+  const hold = Math.max(1, Math.round(sr / 22));
+  let target = 1;
+  let phase = 0;
+  const rumble = new Float32Array(out.length);
+  const body = new Float32Array(out.length);
+  const end = Math.max(0.2, seconds * 0.15);
+  for (let i = 0; i < out.length; i++) {
+    const t = i / sr;
+    let env = 0;
+    for (const p of parts) {
+      const u = t - p.at;
+      if (u <= 0) continue;
+      // A smooth swell (raised cosine), then an exponential decay.
+      const rise = u < p.rise ? 0.5 - 0.5 * Math.cos((Math.PI * u) / p.rise) : 1;
+      env += p.gain * rise * decay(Math.max(0, u - p.rise), p.tau);
+    }
+    if (i % hold === 0) target = 0.35 + r() * 1.1;
+    const flutter = flutterLp(target);
+    // Darker as it rolls on; each loud moment opens the filter a little.
+    const cutoff = dark + (bright - dark) * decay(t, 0.6) + 140 * Math.min(1, env) * (bright / 900);
+    lpA.set(cutoff);
+    lpB.set(cutoff);
+    lpC.set(cutoff * 1.3);
+    const fade = t > seconds - end ? (seconds - t) / end : 1;
+    const freq = 30 + 22 * decay(t, 1.2) + 4 * Math.sin(TAU * 0.7 * t);
+    phase += (TAU * freq) / sr;
+    rumble[i] = lpC(lpB(lpA(hp(r() * 2 - 1)))) * env * flutter * fade;
+    body[i] = Math.sin(phase) * bodyLp(env) * fade;
+  }
+  mix(out, normalize(rumble, 1), 0);
+  mix(out, normalize(body, sub), 0);
+  if (crack > 0) {
+    const snap = thunderCrack(sr, r, echoes);
+    if (dull) {
+      const lpA = lowpass(sr, dull);
+      const lpB = lowpass(sr, dull);
+      for (let i = 0; i < snap.length; i++) snap[i] = lpB(lpA(snap[i]));
+    }
+    mix(out, normalize(snap, crack), 0);
+  }
+  return out;
+}
+
+/** The snap of a close strike: a broadband burst, a tearing chain, crackle and echoes. */
+function thunderCrack(sr, r, echoes) {
+  const dry = buffer(sr, 0.5);
+  const hp = highpass(sr, 250);
+  const tear = bandpass(sr, 2600 + r() * 1200, 0.7);
+  const fizz = bandpass(sr, 5200 + r() * 1500, 1.4);
+  const bursts = [];
+  for (let k = 0, at = 0.008; k < 7; k++, at += 0.012 + r() * 0.03) bursts.push({ at, gain: (0.5 + r() * 0.5) * (1 - k / 9) });
+  for (let i = 0; i < dry.length; i++) {
+    const t = i / sr;
+    let chain = 0;
+    for (const b of bursts) if (t >= b.at) chain += b.gain * decay(t - b.at, 0.009);
+    const snap = hp(r() * 2 - 1) * attack(t, 0.0012) * decay(t, 0.045);
+    const pops = r() < 0.12 * decay(t, 0.18) ? (r() * 2 - 1) * 6 : 0;
+    dry[i] = snap * 1.4 + tear(r() * 2 - 1) * 2.5 * chain + fizz(pops) * decay(t, 0.25);
+  }
+  normalize(dry, 1);
+  const out = buffer(sr, 0.5 + 0.45);
+  mix(out, dry, 0);
+  // Echoes off the ground and hills: later, softer and duller.
+  for (let k = 0; k < echoes; k++) {
+    const at = 0.06 + k * 0.09 + r() * 0.07;
+    const lp = lowpass(sr, 2200 - k * 500);
+    const echo = new Float32Array(dry.length);
+    for (let i = 0; i < dry.length; i++) echo[i] = lp(dry[i]);
+    mix(out, echo, Math.round(at * sr), 0.5 * 0.6 ** k);
+  }
+  return out;
+}
 
 function whoosh(sr, r, { seconds, from, to, gain, rumble = 0 }) {
   const out = buffer(sr, seconds);

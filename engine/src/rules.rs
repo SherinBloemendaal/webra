@@ -42,6 +42,9 @@ struct RawActor {
     kind: String,
     queue: String,
     cost: i32,
+    /// OpenRA CustomSellValue.Value (absent: the cost counts).
+    #[serde(default)]
+    custom_sell_value: Option<i32>,
     build_ticks: i32,
     palette_order: i32,
     /// OpenRA Buildable.BuildLimit (0: no limit).
@@ -672,8 +675,9 @@ struct RawBuilding {
     repairs: Option<RepairInfo>,
     repairable: Option<RepairableInfo>,
     power_down: bool,
-    value: i32,
     center_offset: Vec<i32>,
+    #[serde(default)]
+    lightning_rod: i32,
 }
 
 #[derive(Deserialize)]
@@ -1077,9 +1081,10 @@ pub struct BuildingInfo {
     pub repairable: Option<RepairableInfo>,
     /// The power down button works on it (repair.rs).
     pub power_down: bool,
-    /// OpenRA GetSellValue: CustomSellValue or the cost; the base of the repair cost.
-    pub value: i32,
     pub center_offset: (i32, i32),
+    /// WebRA's Lightning Rod (data/webra/rules.yaml `LightningRod`, lightning.rs):
+    /// lightning that would land within this range (world units) is grounded on it; 0 for none.
+    pub lightning_rod: i32,
 }
 
 impl BuildingInfo {
@@ -1117,6 +1122,9 @@ pub struct ActorInfo {
     pub kind: Kind,
     pub queue: QueueType,
     pub cost: i32,
+    /// OpenRA CustomSellValue: what selling, repairing and kill bounties count
+    /// instead of the cost (see `sell_value`).
+    pub custom_sell_value: Option<i32>,
     pub build_ticks: i32,
     pub palette_order: i32,
     /// OpenRA Buildable.BuildLimit: at most this many owned and queued (0: no limit).
@@ -1219,6 +1227,13 @@ impl ActorInfo {
 
     pub fn is_wall(&self) -> bool {
         self.abilities.line_build.is_some()
+    }
+
+    /// OpenRA CustomSellValueExts.GetSellValue: CustomSellValue, else the
+    /// Valued cost. The base of the sell refund (production.rs), the repair
+    /// cost (repair.rs), kill bounties (gamerules.rs) and the sell crew (sell.rs).
+    pub fn sell_value(&self) -> i32 {
+        self.custom_sell_value.unwrap_or(self.cost)
     }
 }
 
@@ -1384,6 +1399,11 @@ pub struct Rules {
     pub render: crate::fx::RenderData,
 }
 
+thread_local! {
+    /// The rules `Rules::load_with` loaded last and the overrides (JSON text) they were loaded with.
+    static LAST_LOADED: std::cell::RefCell<Option<(String, Rules)>> = const { std::cell::RefCell::new(None) };
+}
+
 pub const TOKEN_DISABLED: &str = "disabled";
 pub const TECH_LEVELS: [&str; 5] = ["infonly", "low", "medium", "high", "unrestricted"];
 
@@ -1395,7 +1415,18 @@ impl Rules {
     /// Load the built-in rules with optional overrides from a custom map
     /// (`{ "actors": { "1TNK": { "cost": 400 } }, "weapons": { "25mm": { "range": 6000 } } }`).
     /// Overrides may only change existing fields to values of the same type.
+    ///
+    /// The last rules loaded are kept with their overrides and handed out
+    /// again (a copy) for the same overrides: the map editor's preview and
+    /// checks, map validation and every game on a map load the same rules
+    /// over and over, and reading rules.json is most of that work.
     pub fn load_with(overrides: Option<&serde_json::Value>) -> Result<Rules, String> {
+        // Never empty for overrides (JSON text), so it cannot match "no overrides".
+        let key = overrides.map(|o| o.to_string()).unwrap_or_default();
+        let cached = LAST_LOADED.with(|last| last.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, r)| r.clone()));
+        if let Some(rules) = cached {
+            return Ok(rules);
+        }
         let mut base: serde_json::Value = serde_json::from_str(RULES_JSON).expect("rules.json is valid JSON");
         if let Some(o) = overrides {
             apply_overrides(&mut base, o)?;
@@ -1404,6 +1435,7 @@ impl Rules {
         let rules = Rules::from_raw(raw)?;
         // Custom maps come from strangers: every value must be safe to simulate.
         rules.validate()?;
+        LAST_LOADED.with(|last| *last.borrow_mut() = Some((key, rules.clone())));
         Ok(rules)
     }
 
@@ -1492,6 +1524,9 @@ impl Rules {
     fn validate_actor(&self, a: &ActorInfo) -> Result<(), String> {
         let n = |f: &str| format!("actors.{}.{f}", a.id);
         within(&n("cost"), a.cost, 0, 1_000_000)?;
+        if let Some(v) = a.custom_sell_value {
+            within(&n("custom_sell_value"), v, 0, 1_000_000)?;
+        }
         within(&n("build_ticks"), a.build_ticks, 0, TIMER)?;
         within(&n("build_limit"), a.build_limit, 0, 1000)?;
         // Crates and proxies have no health (OpenRA ^Crate has no Health trait; proxies no body).
@@ -1715,7 +1750,6 @@ impl Rules {
             within(&n("repairs.interval"), r.interval, 1, TIMER)?;
             within(&n("repairs.value_percent"), r.value_percent, 0, 1000)?;
         }
-        within(&n("value"), b.value, 0, 1_000_000)?;
         if let Some(r) = &b.repairable {
             within(&n("repairable.percent"), r.percent, 0, MAX_PERCENT)?;
             within(&n("repairable.interval"), r.interval, 1, TIMER)?;
@@ -2172,8 +2206,8 @@ impl Rules {
                         repairs: b.repairs,
                         repairable: b.repairable,
                         power_down: b.power_down,
-                        value: b.value,
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
+                        lightning_rod: b.lightning_rod,
                     })
                 }
             };
@@ -2216,6 +2250,7 @@ impl Rules {
                 kind,
                 queue,
                 cost: a.cost,
+                custom_sell_value: a.custom_sell_value,
                 build_ticks: a.build_ticks,
                 palette_order: a.palette_order,
                 build_limit: a.build_limit,
@@ -2359,6 +2394,10 @@ impl Rules {
         let mut have = vec![false; self.tokens.len()];
         for t in TECH_LEVELS {
             have[self.token(&format!("techlevel.{t}")).unwrap() as usize] = true;
+        }
+        // Granted in every skirmish and multiplayer game (production.rs refresh_tokens).
+        if let Some(t) = self.token(crate::production::GLOBAL_SKIRMISH) {
+            have[t as usize] = true;
         }
         let mut ok = vec![false; self.actors.len()];
         // The Construction Yard is where every game starts.
@@ -2515,13 +2554,39 @@ fn apply_overrides(base: &mut serde_json::Value, overrides: &serde_json::Value) 
                 .iter_mut()
                 .find(|e| e[key_field].as_str().is_some_and(|v| v.eq_ignore_ascii_case(id)))
                 .ok_or_else(|| format!("rules.{section}: unknown id {}", truncate(id)))?;
-            merge(target, patch, &format!("{section}.{}", truncate(id)), key_field)?;
+            let path = format!("{section}.{}", truncate(id));
+            if section == "actors" {
+                if let Some(v) = patch.get("custom_sell_value") {
+                    // OpenRA CustomSellValue may be given to any actor, and null takes a
+                    // built-in one away (`-CustomSellValue`: the cost counts again).
+                    set_custom_sell_value(target, v, &path)?;
+                    let mut rest = patch.clone();
+                    rest.as_object_mut().expect("has a key, so an object").remove("custom_sell_value");
+                    merge(target, &rest, &path, key_field)?;
+                    continue;
+                }
+            }
+            merge(target, patch, &path, key_field)?;
         }
     }
     for k in o.keys() {
         if k != "actors" && k != "weapons" {
             return Err(format!("rules: unknown section {}", truncate(k)));
         }
+    }
+    fn set_custom_sell_value(target: &mut Value, v: &Value, path: &str) -> Result<(), String> {
+        let t = target.as_object_mut().ok_or_else(|| format!("{path}: expected an object"))?;
+        match v {
+            Value::Null => {
+                t.remove("custom_sell_value");
+            }
+            Value::Number(n) if n.is_i64() || n.is_u64() => {
+                t.insert("custom_sell_value".into(), v.clone());
+            }
+            Value::Number(_) => return Err(format!("{path}.custom_sell_value: numbers must be integers")),
+            _ => return Err(format!("{path}.custom_sell_value: wrong type")),
+        }
+        Ok(())
     }
     fn merge(target: &mut Value, patch: &Value, path: &str, key_field: &str) -> Result<(), String> {
         let (Some(t), Some(p)) = (target.as_object_mut(), patch.as_object()) else {
@@ -2619,7 +2684,7 @@ mod tests {
             serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "bonuses": [] } } } } }),
             serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "bonuses": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100] } } } } }),
             serde_json::json!({ "actors": { "POWR": { "building": { "repairable": { "percent": -1 } } } } }),
-            serde_json::json!({ "actors": { "POWR": { "building": { "value": -1 } } } }),
+            serde_json::json!({ "actors": { "PBOX": { "custom_sell_value": -1 } } }),
         ] {
             assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
         }
@@ -2643,6 +2708,29 @@ mod tests {
         ] {
             assert!(Rules::load_with(Some(&bad)).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn rules_loaded_again_are_the_same_and_never_mixed_up() {
+        let cost = |r: &Rules| r.actors[r.actor_index("1TNK").unwrap()].cost;
+        let a = serde_json::json!({ "actors": { "1TNK": { "cost": 111 } } });
+        let b = serde_json::json!({ "actors": { "1TNK": { "cost": 222 } } });
+        let base = cost(&Rules::load());
+        // Each load hands out its own copy: changing one changes no later load.
+        let mut first = Rules::load_with(Some(&a)).unwrap();
+        first.actors[0].cost = 1;
+        let again = Rules::load_with(Some(&a)).unwrap();
+        assert_eq!(cost(&again), 111);
+        assert_ne!(again.actors[0].cost, 1);
+        assert_eq!(cost(&Rules::load_with(Some(&b)).unwrap()), 222);
+        assert_eq!(cost(&Rules::load()), base);
+        assert_eq!(cost(&Rules::load_with(Some(&a)).unwrap()), 111);
+        // A refused override is refused every time and changes nothing kept.
+        let bad = serde_json::json!({ "actors": { "1TNK": { "cost": -1 } } });
+        assert!(Rules::load_with(Some(&bad)).is_err());
+        assert!(Rules::load_with(Some(&bad)).is_err());
+        assert_eq!(cost(&Rules::load_with(Some(&a)).unwrap()), 111);
+        assert_eq!(cost(&Rules::load_with(None).unwrap()), base);
     }
 
     #[test]

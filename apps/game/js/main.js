@@ -36,6 +36,8 @@ import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
+import { mountStartMenu } from './startmenu.js';
+import { GeneratedPreviews, previewBackend } from './mappreview.js';
 import { aiName, COLOR_NAMES } from './lobby-state.js';
 import { AudioSystem, holdsGameAudio } from './audio/index.js';
 import { NO_PLAYER } from './audio/director.js';
@@ -47,7 +49,8 @@ import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
 import { missionObjectives, optionRows, skirmishStats } from './gameinfo.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
-import { MouseCapture, pointerLockAvailable } from './mouselock.js';
+import { DETACHED_ESC_TEXT, MouseCapture, pointerLockAvailable } from './mouselock.js';
+import { pausesWhenHidden, runsInBackground } from './background.js';
 import { DebugMenu } from './debug.js';
 import { chooseInstancePath } from './crowd.js';
 import { NotificationView } from './notifications.js';
@@ -94,6 +97,7 @@ import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
 import { TargetLines, withTargetLines } from './targetlines.js';
 import { WorldTooltip } from './worldtooltip.js';
+import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 
 const PLAYER = 0;
 
@@ -137,6 +141,13 @@ const playAccess = new PlayAccess({ onLost: playAccessLost });
 let uiScale = null;
 /** The map lens's art (js/maplens): the game's art for the magnifiers over map previews, or null without the engine. */
 let lensArt = null;
+/** The lobby previews of generated maps (js/mappreview.js), or null without the engine. */
+let previews = null;
+
+/** "Reduce motion" (the setting, or the browser's). */
+function motionIsReduced() {
+  return motionReduced(settings.get('reduceMotion'), !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+}
 
 async function boot() {
   // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
@@ -155,7 +166,9 @@ async function boot() {
   setupContent();
   if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content });
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
-  const lobby = new Lobby($('menu'), {
+  // Generated maps for the lobby previews, made in a worker (js/mappreview.js).
+  previews = wasm ? new GeneratedPreviews({ backend: previewBackend({ Game, module: wasmModule }) }) : null;
+  const lobby = new Lobby($('skirmish'), {
     colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
     colorNames: COLOR_NAMES,
     mapPreview: (seed, size) => Game.map_preview(seed, size),
@@ -177,10 +190,23 @@ async function boot() {
         }),
     },
     lens: newMapLens,
+    previews,
+    reducedMotion: motionIsReduced,
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
-    onCampaign: () => campaign?.open(),
+  });
+  // The start screen's main menu (js/startmenu.js): Play, saved games, account and More.
+  mountStartMenu($('start-nav'), {
+    onSkirmish: () => {
+      campaign?.close();
+      $('skirmish').scrollIntoView?.({ block: 'start' });
+      $('lobby-title')?.focus?.();
+    },
+    // The dialogs give the focus back to the entry that opened them.
+    onContent: contentPanel ? (entry) => contentPanel.open(entry) : undefined,
+    onSound: audioPanel ? (entry) => audioPanel.open(entry) : undefined,
     onReleaseNotes: () => releaseNotes.open(),
+    onStress: () => lobby.openStress(),
   });
   if (!gpuError) {
     try {
@@ -286,7 +312,7 @@ function setupAudio() {
     audio = new AudioSystem();
     // The music player opens from the Sound dialog (start screen and in games) and the game menu.
     const musicPanel = mountMusicPanel($('music-panel'), audio, { onContent: () => contentPanel?.open() });
-    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open(), onMusicPlayer: () => musicPanel.open($('audio-button')) });
+    audioPanel = mountAudioPanel($('audio-button'), $('audio-panel'), audio, { onContent: () => contentPanel?.open(), onMusicPlayer: () => musicPanel.open(document.activeElement) });
   } catch (err) {
     // The game stays playable without sound.
     console.warn('Sound is unavailable:', err);
@@ -367,6 +393,7 @@ function setupContent() {
     };
     content = new ContentSystem({ settings, known });
     contentPanel = mountContentPanel($('content-button'), $('content-panel'), content, audio, {
+      entries: [$('start-content')],
       actorNames: new Map(actors.map((a) => [String(a.id).toUpperCase(), a.name ?? a.id])),
       autoInstall: canAutoInstall(account?.user ?? null),
     });
@@ -510,6 +537,8 @@ function setupOnline(lobby, gpuError) {
       ui = mountOnline(root, {
         Game,
         lens: newMapLens,
+        previews,
+        reducedMotion: motionIsReduced,
         version: version(),
         createGame: createOnlineGame,
         colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
@@ -571,10 +600,11 @@ function setupOnline(lobby, gpuError) {
  * sends on `conn`.
  */
 async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
-  const host = await newSimHost();
+  perfLaunch();
+  const host = await perfTrace.spanAsync('sim.host', () => newSimHost(), (h) => ({ mode: h?.mode ?? null }));
   let info;
   try {
-    info = await host.start(spec);
+    info = await perfTrace.spanAsync('sim.start', () => host.start(spec), (i) => ({ kind: spec.kind, engineMs: i?.timings?.createMs ?? null }));
   } catch (err) {
     host.dispose();
     throw err;
@@ -632,6 +662,10 @@ async function missionFile(id, hash) {
 function setupCampaign(lobby, gpuError) {
   const root = $('campaign-root');
   if (!root || !wasm) return;
+  // The main menu's Campaign entry (index.html #start-nav).
+  const entry = $('campaign-button');
+  entry.hidden = false;
+  entry.addEventListener('click', () => campaign?.open());
   campaign = new CampaignMenu(root, {
     index: missionIndex,
     lens: newMapLens,
@@ -778,6 +812,108 @@ function applyColors(slots) {
 /** Only one game starts at a time (starting is asynchronous: the simulation worker loads first). */
 let starting = false;
 
+// ---- Performance capture (js/perfcapture.js) ----------------------------------------
+// One recorder for the page: the debug menu and Alt+P start and stop it, and
+// with "Record the start of every game" it records each game from its launch.
+
+/** The running game for the capture's file (set by start()), or null before one. */
+let perfGame = null;
+const perf = new PerfRecorder({ context: () => perfContext(), onDone: (_file, _text, capture) => perfDone(capture) });
+
+/** Whether the next game's first frame starts the start-of-game capture ("Record the start of every game"). */
+let perfAutoPending = false;
+
+/**
+ * A game is being launched: its start is traced (spans until its first
+ * frame). A capture still running for the previous game ends first, with that
+ * game's facts. With "Record the start of every game" a capture starts at the
+ * new game's first frame (`perfFirstFrame`), so a slow load never uses up its
+ * 60 seconds; the start's spans are in its file either way.
+ */
+function perfLaunch() {
+  if (perf.recording) perf.stop('restarted');
+  perfTrace.beginStartup();
+  perfGame = null;
+  perfAutoPending = !!settings.get('perfCaptureStart');
+}
+
+/** The game's first frame: the start-of-game capture begins. */
+function perfFirstFrame() {
+  if (!perfAutoPending) return;
+  perfAutoPending = false;
+  perf.start({ seconds: START_CAPTURE_SECONDS, reason: 'start' });
+}
+
+/**
+ * The page is about to reload or leave (leave, restart, rematch, next
+ * mission, exit): a running capture ends with what it recorded, and a
+ * capture not downloaded yet downloads now. Resolves after a moment when
+ * there was one, so the browser takes the download before the page goes.
+ */
+function perfBeforeLeaving() {
+  if (perf.recording) perf.stop('left');
+  if (!perf.last || perf.last.saved) return Promise.resolve();
+  perfDownload();
+  return new Promise((resolve) => setTimeout(resolve, PERF_LEAVE_DELAY_MS));
+}
+/** How long the page waits after a download it started on leaving. */
+const PERF_LEAVE_DELAY_MS = 500;
+
+/** Start a capture of the chosen length, or stop the running one (its file downloads). */
+function perfToggle() {
+  if (perf.recording) {
+    perf.stop();
+    return;
+  }
+  const seconds = settings.get('perfCaptureSeconds');
+  perf.start({ seconds, reason: 'manual' });
+  showToast(`Recording performance for ${seconds} s. Alt+P stops early; the file downloads when it ends.`);
+}
+
+function perfDownload() {
+  if (!perf.last) return;
+  saveText(perf.last.name, perf.last.text);
+  perf.last.saved = true;
+}
+
+/**
+ * A capture ended: one the player started (or stopped) downloads; the
+ * start-of-game one waits in the debug menu (and downloads when the player
+ * leaves the game: perfBeforeLeaving, which also handles captures ended by leaving).
+ */
+function perfDone(capture) {
+  if (capture.endReason === 'left') return;
+  if (capture.reason === 'manual' || capture.endReason === 'stopped' || capture.endReason === 'restarted') {
+    perfDownload();
+    showToast(`Performance capture saved as ${perf.last.name}.`);
+  } else {
+    showToast('The start of the game was recorded: download it from the debug menu (` key).');
+  }
+}
+
+/** The static facts of a capture's file (docs/contracts.md section 10). */
+function perfContext() {
+  const g = perfGame;
+  let sim = null;
+  try {
+    const st = g?.host?.stats();
+    sim = st ? { mode: st.mode, reason: st.reason } : null;
+  } catch {
+    sim = null;
+  }
+  return {
+    build: { version: wasm ? version() : null },
+    environment: { ...environmentFacts(window, renderer?.gpuInfo() ?? null), sim },
+    settings: {
+      ...settingsFacts(settings),
+      originalContent: !!content?.originalActive,
+      instancesParam: new URLSearchParams(location.search).get('instances'),
+      instances: g?.instances?.() ?? null,
+    },
+    game: g ? g.facts : null,
+  };
+}
+
 /**
  * Start a game's simulation (js/sim/host.js) from a js/sim/core.js start spec.
  * Returns `{ host, info }`, or null after showing `failText` and the error.
@@ -785,12 +921,15 @@ let starting = false;
 async function launch(spec, lobby, failText) {
   if (starting) return null;
   starting = true;
+  perfLaunch();
   let host = null;
   try {
     // Installed graphics are read before the first frame, so a game never starts with WebRA art for a moment.
-    await content?.load();
-    host = await newSimHost();
-    const info = await host.start(spec);
+    await perfTrace.spanAsync('content.load', async () => {
+      await content?.load();
+    });
+    host = await perfTrace.spanAsync('sim.host', () => newSimHost(), (h) => ({ mode: h?.mode ?? null }));
+    const info = await perfTrace.spanAsync('sim.start', () => host.start(spec), (i) => ({ kind: spec.kind, engineMs: i?.timings?.createMs ?? null }));
     // A save continues a skirmish or a mission.
     tagGame(spec.kind === 'save' ? (spec.mission ? 'mission' : 'skirmish') : spec.kind);
     return { host, info };
@@ -1075,6 +1214,7 @@ function recorderOf({ host, info }) {
 // longer lists it, and its options) marks a campaign mission (js/campaign).
 // `about` (gameAbout) is what the game menu's Game info tells about the game.
 function start(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, fromSave = false, mission = null, about = null, replayChat = null, replayTeams = [] }) {
+  const setupStart = performance.now();
   // The map lenses' art and tiles are not needed while a game runs.
   lensArt?.release();
   const game = host.game;
@@ -1087,7 +1227,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const onlineEntry = $('online-button');
   if (onlineEntry) onlineEntry.hidden = true;
   $('app').hidden = false;
-  const rules = JSON.parse(game.rules_json());
+  const rules = perfTrace.span('rules.parse', () => JSON.parse(game.rules_json()));
   // A mission's own actors are drawn and voiced like the actor their art key
   // names (engine rules_json `art`, tools/gen_missions.py).
   const artActors = gameArtActors(rules.actors);
@@ -1106,7 +1246,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const allied = (owner) => !viewer && allies(player, owner);
   // Spectators and replays have no player of their own: they hear no player's
   // private notifications (placement, deploy and sell sounds, "Unit ready", ...).
-  audio?.attachGame({ game, rules: { ...rules, actors: artActors }, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied, tickMs });
+  perfTrace.span('audio.attach', () =>
+    audio?.attachGame({ game, rules: { ...rules, actors: artActors }, player: viewer ? NO_PLAYER : player, worldUnitsPerCell: Game.world_units_per_cell(), allied, tickMs }),
+  );
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
   // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
@@ -1134,7 +1276,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // player installed (js/content, presentation only). Rebuilt when they change.
   // The map editor builds its art the same way (js/gameart.js).
   const applyArt = () => {
-    const { atlas, original } = buildGameAtlas(content, artActors, biome, renderer.maxTextureSize);
+    const { atlas, original } = perfTrace.span('atlas.sprites', () => buildGameAtlas(content, artActors, biome, renderer.maxTextureSize), (r) => ({
+      width: r?.atlas.width,
+      height: r?.atlas.height,
+      original: !!r?.original,
+    }));
     renderer.setAtlas(atlas);
     // Original slots drawn the OpenRA way, animated layers, poses and death sequences.
     applyGameArt(game, atlas, original);
@@ -1157,25 +1303,35 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   const mapH = game.map_height();
   renderer.setMapSize(mapW, mapH);
   // Terrain art of the map's biome (js/art/terrain.js), or tile terrain from
-  // installed content (js/content/terrain.js); the cell layer is built from
-  // the first terrain upload below (terrain types never change).
-  renderer.setTerrainAtlas(buildTerrainAtlas(biome));
+  // installed content (js/content/terrain.js), with the cell layer built from
+  // the terrain types (they never change). Made here, from the terrain the
+  // game started with, so the first frames do not wait for it (tile terrain
+  // of a large map takes a while); without it, from the first terrain upload.
   let cellsReady = false;
   let terrainTypes = null;
   const applyTerrain = () => {
     if (!terrainTypes) return;
     const w = game.map_width();
     const h = game.map_height();
-    const tiles = content?.terrain(biome, terrainTypes, w, h) ?? null;
+    const tiles = perfTrace.span('terrain.tiles', () => content?.terrain(biome, terrainTypes, w, h) ?? null, (t) => ({ source: t?.source ?? 'webra', tiles: t?.report?.tiles }));
     if (tiles) {
       renderer.setTerrainAtlas(tiles.atlas);
       renderer.uploadCells(tiles.cells);
     } else {
-      renderer.setTerrainAtlas(buildTerrainAtlas(biome));
+      renderer.setTerrainAtlas(perfTrace.span('atlas.terrain', () => buildTerrainAtlas(biome)));
       // Decals follow the map itself, so every player of a map sees the same ones.
-      renderer.uploadCells(cellTiles(terrainTypes, w, h, terrainSeed(terrainTypes)));
+      renderer.uploadCells(perfTrace.span('terrain.cells', () => cellTiles(terrainTypes, w, h, terrainSeed(terrainTypes))));
     }
   };
+  const initialTerrain = game.initial_terrain();
+  if (initialTerrain) {
+    renderer.uploadTerrain(initialTerrain);
+    terrainTypes = initialTerrain;
+    applyTerrain();
+    cellsReady = true;
+  } else {
+    renderer.setTerrainAtlas(perfTrace.span('atlas.terrain', () => buildTerrainAtlas(biome)));
+  }
   // Installed content changed (the Original content dialog, also in a game): new art at once.
   content?.onChange(() => {
     applyArt();
@@ -1186,7 +1342,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   });
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (gain) => audio?.thunder(gain) });
+  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
   let weatherText = '';
 
@@ -1227,7 +1383,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     sidebar?.repaintIcons();
   };
   settings.subscribe('playerStanceColors', applyRelationshipColors);
+  // A menu, the end of the game, statistics or a modal dialog is open (set per frame).
+  let modalOpen = false;
   const input = new Input($('view'), ui, rules, player, {
+    // No edge scrolling while a dialog is open, the radar is dragged, or the
+    // mouse is released with the release hotkey (js/mouselock.js isDetached,
+    // where it has it): the pointer is then the player's for other windows.
+    holdsEdgeScroll: () => modalOpen || !!minimap?.isPressed() || !!mouseCapture?.isDetached?.(),
     onPowerTargeting: (key) => {
       powerBar?.setTargeting(key);
       if (key) audio?.selectTarget(key);
@@ -1257,7 +1419,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
     selectionClick: () => audio?.click(),
     gameOver: () => flow.over,
-    onMenu: () => menu.open(),
+    // Esc with nothing to cancel. Not while the mouse is released with the
+    // release hotkey (js/mouselock.js isDetached): the game plays on until a
+    // click into it captures the mouse again; the Menu button still opens it.
+    onMenu: () => {
+      if (mouseCapture?.isDetached()) showToast(DETACHED_ESC_TEXT);
+      else menu.open();
+    },
   }, { spectator: !!viewer });
   input.watchAll = !!viewer && view.player === OBSERVER_VIEW;
   // Spectators and replays have no sidebar (and no sidebar drawer on phones).
@@ -1304,10 +1472,12 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         onRadar: viewer ? null : (online) => audio?.radar(online),
         // Finger taps on the radar go through the touch controls (Add, Force; js/touch.js), made below.
         touch: {
-          radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {}, 0)),
+          radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {})),
           radarMayOrder: () => (touch ? touch.radarMayOrder() : input.radarMayOrder()),
         },
       });
+  // The terrain the game started with (later changes come with the frames).
+  if (initialTerrain) minimap?.terrainChanged(initialTerrain);
   // Touch and pen (js/touch.js): gestures on the battlefield, the touch action
   // bar and placement buttons, long press on sidebar cards.
   touch = new TouchControls({ canvas: $('view'), field: $('field'), input, hotkeys });
@@ -1382,6 +1552,20 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     : null;
   // Above the replay controls at the bottom.
   if (replay) chat.root.classList.add('above-replay-bar');
+  // Touch screens have no Enter key: a Chat button in the HUD row opens the
+  // chat (online games, players and spectators; replays with chat). Shown on
+  // touch screens only (css/chat.css .hud-chat).
+  let chatButton = null;
+  if (onlineChat?.send || replayLines) {
+    chatButton = document.createElement('button');
+    chatButton.type = 'button';
+    chatButton.className = 'hud-button hud-chat';
+    chatButton.textContent = 'Chat';
+    chatButton.setAttribute('aria-label', 'Open the chat');
+    chatButton.dataset.noCapture = '';
+    chatButton.addEventListener('click', () => (chat.isOpen ? chat.close() : chat.open(false)));
+    $('menu-button').before(chatButton);
+  }
   // OpenRA MUTE_INDICATOR: "Audio Muted" while all sound is off.
   if (audio) {
     new MuteIndicator(document.querySelector('#field .hud-buttons') ?? $('field'), {
@@ -1463,10 +1647,23 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // Whether the game's own sounds and lines wait: the player's pause or a
   // paused replay, not the end of game dialogs (js/audio/index.js holdsGameAudio).
   const holdsAudio = () => holdsGameAudio({ menu: menuPaused, debug: debugPaused, key: keyPaused, endDialog: flow.paused, replayPaused: !!(replay && !replay.playing) });
+  // A hidden page gets no animation frames. A local game that plays on while
+  // hidden (Settings > Pause when the game is hidden off) ticks on a timer
+  // of the simulation's own meanwhile (js/sim/core.js setBackground; in the
+  // worker browsers do not throttle it, on the main thread they do).
+  let background = false;
+  const gameKind = { stress: !!stress, online: !!online, replay: !!replay };
+  const syncBackground = () => {
+    const on = runsInBackground(gameKind, { hidden: document.hidden, paused });
+    if (on === background) return;
+    background = on;
+    host.command('background', [on]).catch(() => {});
+  };
   const updatePaused = () => {
     paused = menuPaused || debugPaused || keyPaused || flow.paused;
     // At once, not only per frame: a hidden tab gets no animation frames.
     audio?.setPaused(holdsAudio());
+    syncBackground();
   };
   const debug = new DebugMenu($('field'), {
     game,
@@ -1489,6 +1686,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       host.command('debugStep').catch(() => {});
       return true;
     },
+    perf: { recorder: perf, toggle: perfToggle, download: perfDownload, settings },
   });
   // Observer panel and replay controls (js/observer.js, js/records.js).
   let observer = null;
@@ -1535,6 +1733,11 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   };
   if (viewer) mountObserver();
   if (replay && records) replayBar = new records.ReplayBar($('field'), replay);
+  // The replay bar wraps to more rows on phones: the chat above it follows its height (css/chat.css).
+  if (replayBar && typeof ResizeObserver === 'function') {
+    const bar = replayBar.root;
+    new ResizeObserver(() => $('field').style.setProperty('--replay-bar-height', `${bar.offsetHeight}px`)).observe(bar);
+  }
   const progress = records ? new records.ProgressOverlay($('field')) : null;
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
@@ -1573,6 +1776,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     await audio?.leave();
     // Out of a mission: back to the campaign screen, at that mission.
     if (mission?.entry && !replay) saveRestart(campaignRecord(mission.entry.id), sessionStore());
+    await perfBeforeLeaving();
     location.reload();
   };
   // Restart (js/restart.js): a replay plays again from 0 here; a single player
@@ -1582,8 +1786,9 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   // proposes it, every player accepts, and the page reloads into the lobby.
   const rematch = online?.rematch ?? null;
   if (rematch) {
-    rematch.onLobby = () => {
+    rematch.onLobby = async () => {
       leaving = true;
+      await perfBeforeLeaving();
       location.reload();
     };
   }
@@ -1599,12 +1804,13 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         flow.reset();
       }
     : restart && !online && !stress
-      ? () => {
+      ? async () => {
           if (!saveRestart(restart, sessionStore())) {
             showToast('Could not restart: this browser does not let the page keep the settings.');
             return;
           }
           leaving = true;
+          await perfBeforeLeaving();
           location.reload();
         }
       : null;
@@ -1612,6 +1818,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     leaving = true;
     online?.onQuit();
     await audio?.leave();
+    await perfBeforeLeaving();
     location.href = new URL('../', location.href).href;
   };
   // Saves and replays (js/records.js): what the game menu and the game over screen offer.
@@ -1761,6 +1968,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     debugButton: debug.button,
     cheats: debug.cheats,
     toggle: $('sidebar-toggle'),
+    chatButton,
+    isChatOpen: () => chat.isOpen,
     isMenuOpen: () => menu.isOpen,
     isCollapsed: () => layout.collapsed,
   });
@@ -1801,6 +2010,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
             },
       menu: () => menu.toggle(),
       debugMenu: () => debug.toggle(),
+      recordPerformance: perfToggle,
       showUnitPaths: () => {
         const on = settings.set('showUnitPaths', !settings.get('showUnitPaths'));
         showToast(on ? 'Unit paths shown' : 'Unit paths hidden');
@@ -1856,11 +2066,15 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     // Entering fullscreen captures the mouse (Settings: in fullscreen or always), leaving it lets go.
     mouseCapture?.fullscreenChanged(fs);
   });
-  // A single-player game opens the menu (and so pauses) when its tab is hidden.
-  // Online, the lockstep driver keeps up from network events meanwhile (it
-  // runs where the game runs, so it is told).
+  // A hidden page (another tab, a minimised window): a single-player game
+  // plays on (background ticks, syncBackground), or with Settings > Pause
+  // when the game is hidden on, the menu opens and so pauses it. Losing the
+  // focus alone (another app, another monitor) never opens the menu. Online,
+  // the lockstep driver keeps up from network events meanwhile (it runs where
+  // the game runs, so it is told).
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && !stress && !online && !replay) menu.open();
+    if (document.hidden && pausesWhenHidden(gameKind, settings.get('pauseWhenHidden'))) menu.open();
+    syncBackground();
     if (online) host.command('hidden', [document.hidden]).catch(() => {});
   });
   // The worker stopped (an engine error): the game cannot go on.
@@ -1954,7 +2168,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       return;
     }
     leaving = true;
-    location.reload();
+    perfBeforeLeaving().then(() => location.reload());
   };
   // A rematch proposal changes what the end of game screens offer.
   rematch?.subscribe(() => {
@@ -1990,13 +2204,18 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   let drawn = 0;
 
   function frame(now) {
-    const dt = Math.min(now - last, 250);
+    const frameStart = performance.now();
+    perfFirstFrame();
+    const rawDt = now - last;
+    const dt = Math.min(rawDt, 250);
     last = now;
     const catching = busy();
     const suspend = catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
     if (suspend !== input.suspended) input.setSuspended(suspend);
-    // Menus, the end of the game, statistics and modal dialogs (saves, online) get the OS cursor.
-    mouseCapture?.setBlocked(suspend || !!document.querySelector('dialog[open]'));
+    // Menus, the end of the game, statistics and modal dialogs (saves, online)
+    // get the OS cursor, and the window edge does not scroll the map.
+    modalOpen = suspend || !!document.querySelector('dialog[open]');
+    mouseCapture?.setBlocked(modalOpen);
     input.update(dt / 1000);
     // Animated original cursors step like OpenRA's (cursors.js); the input shows the new frame.
     if (tickCursors(now)) input.updateCursor();
@@ -2020,6 +2239,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       // Selected units whose target lines show (js/targetlines.js; Shift: waypoint mode).
       targetLines: targetLines.visible(input.selection, { shift: input.keys.has('Shift') }),
       instances: choice.path,
+      perf: perf.recording,
     });
     // Main thread time the simulation took this frame (in a worker: posting the step).
     const simFrameMs = performance.now() - t0;
@@ -2048,7 +2268,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       if (status.loadError && !leaving) {
         leaving = true;
         showToast(status.loadError);
-        setTimeout(() => location.reload(), 4000);
+        setTimeout(() => perfBeforeLeaving().then(() => location.reload()), 4000);
       }
       if (f.terrain) {
         renderer.uploadTerrain(f.terrain);
@@ -2112,7 +2332,22 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const fxTick = BattleFx.ticksAt(simSeconds);
     const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);
     const drawCamera = shakeX || shakeY ? { ...input.camera, x: input.camera.x + shakeX, y: input.camera.y + shakeY } : input.camera;
+    // A performance capture times the frame on the GPU too (js/gputimer.js); its index comes at the end of the frame.
+    const measure = perf.recording ? { index: -1 } : null;
+    if (measure) {
+      measure.gpu = (ms) => perf.late(measure.index, 'gpuMs', ms);
+      measure.done = (ms) => perf.late(measure.index, 'gpuDoneMs', ms);
+    }
+    renderer.measure = measure;
+    const drawStart = performance.now();
     renderer.draw(drawCamera, simSeconds, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
+    const drawMs = performance.now() - drawStart;
+    renderer.measure = null;
+    // The game's start ends with its first drawn frame (js/perfcapture.js startup).
+    if (!firstDrawn) {
+      firstDrawn = true;
+      perfTrace.endStartup();
+    }
     battle.frame(fxTick, drawCamera);
     // Read the canvas in the same task as the draw, before it is presented.
     if (screenshotPending) {
@@ -2183,8 +2418,57 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         chat.setTeamChat(!flow.over && (out || onlineChat.teamChat), !!onlineChat.spectator || out);
       }
     }
+    // Uploads are counted always (cheap); a capture keeps them with the frame's timings.
+    const uploadBytes = renderer.takeUploadBytes();
+    if (perf.recording) {
+      const index = perf.frame(
+        {
+          frameMs: rawDt,
+          workMs: performance.now() - frameStart,
+          stepMs: simFrameMs,
+          drawMs,
+          // What the simulation reported with the newest frame (nothing new: no ticks).
+          workerMs: fresh ? f.simFrameMs : 0,
+          workerStepMs: fresh ? (f.stepMs ?? 0) : 0,
+          ticks: fresh ? f.ticks : 0,
+          tickMaxMs: fresh ? (f.tickMaxMs ?? 0) : 0,
+          buildMs: fresh ? f.buildMs : 0,
+          queryMs: fresh ? (f.queryMs ?? 0) : 0,
+          roundTripMs: fresh ? (host.roundTripMs ?? 0) : 0,
+          uploadKB: uploadBytes / 1024,
+          sprites: f.spriteCount ?? 0,
+          tick: f.tick,
+          actors: f.actors ?? undefined,
+          wasmMB: (status.memoryBytes ?? 0) / (1024 * 1024),
+        },
+        frameStart,
+      );
+      if (measure) measure.index = index;
+    }
     requestAnimationFrame(frame);
   }
+  // The setup above, until the game loop starts (the first frame ends the start's trace).
+  perfTrace.mark('game.setup', performance.now() - setupStart);
+  let firstDrawn = false;
+  // The facts of this game for the capture's file (js/perfcapture.js, docs/contracts.md section 10).
+  perfGame = {
+    host,
+    instances: () => ({ path: instanceInfo?.path ?? null, reason: instanceInfo?.reason ?? null, cpuForced: !!debug.prefs.cpuInstances }),
+    facts: {
+      mode: online ? 'online' : replay ? 'replay' : mission ? 'mission' : stress ? 'stress' : fromSave ? 'save' : 'skirmish',
+      title: about?.title ?? null,
+      generatedMap: about?.options?.generated ?? null,
+      mapWidth: mapW,
+      mapHeight: mapH,
+      biome,
+      players: slots.filter((p) => !p.neutral).length,
+      ais: slots.filter((p) => !p.neutral && p.ai).length,
+      spectating: !!viewer,
+      tickMs,
+      gameSpeed: about?.options?.options?.gameSpeed ?? about?.options?.gameSpeed ?? null,
+      options: optionFacts(about?.options?.options ?? null),
+    },
+  };
   requestAnimationFrame(frame);
 
   /** What the observer's statistics panel needs per player besides observer_stats (js/observer.js `needs`). */

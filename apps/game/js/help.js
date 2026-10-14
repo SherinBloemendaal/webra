@@ -20,13 +20,13 @@ export const HELP = Object.freeze({
 
   // ---- Battlefield ---------------------------------------------------------------
   mapSource:
-    "Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.",
+    "Random map: generated from the seed and the options below. Map file: a map made in the map editor or an imported OpenRA map. For a closer look, hold Ctrl (on macOS Cmd or Ctrl) with the mouse over the map preview: a magnifier shows that spot as the game draws it, the mouse wheel zooms it, and releasing the key hides it (on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.",
   mapSize: 'Width and height of a generated map in cells: Small 64, Medium 96, Large 128, Huge 160. Five or more players need at least Medium.',
   mapFile:
-    'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first. Maps made for an older WebRA are upgraded automatically; save them in the map editor to keep the upgrade.',
+    'A WebRA map file (.webra-map.json) or an OpenRA Red Alert map (.oramap), converted when you load it. Players take its start positions in slot order. Maps that change the game rules ask you first. Maps made for an older WebRA are upgraded automatically; save them in the map editor to keep the upgrade. Unload map goes back to the generated map with the size, style, biome and seed it had before; the map stays in your map library.',
   onlineMap:
-    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it. Point at the map preview for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.',
-  seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again.',
+    'A generated map, a community map, or one of the host\'s own maps (made in the map editor, an imported .oramap, or a map from an earlier lobby), shared with this lobby only and never published. Players without it are asked to install it; nobody can get ready, and the game cannot start, until every player and spectator has it. For a closer look, hold Ctrl (on macOS Cmd or Ctrl) with the mouse over the map preview: a magnifier shows that spot as the game draws it, the mouse wheel zooms it, and releasing the key hides it (on a touch screen, press and hold). The lettered markers are the start positions: click one to start there.',
+  seed: 'The same seed, map size, style, biome and player count always make the same map. Share it to play a battlefield again. A map file needs no seed: each game on one gets a new seed for crates, the AI and the weather (replays and saves keep it).',
 
   // ---- World -----------------------------------------------------------------------
   mapStyle:
@@ -36,7 +36,7 @@ export const HELP = Object.freeze({
   techBuildings:
     'Neutral buildings of a generated map, captured with engineers. Standard: an oil derrick in every base and a hospital in the middle. Extra: also forward command posts and communications centers between neighbouring bases. Oil only: a derrick in every base and one in the middle. Oil rush: two derricks in every base, more in the middle and between neighbours. None: no tech buildings. Every base gets the same ones; villages of civilian buildings come with every generated map. Map files bring their own.',
   weather:
-    "On: after 2 to 3 clear minutes the biome's weather comes and goes. Sight drops to 90 % in rain, 85 % in thunderstorms and snowfall, 75 % in sandstorms. On snow infantry moves at 90 % and vehicles speed up and brake slowly, turn at 70 % (50 % on ice) and slide. In a heat wave vehicles heat up by driving (about 40 s) and firing; overheated, they move at 75 % and reload a third slower until they cool down. Lightning does no damage. Cosmetic only: the same skies, but the game plays as under clear skies, snow and heat included. Off: always clear skies.",
+    "On: after 2 to 3 clear minutes the biome's weather comes and goes. Sight drops to 90 % in rain, 85 % in thunderstorms and snowfall, 75 % in sandstorms. On snow infantry moves at 90 % and vehicles speed up and brake slowly, turn at 70 % (50 % on ice) and slide. In a heat wave vehicles heat up by driving (about 40 s) and firing; overheated, they move at 75 % and reload a third slower until they cool down. Lightning halves what it strikes and prefers power plants (their owner's power goes out for 15 s, and a struck plant makes half its power until repaired); Lightning Rods ground strikes within 6 cells. Cosmetic only: the same skies, but the game plays as under clear skies, snow and heat included. Off: always clear skies.",
 
   // ---- Rules -----------------------------------------------------------------------
   startingCash: 'Credits every player starts with. A bale of ore pays 25 credits, a bale of gems 50.',
@@ -71,7 +71,7 @@ export const HELP = Object.freeze({
 
   // ---- Players -----------------------------------------------------------------------
   player: `Your name, or who plays in a slot: you (moves you there), an AI or Closed (nobody plays there). ${AI}`,
-  playerOnline: `Who plays in each slot. The host opens and closes slots, adds AI players and picks their bot type and difficulty. ${AI}`,
+  playerOnline: `Who plays in each slot. The host opens and closes slots, sets up AI players and sets the others' team, handicap and start. ${AI}`,
   color: 'Every player has their own colour. Picking a colour another player has swaps the two.',
   colorOnline: 'Every player needs their own colour; a colour in use cannot be picked.',
   faction:
@@ -81,12 +81,14 @@ export const HELP = Object.freeze({
     'Makes a player weaker on purpose, to even out a match: a 25 percent handicap means 75 percent firepower, a third more damage taken and 25 percent longer to build.',
   spawn:
     'Where the player starts. Automatic shows where the lobby puts the player now (it moves when someone picks that position). Pick a position here, or click a marker on the map preview: a free one is yours (the host places its AI players there first, then itself), clicking your own frees it again, a position another player picked is taken. Right-click (or Delete on a marked position) frees it; the host can free anyone\'s. On a generated map the map itself changes with the seed, size, style and number of players, and so the picks are cleared.',
+  bulk:
+    'Bulk edit changes many slots at once. Tick rows, or click a row: Ctrl (Cmd on a Mac) adds or removes one, Shift selects every row from the last one you clicked down or up to this one. Then pick an action and Apply: team presets (free for all, humans vs AI, split or alternate into teams, or one team), AI type and difficulty, fill empty slots with AI or remove the AI, factions (or shuffled countries), shuffled colors, handicap, start positions and opening or closing slots. With nothing selected an action changes every slot it can. Slots the map locks keep their setting. Online only the host can, and the server checks every change; factions and colors then change only for the host\'s own slot and the AI slots, as every player picks their own.',
   spectators:
     'Spectators watch without playing. The host sets how many places there are (up to 8); anyone can move between a free player slot and the spectators. While watching, the statistics panel (F1 to F7, or its list) shows each player by team with its flag: cash, economy (with oil derricks), what each one is building, its support powers and army as icons, combat (with how much of the map it sees) and graphs. Point at an icon for its details.',
 
   // ---- Campaign (js/campaign/menu.js) ------------------------------------------------------
   campaign:
-    "OpenRA's Red Alert missions with their maps, rules and scripts: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions. In the campaigns a chapter opens once you win a mission of the chapter before it (any of its variants); the other missions are open from the start. Your progress is kept with your settings and follows your account. The original movies are not part of WebRA: a card stands in for each. Point at the mission's map for a closer look: a magnifier shows that spot as the game draws it (the mouse wheel zooms; on a touch screen, press and hold).",
+    "OpenRA's Red Alert missions with their maps, rules and scripts: the Allied and Soviet campaigns, the Counterstrike and Aftermath missions, OpenRA's own and the ant missions. In the campaigns a chapter opens once you win a mission of the chapter before it (any of its variants); the other missions are open from the start. Your progress is kept with your settings and follows your account. The original movies are not part of WebRA: a card stands in for each. For a closer look, hold Ctrl (on macOS Cmd or Ctrl) with the mouse over the mission's map: a magnifier shows that spot as the game draws it, the mouse wheel zooms it, and releasing the key hides it (on a touch screen, press and hold).",
   'mission.difficulty':
     "How hard the mission's script makes it, as the mission sets it: more or stronger enemies, fewer reinforcements, less time or less money. Some missions have a fourth level, Real tough guy.",
 
@@ -104,7 +106,7 @@ export const HELP = Object.freeze({
   'settings.reduceMotion':
     'Big explosions shake the camera and an atom bomb flashes the screen white, like OpenRA. On: no shaking and only a dim flash. Like the browser: on when the system asks for reduced motion.',
   'settings.fullscreen': 'Fills the screen with the game. Esc and the number keys then go to the game in browsers that allow it.',
-  'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches a screen edge. Off turns edge scrolling off.',
+  'settings.edgeScrollSpeed': 'How fast the map scrolls when the pointer touches an edge of the window, over the sidebar too. Off turns edge scrolling off.',
   'settings.keyScrollSpeed': 'How fast the arrow keys scroll the map.',
   'settings.showUnitPaths': 'Draws the routes of your selected units to where they are going.',
   'settings.targetLines':
@@ -117,15 +119,23 @@ export const HELP = Object.freeze({
   'settings.gameEventNotifications':
     "Like OpenRA: the announcer's lines as text at the bottom of the battlefield (\"Unit ready.\", \"Construction complete.\"), also with the sound off. Off: no such lines; chat and system lines stay.",
   'settings.mouseCapture':
-    'Locks the pointer to the game, like the locked cursor of desktop OpenRA, so it cannot slip onto another monitor and the screen edges always scroll. In fullscreen: when you enter fullscreen or click into the game there. Always: on every click into the game. Alt+M (Option+M on a Mac; rebindable in Controls) turns it off and on, Esc releases it; opening the menu, switching windows or leaving fullscreen releases it too. A click into the game captures it again.',
+    'Locks the pointer to the game, like the locked cursor of desktop OpenRA, so it cannot slip onto another monitor and the screen edges always scroll. In fullscreen: when you enter fullscreen or click into the game there. Always: on every click into the game. Option+E on a Mac, Alt+Shift+E on Windows and Linux (Alt+E opens the browser menu there; rebindable in Controls) releases it and the game plays on, so you can use another monitor or app; Esc then cancels what you were doing but opens no menu until you click into the game again (the Menu button always opens it). Esc while captured releases it as before, and opening the menu, switching windows or leaving fullscreen releases it too. A click into the game captures it again.',
   'settings.mouseCaptureSpeed':
     "How fast the game cursor moves while the mouse is captured. At 1x it moves exactly like the system pointer, with your system's pointer speed and acceleration. With Raw mouse input on, 1x is one pixel per mouse count at slow speed, with the game's own acceleration on top.",
   'settings.mouseCaptureRaw':
     "Off (recommended): the captured pointer gets the same movement as the system pointer. On: the browser passes raw mouse counts without the system's acceleration where it supports that (such as Chrome and Edge; elsewhere the normal movement is used), and the game adds its own curve: slow, precise moves go one pixel per count, fast flicks up to three times as far. The change applies from the next capture.",
   'settings.errorReports':
     "When the site's operator has turned error reporting on, sends the error with the game's version, your browser and the game mode to WebRA's own Sentry (sentry.vitrion.dev) when something breaks. Never your name, chat, maps or account. Off: nothing is sent from this browser (the switch covers this browser; signed in, it syncs to your other devices). WebRA's server then reports its own errors either way, also of a request of yours that failed, without player data. The privacy notice on the website says whether reporting is on and what a report holds.",
+  'settings.perfCaptureStart':
+    'Records the first 60 seconds of every game, from its first frame, as a performance capture: how long each frame, the simulation and the loading steps before it took. When it is done, the debug menu (` key) downloads it as a JSON file to send along with a report of a slow game; leaving the game downloads it too. It holds timings, your browser and graphics card, screen size, graphics settings, the map and the game options; never names, chat or your account. Nothing is sent anywhere by itself.',
+  'debug.perfCapture':
+    'For a game that stutters or lags: press Record performance (or Alt+P) and play on; after the chosen length, or when you press it again, the browser downloads a webra-perf JSON file. To catch the start of a game, turn on "Record the start of every game" and start the game again: the first 60 seconds are recorded and the debug menu offers the download. Leaving the game saves what was recorded. Send the file with your report (Discord, GitHub or e-mail). It holds frame times, simulation and loading times, long tasks of the browser, memory use, your browser and graphics card, screen size, graphics settings, the map name and size and the game options, with a summary at the top; never names, chat, the map itself or your account, and nothing is sent anywhere by the game.',
   'settings.mouseCaptureEscMenu':
     'Off: with the mouse captured, the first Esc only releases it and the next Esc opens the menu. On: one Esc releases the mouse and also cancels the current mode or opens the menu.',
+  'settings.mouseCaptureNotice':
+    'The short notice at the top of the screen when the mouse is captured, naming the key that releases it (Option+E on a Mac, Alt+Shift+E on Windows and Linux, or what you bound in Controls). Every time, only the first 3 times, or never. Phones and tablets without a mouse never capture it, so they never show it.',
+  'settings.pauseWhenHidden':
+    "Single player. Off (default): the game plays on while its tab or window is hidden (another tab, a minimised window), just as it does while you use another app or monitor. Browsers slow down hidden pages: the game keeps its pace where the browser lets its simulation worker run on (desktop Chromium browsers and Firefox usually do), but it can fall behind or stop where the browser suspends hidden pages (Safari, phones). Sounds of what happens meanwhile are not played; the music goes on. On: hiding the game opens the menu, which pauses it. Losing the focus to another window never pauses it either way. Online games never pause.",
 
   // ---- Game menu pages (js/gamemenu.js MENU_PAGE_HELP_KEYS) ---------------------------------
   'menu.gameInfo':
@@ -139,7 +149,7 @@ export const HELP = Object.freeze({
   'controls.focus':
     'Like OpenRA, a key goes to the game unless the focused control uses it. Typing in a text field (the chat line, a save name) takes every key. A switch, slider or list keeps only the keys that work it (Space; the arrows, Home and End; Enter in a list), so the hotkeys keep working after a click on one. A button clicked with the mouse keeps no key; one reached with Tab keeps Tab and Enter.',
   'controls.selection':
-    "Select all (Q) picks your units on screen of OpenRA's highest selection priority: combat units first, then support units such as the MCV, harvesters, defences and other structures. Select by type (W) adds the units of the selected types on screen. Press either again for the whole map. A double click adds that type on screen. Rest the mouse on the battlefield for a moment and a tooltip names what is there, like OpenRA: the unit or structure and its owner, a remembered structure under the fog, ore, or Unrevealed Terrain. Selected defences, detectors and gap generators show their range as a dashed circle, and placing a defence shows the circles of your defences of the same kind.",
+    "Select all (Q) picks your units on screen of OpenRA's highest selection priority: combat units first, then support units such as the MCV, harvesters, defences and other structures. Select by type (W) adds the units of the selected types on screen. Press either again for the whole map. A double click adds that type on screen. Rest the mouse on the battlefield for a moment and a tooltip names what is there, like OpenRA: the unit or structure and its owner, a remembered structure under the fog, ore, or Unrevealed Terrain. Selected defences, detectors, gap generators and lightning rods show their range as a dashed circle, and placing a defence shows the circles of your defences of the same kind.",
 
   // ---- Audio (js/audio/panel.js in the game menu) --------------------------------------------
   'audio.master': 'Turns every sound up or down at once: effects, voices and music.',

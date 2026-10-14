@@ -246,9 +246,9 @@ function widget(state) {
   const input = {
     suspended: false,
     centerOn: (x, y) => calls.push(['center', x, y]),
-    radarClick: async (w, mods, button) => {
+    radarClick: async (w) => {
       if (!state.units.length) return false;
-      calls.push(['order', button, w.x, w.y]);
+      calls.push(['order', w.x, w.y]);
       return true;
     },
     radarMayOrder: () => state.units.length > 0,
@@ -280,11 +280,32 @@ test('widget: offline radar ignores clicks; online it moves the camera and order
   mm.frame(1000 + TRANSITION_MS + REFRESH_MS);
   assert.ok(!mm.root.classList.contains('static') && !mm.root.classList.contains('off'));
   assert.equal(mm.camera.style.getPropertyValue('--cam-w'), '25.00%');
-  // Units selected: the click is an order (right or left button), the camera stays.
-  mm.canvas.listeners.pointerdown(pointer(2, 128, 0));
+  // Units selected: a left click is an order, the camera stays.
+  mm.canvas.listeners.pointerdown(pointer(0, 128, 0));
   await settle();
-  mm.canvas.listeners.pointerup(pointer(2, 128, 0));
-  assert.deepEqual(calls, [['order', 2, 64 * 24, 0]]);
+  mm.canvas.listeners.pointerup(pointer(0, 128, 0));
+  assert.deepEqual(calls, [['order', 64 * 24, 0]]);
+  // A right click (or middle) only moves the camera, never an order, and follows a drag.
+  calls.length = 0;
+  mm.canvas.listeners.pointerdown(pointer(2, 64, 64));
+  await settle();
+  mm.canvas.listeners.pointermove(pointer(2, 32, 96));
+  mm.canvas.listeners.pointerup(pointer(2, 32, 96));
+  mm.canvas.listeners.pointerdown(pointer(1, 0, 128));
+  await settle();
+  mm.canvas.listeners.pointerup(pointer(1, 0, 128));
+  assert.deepEqual(calls, [
+    ['center', 32 * 24, 32 * 24],
+    ['center', 16 * 24, 48 * 24],
+    ['center', 0, 64 * 24],
+  ]);
+  // Other buttons (back, forward) do nothing.
+  calls.length = 0;
+  mm.canvas.listeners.pointerdown(pointer(3, 64, 64));
+  await settle();
+  mm.canvas.listeners.pointerup(pointer(3, 64, 64));
+  assert.deepEqual(calls, []);
+  calls.length = 0;
   // The cursor over the radar is the battlefield's for that spot.
   mm.canvas.listeners.pointermove(pointer(0, 10, 10));
   mm.frame(1000 + TRANSITION_MS + REFRESH_MS + 16);

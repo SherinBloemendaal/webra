@@ -89,8 +89,8 @@ pub(crate) fn tick_power_down(w: &mut World, player: u8) {
         st.toggle_ticks -= 1;
         return;
     }
-    let p = &w.players[player as usize];
-    let mut power = p.power_gen - p.power_use;
+    // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
+    let mut power = crate::ai_lightning::power_gen(w, player) - w.players[player as usize].power_use;
     let mut toggling: Vec<usize> = Vec::new();
     let toggled_now = w.ai[player as usize].upkeep.toggled.clone();
     if power > 0 && !toggled_now.is_empty() {

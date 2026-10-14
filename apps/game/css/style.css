@@ -473,6 +473,8 @@ body {
   font: 900 calc(34 * var(--ui-px))/1 var(--ui-font-display);
   letter-spacing: calc(2 * var(--ui-px));
   text-transform: uppercase;
+  /* A long word (a map name, a translated title) wraps instead of leaving the card. */
+  overflow-wrap: break-word;
   color: #f2f4f6;
   text-shadow:
     0 1px 0 rgba(255, 255, 255, 0.15),
@@ -598,6 +600,15 @@ body {
 
 #app.cursor-hidden #view {
   cursor: none !important;
+}
+
+/* Edge scrolling (js/input.js setPageCursor): the window edge scrolls the
+   map whatever is under the mouse, so the scroll arrow shows over the
+   sidebar, the radar and the HUD too. The hidden cursor above still wins on
+   the battlefield. */
+html.edge-scroll,
+html.edge-scroll * {
+  cursor: var(--edge-scroll-cursor, auto) !important;
 }
 
 /* Mouse capture (js/mouselock.js): while the pointer is locked the browser

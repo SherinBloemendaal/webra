@@ -2,7 +2,8 @@
 // per-cell tile layer the terrain shader reads. Pure pixels, no canvas.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ATLAS_COLS, BIOMES, DECALS, SHADOW, T, TILE, TILES, buildTerrainAtlas, cellTiles, palette } from '../js/art/terrain.js';
+import { createHash } from 'node:crypto';
+import { ATLAS_COLS, BIOMES, DECALS, SHADOW, T, TILE, TILES, buildTerrainAtlas, cellTiles, palette, terrainSeed } from '../js/art/terrain.js';
 
 const pixel = (atlas, tile, x, y) => {
   const ox = (tile % ATLAS_COLS) * TILE + x;
@@ -100,4 +101,21 @@ test('decals are scattered on a few percent of open ground', () => {
   assert.ok(decals.length > w * h * 0.04 && decals.length < w * h * 0.12, `${decals.length} decals`);
   assert.ok(new Set(decals).size >= 5, 'several kinds');
   assert.notDeepEqual(cellTiles(bytes, w, h, 2), cells, 'another map, other decals');
+});
+
+test('the cell layer of a mixed map is the one it has always been (every type, edges, seeded decals)', () => {
+  // Patches of every terrain type with lone cells between them, 97 x 61.
+  const w = 97;
+  const h = 61;
+  const b = new Uint8Array(w * h * 4);
+  let s = 7;
+  const rnd = (n) => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) % n);
+  for (let i = 0; i < w * h; i++) {
+    b[i * 4] = rnd(10) < 7 && i > 0 ? b[(i - (rnd(2) ? 1 : w > i ? 1 : w)) * 4] : rnd(11);
+    b[i * 4 + 1] = rnd(256);
+    b[i * 4 + 3] = 255;
+  }
+  assert.equal(terrainSeed(b), 4090478341);
+  // Hash of the layer as cellTiles made it before it was made quicker (the same bytes since).
+  assert.equal(createHash('sha256').update(cellTiles(b, w, h, terrainSeed(b))).digest('hex').slice(0, 16), '20fd7beac2f0cb45');
 });

@@ -81,6 +81,7 @@ import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
 import { hasTeamChat } from './chatkeys.js';
+import { touchUi } from './touch.js';
 import { chatPrefix, TextLog } from './chatlog.js';
 import { mapLibrary } from './maplibrary.js';
 import { formatTicks } from './replay.js';
@@ -88,6 +89,9 @@ import { SaveStore } from './saves.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 import { aiName, spawnMarkers } from './lobby-state.js';
 import { SpawnMarkers } from './spawnpick.js';
+import { planBulk } from './lobby-bulk.js';
+import { BulkBar } from './lobby-bulkbar.js';
+import { StalePreview, previewKey } from './mappreview.js';
 import { battlefieldSpawns, generatedMapPlayers } from '../protocol/spawns.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
@@ -181,6 +185,7 @@ export const ONLINE_HELP_KEYS = [
   'handicap',
   'spawn',
   'spectators',
+  'bulk',
 ];
 /** What a member's map state says in the lobby (protocol MAP_STATES). */
 const MAP_STATE_TEXT = { installed: 'Has map', missing: 'No map', declined: 'Declined map' };
@@ -391,6 +396,15 @@ export function confirmModdedMap(mapName) {
     row.append(button('Decline', null, () => close(false)), button('Accept and install', 'online-btn-danger', () => close(true)));
     body.append(row);
   }).then((v) => v === true);
+}
+
+/**
+ * The first line of an online game's chat: who plays, and how to chat
+ * (Enter, Shift+Enter; on touch screens the HUD's Chat button, js/main.js).
+ */
+export function chatIntroLine({ spectator = false, list = '', teamChat = false, touch = false }) {
+  if (touch) return `${spectator ? 'Watching' : 'Online game'}: ${list}. Tap Chat to chat.`;
+  return spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`;
 }
 
 // ---- Online UI -------------------------------------------------------------------
@@ -855,6 +869,9 @@ export class OnlineUI {
   }
 
   onServerError(m) {
+    this.seedPending = null;
+    // A refused bulk edit is reported in the bulk bar, where it was applied.
+    if (this.bulkWait && !this.inGame) return this.settleBulk({ error: m.message });
     const refusal = onlineRefusal(m.code, m.message);
     if (this.inGame) this.gameLine(`Server: ${refusal?.text ?? m.message}`, !!refusal);
     else if (refusal) this.setError(refusal.text, { signIn: refusal.signIn && !this.account?.user });
@@ -980,6 +997,16 @@ export class OnlineUI {
       this.slotHead.append(c);
     }
     this.spectatorTip = infoTip('spectators', { label: 'Spectators' });
+    // The host's bulk edit (js/lobby-bulkbar.js): one `slots` message the server checks change by change.
+    this.bulk = new BulkBar({
+      context: 'online',
+      selectClass: 'online-select',
+      buttonClass: 'online-btn',
+      onApply: (id, selected) => this.applyBulk(id, selected),
+      note: 'Factions and colors change only for your own slot and the AI slots: every player picks their own, like in OpenRA.',
+    });
+    const bulkBox = el('div', 'online-bulk');
+    bulkBox.append(this.bulk.toggleBox, this.bulk.root);
 
     const chat = el('section', 'online-panel online-chat');
     this.chatLog = el('div', 'online-chat-log');
@@ -997,7 +1024,7 @@ export class OnlineUI {
     const body = el('div', 'online-lobby-body');
     this.spectatorBox = el('section', 'online-panel online-spectator-box');
     const left = el('div', 'online-col');
-    left.append(this.slotBox, this.spectatorBox, this.optionBox);
+    left.append(bulkBox, this.slotBox, this.spectatorBox, this.optionBox);
     const right = el('div', 'online-col');
     right.append(this.mapBox, chat);
     body.append(left, right);
@@ -1045,7 +1072,10 @@ export class OnlineUI {
     });
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
+    // The host's New seed arrived (its loader then waits for the map only).
+    if (m.options?.seed === this.seedPending) this.seedPending = null;
     this.renderLobby();
+    this.settleBulk({ slots: m.slots });
   }
 
   /**
@@ -1088,7 +1118,8 @@ export class OnlineUI {
     const waiting = this.state.slots.filter((s) => s.type === 'human' && s.client !== this.state.hostId && !s.ready).length;
     // Who still lacks the lobby's map (players and spectators; the server checks this too).
     const lacking = this.lackingMap();
-    this.startBtn.disabled = waiting > 0 || !mapReady || lacking.length > 0;
+    // A generated map still being made (renderMap): Start game waits for it.
+    this.startBtn.disabled = waiting > 0 || !mapReady || lacking.length > 0 || !!this.previewBusy;
     this.barStatus.textContent = !mapReady
       ? this.mapStatus.text || 'Waiting for the map.'
       : lacking.length > 0
@@ -1171,12 +1202,67 @@ export class OnlineUI {
     box.append(controls);
   }
 
+  /** The slots as js/lobby-bulk.js sees them: the lobby map's locks and which one is you. */
+  bulkSlots() {
+    const setup = this.state.map?.setup ?? null;
+    return this.state.slots.map((s, i) => ({
+      ...s,
+      you: s.type === 'human' && s.client === this.state.you,
+      locked: setup && !this.state.resume ? ['team', 'faction', 'color', 'type'].filter((part) => slotLocked(setup, i, part)) : [],
+    }));
+  }
+
+  /** Host: apply bulk action `id` to the selected slots (all when none is) with one `slots` message. */
+  applyBulk(id, selected) {
+    const mission = this.state.mission ? coopMission(this.state.mission.id) : null;
+    const plan = planBulk(this.bulkSlots(), id, {
+      context: 'online',
+      selected,
+      colorCount: COLOR_COUNT,
+      teamMax: TEAM_MAX,
+      mission: !!mission,
+      missionPlaces: mission ? mission.players.length : Infinity,
+    });
+    if (plan.error || !plan.changes.length) return plan;
+    // The bar reports once the lobby shows the changes, or the refusal (settleBulk).
+    this.bulkWait = { changes: plan.changes, summary: plan.summary };
+    this.send({ t: 'slots', changes: plan.changes });
+    return { pending: true };
+  }
+
+  /**
+   * A lobby update or a server error after a bulk edit: report it in the bar.
+   * A lobby that does not show the changes yet (another member's change the
+   * server handled first) keeps waiting.
+   */
+  settleBulk({ slots = null, error = null }) {
+    const wait = this.bulkWait;
+    if (!wait || !this.bulk) return;
+    if (error) {
+      this.bulkWait = null;
+      this.bulk.report(`Refused: ${error}`, true);
+      return;
+    }
+    const shows = (c) =>
+      Object.entries(c).every(([k, v]) => {
+        const s = slots[c.slot];
+        if (k === 'slot') return true;
+        if (k === 'spawn') return v === null ? s?.spawn === undefined : s?.spawn === v;
+        return s?.[k] === v;
+      });
+    if (!wait.changes.every(shows)) return;
+    this.bulkWait = null;
+    this.bulk.report(wait.summary);
+  }
+
   renderSlots() {
     const box = this.slotBox;
     box.textContent = '';
     box.append(this.slotHead);
     const host = this.isHost;
     const mine = this.mySlot();
+    const playingCount = this.state.slots.filter((x) => x.type === 'human' || x.type === 'ai').length;
+    this.bulk?.begin(this.state.slots.length, { available: host && !this.state.resume, mission: !!this.state.mission, teamMax: TEAM_MAX, players: playingCount });
     this.state.slots.forEach((slot, i) => {
       const row = el('div', `online-slot online-slot-${slot.type}`);
       row.setAttribute('role', 'row');
@@ -1184,8 +1270,12 @@ export class OnlineUI {
       // A co-op mission's places are its playable players (Allies1, Allies2): faction, colour and team are the mission's.
       const mission = this.state.mission ? coopMission(this.state.mission.id) : null;
       who.append(el('span', 'online-badge', mission && i < mission.players.length ? mission.players[i] : `P${i + 1}`));
-      // A resumed save keeps its saved slots.
+      this.bulk?.decorate(row, who, i, `slot ${i + 1}`);
+      // A resumed save keeps its saved slots. Your own slot and (host) the AI
+      // slots are yours to edit; like OpenRA's lobby, the host also sets
+      // another player's team, handicap and start, not its faction or colour.
       const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
+      const hostSets = editable || (!this.state.resume && host && slot.type === 'human');
       if (mission && slot.type === 'human') {
         who.append(el('span', 'online-player-name', slot.name));
         if (slot.account) who.append(accountMark());
@@ -1236,7 +1326,7 @@ export class OnlineUI {
           slot.team,
           (v) => this.send({ t: 'slot', slot: i, team: Number(v) }),
         );
-        team.disabled = !editable || locked('team');
+        team.disabled = !hostSets || locked('team');
         if (locked('team')) team.title = 'Locked by the map';
         team.setAttribute('aria-label', `Player ${i + 1} team`);
         describedBy(team, this.columnTips.team);
@@ -1246,7 +1336,7 @@ export class OnlineUI {
           slot.handicap ?? 0,
           (v) => this.send({ t: 'slot', slot: i, handicap: Number(v) }),
         );
-        handicap.disabled = !editable;
+        handicap.disabled = !hostSets;
         handicap.setAttribute('aria-label', `Player ${i + 1} handicap`);
         describedBy(handicap, this.columnTips.handicap);
         // Start position (OpenRA's spawn dropdown): automatic, or a spawn no other slot picked.
@@ -1257,7 +1347,7 @@ export class OnlineUI {
           Number.isInteger(slot.spawn) && markers.some((m) => m.index === slot.spawn) ? slot.spawn : 'auto',
           (v) => this.send({ t: 'slot', slot: i, spawn: v === 'auto' ? null : Number(v) }),
         );
-        spawn.disabled = !editable || !this.spawnsEnabled();
+        spawn.disabled = !hostSets || !this.spawnsEnabled();
         spawn.setAttribute('aria-label', `Player ${i + 1} start position`);
         describedBy(spawn, this.columnTips.spawn);
         const cells = [faction, color, [team, handicap, spawn]].map((c) => {
@@ -1299,6 +1389,7 @@ export class OnlineUI {
       row.append(action);
       box.append(row);
     });
+    this.bulk?.sync();
   }
 
   /** Send the options with `patch` applied (host only; the server checks). */
@@ -1400,6 +1491,7 @@ export class OnlineUI {
   renderMap() {
     const box = this.mapBox;
     const st = this.state;
+    this.previewBusy = false;
     box.textContent = '';
     box.append(el('h2', 'online-panel-title', 'Battlefield'));
     // A marker with focus keeps it across the lobby update.
@@ -1437,7 +1529,18 @@ export class OnlineUI {
       const G = this.ctx.Game;
       const look = G.resolved_style ? `, ${LABELS.mapStyle[G.resolved_style(o.seed, o.mapStyle)]}, ${LABELS.biome[G.resolved_biome(o.seed, o.biome)]}` : '';
       caption.textContent = `Generated, ${LABELS.mapSize[o.mapSize]} ${o.mapSize} x ${o.mapSize}${look}, seed ${o.seed}`;
-      this.drawPreview(canvas, () => G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
+      const req = this.generatedRequest();
+      const got = this.ctx.previews?.get(req) ?? null;
+      if (this.ctx.previews && !got && this.previewFailed !== previewKey(req)) {
+        // Made off the main thread: the preview says so and Start game waits (renderLobby).
+        this.previewBusy = true;
+        frame.classList.add('is-busy');
+        frame.setAttribute('aria-busy', 'true');
+        frame.append(el('div', 'online-preview-loading', 'Generating the map...'));
+        this.awaitPreview(req);
+      } else {
+        this.drawPreview(canvas, () => got?.rgba ?? G.map_preview_styled(o.seed, o.mapSize, players, o.mapStyle, o.biome), o.mapSize);
+      }
       const gen = { seed: o.seed, size: o.mapSize, players, style: o.mapStyle, biome: o.biome, tech: o.techBuildings ?? 'standard' };
       this.lens?.setSource(`gen:${gen.seed}/${gen.size}/${gen.players}/${gen.style}/${gen.biome}/${gen.tech}`, (art) => art.generatedSteps(gen), { width: gen.size, height: gen.size });
     }
@@ -1486,6 +1589,12 @@ export class OnlineUI {
     source.addEventListener('change', () => this.pickMap(source.value));
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
+    // Back to the generated map, with the seed and size the options kept (like Generated map in the list).
+    if (st.map || st.mission) {
+      const unload = button(st.mission ? 'Leave mission' : 'Unload map', null, () => this.pickMap('generated'));
+      unload.title = 'Go back to the generated map and its seed';
+      controls.append(unload);
+    }
     if (!st.map && !st.mission) {
       const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) =>
         this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }),
@@ -1500,7 +1609,22 @@ export class OnlineUI {
         if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.send({ t: 'options', options: { ...st.options, seed: n } });
         else seed.value = String(st.options.seed);
       });
-      seedRow.append(seed, button('New seed', null, () => this.send({ t: 'options', options: { ...st.options, seed: randomSeed() } })));
+      const dice = button('New seed', 'online-dice', () => {
+        // The loader shows until the lobby has the new seed and its map is made.
+        this.seedPending = randomSeed();
+        busy(dice);
+        this.send({ t: 'options', options: { ...st.options, seed: this.seedPending } });
+      });
+      const busy = (b) => {
+        b.disabled = true;
+        b.setAttribute('aria-busy', 'true');
+        b.classList.add('is-busy');
+        b.classList.toggle('is-still', !!this.ctx.reducedMotion?.());
+        b.textContent = 'Generating...';
+      };
+      if (this.previewBusy || Number.isInteger(this.seedPending)) busy(dice);
+      else dice.setAttribute('aria-busy', 'false');
+      seedRow.append(seed, dice);
       controls.append(field('Map size', size, 'mapSize'), field('Seed', seedRow, 'seed', seed));
     }
     const file = el('input');
@@ -1618,11 +1742,18 @@ export class OnlineUI {
     } else {
       const o = st.options;
       const G = this.ctx.Game;
-      if (!G?.generated_map_styled) return [];
       // One spawn per player of the generated map, counted as the server counts them.
       const n = battlefieldSpawns({ players });
-      // The style shapes the map (the biome only paints it).
-      field = { key: `gen:${o.seed}/${o.mapSize}/${n}/${o.mapStyle}`, width: o.mapSize, height: o.mapSize, cells: () => JSON.parse(G.generated_map_styled(o.seed, o.mapSize, n, o.mapStyle, 'temperate')).spawns };
+      if (this.ctx.previews) {
+        // Made off the main thread (renderMap asks for it): no markers until it is ready.
+        const got = this.ctx.previews.get(this.generatedRequest());
+        if (!got) return [];
+        field = { key: `gen:${previewKey(this.generatedRequest())}`, width: o.mapSize, height: o.mapSize, cells: () => got.spawns };
+      } else {
+        if (!G?.generated_map_styled) return [];
+        // The style shapes the map (the biome only paints it).
+        field = { key: `gen:${o.seed}/${o.mapSize}/${n}/${o.mapStyle}`, width: o.mapSize, height: o.mapSize, cells: () => JSON.parse(G.generated_map_styled(o.seed, o.mapSize, n, o.mapStyle, 'temperate')).spawns };
+      }
     }
     if (this.spawnCells?.key !== field.key) {
       let cells = [];
@@ -1640,6 +1771,32 @@ export class OnlineUI {
       mapSource: st.map ? 'file' : 'random',
     };
     return spawnMarkers(this.spawnCells.cells, field.width, field.height, lobbyState);
+  }
+
+  /** The lobby's generated map as a js/mappreview.js request. */
+  generatedRequest() {
+    const o = this.state.options;
+    const players = generatedMapPlayers(this.state.slots.filter((s) => s.type === 'human' || s.type === 'ai').length);
+    return { seed: o.seed, size: o.mapSize, players, style: o.mapStyle, biome: o.biome };
+  }
+
+  /**
+   * Make the lobby's generated map off the main thread and render the lobby
+   * again once it is ready, unless the lobby moved on (latest wins).
+   */
+  awaitPreview(req) {
+    const key = previewKey(req);
+    this.ctx.previews.request(req).then(
+      () => {
+        if (this.slotBox && !this.state.map && !this.state.mission && previewKey(this.generatedRequest()) === key) this.renderLobby();
+      },
+      (err) => {
+        if (err instanceof StalePreview) return;
+        console.error('Map preview failed:', err);
+        this.previewFailed = key;
+        if (this.slotBox) this.renderLobby();
+      },
+    );
   }
 
   /** Whether this member can pick spawns now: a player or the host, in a skirmish lobby that is not a resumed save, with the map at hand. */
@@ -2325,7 +2482,7 @@ export class OnlineUI {
       bind: ({ colorOf, defeated }) => Object.assign(this.chatPeople, { colorOf, defeated }),
     };
     const list = names.join(', ');
-    this.gameLine(spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`);
+    this.gameLine(chatIntroLine({ spectator, list, teamChat, touch: touchUi() }));
     if (cheats) this.gameLine('Cheats are enabled in this game: every player can use the debug menu.', true);
     setInterval(() => {
       if (this.driver) this.waitLine.hidden = !(this.driver.stalledMs > 600 && !this.driver.stopped);

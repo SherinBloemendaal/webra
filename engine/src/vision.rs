@@ -31,6 +31,17 @@ impl World {
         for p in self.players.iter_mut() {
             p.visible.iter_mut().for_each(|v| *v = 0);
         }
+        // Each unit's sight circle, as row spans counted into a difference
+        // array per player (+1 where a span starts, -1 after it ends), so a
+        // crowd of units costs a few writes per row of its circles instead
+        // of a write per cell; a running sum along each row then marks
+        // every cell some circle covers. The same cells as stamping every
+        // circle cell by cell.
+        let (w, h) = (self.map.width, self.map.height);
+        let stride = w as usize + 1;
+        let mut diff: Vec<Vec<i32>> = vec![Vec::new(); self.players.len()];
+        // Spans (dy, first dx, last dx) of the circles used, by `circle` index.
+        let mut spans: Vec<Vec<(i32, i32, i32)>> = Vec::new();
         let n = self.actors.len();
         for i in 0..n {
             let a = &self.actors[i];
@@ -47,14 +58,40 @@ impl World {
             let (owner, x, y) = (a.owner as usize, a.x, a.y);
             let ci = self.circle(sight);
             let (cx, cy) = self.cell_of(x, y);
-            let (w, h) = (self.map.width, self.map.height);
-            let p = &mut self.players[owner];
-            for &(dx, dy) in &self.circle_cache[ci] {
-                let (vx, vy) = (cx + dx, cy + dy);
-                if vx >= 0 && vy >= 0 && vx < w && vy < h {
-                    let idx = (vy * w + vx) as usize;
-                    p.visible[idx] = 1;
-                    p.explored[idx] = 1;
+            if spans.len() <= ci {
+                spans.resize(ci + 1, Vec::new());
+            }
+            if spans[ci].is_empty() {
+                spans[ci] = circle_spans(&self.circle_cache[ci]);
+            }
+            let d = &mut diff[owner];
+            if d.is_empty() {
+                *d = vec![0; stride * h as usize];
+            }
+            for &(dy, x0, x1) in &spans[ci] {
+                let vy = cy + dy;
+                let (x0, x1) = ((cx + x0).max(0), (cx + x1).min(w - 1));
+                if vy < 0 || vy >= h || x0 > x1 {
+                    continue;
+                }
+                let row = vy as usize * stride;
+                d[row + x0 as usize] += 1;
+                d[row + x1 as usize + 1] -= 1;
+            }
+        }
+        for (p, d) in self.players.iter_mut().zip(&diff) {
+            if d.is_empty() {
+                continue;
+            }
+            for vy in 0..h as usize {
+                let mut covered = 0;
+                for vx in 0..w as usize {
+                    covered += d[vy * stride + vx];
+                    if covered > 0 {
+                        let idx = vy * w as usize + vx;
+                        p.visible[idx] = 1;
+                        p.explored[idx] = 1;
+                    }
                 }
             }
         }
@@ -129,4 +166,21 @@ impl World {
             }
         }
     }
+}
+
+/// The rows of a sight circle (`World::circle`) as spans (dy, first dx,
+/// last dx). A circle's cells in a row are always one unbroken run.
+fn circle_spans(offs: &[(i32, i32)]) -> Vec<(i32, i32, i32)> {
+    let mut spans: Vec<(i32, i32, i32)> = Vec::new();
+    for &(dx, dy) in offs {
+        match spans.iter_mut().find(|s| s.0 == dy) {
+            Some(s) => {
+                s.1 = s.1.min(dx);
+                s.2 = s.2.max(dx);
+            }
+            None => spans.push((dy, dx, dx)),
+        }
+    }
+    debug_assert_eq!(spans.iter().map(|s| (s.2 - s.1 + 1) as usize).sum::<usize>(), offs.len(), "a circle row is one run");
+    spans
 }

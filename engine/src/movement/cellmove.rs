@@ -207,6 +207,7 @@ impl World {
     /// ended short (Blocked) starts again after a cooldown (OpenRA
     /// MoveCooldownHelper with RetryIfDestinationBlocked).
     pub(crate) fn cell_move(&mut self, i: usize, dest: u32) {
+        let _section = crate::profile::scope(crate::profile::Section::CellMove);
         // Made this tick (or moved by other code): it takes its cell first.
         if self.actors[i].mv.to == NONE || self.actors[i].mv.pos != (self.actors[i].x, self.actors[i].y) {
             self.place_on_cell(i);
@@ -859,6 +860,7 @@ impl World {
     /// cell it may not share, moves to the nearest cell it may stay on.
     /// True when it moves.
     pub(crate) fn cell_idle(&mut self, i: usize) -> bool {
+        let _section = crate::profile::scope(crate::profile::Section::Idle);
         if !self.occupies_cells(i) || !self.idle_on_cell(i) {
             return false;
         }

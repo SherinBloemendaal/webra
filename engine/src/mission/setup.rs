@@ -234,10 +234,11 @@ impl World {
         // Bridges take their state from the terrain, trees of tree terrain become actors (neutral.rs).
         w.setup_neutral();
         w.placing_map_actors = false;
+        // A mission before the first token refresh: no `global-skirmish` (production.rs).
+        w.mission_on = true;
         w.refresh_tokens();
         w.update_power();
         w.update_vision();
-        w.mission_on = true;
 
         // The scripts: OpenRA's sandbox, the API globals, the map actors as
         // globals, every script file in order, then WorldLoaded.

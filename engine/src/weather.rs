@@ -16,7 +16,7 @@
 //! | What | Effect |
 //! |------|--------|
 //! | Rain | sight of every actor 90 % |
-//! | Thunderstorm | sight 85 %; lightning is cosmetic (no damage) |
+//! | Thunderstorm | sight 85 %; lightning strikes (lightning.rs): a quarter of the strikes hit a power plant, which loses half its health and blacks out its owner's power plants for 15 s; a strike on other units or structures halves their health; Lightning Rods ground every strike within their range |
 //! | Snowfall (snow) | sight 85 % |
 //! | Sandstorm (desert) | sight 75 % |
 //! | Snow biome, infantry | speed 90 % |
@@ -59,6 +59,11 @@ impl Biome {
     /// The biome of `random`: picked from the game seed.
     pub fn random(seed: u64) -> Biome {
         Biome::ALL[Rng::new(seed ^ 0xb10e_0000_0000_0003).range(0, Biome::ALL.len() as i32) as usize]
+    }
+
+    /// Whether the biome's weather has thunderstorms (lightning.rs).
+    pub fn has_thunderstorms(self) -> bool {
+        self == Biome::Temperate
     }
 
     /// Map files leave the field out for the default biome.
@@ -172,10 +177,15 @@ pub struct Environment {
     /// Ticks the current weather started and ends.
     pub since: u32,
     pub until: u32,
-    /// Latest lightning flash: tick and world position (cosmetic).
-    pub flash: Option<(u32, i32, i32)>,
+    /// Latest lightning flash: tick, world position and what it struck
+    /// (`StrikeKind`; with `WeatherMode::Full` the world moves it onto its
+    /// target, lightning.rs). Presentation: never part of the state hash.
+    pub flash: Option<(u32, i32, i32, StrikeKind)>,
     next_flash: u32,
     rng: Rng,
+    /// What each strike goes for (lightning.rs): a stream of its own, so the
+    /// weather cycle and the flashes are the same as without strike effects.
+    strike_rng: Rng,
 }
 
 impl Default for Environment {
@@ -189,7 +199,8 @@ impl Environment {
         let mut rng = Rng::new(seed ^ 0x5ca1_ab1e_0000_0005);
         // Clear skies for the opening: two to three minutes.
         let until = 120 * SECOND + rng.range(0, 60) as u32 * SECOND;
-        Environment { biome, mode, weather: Weather::Clear, since: 0, until, flash: None, next_flash: 0, rng }
+        let strike_rng = Rng::new(seed ^ 0x57e1_c0de_0000_0006);
+        Environment { biome, mode, weather: Weather::Clear, since: 0, until, flash: None, next_flash: 0, rng, strike_rng }
     }
 
     /// Gameplay effects apply (not cosmetic, not off).
@@ -213,10 +224,11 @@ impl Environment {
         self.effects() && self.weather == Weather::HeatWave
     }
 
-    /// Advance the cycle by one tick (World::step).
-    pub fn tick(&mut self, tick: u32, width: i32, height: i32) {
+    /// Advance the cycle by one tick (World::step). Returns this tick's
+    /// lightning strike, if any, for the world to resolve (lightning.rs).
+    pub fn tick(&mut self, tick: u32, width: i32, height: i32) -> Option<Strike> {
         if self.mode == WeatherMode::Off {
-            return;
+            return None;
         }
         if tick >= self.until {
             let (next, secs) = next_weather(self.biome, self.weather, &mut self.rng);
@@ -228,10 +240,41 @@ impl Environment {
         if self.weather == Weather::Thunderstorm && tick >= self.next_flash {
             let x = self.rng.range(0, width.max(1)) * crate::math::CELL + crate::math::HALF_CELL;
             let y = self.rng.range(0, height.max(1)) * crate::math::CELL + crate::math::HALF_CELL;
-            self.flash = Some((tick, x, y));
+            // From the strikes' own stream, the same numbers in every mode.
+            let roll = self.strike_rng.range(0, 100);
+            let pick = self.strike_rng.range(0, i32::MAX);
+            self.flash = Some((tick, x, y, StrikeKind::Ground));
             self.next_flash = tick + (4 + self.rng.range(0, 9) as u32) * SECOND;
+            return Some(Strike { x, y, roll, pick });
         }
+        None
     }
+}
+
+/// A lightning strike drawn from the weather's own random stream: a random
+/// cell centre (world units), `roll` 0..100 (whether it goes for a power
+/// plant) and `pick` (which one), see lightning.rs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Strike {
+    pub x: i32,
+    pub y: i32,
+    pub roll: i32,
+    pub pick: i32,
+}
+
+/// What a lightning flash struck (the client draws and sounds it), in
+/// increasing order of consequence.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(u8)]
+pub enum StrikeKind {
+    /// Open ground, or `cosmetic` weather.
+    Ground = 0,
+    /// Grounded on a Lightning Rod.
+    Rod = 1,
+    /// Hit units or structures.
+    Hit = 2,
+    /// Hit a power plant: its owner's power is out.
+    PowerPlant = 3,
 }
 
 /// The weather after `now` and how long it lasts (seconds): clear spells
@@ -335,8 +378,7 @@ mod tests {
             let mut seen = Vec::new();
             let mut last = Weather::Clear;
             for t in 0..25 * 60 * 40 {
-                a.tick(t, 64, 64);
-                b.tick(t, 64, 64);
+                assert_eq!(a.tick(t, 64, 64), b.tick(t, 64, 64));
                 assert_eq!((a.weather, a.flash), (b.weather, b.flash));
                 if a.weather != last {
                     assert!(a.weather == Weather::Clear || last == Weather::Clear, "{biome:?}: {last:?} then {:?}", a.weather);
@@ -361,13 +403,13 @@ mod tests {
     fn off_and_cosmetic_have_no_gameplay_effect() {
         let mut off = Environment::new(Biome::Desert, WeatherMode::Off, 1);
         for t in 0..25 * 60 * 20 {
-            off.tick(t, 64, 64);
+            assert_eq!(off.tick(t, 64, 64), None);
             assert_eq!(off.weather, Weather::Clear);
         }
         let mut cosmetic = Environment::new(Biome::Desert, WeatherMode::Cosmetic, 1);
         let mut changed = false;
         for t in 0..25 * 60 * 20 {
-            cosmetic.tick(t, 64, 64);
+            let _ = cosmetic.tick(t, 64, 64);
             changed |= cosmetic.weather != Weather::Clear;
             assert_eq!(cosmetic.sight(5000), 5000);
             assert!(!cosmetic.heat_wave() && !cosmetic.snow_effects());

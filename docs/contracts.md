@@ -13,7 +13,7 @@ this document; change it first (in its own commit) when a contract has to move.
 | `apps/website/` | Landing site, served at `https://webra.sherin.dev/` | Static, no framework |
 | `apps/server/` | Cloudflare Worker: static assets, HTTP API, Durable Objects | `wrangler.jsonc` lives here |
 | `packages/protocol/` | Multiplayer message definitions and validators (plain JS) | Imported by `apps/game` and `apps/server` |
-| `data/` | Red Alert catalog extracted from OpenRA | Input for `tools/gen_rules.py` |
+| `data/` | Red Alert catalog extracted from OpenRA; `data/webra/rules.yaml` holds WebRA's own actors (OpenRA MiniYaml) | Input for `tools/gen_rules.py` |
 | `tools/` | `gen_rules.py`, `shader-check`, `check-js.mjs` | |
 
 The browser imports `packages/protocol` through the path `/play/protocol/` (the
@@ -198,6 +198,9 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   `Game.map_preview_players(seed, size, players)` and
   `Game.map_preview_styled(seed, size, players, style, biome)` (RGBA per
   cell in the biome's colours, spawns in player colours);
+  `Game.map_spawns_styled(seed, size, players, style)` the spawns
+  `generated_map_styled` places, flat `[x0, y0, x1, y1, ...]`, from the
+  map alone (no actors, no map file: the lobby previews);
   `Game.resolved_style(seed, style)` and `Game.resolved_biome(seed, biome)`
   name what `random` picks.
 - Map editor (presentation only, never ticked): `Game.editor_preview(mapJson)`
@@ -265,16 +268,39 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   the render clock at 0 and clear weather, so it needs no WebGPU context.
   The map is cut into tiles of 8 x 8 cells at 24 pixels per cell, drawn a
   few rows per animation frame within a 6 ms budget (the preview's pixels
-  stand in until a tile is ready) and kept in an LRU cache of 48 tiles per
-  lens; at most two sprite atlases are kept, and all of it is let go when a
-  game starts (`LensArt.release`). The lens starts at half the game's
+  stand in until a tile is ready) and kept in an LRU cache of 64 tiles per
+  lens (about 9 MB of tile canvases); one view needs at most 36 (below), so
+  drawing never evicts a tile the same view still needs. At most two sprite
+  atlases are kept, and all of it is let go when a game starts (`LensArt.release`). The lens starts at half the game's
   zoom (`LENS_START_FACTOR` of `baseZoom` at the player's game scale, at the
   render ratio a game uses: `gameScaleFor`), so it shows twice the map
   around the pointer; not at the zoom the player last used in a game
-  (`game.zoomFactor`), which is for playing. The mouse wheel zooms it
-  between the game's zoom limits only while it shows after the pointer
-  moved over the preview, and scrolls the page again at a limit. On touch,
-  press and hold (350 ms) shows it above the finger. It is `aria-hidden`,
+  (`game.zoomFactor`), which is for playing. When it shows (mouse): only
+  while the pointer is over the preview and the magnify key is held
+  (`magnifyHeld`: Ctrl; on macOS also Cmd, because Ctrl + click is the
+  system's right click there), so a plain preview never covers a click on
+  a start marker; pressing the key under a resting mouse shows it at once
+  (window `keydown`/`keyup`), releasing it, leaving the preview or the
+  window losing focus (a lost key release) hides it. While the mouse is
+  over a preview with a lens and the key is up, a small click-through hint
+  (`.map-lens-hint`, `aria-hidden`) at the bottom of the preview says "Hold
+  Ctrl to magnify, scroll to zoom" ("Hold Cmd or Ctrl ..." on macOS). The
+  mouse wheel zooms it only while it shows after the pointer moved over the
+  preview, between `lensZoomLimits`: out to `LENS_MIN_ZOOM` (0.25 CSS px per
+  world pixel at game scale 1, half the game's `MIN_ZOOM`: about 29 cells
+  across the 176 px lens of UI scale 1 at game scale 1), but never wider
+  than `LENS_MAX_VIEW_CELLS` (40) cells across: the lens's size follows the
+  UI scale (`--ui-px`) and the zoom the game scale, so at UI 1.3 and game
+  0.67 the plain limit would span 57 cells (81 tiles) and at UI 2 and game
+  0.5 even 117; with the cap one view is at most 6 x 6 tiles. In: to the
+  game's `MAX_ZOOM`. While it shows the
+  wheel never reaches the page, also at a limit (Ctrl + wheel would zoom
+  the browser page). Without the key the wheel scrolls the page. The same
+  rule on every preview with a lens (lobbies, campaign, the editor's
+  thumbnail). On touch and with a pen (no key at hand), press and hold
+  (350 ms) shows it above the finger or pen tip, without a key. Keyboard
+  focus does not open it (it is decorative; the markers and preview keep
+  their labels). It is `aria-hidden`,
   never focused, placed through CSSOM custom properties (CSP) and sized in
   `--ui-px` (`css/maplens.css`). Previews with a lens: the skirmish lobby,
   the online lobby (generated maps, installed shared and community maps,
@@ -577,6 +603,54 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   warnings, skipped, not supported, and the validation errors when the
   converted map is not playable yet (the editor still opens it for fixing).
 
+### The map editor on big maps (`apps/game/editor`)
+
+The editor's work per frame and per edit follows what changed, not the size
+of the map (a 256 x 256 community map with hundreds of actors edits like a
+small one). `tools/editor-bench.mjs` times it headlessly (the real document,
+tools, view, engine preview, checks and tile planning; a stub renderer) on a
+generated map or a given `.oramap`; `apps/game/tests/editor-perf.test.mjs`
+guards it by counting reads, not by the clock.
+
+- One document version (`MapDoc.version`): it moves on when a transaction
+  that changed something closes, on rollback, undo, redo and load (a click
+  that changes nothing keeps it). Every change happens inside a
+  transaction, so outside one an equal version is the same document.
+  `MapDoc.snapshot()` is the map object and its JSON text made once per
+  version (frozen; `toMap()` for a copy to change), shared by the engine
+  preview, the checks, the thumbnail and the draft.
+- Undo steps hold the changed cells' before and after values and, for
+  actors, spawns and properties, their before and after state; undo and redo
+  write those back and rebuild nothing else of the document.
+- Placement checks go against an index of who stands where (`edits.js`
+  `Occupancy`: structure cells and other actors per cell index), built once
+  per pass and kept in step as actors are placed: the quick fixes, the red
+  ghosts of structures a game would refuse (found once per version), pasting,
+  symmetric placing and dragging a selection check each actor's footprint,
+  never every actor per actor. The results are those of `placementProblem`.
+- The shape preview (line, rectangle, ellipse while dragging) is made when
+  its corners, the brush, the fill or the symmetry change, as runs of cells
+  along each row (the same pixels as a rect per cell), not every frame.
+- After a burst of edits the editor runs, once and when the browser is idle
+  (`js/idle.js`): the checks (engine `validate_map`, the editor's checks and
+  quick fixes; 300 ms after the last change) and the draft save (800 ms).
+  The problem list and the thumbnail are drawn only while their tab shows
+  (else when it is opened); the fairness table waits for idle time too. Side
+  panels (owner lists, selection, history, undo buttons) update once per
+  frame however many changes it had (undoing several steps at once).
+- The engine keeps the rules it loaded last with their overrides
+  (`Rules::load_with`) and hands out a copy for the same overrides: the
+  preview, validation and games on one map load the same rules repeatedly.
+- Terrain tiles: WebRA's (`js/art/terrain.js` `cellTiles`) are made for the
+  whole map on the main thread (a few milliseconds; the decals follow a seed
+  of the whole map's terrain, as in a game). The original graphics' tiles are
+  planned in a worker (`editor/js/tiles-worker.js`, section 8) whenever the
+  terrain types change; meanwhile the editor draws the last plan, with the
+  cells whose type changed since in the tile most cells of that type have in
+  it, and WebRA's tiles until the first plan is in. The finished picture is
+  the one a game on the map draws. Texture packs tile cell by cell on the
+  main thread.
+
 ## 3. Game options (lobby to engine)
 
 `options` JSON as produced by `apps/game/js/lobby.js` (value sets in
@@ -685,7 +759,8 @@ joined protocol 6 the same way, without a version of its own):
   `assignSpawns` (lobby markers) share the cases of
   `packages/protocol/test/fixtures/spawn-cases.json`.
 - `bounty` (default off, OpenRA GivesBounty): a kill pays the killer the
-  victim's GivesBounty percentage (10 % by default) of its value; allies pay
+  victim's GivesBounty percentage (10 % by default) of its sell value
+  (CustomSellValue, else the cost: a pillbox pays 40, not 60); allies pay
   nothing.
 - `timeLimit` (minutes: 0 = none, 10, 20, 30, 40, 60, 90; OpenRA
   TimeLimitManager): the countdown counts game time in real seconds of the
@@ -795,13 +870,13 @@ simulation's stream): clear skies for the first 2 to 3 minutes, then the
 biome's weather alternates with clear spells of 90 to 180 s. Temperate:
 rain (60 %, 60 to 120 s) or thunderstorm (40 %, 45 to 90 s); snow:
 snowfall (60 to 150 s); desert: heat wave (60 %, 60 to 120 s) or sandstorm
-(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm and
-is cosmetic (no damage). Effects with `weather: full`:
+(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm.
+Effects with `weather: full`:
 
 | What | Effect |
 |------|--------|
 | Rain | sight of every actor 90 % |
-| Thunderstorm | sight 85 % |
+| Thunderstorm | sight 85 %; lightning strikes (below) |
 | Snowfall | sight 85 % |
 | Sandstorm | sight 75 % |
 | Snow biome, infantry | speed 90 % |
@@ -809,6 +884,79 @@ is cosmetic (no damage). Effects with `weather: full`:
 | Ice (rough ground in the snow biome) | +6 % / -7 % per tick, turn rate 50 % |
 | Heat wave, vehicles | heat +1 per tick driving (40 s of driving), +25 per shot; overheated at 1000: speed 75 %, reload 133 %, until heat drops to 400 |
 | Cooling | -5 per tick standing still without firing, -1 per tick otherwise outside a heat wave |
+
+**Lightning and the Lightning Rod** (WebRA additions, no OpenRA counterpart;
+`engine/src/lightning.rs`, `engine/src/ai_lightning.rs`). Each strike's random cell comes from the
+weather's own stream as before; its roll 0..99 and pick come from a stream
+of their own (seeded from the game seed), so the weather cycle and the
+flashes are the same in every mode and as before strikes had effects. With
+`full` the world resolves it:
+
+1. Power plants attract lightning (tall structures): with a roll below 25
+   the strike goes for a power plant (a structure with positive power: the
+   Power Plant and the Advanced Power Plant), `pick` modulo the number of
+   candidates among every player's plants that no rod protects, in actor
+   order. Without a candidate it falls on the random cell.
+2. A strike point within a Lightning Rod's range (its centre to the point)
+   is grounded on the nearest rod (lowest actor index on a tie): nothing is
+   damaged, the rod included. Rods protect everyone's actors, whoever owns
+   them, need no power and work during an outage.
+3. Otherwise it hits what stands on the struck cell: structures whose hit
+   cells cover it and ground units on it, players' actors only (aircraft in
+   the air, mines, husks and the neutral world are never hit, nor an actor
+   whose centre a rod protects).
+4. Each struck actor loses half of its current hit points, rounded down
+   (the normal damage path with its events, AI reactions and damage states,
+   but without veterancy, prone or handicap modifiers and without an
+   attacker: no "under attack" line, no kill credit). So lightning never
+   destroys anything; the Iron Curtain blocks it.
+5. A struck power plant (picked or on the struck cell) also blacks out its
+   owner's power plants for 15 s (375 ticks; the spy's power outage, OpenRA
+   PowerManager.TriggerPowerOutage: a longer running outage stays), with the
+   low power effects that follow (defences, radar and the gap generator go
+   dark, production slows down, the Low power line) and the owner's line
+   "Power plant struck by lightning. Power outage." Power plants make power
+   in proportion to their health (OpenRA ScalePowerWithHealth), so after
+   the outage a struck plant makes half of what it made before until it is
+   repaired.
+
+The flash (`weather_json().flash`, `[tick, x, y, kind]`) moves onto what the
+strike hit; kind 0 ground (or `cosmetic` weather), 1 grounded on a rod, 2 a
+unit or structure, 3 a power plant. `Game.build_lines` draws the bolt for 8
+ticks where the viewer has explored the ground (jitter from the flash
+itself, never the simulation's random streams); thunder follows it
+(js/weather-fx.js, js/audio). Hit points and outages are simulation state;
+the flash, the bolt and the `LightningStrike` audio events are presentation.
+
+The Lightning Rod `LROD` (`data/webra/rules.yaml`, WebRA trait
+`LightningRod: Range 6c0`, read by `tools/gen_rules.py` into
+`building.lightning_rod`): Defense tab, both sides, prerequisite `anypower`
+(a power plant), tech level low, cost 300, build time 180 ticks, 300 HP,
+Heavy armour, 1x1 with a minibib, no power, sight 4 cells; inherits OpenRA
+`^Building` (sell, repair, engineer capture, make animation). It is
+buildable in every skirmish and multiplayer game, also where no
+thunderstorm can come (desert, snow, weather off): it is cheap and the
+tooltip and badge say what it does. Campaign and co-op missions keep
+OpenRA's rules: its prerequisite `~global-skirmish` is a WebRA token the
+engine grants every player outside missions (production.rs
+`GLOBAL_SKIRMISH`; `World::in_game_mode` keeps it out of a mission's
+sidebar and observer lists altogether), and tools/gen_missions.py leaves
+WebRA's actors out of the mission rules. A dashed yellow
+`WithRangeCircle` (Type LightningRod, 6 cells) shows when selected and
+around other rods while placing one. Art: WebRA's own pixel art
+(`tools/gen_pixel_art.py`: idle, damaged, a 12 frame make animation and a
+cameo). The skirmish AI builds rods only while thunderstorms can strike
+(temperate biome, `weather: full`) and after the game's first lightning
+strike, once it owns two power plants and has three times the rod's cost,
+one rod per three plants and at most three, and only
+while one of its plants is unprotected; it places each where it covers the
+most of its unprotected plants. Through a blackout from lightning the bot
+counts the power its intact plants will make again
+(`ai_lightning::power_gen`). It buys no extra power plants. It switches no
+structures off (power down module). It sells no plants it would otherwise
+keep. A spy's or a mission's outage counts as low power, as for OpenRA's
+bots (PowerManager.ExcessPower drops while AffectedByPowerOutage disables
+the plants' Power trait).
 
 The AI rests overheated vehicles until they cool down (they still defend).
 Long games can harvest every field a base reaches, so the AI also handles
@@ -832,8 +980,8 @@ Submarines alone do not keep a player in the game (OpenRA `^Submarine`
 has no `MustBeDestroyed`), nor do walls and mines.
 
 Engine API: `Game.weather_json()` returns `{ biome, mode, weather, since,
-until, tick, sightPct, flash }` (`flash`: the latest lightning `[tick, x, y]`
-in world pixels, or null); `Game.build_heat_fx(player, x0, y0, x1, y1)`
+until, tick, sightPct, flash }` (`flash`: the latest lightning `[tick, x, y,
+kind]` in world pixels, or null); `Game.build_heat_fx(player, x0, y0, x1, y1)`
 fills `[x, y, heat 0..1, overheated]` per hot vehicle in view (at most 512,
 read at `Game.fx_ptr()`); `Game.actor_json` has `heat` (percent) and
 `overheated`.
@@ -935,7 +1083,8 @@ Client to server:
 | t | Fields | When |
 |---|--------|------|
 | `hello` | `protocol, version, name?, password?, hostKey?, spectate?, rejoin?: { client, key }` (`name` required without an account; ignored for signed-in connections, which play under their username) | first message |
-| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions") | lobby |
+| `slot` | `slot, faction?, color?, team?, type?(host only: ai/closed/open), difficulty?, bot?, handicap?, spawn?` (difficulty and bot: AI slots, host only; `spawn`: 0 to 7 or null, see "Start positions"; another player's team, handicap and spawn: host only, as OpenRA's lobby offers; another player's faction and colour: never) | lobby |
+| `slots` | `changes: [{ slot, ...the fields of slot }]` (host only; 1 to 8 changes, each slot once, each changing something; see "Bulk edit") | lobby |
 | `spectators` | `max` (0..8, host only, not below the spectators present) | lobby |
 | `spectate` | `on: bool` (move between a player slot and the spectators) | lobby |
 | `resume` | | rejoining player, after catching up |
@@ -1026,7 +1175,11 @@ and online lobbies (`apps/game/js/spawnpick.js`):
   host disables empty spawns with a right click; WebRA has no disabled spawns.
 - Hover or focus shows the shared tooltip (who starts there, team, picked
   or automatic, and what a click does); the markers are buttons (Tab, Enter
-  or Space), and the lens rings the one under the pointer or focus.
+  or Space), and the lens rings the one under the pointer or focus. The
+  lens shows only while Ctrl (on macOS Cmd or Ctrl) is held, so a plain
+  preview never covers a marker; on macOS Ctrl + click is the system's
+  right click, which frees a spawn, so Cmd is the key to click with while
+  magnifying (the hint names Cmd first there).
 - How many spawns a battlefield has is one definition for both lobbies
   and the server (`packages/protocol` `battlefieldSpawns`): a map file's
   own, none in a co-op mission, else one per player of the generated map,
@@ -1051,14 +1204,112 @@ and online lobbies (`apps/game/js/spawnpick.js`):
   save keeps the saved ones.
 - Online: the client sends `slot { slot, spawn }` (null: automatic). The
   server (`apps/server/src/room.js`) checks it: your own slot (a change of
-  your own makes you not ready), the host for AI slots (everyone not
-  ready, like other host changes) or `spawn: null` alone for another
-  person's slot; the spawn on the battlefield (`map.players` spawns, or one
+  your own makes you not ready), the host for AI slots and other people's
+  team, handicap and spawn (everyone not ready, like other host changes),
+  and `spawn: null` alone for another person's slot only makes that person
+  not ready (OpenRA `clear_spawn`). OpenRA's server would also take the
+  host's faction and colour for another client (LobbyCommands.cs), but its
+  lobby (LobbyLogic, a player who is not you) offers the host only team,
+  handicap, spawn and the slot admin; WebRA's server accepts that same set
+  and refuses the rest; the spawn on the battlefield (`map.players` spawns, or one
   per player); not picked by another slot; never with `type` and never in
   a mission or a resumed save. Lobby slots carry `spawn` when picked; the
   start message's players carry it to the engine. Like OpenRA a ready player
   could not change its spawn; WebRA lets every own change through and makes
   the player not ready, as for faction or colour.
+
+### Bulk edit
+
+The skirmish and online lobbies edit many slots at once
+(`apps/game/js/lobby-bulk.js` plans, `lobby-bulkbar.js` is the bar),
+beyond OpenRA's slot admin dropdown and its `assign_teams` command
+(`LobbyCommands.cs AssignTeams`):
+
+- **Bulk edit** (a toggle by the slots) shows a checkbox in every row.
+  Selection works like a file manager, by slot index: a click on a row
+  (not on one of its controls) selects that row alone, Ctrl or Cmd adds or
+  removes it, and both set the anchor; Shift selects every row from the
+  anchor to the clicked one, up or down, in place of the selection (with
+  Ctrl or Cmd, or on a checkbox, the range takes the clicked row's new
+  state, like Shift on checkbox lists). The anchor stays for Shift. "All"
+  selects or clears every row. The selection survives lobby updates and
+  forgets rows that are gone; turning bulk edit off clears it.
+- One grouped action list and Apply (Enter in the list applies). With no
+  row selected an action applies to every slot it can change; slots the
+  map locks (map format version 2) keep the locked part. Actions: team
+  presets (free for all; humans vs AI, OpenRA's "Humans vs Bots"; split
+  into 2 to 4 teams in slot order, OpenRA's `assigned * teams / count + 1`;
+  alternating teams; put on one team), AI (fill empty slots with a bot
+  type, Normal difficulty: online the open slots, in skirmish the closed
+  ones and, with nothing selected, new rows up to the map's spawns; set
+  the bot type or difficulty of AI slots; remove the AI: online the slots
+  open, in skirmish they close and at least two players must stay),
+  factions (any choice of the faction list, or "Shuffle countries" which
+  picks a country per slot now), shuffled colours (unique: the targets
+  share the colours no other slot holds; skirmish closed rows keep
+  theirs; online both only for the host's own slot and the AI slots, as
+  the bar says, since another player's faction and colour are its own), handicap (0 to 90 %), start positions back to automatic, and
+  slots (make open or closed slots Normal AI; online also remove selected
+  players, open or close AI and empty slots; never your own slot).
+- Skirmish: the plan is applied all or nothing (`applyBulk`), checked for
+  unique colours, two to the map's spawns of players and your own slot.
+- Online: only the host has bulk edit (not while resuming a save; in a
+  co-op mission only the slot actions, within the mission's places). It
+  sends one `slots` message. The server (`room.js setSlots`) applies each
+  change exactly as the host's `slot` message (types, AI settings, other
+  people's settings, spawns, the mission's places), checks the colours
+  once all changes are in (a shuffle swaps them), then the map's locks
+  like `slot`; any refusal puts every slot back. Everyone is no longer
+  ready, removed players are kicked like the slot admin's, and the lobby
+  goes out once. The bar says "Sent to the server..." until a lobby update
+  shows every change (then the summary), or the server's refusal. Added in protocol 6 without a version bump (a new
+  message only the host sends; sessions pair identical builds).
+
+### Unloading a map
+
+The skirmish lobby's **Unload map** (next to Load map file, while a map
+file or `.oramap` is installed) goes back to the generated map with the
+size, style, biome, tech buildings and seed it had before: they are kept
+while a map file is in use. The file is forgotten as the lobby's map (it
+stays in the map library); the slots stay as they are, and the spawn
+picks clear with the battlefield as on every map change. The seed field
+and New seed show only for a generated map. A game on a map file still
+draws its random events from the seed (crates, random factions, the AI,
+the weather), so each start on a map file gets a new random seed (the
+skirmish lobby picks it at Start, the server at `start` for a lobby map);
+the game's options carry it, so replays, saves and Restart keep it, and
+the lobby keeps its own seed for the generated map. Online, the host's **Unload
+map** (a shared or community map) or **Leave mission** (a co-op mission)
+sends `map: null`, like Generated map in the map list: the lobby's
+options, seed included, were kept.
+
+### Lobby previews of generated maps
+
+The skirmish and online lobbies make the preview and the start positions of
+a generated map in a worker (`apps/game/js/mappreview.js`,
+`mappreview-worker.js`), given the engine module the page compiled; the
+main thread only draws the bytes. Without workers, or when the worker
+cannot load, the same work runs on the page after a timeout (so the loading
+state paints first). One generation runs at a time and the latest wins: a
+newer request replaces the one waiting (it never starts) and a running one
+it overtakes is kept in a small cache but not drawn. The spawns come from
+`Game.map_spawns_styled` instead of a whole generated map file.
+
+While a map is made, New seed shows a loader (disabled, `aria-busy`, its die
+or ring turns unless Reduce motion, the setting or the browser's, is on),
+the preview is dimmed with "Generating the map...", its start markers are
+gone (they would name places on the old map) and Start game waits. Online
+the host's New seed stays busy from the click until the lobby has the new
+seed and its map is made. The map lens still reads its map only when the
+pointer first rests on the preview.
+
+Main thread time of one New seed (Node 26, Apple Silicon, `node` timing of
+the engine calls; the browser's draw of the preview bytes comes on top in
+both): before, the preview, the full map file for the spawns and the caption
+took 49 ms (96 x 96) and 60 ms (160 x 160) for the first seed of a page, and
+10 to 17 ms on average (up to 45 ms) after that; now only the caption is
+left on the main thread (under 0.1 ms), and the worker takes 8 ms and 16 ms
+for a first seed, 2.4 to 7.5 ms after that.
 
 ### Reconnecting
 
@@ -1255,6 +1506,21 @@ an open slot and the spectators with `spectate`; a spectating host keeps the
 host role. Spectators are not in `start.players`, receive every frame and
 chat, never count for stalls or hash majorities, and the server removes a
 spectator that sends `orders` or `hash` (`left` reason `removed`).
+
+On phones and touch screens (`apps/game/tests/spectate-mobile.test.mjs`):
+the session list's Join and Watch get a row of their own below 760 px;
+the catch-up message ("Joining the game...", "Catching up with the game...
+N%", `js/records.js` ProgressOverlay) is one line where it fits; the
+observer panel starts below the 44 px HUD buttons (it covered Menu) and
+scrolls on short screens; in the phone layouts (`js/layout.js`) its view
+buttons are one sideways-scrolling row, full width in portrait and at most
+half the width in landscape; spectators and replays get no touch action bar
+or placement buttons (no orders), so the bottom belongs to the replay bar
+and the chat; a Chat button in the HUD row (touch screens only) opens the
+chat of online games and replays with chat, and the chat's first line says
+"Tap Chat to chat" there; in replays the chat follows the replay bar's
+height (`--replay-bar-height`, measured by a ResizeObserver). Spectators
+have no radar in WebRA (the sidebar that holds it is hidden for them).
 
 ### Defeated players
 
@@ -1530,6 +1796,41 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   on the exit cell instead of inside the structure at the Exit's
   SpawnOffset (ships launched from a corner exit on the water just outside
   it instead of on the corner itself), and the Exit's Facing is not used.
+- Selling (`{"o": "sell", player, building}`, `World::sell_refund`) pays
+  OpenRA's Sell activity refund: `sell_value * sell_refund * hp / (100 *
+  max_hp)`, rounded down, where `sell_value` is OpenRA GetSellValue
+  (`custom_sell_value`, the actor's CustomSellValue, else its `cost`) and
+  `building.sell_refund` is Sellable.RefundPercent (50 in Red Alert; 0: no
+  Sellable, so it cannot be sold). So a pillbox pays 200 (CustomSellValue
+  400, not its cost 600), a camouflaged pillbox 275, a refinery 150, and
+  walls (CustomSellValue 0) can be sold for nothing. A map rule that
+  changes the cost changes the refund of actors without CustomSellValue,
+  like OpenRA. The same value is the base of the repair cost (repair.rs),
+  kill bounties (gamerules.rs), the sell crew (sell.rs) and the AI's
+  capture value. A structure being captured or demolished cannot be sold.
+  `Game.sell_value(player, id)` is that refund for an own structure, -1
+  while it cannot be sold (the sell cursor, and the "Refund: $n" tooltip
+  line, $0 for walls); the Sold event (7) carries the refund in `b`, which
+  js/battlefx.js floats as "+$n" for the seller and its allies when it is
+  above 0 (Sell ShowTicks); the statistics' `sold` adds it up. The broke
+  AI sells the structure that pays the most first within a rank.
+  Map rules overrides may give any actor `custom_sell_value` (a whole
+  number 0 to 1,000,000), and `null` takes a built-in one away like
+  OpenRA's `-CustomSellValue` (the cost counts again); the editor's rules
+  tab and its raw JSON view accept the same (editor/js/overrides.js). A
+  CustomSellValue node without a Value counts 0 (the field's default in
+  CustomSellValue.cs; OpenRA's FieldLoader.Require would refuse it).
+  Known difference (timing): WebRA sells within the tick the order runs: it
+  pays the refund at the health the structure has then, to its owner then,
+  spawns the crew (SpawnActorsOnSell), raises Sold and removes the
+  structure at once. OpenRA's Sellable.Sell cancels the activity, plays the
+  sell sounds, calls INotifySold.Selling and, unless SkipMakeAnimation,
+  plays the make animation backwards first; only then does the Sell
+  activity (not interruptible) compute the refund from the health at that
+  moment (damage taken meanwhile lowers it), pay the PlayerResources of the
+  owner it captured when the order was given, call INotifySold.Sold (the
+  crew comes out then), speak the notification and dispose of the actor.
+  RefundPercent 0 also means "not sellable" here.
 
 ## 5. Domains for units
 
@@ -2189,18 +2490,58 @@ and nothing hostile within range of an enemy jammer. Terrain and fog come
 from `terrain_ptr` and `fog_ptr`.
 
 Radar input is client side and adds no order kinds (OpenRA RadarWidget): a
-click on the radar is a click on that world spot (`Input.radarClick`), so
-it goes through the same order generators as the battlefield (support
+left click on the radar is a click on that world spot (`Input.radarClick`),
+so it goes through the same order generators as the battlefield (support
 powers, sidebar modes, ability targeting, the command bar, minefields,
 attack move, `order_smart`, rally points) and the same `ui` game handle
-(unit replies, target lines; spectators' handles drop orders). Left is the
-action button; the right button gives unit orders only. Clicks that are no
-order there (nothing selected, an own unit, deploy, placement, spectators)
-move the camera. The radar cursor is `Input.radarCursor` (the battlefield's
-cursor for that cell, in the original cursors' `-minimap` variant when
+(unit replies, target lines; spectators' handles drop orders). Buttons, as
+OpenRA's `RadarWidget.HandleMouseInput`: a press of the order generator's
+`ActionButton` fakes a click on the world there, any other button centres
+the view there and drags it while held (`isMinimapMoving`). OpenRA's
+ActionButton is left in its Classic mouse style and right in Modern;
+WebRA has only the Classic style (the battlefield orders with the left
+button, the right one cancels or deselects), so on the radar:
+- Left: the order the cursor shows for that spot (Shift, Ctrl, Alt and
+  the command bar as on the battlefield). A left click that is no order
+  there (nothing selected, an own unit, deploy, placement, spectators)
+  moves the camera and drags it while held (a WebRA addition: OpenRA's
+  Classic radar would select there); a left press that gave an order does
+  not drag.
+- Right and middle: move the camera there and drag it while held, never an
+  order, also with units selected or a sidebar mode, support power or
+  attack move on (they stay on). Back and forward buttons do nothing.
+
+The radar cursor is `Input.radarCursor` (the battlefield's cursor for a
+left click on that cell, in the original cursors' `-minimap` variant when
 installed). Touch: a tap with units selected or a mode on gives the order
 (`TouchControls.radarTap`, with Add and Force); a drag, or any touch with
 nothing to order, moves the camera.
+
+Edge scrolling is client side too (`js/input.js` `edgeDirection`,
+`edgeScrollAllowed`; OpenRA `ViewportControllerWidget.CheckForDirections`).
+The zone is measured against the window, not the battlefield canvas: the
+mouse's window position comes from every mouse event on the page
+(`Input.windowMouse`), so the edge scrolls whatever is under it, the
+sidebar, radar, HUD buttons and chat included, and clicks there still work.
+The zone is `EDGE` (12) CSS px on each side, a deliberate difference from
+OpenRA's `ViewportEdgeScrollMargin` of 5: a browser window that is not
+maximised lets the mouse leave, and a quick move skips a narrow zone. It
+covers the rightmost 12 px of the sidebar buttons, which still take clicks.
+While it scrolls the whole page shows the scroll arrow (`html.edge-scroll`,
+css/style.css); OpenRA keeps the widget's own cursor off the battlefield,
+WebRA follows Red Alert there. It holds while the speed setting is 0, the
+mouse is outside the window (browsers report no position there, so leaving
+the window, even through an edge, stops it; a maximised or fullscreen window
+has its edge at the screen's, and mouse capture keeps the pointer inside),
+the window has no input focus (as OpenRA), for a touch (a finger or pen
+leaves no position: the mouse-like events js/touch.js feeds in carry
+`pointerType: 'touch'`, and the browser's compatibility mouse events after a
+pointer event of a finger are ignored until a mouse moves again,
+`Input.notePointerType`), while the game menu, end of game, statistics or a
+modal dialog is open, during a box selection, repair box, middle button pan
+or radar drag, while a text field has the focus (the chat line), and while
+the mouse is released with the release hotkey (`MouseCapture.isDetached`,
+where it exists). The map editor has no edge scrolling.
 
 Command bar (engine/src/commands.rs, apps/game/js/commandbar.js): orders
 `{"o": "attack_ground", player, ids, x, y}` (force-fire on the ground until
@@ -2235,13 +2576,22 @@ apps/game/js/input.js modes, js/sidebar.js top row): orders
 `{"o": "repair_building", player, building}` (start or stop repairing an own
 or allied structure with `building.repairable`; starting needs it damaged; at
 most `bonuses.len() - 1` repairers), `{"o": "power_down", player, building}`
-(switch an own structure with `building.power_down` off or on) and
+(switch an own structure with `building.power_down` off or on),
+`{"o": "repair_buildings", player, ids}` (WebRA bulk repair, not in OpenRA:
+OpenRA's per-structure toggle applied to a group; of the listed structures
+only the sender's own, alive, repairable and damaged ones count, each once;
+when any of them can start (the sender does not repair it yet and a repairer
+slot is free) all of those start, otherwise all that the sender repairs stop;
+one `RepairStarted` sound event for the group, at the first one started;
+funds are paid per step exactly as for single repairs; allied structures stay
+one `repair_building` click each, so a box over an ally's base never spends
+money on it; at most 2000 ids like the other id lists) and
 `{"o": "place_beacon", player, x, y}` (world units, inside the map; the
 beacon sits on the centre of that cell and replaces the player's previous
 one). Repair follows OpenRA's RepairableBuilding: a step of `min(step,
 missing hp)` every `interval + 1` ticks, each repairing player pays
-`max(1, hp * percent * value / (max_hp * 100))` (`building.value`: OpenRA
-GetSellValue, CustomSellValue or the cost), the step is multiplied by
+`max(1, hp * percent * value / (max_hp * 100))` (value: OpenRA
+GetSellValue, `custom_sell_value` or the cost), the step is multiplied by
 `bonuses[payers - 1]` percent, nobody paying waits two ticks and pushes an
 insufficient funds event per player, repairers who are no longer allied or
 playing drop out, a full structure ends the repair. Powered off, a structure
@@ -2252,13 +2602,26 @@ in the state hash; beacons are not (they change nothing) and last
 `player.beacon_duration` ticks (OpenRA PlaceBeacon.Duration, 750), shown to
 the owner and allies (rects over the shroud, not in the spectator views).
 Rules: `building.repairable {percent, interval, step, bonuses}` or null,
-`building.power_down`, `building.value`, `base_building` (actor),
+`building.power_down`, `custom_sell_value` (actor, absent: the cost), `base_building` (actor),
 `player.beacon_duration`; `Rules::validate` bounds them (bonuses 1..9 values).
 `rules_json` actors have `repairable` and `powerDown`, players `team` and
 `neutral`. Wasm: `repair_building`, `power_down`, `place_beacon(player, x,
 y)` (pixels), `repair_cursor(player, id)` (0 nothing, 1 toggle repairing that
 structure, 2 an own damaged unit goes to its depot), `repair_unit_target(player,
-id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`, and for the hotkeys
+id)` (`[x, y]` of that depot, own depots, the nearest), `can_power_down`,
+for bulk repair `repair_buildings(player, ids)`, `repair_targets(player, ids)`
+(the own damaged repairable structures among `ids`, in that order: the Repair
+button or key with them selected sends `repair_buildings` for them instead of
+opening repair mode, which opens when there are none) and
+`repair_box(player, x0, y0, x1, y1)` (pixels; the own damaged repairable
+structures whose selection bounds touch the box, in actor order: a drag of at
+least 6 view px in repair mode sends `repair_buildings` for them on release,
+draws a yellow box and shows the repair cursor while the box holds one, the
+blocked one otherwise; a shorter drag is the usual click; touch: a drag in
+repair mode is that box). There is no separate "repair all damaged structures"
+hotkey: OpenRA's hotkey set has no such command to name it after, and
+selecting the base (box or double click on a structure) and pressing Repair
+does the same. Wasm for the hotkeys:
 `base_actors(player)` (Construction Yards and MCVs, else the first
 structure), `harvesters(player)`, `production_buildings(player)` (no
 Construction Yards, by first production type) and `queue_producer(player,
@@ -2298,7 +2661,7 @@ log is presentation only: never read by the simulation, off by default
 `air.power` / `air.launched`) is not hashed either. Kinds and their fields:
 1 Fire, 2 Impact, 3 Death, 4 BuildingDamaged and 14 UnitDamaged (b: the
 attacking player; only another player's fire counts, as in OpenRA's
-DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold, 8
+DamageNotifier), 5 UnitProduced, 6 BuildingPlaced, 7 Sold (b: the refund), 8
 InsufficientFunds, 9 PowerActivated (a: `power_code`, b: `power_ref`), 10
 ConstructionReady, 11 RepairStarted, 12 PowerToggled, 13 BeaconPlaced, 15
 Transformed, 16 DeployBlocked, 17 PowerCharging and 18 PowerReady (a: the
@@ -2329,9 +2692,15 @@ back and the missions' chronoshifts, Chronoshiftable), 40 PlayerLost and 47
 PlayerWon (owner: the player; one PlayerWon per player of the last side
 standing, after the losers' PlayerLost, like OpenRA ConquestVictoryConditions
 marking each remaining ally's objective; js/battlefx.js writes "X is
-defeated." and "X is victorious." as system lines), 49 RouteBlocked (a: the
-unit's type, at the unit; WebRA addition, see the movement models: the line
-"Route blocked." and a radar ping for its owner). Kinds 32 to 36
+defeated." and "X is victorious." as system lines), 48 LightningStrike
+(WebRA, engine/src/lightning.rs: one event per actor lightning struck, at it;
+a: its type, owner: its owner, b: the strike kind, 2 a unit or structure, 3
+a power plant, whose owner hears the WebRA line "Power plant struck by
+lightning. Power outage." (EVA key `lightningOutage`, chime and text, no
+original), 1 grounded on a Lightning Rod, a: the rod's type), 49
+RouteBlocked (a: the unit's type, at the unit; WebRA addition, see the
+movement models: the line "Route blocked." and a radar ping for its
+owner). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.
@@ -2383,7 +2752,15 @@ stolen", enmydet, the thief's scandy, sclean1 and ssteal1, the spy's silppk),
 nothing plays and an announcer line only shows its text; the browser's
 speech never stands in for an original line or reply. A cue whose Red Alert
 file is just not installed (a partial install) and WebRA's own cues
-(thunder) keep WebRA's sound. Until the installed sounds are loaded
+(thunder) keep WebRA's sound. Thunder comes after the light-to-sound delay
+of the strike's distance (js/weather-fx.js, `flash` `[tick, x, y]` or
+`[tick, x, y, kind]`) and is placed like the other world sounds
+(director.js `thunderCue`, gain and pan of `spatial`): on screen
+`thunder_close` (a tearing crack with echoes, then rolling rumble), up to 3
+half-views away `thunder` (a dull clap and rolls), further `thunder_distant`
+(a soft rumble that swells in), fading over 4 times the usual reach but
+never below 0.4; a strike on a lightning rod, units, structures or a
+power plant (`kind` above 0) cracks just off the view's edge too. Until the installed sounds are loaded
 (`AudioSystem.loaded`), effects, notifications and replies wait for them (at
 most DEFER_MAX_AGE, 1 s, then they are dropped) and announcer lines wait up
 to ANNOUNCE_WAIT (3 s) for them and for audio to start, so a game started
@@ -2396,7 +2773,8 @@ Hotkeys (apps/game/js/hotkeys.js): defaults are OpenRA's Red Alert hotkeys
 (`apps/game/js/openra-hotkeys.js`, generated by `tools/gen_hotkeys.py` from
 data/source/hotkeys; CI checks it is up to date), each action naming its
 OpenRA hotkey (`openra`), except `BROWSER_SUBSTITUTES` (Ctrl+Tab, Ctrl+Q,
-Ctrl+W, F11, F12). Saved overrides (`settings.hotkeys`, synced with the
+Ctrl+W, F11, F12) and `WEBRA_SUBSTITUTES` (on macOS Alt+E is WebRA's release mouse key,
+so OpenRA's MapBookmarkRestore03 has no default key there; `substituteFor`). Saved overrides (`settings.hotkeys`, synced with the
 account) carry `"webra:keymap": ["2"]`; overrides without it come from WebRA
 0.7 and are migrated on reading (`migrateOverrides`: overrides equal to the
 old defaults, or old defaults that only lost keys to other actions' user
@@ -2436,7 +2814,8 @@ Neutral 2, Enemy 4, `generic_prefix`, `show_owner`; null: no tooltip) and
 battlefield (TooltipContainerWidget), 20 px under the cursor, moved left at
 the right edge and above the cursor at the bottom; it adds the owner's name
 and colour, the faction flag (css flag chips) and, in sell mode,
-"Refund: $n" for the player's own structures (Sellable). Differences: a
+"Refund: $n" for the player's own structures that can be sold (Sellable:
+`Game.sell_value`, the amount the sale pays; walls say $0). Differences: a
 remembered structure's TooltipDescription follows the owner it was seen
 with (OpenRA reads the live actor's, which tells a capture under the fog);
 mouse bounds of actors without Selectable bounds are their footprint or one
@@ -2529,6 +2908,48 @@ timer in WebRA's observer panel.
 speaker in the HUD button row for as long as all sound is off (ToggleMute or
 the audio settings), in every game; ToggleMute itself writes "Audio muted." or
 "Audio unmuted." as a feedback line (MuteHotkeyLogic).
+
+### Mouse capture, the release key and pausing (`apps/game/js/mouselock.js`, `main.js`)
+
+Mouse capture (Pointer Lock, desktop browsers with a mouse only) follows
+Settings > Capture the mouse (`off`, `fullscreen` default, `always`). One
+model, like cloud gaming services:
+
+- Captured: a short notice at the top, "Mouse captured. Press Option+E to
+  release." with the bound key in the platform's names (Option on macOS;
+  Esc when none is bound), every capture by default; Settings > Mouse
+  captured notice `always` / `first` (the first 3 captures,
+  `extra.mouseCaptureHints` counts them) / `off`. Never on touch screens
+  (no capture there).
+- The release key (`toggleMouseCapture`, rebindable; `RELEASE_MOUSE_KEYS`):
+  Option+E on macOS (matched by `code` KeyE since Option makes a dead key),
+  Alt+Shift+E on Windows and Linux, where Alt+E opens Chrome's and Edge's
+  menu and Firefox's Edit menu (a page cannot reliably hold that back) and
+  Ctrl+Alt+E is AltGr+E (the euro sign on many European layouts); no
+  browser reserves Alt+Shift+E and no OpenRA hotkey has it. While
+  captured releases without the menu: the game plays on, single player is
+  not paused. The game is then detached (`MouseCapture.isDetached()`): Esc
+  still cancels a mode and closes what it closes (the chat, a tip), but
+  where it would open the game menu the HUD shows "Mouse released. Click
+  into the game to capture it again; then Esc opens the menu." instead. A
+  click into the game captures again (no browser cooldown after the key) and
+  ends it; so do a menu or dialog (the Menu button, the end of the game).
+  Where a click would not capture again (capture off, `fullscreen` outside
+  fullscreen, a dialog open) Esc opens the menu as usual. Pressed while
+  released, the key captures (whatever the setting says).
+- Esc while captured releases the mouse and, with "Esc also opens the menu"
+  (default), cancels a mode or opens the menu at once; off, the next Esc
+  does.
+- The browser letting go by itself is Esc, or the focus going to another
+  window (alt-tab, a click on another monitor). The page cannot tell at
+  once (blur may come just after), so `FOCUS_SETTLE_MS` (100 ms) later a
+  window that still has the focus and is shown means Esc. Losing the focus
+  never opens the menu, and nothing else opens it on blur.
+- Settings > "Pause when the game is hidden" (single player, default off):
+  off, a hidden tab or window keeps playing (section 8, "Hidden pages"),
+  sounds of the hidden time are dropped and the music goes on; on, the game
+  menu opens (and so pauses) when the page is hidden. Online games never
+  pause.
 
 ## 6. Deployment
 
@@ -2679,11 +3100,11 @@ Main thread to worker:
 | `t` | Fields | Answer |
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
-| `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours) |
+| `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours, `terrain`: the terrain bytes at the start, so the terrain art and the minimap are made before the first frame (frames carry terrain only when it changed later), `timings { createMs, infoMs }`: the engine's time to make the game, for the performance capture, section 10) |
 | `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
-| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
-| `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances }`, `recycle` | `frame` |
+| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `background` (`[on]`: tick a hidden local game on a timer, see "Hidden pages"; answers whether the timer runs), `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
+| `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances, perf }`, `recycle` | `frame` |
 
 Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
 for the lockstep driver's network messages, `caughtUp`, `check { ok, tick }`),
@@ -2727,7 +3148,13 @@ and heat shimmer instances (`heatCount`, 4 floats each,
 `instances: 'gpu'` (below) it carries tick-rate records and fog instead of
 sprites, rects and fog, only when they changed, plus `instances`, `buildMs`
 (time spent building render data this step) and `renderBytes` (render data
-handed over this step). In a mission it also carries `mission { state,
+handed over this step). Every frame carries `simFrameMs` (the ticks, for
+the debug panel). With `req.perf` (a performance capture records, section
+10) it also carries `tickMaxMs` (the slowest tick of the step; under the
+lockstep driver and in replays, which tick inside, the mean of the step's
+ticks), `queryMs` (the query answers), `stepMs` (the whole step in the
+simulation) and `actors` (actors alive); without it these are null and the
+step reads the clock no more than before. In a mission it also carries `mission { state,
 events }`: `Game.mission_state()` text when a tick ran (else null) and the
 `Game.take_mission_events()` text of the step (null when empty or busy); the
 handles keep the newest state and queue the events (`MissionFeed`).
@@ -2740,6 +3167,26 @@ meanwhile goes with the next step, so the simulation keeps its pace and the
 main thread never waits. Online sends carry the connection epoch they were
 made under; after a reconnect (`reattach`) the main thread drops sends made
 for the old connection.
+
+Hidden pages: a hidden page gets no animation frames, so no `step`. Online,
+`hidden` makes the lockstep driver run frames as they arrive. A local game
+(skirmish, mission, a loaded save; never online, a replay, the stress test
+or a save still loading) that is not paused gets `background [true]` from
+the main thread while the page is hidden and Settings > "Pause when the game
+is hidden" is off (the default; on, the game menu opens and pauses it):
+`SimCore.setBackground` then ticks it on a `setInterval` of `tickMs`, each
+wake advancing by the wall time since the last one, at most
+`BACKGROUND_MAX_MS` (1000) of it (more is dropped: no burst after a
+suspended page). The ticks are the same ticks a frame would run (same
+orders, same state hash; `apps/game/tests/sim.test.mjs`); their sound
+events are dropped, mission events wait for the next frame. `background
+[false]` (shown again, or paused) stops it, as do an engine error (the next
+`step` throws it) and disposing a direct host. In the worker the timer is
+the worker's own, which desktop Chromium browsers and Firefox usually do not
+throttle; in direct mode it is the page's, throttled to about once a second
+(Chrome: once a minute after 5 minutes hidden and silent). Browsers that
+suspend hidden pages (Safari, phones) stop it; the game then stands still
+until shown.
 
 ### Shared frames
 
@@ -2998,8 +3445,8 @@ WebRA's own pixel art (`tools/gen_pixel_art.py` writes
 `js/art/pixel-data.js`, CI checks it is up to date): 8-bit frames at one
 pixel per world pixel on WebRA's own palette with Red Alert's index
 conventions (0 transparent, 4 shadow, 80 to 95 the owner's colour), for
-actors Red Alert has no art for: the oil derrick, the Black Hawk and the
-Mobile Flak. Per actor `PIXEL_ART` holds trimmed frames placed around the
+actors Red Alert has no art for: the oil derrick, the Black Hawk, the
+Mobile Flak and WebRA's own Lightning Rod. Per actor `PIXEL_ART` holds trimmed frames placed around the
 actor's origin and OpenRA-style sequences over them (`start`, `length`,
 `facings` anticlockwise from north in even steps, `tick`) for the `body`
 and `second` slot, the same roles the original art has: the derrick's idle
@@ -3008,7 +3455,10 @@ and its rotor (pose idle the 8 frame slow-rotor on the ground, move the 4
 frame blurred rotor in the air, around the hub over the mast like OpenRA's
 rotor overlay at offset 0), the Mobile Flak's 32 body and 32 turret facings
 (the turret drawn around its pivot at the height of OpenRA's Turreted
-offset -298,0,298). `js/art/pixel.js` `pixelSlots` makes the pose tables
+offset -298,0,298), the Lightning Rod's idle, damaged and 12 frame make
+body (OpenRA ^Building WithMakeAnimation: pose make, played once from the
+age the engine reports for 127 ticks after placement, then idle; the engine
+has no sell animation, so make is never played backwards). `js/art/pixel.js` `pixelSlots` makes the pose tables
 (`content/sequences.js` resolveSequence and `content/atlas.js` poseTable,
 like loaded original sequences; structures centred on the footprint plus
 the building's centre offset), stored at two atlas pixels per world pixel
@@ -3021,7 +3471,8 @@ disc, the turret at `classic_offset` of the Turreted offset's forward part,
 as for original turrets). The muzzle flashes stay the slot's own: Red
 Alert's (`ACTOR_ART` keeps only `muzzle` for these two) with the original
 graphics, WebRA's otherwise. `pixelDraw` and `pixelUnitDraw` paint the idle
-frame (north) for icons, `drawPixelCameo` the 64 x 48 cameo, in its own
+frame (north) for icons (a structure's in `pixelBox`: its footprint, grown
+evenly where the art reaches past it, the Lightning Rod's mast), `drawPixelCameo` the 64 x 48 cameo, in its own
 colours like Red Alert's cameos (the sidebar labels it). Nothing in it
 comes from Westwood's or OpenRA's files. The pack format is in `docs/texture-packs.md`; packs are
 cosmetic and never reach the simulation.
@@ -3039,14 +3490,136 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
-| `order_*`, `sell`, `repair_building`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
+| `order_*`, `sell`, `repair_building`, `repair_buildings`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |
-| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `observer_production`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
+| `pick`, `world_tooltip`, `cursor_action`, `can_guard`, `can_attack_ground`, `can_attack_actor`, `teleport_valid`, `placement_preview`, `sell_value`, `repair_cursor`, `repair_unit_target`, `repair_targets`, `repair_box`, `can_power_down`, `base_actors`, `harvesters`, `production_buildings`, `queue_producer`, `army_counts`, `deploy_state`, `has_minelayer`, `command_state`, `actor_json`, `debug_cells`, `debug_flow`, `debug_actors`, `debug_stats`, `player_json`, `power_timers_json`, `observer_stats`, `observer_production`, `radar_state`, `minimap_blips`, `actor_count`, `fog_bytes`, `deploy_summary` | cursor, footprint preview, command bar and deploy button state, selection panel, sidebar, observer panel, radar, debug views | Synchronous from a cache: each call registers the query, every step asks the queries called in the last 300 ms, the answers come with the frame. Before the first answer a call returns the engine's "nothing" value (`player_json` and `observer_stats`: null, and the caller waits); hover and view queries return the last answer to the same method meanwhile |
 | The same queries plus `select_box`, `select_at`, `select_all`, `select_by_class`, `units_center`, `deploy_targets`, `observer_report`, `move_hint` | clicks, taps, hotkeys (select, order, place, sell, deploy, teleport, centre), the statistics screen, the attack-move tip | `ask.<method>()`: a promise of a fresh answer; the action happens when it arrives |
 
 `deploy_summary` and `deploy_targets` are composite queries run where the
 game is (one message for a whole selection instead of one per actor).
+
+### The map editor's tile worker (`apps/game/editor/js/tiles-worker.js`)
+
+The map editor plans the original graphics' terrain tiles
+(`js/content/terrain.js` `originalTerrain`) in a module worker
+(`editor/js/tiles.js` `TileWorker`); without module workers, or when the
+worker fails, the plans run on the main thread.
+
+| Direction | Message | Meaning |
+|-----------|---------|---------|
+| to the worker | `{ t: 'theater', key, tileset, files: [name, bytes][] }` | The theater to tile with: the installed files `theaterFiles(tileset)` names (palette, templates, trees, smudges, ore and gems), sent once per `key` (art and biome) |
+| to the worker | `{ t: 'plan', id, key, bytes, w, h }` | Tile engine terrain bytes (RGBA per cell, R the type) |
+| from the worker | `{ t: 'planned', id, result }` | `originalTerrain`'s `{ atlas, cells, report }`, or null; the atlas pixels and cells are transferred |
+| from the worker | `{ t: 'failed', id, error }` | The plan failed (the editor keeps WebRA's tiles) |
+
+### Simulation performance (`engine/examples/sim_bench.rs`, `engine/src/profile.rs`)
+
+The simulation is one integer-only tick on one thread; this section is how
+it is measured, where its time goes with very large armies, what keeps it
+fast without changing a result, and why it does not use more cores yet.
+
+**Measuring.** `cargo run -p webra-sim --release --example sim_bench --
+<units> <ticks> [seed] [--window N] [--hashes FILE]` steps the lobby's stress
+test (`World::new_stress`: two armies of soldiers, light and heavy tanks,
+one tank or a pair of soldiers per cell, that attack-move across an open
+map into each other) and prints the average and worst tick per window, the
+units alive, flow fields and route searches, the first tick and the ticks
+after it on their own (median, 95th percentile, worst), a digest of the
+state hashes (every 25 ticks, outside the timed ticks), the final state
+hash and the peak resident memory. With `--features profile` (and `--sections` per
+window) it also prints the time of each system: `profile::scope` timers in
+`World::step` and the hot functions, which compile to nothing without the
+feature (the game never builds it; the feature refuses to build for
+wasm32, where `std::time::Instant` panics). `node tools/sim-tick-bench.mjs <units>
+<ticks>` runs the same scenario on the game's wasm build in node and prints
+the same final state hash as the native run.
+
+**Where the time goes**, 20,000 units over 1,500 ticks, native, before and
+after the changes below (identical state hashes):
+
+| System | Squeezed layout, before | after | Stress test, before | after |
+|--------|------------------------:|------:|--------------------:|------:|
+| Whole tick (average) | 37.6 ms | 28.9 ms | 29.0 ms | 18.1 ms |
+| Idle upkeep (crowded units looking for a free cell) | 15.2 ms | 11.7 ms | 0.2 ms | 0.2 ms |
+| Cell moves | 8.3 ms | 7.3 ms | 18.3 ms | 11.0 ms |
+| of which route searches | 1.2 ms | 1.1 ms | 14.8 ms | 7.9 ms |
+| Target scans | 4.3 ms | 1.4 ms | 5.3 ms | 1.8 ms |
+| Vision | 2.4 ms | 1.4 ms | 1.2 ms | 0.7 ms |
+| Tick start (unit hash, occupancy) | 1.5 ms | 1.3 ms | 0.9 ms | 1.1 ms |
+
+The squeezed layout is the stress test as it was placed before: a tank and
+a soldier in every cell (the type index skipped every other entry of its
+mix), which leaves the whole army crowded under the OpenRA movement model,
+and every idle crowded unit searched ten rings of cells for a free one on
+every tick. The stress test now places one tank or a pair of soldiers per
+cell. There the route searches dominate, and nearly all of them fall in the
+first tick, when every unit of both armies starts its move: 34,500 searches
+expanding 37 million cells at 20,000 units, 6 to 10 s native and 7 to
+8 s in wasm for that one tick in the quieter runs on a busy machine (17 s
+in wasm before). Flow fields (the HUD's count
+is the fields computed since the start, not the fields kept) cost about
+2 % of a tick. The worker's render build (`build_render` with the whole map
+in view) is 1.9 ms per frame at 20,000 units in wasm; the GPU instance path
+builds once per tick instead (section 8, Instance paths).
+
+**What is faster, with the same results.** Each change answers exactly what
+the code answered before; `engine/src/tests_simperf.rs` compares each with
+its plain definition on crowds of both sides, and the state hashes of the
+stress test (2,000 to 20,000 units, 1,500 ticks, every 25 ticks), the
+ai_vs_ai games and the native against the wasm build are identical.
+
+- Sub-cell questions (movement/occupancy.rs `free_sub_cell`, the
+  shared-cell check of `can_enter_cell`, the sub-cell choice of
+  `available_sub_cell` for soldiers) collect the sub-cells a cell's
+  holders take as bits in one pass over the holders, instead of one pass
+  per sub-cell. `can_enter_cell`'s blocking check (when no sub-cell is
+  free) and `available_sub_cell` for units that do not share cells still
+  make their own pass, as before; the blocking rule (`blocked_by`) only
+  looks up what the check needs.
+- A route search (movement/search.rs) asks each cell's can-enter answer
+  and terrain cost once (a search reaches a cell from up to eight
+  neighbours, and nothing moves while it runs), keeps a cell's bookkeeping
+  in one record and reuses its open list.
+- The unit hash (world.rs `rebuild_hash`) keeps the owners of each cell's
+  units as bits, and target scans (combat.rs `scan_for_target`) skip cells
+  without enemies. An owner change or a freed actor slot voids the bits
+  until the next rebuild (scans then look at every cell).
+- Vision (vision.rs) adds each sight circle as row spans to a difference
+  array per player instead of writing every cell of every circle.
+
+**Several cores.** The game page is already cross-origin isolated (COOP
+`same-origin`, COEP `require-corp`, docs/security.md), so
+`SharedArrayBuffer` is there; what is missing is a threaded wasm build and
+work that can run side by side without changing a result.
+
+- Toolchain: wasm threads with wasm-bindgen need the `atomics` and
+  `bulk-memory` target features and a standard library built with them,
+  which only a nightly Rust can do (`-Z build-std`; `wasm-bindgen-rayon`
+  needs the same). The project builds on stable Rust, so this is a
+  decision of its own: a pinned nightly for the wasm build.
+- What could run in parallel unchanged: vision, the unit hash and
+  occupancy rebuild, flow field computations. Together they are under a
+  tenth of a tick (table above), so even with many cores a tick would get
+  at most about 10 % faster. Every unit's activity, movement and target
+  scan runs one unit after another and sees the moves of the units before
+  it (OpenRA's order), which is most of the tick; running them side by side
+  changes what happens.
+- The one large parallel win in sight is the first tick of a huge move
+  order: route searches could run on all cores against the occupancy at the
+  start of the tick, each recording the cells it read, and the sequential
+  pass would take a result only when none of those cells changed before
+  that unit's turn (else it searches again itself). The results stay those
+  of the sequential search, whatever the core count. This needs the
+  threaded build above plus a record of every change to the occupancy
+  table and to the units holding cells.
+- Without isolation or threads (Safari before 15.2, an embed without COEP)
+  the game would keep the single-threaded build it uses now. Moving the
+  render build to another worker or flow fields to separate workers was
+  measured and is not worth it: the render build is about 2 ms per frame
+  with the whole map in view, flow fields about 2 % of a tick, and both
+  would need the world's state in the other worker (a shared, threaded
+  wasm memory again).
 
 ## 9. Campaign missions (`engine/src/mission`, `engine/src/lua`, `apps/game/js/campaign`)
 
@@ -3272,3 +3845,114 @@ clock, and resolves `play` with `played`, `skipped` (click, Esc, Space,
 Enter, `stop`, or another movie), `missing` or `failed`. Presentation only:
 the mission goes on while a movie plays (the engine calls the script's
 callback on the next tick).
+
+## 10. Performance capture (`apps/game/js/perfcapture.js`)
+
+A recording of where a game's time went, saved as a JSON file the player
+sends with a report of a slow game. Started from the debug menu ("Record
+performance", for 10, 30, 60 or 120 seconds: debug setting
+`perfCaptureSeconds`, which takes only these lengths, `PERF_CAPTURE_SECONDS`
+of packages/protocol accounts.js), with `recordPerformance` (Alt+P; again:
+stop and save), or for the first 60 seconds of every game with the debug
+setting `perfCaptureStart` ("Record the start of every game", also on the game
+menu's Settings page). The start-of-game capture begins with the game's first
+frame, so a slow load never uses up its 60 seconds; the loading steps before
+it are in the file's `startup` spans. A capture the player started or stopped
+downloads when it ends; the start-of-game capture waits in the debug menu
+("Download last capture"). Leaving the game (Leave, Exit, Restart, a rematch,
+the next mission) ends a running capture with what it recorded and downloads
+any capture not downloaded yet before the page reloads (`endReason: "left"`);
+closing or reloading the tab itself leaves no time for a download, so a
+capture still in memory is lost then.
+Launching another game ends a running capture first (`"restarted"`, with the
+facts of the game it recorded). Nothing is sent anywhere by the game.
+
+File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
+
+```jsonc
+{
+  "format": "webra-perf", "version": 1,
+  "summary": {                     // first, for a person reading the file
+    "durationMs": 30012, "frames": 1790, "fps": 59.6,
+    "frameMs": { "avg": 16.8, "p50": 16.7, "p95": 18.1, "max": 812.4 },
+    "hitches": { "over50ms": 3, "over100ms": 2, "over250ms": 1 },
+    "worstFrames": [               // the 10 slowest frames and what overlapped them
+      { "t": 1210.5, "frameMs": 812.4, "workMs": 790.1, "stepMs": 0.4, "drawMs": 2.1, "workerMs": 1.2, "ticks": 1, "tickMaxMs": 1.2, "roundTripMs": 6.3, "tick": 3,
+        "during": ["longtask self 795 ms", "terrain.tiles 701 ms"] }
+    ],
+    "time": {                      // where the time went
+      "mainThreadMs": 6100.2, "mainThreadShare": 0.2,
+      "stepMs": { "avg": .., "p50": .., "p95": .., "max": .. },   // also drawMs, gpuMs, gpuDoneMs, workerMs, workerStepMs, tickMaxMs, roundTripMs (null: never measured)
+      "longTasks": { "count": 2, "totalMs": 900 }, "longAnimationFrames": { "count": 4, "totalMs": 1100 },
+      "gcHints": { "count": 3, "freedMB": 40 },
+      "spans": [{ "name": "terrain.tiles", "count": 1, "totalMs": 701, "maxMs": 701 }]   // the 12 largest by total
+    },
+    "startup": { "firstFrameMs": 2410, "slowest": [{ "name": "atlas.sprites", "ms": 640 }] },
+    "findings": ["The game took 2410 ms from launch to its first frame; ..."]   // plain sentences
+  },
+  "privacy": "...",                // what the file holds and leaves out (PRIVACY_NOTE)
+  "capture": { "reason": "manual", "requestedSeconds": 30, "durationMs": 30012, "frames": 1790,
+               "endReason": "time", "maxFrames": 30000, "droppedEvents": 0 },   // reason manual | start; endReason time | full | stopped | left | restarted
+  "build": { "version": "0.13.0" },
+  "environment": { "userAgent": "...", "brands": ["Chromium 140"], "mobile": false, "platform": "macOS", "cores": 8, "deviceMemoryGB": 8,
+                   "devicePixelRatio": 2, "viewport": { "width": 1512, "height": 860 }, "screen": { .. }, "crossOriginIsolated": true,
+                   "observers": ["longtask", "long-animation-frame"], "jsHeapLimitMB": 4096,
+                   "gpu": { "vendor": "apple", "architecture": "metal-3", "device": "", "description": "", "fallbackAdapter": false,
+                            "timestamps": true, "timestampError": null, "maxTextureSize": 16384, "format": "bgra8unorm", "instances": "available" },
+                   "sim": { "mode": "shared", "reason": "..." } },
+  "settings": { "pixelRatioCap": 2, "lowQuality": false, "reduceMotion": "auto", "uiScale": "auto", "gameScale": "auto", "graphics": "original",
+                "healthBars": "off", "showUnitPaths": false, "targetLines": "automatic", "originalContent": true, "instancesParam": null,
+                "instances": { "path": "cpu", "reason": "...", "cpuForced": false } },
+  "game": { "mode": "skirmish", "title": "Example map", "generatedMap": false, "mapWidth": 96, "mapHeight": 96, "biome": "temperate",
+            "players": 2, "ais": 1, "spectating": false, "tickMs": 40, "gameSpeed": "normal",
+            "options": { "seed": 1, "startingCash": 10000, "players": [{ "type": "human", "faction": "england", "team": 0, "difficulty": null, "bot": null }] } },
+  "startup": { "spans": [{ "name": "sim.start", "t": 120.4, "ms": 61.2, "detail": { "kind": "skirmish", "engineMs": 43.8 } }], "dropped": 0 },
+  "frameFields": ["t", "frameMs", "workMs", "stepMs", "drawMs", "gpuMs", "gpuDoneMs", "workerMs", "workerStepMs", "ticks", "tickMaxMs", "buildMs",
+                  "queryMs", "roundTripMs", "uploadKB", "sprites", "tick", "actors", "heapMB", "wasmMB"],
+  "frames": { "t": [16.7, 33.4], "frameMs": [16.7, 16.7], "...": [] },   // one array per field, frame order, 2 decimals, null: none
+  "events": [{ "t": 1220.1, "kind": "span", "name": "terrain.tiles", "ms": 701.2, "detail": { "source": "original", "tiles": 557 } }]
+}
+```
+
+- Times are milliseconds; `t` of frames and events counts from the capture's
+  start (frames: when the frame began), `t` of startup spans from the game's
+  launch. A frame's stall lies between `t - frameMs` and `t`.
+- Frame fields: `frameMs` the time since the previous animation frame,
+  `workMs` the game's own frame callback on the main thread, of which
+  `stepMs` (handing the step to the simulation; in main thread mode the ticks
+  themselves) and `drawMs` (encoding the WebGPU frame); `gpuMs` the render
+  pass on the GPU (timestamp queries, where the adapter has `timestamp-query`),
+  `gpuDoneMs` from the frame's submit until the GPU finished it; `workerMs`
+  (its ticks), `workerStepMs` (its whole step: ticks, queries, render data),
+  `ticks`, `tickMaxMs`, `buildMs`, `queryMs` from the newest simulation frame
+  (0 when no new one came: section 8), `roundTripMs` a step's way to the worker
+  and back, `uploadKB` texture and buffer writes of the frame, `sprites` the
+  CPU path's sprites, `tick`, `actors`, `heapMB` the used JS heap (Chrome's
+  `performance.memory`, every 250 ms, else null) and `wasmMB` the engine's
+  memory.
+- Event kinds: `span` (heavy work, `perfTrace.span`: `content.load`,
+  `sim.host`, `sim.start`, `rules.parse`, `atlas.sprites`, `upload.sprites`,
+  `terrain.tiles`, `atlas.terrain`, `terrain.cells`, `upload.terrain-atlas`,
+  `audio.attach`, `audio.synth`, `audio.decode`, `audio.decode-pack`,
+  `game.setup`, `first-frame`), `longtask` and `loaf` (PerformanceObserver
+  `longtask` and `long-animation-frame` where the browser has them; a `loaf`
+  has `blockingMs`, `renderMs`, `layoutMs` and up to five `scripts { ms,
+  invoker, source, fn, layoutMs }`), `gc-hint` (the heap dropped by 1 MB or
+  more between samples: `freedMB`).
+- The start of every game is traced (spans from the launch to the first drawn
+  frame, at most 64), whether or not a capture runs, and goes into every
+  capture of that game.
+- Bounds: one capture at a time, at most 120 s, 30000 frames (a fuller capture
+  ends with `endReason: "full"`) and 4000 events (`droppedEvents` counts the
+  rest); the frame columns are preallocated.
+- Privacy: no player names (`options.players` keeps type, faction, team and
+  AI only), chat, account, map contents, IP address or location. Script
+  addresses are cut to their path on the game's site; other origins are
+  `other origin`, browser extensions `extension`. The user agent, the GPU
+  adapter facts the browser reports, screen size and the map's title are in
+  it.
+- Off, the capture costs one check per span and the per-frame upload counter;
+  the simulation's capture timings and actor count (`req.perf`, section 8)
+  and GPU timing (js/gputimer.js) run only while recording. GPU timestamps
+  stop for good (their buffers freed) when a readback fails or the device is
+  lost; `environment.gpu.timestampError` says why.

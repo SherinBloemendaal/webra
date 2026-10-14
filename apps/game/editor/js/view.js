@@ -65,6 +65,7 @@ export class EditorView {
     if (biome === this.biome) return;
     this.biome = biome;
     this.tiled = false;
+    this.tileAtlas = null;
     this.renderer.setTerrainAtlas(buildTerrainAtlas(biome));
     this.terrainDirty = true;
   }
@@ -92,12 +93,15 @@ export class EditorView {
     this.renderer.uploadTerrain(b);
     const tiles = tilesFor(b);
     if (tiles) {
-      this.renderer.setTerrainAtlas(tiles.atlas);
+      // The same atlas again (installed tiles planned once, js/tiles.js): no new texture.
+      if (!this.tiled || tiles.atlas !== this.tileAtlas) this.renderer.setTerrainAtlas(tiles.atlas);
+      this.tileAtlas = tiles.atlas;
       this.renderer.uploadCells(tiles.cells);
       this.tiled = true;
     } else {
       if (this.tiled) this.renderer.setTerrainAtlas(buildTerrainAtlas(this.biome ?? 'temperate'));
       this.tiled = false;
+      this.tileAtlas = null;
       this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, terrainSeed(b)));
     }
     this.terrainDirty = false;

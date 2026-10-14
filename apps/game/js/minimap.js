@@ -8,15 +8,18 @@
 // radar it shows a dark panel; jammed or without power it shows static, and
 // it opens and closes with a short animation like Red Alert.
 //
-// Clicks (OpenRA RadarWidget): a click is the click on that spot of the
-// battlefield (js/input.js radarClick), so with units selected it gives the
-// order the battlefield would (move, attack, attack move, Shift waypoints,
-// force move or fire, a support power or sidebar mode on that spot), and the
-// cursor shows that order. Left is the action button, as on the battlefield;
-// the right button gives the units' orders too. A click that is no order there
-// moves the camera, and dragging keeps moving it. Touch: with units selected
-// (or a mode on) a tap gives the order and a drag moves the camera; with
-// nothing selected a touch moves the camera at once, as before.
+// Clicks (OpenRA RadarWidget): the action button (left, as on the
+// battlefield) is a click on that spot of the battlefield (js/input.js
+// radarClick), so with units selected it gives the order the battlefield
+// would (move, attack, attack move, Shift waypoints, force move or fire, a
+// support power or sidebar mode on that spot), and the cursor shows that
+// order; a left click that is no order there moves the camera, and dragging
+// keeps moving it. Any other button (right, middle) only moves the camera
+// and follows a drag, never an order: OpenRA's radar moves the view with
+// every button but the order generator's ActionButton, which is the left
+// one in the Classic mouse style, the only one WebRA has. Touch: with units
+// selected (or a mode on) a tap gives the order and a drag moves the
+// camera; with nothing selected a touch moves the camera at once.
 //
 // Cost: one pixel per cell on a small canvas scaled up by CSS. The picture is
 // rebuilt a few times per second (one pass over the cells plus one per blip);
@@ -294,6 +297,9 @@ export class Minimap {
     this.setLabel(radarLabel(this.state));
 
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // The middle button moves the camera: no autoscroll (Windows) or paste (Linux).
+    this.canvas.addEventListener('mousedown', (e) => e.button === 1 && e.preventDefault());
+    this.canvas.addEventListener('auxclick', (e) => e.button === 1 && e.preventDefault());
     this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
     this.canvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
@@ -344,10 +350,11 @@ export class Minimap {
   }
 
   /**
-   * A button or finger went down. Mouse: the click goes to the battlefield's
-   * order generator at once (left: the action button; right: unit orders);
-   * when it is no order there, the camera moves there and follows a drag.
-   * Touch: see onPointerUp.
+   * A button or finger went down. Mouse: the left button's click goes to
+   * the battlefield's order generator at once; when it is no order there,
+   * the camera moves there and follows a drag. The right and middle buttons
+   * move the camera there and follow a drag, and give no order (OpenRA
+   * RadarWidget: every button but the ActionButton). Touch: see onPointerUp.
    */
   onPointerDown(e) {
     if (!this.usable()) return;
@@ -355,7 +362,7 @@ export class Minimap {
     // One pointer at a time; a second finger or button changes nothing.
     if (this.press) return;
     const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
-    if (!touch && e.button !== 0 && e.button !== 2) return;
+    if (!touch && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
     const press = { id: e.pointerId, w: this.worldAt(e), x: e.clientX, y: e.clientY, touch, panning: false };
     this.press = press;
     this.canvas.setPointerCapture?.(e.pointerId);
@@ -364,9 +371,13 @@ export class Minimap {
       if (!(this.touch?.radarMayOrder() ?? this.input.radarMayOrder())) this.pan(press);
       return;
     }
+    if (e.button !== 0) {
+      this.pan(press);
+      return;
+    }
     const mods = { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey };
     this.input
-      .radarClick(press.w, mods, e.button)
+      .radarClick(press.w, mods)
       .catch((err) => {
         console.warn('radar order:', err);
         return false;
@@ -374,6 +385,11 @@ export class Minimap {
       .then((ordered) => {
         if (!ordered) this.pan(press);
       });
+  }
+
+  /** A button or finger is down on the radar (js/input.js holds edge scrolling meanwhile). */
+  isPressed() {
+    return !!this.press;
   }
 
   /** Move the camera to the press's spot; it follows the pointer from then on while it is down. */
@@ -403,7 +419,7 @@ export class Minimap {
     if (!press || press.id !== e.pointerId) return;
     this.press = null;
     if (!press.touch || press.panning || !this.usable()) return;
-    const tap = this.touch ? this.touch.radarTap(press.w) : this.input.radarClick(press.w, {}, 0);
+    const tap = this.touch ? this.touch.radarTap(press.w) : this.input.radarClick(press.w, {});
     tap
       .catch((err) => {
         console.warn('radar order:', err);

@@ -2,26 +2,18 @@
    screen, the sign-in dialog and the settings conflict choice. Shares the
    look of the other dialogs (css/audio.css, menu-card). */
 
+/* In the start screen's main menu (index.html #start-nav, css/startmenu.css). */
 #account-entry {
-  position: fixed;
-  left: max(8px, env(safe-area-inset-left));
-  top: max(8px, env(safe-area-inset-top));
-  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: min(360px, calc(100% - 200px));
+  max-width: 360px;
+  min-width: 0;
   font: var(--ui-fs-m) / 1.4 var(--ui-font);
   color: var(--ui-text);
 }
 
 #account-entry[hidden] {
-  display: none;
-}
-
-/* Only on the start screen: the game and the online page have their own. */
-#app:not([hidden]) ~ #account-entry,
-#online-root:not([hidden]) ~ #account-entry {
   display: none;
 }
 
@@ -203,10 +195,6 @@
 }
 
 @media (pointer: coarse), (max-width: 600px) {
-  #account-entry {
-    max-width: calc(100% - 170px);
-  }
-
   .account-row button {
     min-height: 44px;
   }

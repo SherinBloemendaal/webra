@@ -140,7 +140,7 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
     game: { edgeScrollSpeed: 1.5, keyScrollSpeed: 0.5, showUnitPaths: true, pixelRatioCap: 1, lowQuality: false, uiScale: 0.85, gameScale: 'auto', healthBars: 'damaged', graphics: 'original', hotkeys: { attackMove: ['A', 'Ctrl+Shift+F1'], stop: [] } },
     audio: { enabled: true, master: 0.5, effects: 1, voices: 0, music: 0.3, speech: false, original: true, musicOn: true, musicShuffle: false, musicRepeat: 'off' },
     content: { packs: [{ id: 'desert tiles|someone', enabled: true }, { id: 'hd units|other', enabled: false }] },
-    debug: { cells: true, stats: true, cpuInstances: false },
+    debug: { cells: true, stats: true, cpuInstances: false, perfCaptureSeconds: 60, perfCaptureStart: true },
     lobby: { name: 'Commander', faction: 'randomsoviet', color: 3, lastOptions: { mapSize: 96, startingCash: 5000, players: [{ slot: 0, type: 'human' }] } },
     releaseNotes: { lastSeenVersion: '0.6.0' },
     extra: { future: { nested: [1, 'two', null] } },
@@ -169,6 +169,8 @@ test('settings document: validation, ETag and If-Match, conflicts from two devic
   await invalid({ game: { uiScale: 0.25 } }, 'settings.game.uiScale');
   await invalid({ game: { gameScale: 'big' } }, 'settings.game.gameScale');
   await invalid({ audio: { musicRepeat: 'twice' } }, 'settings.audio.musicRepeat');
+  await invalid({ debug: { perfCaptureSeconds: 5 } }, 'settings.debug.perfCaptureSeconds');
+  await invalid({ debug: { perfCaptureStart: 1 } }, 'settings.debug.perfCaptureStart');
   await invalid({ game: { healthBars: 'some' } }, 'settings.game.healthBars');
   await invalid({ game: { fly: true } }, 'settings.game.fly');
   await invalid({ cheats: {} }, 'settings.cheats');

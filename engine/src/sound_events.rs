@@ -47,7 +47,8 @@ pub enum SoundEventKind {
     UnitProduced = 5,
     /// a = actor type of a structure placed by its owner.
     BuildingPlaced = 6,
-    /// a = actor type of a structure sold.
+    /// a = actor type of a structure sold; b = the refund paid (the client
+    /// floats it for the seller's allies, OpenRA Sell activity ShowTicks).
     Sold = 7,
     /// Production stalled for lack of money; a = actor type being built.
     InsufficientFunds = 8,
@@ -175,6 +176,11 @@ pub enum SoundEventKind {
     /// `owner` won (OpenRA ConquestVictoryConditions.OnPlayerWon: the
     /// "player is victorious" line), one event per winning player.
     PlayerWon = 47,
+    /// A thunderstorm's lightning struck (WebRA, lightning.rs): one event per
+    /// struck actor, at it; a = its type, owner = its owner, b = the
+    /// `StrikeKind` (2: a unit or structure, 3: a power plant, its owner's
+    /// power is out; 1: grounded on a Lightning Rod, a = the rod's type).
+    LightningStrike = 48,
     /// A move order of `owner`'s unit ended short of its goal because the
     /// way stayed blocked (movement/cellmove.rs `note_route_blocked`), at the
     /// unit; a = actor type. WebRA addition (OpenRA gives no feedback), at

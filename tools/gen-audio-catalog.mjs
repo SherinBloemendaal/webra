@@ -104,6 +104,12 @@ const loadYaml = (path) => parseMiniYaml(readFileSync(path, 'utf8'));
 const ruleFiles = readdirSync(`${SOURCE}rules`).filter((f) => f.endsWith('.yaml')).sort();
 const defs = {};
 for (const f of ruleFiles) Object.assign(defs, loadYaml(`${SOURCE}rules/${f}`));
+// WebRA's own actors (data/webra/rules.yaml, tools/gen_rules.py WEBRA_ACTORS)
+// inherit OpenRA's templates, so their sounds (the death explosion, building
+// placement, selling) are OpenRA's too.
+const webraDefs = loadYaml(`${root}data/webra/rules.yaml`);
+const webraActors = Object.keys(webraDefs).filter((n) => !n.startsWith('^')).sort();
+Object.assign(defs, webraDefs);
 const rules = resolveAll(defs);
 const actorRules = Object.fromEntries(
   Object.entries(rules)
@@ -529,7 +535,7 @@ const worldNotifications = compact({
  * (catalog.js `openra`) instead of playing WebRA's own sound.
  */
 const openraWeapons = Object.keys(weapons).sort();
-const openraActors = Object.keys(actorRules).sort();
+const openraActors = Object.keys(actorRules).filter((n) => !webraActors.includes(n)).sort();
 /**
  * Sound files OpenRA made and ships itself (data/source/bits.txt, mods/ra/bits):
  * a player's copy of Red Alert never has them ("Battle control online",
@@ -583,6 +589,9 @@ export const OPENRA_WEAPONS = ${JSON.stringify(openraWeapons)};
 
 /** Every actor of OpenRA's rules (data/source/rules), sounds or not. */
 export const OPENRA_ACTORS = ${JSON.stringify(openraActors)};
+
+/** WebRA's own actors (data/webra/rules.yaml): built on OpenRA's templates, their sounds are OpenRA's. */
+export const WEBRA_ACTORS = ${JSON.stringify(webraActors)};
 
 /** Sound files OpenRA made itself (data/source/bits.txt): no copy of Red Alert has them. */
 export const OPENRA_MADE_SOUNDS = ${json(openraMadeSounds)};

@@ -33,6 +33,7 @@ import {
   SLOT_TYPES,
   BOT_TYPES,
   TEAMS,
+  TEAM_COUNT,
   FACTION_GROUPS,
   FACTIONS,
   randomSeed,
@@ -73,6 +74,9 @@ import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
 import { switchInput } from './ui/controls.js';
 import { mapLibrary } from './maplibrary.js';
 import { attachTooltip } from './ui/tooltip.js';
+import { applyBulk, planBulk } from './lobby-bulk.js';
+import { BulkBar } from './lobby-bulkbar.js';
+import { StalePreview, previewKey } from './mappreview.js';
 
 // Game option rows: the key in options (also its help text in js/help.js),
 // its label and choices. Map style, biome, tech buildings and weather are the
@@ -99,6 +103,7 @@ export const HELP_KEYS = [
   'team',
   'handicap',
   'spawn',
+  'bulk',
 ];
 
 let uid = 0;
@@ -377,10 +382,10 @@ export class Lobby {
    *   },
    *   mapPreview?: (seed: number, size: number) => Uint8Array,
    *   lens?: () => import('./maplens/lens.js').MapLens,  a magnifier over the preview (js/maplens)
+   *   previews?: import('./mappreview.js').GeneratedPreviews,  generated maps made off the main thread
+   *   reducedMotion?: () => boolean,  the "Reduce motion" setting (the loader then stands still)
    *   onStart: (options: object) => void,
    *   onStress: (opts: {seed: number, units: number}) => void,
-   *   onCampaign?: () => void,  open the campaign screen
-   *   onReleaseNotes?: () => void,
    * }} config `maps` gives player-count previews and map files; without it
    *   only `mapPreview` (two players) is used and map files are unavailable.
    */
@@ -391,10 +396,12 @@ export class Lobby {
     this.maps = config.maps || null;
     this.legacyPreview = config.mapPreview || null;
     this.lens = config.lens?.() ?? null;
+    this.previews = config.previews ?? null;
+    this.reducedMotion = config.reducedMotion ?? null;
+    /** A generated map is being made (js/mappreview.js): New seed and Start game wait. */
+    this.previewBusy = false;
     this.onStart = config.onStart;
     this.onStress = config.onStress;
-    this.onCampaign = config.onCampaign ?? null;
-    this.onReleaseNotes = config.onReleaseNotes || null;
     this.blocked = false;
     this.previewFrame = 0;
     this.spawnCache = { key: '', cells: [] };
@@ -444,6 +451,19 @@ export class Lobby {
   /** The current setup in the shape onStart receives. */
   getOptions() {
     return buildOptions(this.state, this.mapFile ? this.mapFile.json : null);
+  }
+
+  /**
+   * Show the stress test controls (the start screen's More menu): the unit
+   * count and its start button, hidden again with their Close button.
+   */
+  openStress() {
+    this.stressBox.hidden = false;
+    this.unitsInput.focus();
+  }
+
+  closeStress() {
+    this.stressBox.hidden = true;
   }
 
   // ---- Map files ---------------------------------------------------------------
@@ -602,6 +622,24 @@ export class Lobby {
       .catch((err) => console.warn('Map library:', err?.message ?? err));
   }
 
+  /**
+   * Unload the map file: the lobby goes back to the generated map with the
+   * generator settings and seed it had before the file came (they are kept
+   * while a file is loaded), and forgets the file (it stays in the map
+   * library). The slots stay as they are. The spawn picks clear with the
+   * battlefield, as on every map change.
+   */
+  unloadMap() {
+    this.mapFile = null;
+    this.pendingMap = null;
+    this.importReport = null;
+    this.mapErrors = [];
+    writeJson(MAP_STORAGE_KEY, null);
+    this.state.mapSource = 'random';
+    this.renderAll();
+    this.sourceBtns.file.focus();
+  }
+
   setMapSource(source) {
     if (source !== 'file') this.importReport = null;
     if (source === 'file' && !this.mapFile) {
@@ -620,21 +658,15 @@ export class Lobby {
     this.root.textContent = '';
     const lobby = el('div', 'lobby');
 
-    // Title bar.
+    // Title bar: the screen's name (the WebRA name and the other screens
+    // are in the start screen's main menu, index.html #start-nav).
     const head = el('header', 'lobby-head');
-    const h1 = el('h1', 'lobby-logo', 'WEB');
-    h1.append(el('span', null, 'RA'));
-    const tag = el('p', 'lobby-tagline', 'Skirmish lobby. Pick your side, set the battlefield and deploy.');
-    head.append(h1, tag);
-    if (this.onReleaseNotes) {
-      // A text button after the tagline: the top right corner belongs to "Play online".
-      const notes = el('button', 'lobby-notes', 'Release notes');
-      notes.type = 'button';
-      notes.title = 'What changed in each WebRA version';
-      notes.setAttribute('aria-haspopup', 'dialog');
-      notes.addEventListener('click', () => this.onReleaseNotes());
-      head.append(notes);
-    }
+    const title = el('h2', 'lobby-title', 'Skirmish');
+    title.id = 'lobby-title';
+    title.tabIndex = -1;
+    const tag = el('p', 'lobby-tagline', 'Pick your side, set the battlefield and deploy.');
+    head.append(title, tag);
+    lobby.setAttribute('aria-labelledby', title.id);
 
     // Error banner.
     this.errorBox = el('div', 'lobby-error');
@@ -705,8 +737,12 @@ export class Lobby {
     this.ctx = this.canvas.getContext('2d');
     this.markers = el('div', 'lobby-markers');
     this.previewFail = el('div', 'lobby-preview-fail', 'Preview unavailable');
+    // While a generated map is made: the preview says so (setPreviewBusy).
+    this.previewLoading = el('div', 'lobby-preview-loading', 'Generating the map...');
+    this.previewLoading.hidden = true;
+    this.previewFrame$ = frame;
     this.previewFail.hidden = true;
-    frame.append(this.canvas, this.markers, this.previewFail);
+    frame.append(this.canvas, this.markers, this.previewFail, this.previewLoading);
     this.lens?.attach(frame, this.canvas);
     // The start positions: click one to start there (js/spawnpick.js).
     this.spawnLayer = new SpawnMarkers(this.markers, { lens: this.lens, onPick: (a) => this.pickSpawn(a) });
@@ -777,6 +813,8 @@ export class Lobby {
     die.setAttribute('aria-hidden', 'true');
     this.diceBtn.append(die, el('span', 'lobby-dice-text', 'New seed'));
     this.diceBtn.addEventListener('click', () => {
+      // The loader shows at once; the map is made off the main thread (drawPreview).
+      if (this.previews) this.setPreviewBusy(true);
       this.state.seed = randomSeed();
       this.renderSeed();
       this.renderCaption();
@@ -835,8 +873,14 @@ export class Lobby {
     this.importBox.setAttribute('aria-live', 'polite');
     this.importBox.hidden = true;
 
+    // Back to the generated map (unloadMap).
+    this.unloadBtn = el('button', 'lobby-btn', 'Unload map');
+    this.unloadBtn.type = 'button';
+    this.unloadBtn.title = 'Go back to the generated map and its seed';
+    this.unloadBtn.addEventListener('click', () => this.unloadMap());
+
     const fileRow = el('div', 'lobby-file-row');
-    fileRow.append(this.loadBtn, this.fileInput);
+    fileRow.append(this.loadBtn, this.unloadBtn, this.fileInput);
 
     const fields = el('div', 'lobby-fields');
     this.sizeField = this.field('Map size', this.mapSizeSelect, 'mapSize');
@@ -854,7 +898,11 @@ export class Lobby {
       this.techField,
       this.field('Weather', this.weatherSelect, 'weather'),
     );
-    fields.append(this.sizeField, this.fileField, world, this.field('Seed', seedRow, 'seed', this.seedInput));
+    // The seed makes the generated map, so it hides with the other generator
+    // fields while a map file is in use; a game on a map file gets a new
+    // seed of its own for its random events (start).
+    this.seedField = this.field('Seed', seedRow, 'seed', this.seedInput);
+    fields.append(this.sizeField, this.fileField, world, this.seedField);
 
     content.append(source, frame, this.caption, this.mapInfo, this.moddedBox, this.mapErrorList, this.importBox, fields);
     return section;
@@ -868,6 +916,13 @@ export class Lobby {
 
   buildPlayersPanel() {
     const { section, content } = this.panel('Players', 'lobby-players');
+    // Bulk edit (js/lobby-bulkbar.js): select rows, apply one action to them.
+    this.bulk = new BulkBar({
+      context: 'skirmish',
+      selectClass: 'lobby-select',
+      buttonClass: 'lobby-btn',
+      onApply: (id, selected) => this.applyBulk(id, selected),
+    });
     this.slotTable = el('div', 'lobby-slots');
     this.slotTable.setAttribute('role', 'table');
     this.slotTable.setAttribute('aria-label', 'Player slots');
@@ -903,10 +958,31 @@ export class Lobby {
     });
     this.slotHint = el('span', 'lobby-muted lobby-slot-hint');
     const foot = el('div', 'lobby-slots-foot');
-    foot.append(this.addBtn, this.slotHint);
+    foot.append(this.addBtn, this.bulk.toggleBox, this.slotHint);
 
-    content.append(this.slotTable, foot);
+    content.append(this.bulk.root, this.slotTable, foot);
     return section;
+  }
+
+  /** The slots as js/lobby-bulk.js sees them: the map file's locks and which one is you. */
+  bulkSlots() {
+    const setup = this.mapFile?.info.setup ?? null;
+    return this.state.players.map((p, k) => ({
+      ...p,
+      you: p.type === 'human',
+      locked: ['team', 'faction', 'color', 'type'].filter((part) => slotLockedBy(this.state, setup, k, part)),
+    }));
+  }
+
+  /** Apply bulk action `id` to the selected rows (all rows when none is). */
+  applyBulk(id, selected) {
+    const limit = this.spawnLimit();
+    const plan = planBulk(this.bulkSlots(), id, { context: 'skirmish', selected, colorCount: this.colors.length, teamMax: TEAM_COUNT, maxActive: limit, maxRows: MAX_SLOTS });
+    if (plan.error) return plan;
+    const refused = applyBulk(this.state, plan, { colorCount: this.colors.length, maxActive: limit, addRow: () => addSlot(this.state, this.colors.length, limit) });
+    if (refused) return { error: refused };
+    this.afterPlayerCountChange();
+    return plan;
   }
 
   /** (Re)build every slot row; slots come and go, so rows are not kept. */
@@ -916,8 +992,10 @@ export class Lobby {
     this.pickers = [];
     this.slotRows = [];
     this.slotTable.append(this.slotHead);
+    this.bulk.begin(this.state.players.length, { teamMax: TEAM_COUNT, players: activeCount(this.state) });
     this.state.players.forEach((p, slot) => this.slotTable.append(this.buildSlot(p, slot)));
     this.state.players.forEach((_, slot) => this.renderSlot(slot));
+    this.bulk.sync();
     const limit = this.spawnLimit();
     this.addBtn.disabled = !canAddSlot(this.state, limit);
     const n = activeCount(this.state);
@@ -946,6 +1024,7 @@ export class Lobby {
     const cellPlayer = cell('lobby-cell-player', 'Player');
     const who = el('div', 'lobby-who');
     cellPlayer.append(el('span', 'lobby-badge', `P${slot + 1}`), who);
+    this.bulk.decorate(row, cellPlayer, slot, `player ${slot + 1}`);
     if (player.type === 'human') {
       const name = el('input', 'lobby-input lobby-name');
       name.type = 'text';
@@ -1165,8 +1244,13 @@ export class Lobby {
   buildBar() {
     const bar = el('footer', 'lobby-bar');
 
+    // The stress test: hidden until the main menu's More, Stress test opens it (openStress).
     const stress = el('div', 'lobby-stress');
+    stress.hidden = true;
+    stress.setAttribute('role', 'group');
+    stress.setAttribute('aria-label', 'Stress test');
     stress.title = 'Spawns a large number of units on the current seed to measure performance.';
+    this.stressBox = stress;
     const label = el('span', 'lobby-stress-label', 'Stress test');
     this.unitsInput = el('input', 'lobby-input lobby-units');
     this.unitsInput.type = 'number';
@@ -1195,24 +1279,20 @@ export class Lobby {
     this.stressBtn = el('button', 'lobby-btn lobby-btn-secondary', 'Start stress test');
     this.stressBtn.type = 'button';
     this.stressBtn.addEventListener('click', () => this.stress());
-    stress.append(label, unitsField, this.stressBtn);
+    const stressClose = el('button', 'lobby-btn', 'Close');
+    stressClose.type = 'button';
+    stressClose.setAttribute('aria-label', 'Close the stress test');
+    stressClose.addEventListener('click', () => this.closeStress());
+    stress.append(label, unitsField, this.stressBtn, stressClose);
 
     const go = el('div', 'lobby-go');
     this.problemText = el('p', 'lobby-problem');
     this.problemText.setAttribute('role', 'status');
-    // The campaign's mission browser (js/campaign/menu.js).
-    let campaign = null;
-    if (this.onCampaign) {
-      campaign = el('button', 'lobby-btn lobby-btn-secondary', 'Campaign');
-      campaign.type = 'button';
-      campaign.title = 'Play the Allied and Soviet campaigns and the expansion missions';
-      campaign.addEventListener('click', () => this.onCampaign());
-    }
     this.startBtn = el('button', 'lobby-btn lobby-btn-primary', 'Start game');
     this.startBtn.type = 'button';
     this.startBtn.title = 'Start the skirmish (Enter)';
     this.startBtn.addEventListener('click', () => this.start());
-    go.append(this.problemText, ...(campaign ? [campaign] : []), this.startBtn);
+    go.append(this.problemText, this.startBtn);
 
     bar.append(stress, go);
     return bar;
@@ -1284,10 +1364,13 @@ export class Lobby {
     this.styleField.hidden = file;
     this.biomeField.hidden = file;
     this.techField.hidden = file;
+    this.seedField.hidden = file;
     this.styleSelect.value = this.state.mapStyle;
     this.biomeSelect.value = this.state.biome;
     this.techSelect.value = this.state.techBuildings;
     this.fileField.hidden = !file && !this.pendingMap;
+    this.unloadBtn.hidden = !this.mapFile;
+    this.loadBtn.textContent = this.mapFile ? 'Load another map' : 'Load map file';
 
     this.mapInfo.textContent = '';
     this.mapInfo.hidden = !file || !this.mapFile;
@@ -1431,15 +1514,61 @@ export class Lobby {
   /** Show why the game cannot start (or a one-off message), and gate the start button. */
   renderProblem(message) {
     const problem = startProblem(this.state, this.mapFileStatus());
-    this.problemText.textContent = message || problem || '';
-    if (!this.blocked) this.startBtn.disabled = Boolean(problem);
+    this.problemText.textContent = message || problem || (this.previewBusy ? 'Generating the map...' : '');
+    if (!this.blocked) this.startBtn.disabled = Boolean(problem) || this.previewBusy;
+  }
+
+  /**
+   * A generated map is being made, or is ready: the New seed button shows a
+   * loader (disabled, aria-busy; the die turns unless motion is reduced),
+   * the preview says it is generating and Start game waits.
+   */
+  setPreviewBusy(on) {
+    if (this.previewBusy === on) return;
+    this.previewBusy = on;
+    const still = on && !!this.reducedMotion?.();
+    this.diceBtn.disabled = on;
+    this.diceBtn.setAttribute('aria-busy', String(on));
+    this.diceBtn.classList.toggle('is-busy', on);
+    this.diceBtn.classList.toggle('is-still', still);
+    this.diceBtn.querySelector('.lobby-dice-text').textContent = on ? 'Generating...' : 'New seed';
+    this.previewFrame$.classList.toggle('is-busy', on);
+    this.previewFrame$.setAttribute('aria-busy', String(on));
+    this.previewLoading.hidden = !on;
+    this.renderProblem();
+  }
+
+  /**
+   * Make the generated map of `req` (js/mappreview.js), then draw it, unless
+   * the lobby moved on to another one meanwhile (latest wins).
+   */
+  awaitPreview(req) {
+    const key = previewKey(req);
+    this.previewWant = key;
+    this.setPreviewBusy(true);
+    // The markers of the last map would name places on another map: none until it is ready.
+    this.renderMarkers([], this.canvas.width, this.canvas.height);
+    this.previews.request(req).then(
+      () => {
+        if (this.previewWant === key) this.drawPreview();
+      },
+      (err) => {
+        if (err instanceof StalePreview || this.previewWant !== key) return;
+        console.error('Lobby map preview failed:', err);
+        this.previewWant = null;
+        this.setPreviewBusy(false);
+        this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.previewFail.hidden = false;
+        this.lens?.clearSource();
+      },
+    );
   }
 
   renderCaption() {
     let text;
     if (this.state.mapSource === 'file' && this.mapFile) {
       const i = this.mapFile.info;
-      text = `${i.name}, ${i.width} x ${i.height}, seed ${this.state.seed}`;
+      text = `${i.name}, ${i.width} x ${i.height}`;
     } else {
       const m = MAP_SIZES.find((x) => x.value === this.state.mapSize);
       // Random style and biome: name what the seed picks.
@@ -1480,7 +1609,17 @@ export class Lobby {
         spawns = this.mapFile.info.spawnCells;
       } else {
         width = height = this.state.mapSize;
-        if (this.maps) {
+        if (this.previews) {
+          // Made off the main thread; drawn when ready (awaitPreview).
+          const req = { seed: this.state.seed, size: width, players: n, style: this.state.mapStyle, biome: this.state.biome };
+          const got = this.previews.get(req);
+          if (!got) {
+            this.awaitPreview(req);
+            return;
+          }
+          data = got.rgba;
+          spawns = got.spawns;
+        } else if (this.maps) {
           data = this.maps.preview(this.state.seed, width, n, this.state.mapStyle, this.state.biome);
           spawns = this.generatedSpawns(this.state.seed, width, n, this.state.mapStyle);
         } else {
@@ -1497,7 +1636,11 @@ export class Lobby {
       // Copy: the source may be a view into wasm memory that can move.
       this.ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
       this.previewFail.hidden = true;
+      this.previewWant = null;
+      this.setPreviewBusy(false);
     } catch (err) {
+      this.previewWant = null;
+      this.setPreviewBusy(false);
       console.error('Lobby map preview failed:', err);
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.previewFail.hidden = false;
@@ -1583,7 +1726,8 @@ export class Lobby {
 
   start() {
     if (this.blocked || this.startBtn.disabled) return;
-    if (!this.commitSeed()) return;
+    // The seed field shows (and counts) only for a generated map.
+    if (this.state.mapSource !== 'file' && !this.commitSeed()) return;
     const human = this.slotRows.find((r) => r.name);
     if (human) {
       const slot = this.slotRows.indexOf(human);
@@ -1597,6 +1741,11 @@ export class Lobby {
     }
     this.closePickers(null);
     const options = this.getOptions();
+    // A map file: the engine still draws crates, random factions, the AI and
+    // the weather from the seed, and the hidden generator seed must not
+    // decide them game after game. Each start gets a new one (the replay,
+    // saves and Restart keep it); the lobby keeps its seed for the generated map.
+    if (this.state.mapSource === 'file') options.seed = randomSeed();
     this.persist();
     this.onStart(options);
   }
@@ -1626,6 +1775,8 @@ export class Lobby {
     if (!onPage) return;
     // Buttons handle Enter themselves; an open colour list picks a colour.
     if (t instanceof HTMLButtonElement || t instanceof HTMLTextAreaElement) return;
+    // A bulk edit checkbox selects rows; Enter there must not start the game.
+    if (t?.classList?.contains('bulk-pick')) return;
     if (this.pickers.some((p) => p.open)) return;
     e.preventDefault();
     this.start();

@@ -23,7 +23,7 @@ import { buildTerrainAtlas, cellTiles, terrainSeed, TILES } from '../js/art/terr
 import { MODE, POSE, packSprite } from '../js/content/sequences.js';
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, baseZoom, gameScaleFor, zoomLimits } from '../js/scale.js';
 import { CELL_PX, TerrainRaster, frameQuad, hash2, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
-import { HOLD_CLICK_MS, HOLD_MS, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensPlacement, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
+import { HOLD_CLICK_MS, HOLD_MS, LENS_MAX_VIEW_CELLS, LENS_MIN_ZOOM, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensHint, lensPlacement, lensZoomLimits, magnifyHeld, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
 import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, runSteps, teamColors } from '../js/maplens/source.js';
 import { createMap, encodeBase64, TERRAIN } from '../editor/js/mapformat.js';
 
@@ -315,7 +315,7 @@ function fakeContext(canvas) {
 }
 
 /** A page: a fake DOM with canvases, a window with a manual frame clock and timers, and a preview to put a lens on. */
-function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width: 200, height: 120 }, objectFit = 'fill', idleCallbacks = false } = {}) {
+function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width: 200, height: 120 }, objectFit = 'fill', idleCallbacks = false, lensSize = 176 } = {}) {
   const doc = installDom();
   const create = doc.createElement.bind(doc);
   const placed = [];
@@ -329,7 +329,7 @@ function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width
       const props = {};
       el.style = { setProperty: (k, v) => ((props[k] = v), placed.push([k, v])), props };
     }
-    el.getBoundingClientRect = () => ({ left: 0, top: 0, right: 176, bottom: 176, width: 176, height: 176 });
+    el.getBoundingClientRect = () => ({ left: 0, top: 0, right: lensSize, bottom: lensSize, width: lensSize, height: lensSize });
     return el;
   };
   const frames = [];
@@ -342,8 +342,19 @@ function page({ mapW = 20, mapH = 12, previewRect = { left: 100, top: 100, width
     cancelAnimationFrame: () => {},
     setTimeout: (fn, ms) => timers.push({ fn, ms }) && timers.length,
     clearTimeout: (id) => id && timers[id - 1] && (timers[id - 1].fn = null),
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    listeners: {},
+    addEventListener(type, fn) {
+      (this.listeners[type] ??= new Set()).add(fn);
+    },
+    removeEventListener(type, fn) {
+      this.listeners[type]?.delete(fn);
+    },
+    /** A window event (keys, blur) to every listener. */
+    dispatch(type, init = {}) {
+      const e = new FakeEvent(type, init);
+      for (const fn of this.listeners[type] ?? []) fn(e);
+      return e;
+    },
     getComputedStyle: (el) => (el.localName === 'canvas' ? { ...NO_BORDER, objectFit } : { fontFamily: 'Impact' }),
   };
   const frame = doc.createElement('div');
@@ -411,12 +422,13 @@ function syntheticMap(w = 20, h = 12, version = 0) {
   };
 }
 
-const pointer = (type, x, y, extra = {}) => new FakeEvent(type, { clientX: x, clientY: y, pointerType: 'mouse', pointerId: 1, ...extra });
+/** A pointer event; a mouse holds the magnify key (Ctrl) unless `extra` says otherwise. */
+const pointer = (type, x, y, extra = {}) => new FakeEvent(type, { clientX: x, clientY: y, pointerType: 'mouse', pointerId: 1, ctrlKey: true, metaKey: false, ...extra });
 
 function lensOn(p, opts = {}) {
   const art = { version: 0, listeners: new Set(), onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); } };
   let clock = 0;
-  const lens = new MapLens({ art, doc: p.doc, win: p.win, now: () => clock, ...opts });
+  const lens = new MapLens({ art, doc: p.doc, win: p.win, now: () => clock, mac: false, ...opts });
   lens.attach(p.frame, p.preview);
   return { lens, art, tick: (ms) => (clock += ms) };
 }
@@ -549,10 +561,186 @@ test('mouse wheel zooms the lens only while it shows after a pointer move, and l
   assert.ok(lens.zoom() > DEFAULT_ZOOM * LENS_START_FACTOR);
   for (let i = 0; i < 100; i++) wheel(-100);
   assert.equal(lens.zoom(), MAX_ZOOM);
-  assert.equal(wheel(-100), false, 'at the limit the wheel is the page\'s again');
+  assert.equal(wheel(-100), true, 'at the limit the wheel stays the lens\'s: Ctrl + wheel would zoom the page');
+  assert.equal(lens.zoom(), MAX_ZOOM);
+  // Out further than a game: down to LENS_MIN_ZOOM, half the game's MIN_ZOOM.
+  for (let i = 0; i < 200; i++) wheel(100);
+  assert.equal(lens.zoom(), LENS_MIN_ZOOM);
+  assert.ok(lens.zoom() < MIN_ZOOM, 'below the game\'s own limit');
   assert.equal(wheel(100), true);
+  assert.equal(lens.zoom(), LENS_MIN_ZOOM);
+  // Ctrl released: the lens hides and the wheel scrolls the page.
+  p.win.dispatch('keyup', { key: 'Control', ctrlKey: false });
+  assert.equal(wheel(-100), false, 'no key: the page scrolls');
+  assert.equal(lens.zoom(), LENS_MIN_ZOOM);
+  p.win.dispatch('keydown', { key: 'Control', ctrlKey: true });
+  assert.equal(wheel(-100), true);
   p.frame.dispatchEvent(pointer('pointerleave', 0, 0));
   assert.equal(wheel(100), false, 'hidden again: the page scrolls');
+});
+
+test('lensZoomLimits: out to LENS_MIN_ZOOM, in to the game\'s MAX_ZOOM, both with the game scale', () => {
+  assert.deepEqual(lensZoomLimits(1), { min: LENS_MIN_ZOOM, max: MAX_ZOOM });
+  assert.deepEqual(lensZoomLimits(2), { min: 2 * LENS_MIN_ZOOM, max: 2 * MAX_ZOOM });
+  assert.equal(LENS_MIN_ZOOM, MIN_ZOOM / 2);
+  assert.ok(LENS_MIN_ZOOM < DEFAULT_ZOOM * LENS_START_FACTOR, 'the start leaves room to zoom out');
+  // A 176 px lens at the lowest zoom: about 29 cells across, within the tile cache (64 tiles of 8 x 8 cells).
+  assert.deepEqual(lensZoomLimits(1, 176), { min: LENS_MIN_ZOOM, max: MAX_ZOOM });
+  const cells = 176 / LENS_MIN_ZOOM / CELL_PX;
+  assert.ok(cells > 29 && cells < 30, `${cells} cells`);
+});
+
+test('lensZoomLimits: a lens never spans more than LENS_MAX_VIEW_CELLS, whatever the UI and game scales', () => {
+  // [UI scale (the lens's size), game scale (the zoom)]
+  for (const [ui, game] of [[1, 1], [1.3, 2 / 3], [2, 0.5], [2, 0.25], [0.75, 2], [1, 0.5]]) {
+    const size = 176 * ui;
+    const { min, max } = lensZoomLimits(game, size);
+    assert.ok(min <= max);
+    assert.ok(min >= LENS_MIN_ZOOM * game - 1e-12, 'never below the plain limit');
+    const across = size / min / CELL_PX;
+    assert.ok(across <= LENS_MAX_VIEW_CELLS + 1e-9, `UI ${ui} / game ${game}: ${across.toFixed(1)} cells across`);
+    // Wherever it is on a 160 map, one view needs at most 36 tiles, inside the default cache of 64.
+    let most = 0;
+    for (let c = 0; c <= 160; c += 1.37) most = Math.max(most, tilesFor({ x: c, y: (c * 7) % 160 }, across, across, 160, 160).length);
+    assert.ok(most <= 36, `UI ${ui} / game ${game}: ${most} tiles`);
+  }
+  // Without the cap: UI 1.3 / game 0.67 spans 57 cells, UI 2 / game 0.5 117.
+  assert.ok((176 * 1.3) / (LENS_MIN_ZOOM * (2 / 3)) / CELL_PX > 57);
+  assert.ok((176 * 2) / (LENS_MIN_ZOOM * 0.5) / CELL_PX > 117);
+});
+
+for (const [ui, game] of [[2, 0.5], [1.3, 2 / 3]]) {
+  test(`UI ${ui} / game ${game.toFixed(2)} on a 160 map, zoomed all the way out: the tiles of a view stay cached (no churn)`, () => {
+    const p = page({ mapW: 160, mapH: 160, previewRect: { left: 0, top: 0, width: 640, height: 640 }, lensSize: 176 * ui });
+    const { lens } = lensOn(p, { gameScale: () => game, budgetMs: 1000 });
+    lens.setSource('m', () => syntheticMap(160, 160), { width: 160, height: 160 });
+    let made = 0;
+    const set = lens.tiles.set.bind(lens.tiles);
+    lens.tiles.set = (k, v) => (made++, set(k, v));
+    p.frame.dispatchEvent(pointer('pointermove', 321, 317));
+    for (let i = 0; i < 300; i++) p.frame.dispatchEvent(new FakeEvent('wheel', { deltaY: 100, deltaMode: 0, clientX: 321, clientY: 317 }));
+    assert.equal(lens.zoom(), lensZoomLimits(game, 176 * ui).min, 'at the lowest zoom');
+    p.runFrames(50);
+    assert.equal(p.frames.length, 0, 'every tile of the view is drawn: no frame keeps asking for more');
+    const drawn = made;
+    assert.ok(drawn <= 36 && lens.tiles.size === drawn, `${drawn} tiles for the view`);
+    // Frames over the same view only copy tiles: none is made again.
+    for (let i = 0; i < 20; i++) {
+      p.frame.dispatchEvent(pointer('pointermove', 321 + (i % 2), 317));
+      p.runFrames(1);
+    }
+    assert.equal(made, drawn, 'no tile evicted and drawn again');
+    assert.ok([...lens.tiles.map.values()].every((t) => t.done && t.img === null));
+  });
+}
+
+test('while the lens shows, a click that opens the context menu (macOS Ctrl + click) opens nothing', () => {
+  const p = page();
+  const { lens } = lensOn(p, { mac: true });
+  lens.setSource('a', () => syntheticMap(), { width: 20, height: 12 });
+  const menu = () => {
+    const e = new FakeEvent('contextmenu', { button: 0, ctrlKey: true, clientX: 150, clientY: 130 });
+    p.frame.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130, { ctrlKey: false }));
+  assert.equal(lens.visible, false);
+  assert.equal(menu(), false, 'a plain preview keeps the browser menu');
+  p.frame.dispatchEvent(pointer('pointermove', 151, 130, { ctrlKey: true }));
+  assert.equal(lens.visible, true);
+  assert.equal(menu(), true);
+  p.win.dispatch('keyup', { key: 'Control', ctrlKey: false });
+  assert.equal(menu(), false);
+});
+
+test('the magnify key: Ctrl everywhere, Cmd too on macOS; the hint says which', () => {
+  assert.equal(magnifyHeld({ ctrlKey: true }, false), true);
+  assert.equal(magnifyHeld({ metaKey: true }, false), false, 'the Windows key is not Ctrl');
+  assert.equal(magnifyHeld({ metaKey: true }, true), true, 'Cmd on macOS');
+  assert.equal(magnifyHeld({ ctrlKey: true }, true), true, 'Ctrl on macOS as asked');
+  assert.equal(magnifyHeld({ shiftKey: true, altKey: true }, true), false);
+  assert.equal(magnifyHeld(null, true), false);
+  assert.equal(lensHint(false), 'Hold Ctrl to magnify, scroll to zoom');
+  assert.equal(lensHint(true), 'Hold Cmd or Ctrl to magnify, scroll to zoom');
+});
+
+test('mouse: no lens without the key, only the hint; the key shows it under a resting mouse, releasing hides it', () => {
+  const p = page();
+  const { lens } = lensOn(p);
+  lens.setSource('a', () => syntheticMap(), { width: 20, height: 12 });
+  const plain = (type, x, y) => p.frame.dispatchEvent(pointer(type, x, y, { ctrlKey: false }));
+  plain('pointerenter', 150, 130);
+  plain('pointermove', 151, 130);
+  const lensEl = () => p.doc.body.querySelector('.map-lens');
+  const hint = p.doc.body.querySelector('.map-lens-hint');
+  assert.ok(!lensEl() || lensEl().hidden, 'a plain preview: nothing covers the start markers');
+  assert.equal(lens.visible, false);
+  assert.ok(hint && !hint.hidden, 'the hint shows');
+  assert.equal(hint.textContent, 'Hold Ctrl to magnify, scroll to zoom');
+  assert.equal(hint.getAttribute('aria-hidden'), 'true');
+  // At the bottom centre of the preview (200 x 120 at 100, 100), through CSSOM custom properties.
+  assert.equal(hint.style.props['--map-lens-hint-x'], '200px');
+  assert.equal(hint.style.props['--map-lens-hint-y'], '220px');
+  // The wheel scrolls the page.
+  const wheel = new FakeEvent('wheel', { deltaY: -100, deltaMode: 0, clientX: 151, clientY: 130 });
+  p.frame.dispatchEvent(wheel);
+  assert.equal(wheel.defaultPrevented, false);
+  // Ctrl pressed with the mouse at rest: the lens shows at once, the hint goes.
+  p.win.dispatch('keydown', { key: 'Control', ctrlKey: true });
+  assert.equal(lens.visible, true);
+  assert.equal(lensEl().hidden, false);
+  assert.equal(hint.hidden, true);
+  assert.ok(Math.abs(lens.centre.x - 5.1) < 1e-9 && lens.centre.y === 3, 'at the resting mouse');
+  // Other keys with Ctrl still held keep it.
+  p.win.dispatch('keydown', { key: 'a', ctrlKey: true });
+  assert.equal(lens.visible, true);
+  // Released: hidden, the hint is back.
+  p.win.dispatch('keyup', { key: 'Control', ctrlKey: false });
+  assert.equal(lens.visible, false);
+  assert.equal(lensEl().hidden, true);
+  assert.equal(hint.hidden, false);
+  // A move with Ctrl held shows it (the event's own flag), one without hides it.
+  p.frame.dispatchEvent(pointer('pointermove', 160, 130));
+  assert.equal(lens.visible, true);
+  plain('pointermove', 161, 130);
+  assert.equal(lens.visible, false);
+  // The window loses focus with Ctrl down (Ctrl + Tab): the release is lost, so the key counts as up.
+  p.win.dispatch('keydown', { key: 'Control', ctrlKey: true });
+  assert.equal(lens.visible, true);
+  p.win.dispatch('blur');
+  assert.equal(lens.visible, false);
+  assert.equal(hint.hidden, true, 'blur hides the hint too');
+  assert.equal(lens.magnify, false);
+  // Leaving the preview hides the hint; the key away from the preview shows nothing.
+  plain('pointermove', 150, 130);
+  assert.equal(hint.hidden, false);
+  plain('pointerleave', 400, 400);
+  assert.equal(hint.hidden, true);
+  p.win.dispatch('keydown', { key: 'Control', ctrlKey: true });
+  assert.equal(lens.visible, false);
+  assert.equal(hint.hidden, true);
+  // A preview without a map for the lens: no hint either.
+  p.win.dispatch('keyup', { key: 'Control', ctrlKey: false });
+  lens.clearSource();
+  plain('pointermove', 150, 130);
+  assert.equal(hint.hidden, true);
+  lens.destroy();
+  assert.equal(p.doc.body.querySelector('.map-lens-hint'), null);
+  assert.equal(p.win.listeners.keydown.size, 0, 'the key listeners go with the lens');
+});
+
+test('macOS: Cmd magnifies as well as Ctrl, and the hint names it', () => {
+  const p = page();
+  const { lens } = lensOn(p, { mac: true });
+  lens.setSource('a', () => syntheticMap(), { width: 20, height: 12 });
+  p.frame.dispatchEvent(pointer('pointermove', 150, 130, { ctrlKey: false }));
+  assert.equal(p.doc.body.querySelector('.map-lens-hint').textContent, 'Hold Cmd or Ctrl to magnify, scroll to zoom');
+  p.win.dispatch('keydown', { key: 'Meta', metaKey: true });
+  assert.equal(lens.visible, true);
+  p.win.dispatch('keyup', { key: 'Meta', metaKey: false });
+  assert.equal(lens.visible, false);
+  p.frame.dispatchEvent(pointer('pointermove', 151, 130, { ctrlKey: true }));
+  assert.equal(lens.visible, true);
 });
 
 test('the zoom follows the game scale', () => {
@@ -570,6 +758,23 @@ test('the auto game scale of a 14" MacBook: the lens starts at LENS_START_FACTOR
   assert.ok(Math.abs(gameScaleFor(settings, win) - 2 / 3) < 1e-9, 'Auto rounds down on this screen');
   assert.ok(Math.abs(lens.zoom() - baseZoom(2 / 3) * LENS_START_FACTOR) < 1e-9, 'half the base zoom: 0.5 CSS px per world px');
   assert.ok(lens.zoom() >= zoomLimits(2 / 3).min, 'inside the zoom limits');
+});
+
+test('pen: press and hold shows the lens like a finger (no key at hand); a hovering pen shows nothing', () => {
+  const p = page({ previewRect: { left: 100, top: 400, width: 200, height: 120 } });
+  const { lens } = lensOn(p);
+  lens.setSource('a', () => syntheticMap(), { width: 20, height: 12 });
+  const pen = (type, x, y) => p.frame.dispatchEvent(pointer(type, x, y, { pointerType: 'pen', pointerId: 4, ctrlKey: false }));
+  pen('pointermove', 150, 450);
+  assert.equal(lens.visible, false);
+  assert.equal(p.doc.body.querySelector('.map-lens-hint'), null, 'no keyboard hint for a pen');
+  pen('pointerdown', 150, 450);
+  p.runTimers();
+  assert.equal(lens.visible, true);
+  assert.equal(lens.pointer.touch, true, 'above the pen tip');
+  assert.equal(lens.heldRecently(), true, 'lifting the pen is no tap');
+  pen('pointerup', 150, 450);
+  assert.equal(lens.visible, false);
 });
 
 test('touch: press and hold shows the lens above the finger; a swipe stays a scroll; lifting hides it', () => {

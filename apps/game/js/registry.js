@@ -38,7 +38,7 @@ import { SYMMETRY_MODES } from '../editor/js/symmetry.js';
 import { BRUSH_SIZES } from '../editor/js/edits.js';
 import { FACTIONS } from '../protocol/constants.js';
 import { text as protocolText } from '../protocol/check.js';
-import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, ZOOM_FACTOR_LIMITS, MUSIC_REPEAT_MODES } from '../protocol/accounts.js';
+import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, ZOOM_FACTOR_LIMITS, MUSIC_REPEAT_MODES, PERF_CAPTURE_SECONDS } from '../protocol/accounts.js';
 import { PRESETS_MAX, presetNameKey, validateSavedPresets } from '../protocol/presets.js';
 
 /** localStorage key of the registry document. */
@@ -162,7 +162,7 @@ export const GROUPS = deepFreeze({
         options: ['off', 'fullscreen', 'always'],
         labels: { off: 'Off', fullscreen: 'In fullscreen', always: 'Always (click into the game)' },
         label: 'Capture the mouse',
-        help: 'Keeps the pointer inside the game. The capture hotkey or Esc releases it.',
+        help: 'Keeps the pointer inside the game. The release hotkey (Option+E on a Mac, Alt+Shift+E elsewhere) or Esc releases it.',
       },
       // Unadjusted movement (raw mouse counts) with WebRA's own acceleration curve, where the browser has it (js/mouselock.js).
       mouseCaptureRaw: {
@@ -177,6 +177,22 @@ export const GROUPS = deepFreeze({
         default: true,
         label: 'Esc also opens the menu while the mouse is captured',
         help: 'Off: the first Esc only releases the mouse, the next one opens the menu.',
+      },
+      // The "Mouse captured. Press Option+E to release." notice (js/mouselock.js): every capture, the first few, or never.
+      mouseCaptureNotice: {
+        type: 'choice',
+        default: 'always',
+        options: ['always', 'first', 'off'],
+        labels: { always: 'Every time', first: 'First 3 times', off: 'Never' },
+        label: 'Mouse captured notice',
+        help: 'The short notice at the top that names the key that releases the mouse.',
+      },
+      // A single-player game whose page is hidden (another tab, a minimised window): the menu opens and pauses it, or it plays on (js/main.js).
+      pauseWhenHidden: {
+        type: 'boolean',
+        default: false,
+        label: 'Pause when the game is hidden',
+        help: 'Single player: open the menu (and so pause) when the game\'s tab or window is hidden. Off: the game plays on.',
       },
     },
   },
@@ -225,11 +241,19 @@ export const GROUPS = deepFreeze({
   },
   debug: {
     label: 'Debug views',
-    description: 'Local overlays of the debug menu.',
+    description: 'Local overlays of the debug menu and its performance capture.',
     scope: 'game',
     settings: {
       ...Object.fromEntries(VIEWS.map((v) => [v.key, { type: 'boolean', default: false, label: v.label }])),
       cpuInstances: { type: 'boolean', default: false, label: 'Force the CPU instance path' },
+      // The performance capture (js/perfcapture.js): its length, and recording the start of every game.
+      perfCaptureSeconds: { type: 'choice', default: 30, options: [...PERF_CAPTURE_SECONDS], label: 'Performance capture length (seconds)' },
+      perfCaptureStart: {
+        type: 'boolean',
+        default: false,
+        label: 'Record the start of every game',
+        help: 'Records the first 60 seconds of every game, from its first frame, as a performance capture, ready to download from the debug menu.',
+      },
     },
   },
   lobby: {

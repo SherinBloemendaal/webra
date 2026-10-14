@@ -171,7 +171,10 @@ export class DirectHost extends Events {
     return { mode: this.mode, label: this.label, reason: this.reason, workerMs: null, roundTripMs: null, torn: 0 };
   }
 
-  dispose() {}
+  dispose() {
+    // A hidden game's background timer runs on this thread: it ends with the game.
+    this.core.setBackground(false);
+  }
 }
 
 // ---- Worker ----------------------------------------------------------------------------------

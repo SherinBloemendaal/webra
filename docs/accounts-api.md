@@ -799,7 +799,9 @@ Serialized size at most 32 KiB.
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
     "mouseCaptureRaw": false,      // true: raw (unadjusted) movement with the game's acceleration curve
     "mouseCaptureSpeed": 1,        // number 0.25..3 (pointer speed while captured)
-    "mouseCaptureEscMenu": true    // true (default): Esc releases the mouse and opens the menu at once
+    "mouseCaptureEscMenu": true,   // true (default): Esc releases the mouse and opens the menu at once
+    "mouseCaptureNotice": "always", // "always" | "first" (the first 3 captures) | "off": the "Mouse captured" notice
+    "pauseWhenHidden": false       // single player: true opens the menu (pauses) when the page is hidden
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1
@@ -812,7 +814,9 @@ Serialized size at most 32 KiB.
   },
   "debug": {
     "cells": false, "footprints": false, "flow": false, "combat": false,
-    "tags": false, "health": false, "stats": false, "graph": false, "cpuInstances": false
+    "tags": false, "health": false, "stats": false, "graph": false, "cpuInstances": false,
+    "perfCaptureSeconds": 30,      // performance capture length: 10, 30, 60 or 120 (PERF_CAPTURE_SECONDS, docs/contracts.md section 10)
+    "perfCaptureStart": false      // record the first 60 s of every game
   },
   "lobby": {
     "name": "Commander",           // 1..20 characters, lobby name text rules

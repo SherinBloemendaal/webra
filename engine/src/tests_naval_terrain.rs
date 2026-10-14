@@ -464,20 +464,18 @@ fn naval_bots_keep_every_ship_on_water() {
         w.state_hash()
     };
     let minutes = 25 * 60;
-    // Seed 2: the island bots of seed 3 now spend their money on a land war
-    // and build at most one ship in twelve minutes (with either movement
-    // model), too few to check fleets.
-    game(MapStyle::Islands, 2, 12 * minutes);
-    // Lakes seed 1 (5 ships in twelve minutes), moved from seed 7 in
-    // 5dc623d (production exits). Seed 7 was marginal: no bot has a naval
-    // yard before minute 11, and its ships came from a yard one bot
-    // (hoarding about 15,000 credits with an idle queue) only placed in the
-    // last minute; with the changed timing of land units that bot no longer
-    // places it in time (1 ship). Ships are never held up there (no ship
-    // queue waits on a blocked exit). Measured with this game() setup, most
-    // ships alive at once in twelve minutes over seeds 1 to 8: 18 in total
-    // on lakes (21 before 5dc623d), 16 on islands (13), 23 on rivers (23).
-    let lakes = game(MapStyle::Lakes, 1, 12 * minutes);
-    game(MapStyle::Rivers, 3, 12 * minutes);
-    assert_eq!(game(MapStyle::Lakes, 1, 12 * minutes), lakes, "deterministic");
+    // How many ships Naval bots build in twelve minutes swings with any
+    // change to their economy: on many seeds they spend everything on a land
+    // war and place no naval yard in time (rivers seeds 2 and 3: no bot has
+    // a naval yard or a ship queued by minute 12). Measured after merging the
+    // production exits (exit queue, exit production types) with lightning
+    // (ai_lightning.rs), most ships alive at once over seeds 1 to 11: lakes
+    // 3, 2, 2, 4, 1, 0, 6, 5, 2, 3, 2; rivers 3, 0, 0, 2, 1, 2, 6, 1, 1, 1,
+    // 3; islands 2, 2, 0, 2, 0, 3, 3, 2, 0, 1, 0. Rivers seed 3 and islands
+    // seed 2, used before, now build none and two (the least this checks);
+    // the seeds below build three to six.
+    game(MapStyle::Islands, 6, 12 * minutes);
+    let lakes = game(MapStyle::Lakes, 8, 12 * minutes);
+    game(MapStyle::Rivers, 7, 12 * minutes);
+    assert_eq!(game(MapStyle::Lakes, 8, 12 * minutes), lakes, "deterministic");
 }

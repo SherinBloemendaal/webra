@@ -304,3 +304,24 @@ test('the game menu has a Music page with the player, also linked from the Audio
   menu.close();
   assert.equal(audio.listeners.size, listeners);
 });
+
+test('the Sound dialog gives the focus back to the entry that opened it, not the hidden corner button', async () => {
+  const { audio } = await audioWith({ tracks: 1 });
+  const button = doc.createElement('button');
+  const entry = doc.createElement('button');
+  const soundPanel = doc.createElement('section');
+  soundPanel.hidden = true;
+  doc.body.append(button, entry, soundPanel);
+  const panel = mountAudioPanel(button, soundPanel, audio);
+  // Safari and Firefox on macOS: a click leaves the focus on the page, so the opener is named.
+  doc.body.focus();
+  panel.open(entry);
+  assert.equal(soundPanel.hidden, false);
+  soundPanel.dispatchEvent(new FakeEvent('keydown', { key: 'Escape' }));
+  assert.equal(soundPanel.hidden, true);
+  assert.equal(doc.activeElement, entry);
+  // Its own button: back to the button.
+  click(button);
+  click(soundPanel.querySelector('.audio-close'));
+  assert.equal(doc.activeElement, button);
+});

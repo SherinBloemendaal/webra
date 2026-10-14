@@ -50,8 +50,8 @@ const HOSPITAL_VALUE: i64 = 1000;
 /// minutes of CashTrickler income (oil derricks) and a hospital's healing.
 pub(crate) fn capture_value(w: &World, t: usize) -> i64 {
     let info = &w.rules.actors[w.actors[t].ty as usize];
-    let Some(b) = info.building.as_ref() else { return info.cost as i64 };
-    let value = b.value as i64;
+    let value = info.sell_value() as i64;
+    let Some(b) = info.building.as_ref() else { return value };
     let benefits = [
         info.abilities.support_powers.as_ref().is_some_and(|l| !l.is_empty()),
         !b.produces.is_empty(),

@@ -13,6 +13,12 @@
 //! and for players who are no longer allied or no longer playing. Red Alert
 //! numbers: 700 hit points per 24 ticks, 20 percent of the value in total.
 //!
+//! Bulk repair (a WebRA addition, `Order::RepairBuildings`): the Repair button
+//! with own structures selected, or a box dragged in repair mode, toggles a
+//! group of the player's own damaged structures at once with OpenRA's toggle
+//! rule: when any of them can start repairing, all that can start; when all
+//! are being repaired already, all stop. One "Repairing" line for the group.
+//!
 //! Power down (OpenRA `ToggleConditionOnOrder` with `OrderName: PowerDown`
 //! and `PowerMultiplier@POWERDOWN`, `Order::PowerDown`): the owner switches a
 //! structure that has the button (Red Alert: defences that need power, the
@@ -58,26 +64,83 @@ impl World {
         if !self.can_toggle_repair(player, i) {
             return;
         }
-        if let Some(pos) = self.actors[i].repairers.iter().position(|&p| p == player) {
-            // Red Alert has no "repairing stopped" notification.
-            self.actors[i].repairers.remove(pos);
-            if self.actors[i].repairers.is_empty() {
-                self.actors[i].repair_active = false;
-            }
-            return;
+        if self.actors[i].repairers.contains(&player) {
+            self.stop_repair(player, i);
+        } else if self.can_start_repair(player, i) {
+            self.start_repair(player, i);
+            self.notify_repair_started(player, i);
         }
-        let info = &self.rules.actors[self.actors[i].ty as usize];
+    }
+
+    /// Whether `player`, not repairing structure `i` yet, may start: it is
+    /// damaged (the repair cursor offers no order on a structure at full
+    /// health) and fewer than `bonuses - 1` players repair it.
+    fn can_start_repair(&self, player: u8, i: usize) -> bool {
+        let a = &self.actors[i];
+        let info = &self.rules.actors[a.ty as usize];
         let bonuses = info.building.as_ref().and_then(|b| b.repairable.as_ref()).map_or(0, |r| r.bonuses.len());
-        // A structure at full health has nothing to repair (the repair cursor
-        // offers no order there); at most `bonuses - 1` players repair at once.
-        if self.actors[i].hp >= info.hp || self.actors[i].repairers.len() + 1 >= bonuses {
-            return;
-        }
+        !a.repairers.contains(&player) && a.hp < info.hp && a.repairers.len() + 1 < bonuses
+    }
+
+    fn start_repair(&mut self, player: u8, i: usize) {
         self.actors[i].repairers.push(player);
+    }
+
+    fn stop_repair(&mut self, player: u8, i: usize) {
+        // Red Alert has no "repairing stopped" notification.
+        let a = &mut self.actors[i];
+        a.repairers.retain(|&p| p != player);
+        if a.repairers.is_empty() {
+            a.repair_active = false;
+        }
+    }
+
+    /// OpenRA RepairingNotification: to the player who started repairing.
+    fn notify_repair_started(&mut self, player: u8, i: usize) {
         let a = &self.actors[i];
         let (ty, x, y, owner) = (a.ty as i32, a.x, a.y, a.owner);
-        // OpenRA RepairingNotification: to the player who started repairing.
         self.sound.push(SoundEventKind::RepairStarted, ty, x, y, player, owner as i32);
+    }
+
+    /// The own structures among `ids` a group repair acts on: alive,
+    /// repairable and damaged (`can_repair_building`), each once, in the
+    /// order listed. Allied structures stay one click each (WebRA bulk
+    /// repair spends only on the player's own base).
+    pub fn bulk_repair_targets(&self, player: u8, ids: &[u32]) -> Vec<usize> {
+        let mut out: Vec<usize> = Vec::new();
+        for &id in ids {
+            let Some(i) = self.resolve(id) else { continue };
+            if self.actors[i].owner == player && self.can_repair_building(player, i) && !out.contains(&i) {
+                out.push(i);
+            }
+        }
+        out
+    }
+
+    /// `Order::RepairBuildings` (WebRA bulk repair): OpenRA's per-structure
+    /// toggle applied as a group. When any listed own damaged structure can
+    /// start repairing, every one that can starts; when all of them are being
+    /// repaired by `player` already, all stop. Structures at full health,
+    /// allied, enemy or gone are skipped; funds are paid per step as for one
+    /// structure. The announcer says "Repairing" once for the whole group.
+    pub(crate) fn toggle_repair_group(&mut self, player: u8, ids: &[u32]) {
+        if (player as usize) >= self.players.len() {
+            return;
+        }
+        let targets = self.bulk_repair_targets(player, ids);
+        let start: Vec<usize> = targets.iter().copied().filter(|&i| self.can_start_repair(player, i)).collect();
+        if let Some(&first) = start.first() {
+            for &i in &start {
+                self.start_repair(player, i);
+            }
+            self.notify_repair_started(player, first);
+            return;
+        }
+        for &i in &targets {
+            if self.actors[i].repairers.contains(&player) {
+                self.stop_repair(player, i);
+            }
+        }
     }
 
     /// Repair steps of every structure being repaired (OpenRA `RepairableBuilding.Tick`).
@@ -111,7 +174,7 @@ impl World {
         let max_hp = info.hp.max(1);
         let hp = (r.step).min(max_hp - a.hp).max(0);
         // The cost is the same however many players repair.
-        let cost = ((hp as i64 * r.percent as i64 * b.value as i64) / (max_hp as i64 * 100)).max(1) as i32;
+        let cost = ((hp as i64 * r.percent as i64 * info.sell_value() as i64) / (max_hp as i64 * 100)).max(1) as i32;
         let (interval, bonuses, ty, player_xp) = (r.interval, r.bonuses.clone(), a.ty, r.player_experience);
         let tick = self.tick;
         let mut paying = 0usize;

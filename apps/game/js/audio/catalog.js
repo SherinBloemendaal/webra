@@ -27,13 +27,15 @@ import {
   VOICE_SETS,
   OPENRA_WEAPONS,
   OPENRA_ACTORS,
+  WEBRA_ACTORS,
   OPENRA_MADE_SOUNDS,
 } from './catalog-data.js';
 
 export { VOICE_SETS };
 
 const OPENRA_WEAPON = new Set(OPENRA_WEAPONS);
-const OPENRA_ACTOR = new Set(OPENRA_ACTORS);
+// WebRA's own actors (the Lightning Rod) are built on OpenRA's templates: their sounds are OpenRA's.
+const OPENRA_ACTOR = new Set([...OPENRA_ACTORS, ...WEBRA_ACTORS]);
 
 /** "conscmp1" -> "conscmp1.aud"; names with an extension (voice variants like "ackno.v01") stay as they are. */
 export const fileName = (base) => (/\.[a-z0-9]{3}$/i.test(base) ? base : `${base}.aud`).toLowerCase();
@@ -413,6 +415,15 @@ for (const [key, text] of Object.entries({
   routeBlocked: 'Route blocked.',
 })) {
   EVA[key] = { name: null, text, chime: null, originals: [], cooldown: TEXT_COOLDOWNS[key] ?? 0.2, textOnly: true };
+}
+
+// WebRA's own lines (no OpenRA counterpart): our chime and the text, spoken
+// when speech is on; they play with original sounds in use too.
+for (const [key, [text, chime, cooldown]] of Object.entries({
+  // Lightning struck one of the player's power plants: their power is out (engine lightning.rs).
+  lightningOutage: ['Power plant struck by lightning. Power outage.', 'eva_warn', 5],
+})) {
+  EVA[key] = { name: null, text, chime, originals: [], cooldown };
 }
 
 /** The EVA key of an OpenRA speech notification name, or null when there is no such line. */
