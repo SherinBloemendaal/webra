@@ -1424,11 +1424,12 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   "Build radius" option a structure with `requires_base_provider` also needs
   its OpenRA centre within a base provider's range of the provider's OpenRA
   centre (both footprint centres plus LocalCenterOffset, `center_offset`;
-  the yard's is half a cell up). A structure without RequiresBuildableArea
-  (`requires_area` null) goes anywhere its terrain allows. Every footprint
+  the yard's is half a cell up), comparing squared lengths like OpenRA. A
+  structure without RequiresBuildableArea (`requires_area` null) goes
+  anywhere its terrain allows. Every footprint
   cell must be on the map, of the structure's terrain (naval yards and sub
   pens: Water only, never beach or river), without ore or gems, and empty:
-  no structure, unit on the ground (aircraft in the air do not count), husk,
+  no structure, unit (aircraft in the air do not count, paratroopers on their parachute do), husk,
   crate or mine.
 - Like OpenRA (World.IsCellBuildable at b6fc03f), placement reads the true
   world state and never the player's view: footprints may reach into the
@@ -1443,7 +1444,9 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   direction is searched up to LineBuild Range - 1 cells (7 for Red Alert's
   walls); free cells and unexplored cells are passed over, the first other
   cell ends the search, and a piece of the same wall there (any owner) fills
-  the cells passed over. OpenRA puts a piece on every passed cell, even an
+  the cells passed over (OpenRA joins a LineBuildNode whose Types match the
+  piece's NodeTypes; every Red Alert wall has its own node type, so WebRA
+  compares the wall type). OpenRA puts a piece on every passed cell, even an
   unexplored occupied one; WebRA structures never share a cell, so such a
   cell stays empty.
 - `cancel_production` removes the last queued item of that type and refunds

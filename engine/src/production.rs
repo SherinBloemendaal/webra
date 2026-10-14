@@ -1,7 +1,7 @@
 //! Prerequisites, power, classic per-category production queues and building placement.
 
 use crate::map::Terrain;
-use crate::math::dist;
+use crate::math::dist_sq;
 use crate::rules::{Kind, QueueType};
 use crate::sound_events::SoundEventKind;
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
@@ -590,10 +590,12 @@ impl World {
             && !self.map.has_resource(i)
             && self.building_at[i] == NONE
             // Aircraft in the air occupy no cell (OpenRA Aircraft.OccupiedCells
-            // holds only the landing cells).
+            // holds only the landing cells); anything else does from its
+            // creation, a paratrooper still on its parachute too.
             && self.units_in_cell(i).iter().all(|&u| {
                 let a = &self.actors[u as usize];
-                !a.alive || a.altitude > 0 || Some(u as usize) == ignore
+                let flying = a.altitude > 0 && self.rules.actors[a.ty as usize].unit.as_ref().is_some_and(|ui| ui.aircraft.is_some());
+                !a.alive || flying || Some(u as usize) == ignore
             })
             // Husks, crates and mines take the cell too (husks.rs, crates.rs, abilities.rs).
             && self.husk_at(i).is_none()
@@ -641,7 +643,9 @@ impl World {
                     && (a.owner == player || ally(a))
                     && self.rules.actors[a.ty as usize].building.as_ref().is_some_and(|ob| {
                         let (px, py) = ob.openra_center(a.cx, a.cy);
-                        ob.base_provider_range > 0 && dist(center.0, center.1, px, py) <= ob.base_provider_range
+                        // HorizontalLengthSquared <= Range * Range (no rounded square root).
+                        let r = ob.base_provider_range as i64;
+                        ob.base_provider_range > 0 && dist_sq(center.0, center.1, px, py) <= r * r
                     })
                     && !self.being_captured(k)
             });
@@ -732,19 +736,24 @@ impl World {
     /// piece, each direction is searched up to `range - 1` cells out. Cells a
     /// piece could go on, and cells the player has not explored, are passed
     /// over; the first other cell ends the search, and when a piece of the
-    /// same wall (any owner, LineBuildNode) stands there, the cells passed
-    /// over are filled. OpenRA puts a piece on every one of them, even an
-    /// unexplored cell that something occupies; WebRA structures never share
-    /// a cell, so such a cell stays empty.
+    /// same wall (any owner; OpenRA matches LineBuildNode Types, and every Red
+    /// Alert wall has its own) stands there, the cells passed over are
+    /// filled; a search that leaves the map finds no piece to join. OpenRA
+    /// puts a piece on every passed cell, even an unexplored one that
+    /// something occupies; WebRA structures never share a cell, so such a
+    /// cell stays empty.
     fn fill_wall_line(&mut self, player: u8, ty: u16, cx: i32, cy: i32, range: i32) {
         let on_water = self.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.on_water);
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let mut gap = Vec::new();
             for k in 1..range {
                 let (x, y) = (cx + dx * k, cy + dy * k);
-                let on_map = self.map.contains(x, y);
-                let i = if on_map { self.map.idx(x, y) } else { 0 };
-                if !on_map || self.cell_free_for(on_water, i, None) || self.players[player as usize].explored[i] == 0 {
+                // Off the map OpenRA's search finds no piece to join either.
+                if !self.map.contains(x, y) {
+                    break;
+                }
+                let i = self.map.idx(x, y);
+                if self.cell_free_for(on_water, i, None) || self.players[player as usize].explored[i] == 0 {
                     gap.push((x, y));
                     continue;
                 }

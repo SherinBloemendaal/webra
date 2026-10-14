@@ -526,6 +526,37 @@ fn hidden_actors_block_their_cells_like_openra() {
     assert!(w.can_place(0, syrd, 21, 10), "free once it is gone");
 }
 
+/// A paratrooper on its parachute occupies its cell from its creation
+/// (OpenRA: every Mobile actor is in the ActorMap; only Aircraft keep no
+/// cell in the air).
+#[test]
+fn a_descending_paratrooper_blocks_placement() {
+    let mut w = shore_world();
+    let powr = ty(&w, "POWR");
+    let e1 = w.spawn_unit(ty(&w, "E1"), 1, cell_center(9), cell_center(11), 0);
+    w.actors[e1].altitude = 4096;
+    w.rebuild_hash();
+    assert!(!w.can_place(0, powr, 9, 11), "a paratrooper still in the air");
+    w.remove(e1);
+    w.rebuild_hash();
+    assert!(w.can_place(0, powr, 9, 11), "free once it is gone");
+}
+
+/// A crate on its parachute takes its cell too (OpenRA Crate is in the
+/// ActorMap from its creation, falling or landed).
+#[test]
+fn a_falling_crate_blocks_placement() {
+    let mut w = shore_world();
+    let powr = ty(&w, "POWR");
+    let c = w.place_crate(ty(&w, "CRATE") as usize, 1, 9, 11, 4096);
+    w.rebuild_hash();
+    assert!(w.actors[c].altitude > 0 && w.actors[c].air.parachute);
+    assert!(!w.can_place(0, powr, 9, 11), "a crate still in the air");
+    w.remove(c);
+    w.rebuild_hash();
+    assert!(w.can_place(0, powr, 9, 11), "free once it is gone");
+}
+
 /// Aircraft in the air occupy no cell (OpenRA Aircraft.OccupiedCells holds
 /// only landing cells); a landed one blocks.
 #[test]
@@ -606,4 +637,29 @@ fn the_build_radius_is_measured_from_the_yards_openra_centre() {
     assert!(w.can_place(0, powr, 25, 1), "north of the yard, inside the radius");
     // (24, 22): 16654 from the yard's OpenRA centre (16296 from its footprint's).
     assert!(!w.can_place(0, powr, 24, 22), "south of the yard, outside the radius");
+}
+
+/// OpenRA FindBaseProvider compares squared lengths (HorizontalLengthSquared
+/// <= Range * Range), not a rounded square root. Red Alert's centres lie on
+/// a 512 grid where the two never differ, so a synthetic LocalCenterOffset
+/// puts a pillbox 16384.3 from the yard's centre: the rounded root (16384)
+/// would let it in.
+#[test]
+fn the_build_radius_compares_squared_lengths() {
+    use crate::map::{Map, Terrain};
+    let mut m = Map::filled(48, 24, Terrain::Clear);
+    m.spawns = vec![(12, 10), (40, 2)];
+    let mut w = World::empty(crate::rules::Rules::load(), m, 5);
+    for (f, start) in [("allies", (12, 10)), ("soviet", (40, 2))] {
+        let fi = w.rules.faction_index(f).unwrap();
+        w.add_player(fi, false, start);
+    }
+    let (fact, powr, pbox) = (ty(&w, "FACT"), ty(&w, "POWR"), ty(&w, "PBOX"));
+    w.spawn_building(fact, 0, 12, 10).unwrap();
+    // A giver of buildable area next to the spot, out of the radius itself.
+    w.spawn_building(powr, 0, 30, 10).unwrap();
+    // The pillbox's centre at (29, 11) is 16384 east of the yard's OpenRA centre.
+    assert!(w.can_place(0, pbox, 29, 11), "exactly at the radius");
+    w.rules.actors[pbox as usize].building.as_mut().unwrap().center_offset = (0, 100);
+    assert!(!w.can_place(0, pbox, 29, 11), "100 further down: 16384.3 away");
 }
