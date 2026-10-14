@@ -73,7 +73,7 @@ import { ContentSystem } from './content/index.js';
 import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
 import { AccountSession } from './account/session.js';
-import { browserQueue, GameReplay, ReplayUploads, replayResult, uploadEventText, uploadsWanted } from './account/replays.js';
+import { browserQueue, forgetReplayLink, GameReplay, REPLAY_LINK_RE, replayLink, ReplayUploads, replayResult, uploadEventText, uploadsWanted } from './account/replays.js';
 import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
 import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
@@ -316,25 +316,45 @@ async function setupRecords(lobby, gpuError) {
 
 /**
  * Watch from the account page: /play/#replay=<id> opens that replay of the
- * signed-in account (downloaded and checked like a file) in the viewer.
+ * signed-in account (downloaded and checked like a file) in the viewer. The
+ * id is kept for this tab (js/account/replays.js replayLink) until it opens,
+ * so a link followed while signed out opens once the player signs in (also
+ * through the account page, where the play gate sends signed-out players).
  */
 async function openReplayLink(lobby, gpuError) {
-  const m = /^#replay=([0-9a-f]{16})$/.exec(location.hash);
-  if (!m) return;
-  history.replaceState(null, '', location.pathname + location.search);
-  if (gpuError || !renderer) return lobby.showError('WebGPU is not available.');
-  if (!account) return lobby.showError('Accounts are unavailable, so the replays in your account cannot be opened.');
-  if (!account.ready) await new Promise((resolve) => {
-    const off = account.onChange(() => {
-      if (!account.ready) return;
-      off();
-      resolve();
-    });
-  });
-  if (!account.user) return lobby.showError('Sign in to watch the replays in your account.');
-  const r = await records.openAccountReplay(account.api, m[1], version());
-  if (!r.ok) return lobby.showError(r.error);
-  watchReplay(r.replay, lobby);
+  const store = sessionStore();
+  const id = replayLink(location.hash, store);
+  if (REPLAY_LINK_RE.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+  if (!id) return;
+  const fail = (message) => {
+    forgetReplayLink(store);
+    lobby.showError(message);
+  };
+  if (gpuError || !renderer) return fail('WebGPU is not available.');
+  if (!account) return fail('Accounts are unavailable, so the replays in your account cannot be opened.');
+  const open = async () => {
+    forgetReplayLink(store);
+    const r = await records.openAccountReplay(account.api, id, version());
+    if (!r.ok) return lobby.showError(r.error);
+    watchReplay(r.replay, lobby);
+  };
+  let off = null;
+  let told = false;
+  const tryOpen = () => {
+    if (!account.ready) return false;
+    if (account.user) {
+      off?.();
+      off = null;
+      open();
+      return true;
+    }
+    if (!told) {
+      told = true;
+      lobby.showError('Sign in to watch this replay from your account: it opens once you are signed in.');
+    }
+    return false;
+  };
+  if (!tryOpen()) off = account.onChange(tryOpen);
 }
 
 function setupAudio() {
@@ -387,6 +407,9 @@ function setupAccount() {
       else replayUploads.stop();
     };
     account.onChange(followUploads);
+    // Signing out here drops the replays this account left waiting in this browser; a session
+    // that ends by itself keeps them for the next sign-in (at most 7 days).
+    account.onSignOut((userId) => replayUploads.clear(userId));
     settings.subscribe('cloudReplays', (on) => {
       if (!on && account.user) replayUploads.clear(account.user.id).catch(() => {});
       followUploads();

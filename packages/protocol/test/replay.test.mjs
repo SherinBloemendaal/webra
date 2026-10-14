@@ -12,6 +12,7 @@ import {
   REPLAY_VERSION,
   replayOptions,
   replaySummary,
+  REPLAY_TIME_MAX,
   sha256Hex,
   validateReplay,
 } from '../src/index.js';
@@ -281,4 +282,12 @@ test('replaySummary: what an account replay list shows', async () => {
   const mission = replaySummary((await check(missionReplay())).replay);
   assert.equal(mission.mapName, missionReplay().mission.id);
   assert.deepEqual(mission.players, [], 'a campaign mission lists no players');
+});
+
+test('createdAt stays within the Date range, so every reader can format it', async () => {
+  assert.ok((await check({ ...base(), createdAt: REPLAY_TIME_MAX })).ok);
+  assert.equal(new Date(REPLAY_TIME_MAX).toISOString(), '+275760-09-13T00:00:00.000Z');
+  assert.match((await check({ ...base(), createdAt: REPLAY_TIME_MAX + 1 })).error, /createdAt/);
+  assert.match((await check({ ...base(), createdAt: Number.MAX_SAFE_INTEGER })).error, /createdAt/);
+  assert.match((await parseReplay(JSON.stringify({ ...base(), engine: '9.9.9', createdAt: Number.MAX_SAFE_INTEGER }), { version: '0.3.0+abcdef12' })).error, /createdAt/, 'the header check too');
 });

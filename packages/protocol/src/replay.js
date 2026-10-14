@@ -32,6 +32,11 @@ export const REPLAY_TITLE_MAX = 64;
 export const REPLAY_CHAT_MAX = 5000;
 /** Saves in the browser (IndexedDB) and their names. */
 export const SAVE_SLOTS_MAX = 50;
+/** Latest `createdAt` (Unix milliseconds) a file may name: the end of the Date range, so every reader can format it. */
+export const REPLAY_TIME_MAX = 8.64e15;
+
+/** The map name of each replay validateReplay returned (replaySummary reads it instead of parsing the map again). */
+const MAP_NAMES = new WeakMap();
 
 const KEYS = ['format', 'version', 'kind', 'mode', 'engine', 'createdAt', 'title', 'options', 'map', 'mapHash', 'player', 'ticks', 'frames', 'hashes', 'online', 'mission', 'chat'];
 
@@ -56,7 +61,7 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
       if (typeof v.engine !== 'string' || !VERSION_RE.test(v.engine)) fail('engine version is malformed');
       return v.engine;
     })(),
-    createdAt: int(v.createdAt, 0, Number.MAX_SAFE_INTEGER, 'createdAt'),
+    createdAt: int(v.createdAt, 0, REPLAY_TIME_MAX, 'createdAt'),
     title: text(v.title, 1, REPLAY_TITLE_MAX, 'title'),
     options: mission ? validateMissionOptions(v.options, 'options') : validateGameOptions(v.options, 'options'),
     map: null,
@@ -104,6 +109,7 @@ export function validateReplay(v, { maxFrameBytes = Infinity } = {}) {
     if (r.canonical !== v.map) fail('map is not in canonical form');
     if (players > r.players) fail(`the map has room for ${r.players} players`);
     out.map = r.canonical;
+    MAP_NAMES.set(out, r.map.name);
     if (typeof v.mapHash !== 'string' || !SHA256_RE.test(v.mapHash)) fail('mapHash is malformed');
     out.mapHash = v.mapHash;
   } else if (v.mapHash !== null) {
@@ -174,7 +180,7 @@ export function replayHeader(v) {
     kind: oneOf(v.kind, REPLAY_KINDS, 'kind'),
     mode: oneOf(v.mode, REPLAY_MODES, 'mode'),
     engine: v.engine,
-    createdAt: int(v.createdAt, 0, Number.MAX_SAFE_INTEGER, 'createdAt'),
+    createdAt: int(v.createdAt, 0, REPLAY_TIME_MAX, 'createdAt'),
     title: text(v.title, 1, REPLAY_TITLE_MAX, 'title'),
   };
 }
@@ -226,7 +232,7 @@ export function replaySummary(replay) {
   let mapName = 'Generated map';
   if (replay.mission) mapName = replay.mission.id;
   else if (replay.map !== null) {
-    const name = JSON.parse(replay.map).name;
+    const name = MAP_NAMES.get(replay) ?? JSON.parse(replay.map).name;
     if (typeof name === 'string' && name.trim()) mapName = name.trim().slice(0, 64);
   }
   const players = Array.isArray(replay.options?.players)

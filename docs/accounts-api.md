@@ -982,14 +982,25 @@ per game, when the whole game ended (or this player won) or when the player
 leaves it first (waiting at most 3 s before the page reloads), in IndexedDB
 (`webra-replay-uploads`), and uploads it in the background, one at a time,
 for the account that played it. Offline, `5xx` and `429` are retried with a
-pause from 5 s doubling to 30 minutes (8 tries); other refusals are dropped
-with a message; `401` and `403` wait for the next sign-in; `503 unavailable`
-drops it. Switching the setting off drops the replays still waiting. Closing
+pause from 5 s doubling to 30 minutes (8 tries); `401` and every `403`
+except `403 csrf` (signed out, banned, not active) keep the replay and
+wait for that account's next sign-in (an answer that arrives after another
+account signed in leaves that account's uploads alone); `503 unavailable`
+drops it; every other refusal, `403 csrf` included, drops it with a
+message. An upload the server already has (the one sent before the page
+reloaded got through) is dropped silently. Queued replays wait at most 7
+days, at most 10 of them, for their account to sign in again; signing out
+in the game or on the account page drops that account's waiting replays
+(a session that ends by itself keeps them). Switching the setting off drops
+the replays still waiting. Closing
 the tab without leaving the game uploads nothing for that game (the page
 cannot finish the work while it closes). The game's Replays button lists the
 account's replays (Watch, Download, Delete) when signed in, and the account
 page has the same list with the switch; its Watch opens `/play/#replay=<id>`,
-which loads that replay. Watching checks the file with `parseReplay` and the
+which loads that replay. The id is kept in the tab's sessionStorage
+(`webra.replayLink.v1`) until it opens, so a link followed while signed out
+(the play gate sends the player to the account page, the fragment goes
+along) opens in the game after the sign-in. Watching checks the file with `parseReplay` and the
 running version: one made by another version says so (docs/contracts.md
 section 7).
 

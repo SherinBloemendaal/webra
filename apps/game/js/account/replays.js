@@ -244,9 +244,11 @@ export class ReplayUploads {
     } catch (err) {
       const status = err instanceof AccountError ? err.status : -1;
       const code = err instanceof AccountError ? err.code : '';
-      // Signed out or not allowed now: wait for the next sign-in (start).
+      // Signed out or not allowed now: wait for the next sign-in (start). An answer for an
+      // account that is no longer the current one (signed out and another signed in while
+      // it ran) leaves the new account's uploads alone.
       if (status === 401 || (status === 403 && code !== 'csrf')) {
-        this.stop();
+        if (this.userId === row.userId) this.stop();
         return 'stop';
       }
       if (status === 503 && code === 'unavailable') {
@@ -269,11 +271,53 @@ export class ReplayUploads {
   }
 }
 
+/**
+ * Drop the replays an account left waiting in this browser's queue (an
+ * explicit sign-out: they would otherwise wait up to QUEUE_MAX_AGE_MS for
+ * that account to sign in again). Never rejects.
+ */
+export async function clearQueuedReplays(userId, queue = browserQueue()) {
+  try {
+    for (const row of await queue.all()) if (row.userId === userId) await queue.remove(row.key);
+  } catch {
+    // blocked storage: nothing was kept either
+  }
+}
+
+/** sessionStorage key of a replay to open once signed in (`/play/#replay=<id>`). */
+export const REPLAY_LINK_KEY = 'webra.replayLink.v1';
+export const REPLAY_LINK_RE = /^#replay=([0-9a-f]{16})$/;
+
+/**
+ * The replay a link asks to open: from the address (`#replay=<id>`, kept in
+ * `storage` until it is opened, so it survives signing in) or one kept
+ * earlier. Returns the id or null; `take` forgets it.
+ */
+export function replayLink(hash, storage) {
+  const m = REPLAY_LINK_RE.exec(hash ?? '');
+  try {
+    if (m) storage?.setItem(REPLAY_LINK_KEY, m[1]);
+    const kept = storage?.getItem(REPLAY_LINK_KEY) ?? null;
+    return kept && /^[0-9a-f]{16}$/.test(kept) ? kept : m ? m[1] : null;
+  } catch {
+    return m ? m[1] : null;
+  }
+}
+
+export function forgetReplayLink(storage) {
+  try {
+    storage?.removeItem(REPLAY_LINK_KEY);
+  } catch {
+    // nothing kept
+  }
+}
+
 /** Toast text for an upload event (js/main.js showToast), or null for none. */
 export function uploadEventText(e) {
   switch (e.type) {
     case 'uploaded':
-      if (e.duplicate) return 'This replay is already in your account.';
+      // Already there: the upload before the page reloaded reached the server, and that is all.
+      if (e.duplicate) return null;
       return e.evicted ? `Replay saved to your account (the oldest ${e.evicted === 1 ? 'one was' : `${e.evicted} were`} removed to make room).` : 'Replay saved to your account.';
     case 'failed':
       return `The replay could not be saved to your account: ${e.message}`;

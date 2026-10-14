@@ -18,14 +18,14 @@ beforeEach(() => {
 });
 afterEach(() => uninstallDom());
 
-async function page(server, hash = '', search = '') {
+async function page(server, hash = '', search = '', storage = null) {
   const root = doc.createElement('div');
   doc.body.append(root);
   const replaced = [];
   const navigated = [];
   const location = { hash, pathname: '/account/', search, assign: (u) => navigated.push(u) };
   const history = { replaceState: (_s, _t, url) => replaced.push(url) };
-  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u) });
+  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u), storage });
   await settle(10);
   return { root, view, replaced, navigated };
 }
@@ -391,4 +391,13 @@ test('account page replays: left out when the server keeps none', async () => {
   const { root } = await page(server);
   assert.equal(root.querySelector('#section-replays'), null);
   assert.deepEqual(strayValues(root), []);
+});
+
+test('account page: a replay link from the play gate is kept for the game until after the sign-in', async () => {
+  const server = new MockAccountServer();
+  const kept = new Map();
+  const storage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v), removeItem: (k) => kept.delete(k) };
+  const { replaced } = await page(server, '#replay=0123456789abcdef', '?returnTo=%2Fplay%2F', storage);
+  assert.equal(kept.get('webra.replayLink.v1'), '0123456789abcdef');
+  assert.deepEqual(replaced, ['/account/?returnTo=%2Fplay%2F'], 'the fragment leaves the address');
 });

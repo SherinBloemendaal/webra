@@ -16,7 +16,7 @@ import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/acc
 import { checkInput } from '/lib/js/ui/controls.js';
 import { AccountSession, accountState, signInMethods } from '/lib/js/account/session.js';
 import { createPasskey, getPasskey, isCancel, passkeysAvailable } from '/lib/js/account/passkey.js';
-import { replayLine, usageText } from '/lib/js/account/replays.js';
+import { clearQueuedReplays, REPLAY_LINK_RE, replayLine, replayLink, usageText } from '/lib/js/account/replays.js';
 import {
   ACCOUNT_PASSWORD_MAX,
   ACCOUNT_PASSWORD_MIN,
@@ -64,6 +64,15 @@ export function discordReturn(target) {
   return withTarget.length <= 200 ? withTarget : `/account/?returnTo=${encodeURIComponent(DEFAULT_RETURN)}`;
 }
 
+/** This tab's sessionStorage, or null when the browser blocks it. */
+function sessionStore() {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The message of a protocol check that fails, or null. */
 function check(fn) {
   try {
@@ -105,7 +114,9 @@ export const DISCORD_ERRORS = {
 /**
  * Build the page into `root`.
  * @param {HTMLElement} root
- * @param {{ api?: AccountApi, location?: Location, history?: History, navigate?: (url: string) => void }} [deps]
+ * `storage` (sessionStorage) keeps a replay link (`#replay=<id>`, from the
+ * game's Watch through the play gate) until the game opens it after sign-in.
+ * @param {{ api?: AccountApi, location?: Location, history?: History, navigate?: (url: string) => void, storage?: Storage | null }} [deps]
  */
 export async function mountAccountPage(root, deps = {}) {
   const api = deps.api ?? new AccountApi();
@@ -113,10 +124,18 @@ export async function mountAccountPage(root, deps = {}) {
   const hist = deps.history ?? globalThis.history;
   const navigate = deps.navigate ?? ((url) => loc.assign(url));
   const session = new AccountSession({ api });
+  // Signing out here drops the replays this account left waiting in this browser (js/account/replays.js).
+  session.onSignOut((userId) => clearQueuedReplays(userId));
   const notice = statusLine();
   const view = el('div', { class: 'account-view' });
   root.replaceChildren(notice.node, view);
 
+  // A replay to watch (the play gate sent a signed-out player here from /play/#replay=<id>):
+  // kept for this tab, so the game opens it after the sign-in.
+  if (REPLAY_LINK_RE.test(loc.hash ?? '')) {
+    replayLink(loc.hash, deps.storage !== undefined ? deps.storage : sessionStore());
+    hist.replaceState(null, '', loc.pathname + loc.search);
+  }
   const fragment = parseFragment(loc.hash);
   if (fragment.kind) hist.replaceState(null, '', loc.pathname + loc.search);
   const target = returnTarget(loc.search);

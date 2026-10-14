@@ -1068,6 +1068,11 @@ syncs with the account; the privacy notice (`apps/website/privacy.html`,
   JSON is served as a download, never rendered. Reads need the CSRF header,
   writes the full CSRF rules (Origin, Fetch Metadata, header), like every
   account route.
+- **Memory.** The Worker hashes and compresses the uploaded bytes as they
+  came, drops the text once it is parsed and the parsed replay once it is
+  summarized, so a 16 MiB upload holds the bytes plus one transient copy.
+  `createdAt` must be a time the Date range holds (protocol
+  `REPLAY_TIME_MAX`), so formatting it never throws.
 - **Validation and limits.** An upload needs an active account (not banned,
   not pending), 60 uploads per hour per account (counted before the body is
   read), `Content-Type: application/json` and at most 16 MiB
@@ -1091,7 +1096,9 @@ syncs with the account; the privacy notice (`apps/website/privacy.html`,
   the player leaves (the replay is queued in IndexedDB first, at most 3 s,
   so leaving never hangs), only for the account that played the game, and
   never while the setting is off; switching it off drops the replays still
-  waiting. Server text in the lists goes in with `textContent`. A replay
+  waiting, and so does signing out (a session that ends by itself keeps
+  them for that account's next sign-in, at most 7 days). A sign-in or
+  refusal answer for one account never stops another account's uploads. Server text in the lists goes in with `textContent`. A replay
   watched from the account is checked like a file (`parseReplay`, engine
   version) before the viewer runs it.
 - **Infrastructure.** The bucket is private (no public access, no custom

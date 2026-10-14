@@ -294,7 +294,7 @@ export const GROUPS = deepFreeze({
         label: 'Send error reports',
         help: 'When the site has error reporting on and something breaks, the game and the website in this browser send the error, the version and the browser to WebRA\'s own Sentry, without your name, chat or account. The server then reports its own errors either way, without player data.',
       },
-      // js/account/replay-uploads.js: the replay of every game goes to the account (docs/accounts-api.md 5.10).
+      // js/account/replays.js: the replay of every game goes to the account (docs/accounts-api.md 5.10).
       cloudReplays: {
         type: 'boolean',
         default: true,

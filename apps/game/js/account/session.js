@@ -79,6 +79,7 @@ export class AccountSession {
     this.session = null;
     this.ready = false;
     this.listeners = new Set();
+    this.signOutListeners = new Set();
     this.syncStatus = { status: 'idle', detail: '' };
     this.sync = registry
       ? new SettingsSync({
@@ -145,10 +146,26 @@ export class AccountSession {
     if (user.id !== before) await this.sync.start(user).catch((err) => console.warn('settings sync failed:', err));
   }
 
+  /** `fn(userId)` runs when the player signs out here (not when a session ends by itself). */
+  onSignOut(fn) {
+    this.signOutListeners.add(fn);
+    return () => this.signOutListeners.delete(fn);
+  }
+
   async signOut() {
+    const userId = this.user?.id ?? null;
     try {
       await this.api.logout();
     } finally {
+      if (userId) {
+        for (const fn of [...this.signOutListeners]) {
+          try {
+            await fn(userId);
+          } catch (err) {
+            console.warn('sign-out listener failed:', err);
+          }
+        }
+      }
       await this.setUser(null);
     }
   }

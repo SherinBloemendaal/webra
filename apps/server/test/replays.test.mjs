@@ -16,7 +16,7 @@ import {
   REPLAY_VERSION,
 } from '@webra/protocol';
 import { Browser, Clock, makeEnv, PASSWORD, promote, scheduled, signup } from './accounts-harness.mjs';
-import { drainReplayTrash, REPLAY_UPLOAD_LIMIT } from '../src/accounts/replays.js';
+import { drainReplayTrash, REPLAY_UPLOAD_LIMIT, replayFileName } from '../src/accounts/replays.js';
 import { DELETED_RETENTION_MS } from '../src/accounts/users.js';
 
 const clock = new Clock();
@@ -383,4 +383,25 @@ test('wrangler.jsonc binds the bucket the deploy creates', () => {
   assert.ok(step < deploy.indexOf('- name: Deploy the Worker'), 'before the Worker deploys');
   assert.match(deploy, /wrangler r2 bucket create "\$bucket"/);
   assert.match(deploy, /already exists/, 'an existing bucket is not an error');
+});
+
+test('a start time outside the Date range is refused; a stored one never breaks the download name', async () => {
+  const env = makeEnv({ email: false });
+  const b = await player(env, 'Timeless');
+  const r = await upload(b, text(replay(30, { createdAt: Number.MAX_SAFE_INTEGER })));
+  assert.equal(r.status, 422);
+  assert.match(r.body.error.message, /createdAt/);
+  assert.equal(replayFileName({ played_at: 9e15, title: 'Far future' }), 'webra-replay-Far-future-undated.json');
+  assert.equal(replayFileName({ played_at: 0, title: '' }), 'webra-replay-game-1970-01-01-00-00.json');
+});
+
+test('sizes and the checksum come from the uploaded bytes (multi-byte text counted as UTF-8)', async () => {
+  const env = makeEnv({ email: false });
+  const b = await player(env, 'Bytes');
+  const file = text(replay(31, { title: 'Ölfeld 戦い' }));
+  const r = (await upload(b, file)).body.replay;
+  assert.equal(r.rawSize, Buffer.byteLength(file, 'utf8'));
+  const { createHash } = await import('node:crypto');
+  assert.equal(rows(env, b.user.id)[0].content_hash, createHash('sha256').update(file, 'utf8').digest('hex'));
+  assert.equal(JSON.stringify((await b.get(`/api/account/replays/${r.id}`)).body), file);
 });

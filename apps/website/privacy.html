@@ -135,6 +135,10 @@
             days other account data waits).</li>
           <li>The files are stored with Cloudflare R2 (Cloudflare runs WebRA's server), compressed, under a random name.
             Your data export lists the replays; the files themselves download from the Replays list.</li>
+          <li>Until it is uploaded, a replay waits in this browser (IndexedDB), for the account that played it: when
+            you are offline, or signed out because your session ended, it waits until that account signs in here again,
+            at most 7 days (and at most 10 replays), then it is dropped. Signing out yourself, in the game or on the
+            account page, drops your replays still waiting in this browser.</li>
           <li>Switching the setting off stops new uploads (and drops replays still waiting to be uploaded in this
             browser); replays already in your account stay until they expire or you delete them.</li>
         </ul>

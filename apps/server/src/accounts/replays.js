@@ -29,9 +29,8 @@ import {
   ACCOUNT_REPLAYS_MAX,
   parseReplay,
   replaySummary,
-  sha256Hex,
 } from '@webra/protocol';
-import { HttpError, json, readText } from '../http.js';
+import { HttpError, json, readBody } from '../http.js';
 import { randomHex } from '../crypto.js';
 import { checkJsonType } from '../maps.js';
 import { invalid } from './context.js';
@@ -125,9 +124,16 @@ function evictStatement(db, userId) {
     .bind(userId, ACCOUNT_REPLAYS_MAX, ACCOUNT_REPLAYS_BYTES_MAX);
 }
 
-async function gzip(text) {
-  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+/** Gzip the uploaded bytes as they came (no second encoding of the text). */
+async function gzip(bytes) {
+  const stream = new Response(bytes).body.pipeThrough(new CompressionStream('gzip'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** SHA-256 (hex) of the uploaded bytes: the same digest as the protocol's sha256Hex of their text. */
+async function sha256Bytes(bytes) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function resultOf(url) {
@@ -156,28 +162,32 @@ async function uploadReplay(ctx) {
   checkJsonType(ctx.request);
   const result = resultOf(ctx.url);
   await ctx.limit('replay-upload', user.id, REPLAY_UPLOAD_LIMIT, HOUR, 'Too many replays uploaded. Try again later.');
-  const text = await readText(ctx.request, ACCOUNT_REPLAY_MAX_BYTES);
-  const parsed = await parseReplay(text, { maxBytes: ACCOUNT_REPLAY_MAX_BYTES });
+  // Peak memory of a 16 MiB upload: the bytes, their text and the parsed replay; the text goes
+  // out of reach after parsing, the replay after its summary, so only the bytes reach R2.
+  const body = await readBody(ctx.request, ACCOUNT_REPLAY_MAX_BYTES);
+  const bytes = body.bytes;
+  const parsed = await parseReplay(body.text, { maxBytes: ACCOUNT_REPLAY_MAX_BYTES });
+  body.text = null;
   if (!parsed.ok) {
     if (parsed.code === 'too_large') throw new HttpError(413, 'too_large', 'This replay is too large to keep in your account.');
     throw new HttpError(422, 'invalid', `Invalid replay: ${parsed.error}.`);
   }
-  const replay = parsed.replay;
-  if (replay.kind !== 'replay') throw new HttpError(422, 'invalid', 'This is a saved game, not a replay.');
+  if (parsed.replay.kind !== 'replay') throw new HttpError(422, 'invalid', 'This is a saved game, not a replay.');
+  const summary = replaySummary(parsed.replay);
+  parsed.replay = null;
   const db = ctx.db;
-  const hash = await sha256Hex(text);
+  const hash = await sha256Bytes(bytes);
   const stored = async () => db.prepare('SELECT * FROM account_replays WHERE user_id = ?1 AND content_hash = ?2 AND expires_at > ?3').bind(user.id, hash, ctx.now).first();
   const existing = await stored();
   if (existing) return json({ replay: replayView(existing), duplicate: true });
 
-  const summary = replaySummary(replay);
-  const body = await gzip(text);
+  const gz = await gzip(bytes);
   const id = randomHex(8);
   const key = objectKey(user.id, id);
   await db.prepare('INSERT INTO replay_object_trash (r2_key, ready_at) VALUES (?1, ?2)').bind(key, ctx.now + PENDING_OBJECT_MS).run();
   let results;
   try {
-    await bucket.put(key, body, { httpMetadata: { contentType: 'application/gzip' }, customMetadata: { user: user.id, engine: replay.engine } });
+    await bucket.put(key, gz, { httpMetadata: { contentType: 'application/gzip' }, customMetadata: { user: user.id, engine: summary.engine } });
     results = await db.batch([
       // An expired copy (the daily job has not run yet) makes way for this one.
       db.prepare('DELETE FROM account_replays WHERE user_id = ?1 AND expires_at <= ?2').bind(user.id, ctx.now),
@@ -192,8 +202,8 @@ async function uploadReplay(ctx) {
           key,
           ctx.now,
           ctx.now + ACCOUNT_REPLAY_RETENTION_MS,
-          body.byteLength,
-          new TextEncoder().encode(text).byteLength,
+          gz.byteLength,
+          bytes.byteLength,
           hash,
           summary.engine,
           summary.mode,
@@ -244,7 +254,9 @@ async function ownReplay(ctx, user, id) {
 
 /** A file name for the download: letters, digits and dashes (like the game's recordFileName). */
 export function replayFileName(row) {
-  const date = new Date(row.played_at).toISOString().slice(0, 16).replace(/[T:]/g, '-');
+  // The protocol keeps createdAt within the Date range; a row from before that check gets no date.
+  const when = new Date(row.played_at);
+  const date = Number.isNaN(when.getTime()) ? 'undated' : when.toISOString().slice(0, 16).replace(/[T:]/g, '-');
   const title = row.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'game';
   return `webra-replay-${title}-${date}.json`;
 }

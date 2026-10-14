@@ -5,7 +5,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AccountApi, AccountError } from '../js/account/api.js';
 import {
+  clearQueuedReplays,
   daysLeft,
+  forgetReplayLink,
+  REPLAY_LINK_KEY,
+  replayLink,
   durationText,
   formatBytes,
   GameReplay,
@@ -350,4 +354,65 @@ test('the game\'s Replays button lists the account\'s replays: Watch loads and c
   } finally {
     uninstallDom();
   }
+});
+
+test('a late refusal for the previous account never stops the next account\'s uploads', async () => {
+  let reject;
+  const api = {
+    calls: [],
+    uploadReplay(text) {
+      this.calls.push(text);
+      if (text === 'a') return new Promise((_, rj) => (reject = rj));
+      return Promise.resolve({ replay: { id: 'b'.repeat(16) }, evicted: 0 });
+    },
+  };
+  const { u, timers } = uploads(api);
+  await u.add({ userId: 'A', key: 'a', text: 'a' });
+  await u.add({ userId: 'B', key: 'b', text: 'b' });
+  u.start('A');
+  await timers.fire();
+  assert.deepEqual(api.calls, ['a'], 'A\'s upload is under way');
+  // A signs out, B signs in; then A's request comes back unauthenticated.
+  u.stop();
+  u.start('B');
+  reject(new AccountError(401, 'unauthenticated', 'Sign in first.'));
+  await settle();
+  assert.equal(u.userId, 'B', 'B keeps uploading');
+  await timers.fire();
+  assert.deepEqual(api.calls, ['a', 'b']);
+  assert.deepEqual((await u.queue.all()).map((r) => r.key), ['a'], 'A\'s replay waits for A');
+});
+
+test('a replay the server already has (sent just before a reload) is dropped without a toast', () => {
+  assert.equal(uploadEventText({ type: 'uploaded', duplicate: true, replay: {} }), null);
+  assert.equal(uploadEventText({ type: 'uploaded', duplicate: false, evicted: 2, replay: {} }), 'Replay saved to your account (the oldest 2 were removed to make room).');
+});
+
+test('signing out drops that account\'s waiting replays; a session that ends by itself keeps them', async () => {
+  const { AccountSession } = await import('../js/account/session.js');
+  const queue = new MemoryQueue();
+  await queue.put({ key: 'mine', userId: 'u1', text: 't', queuedAt: 0 });
+  await queue.put({ key: 'theirs', userId: 'u2', text: 't', queuedAt: 0 });
+  const session = new AccountSession({ api: { logout: async () => ({}) } });
+  session.user = { id: 'u1', status: 'active' };
+  session.onSignOut((id) => clearQueuedReplays(id, queue));
+  await session.setUser(null);
+  assert.equal((await queue.all()).length, 2, 'no sign-out: the session ended, the replays wait');
+  session.user = { id: 'u1', status: 'active' };
+  await session.signOut();
+  assert.deepEqual((await queue.all()).map((r) => r.key), ['theirs']);
+  assert.equal(session.user, null);
+});
+
+test('a replay link survives the sign-in: kept for the tab until it opens', () => {
+  const m = new Map();
+  const store = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+  const id = 'abcdef0123456789';
+  assert.equal(replayLink(`#replay=${id}`, store), id);
+  assert.equal(store.getItem(REPLAY_LINK_KEY), id);
+  assert.equal(replayLink('', store), id, 'after the sign-in the address has no fragment any more');
+  forgetReplayLink(store);
+  assert.equal(replayLink('', store), null);
+  assert.equal(replayLink('#replay=../etc', store), null);
+  assert.equal(replayLink(`#replay=${id}`, null), id, 'blocked storage: this page only');
 });
