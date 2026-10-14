@@ -1700,9 +1700,11 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   husk, crate or mine. A unit takes its cell like in OpenRA's ActorMap
   (`occupies_cell`): from its creation, a paratrooper on its parachute
   too, but an aircraft only when landed. The same rule decides where
-  crates drop (spawner, and the delivery plane, which keeps its crate
-  over a taken cell and drops it on the first free cell of its flight
-  within DropRange, else flies off with it), where a helicopter may land,
+  crates drop (the spawner's target cell; the delivery plane drops the
+  crate over the first cell of its approach within DropRange that suits
+  it, the crate's TerrainTypes from ^Crate and no actor there, usually
+  before the chosen cell, as in OpenRA, and flies off with it when none
+  does; WaterChance only chooses the target), where a helicopter may land,
   what a falling bridge kills and which units a mission's footprint
   trigger sees. A crate landing on a unit whose locomotor crushes crates
   (a paratrooper still on its parachute too) is collected by it; landing

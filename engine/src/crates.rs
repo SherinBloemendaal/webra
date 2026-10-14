@@ -4,9 +4,12 @@
 //! With the crates lobby option the spawner waits `initial_delay` ticks, then
 //! every `spawn_interval` ticks tops the crates on the map up to `minimum`
 //! and adds one more while there are fewer than `maximum`. Each new crate
-//! goes to a random free cell (land, or water with `water_chance` percent)
-//! and is flown in by a Badger of the neutral player, dropped over its cell
-//! and lands on a parachute. A crate lies for `duration` ticks. A unit whose
+//! is aimed at a random free cell (land, or water with `water_chance`
+//! percent; that only chooses the target) and flown in by a Badger of the
+//! neutral player. Like OpenRA's ParaDrop, the Badger drops it over the
+//! first cell of its approach within DropRange that suits it (the crate's
+//! TerrainTypes and nothing in the ActorMap), usually before the chosen
+//! cell, and it lands on a parachute. A crate lies for `duration` ticks. A unit whose
 //! locomotor crushes `crate` picks it up by driving onto it; the crate rolls
 //! one of its actions weighted by their shares for that collector (cash,
 //! a level up, an explosion, the map hidden or revealed, healing, copies of

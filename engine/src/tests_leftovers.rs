@@ -242,6 +242,7 @@ fn a_delivery_plane_drops_its_crate_beside_a_blocked_drop_cell() {
         }
         assert_eq!(w.cell_of(w.actors[harv].x, w.actors[harv].y), (20, 20), "the harvester still on the drop cell");
         if blocked_around {
+            assert!(!w.actors.iter().any(|a| a.alive && a.ty as usize == badr), "the Badger left the map");
             assert_eq!(landed, None, "nowhere free within DropRange: the crate flew off");
             assert_eq!(w.crates.count, 0);
         } else {
