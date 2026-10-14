@@ -1090,21 +1090,25 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
   panel.replaceChildren(card);
   // The entry point shows the installed state too: a mark and its accessible name.
   let level = 'none';
+  // The corner button and the other entries (`opts.entries`: the start screen's More, Original content).
+  const entries = [button, ...(opts.entries ?? [])].filter(Boolean);
   const showLevel = (l) => {
     level = l;
-    if (!button) return;
-    button.dataset.state = l;
-    if (l === 'none') button.removeAttribute('aria-label');
-    else button.setAttribute('aria-label', `Original content (${ENTRY_STATES[l]})`);
+    for (const b of entries) {
+      b.dataset.state = l;
+      if (l === 'none') b.removeAttribute('aria-label');
+      else b.setAttribute('aria-label', `Original content (${ENTRY_STATES[l]})`);
+    }
   };
   const view = mountContentSettings(body, content, audio, { ...opts, onState: showLevel });
   let opener = null;
-  const open = (on) => {
+  // `from`: what gets the focus back (a click does not focus a button in Safari and Firefox on macOS).
+  const open = (on, from = null) => {
     if (on === !panel.hidden) return;
     panel.hidden = !on;
-    button?.setAttribute('aria-expanded', String(on));
+    for (const b of entries) b.setAttribute('aria-expanded', String(on));
     if (on) {
-      opener = document.activeElement;
+      opener = from ?? (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
       view.refresh();
       close.focus();
     } else {
@@ -1113,7 +1117,7 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
   };
   if (button) {
     button.hidden = false;
-    button.addEventListener('click', () => open(panel.hidden));
+    button.addEventListener('click', () => open(panel.hidden, button));
   }
   close.addEventListener('click', () => open(false));
   panel.addEventListener('pointerdown', (e) => {
@@ -1125,7 +1129,7 @@ export function mountContentPanel(button, panel, content, audio, opts = {}) {
     e.stopPropagation();
   });
   return {
-    open: () => open(true),
+    open: (from = null) => open(true, from),
     /** The menu entry's label: "Original content", with the installed state once there is one. */
     get label() {
       return level === 'none' ? 'Original content' : `Original content (${ENTRY_STATES[level]})`;

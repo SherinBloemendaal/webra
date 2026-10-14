@@ -1,6 +1,6 @@
 [package]
 name = "webra-sim"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2021"
 description = "Deterministic RTS simulation for WebRA, compiled to WebAssembly"
 license = "GPL-3.0-or-later"
@@ -22,6 +22,10 @@ libm = "0.2"
 # wasm32 measurement (examples/lua_stack.rs, tools/lua-stack-wasm.mjs). Never
 # in the game's build.
 stack-probe = []
+# Per-system timers of the tick (src/profile.rs) for the headless benchmark
+# (examples/sim_bench.rs). Native only (std::time::Instant panics on wasm32,
+# so the feature refuses to build there); never in the game's build.
+profile = []
 
 # The interpreter's stack use per level, built for wasm32 and run by node
 # (tools/lua-stack-wasm.mjs): the per-target budget check of MAX_LEVELS.

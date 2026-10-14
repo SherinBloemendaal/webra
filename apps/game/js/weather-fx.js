@@ -33,7 +33,10 @@ export function weatherInfo(state) {
   if (state.sightPct < 100) effects.push(`Sight ${state.sightPct - 100}%`);
   if (state.biome === 'snow') effects.push('Vehicles slide (more on ice), infantry 10% slower');
   if (state.weather === 'heatwave') effects.push('Vehicles that keep driving or firing overheat: 25% slower and fire 25% slower until they cool down');
-  if (state.weather === 'thunderstorm') effects.push('Lightning is harmless');
+  // engine/src/lightning.rs: what a strike does; Lightning Rods ground it.
+  if (state.weather === 'thunderstorm') {
+    effects.push('Lightning halves the health of what it strikes; a struck power plant cuts its owner\'s power for 15 s and then makes half its power until repaired. Lightning Rods ground every strike within their range');
+  }
   return { label, detail: effects.length ? effects.join('. ') + '.' : NO_EFFECT };
 }
 
@@ -58,12 +61,17 @@ export class WeatherFx {
     this.lastFlashTick = null;
     this.flashAt = -1;
     this.thunderAt = -1;
-    this.thunderGain = 1;
+    /** The strike whose thunder is on its way: { x, y, kind } (world pixels). */
+    this.strike = null;
   }
 
   /**
    * New sky from Game.weather_json (parsed). `now` in seconds; `camera` is
-   * the view centre in world pixels (thunder is quieter far away).
+   * the view centre in world pixels (far strikes rumble later). `flash` is
+   * [tick, x, y] or [tick, x, y, kind] (engine/src/weather.rs StrikeKind:
+   * 0 the ground, 1 a lightning rod, 2 units or structures, 3 a power
+   * plant); `onThunder` gets { x, y, kind } once the sound has travelled, and
+   * the sound system places it (audio/director.js thunderCue).
    */
   update(state, now, camera = null) {
     this.state = state;
@@ -75,14 +83,14 @@ export class WeatherFx {
       if (fresh) {
         this.flashAt = now;
         const d = camera ? Math.hypot(flash[1] - camera.x, flash[2] - camera.y) : 0;
-        // Sound travels: farther strikes rumble later and softer.
+        // Sound travels: farther strikes rumble later.
         this.thunderAt = now + 0.3 + Math.min(2.5, d / 1200);
-        this.thunderGain = Math.max(0.25, 1 - d / 4000);
+        this.strike = { x: flash[1], y: flash[2], kind: flash[3] ?? 0 };
       }
     }
     if (this.thunderAt >= 0 && now >= this.thunderAt) {
       this.thunderAt = -1;
-      this.onThunder?.(this.thunderGain);
+      this.onThunder?.(this.strike);
     }
   }
 

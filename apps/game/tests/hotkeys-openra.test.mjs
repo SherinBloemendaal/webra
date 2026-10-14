@@ -10,6 +10,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { OPENRA_HOTKEYS, HOTKEY_GROUPS } from '../js/openra-hotkeys.js';
 import {
   BROWSER_SUBSTITUTES,
+  WEBRA_SUBSTITUTES,
+  substituteFor,
   HotkeyRegistry,
   KEYMAP_VERSION,
   KEYMAP_VERSION_KEY,
@@ -93,7 +95,7 @@ function fakeGame(over = {}) {
     select_all: () => new Uint32Array(0),
     select_by_class: () => new Uint32Array(0),
     units_center: (_p, ids) => (ids.length ? Float32Array.from([ids[0] * 10, ids[0] * 20]) : new Float32Array(0)),
-    sell_value: () => 0,
+    sell_value: () => -1,
     repair_cursor: () => 0,
     repair_unit_target: () => new Float32Array(0),
     can_power_down: () => false,
@@ -157,7 +159,7 @@ test("the defaults are OpenRA's, except where the browser keeps the key, and not
     for (const a of hotkeys.list()) {
       if (a.openra) {
         const ora = OPENRA_HOTKEYS[a.openra].key;
-        const expected = BROWSER_SUBSTITUTES[a.openra] ? BROWSER_SUBSTITUTES[a.openra].key : ora;
+        const expected = substituteFor(a.openra) ? substituteFor(a.openra).key : ora;
         assert.deepEqual(a.defaults, expected ? [expected] : [], `${a.name} (${a.openra})`);
         assert.equal(a.label, OPENRA_HOTKEYS[a.openra].description);
         assert.equal(a.group, groupOfTypes(OPENRA_HOTKEYS[a.openra].types));
@@ -308,7 +310,7 @@ test('repair, power down and sell modes stay on; a beacon ends its mode', async 
     repair_cursor: (_p, id) => (id === 7 ? 1 : id === 8 ? 2 : 0),
     repair_unit_target: () => Float32Array.from([300, 400]),
     can_power_down: (_p, id) => id === 7,
-    sell_value: (_p, id) => (id === 7 ? 150 : 0),
+    sell_value: (_p, id) => (id === 7 ? 150 : -1),
   });
   const { input, hotkeys } = await makeInput({ game, hooks: { onMode: (m) => modes.push(m) } });
   const key = (code, k = code.replace('Key', '')) => hotkeys.handle({ code, key: k.toLowerCase(), ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {} });
@@ -346,6 +348,388 @@ test('repair, power down and sell modes stay on; a beacon ends its mode', async 
   input.setMode('repair');
   assert.equal(input.modeTarget({ x: 50, y: 50 }), true);
   assert.equal(input.modeTarget({ x: 500, y: 50 }), false);
+});
+
+// ---- Bulk repair and sell (WebRA additions, js/input.js) ----------------------------------
+
+/**
+ * Ids 1..3: own structures (3 undamaged), 4: an own damaged tank, 5: an
+ * ally's structure, 6: an own damaged ore truck, 7: an own damaged tank with
+ * no depot, 8: an own undamaged tank, 9: the own Construction Yard.
+ */
+function bulkGame(over = {}) {
+  const actors = {
+    1: { owner: 0, building: true },
+    2: { owner: 0, building: true },
+    3: { owner: 0, building: true },
+    4: { owner: 0, building: false, kind: 'combat' },
+    5: { owner: 1, building: true },
+    6: { owner: 0, building: false, kind: 'harvesters' },
+    7: { owner: 0, building: false, kind: 'combat' },
+    8: { owner: 0, building: false },
+    9: { owner: 0, building: true },
+  };
+  const damaged = new Set([1, 2, 4, 6, 7]);
+  // The engine's answer: own damaged actors among the ids by category, in their order.
+  const groups = (p, ids) => {
+    const out = { buildings: [], combat: [], harvesters: [], other: [], noFacility: [] };
+    for (const id of new Set(ids)) {
+      const a = actors[id];
+      if (!a || a.owner !== p || !damaged.has(id)) continue;
+      out[a.building ? 'buildings' : a.kind].push(id);
+      if (id === 7) out.noFacility.push(id);
+    }
+    return JSON.stringify(out);
+  };
+  const recorder = () => {
+    const calls = [];
+    const f = (...args) => calls.push(args.map((v) => (ArrayBuffer.isView(v) ? Array.from(v) : v)));
+    f.calls = calls;
+    return f;
+  };
+  return fakeGame({
+    actor_json: (id) => (actors[id] ? JSON.stringify({ id, type: 'x', ...actors[id], carrier: NONE }) : 'null'),
+    repair_selection_json: (p, ids) => groups(p, Array.from(ids)),
+    // Everything stands inside x < 400; nothing elsewhere.
+    repair_box_json: (p, x0, _y0, x1) => groups(p, Math.min(x0, x1) < 400 ? [1, 2, 3, 4, 5, 6, 7, 8, 9] : []),
+    // The sell box: 1, 2 and 3 (never the Construction Yard 9), worth 100, 200 and 300.
+    sell_box: (_p, x0, _y0, x1) => (Math.min(x0, x1) < 400 ? Uint32Array.from([1, 2, 3]) : Math.min(x0, x1) < 600 ? Uint32Array.from([2]) : new Uint32Array(0)),
+    sell_value: (_p, id) => id * 100,
+    repair_buildings: recorder(),
+    repair_units: recorder(),
+    sell_buildings: recorder(),
+    ...over,
+  });
+}
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+const keyEvent = (code, k) => ({ code, key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {} });
+const mouseOf = (input) => (type, x, y, shift = false) =>
+  input[type]({ button: 0, clientX: x, clientY: y, shiftKey: shift, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} });
+
+test('the Repair key with own actors selected repairs the damaged ones at once instead of opening the mode', async () => {
+  const modes = [];
+  const feedback = [];
+  const game = bulkGame();
+  const { input, hotkeys } = await makeInput({ game, hooks: { onMode: (m) => modes.push(m), feedback: (t) => feedback.push(t) } });
+  input.setSelection([4, 3, 2, 5, 1, 6, 7, 8]);
+  hotkeys.handle(keyEvent('KeyC', 'c'));
+  await flush();
+  assert.equal(input.mode, null, 'no repair mode');
+  assert.deepEqual(game.repair_buildings.calls, [[0, [2, 1]]], 'one order for the selected own damaged structures');
+  assert.deepEqual(game.repair_units.calls, [[0, [4, 6]]], 'one order for the units that have a depot, no chooser');
+  assert.deepEqual(feedback, ['No repair facility for one unit.']);
+  // The sidebar button goes the same way (main.js: onMode -> toggleMode).
+  input.toggleMode('repair');
+  await flush();
+  assert.equal(game.repair_buildings.calls.length, 2, 'pressed again: the engine stops the structures when all repair');
+  // Only undamaged or allied actors selected, or none: repair mode as before.
+  for (const sel of [[3], [5], [8], []]) {
+    input.setSelection(sel);
+    input.toggleMode('repair');
+    await flush();
+    assert.equal(input.mode, 'repair', `selection ${sel}`);
+    input.toggleMode('repair');
+    assert.equal(input.mode, null, 'the key again ends the mode');
+  }
+  assert.equal(game.repair_buildings.calls.length, 2);
+  assert.deepEqual(modes, ['repair', null, 'repair', null, 'repair', null, 'repair', null]);
+});
+
+test('the Repair key from sell or power down mode leaves that mode before it repairs', async () => {
+  const game = bulkGame({ pick: () => 1, sell_value: () => 150 });
+  const { input } = await makeInput({ game });
+  for (const mode of ['sell', 'powerDown']) {
+    input.setMode(mode);
+    input.setSelection([1]);
+    input.toggleMode('repair');
+    assert.equal(input.mode, null, `${mode} ends at once, before the answer`);
+    // A click meanwhile sells or powers down nothing.
+    await input.modeClick({ x: 50, y: 50 });
+    await flush();
+    assert.equal(input.mode, null);
+  }
+  assert.deepEqual(game.calls.filter((c) => c[0] === 'sell' || c[0] === 'power_down'), []);
+  assert.equal(game.repair_buildings.calls.length, 2);
+});
+
+test('a box dragged in repair mode asks what to repair, remembers it, and Shift skips the question', async () => {
+  const asked = [];
+  let answer = 'combat';
+  const feedback = [];
+  const game = bulkGame({ pick: (_p, x) => (x < 100 ? 1 : NONE), repair_cursor: (_p, id) => (id === 1 ? 1 : 0) });
+  const settings = createSettings();
+  installDom();
+  const { Input } = await import('../js/input.js');
+  const canvas = { clientWidth: 800, clientHeight: 600, style: {}, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  const hooks = {
+    onSelectionChanged() {},
+    feedback: (t) => feedback.push(t),
+    chooseRepair: async (q) => {
+      asked.push(q);
+      return answer;
+    },
+  };
+  const input = new Input(canvas, game, { actors: [] }, 0, hooks, { hotkeys: new HotkeyRegistry(createSettings()), settings });
+  input.camera.zoom = 1;
+  const mouse = mouseOf(input);
+  input.setMode('repair');
+  // While dragging: the yellow box and the repair cursor while it holds something.
+  mouse('onMouseDown', 10, 10);
+  assert.equal(input.drag, null, 'no selection box');
+  mouse('onMouseMove', 300, 200);
+  assert.equal(input.modeTarget({ x: 600, y: 600 }), true, 'the box holds things to repair');
+  const rects = input.uiRects();
+  assert.deepEqual(rects.slice(4, 7), [0.95, 0.79, 0.3], 'in the repair yellow');
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.deepEqual(asked, [{ options: ['buildings', 'combat', 'harvesters', 'all'], last: 'all', at: { x: 300, y: 200 } }]);
+  assert.deepEqual(game.repair_units.calls, [[0, [4]]], 'combat units with a depot');
+  assert.deepEqual(game.repair_buildings.calls, []);
+  assert.deepEqual(feedback, ['No repair facility for one unit.']);
+  assert.equal(settings.get('repairBoxChoice'), 'combat', 'remembered');
+  // Shift: the last choice without asking.
+  mouse('onMouseDown', 10, 10, true);
+  mouse('onMouseMove', 300, 200, true);
+  mouse('onMouseUp', 300, 200, true);
+  await flush();
+  assert.equal(asked.length, 1);
+  assert.equal(game.repair_units.calls.length, 2);
+  // All: structures toggle, units go; cancelled (null): nothing.
+  answer = 'all';
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.deepEqual(game.repair_buildings.calls, [[0, [1, 2]]]);
+  assert.deepEqual(game.repair_units.calls.at(-1), [0, [4, 6]]);
+  assert.equal(asked.at(-1).last, 'combat', 'the remembered choice is offered first');
+  answer = null;
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.equal(game.repair_buildings.calls.length, 1);
+  assert.equal(settings.get('repairBoxChoice'), 'all');
+  // A box with nothing to repair: the blocked cursor, no question, no order.
+  mouse('onMouseDown', 500, 10);
+  mouse('onMouseMove', 700, 200);
+  assert.equal(input.modeTarget({ x: 50, y: 50 }), false, 'the box decides, not the actor under the mouse');
+  mouse('onMouseUp', 700, 200);
+  await flush();
+  assert.equal(asked.length, 3);
+  // A click (less than 6 px of movement) repairs the one structure under it.
+  mouse('onMouseDown', 50, 50);
+  mouse('onMouseMove', 52, 51);
+  mouse('onMouseUp', 52, 51);
+  await flush();
+  assert.deepEqual(game.calls.filter((c) => c[0] === 'repair_building'), [['repair_building', 0, 1]]);
+  // Right click (or Esc) during a drag ends the mode and the box.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  input.setMode(null);
+  assert.equal(input.modeDrag, null);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  assert.equal(asked.length, 3);
+});
+
+test('a box dragged in sell mode sells the structures in it after a confirmation with the refund', async () => {
+  const asked = [];
+  let ok = false;
+  const game = bulkGame({ pick: (_p, x) => (x < 100 ? 9 : NONE), sell_value: (_p, id) => id * 100 });
+  const { input } = await makeInput({ game, hooks: { confirmSell: async (q) => (asked.push(q), ok) } });
+  const mouse = mouseOf(input);
+  input.setMode('sell');
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  assert.equal(input.modeTarget({ x: 700, y: 700 }), true, 'the sell cursor while the box holds a structure');
+  assert.deepEqual(input.uiRects().slice(4, 7), [0.95, 0.3, 0.22], 'in red');
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  await flush();
+  assert.deepEqual(asked, [{ count: 3, refund: 600, at: { x: 300, y: 200 } }], 'the count and the total refund');
+  assert.deepEqual(game.sell_buildings.calls, [], 'cancelled: nothing sold');
+  // Esc (the mode ends) while the refunds are asked for: no question is left open, nothing sold.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await Promise.resolve();
+  input.cancelMode();
+  await flush();
+  await flush();
+  assert.equal(asked.length, 1, 'no question after the mode ended');
+  input.setMode('sell');
+  // A newer box while the first one's refunds come: only the newer one asks.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  mouse('onMouseDown', 700, 500);
+  await flush();
+  await flush();
+  assert.equal(asked.length, 1, 'the first box was dropped');
+  mouse('onMouseUp', 700, 500);
+  await flush();
+  ok = true;
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  await flush();
+  assert.deepEqual(game.sell_buildings.calls, [[0, [1, 2, 3]]]);
+  // One structure: no question.
+  mouse('onMouseDown', 450, 10);
+  mouse('onMouseMove', 500, 200);
+  mouse('onMouseUp', 500, 200);
+  await flush();
+  assert.equal(asked.length, 2);
+  assert.deepEqual(game.sell_buildings.calls.at(-1), [0, [2]]);
+  // Nothing sellable in the box: the blocked cursor, nothing sold.
+  mouse('onMouseDown', 700, 10);
+  mouse('onMouseMove', 760, 200);
+  assert.equal(input.modeTarget({ x: 50, y: 50 }), false);
+  mouse('onMouseUp', 760, 200);
+  await flush();
+  assert.equal(game.sell_buildings.calls.length, 2);
+  // A single click still sells the Construction Yard (9).
+  mouse('onMouseDown', 50, 50);
+  mouse('onMouseUp', 50, 50);
+  await flush();
+  assert.deepEqual(game.calls.filter((c) => c[0] === 'sell'), [['sell', 0, 9]]);
+  assert.equal(input.mode, 'sell', 'the mode stays on');
+});
+
+test('the game menu or the end of the view closes an open box question and drops its answer; a mode box holds edge scrolling', async () => {
+  let cancels = 0;
+  const answers = [];
+  const game = bulkGame({ sell_value: (_p, id) => id * 100 });
+  const hooks = {
+    // The question stays open until the test answers it, as the pop-up does (js/boxchooser.js).
+    confirmSell: () => new Promise((r) => answers.push(r)),
+    cancelBoxChoice: () => cancels++,
+  };
+  const { input } = await makeInput({ game, hooks });
+  const mouse = mouseOf(input);
+  input.setMode('sell');
+  const cancelsBefore = cancels;
+  // A box being dragged: no edge scrolling (js/main.js holds it while the question is open).
+  input.windowMouse = { x: 0, y: 300, inside: true, finger: false };
+  assert.equal(input.mayEdgeScroll(1), true, 'the mouse at the left edge scrolls');
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  assert.equal(input.mayEdgeScroll(1), false, 'not while the box is dragged');
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  await flush();
+  assert.equal(answers.length, 1, 'the sell question is open');
+  // The game menu opens: the question closes, and a late Sell sells nothing.
+  input.setSuspended(true);
+  assert.equal(cancels, cancelsBefore + 1, 'the open question was closed');
+  answers[0](true);
+  await flush();
+  assert.deepEqual(game.sell_buildings.calls, [], 'the answer of a dropped box does nothing');
+  input.setSuspended(false);
+  // The view goes (Input.dispose): the same.
+  mouse('onMouseDown', 10, 10);
+  mouse('onMouseMove', 300, 200);
+  mouse('onMouseUp', 300, 200);
+  await flush();
+  await flush();
+  assert.equal(answers.length, 2);
+  // The fake canvas and window of installDom have no removeEventListener for dispose().
+  input.canvas.removeEventListener = () => {};
+  globalThis.window.removeEventListener ??= () => {};
+  input.dispose();
+  assert.equal(cancels, cancelsBefore + 2);
+  answers[1](true);
+  await flush();
+  assert.deepEqual(game.sell_buildings.calls, []);
+});
+
+test('the box chooser: keys, Enter, Esc and a press outside answer it', async () => {
+  const { BoxChooser, sellConfirmText, formatCredits } = await import('../js/boxchooser.js');
+  assert.equal(formatCredits(12345), '$12,345');
+  assert.equal(sellConfirmText(3, 1500), 'Sell 3 structures for $1,500?');
+  const listeners = new Map();
+  const win = {
+    addEventListener: (t, f) => listeners.set(t, f),
+    removeEventListener: (t, f) => listeners.get(t) === f && listeners.delete(t),
+  };
+  const make = (tag) => {
+    const el = {
+      tag,
+      children: [],
+      attrs: {},
+      style: {},
+      handlers: {},
+      textContent: '',
+      setAttribute: (k, v) => (el.attrs[k] = v),
+      append: (...c) => el.children.push(...c),
+      addEventListener: (t, f) => (el.handlers[t] = f),
+      remove: () => (el.removed = true),
+      contains: (x) => x === el || el.children.some((c) => c === x || c.contains?.(x)),
+      focus: () => (focused = doc.activeElement = el),
+    };
+    return el;
+  };
+  let focused = null;
+  const parent = make('main');
+  const doc = { createElement: make, activeElement: null };
+  const chooser = new BoxChooser(parent, { doc, win });
+  const key = (k, shiftKey = false) => {
+    const e = { key: k, shiftKey, prevented: false, stopImmediatePropagation() {}, preventDefault: () => (e.prevented = true) };
+    listeners.get('keydown')(e);
+    return e;
+  };
+  let p = chooser.chooseRepair({ options: ['buildings', 'combat', 'all'], last: 'combat', at: { x: 5, y: 5 } });
+  const buttons = parent.children[0].children[1].children;
+  assert.equal(buttons.length, 3);
+  assert.equal(focused, buttons[1], 'the remembered choice has the focus (Enter takes it)');
+  key('2');
+  assert.equal(await p, 'combat');
+  assert.equal(chooser.open, false);
+  assert.equal(listeners.size, 0, 'listeners removed');
+  p = chooser.chooseRepair({ options: ['buildings', 'harvesters', 'all'], last: 'other', at: null });
+  assert.equal(focused, parent.children[1].children[1].children[2], 'All when the last choice is not offered');
+  key('o');
+  assert.equal(await p, 'harvesters', 'letters pick too');
+  p = chooser.chooseRepair({ options: ['buildings', 'combat', 'all'], last: 'all' });
+  const trap = parent.children.at(-1).children[1].children;
+  assert.equal(focused, trap[2]);
+  assert.ok(key('Tab').prevented, 'Tab stays in the chooser');
+  assert.equal(focused, trap[0], 'Tab from the last button goes to the first');
+  key('Tab', true);
+  assert.equal(focused, trap[2], 'Shift+Tab from the first to the last');
+  key('Tab', true);
+  assert.equal(focused, trap[1]);
+  assert.equal(key('Enter').prevented, false, 'Enter is left to the focused choice (the browser clicks it)');
+  key('Escape');
+  assert.equal(await p, null);
+  // The sale: Cancel has the focus, Enter (the chat key) cancels even with Sell focused, 1 does nothing.
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  const sale = parent.children.at(-1).children[1].children;
+  assert.equal(focused, sale[1], 'Cancel has the focus');
+  key('1');
+  assert.equal(chooser.open, true, 'no number key sells');
+  key('Tab');
+  assert.equal(focused, sale[0]);
+  assert.ok(key('Enter').prevented, 'Enter does not click the focused Sell');
+  assert.equal(await p, false, 'Enter cancels the sale');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  key('y');
+  assert.equal(await p, true, 'Y sells');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  key('n');
+  assert.equal(await p, false, 'N keeps them');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  listeners.get('pointerdown')({ target: parent });
+  assert.equal(await p, false, 'a press outside cancels');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  parent.children.at(-1).children[1].children[0].handlers.click();
+  assert.equal(await p, true, 'Sell clicked');
+  p = chooser.confirmSell({ count: 2, refund: 300 });
+  chooser.cancel();
+  assert.equal(await p, false, 'the mode ended');
 });
 
 // ---- Selection and camera hotkeys ---------------------------------------------------------

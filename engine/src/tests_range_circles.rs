@@ -124,6 +124,8 @@ fn the_rules_give_openra_s_circles_to_the_right_actors() {
         want("MRJ", Jammer, "", 5120),
         want("MRJ", Fixed, "jammer", 18432),
         want("QTNK", Fixed, "", 7168),
+        // WebRA's Lightning Rod (data/webra/rules.yaml WithRangeCircle).
+        want("LROD", Fixed, "LightningRod", 6144),
     ];
     expected.sort_by(|a, b| a.0.cmp(&b.0).then(format!("{:?}", a.1).cmp(&format!("{:?}", b.1))));
     assert_eq!(got, expected);

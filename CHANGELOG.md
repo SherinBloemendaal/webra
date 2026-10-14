@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.14.0](https://github.com/SherinBloemendaal/webra/compare/v0.13.0...v0.14.0) (2026-10-13)
+
+
+### Features
+
+* **engine:** add OpenRA's surrender order to lockstep games ([de74458](https://github.com/SherinBloemendaal/webra/commit/de744582e08de9c819701adfae8d9f81334ed7d7))
+* **engine:** announce the victors and expose cameo veterancy overlays ([05d3741](https://github.com/SherinBloemendaal/webra/commit/05d37417c0ea921f89a71360daa46403a5bd6315))
+* **game:** add game info and surrender to the game menu like OpenRA ([852f4e7](https://github.com/SherinBloemendaal/webra/commit/852f4e7c2cf46d47999a791f3b71221f0d9245c7))
+* **game:** add OpenRA's battlefield tooltip and range circles ([4cafdd8](https://github.com/SherinBloemendaal/webra/commit/4cafdd8aa5c0b05904b673d466c99ada70a24dba))
+* **game:** chat history, system lines and HUD status like OpenRA ([918ba20](https://github.com/SherinBloemendaal/webra/commit/918ba20acb3c29853d832577a2e40c13df0de34b))
+* **game:** show observer production, powers and army as icons ([d1b2442](https://github.com/SherinBloemendaal/webra/commit/d1b2442fce824428ed2c33b3c24ae90f538eea21))
+* **game:** show superweapon timers of every player like OpenRA ([be45ce2](https://github.com/SherinBloemendaal/webra/commit/be45ce27c9d30f4bbe36c7f128af612f8f4c8e45))
+* **protocol:** keep online chat in replays and sync the chat settings ([b4adb3f](https://github.com/SherinBloemendaal/webra/commit/b4adb3fb522c0c98fe9d22390cae407b854853bd))
+
+
+### Bug Fixes
+
+* **engine:** let map rules add or remove any actor's sell value ([ca49cbf](https://github.com/SherinBloemendaal/webra/commit/ca49cbf6035e40b9b8782befb303398d9686b965))
+* **engine:** refund sold structures from their sell value like OpenRA ([d8a74d2](https://github.com/SherinBloemendaal/webra/commit/d8a74d281f8be81fe800b589238f9f7532cbd4b5))
+* **game:** keep the end-game title inside its dialog ([3430264](https://github.com/SherinBloemendaal/webra/commit/34302642deade5de629899f31687d7d3f397e008))
+* **game:** label spectator chat by channel and close the chat on Esc ([6933ff9](https://github.com/SherinBloemendaal/webra/commit/6933ff937e32f73c58304de2fe55394f7d10d9a0))
+* **game:** ready support powers need a powered provider, align icon heads ([52d6578](https://github.com/SherinBloemendaal/webra/commit/52d65785cd382f0cf64df714ef747a0f5626af1d))
+* **game:** score players by OpenRA player experience and hide unknown countries ([100c270](https://github.com/SherinBloemendaal/webra/commit/100c2703aa21f9a01ea42956ebfaaba297cc41e0))
+* **game:** stack the top-left HUD so weather, powers and timers never overlap ([e9333c6](https://github.com/SherinBloemendaal/webra/commit/e9333c6c128876116deec291a5330a57d64ad1c3))
+* **server:** send a defeated player's team chat to the spectators ([cf4c7ca](https://github.com/SherinBloemendaal/webra/commit/cf4c7ca7e198f7625ecb231698573401844fb23a))
+
 ## [0.13.0](https://github.com/SherinBloemendaal/webra/compare/v0.12.0...v0.13.0) (2026-10-12)
 
 

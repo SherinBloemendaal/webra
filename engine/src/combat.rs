@@ -96,6 +96,7 @@ impl World {
     /// attack-moving) only defences count among the structures
     /// (AutoTargetPriority@DEFAULT has Defense but not Structure).
     pub(crate) fn scan_for_target(&self, i: usize, allow_move: bool) -> Option<usize> {
+        let _section = crate::profile::scope(crate::profile::Section::TargetScan);
         // Medics and mechanics look for friends to treat (infantry_combat.rs).
         if self.heals(i) {
             return self.scan_for_heal_target(i);
@@ -122,6 +123,9 @@ impl World {
         let mut best_unit: Option<(i64, usize)> = None;
         let mut best_building: Option<(i32, usize)> = None;
         let vis = &self.players[a.owner as usize].visible;
+        // Cells whose units are all friends or neutral need no look at them
+        // (the hash's owners per cell, world.rs `rebuild_hash`).
+        let enemies = self.enemy_bits(a.owner);
         for y in cy - r_cells..=cy + r_cells {
             for x in cx - r_cells..=cx + r_cells {
                 if !self.map.contains(x, y) {
@@ -131,7 +135,8 @@ impl World {
                 if vis[ci] == 0 {
                     continue;
                 }
-                for &u in self.units_in_cell(ci) {
+                let units = if self.hash_owners[ci] & enemies != 0 { self.units_in_cell(ci) } else { &[] };
+                for &u in units {
                     let u = u as usize;
                     let t = &self.actors[u];
                     if !t.alive
@@ -180,6 +185,15 @@ impl World {
             }
         }
         best_unit.map(|(_, u)| u).or(best_building.map(|(_, b)| b))
+    }
+
+    /// The player slots `player` is an enemy of, as `World::hash_owners`
+    /// bits; every bit while those are not current (or past slot 31).
+    pub(crate) fn enemy_bits(&self, player: u8) -> u32 {
+        if !self.hash_owners_valid || self.players.len() > 32 {
+            return u32::MAX;
+        }
+        (0..self.players.len()).filter(|&p| self.are_enemies(player, p as u8)).fold(0, |m, p| m | crate::world::owner_bit(p as u8))
     }
 
     /// Whether `player` can currently target actor `t` (visible, and not cloaked).
@@ -1051,6 +1065,14 @@ impl World {
         if dmg <= 0 {
             return;
         }
+        self.apply_damage(u, dmg, source, types);
+    }
+
+    /// `damage_from` after the victim's modifiers: take `dmg` (positive) hit
+    /// points from living actor `u` with health, with every consequence
+    /// (events, notifications, smoke, the AI, death). Lightning
+    /// (lightning.rs) halves hit points through here, without modifiers.
+    pub(crate) fn apply_damage(&mut self, u: usize, dmg: i32, source: u32, types: u32) {
         let tick = self.tick;
         let attacker = self.observer.source;
         let a = &mut self.actors[u];

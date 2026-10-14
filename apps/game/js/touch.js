@@ -5,7 +5,9 @@
 //
 //   Tap                     select, or give the context order (move, attack, harvest, ...)
 //   Double tap              select every unit of that type on screen
-//   Drag                    box select (in a targeting mode: aim, then release to act)
+//   Drag                    box select (in a targeting mode: aim, then release to act;
+//                           in repair mode: repair what is in the box, Add skips the
+//                           chooser; in sell mode: sell the structures in the box)
 //   Two fingers             pan, pinch to zoom
 //   Long press              with units selected: force attack the actor under the finger,
 //                           or attack-move to the ground; otherwise cancel the mode or
@@ -32,6 +34,16 @@ const CARD_SLOP = 10;
  * Buttons of the touch action bar. `toggle` buttons show a pressed state;
  * `hotkey` runs that registered action.
  */
+/**
+ * Whether the page shows the touch UI (body.touch: the action bar, 44 px
+ * targets, the Chat button): a touch screen as the main pointer, or a touch
+ * seen already. One test for everything that depends on it (js/online.js
+ * names the Chat button only where it shows).
+ */
+export function touchUi(doc = globalThis.document, win = globalThis) {
+  return !!doc?.body?.classList.contains('touch') || !!win.matchMedia?.('(pointer: coarse)').matches;
+}
+
 export const TOUCH_BAR = [
   { id: 'queue', label: 'Add', title: 'Like holding Shift: taps and boxes add to the selection, modes stay active, the sidebar queues 5', toggle: true },
   { id: 'attackMove', label: 'A-Move', title: 'Attack move: tap the destination', toggle: true, needsUnits: true },
@@ -47,7 +59,7 @@ export function touchControls() {
   return [
     ['Tap', 'Select, or give the order (move, attack, harvest, dock, repair)'],
     ['Double tap', 'Select all units of that type on screen'],
-    ['Drag', 'Box select; in a targeting mode, aim and release'],
+    ['Drag', 'Box select; in a targeting mode, aim and release; in repair mode, repair what is damaged in the box; in sell mode, sell the structures in the box'],
     ['Two-finger drag', 'Pan the map'],
     ['Pinch', 'Zoom'],
     ['Long press', 'Force attack the unit or building (units selected), attack-move to the ground, or cancel'],
@@ -58,6 +70,7 @@ export function touchControls() {
     ['Long press a sidebar card', 'Cancel one'],
     ['Placing a building', 'Tap or drag to move it, then Place (or Cancel)'],
     ['Menu, Build / Map', 'Game menu; show or hide the build sidebar on phones'],
+    ['Chat', 'Online games and replays with chat: open the chat'],
   ];
 }
 
@@ -113,7 +126,7 @@ export class TouchControls {
     window.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'mouse' && this.input.mouse.touch) this.input.mouse.touch = false;
     });
-    if (globalThis.matchMedia?.('(pointer: coarse)').matches) this.markTouchUi();
+    if (touchUi()) this.markTouchUi();
   }
 
   /** Show the touch UI (action bar, larger targets) from the first touch on. */
@@ -152,9 +165,9 @@ export class TouchControls {
     return { x: x - r.left, y: y - r.top };
   }
 
-  /** A mouse-like event for js/input.js at client point (x, y). */
+  /** A mouse-like event for js/input.js at client point (x, y); pointerType 'touch' keeps it out of edge scrolling. */
   fake(x, y, button = 0) {
-    return { button, clientX: x, clientY: y, shiftKey: this.queue, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} };
+    return { button, clientX: x, clientY: y, pointerType: 'touch', shiftKey: this.queue, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} };
   }
 
   /** Left click at a client point, through the mouse code path. */
@@ -219,7 +232,7 @@ export class TouchControls {
       this.update();
       return ordered;
     }
-    const ordered = await this.input.radarClick(w, { shift: this.queue }, 0);
+    const ordered = await this.input.radarClick(w, { shift: this.queue });
     this.update();
     return ordered;
   }
@@ -297,6 +310,9 @@ export class TouchControls {
     if (i.power) {
       // Support power: the drag start is the target, the release sets the direction.
       this.dragKind = 'power';
+    } else if ((i.mode === 'repair' || i.mode === 'sell') && !this.force) {
+      // Repair and sell mode: the drag is a bulk repair or sell box, as with the mouse (js/input.js).
+      this.dragKind = 'box';
     } else if (this.modeActive()) {
       this.dragKind = 'aim';
       return;
@@ -333,7 +349,10 @@ export class TouchControls {
   }
 
   onDragCancel() {
-    if (this.dragKind === 'box') this.input.drag = null;
+    if (this.dragKind === 'box') {
+      this.input.drag = null;
+      this.input.modeDrag = null;
+    }
     if (this.dragKind === 'power') this.input.powerDrag = null;
     this.dragKind = null;
     this.footprint = null;

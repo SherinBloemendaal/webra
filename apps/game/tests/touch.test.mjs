@@ -381,7 +381,7 @@ function fakeGame(actors) {
     deploy_state: () => 0,
     ability_deploy_state: () => 0,
     has_minelayer: () => false,
-    sell_value: () => 0,
+    sell_value: () => -1,
     cursor_action: (_p, _ids, x, y) => {
       const hit = entries().find(([, a]) => Math.hypot(a.x - x, a.y - y) < 12);
       return hit && hit[1].owner !== 0 ? ACTION.ATTACK : ACTION.MOVE;
@@ -394,6 +394,20 @@ function fakeGame(actors) {
       return Uint32Array.from(entries().filter(([, a]) => owners.includes(a.owner) && types.includes(a.type) && inRect(a, x0, y0, x1, y1)).map(([i]) => i));
     },
     placement_preview: (_p, _id, cx, cy) => Int32Array.from([cx, cy, cx >= 0 && cy >= 0 ? 1 : 0]),
+    // Repair mode: own damaged structures (bulk repair, engine repair_box_json).
+    repair_cursor: (_p, id) => (actors[id]?.owner === 0 && actors[id].building && actors[id].damaged ? 1 : 0),
+    repair_box_json: (_p, x0, y0, x1, y1) =>
+      JSON.stringify({
+        buildings: entries().filter(([, a]) => a.owner === 0 && a.building && a.damaged && inRect(a, x0, y0, x1, y1)).map(([id]) => id),
+        combat: [],
+        harvesters: [],
+        other: [],
+        noFacility: [],
+      }),
+    sell_box: (_p, x0, y0, x1, y1) => Uint32Array.from(entries().filter(([, a]) => a.owner === 0 && a.building && a.type !== 'fact' && inRect(a, x0, y0, x1, y1)).map(([id]) => id)),
+    sell_buildings: rec('sell_buildings'),
+    repair_building: rec('repair_building'),
+    repair_buildings: rec('repair_buildings'),
     order_smart: rec('order_smart'),
     order_move: rec('order_move'),
     order_attack: rec('order_attack'),
@@ -530,6 +544,41 @@ test('touch: drag box-selects (with Add: adds), a second finger cancels the box'
   assert.deepEqual(input.selection, [1, 2, 4]);
 });
 
+test('touch: taps and box drags at the screen edge never start edge scrolling; a mouse moving again does', async () => {
+  const { input, p, clock } = await setup(ARMY);
+  Object.assign(window, { innerWidth: 800, innerHeight: 600 });
+  input.centerOn(2400, 2400);
+  const still = () => {
+    const { x, y } = input.camera;
+    input.update(0.1);
+    assert.equal(input.edgeScroll, null);
+    assert.deepEqual([input.camera.x, input.camera.y], [x, y], 'the camera stays');
+  };
+  // A tap within the edge zone (right edge, x 797 of 800) goes through js/input.js's mouse handlers.
+  await p.tap(797, 300);
+  assert.equal(input.mouse.touch, false, 'no placement footprint: the touch flag is not what holds it');
+  still();
+  clock.advance(1000);
+  await flush();
+  // A box drag that ends in the bottom right corner.
+  await p.down(1, 400, 300);
+  await p.move(1, 600, 450);
+  await p.move(1, 797, 597);
+  assert.ok(input.drag);
+  await p.up(1, 797, 597);
+  assert.equal(input.drag, null);
+  still();
+  still();
+  // A real mouse on a hybrid device moves again (pointer events first, then its mouse event): it scrolls.
+  input.notePointerType({ pointerType: 'mouse' });
+  input.onMouseMove({ clientX: 797, clientY: 300 });
+  input.update(0.1);
+  assert.deepEqual([input.edgeScroll.dx, input.edgeScroll.dy], [1, 0]);
+  // A finger again: the position is gone, the scrolling stops at once.
+  input.notePointerType({ pointerType: 'touch' });
+  still();
+});
+
 test('touch: two fingers pan and pinch-zoom the camera around the fingers', async () => {
   const { input, p } = await setup(ARMY);
   input.camera.x = 200;
@@ -606,6 +655,52 @@ test('touch: attack move from the bar, then tap the destination (drag: aim and r
   await p.up(1, 360, 330);
   assert.deepEqual(game.calls.at(-1), ['order_move', 0, [1], 360, 330, true]);
   assert.equal(input.attackMove, false);
+});
+
+test('touch: in repair mode a drag repairs the damaged own structures in the box, a tap one', async () => {
+  const BASE = {
+    1: { owner: 0, type: 'powr', building: true, damaged: true, x: 100, y: 100 },
+    2: { owner: 0, type: 'powr', building: true, damaged: true, x: 160, y: 100 },
+    3: { owner: 0, type: 'powr', building: true, damaged: false, x: 130, y: 140 },
+    4: { owner: 0, type: 'powr', building: true, damaged: true, x: 600, y: 400 },
+  };
+  const { input, game, p } = await setup(BASE);
+  input.setMode('repair');
+  await p.down(1, 80, 80);
+  await p.move(1, 150, 120);
+  assert.ok(input.modeDrag && !input.drag, 'a repair box, not a selection box');
+  await p.move(1, 200, 160);
+  await p.up(1, 200, 160);
+  assert.deepEqual(game.calls.at(-1), ['repair_buildings', 0, [1, 2]], 'only structures in the box: no chooser');
+  assert.equal(input.mode, 'repair', 'the mode stays on');
+  await p.tap(600, 400);
+  assert.deepEqual(game.calls.at(-1), ['repair_building', 0, 4]);
+  // A second finger cancels the box: nothing is repaired.
+  const n = game.calls.length;
+  await p.down(1, 80, 80);
+  await p.move(1, 200, 160);
+  await p.down(2, 500, 500);
+  assert.equal(input.modeDrag, null);
+  await p.up(1, 200, 160);
+  await p.up(2, 500, 500);
+  assert.equal(game.calls.length, n);
+});
+
+test('touch: in sell mode a drag sells the structures in the box, never the Construction Yard', async () => {
+  const BASE = {
+    1: { owner: 0, type: 'fact', building: true, x: 100, y: 100 },
+    2: { owner: 0, type: 'powr', building: true, x: 160, y: 100 },
+    3: { owner: 1, type: 'powr', building: true, x: 130, y: 140 },
+  };
+  const { input, game, p } = await setup(BASE);
+  input.setMode('sell');
+  await p.down(1, 80, 80);
+  await p.move(1, 150, 120);
+  assert.ok(input.modeDrag && !input.drag, 'a sell box, not a selection box');
+  await p.move(1, 200, 160);
+  await p.up(1, 200, 160);
+  assert.deepEqual(game.calls.at(-1), ['sell_buildings', 0, [2]], 'one structure: sold without asking');
+  assert.equal(input.mode, 'sell');
 });
 
 test('touch: placement shows the footprint mid-view, tap and drag move it, Place builds', async () => {

@@ -3,7 +3,7 @@
 A texture pack changes how WebRA looks and sounds on the player's own
 device: sprites of units, structures and effects, sidebar cameos, terrain
 tiles and sounds. Players install packs in the **Original content** dialog
-(lobby button, or **Original content** in the game menu); they are kept in
+(main menu, **More**, **Original content**; the **Original content** button on the online and campaign screens; or **Original content** in the game menu); they are kept in
 the browser (IndexedDB) and never uploaded.
 
 Packs are **cosmetic only**. The format has no place for rules, maps,

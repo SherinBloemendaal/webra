@@ -345,24 +345,12 @@ body.touch #app:not([hidden]) ~ #version,
   .online-btn,
   .online-input,
   .online-select,
-  #online-button,
   #audio-button {
     min-height: max(44px, calc(44 * var(--ui-px)));
   }
 }
 
 @media (max-width: 600px) {
-  /* The Play online entry moves from the lobby's title bar to the bottom corner. */
-  #online-button {
-    top: auto;
-    right: max(calc(12 * var(--ui-px)), env(safe-area-inset-right));
-    bottom: max(calc(12 * var(--ui-px)), env(safe-area-inset-bottom));
-  }
-
-  #menu {
-    padding-bottom: calc(76 * var(--ui-px));
-  }
-
   #audio-button {
     bottom: max(calc(24 * var(--ui-px)), env(safe-area-inset-bottom));
   }

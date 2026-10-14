@@ -60,6 +60,10 @@ test('content: name, owner row in the owner colour and extra lines; refund only 
     extras: ['Captured', 'Refund: $350'],
   });
   assert.deepEqual(worldTooltipContent({ ...tip, kind: 'frozen' }, { ...ctx, refund: 350 }).extras, ['Captured'], 'no refund for remembered structures');
+  // OpenRA Sellable shows the refund whenever it may be sold: walls (CustomSellValue 0) say $0; -1 (or none) cannot be sold.
+  assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: 0 }).extras, ['Captured', 'Refund: $0']);
+  assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: -1 }).extras, ['Captured']);
+  assert.deepEqual(worldTooltipContent(tip, ctx).extras, ['Captured']);
 });
 
 test('the worker proxy asks world_tooltip like pick and sends the placement as UI state', () => {
@@ -163,7 +167,7 @@ test('the panel: label, owner row and extras from the query, hidden until the mo
         asked.push(a);
         return answer;
       },
-      sell_value: () => 0,
+      sell_value: () => -1,
     };
     const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600 }) };
     const input = {

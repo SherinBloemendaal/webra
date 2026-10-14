@@ -891,7 +891,7 @@ impl World {
         }
     }
 
-    fn heli_send_to_depot(&mut self, i: usize, d: usize) {
+    pub(crate) fn heli_send_to_depot(&mut self, i: usize, d: usize) {
         self.release_dock(i);
         let r = self.make_ref(d);
         let a = &mut self.actors[i];

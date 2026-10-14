@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ACTOR_ART, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, SPECIAL_ART } from '../js/content/tables.js';
-import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS } from '../js/content/render-facts.js';
+import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS, WEBRA_ACTORS } from '../js/content/render-facts.js';
 import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS, withMissionActors } from '../js/content/audit.js';
 import { originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
 import { POSE, POSE_COUNT } from '../js/content/sequences.js';
@@ -53,6 +53,14 @@ test('art audit: complete, every rules actor and every OpenRA render sequence ha
   const { rows } = auditOriginalArt(AUDITED, getFile, { identify });
   assert.ok(AUDITED.length > ACTORS.length, 'the campaign characters are audited too');
   for (const a of AUDITED) {
+    if (WEBRA_ACTORS.includes(a.id)) {
+      // WebRA's own actors: not OpenRA's, no facts; a webra-only row per pose of their own art.
+      assert.equal(RENDER_FACTS[a.id], undefined, a.id);
+      const mine = rows.filter((r) => r.actor === a.id);
+      assert.ok(mine.length > 0, `${a.id}: rows`);
+      for (const r of mine) assert.ok(r.status === 'webra-only' && r.note, `${a.id} ${r.role}`);
+      continue;
+    }
     assert.ok(RENDER_FACTS[a.id], `${a.id}: OpenRA facts (python3 tools/gen_content_tables.py)`);
     const mine = rows.filter((r) => r.actor === a.id);
     assert.equal(mine.length, RENDER_FACTS[a.id].parts.length, `${a.id}: a row per OpenRA sequence`);
@@ -74,6 +82,7 @@ test('art audit: complete, every rules actor and every OpenRA render sequence ha
     if (r.actor === '(special)') assert.equal(SPECIAL_ART[r.role], null, r.role);
     else if (r.actor === '(explosion)') assert.equal(EXPLOSION_ART[r.role], null, r.role);
     else if (r.actor === '(cursor)') assert.equal(CURSOR_ART[r.openra], undefined, r.role);
+    else if (WEBRA_ACTORS.includes(r.actor)) assert.equal(r.openra, null, r.actor);
     else if (!/OpenRA's own art/.test(r.note)) assert.equal(RENDER_FACTS[r.actor].parts.find((p) => `${p[1]}.${p[2]}` === r.openra)[3], false, `${r.actor} ${r.openra}`);
   }
   // What is left: vehicles that leave no husk; n/a: vehicles by parachute. Infantry
@@ -195,6 +204,20 @@ test('art audit: an actor OpenRA draws from Red Alert files without an original 
     assert.equal(r.where, 'muzzle', seq);
     assert.equal(r.status, 'ok', seq);
   }
+  // WebRA's own Lightning Rod (data/webra/rules.yaml): no OpenRA or Red Alert art, its pixel art throughout.
+  assert.ok(WEBRA_ACTORS.includes('LROD'));
+  assert.ok(ACTORS.some((a) => a.id === 'LROD'), 'the Lightning Rod is in the rules');
+  const lrod = rows.filter((r) => r.actor === 'LROD');
+  assert.deepEqual(
+    lrod.map((r) => [r.role, r.webra, r.where, r.status, r.openra]),
+    [
+      ['body-damaged', 'pixel lrod.damaged', 'body.damaged', 'webra-only', null],
+      ['body', 'pixel lrod.idle', 'body.idle', 'webra-only', null],
+      ['make', 'pixel lrod.make', 'body.make', 'webra-only', null],
+      ['icon', 'pixel lrod.cameo', 'cameo', 'webra-only', null],
+    ],
+  );
+  for (const r of lrod) assert.match(r.note, /WebRA's own actor .*pixel art in Red Alert's style/);
   // Without pixel art (the hut) the note says only that Red Alert has none.
   const hut = rows.find((r) => r.actor === 'ASIANHUT' && r.openra === 'asianhut.idle');
   assert.deepEqual([hut.status, hut.webra, hut.note], ['webra-only', null, 'OpenRA made this art (bits.txt); Red Alert has none']);

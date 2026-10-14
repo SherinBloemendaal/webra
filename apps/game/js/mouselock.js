@@ -28,14 +28,28 @@
 //
 // When it engages: Settings > Capture the mouse is 'fullscreen' (default:
 // entering fullscreen, or a click into the game while fullscreen) or
-// 'always' (any click into the game), and the capture hotkey (Alt+M, Option+M
-// on macOS; js/gamekeys.js) turns it on and off by hand. It lets go for the
-// game menu and other dialogs, when the window loses focus or the page is
-// hidden, on leaving fullscreen, for a touch on the screen, and on Esc: the
-// first Esc only releases the mouse, the next one opens the menu as before
-// (unless Settings > "Esc also opens the menu" is on). A click into the game
-// captures it again. Browsers refuse a new lock for about a second after the
-// player pressed Esc; clicks in that time just act.
+// 'always' (any click into the game). It lets go for the game menu and other
+// dialogs, when the window loses focus or the page is hidden, on leaving
+// fullscreen, for a touch on the screen, and on Esc: Esc releases the mouse
+// and, with Settings > "Esc also opens the menu" on (default), opens the menu
+// too; off, the next Esc does. A click into the game captures it again.
+// Browsers refuse a new lock for about a second after the player pressed
+// Esc; clicks in that time just act. Losing the lock to another window
+// (alt-tab, a click on another monitor) never opens the menu.
+//
+// The release hotkey (Option+E on macOS, Alt+Shift+E elsewhere: js/hotkeys.js
+// RELEASE_MOUSE_KEYS; js/gamekeys.js), like cloud
+// gaming services: while captured it lets go without the menu, so the game
+// plays on (single player is not paused) while the player uses another
+// monitor or app. The game is then "detached" (isDetached): Esc cancels a
+// mode or closes what it closes but does not open the menu until a click into
+// the game has captured the mouse again; the Menu button opens it as always.
+// Where a click would not capture again (Capture the mouse off, 'In
+// fullscreen' outside fullscreen, a dialog open) Esc works as usual. Pressed
+// while released, the key captures the mouse (whatever the setting says: the
+// press is the player asking). Each capture shows a short notice that names
+// the key (Settings > Mouse captured notice: every time, the first 3 times,
+// or never).
 //
 // Speed (movementFactor): by default the lock is the plain one, and
 // movementX / movementY are the OS cursor's own movement in CSS px, with the
@@ -62,7 +76,7 @@ import { formatCombo, isMac } from './hotkeys.js';
 
 /** The values of the mouseCapture setting (js/registry.js). */
 export const CAPTURE_MODES = Object.freeze(['off', 'fullscreen', 'always']);
-/** The hotkey action that captures and releases the mouse (js/gamekeys.js). */
+/** The hotkey action that releases the mouse (captures it while released; js/gamekeys.js). */
 export const CAPTURE_ACTION = 'toggleMouseCapture';
 /** pointerId of the virtual pointer's events (the mouse's id in Chromium). */
 export const VIRTUAL_POINTER_ID = 1;
@@ -70,8 +84,12 @@ export const VIRTUAL_POINTER_ID = 1;
 export const RELOCK_COOLDOWN_MS = 1100;
 /** An Esc keydown this soon after the browser let go was the key that let go. */
 export const ESC_GUARD_MS = 250;
-/** The "Mouse captured" hint shows the first few times only. */
+/** The "Mouse captured" notice with Settings > Mouse captured notice 'first': the first few captures only. */
 export const HINT_LIMIT = 3;
+/** The values of the mouseCaptureNotice setting (js/registry.js). */
+export const NOTICE_MODES = Object.freeze(['always', 'first', 'off']);
+/** The browser let go by itself: this long later, a window that still has the focus means the player's Esc. */
+export const FOCUS_SETTLE_MS = 100;
 /**
  * The first movement after locking is dropped only when it jumps more than
  * this far (CSS px or counts): Chromium can report the distance to where the
@@ -257,10 +275,13 @@ export function cursorArt(value) {
   return parseCursor(KEYWORD_ART[c.keyword] ?? CURSORS.select);
 }
 
-/** "Mouse captured. Option+M or Esc to release." with the capture hotkey's key (none: Esc only). */
+/** "Mouse captured. Press Option+E to release." with the release hotkey's key (none bound: Esc). */
 export function hintText(combo, mac = isMac()) {
-  return `Mouse captured. ${combo ? `${formatCombo(combo, mac)} or ` : ''}Esc to release.`;
+  return `Mouse captured. Press ${combo ? formatCombo(combo, mac) : 'Esc'} to release.`;
 }
+
+/** What Esc says while the mouse is released by the hotkey (detached): it does not open the menu then. */
+export const DETACHED_ESC_TEXT = 'Mouse released. Click into the game to capture it again; then Esc opens the menu.';
 
 /** `el` and its ancestor elements, innermost first. */
 function chain(el) {
@@ -653,11 +674,12 @@ export class MouseCapture {
    * @param {{
    *   root: Element,  clicks into it capture the mouse (#app; [data-no-capture] inside it does not)
    *   settings: { get(k: string): any, set(k: string, v: any): any, subscribe(k: string, fn: Function): Function },
-   *   hotkeys?: { bindingsFor(name: string): string[] },  the capture hotkey's key for the hint
+   *   hotkeys?: { bindingsFor(name: string): string[] },  the release hotkey's key for the notice
    *   isFullscreen?(): boolean,
-   *   onHint?(text: string): void,  the "Mouse captured" hint (a toast)
+   *   onHint?(text: string): void,  the "Mouse captured" notice (a toast)
    *   onEscape?(): void,  Esc that the browser kept while it let go, when Esc also opens the menu
    *   doc?: Document, win?: Window, now?(): number, makeEvent?(type: string, init: object): Event,
+   *   later?(fn: Function, ms: number): void,  setTimeout (tests run it by hand)
    *   mac?: boolean,
    * }} opts
    */
@@ -670,9 +692,12 @@ export class MouseCapture {
     this.now = opts.now ?? (() => performance.now());
     this.isFullscreen = opts.isFullscreen ?? (() => !!(this.doc.fullscreenElement ?? this.doc.webkitFullscreenElement));
     this.lockTarget = this.doc.documentElement;
+    this.later = opts.later ?? ((fn, ms) => setTimeout(fn, ms));
     this.state = 'off';
-    /** The player turned capture off with the hotkey: no capture on clicks until it is turned on again. */
-    this.userOff = false;
+    /** Released with the hotkey (Boosteroid-style): the game plays on, Esc opens no menu until a click captures again. */
+    this.detached = false;
+    /** Counts locks: a late check (FOCUS_SETTLE_MS) of a lock that went is dropped once a new one came. */
+    this.lockEpoch = 0;
     /** A menu or dialog is open (setBlocked). */
     this.blocked = false;
     this.cooldownUntil = 0;
@@ -728,7 +753,7 @@ export class MouseCapture {
 
   /** Whether a mouse press on `target` should capture the mouse. */
   wantsCapture(target) {
-    if (this.state !== 'off' || this.userOff || this.blocked || !this.modeAllows()) return false;
+    if (this.state !== 'off' || this.blocked || !this.modeAllows()) return false;
     if (this.now() < this.cooldownUntil) return false;
     if (!target || !this.root?.contains?.(target) || target.closest?.('[data-no-capture]')) return false;
     return !textField(target) && !realCursorControl(target);
@@ -782,22 +807,40 @@ export class MouseCapture {
     return true;
   }
 
-  /** The capture hotkey: let go, or capture now (whatever the setting says; the press is the player's intent). */
+  /**
+   * The release hotkey: while captured, let go without the menu (detached:
+   * the game plays on, a click into the game captures again); while
+   * released, capture now (whatever the setting says; the press is the
+   * player's intent). Returns whether it captures.
+   */
   toggle() {
     if (this.state !== 'off') {
-      this.userOff = true;
       this.release('hotkey');
+      this.detached = true;
       return false;
     }
-    this.userOff = false;
+    this.detached = false;
     if (!this.blocked) this.request();
     return true;
+  }
+
+  /**
+   * Released with the hotkey and a click into the game would capture again:
+   * Esc then opens no menu (js/main.js asks before opening it). False where
+   * a click would not capture (so Esc and the menu work as without capture).
+   */
+  isDetached() {
+    return this.detached && this.state === 'off' && !this.blocked && this.modeAllows();
   }
 
   /** A menu, dialog or loading screen is open (true) or not: open lets go and stops capturing. */
   setBlocked(on) {
     this.blocked = !!on;
-    if (this.blocked) this.release('blocked');
+    if (this.blocked) {
+      // The player is in the game's own UI again: Esc is the game's once the dialog closes.
+      this.detached = false;
+      this.release('blocked');
+    }
   }
 
   /** Fullscreen came or went: entering captures (when the setting allows), leaving lets go. */
@@ -806,7 +849,7 @@ export class MouseCapture {
       this.release('fullscreen');
       return;
     }
-    if (this.mode() !== 'off' && !this.userOff && !this.blocked && this.state === 'off') this.request();
+    if (this.mode() !== 'off' && !this.blocked && this.state === 'off') this.request();
   }
 
   onLockChange() {
@@ -830,8 +873,17 @@ export class MouseCapture {
     const now = this.now();
     this.cooldownUntil = now + RELOCK_COOLDOWN_MS;
     this.escGuardUntil = now + ESC_GUARD_MS;
-    const focused = this.doc.hasFocus?.() ?? true;
-    if (focused && !this.doc.hidden && this.settings.get('mouseCaptureEscMenu')) this.opts.onEscape?.();
+    if (!this.settings.get('mouseCaptureEscMenu')) return;
+    // Esc, or focus moving to another window (alt-tab, a click on another
+    // monitor)? Browsers do not say, and blur can come just after the lock
+    // went: asked again a moment later, the window that still has the focus
+    // means Esc. Losing the focus never opens the menu.
+    const at = this.lockEpoch;
+    this.later(() => {
+      if (this.lockEpoch !== at || this.state !== 'off' || this.blocked) return;
+      const focused = this.doc.hasFocus?.() ?? true;
+      if (focused && !this.doc.hidden) this.opts.onEscape?.();
+    }, FOCUS_SETTLE_MS);
   }
 
   onLockError() {
@@ -842,6 +894,8 @@ export class MouseCapture {
 
   engage() {
     this.state = 'locked';
+    this.detached = false;
+    this.lockEpoch++;
     mirrorPointerStates(this.doc);
     this.pointer = new VirtualPointer({ doc: this.doc, win: this.win, makeEvent: this.opts.makeEvent, now: this.now });
     activePointer = this.pointer;
@@ -873,11 +927,14 @@ export class MouseCapture {
     return { w: this.win?.innerWidth ?? 0, h: this.win?.innerHeight ?? 0 };
   }
 
-  /** The "Mouse captured" hint, the first HINT_LIMIT times. */
+  /** The "Mouse captured" notice: every capture, the first HINT_LIMIT times, or never (Settings > Mouse captured notice). */
   hint() {
+    const mode = this.settings.get('mouseCaptureNotice');
+    if (mode === 'off') return;
     const shown = Number(this.settings.get('mouseCaptureHints')) || 0;
-    if (shown >= HINT_LIMIT) return;
-    this.settings.set('mouseCaptureHints', shown + 1);
+    if (mode === 'first' && shown >= HINT_LIMIT) return;
+    // Counted up to HINT_LIMIT only (all 'first' needs): no settings write, and no account sync, per capture after that.
+    if (shown < HINT_LIMIT) this.settings.set('mouseCaptureHints', shown + 1);
     const combo = this.opts.hotkeys?.bindingsFor(CAPTURE_ACTION)?.[0] ?? null;
     this.opts.onHint?.(hintText(combo, this.opts.mac ?? isMac()));
   }

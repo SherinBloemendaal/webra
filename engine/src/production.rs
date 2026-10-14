@@ -31,6 +31,9 @@ fn title(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
+/// The prerequisite token of WebRA's own actors, granted outside missions (`refresh_tokens`).
+pub const GLOBAL_SKIRMISH: &str = "global-skirmish";
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Availability {
     /// Shown in the sidebar (all `~` prerequisites met).
@@ -43,9 +46,14 @@ impl World {
     pub(crate) fn refresh_tokens(&mut self) {
         self.tokens_dirty = false;
         // The lobby tech level grants techlevel.* tokens up to the chosen level.
-        let tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
+        let mut tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
             .filter_map(|l| self.rules.token(&format!("techlevel.{}", crate::rules::TECH_LEVELS[l])))
             .collect();
+        // WebRA's own actors (data/webra/rules.yaml) need `global-skirmish`:
+        // every game but the campaign and co-op missions, which keep OpenRA's rules.
+        if !self.mission_on {
+            tech.extend(self.rules.token(GLOBAL_SKIRMISH));
+        }
         for p in self.players.iter_mut() {
             p.tokens.iter_mut().for_each(|t| *t = false);
             for &t in &tech {
@@ -122,14 +130,24 @@ impl World {
         }
     }
 
+    /// Whether actor type `ty` belongs to this game at all (the sidebar's and
+    /// the observers' lists): not one that is never built (`~disabled`), and
+    /// in a mission none of WebRA's own actors (`global-skirmish`, which
+    /// missions never grant).
+    pub fn in_game_mode(&self, ty: u16) -> bool {
+        self.rules.actors[ty as usize].prerequisites.iter().all(|pr| {
+            let name = self.rules.tokens[pr.token as usize].as_str();
+            name != crate::rules::TOKEN_DISABLED && !(self.mission_on && !pr.negate && name == GLOBAL_SKIRMISH)
+        })
+    }
+
     pub fn availability(&self, player: u8, ty: u16) -> Availability {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
         // Debug menu "all tech" (debug.rs): every prerequisite counts as met,
-        // except the marker of actors that are never buildable.
+        // except for actors outside this game (never buildable, or WebRA's in a mission).
         if p.dev.all_tech {
-            let never =
-                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+            let never = !self.in_game_mode(ty);
             return Availability { visible: !never, enabled: !never };
         }
         let mut visible = true;
@@ -768,26 +786,37 @@ impl World {
 
     // ---- Selling, deploying ------------------------------------------------
 
-    /// Sell a structure: refund RefundPercent of its value, scaled by health (OpenRA Sellable).
-    pub fn sell(&mut self, b: usize) -> bool {
+    /// What selling structure `b` would pay now, or None while it cannot be
+    /// sold. OpenRA Sell activity and Sellable.TooltipText: RefundPercent of
+    /// the sell value (CustomSellValue, else the cost), scaled by health,
+    /// rounded down; walls (CustomSellValue 0) sell for nothing.
+    pub fn sell_refund(&self, b: usize) -> Option<i32> {
         let a = &self.actors[b];
         if !a.alive || a.kind != Kind::Building {
-            return false;
+            return None;
         }
         // Sellable RequiresCondition !being-captured && !being-demolished (infantry.rs).
         if self.being_captured(b) || self.being_demolished(b) {
-            return false;
+            return None;
         }
         let info = &self.rules.actors[a.ty as usize];
-        let percent = info.building.as_ref().unwrap().sell_refund;
+        // No Sellable trait (or a mission's -Sellable): RefundPercent 0 (gen_rules.py).
+        let percent = info.building.as_ref()?.sell_refund;
         if percent <= 0 {
-            return false;
+            return None;
         }
-        let refund = (info.cost as i64 * percent as i64 * a.hp as i64 / (100 * info.hp as i64)) as i32;
+        let max_hp = info.hp.max(1) as i64;
+        Some((info.sell_value() as i64 * percent as i64 * a.hp as i64 / (100 * max_hp)) as i32)
+    }
+
+    /// Sell a structure: pay `sell_refund` (OpenRA Sellable, Sell activity).
+    pub fn sell(&mut self, b: usize) -> bool {
+        let Some(refund) = self.sell_refund(b) else { return false };
+        let a = &self.actors[b];
         let (owner, x, y, ty) = (a.owner, a.x, a.y, a.ty);
         self.refund(owner, refund);
         self.note_sold(owner, refund);
-        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, 0);
+        self.sound.push(SoundEventKind::Sold, ty as i32, x, y, owner, refund);
         self.effects.push(Effect { x, y, tx: x, ty: y, kind: EffectKind::Dust, ttl: 20, max: 20 });
         // The crew walks out (sell.rs, OpenRA SpawnActorsOnSell).
         self.spawn_sell_survivors(b);
@@ -795,6 +824,34 @@ impl World {
         self.script_event(crate::mission::ScriptEvent::Sold { actor });
         self.remove(b);
         true
+    }
+
+    /// Whether a click in sell mode sells structure `b` for `player`: their
+    /// own structure in the world with OpenRA's Sellable (a refund percent),
+    /// not being captured or demolished (the checks of `sell`).
+    pub fn can_sell(&self, player: u8, b: usize) -> bool {
+        let a = &self.actors[b];
+        a.owner == player && a.in_world() && self.sell_refund(b).is_some()
+    }
+
+    /// Whether a box in sell mode (WebRA bulk sell) takes structure `b`:
+    /// `can_sell`, but never a structure that packs up into a unit (OpenRA
+    /// Transforms: the Construction Yard into an MCV), which only a single
+    /// click sells.
+    pub fn can_bulk_sell(&self, player: u8, b: usize) -> bool {
+        self.can_sell(player, b) && self.rules.actors[self.actors[b].ty as usize].abilities.transforms.is_none()
+    }
+
+    /// `Order::SellBuildings` (WebRA bulk sell): sell each listed structure
+    /// that `can_bulk_sell` still allows, once, in the order listed.
+    pub(crate) fn sell_group(&mut self, player: u8, ids: &[u32]) {
+        for &id in ids {
+            if let Some(b) = self.resolve(id) {
+                if self.can_bulk_sell(player, b) {
+                    self.sell(b);
+                }
+            }
+        }
     }
 
     /// Where actor `i` would deploy to: (target actor type, top-left cell or unit cell).

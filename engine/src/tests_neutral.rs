@@ -923,6 +923,18 @@ fn generated_maps_get_mirrored_ore_mines_and_trees() {
     assert!(d.validate().ok, "{:?}", d.validate().errors);
 }
 
+#[test]
+fn lobby_spawns_match_the_generated_map_file() {
+    // The lobby's markers (map_spawns_styled) are where the game's map file puts the spawns.
+    for (seed, size, players, style) in [(21, 96, 2, "land"), (7, 64, 4, "rivers"), (99, 128, 6, "islands"), (5, 160, 8, "random")] {
+        let json = crate::Game::generated_map_styled(seed, size, players, style, "temperate").unwrap();
+        let d = MapData::parse(&json).unwrap();
+        let flat: Vec<i32> = d.spawns.iter().flat_map(|s| [s[0], s[1]]).collect();
+        let quick = crate::Game::map_spawns_styled(seed, size, players, style).unwrap_or_else(|_| panic!("built-in style"));
+        assert_eq!(quick, flat, "seed {seed}, size {size}, {players} players, {style}");
+    }
+}
+
 // ---- Terrain -------------------------------------------------------------------------------
 
 #[test]
