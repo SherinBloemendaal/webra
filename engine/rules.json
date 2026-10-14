@@ -39561,6 +39561,197 @@
      0
     ]
    }
+  },
+  {
+   "id": "LROD",
+   "name": "Lightning Rod",
+   "description": "Grounds thunderstorm lightning: units and structures within its range are never struck.",
+   "kind": "building",
+   "queue": "Defense",
+   "cost": 300,
+   "build_ticks": 180,
+   "palette_order": 36,
+   "build_limit": 0,
+   "prerequisites": [
+    "anypower",
+    "~techlevel.low",
+    "~global-skirmish"
+   ],
+   "build_at": "Defense",
+   "hp": 30000,
+   "armor": 3,
+   "sight": 4096,
+   "weapons": [],
+   "turret_turn_speed": null,
+   "reload_override": null,
+   "requires_power": false,
+   "defense": false,
+   "opportunity_fire": false,
+   "base_building": false,
+   "selection": {
+    "priority": 2,
+    "modifiers": 0,
+    "class": "lrod",
+    "bounds": [
+     1024,
+     1024,
+     0,
+     0
+    ]
+   },
+   "death_weapon": null,
+   "self_heal": null,
+   "turret_offsets": [],
+   "stance": null,
+   "abilities": {
+    "capturable": {
+     "types": [
+      "building"
+     ],
+     "cancel_activity": false
+    },
+    "instantly_repairable": {},
+    "demolishable": {},
+    "accepts_cash": {},
+    "iron_curtainable": {
+     "kills": false
+    },
+    "gap_sight": {
+     "range": 4096
+    }
+   },
+   "experience": null,
+   "gives_experience": {
+    "experience": -1,
+    "actor_modifier": 10000,
+    "player_modifier": 1
+   },
+   "take_cover": null,
+   "must_be_destroyed": null,
+   "owner_lost": "kill",
+   "gives_bounty": 10,
+   "handicaps": true,
+   "spawn_on_death": null,
+   "full_husk": null,
+   "sell_survivors": {
+    "actor_types": [
+     "E1",
+     "E1",
+     "E1",
+     "TECN",
+     "TECN2"
+    ],
+    "guaranteed": [
+     "E1"
+    ],
+    "value_percent": 40,
+    "min_hp_percent": 30,
+    "factions": []
+   },
+   "primary_building": false,
+   "shake_on_death": [
+    10,
+    1
+   ],
+   "death_needs_resources": false,
+   "husk": null,
+   "crate": null,
+   "producible_level": null,
+   "production_overlays": [],
+   "fire_delays": [],
+   "targets_allies": false,
+   "death": null,
+   "infiltrate_types": [],
+   "disguisable": false,
+   "world": {
+    "selectable": true,
+    "category": "Building",
+    "ally_description": "",
+    "other_description": ""
+   },
+   "tooltip": {
+    "generic_name": "Structure",
+    "generic_visibility": 0,
+    "generic_prefix": true,
+    "show_owner": true
+   },
+   "range_circles": [
+    {
+     "kind": "fixed",
+     "group": "LightningRod",
+     "range": 6144,
+     "color": [
+      255,
+      228,
+      92,
+      128
+     ],
+     "border": [
+      0,
+      0,
+      0,
+      96
+     ],
+     "width": 1.0,
+     "border_width": 3.0,
+     "placement": true,
+     "passengers": []
+    }
+   ],
+   "building": {
+    "width": 1,
+    "height": 1,
+    "footprint": [
+     "x"
+    ],
+    "terrain": [
+     "Clear",
+     "Road"
+    ],
+    "requires_base_provider": true,
+    "power": 0,
+    "power_scales_with_health": false,
+    "produces": [],
+    "exits": [],
+    "gives_buildable_area": false,
+    "base_provider_range": 0,
+    "adjacent": 2,
+    "storage": 0,
+    "sell_refund": 50,
+    "provides": {
+     "allies": [],
+     "england": [],
+     "france": [],
+     "germany": [],
+     "soviet": [],
+     "russia": [],
+     "ukraine": []
+    },
+    "repairable": {
+     "percent": 20,
+     "interval": 24,
+     "step": 700,
+     "bonuses": [
+      100,
+      150,
+      175,
+      200,
+      220,
+      240,
+      260,
+      280,
+      300
+     ],
+     "player_experience": 5
+    },
+    "power_down": false,
+    "value": 300,
+    "center_offset": [
+     0,
+     0
+    ],
+    "lightning_rod": 6144
+   }
   }
  ],
  "weapons": [

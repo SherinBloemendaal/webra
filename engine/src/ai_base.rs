@@ -279,7 +279,11 @@ fn tick_queue(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> bool {
             } else {
                 Placement::Building
             };
-            let (location, center) = choose_build_location(w, player, cfg, item.ty, kind, idx);
+            let (mut location, center) = choose_build_location(w, player, cfg, item.ty, kind, idx);
+            // WebRA: a Lightning Rod goes where it covers the most power plants (ai_lightning.rs).
+            if crate::ai_lightning::is_rod(w, item.ty) {
+                location = crate::ai_lightning::rod_location(w, player, item.ty).or(location);
+            }
             qm(w, player, idx).base_center_failing = center;
             let Some((cx, cy)) = location else {
                 let q = qm(w, player, idx);
@@ -350,7 +354,7 @@ fn producible(w: &mut World, player: u8, cfg: &BotConfig, types: &[u16], buildab
 /// OpenRA HasSufficientPowerForActor.
 fn sufficient_power(w: &World, player: u8, cfg: &BotConfig, ty: u16) -> bool {
     let p = &w.players[player as usize];
-    power_amount(w, ty) + p.power_gen - p.power_use >= cfg.info.base_builder.minimum_excess_power
+    power_amount(w, ty) + crate::ai_lightning::power_gen(w, player) - p.power_use >= cfg.info.base_builder.minimum_excess_power
 }
 
 /// OpenRA HasAdequateRefineryCount.
@@ -386,7 +390,8 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
         .filter(|&t| cfg.power.contains(&t) && limit_ok(w, player, cfg, t))
         .max_by_key(|&t| (power_amount(w, t), std::cmp::Reverse(t)));
     let power_ok = power.is_some_and(|p| power_amount(w, p) > 0);
-    let excess = w.players[player as usize].power_gen - w.players[player as usize].power_use;
+    // WebRA: through a lightning blackout the plants count as working (ai_lightning.rs).
+    let excess = crate::ai_lightning::power_gen(w, player) - w.players[player as usize].power_use;
     let min_excess = qm(w, player, idx).min_excess_power;
     let ore = crate::ai_economy::reachable_resources(w, player) > 0;
     // Starving (ai_economy.rs): only the power the factories need, a first
@@ -470,6 +475,10 @@ fn choose_building(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> Op
                 return power;
             }
         }
+    }
+    // WebRA: a Lightning Rod over power plants while thunderstorms can strike (ai_lightning.rs).
+    if let Some(r) = crate::ai_lightning::wanted_rod(w, player, &buildable) {
+        return Some(r);
     }
     // Everything else, by BuildingFractions in random order.
     let mut fractions = cfg.fractions.clone();
@@ -814,7 +823,7 @@ fn dock_ore_distance(w: &World, ty: u16, cx: i32, cy: i32, field: &[i32]) -> i32
     best
 }
 
-fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
+pub(crate) fn has_clearance(w: &World, cx: i32, cy: i32, bw: i32, bh: i32) -> bool {
     for y in cy - 1..=cy + bh {
         for x in cx - 1..=cx + bw {
             let inside = x >= cx && x < cx + bw && y >= cy && y < cy + bh;

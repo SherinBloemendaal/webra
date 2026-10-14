@@ -42,6 +42,20 @@ Art:
   drawn from its own mh60.shp, yrotorlg.shp, ftrk.shp and their icons.
   Here: 3D models rendered facing by facing (see "Units" below), with the
   rotor and the turret as OpenRA's sequences have them, and cameos.
+- LROD, the Lightning Rod: WebRA's own structure (data/webra/rules.yaml),
+  so neither Red Alert nor OpenRA has art for it. A 1x1 building of
+  OpenRA's ^Building: idle, damaged-idle and a make (build-up) sequence
+  (WithMakeAnimation, played once when it is placed). Here: a concrete
+  mini bib pad, a plinth with the owner's colour band, a tapered steel
+  lattice mast about one cell high on it (some two cells high on screen,
+  like its Selectable DecorationBounds), a porcelain insulator, a copper
+  rod with a crown of points and a grounding cable down the mast to a clamp
+  on the pad. Damaged: the mast's top bent over with the rod, the cable
+  snapped, the plinth cracked and chipped, scorch marks and rubble. Make:
+  twelve frames from bare earth through the poured pad, the plinth and the
+  rising mast to the rod (the idle frame adds the cable). Its cameo shows
+  it against a thunderstorm. The copper ramp is new; it comes after the
+  others, so their indices (and the other actors' frames) never change.
 
 Run: python3 tools/gen_pixel_art.py (CI checks the output is up to date).
 """
@@ -84,6 +98,11 @@ RAMPS = {
     # (Red Alert's cameos are not remapped to the owner's colour).
     'drab': [(22, 24, 12), (36, 40, 20), (52, 58, 30), (68, 76, 40), (86, 94, 52), (106, 114, 66), (128, 136, 84),
              (152, 158, 104)],
+    # Copper and brass: the Lightning Rod's rod, crown and grounding clamp.
+    # Last, so the indices of the ramps above (and every frame drawn with
+    # them) never move; it skips the remap range like any ramp.
+    'copper': [(42, 20, 10), (74, 38, 16), (110, 60, 24), (148, 86, 36), (186, 118, 54), (220, 156, 86),
+               (248, 204, 140)],
 }
 # The remap range: a neutral ramp of WebRA's own; the game tints it with the
 # owner's colour (content/palette.js paletteLookup).
@@ -602,6 +621,377 @@ def damage(cv, rng):
         if rng.next() < 0.35:
             cv.put(x, 45, c('dirt', 1))
             cv.put(x, 44, c('grey', 3))
+
+
+# ---- The Lightning Rod ---------------------------------------------------------------------
+# A 1x1 structure that stands about two cells high on screen (its
+# Selectable DecorationBounds: 1024, 2048, 0, -512). The canvas holds the
+# footprint cell at x 0..23, y 32..55 with room above for the mast and to
+# the right and below for its cast shadow; the frames' origin is the cell's
+# centre (LROD_ORIGIN), so they sit on the footprint like the derrick's.
+
+LROD_W, LROD_H = 44, 64
+LROD_ORIGIN = (12, 44)
+# The plinth: ground rectangle x0, y0, x1, y1 (inclusive) and height.
+PLINTH = (6, 40, 17, 48, 5)
+# The mast: legs from the plinth's roof (NW, NE, SE, SW ground points) to a
+# small square under the cap MAST_TOP pixels above the ground.
+MAST_LEGS = [(8, 42), (15, 42), (15, 46), (8, 46)]
+MAST_TOPS = [(10.5, 43), (12.5, 43), (12.5, 45), (10.5, 45)]
+MAST_TOP = 27
+MAST_CENTRE = (11.5, 44)
+# Bracing levels up the mast (closer together towards the top).
+MAST_LEVELS = [0, 0.2, 0.38, 0.54, 0.68, 0.8, 0.9, 1]
+# The make (build-up) animation, OpenRA WithMakeAnimation: a stage per frame
+# (pad: 0 bare earth, 1 half poured, 2 done; plinth height; mast height as a
+# fraction; cap; rod: 0 none, 1 lower half, 2 all of it with the crown). The
+# idle frame adds the grounding cable.
+LROD_MAKE = [
+    (0, 0, 0, False, 0),
+    (1, 0, 0, False, 0),
+    (2, 0, 0, False, 0),
+    (2, 2, 0, False, 0),
+    (2, 5, 0, False, 0),
+    (2, 5, 0.2, False, 0),
+    (2, 5, 0.38, False, 0),
+    (2, 5, 0.54, False, 0),
+    (2, 5, 0.76, False, 0),
+    (2, 5, 1, True, 0),
+    (2, 5, 1, True, 1),
+    (2, 5, 1, True, 2),
+]
+
+
+def mast_point(i, f):
+    """Leg i (NW, NE, SE, SW) f of the way up: ground x, y and height."""
+    (lx, ly), (tx, ty) = MAST_LEGS[i], MAST_TOPS[i]
+    return lx + (tx - lx) * f, ly + (ty - ly) * f, PLINTH[4] + (MAST_TOP - PLINTH[4]) * f
+
+
+def lrod_pad(cv, stage):
+    """The ground: a patch of earth (stage 0), half of the concrete pad
+    poured (1, still wet and dark) or all of it with its kerb (2), a mini
+    bib like Red Alert's small structures stand on. The random speckles are
+    drawn the same in every stage, so the frames do not flicker."""
+    rng = Rng(0x120D)
+    x0, y0, x1, y1 = 2, 35, 21, 51
+    for y in range(33, 56):
+        for x in range(0, 24):
+            edge = min(x, 23 - x, y - 33, 55 - y)
+            skip = edge < 2 and rng.next() < 0.45 - edge * 0.2
+            s = 2 + rng.int(-1, 1)
+            speck = rng.next()
+            slab = rng.next()
+            if skip:
+                continue
+            on_slab = x0 <= x <= x1 and y0 <= y <= y1
+            if stage == 2 and on_slab:
+                cv.put(x, y, c('grey', 7 if slab < 0.45 else 8 if slab < 0.75 else 6 if slab < 0.92 else 9 if slab < 0.97 else 5))
+            elif stage == 1 and on_slab and y <= 43:
+                cv.put(x, y, c('grey', 5 if slab < 0.6 else 4))
+            elif speck < 0.04:
+                cv.put(x, y, c('oil', 2))
+            else:
+                cv.put(x, y, c('dirt', s))
+    if stage == 1:
+        # The edge of the wet concrete, and the formwork boards around the rest.
+        for x in range(x0, x1 + 1):
+            cv.put(x, 44, c('grey', 3))
+            cv.put(x, y1 + 1, c('rust', 3))
+        for y in range(y0, y1 + 2):
+            cv.put(x0 - 1, y, c('rust', 4))
+            cv.put(x1 + 1, y, c('rust', 1))
+    if stage < 2:
+        return
+    # The kerb: lit on the north and west, a two pixel south face, dark outline (as the derrick's pad).
+    for x in range(x0, x1 + 1):
+        cv.put(x, y0, c('grey', 10))
+        cv.put(x, y1 - 1, c('grey', 9))
+        cv.put(x, y1, c('grey', 5))
+        cv.put(x, y1 + 1, c('grey', 4))
+        cv.put(x, y1 + 2, c('grey', 1))
+    for y in range(y0, y1 + 2):
+        cv.put(x0, y, c('grey', 9))
+        cv.put(x1, y, c('grey', 4))
+        cv.put(x1 + 1, y, c('grey', 1))
+
+
+def lrod_frame(make=None, damaged=False):
+    """A Lightning Rod canvas: idle (make None), damaged, or the make stage
+    `make` (LROD_MAKE)."""
+    pad_stage, plinth_h, mast_f, cap, rod = make if make else (2, PLINTH[4], 1, True, 2)
+    cable = make is None
+    rng = Rng(0x120D + (7 if damaged else 0))
+    cv = Canvas(LROD_W, LROD_H)
+    lrod_pad(cv, pad_stage)
+    # A damaged mast stands straight to `top_f`; above it the top section is bent over.
+    top_f = 0.68 if damaged else mast_f
+    levels = [f for f in MAST_LEVELS if f < top_f] + [top_f] if top_f > 0 else []
+    cxm, cym = MAST_CENTRE
+    px0, py0, px1, py1, _ = PLINTH
+
+    def P(i, f):
+        x, y, h = mast_point(i, f)
+        return at(x, y, h)
+
+    # ---- cast shadows (before the volumes, so they only fall on the ground)
+    if plinth_h:
+        shadow_box(cv, px0, py0, px1, py1, plinth_h)
+    if top_f > 0:
+        for i in range(4):
+            a, b = mast_point(i, 0), mast_point(i, top_f)
+            shadow_line(cv, a[0], a[1], a[2], b[0], b[1], b[2])
+        for f in levels[1:]:
+            a, b = mast_point(3, f), mast_point(2, f)
+            shadow_line(cv, a[0], a[1], a[2], b[0], b[1], b[2])
+    if damaged:
+        # The bent top section and rod, leaning east.
+        shadow_line(cv, cxm + 1, cym, MAST_TOP * 0.7, cxm + 7, cym + 1, MAST_TOP * 0.8)
+    elif rod:
+        shadow_line(cv, cxm, cym, MAST_TOP, cxm, cym, MAST_TOP + (6 if rod == 1 else 12))
+        shadow_line(cv, cxm + 0.5, cym, MAST_TOP, cxm + 0.5, cym, MAST_TOP + (6 if rod == 1 else 10))
+
+    # ---- back to front
+    if plinth_h:
+        # The concrete plinth; its south face carries the owner's colour band once it is cast.
+        box(cv, px0, py0, px1, py1, plinth_h, 'grey', 8, 5, rng, 0.12)
+        if plinth_h == PLINTH[4]:
+            for x in range(px0 + 1, px1):
+                cv.put(x, py1 - 3, c('team', 11 if x < px1 - 1 else 6))
+                cv.put(x, py1 - 2, c('team', 7 if x < px1 - 1 else 4))
+            cv.put(px0, py1 - 3, c('team', 13))
+            cv.put(px0, py1 - 2, c('team', 9))
+            # Anchor bolts under the legs.
+            for lx, ly in MAST_LEGS:
+                cv.put(lx, ly - plinth_h, c('steel', 1))
+                cv.put(lx + 1, ly - plinth_h, c('steel', 4))
+    if top_f > 0:
+        # The back legs and their rungs, in shade behind the front face.
+        for i in (0, 1):
+            cv.line(*P(i, 0), *P(i, top_f), c('steel', 2))
+        for f in levels[1:]:
+            cv.line(*P(0, f), *P(1, f), c('steel', 1))
+        # The front face: an X in every bay, a rung at every level.
+        for k in range(len(levels) - 1):
+            f0, f1 = levels[k], levels[k + 1]
+            cv.line(*P(3, f0), *P(2, f1), c('steel', 4))
+            cv.line(*P(2, f0), *P(3, f1), c('steel', 3))
+        for f in levels[1:]:
+            cv.line(*P(3, f), *P(2, f), c('steel', 5))
+        # The front legs: the west one lit, the east one in shade, outlined.
+        sx, sy = P(3, 0)
+        tx, ty = P(3, top_f)
+        cv.line(sx - 1, sy, tx - 1, ty, c('steel', 1))
+        cv.line(sx, sy, tx, ty, c('steel', 6))
+        ex, ey = P(2, 0)
+        fx, fy = P(2, top_f)
+        cv.line(ex, ey, fx, fy, c('steel', 2))
+        cv.line(ex + 1, ey, fx + 1, fy, c('steel', 0))
+    # The cap on the mast, the porcelain insulator on it and the copper rod
+    # with its crown of points (an air terminal).
+    tx, ty = at(cxm, cym, MAST_TOP)
+    tx, ty = int(tx), int(round(ty))
+    if damaged:
+        # Bent over: the top section of the mast and the rod hang to the east.
+        (ax, ay), (bx, by) = P(3, top_f), P(2, top_f)
+        cv.line(ax, ay, bx + 4, by - 3, c('steel', 4))
+        cv.line(bx, by, bx + 6, by - 1, c('steel', 1))
+        cv.line(ax, ay - 1, bx + 5, by - 4, c('steel', 6))
+        cv.line(bx + 1, by, bx + 7, by - 1, c('steel', 0))
+        hx, hy = int(bx) + 6, int(by) - 3
+        cv.rect(hx, hy, hx + 2, hy + 1, c('steel', 3))
+        cv.put(hx, hy, c('steel', 5))
+        cv.put(hx + 2, hy + 1, c('steel', 0))
+        # The rod, bent down, its tip blackened.
+        cv.line(hx + 3, hy, hx + 6, hy + 2, c('copper', 4))
+        cv.line(hx + 3, hy + 1, hx + 6, hy + 3, c('copper', 1))
+        cv.put(hx + 7, hy + 3, c('oil', 1))
+        cv.put(hx + 7, hy + 4, c('oil', 0))
+        # A broken insulator shell on the plinth.
+        cv.put(px1 - 2, py0 - plinth_h + 2, c('grey', 11))
+        cv.put(px1 - 1, py0 - plinth_h + 2, c('grey', 7))
+    elif cap:
+        cv.rect(tx - 1, ty - 1, tx + 2, ty + 1, c('steel', 3))
+        cv.rect(tx - 1, ty - 1, tx + 1, ty - 1, c('steel', 5))
+        cv.put(tx + 2, ty, c('steel', 0))
+        cv.put(tx + 2, ty + 1, c('steel', 0))
+        cv.rect(tx - 1, ty + 1, tx + 1, ty + 1, c('steel', 1))
+        # The insulator: two porcelain sheds.
+        for x, s in zip(range(tx - 1, tx + 3), (10, 11, 8, 5)):
+            cv.put(x, ty - 2, c('grey', s))
+        cv.put(tx, ty - 3, c('grey', 11))
+        cv.put(tx + 1, ty - 3, c('grey', 7))
+        if rod:
+            # The rod: two pixels wide, lit on the west.
+            top = ty - 6 if rod == 1 else ty - 7
+            for y in range(top, ty - 3):
+                cv.put(tx, y, c('copper', 5))
+                cv.put(tx + 1, y, c('copper', 2))
+            cv.put(tx + 1, top, c('copper', 3))
+        if rod == 2:
+            # The crown: a ring with a point at each side, and the tip.
+            ry = ty - 6
+            for x in range(tx - 2, tx + 4):
+                cv.put(x, ry, c('copper', 4 if x < tx + 2 else 1))
+            for k, (x, s) in enumerate([(tx - 2, 5), (tx + 3, 2)]):
+                cv.put(x, ry - 1, c('copper', s))
+                cv.put(x, ry - 2, c('copper', s + 1))
+            cv.put(tx, ty - 8, c('copper', 5))
+            cv.put(tx, ty - 9, c('copper', 6))
+            cv.put(tx + 1, ty - 8, c('copper', 1))
+            cv.put(tx, ty - 10, c('yellow', 5))
+
+    if cable:
+        # The grounding cable: from the rod's foot down the east front leg,
+        # over the plinth and into the ground at a clamp on the pad.
+        n = 0
+        stop = 0.4 if damaged else 1
+        for k in range(0, 41):
+            f = k / 40
+            if damaged and f > stop:
+                break
+            x, y = P(2, f)
+            n += 1
+            cv.put(x + 2, y, c('copper', 3) if n % 5 == 0 else c('oil', 2))
+        if not damaged:
+            cv.line(tx + 2, ty - 2, P(2, 1)[0] + 2, P(2, 1)[1], c('oil', 2))
+        else:
+            # Snapped: the loose end hangs off the mast.
+            x, y = P(2, stop)
+            cv.line(x + 2, y, x + 4, y + 4, c('oil', 2))
+            cv.put(x + 4, y + 5, c('copper', 4))
+        cx0 = px1 - 1
+        for y in range(py1 - PLINTH[4] - 1, py1 + 1):
+            cv.put(cx0 + 1, y, c('oil', 2) if y % 4 else c('copper', 3))
+        for x in range(cx0 + 1, cx0 + 4):
+            cv.put(x, py1 + 1, c('oil', 2))
+            cv.shadow(x + 1, py1 + 2)
+        # The clamp on its earthing stake.
+        cv.put(cx0 + 4, py1, c('copper', 5))
+        cv.put(cx0 + 5, py1, c('copper', 2))
+        cv.put(cx0 + 4, py1 + 1, c('copper', 3))
+        cv.put(cx0 + 5, py1 + 1, c('copper', 1))
+        cv.shadow(cx0 + 6, py1 + 1)
+        cv.shadow(cx0 + 6, py1 + 2)
+
+    if damaged:
+        lrod_damage(cv, rng)
+    return cv
+
+
+def lrod_damage(cv, rng):
+    """Scorch marks, cracks in the plinth, a chipped corner and rubble."""
+    for sx, sy, r in [(5, 38, 3), (18, 50, 3), (12, 46, 3), (20, 39, 2), (4, 49, 2)]:
+        for y in range(sy - r, sy + r + 1):
+            for x in range(sx - r, sx + r + 1):
+                v = cv.get(x, y)
+                if v in (TRANSPARENT, SHADOW):
+                    continue
+                d = ((x - sx) ** 2 + (y - sy) ** 2) ** 0.5 / r
+                if d > 1 or rng.next() < d * 0.35:
+                    continue
+                cv.put(x, y, c('oil', rng.int(0, 1)) if d < 0.45 else c('grey', rng.int(1, 3)))
+    # A crack down the plinth's south face and across its roof.
+    for x, y in [(10, 36), (10, 37), (11, 38), (11, 39), (12, 40), (12, 41), (13, 42), (13, 43), (14, 44), (14, 45),
+                 (13, 46), (13, 47), (14, 48)]:
+        cv.put(x, y, c('grey', 1))
+    # The north-east corner of the plinth knocked off.
+    for x, y in [(16, 35), (17, 35), (17, 36), (17, 37)]:
+        cv.put(x, y, c('dirt', 1))
+    cv.put(16, 36, c('grey', 3))
+    # Rubble on the pad.
+    for _ in range(12):
+        x, y = rng.int(2, 21), rng.int(36, 51)
+        if cv.get(x, y) in IDX['grey'] or cv.get(x, y) in IDX['dirt']:
+            cv.put(x, y, c('grey', rng.int(2, 9)))
+            if rng.next() < 0.5:
+                cv.put(x + 1, y, c('grey', 1))
+
+
+def lrod_canvas_frame(cv):
+    """A Lightning Rod canvas as a frame around the footprint centre."""
+    ox, oy = LROD_ORIGIN
+    return pixels_frame({(x - ox, y - oy): v for y in range(cv.h) for x in range(cv.w) if (v := cv.px[y * cv.w + x])})
+
+
+def lrod_cameo():
+    """The cameo: the rod against a thunderstorm sky, lightning striking the
+    plain behind it, the tip glowing. Opaque, its own colours (the owner's
+    band painted olive drab, like the units' cameos)."""
+    rng = Rng(0xCA3E1)
+    px = [0] * (CAMEO_W * CAMEO_H)
+    horizon = 30
+    for y in range(CAMEO_H):
+        for x in range(CAMEO_W):
+            if y < horizon:
+                # Storm clouds: dark at the top, a paler band low over the horizon.
+                f = y / horizon
+                s = int(f * 2.4 + BAYER[y % 2][x % 2] * 0.9)
+                if rng.next() < 0.1:
+                    s += rng.int(-1, 1)
+                px[y * CAMEO_W + x] = c('steel', max(0, min(3, s)))
+            else:
+                f = (y - horizon) / (CAMEO_H - horizon)
+                s = 1 + int(f * 2.6 + BAYER[y % 2][x % 2] * 0.9)
+                if rng.next() < 0.08:
+                    s += rng.int(-1, 1)
+                px[y * CAMEO_W + x] = c('dirt', max(0, min(3, s)))
+    for x in range(CAMEO_W):
+        px[horizon * CAMEO_W + x] = c('steel', 3)
+    # The lightning bolt behind: a jagged white core with a pale glow, and a fork.
+    def bolt(points, core, glow):
+        for (x0, y0), (x1, y1) in zip(points, points[1:]):
+            n = max(abs(x1 - x0), abs(y1 - y0))
+            for k in range(n + 1):
+                x = int(round(x0 + (x1 - x0) * k / n))
+                y = int(round(y0 + (y1 - y0) * k / n))
+                for gx in (x - 1, x + 1):
+                    if 0 <= gx < CAMEO_W and px[y * CAMEO_W + gx] in IDX['steel']:
+                        px[y * CAMEO_W + gx] = glow
+                px[y * CAMEO_W + x] = core
+    bolt([(12, 1), (9, 7), (13, 12), (10, 18), (14, 24), (12, 30)], c('grey', 11), c('steel', 5))
+    bolt([(10, 18), (5, 22), (6, 27)], c('grey', 9), c('steel', 4))
+    # The rod in front, standing on the plain.
+    cv = lrod_frame()
+    dx, dy = 25, -3
+    drab_ramp = IDX['drab']
+    for y in range(cv.h):
+        for x in range(cv.w):
+            v = cv.px[y * cv.w + x]
+            X, Y = x + dx, y + dy
+            if not v or not (0 <= X < CAMEO_W and 0 <= Y < CAMEO_H):
+                continue
+            if v == SHADOW:
+                old = px[Y * CAMEO_W + X]
+                for ramp, idx in IDX.items():
+                    if old in idx:
+                        px[Y * CAMEO_W + X] = c(ramp, idx.index(old) - 2)
+                        break
+            elif REMAP_START <= v <= REMAP_END:
+                px[Y * CAMEO_W + X] = drab_ramp[(v - REMAP_START) * len(drab_ramp) // 16]
+            else:
+                px[Y * CAMEO_W + X] = v
+    # The tip glows where the storm's charge gathers.
+    tx, ty = at(*MAST_CENTRE, MAST_TOP)
+    tx, ty = int(tx) + dx, int(round(ty)) + dy - 10
+    for gx, gy, s in [(tx - 1, ty, 4), (tx + 1, ty, 4), (tx, ty - 1, 4), (tx - 1, ty - 1, 3), (tx + 1, ty - 1, 3)]:
+        px[gy * CAMEO_W + gx] = c('yellow', s)
+    px[ty * CAMEO_W + tx] = c('yellow', 5)
+    # A dark rim around the picture, lit on the top and the left (as the units' cameos).
+    for x in range(CAMEO_W):
+        px[x] = c('steel', 4)
+        px[(CAMEO_H - 1) * CAMEO_W + x] = c('steel', 0)
+    for y in range(CAMEO_H):
+        px[y * CAMEO_W] = c('steel', 4)
+        px[y * CAMEO_W + CAMEO_W - 1] = c('steel', 0)
+    return [CAMEO_W, CAMEO_H, base64.b64encode(bytes(px)).decode('ascii')]
+
+
+def lrod_frames():
+    """Idle, damaged, then the make sequence."""
+    return [lrod_canvas_frame(lrod_frame()), lrod_canvas_frame(lrod_frame(damaged=True))] + [
+        lrod_canvas_frame(lrod_frame(make=m)) for m in LROD_MAKE
+    ]
 
 
 # ---- Units: 3D models rendered facing by facing --------------------------------------------
@@ -1315,6 +1705,15 @@ def main():
             'offset': [0, 0],
             'body': {'idle': {'start': 0}, 'damaged': {'start': 1}},
             'frames': checked('OILB', [canvas_frame(derrick_frame(False)), canvas_frame(derrick_frame(True))], allowed),
+        },
+        'LROD': {
+            # The frames sit on the 1x1 footprint, centred on it; the mast rises above it.
+            'offset': [0, 0],
+            # OpenRA's ^Building: idle, damaged-idle and the make sequence
+            # (WithMakeAnimation, at the default 40 ms per frame).
+            'body': {'idle': {'start': 0}, 'damaged': {'start': 1}, 'make': {'start': 2, 'length': len(LROD_MAKE)}},
+            'frames': checked('LROD', lrod_frames(), allowed),
+            'cameo': checked('LROD cameo', [lrod_cameo()], allowed)[0],
         },
         'MH60': {
             'offset': [0, 0],

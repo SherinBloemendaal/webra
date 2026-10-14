@@ -1341,7 +1341,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
   });
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (gain) => audio?.thunder(gain) });
+  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
   let weatherText = '';
 

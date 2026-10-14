@@ -13,7 +13,7 @@ this document; change it first (in its own commit) when a contract has to move.
 | `apps/website/` | Landing site, served at `https://webra.sherin.dev/` | Static, no framework |
 | `apps/server/` | Cloudflare Worker: static assets, HTTP API, Durable Objects | `wrangler.jsonc` lives here |
 | `packages/protocol/` | Multiplayer message definitions and validators (plain JS) | Imported by `apps/game` and `apps/server` |
-| `data/` | Red Alert catalog extracted from OpenRA | Input for `tools/gen_rules.py` |
+| `data/` | Red Alert catalog extracted from OpenRA; `data/webra/rules.yaml` holds WebRA's own actors (OpenRA MiniYaml) | Input for `tools/gen_rules.py` |
 | `tools/` | `gen_rules.py`, `shader-check`, `check-js.mjs` | |
 
 The browser imports `packages/protocol` through the path `/play/protocol/` (the
@@ -860,13 +860,13 @@ simulation's stream): clear skies for the first 2 to 3 minutes, then the
 biome's weather alternates with clear spells of 90 to 180 s. Temperate:
 rain (60 %, 60 to 120 s) or thunderstorm (40 %, 45 to 90 s); snow:
 snowfall (60 to 150 s); desert: heat wave (60 %, 60 to 120 s) or sandstorm
-(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm and
-is cosmetic (no damage). Effects with `weather: full`:
+(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm.
+Effects with `weather: full`:
 
 | What | Effect |
 |------|--------|
 | Rain | sight of every actor 90 % |
-| Thunderstorm | sight 85 % |
+| Thunderstorm | sight 85 %; lightning strikes (below) |
 | Snowfall | sight 85 % |
 | Sandstorm | sight 75 % |
 | Snow biome, infantry | speed 90 % |
@@ -874,6 +874,79 @@ is cosmetic (no damage). Effects with `weather: full`:
 | Ice (rough ground in the snow biome) | +6 % / -7 % per tick, turn rate 50 % |
 | Heat wave, vehicles | heat +1 per tick driving (40 s of driving), +25 per shot; overheated at 1000: speed 75 %, reload 133 %, until heat drops to 400 |
 | Cooling | -5 per tick standing still without firing, -1 per tick otherwise outside a heat wave |
+
+**Lightning and the Lightning Rod** (WebRA additions, no OpenRA counterpart;
+`engine/src/lightning.rs`, `engine/src/ai_lightning.rs`). Each strike's random cell comes from the
+weather's own stream as before; its roll 0..99 and pick come from a stream
+of their own (seeded from the game seed), so the weather cycle and the
+flashes are the same in every mode and as before strikes had effects. With
+`full` the world resolves it:
+
+1. Power plants attract lightning (tall structures): with a roll below 25
+   the strike goes for a power plant (a structure with positive power: the
+   Power Plant and the Advanced Power Plant), `pick` modulo the number of
+   candidates among every player's plants that no rod protects, in actor
+   order. Without a candidate it falls on the random cell.
+2. A strike point within a Lightning Rod's range (its centre to the point)
+   is grounded on the nearest rod (lowest actor index on a tie): nothing is
+   damaged, the rod included. Rods protect everyone's actors, whoever owns
+   them, need no power and work during an outage.
+3. Otherwise it hits what stands on the struck cell: structures whose hit
+   cells cover it and ground units on it, players' actors only (aircraft in
+   the air, mines, husks and the neutral world are never hit, nor an actor
+   whose centre a rod protects).
+4. Each struck actor loses half of its current hit points, rounded down
+   (the normal damage path with its events, AI reactions and damage states,
+   but without veterancy, prone or handicap modifiers and without an
+   attacker: no "under attack" line, no kill credit). So lightning never
+   destroys anything; the Iron Curtain blocks it.
+5. A struck power plant (picked or on the struck cell) also blacks out its
+   owner's power plants for 15 s (375 ticks; the spy's power outage, OpenRA
+   PowerManager.TriggerPowerOutage: a longer running outage stays), with the
+   low power effects that follow (defences, radar and the gap generator go
+   dark, production slows down, the Low power line) and the owner's line
+   "Power plant struck by lightning. Power outage." Power plants make power
+   in proportion to their health (OpenRA ScalePowerWithHealth), so after
+   the outage a struck plant makes half of what it made before until it is
+   repaired.
+
+The flash (`weather_json().flash`, `[tick, x, y, kind]`) moves onto what the
+strike hit; kind 0 ground (or `cosmetic` weather), 1 grounded on a rod, 2 a
+unit or structure, 3 a power plant. `Game.build_lines` draws the bolt for 8
+ticks where the viewer has explored the ground (jitter from the flash
+itself, never the simulation's random streams); thunder follows it
+(js/weather-fx.js, js/audio). Hit points and outages are simulation state;
+the flash, the bolt and the `LightningStrike` audio events are presentation.
+
+The Lightning Rod `LROD` (`data/webra/rules.yaml`, WebRA trait
+`LightningRod: Range 6c0`, read by `tools/gen_rules.py` into
+`building.lightning_rod`): Defense tab, both sides, prerequisite `anypower`
+(a power plant), tech level low, cost 300, build time 180 ticks, 300 HP,
+Heavy armour, 1x1 with a minibib, no power, sight 4 cells; inherits OpenRA
+`^Building` (sell, repair, engineer capture, make animation). It is
+buildable in every skirmish and multiplayer game, also where no
+thunderstorm can come (desert, snow, weather off): it is cheap and the
+tooltip and badge say what it does. Campaign and co-op missions keep
+OpenRA's rules: its prerequisite `~global-skirmish` is a WebRA token the
+engine grants every player outside missions (production.rs
+`GLOBAL_SKIRMISH`; `World::in_game_mode` keeps it out of a mission's
+sidebar and observer lists altogether), and tools/gen_missions.py leaves
+WebRA's actors out of the mission rules. A dashed yellow
+`WithRangeCircle` (Type LightningRod, 6 cells) shows when selected and
+around other rods while placing one. Art: WebRA's own pixel art
+(`tools/gen_pixel_art.py`: idle, damaged, a 12 frame make animation and a
+cameo). The skirmish AI builds rods only while thunderstorms can strike
+(temperate biome, `weather: full`) and after the game's first lightning
+strike, once it owns two power plants and has three times the rod's cost,
+one rod per three plants and at most three, and only
+while one of its plants is unprotected; it places each where it covers the
+most of its unprotected plants. Through a blackout from lightning the bot
+counts the power its intact plants will make again
+(`ai_lightning::power_gen`). It buys no extra power plants. It switches no
+structures off (power down module). It sells no plants it would otherwise
+keep. A spy's or a mission's outage counts as low power, as for OpenRA's
+bots (PowerManager.ExcessPower drops while AffectedByPowerOutage disables
+the plants' Power trait).
 
 The AI rests overheated vehicles until they cool down (they still defend).
 Long games can harvest every field a base reaches, so the AI also handles
@@ -897,8 +970,8 @@ Submarines alone do not keep a player in the game (OpenRA `^Submarine`
 has no `MustBeDestroyed`), nor do walls and mines.
 
 Engine API: `Game.weather_json()` returns `{ biome, mode, weather, since,
-until, tick, sightPct, flash }` (`flash`: the latest lightning `[tick, x, y]`
-in world pixels, or null); `Game.build_heat_fx(player, x0, y0, x1, y1)`
+until, tick, sightPct, flash }` (`flash`: the latest lightning `[tick, x, y,
+kind]` in world pixels, or null); `Game.build_heat_fx(player, x0, y0, x1, y1)`
 fills `[x, y, heat 0..1, overheated]` per hot vehicle in view (at most 512,
 read at `Game.fx_ptr()`); `Game.actor_json` has `heat` (percent) and
 `overheated`.
@@ -2483,7 +2556,12 @@ back and the missions' chronoshifts, Chronoshiftable), 40 PlayerLost and 47
 PlayerWon (owner: the player; one PlayerWon per player of the last side
 standing, after the losers' PlayerLost, like OpenRA ConquestVictoryConditions
 marking each remaining ally's objective; js/battlefx.js writes "X is
-defeated." and "X is victorious." as system lines). Kinds 32 to 36
+defeated." and "X is victorious." as system lines), 48 LightningStrike
+(WebRA, engine/src/lightning.rs: one event per actor lightning struck, at it;
+a: its type, owner: its owner, b: the strike kind, 2 a unit or structure, 3
+a power plant, whose owner hears the WebRA line "Power plant struck by
+lightning. Power outage." (EVA key `lightningOutage`, chime and text, no
+original), 1 grounded on a Lightning Rod, a: the rod's type). Kinds 32 to 36
 are the API for features other code emits (`self.sound.push(...)`); the
 client already plays them. `rules_json` actors list their support power keys
 (`powers`) so `power_ref` names a power.
@@ -2535,7 +2613,15 @@ stolen", enmydet, the thief's scandy, sclean1 and ssteal1, the spy's silppk),
 nothing plays and an announcer line only shows its text; the browser's
 speech never stands in for an original line or reply. A cue whose Red Alert
 file is just not installed (a partial install) and WebRA's own cues
-(thunder) keep WebRA's sound. Until the installed sounds are loaded
+(thunder) keep WebRA's sound. Thunder comes after the light-to-sound delay
+of the strike's distance (js/weather-fx.js, `flash` `[tick, x, y]` or
+`[tick, x, y, kind]`) and is placed like the other world sounds
+(director.js `thunderCue`, gain and pan of `spatial`): on screen
+`thunder_close` (a tearing crack with echoes, then rolling rumble), up to 3
+half-views away `thunder` (a dull clap and rolls), further `thunder_distant`
+(a soft rumble that swells in), fading over 4 times the usual reach but
+never below 0.4; a strike on a lightning rod, units, structures or a
+power plant (`kind` above 0) cracks just off the view's edge too. Until the installed sounds are loaded
 (`AudioSystem.loaded`), effects, notifications and replies wait for them (at
 most DEFER_MAX_AGE, 1 s, then they are dropped) and announcer lines wait up
 to ANNOUNCE_WAIT (3 s) for them and for audio to start, so a game started
@@ -3219,8 +3305,8 @@ WebRA's own pixel art (`tools/gen_pixel_art.py` writes
 `js/art/pixel-data.js`, CI checks it is up to date): 8-bit frames at one
 pixel per world pixel on WebRA's own palette with Red Alert's index
 conventions (0 transparent, 4 shadow, 80 to 95 the owner's colour), for
-actors Red Alert has no art for: the oil derrick, the Black Hawk and the
-Mobile Flak. Per actor `PIXEL_ART` holds trimmed frames placed around the
+actors Red Alert has no art for: the oil derrick, the Black Hawk, the
+Mobile Flak and WebRA's own Lightning Rod. Per actor `PIXEL_ART` holds trimmed frames placed around the
 actor's origin and OpenRA-style sequences over them (`start`, `length`,
 `facings` anticlockwise from north in even steps, `tick`) for the `body`
 and `second` slot, the same roles the original art has: the derrick's idle
@@ -3229,7 +3315,10 @@ and its rotor (pose idle the 8 frame slow-rotor on the ground, move the 4
 frame blurred rotor in the air, around the hub over the mast like OpenRA's
 rotor overlay at offset 0), the Mobile Flak's 32 body and 32 turret facings
 (the turret drawn around its pivot at the height of OpenRA's Turreted
-offset -298,0,298). `js/art/pixel.js` `pixelSlots` makes the pose tables
+offset -298,0,298), the Lightning Rod's idle, damaged and 12 frame make
+body (OpenRA ^Building WithMakeAnimation: pose make, played once from the
+age the engine reports for 127 ticks after placement, then idle; the engine
+has no sell animation, so make is never played backwards). `js/art/pixel.js` `pixelSlots` makes the pose tables
 (`content/sequences.js` resolveSequence and `content/atlas.js` poseTable,
 like loaded original sequences; structures centred on the footprint plus
 the building's centre offset), stored at two atlas pixels per world pixel
@@ -3242,7 +3331,8 @@ disc, the turret at `classic_offset` of the Turreted offset's forward part,
 as for original turrets). The muzzle flashes stay the slot's own: Red
 Alert's (`ACTOR_ART` keeps only `muzzle` for these two) with the original
 graphics, WebRA's otherwise. `pixelDraw` and `pixelUnitDraw` paint the idle
-frame (north) for icons, `drawPixelCameo` the 64 x 48 cameo, in its own
+frame (north) for icons (a structure's in `pixelBox`: its footprint, grown
+evenly where the art reaches past it, the Lightning Rod's mast), `drawPixelCameo` the 64 x 48 cameo, in its own
 colours like Red Alert's cameos (the sidebar labels it). Nothing in it
 comes from Westwood's or OpenRA's files. The pack format is in `docs/texture-packs.md`; packs are
 cosmetic and never reach the simulation.

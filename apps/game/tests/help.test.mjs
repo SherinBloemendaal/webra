@@ -78,6 +78,12 @@ test('weather, biome and speed help match the engine numbers', () => {
   assert.match(text, /after 2 to 3 clear minutes/);
   assert.match(weather, /120 \* SECOND \+ rng\.range\(0, 60\)/);
   assert.match(text, /Cosmetic only: the same skies, but the game plays as under clear skies/);
+  // Lightning (engine lightning.rs) and the Lightning Rod's range (data/webra/rules.yaml).
+  const lightning = read('../../../engine/src/lightning.rs');
+  assert.match(lightning, /pub const OUTAGE_TICKS: i32 = 15 \* TICKS_PER_SECOND/);
+  assert.match(text, /power goes out for 15 s/);
+  assert.match(read('../../../data/webra/rules.yaml'), /LightningRod:\n\t\tRange: 6c0/);
+  assert.match(text, /Lightning Rods ground strikes within 6 cells/);
   // Game speeds as a share of Normal (SPEED_MS: milliseconds per tick).
   for (const speed of GAME_SPEEDS.filter((s) => s !== 'normal')) {
     const share = Math.round((SPEED_MS.normal / SPEED_MS[speed]) * 100);

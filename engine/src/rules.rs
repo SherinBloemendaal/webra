@@ -670,6 +670,8 @@ struct RawBuilding {
     repairable: Option<RepairableInfo>,
     power_down: bool,
     center_offset: Vec<i32>,
+    #[serde(default)]
+    lightning_rod: i32,
 }
 
 #[derive(Deserialize)]
@@ -1054,6 +1056,9 @@ pub struct BuildingInfo {
     /// The power down button works on it (repair.rs).
     pub power_down: bool,
     pub center_offset: (i32, i32),
+    /// WebRA's Lightning Rod (data/webra/rules.yaml `LightningRod`, lightning.rs):
+    /// lightning that would land within this range (world units) is grounded on it; 0 for none.
+    pub lightning_rod: i32,
 }
 
 impl BuildingInfo {
@@ -2156,6 +2161,7 @@ impl Rules {
                         repairable: b.repairable,
                         power_down: b.power_down,
                         center_offset: pair(&b.center_offset).ok_or_else(|| n("building.center_offset must be [x, y]"))?,
+                        lightning_rod: b.lightning_rod,
                     })
                 }
             };
@@ -2342,6 +2348,10 @@ impl Rules {
         let mut have = vec![false; self.tokens.len()];
         for t in TECH_LEVELS {
             have[self.token(&format!("techlevel.{t}")).unwrap() as usize] = true;
+        }
+        // Granted in every skirmish and multiplayer game (production.rs refresh_tokens).
+        if let Some(t) = self.token(crate::production::GLOBAL_SKIRMISH) {
+            have[t as usize] = true;
         }
         let mut ok = vec![false; self.actors.len()];
         // The Construction Yard is where every game starts.

@@ -20,7 +20,7 @@ export const COOP_MISSIONS = deepFreeze(
       "Allies1",
       "Allies2"
     ],
-    "actors": 275,
+    "actors": 276,
     "options": {
       "difficulty": {
         "values": [
@@ -39,7 +39,7 @@ export const COOP_MISSIONS = deepFreeze(
       "Allies1",
       "Allies2"
     ],
-    "actors": 269,
+    "actors": 270,
     "options": {
       "difficulty": {
         "values": [
@@ -59,7 +59,7 @@ export const COOP_MISSIONS = deepFreeze(
       "Allies1",
       "Allies2"
     ],
-    "actors": 272,
+    "actors": 273,
     "options": {
       "difficulty": {
         "values": [

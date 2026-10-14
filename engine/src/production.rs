@@ -31,6 +31,9 @@ fn title(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
+/// The prerequisite token of WebRA's own actors, granted outside missions (`refresh_tokens`).
+pub const GLOBAL_SKIRMISH: &str = "global-skirmish";
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Availability {
     /// Shown in the sidebar (all `~` prerequisites met).
@@ -43,9 +46,14 @@ impl World {
     pub(crate) fn refresh_tokens(&mut self) {
         self.tokens_dirty = false;
         // The lobby tech level grants techlevel.* tokens up to the chosen level.
-        let tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
+        let mut tech: Vec<u16> = (0..=self.options.tech_level.min(crate::rules::TECH_LEVELS.len() - 1))
             .filter_map(|l| self.rules.token(&format!("techlevel.{}", crate::rules::TECH_LEVELS[l])))
             .collect();
+        // WebRA's own actors (data/webra/rules.yaml) need `global-skirmish`:
+        // every game but the campaign and co-op missions, which keep OpenRA's rules.
+        if !self.mission_on {
+            tech.extend(self.rules.token(GLOBAL_SKIRMISH));
+        }
         for p in self.players.iter_mut() {
             p.tokens.iter_mut().for_each(|t| *t = false);
             for &t in &tech {
@@ -122,14 +130,24 @@ impl World {
         }
     }
 
+    /// Whether actor type `ty` belongs to this game at all (the sidebar's and
+    /// the observers' lists): not one that is never built (`~disabled`), and
+    /// in a mission none of WebRA's own actors (`global-skirmish`, which
+    /// missions never grant).
+    pub fn in_game_mode(&self, ty: u16) -> bool {
+        self.rules.actors[ty as usize].prerequisites.iter().all(|pr| {
+            let name = self.rules.tokens[pr.token as usize].as_str();
+            name != crate::rules::TOKEN_DISABLED && !(self.mission_on && !pr.negate && name == GLOBAL_SKIRMISH)
+        })
+    }
+
     pub fn availability(&self, player: u8, ty: u16) -> Availability {
         let p = &self.players[player as usize];
         let info = &self.rules.actors[ty as usize];
         // Debug menu "all tech" (debug.rs): every prerequisite counts as met,
-        // except the marker of actors that are never buildable.
+        // except for actors outside this game (never buildable, or WebRA's in a mission).
         if p.dev.all_tech {
-            let never =
-                info.prerequisites.iter().any(|pr| !pr.negate && self.rules.tokens[pr.token as usize] == crate::rules::TOKEN_DISABLED);
+            let never = !self.in_game_mode(ty);
             return Availability { visible: !never, enabled: !never };
         }
         let mut visible = true;

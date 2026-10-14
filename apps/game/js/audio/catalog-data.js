@@ -4780,6 +4780,27 @@ export const ACTOR_SOUNDS = {
       "move": "Action",
       "attack": "Action"
     }
+  },
+  "LROD": {
+    "build": [
+      "placbldg",
+      "build5"
+    ],
+    "sell": [
+      "cashturn"
+    ],
+    "sellNotification": "StructureSold",
+    "death": [
+      "kaboom22"
+    ],
+    "damaged": [
+      "kaboom1"
+    ],
+    "capture": {
+      "speech": "BuildingCaptured",
+      "text": "Structure captured."
+    },
+    "repairing": "Repairing"
   }
 };
 
@@ -5947,6 +5968,9 @@ export const OPENRA_WEAPONS = ["105mm","120mm","155mm","25mm","2Inch","8Inch","9
 
 /** Every actor of OpenRA's rules (data/source/rules), sounds or not. */
 export const OPENRA_ACTORS = ["1TNK","2TNK","2TNK.Husk","3TNK","3TNK.Husk","4TNK","4TNK.Husk","AFLD","AFLD.Ukraine","AGUN","AMMOBOX1","AMMOBOX2","AMMOBOX3","ANYPOWER","APC","APWR","ARTY","ASIANHUT","ATEF","ATEK","Ant","BADR","BADR.Bomber","BADR.Husk","BARB","BARL","BARR","BARRACKS","BIO","BOXES01","BOXES02","BOXES03","BOXES04","BOXES05","BOXES06","BOXES07","BOXES08","BOXES09","BR1","BR2","BR3","BRIDGE1","BRIDGE2","BRIDGE3","BRIDGE4","BRIDGEHUT","BRIDGEHUT.small","BRIK","BRL3","C1","C10","C11","C2","C3","C4","C5","C6","C7","C8","C9","CA","CAMERA","CHAN","CRATE","CTFLAG","CTNK","CYCL","DD","DELPHI","DOG","DOME","DOMF","DTRK","E1","E1R1","E2","E3","E3R1","E4","E6","E7","EINSTEIN","EditorPlayer","EditorWorld","FACF","FACT","FAPW","FCOM","FENC","FIX","FIXF","FLARE","FPWR","FTRK","FTUR","FireAnt","GAP","GMINE","GNRL","GUN","HARV","HARV.EmptyHusk","HARV.FullHusk","HBOX","HEALCRATE","HELI","HELI.Husk","HIND","HIND.Husk","HOSP","HPAD","ICE01","ICE02","ICE03","ICE04","ICE05","IRON","JEEP","KENN","LAR1","LAR2","LHUS","LST","MCV","MCV.Husk","MECH","MEDI","MGG","MGG.Husk","MH60","MH60.Husk","MIG","MIG.Husk","MINE","MINP","MINV","MISS","MNLY","MONEYCRATE","MRJ","MSLF","MSLO","MSUB","OILB","PBOX","PDOF","PDOX","POWR","PROC","PT","Player","QTNK","QUEE","RAILMINE","RICE","ROCK1","ROCK2","ROCK3","ROCK4","ROCK5","ROCK6","ROCK7","RUSHOUSE","SAM","SBAG","SBRIDGE1","SBRIDGE2","SBRIDGE3","SBRIDGE4","SCRATE","SHOK","SILO","SNOWHUT","SONAR","SPEF","SPEN","SPY","SPY.England","SS","STEK","STNK","SYRD","SYRF","ScoutAnt","T01","T01.Husk","T02","T02.Husk","T03","T03.Husk","T04","T04.Husk","T05","T05.Husk","T06","T06.Husk","T07","T07.Husk","T08","T08.Husk","T09","T09.Husk","T10","T10.Husk","T11","T11.Husk","T12","T12.Husk","T13","T13.Husk","T14","T14.Husk","T15","T15.Husk","T16","T16.Husk","T17","T17.Husk","TANKTRAP1","TANKTRAP2","TC01","TC01.Husk","TC02","TC02.Husk","TC03","TC03.Husk","TC04","TC04.Husk","TC05","TC05.Husk","TECHCENTER","TECN","TECN2","TENF","TENT","THF","TRAN","TRAN.Husk","TRAN.Husk1","TRAN.Husk2","TRUK","TSLA","TTNK","U2","U2.Husk","UTILPOL1","UTILPOL2","V01","V02","V03","V04","V05","V06","V07","V08","V09","V10","V11","V12","V13","V14","V15","V16","V17","V18","V19","V19.Husk","V20","V21","V22","V23","V24","V25","V26","V27","V28","V29","V2RL","V30","V31","V32","V33","V34","V35","V36","V37","WCRATE","WEAF","WEAP","WINDMILL","WOOD","WarriorAnt","World","YAK","YAK.Husk","Zombie","aircraft.upgraded","barracks.upgraded","camera.paradrop","camera.spyplane","fact.colorpicker","mpspawn","powerproxy.parabombs","powerproxy.paratroopers","powerproxy.sonarpulse","vehicles.upgraded","waypoint"];
+
+/** WebRA's own actors (data/webra/rules.yaml): built on OpenRA's templates, their sounds are OpenRA's. */
+export const WEBRA_ACTORS = ["LROD"];
 
 /** Sound files OpenRA made itself (data/source/bits.txt): no copy of Red Alert has them. */
 export const OPENRA_MADE_SOUNDS = [

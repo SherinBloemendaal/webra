@@ -14,6 +14,7 @@ mod ai_economy;
 mod ai_fuzzy;
 mod ai_harvest;
 mod ai_infantry;
+mod ai_lightning;
 mod ai_mcv;
 mod ai_mines;
 mod ai_naval;
@@ -43,6 +44,7 @@ pub mod infantry;
 mod infantry_combat;
 mod infantry_render;
 pub mod instances;
+pub mod lightning;
 pub mod lua;
 pub mod map;
 pub mod mapdata;
@@ -114,6 +116,8 @@ mod tests_infantry;
 mod tests_instances;
 #[cfg(test)]
 mod tests_leftovers;
+#[cfg(test)]
+mod tests_lightning;
 #[cfg(test)]
 mod tests_mapsetup;
 #[cfg(test)]
@@ -570,7 +574,8 @@ impl Game {
 
     /// `{ biome, mode, weather, since, until, tick, sightPct, flash }`: the
     /// sky for the HUD and the weather renderer. `flash` is the latest
-    /// lightning `[tick, x, y]` (world pixels) or null; `sightPct` is what
+    /// lightning `[tick, x, y, kind]` (world pixels; kind: 0 ground, 1
+    /// grounded on a Lightning Rod, 2 hit, 3 hit a power plant) or null; `sightPct` is what
     /// weather does to sight right now (100 when effects are off).
     pub fn weather_json(&self) -> String {
         let env = &self.world.env;
@@ -583,7 +588,7 @@ impl Game {
             "until": env.until,
             "tick": self.world.tick,
             "sightPct": if env.effects() { env.weather.sight_pct() } else { 100 },
-            "flash": env.flash.map(|(t, x, y)| json!([t, px(x), px(y)])),
+            "flash": env.flash.map(|(t, x, y, kind)| json!([t, px(x), px(y), kind as u8])),
         })
         .to_string()
     }
@@ -880,7 +885,8 @@ impl Game {
         self.paths.len() / paths::LINE_FLOATS
     }
 
-    /// Every line the map shows this frame: the range circles of the
+    /// Every line the map shows this frame: the latest lightning bolt
+    /// (lightning.rs), the range circles of the
     /// selected actors and of the structure being placed (range_circles.rs),
     /// the rally lines of the selected
     /// structures (OpenRA RallyPointIndicator, overlays.rs), then, with
@@ -898,6 +904,7 @@ impl Game {
             self.world.build_paths(player, alpha, &self.selection, &mut route);
         }
         self.paths.clear();
+        self.world.build_lightning_bolt(player, alpha, &mut self.paths);
         self.world.build_range_circles(player, alpha, &self.selection, self.placing, &mut self.paths);
         self.world.build_rally_lines(player, &self.selection, &mut self.paths);
         self.paths.extend_from_slice(&route);
@@ -1609,7 +1616,7 @@ impl Game {
         // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
         let factories = w.factories(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
-            .filter(|&t| !w.rules.actors[t].prerequisites.iter().any(|pr| w.rules.tokens[pr.token as usize] == rules::TOKEN_DISABLED))
+            .filter(|&t| w.in_game_mode(t as u16))
             .map(|t| {
                 let reqs = w.requirements(player, t as u16);
                 json!({

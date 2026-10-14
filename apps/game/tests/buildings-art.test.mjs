@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAtlas, animationPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
+import { actorSprites, buildAtlas, animationPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM } from '../js/art/animated.js';
 import { worldDraw } from '../js/art/world.js';
@@ -173,8 +173,9 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
 for (const a of buildings) {
   test(`building art ${a.id}: finite, inside its box, team coloured, deterministic`, () => {
     const key = keyOf(a.id);
-    const w = a.width * 24;
-    const h = a.height * 24;
+    // The footprint box, or the taller one of pixel art reaching past it (art/pixel.js pixelBox: the Lightning Rod).
+    const [w, h] = actorSprites(a).body;
+    assert.ok(w >= a.width * 24 && h >= a.height * 24, `${a.id} box covers the footprint`);
     const draw = drawOf(a);
     // The neutral world needs no team colour (OpenRA draws it with fixed palettes; captured
     // tech buildings show their owner's stripe) and looks like the map's biome.

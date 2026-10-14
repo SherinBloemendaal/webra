@@ -15,6 +15,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
 OUT = os.path.join(ROOT, 'engine', 'rules.json')
+# WebRA's own actors (WEBRA_ACTORS); missions point DATA elsewhere, never this.
+WEBRA_RULES = os.path.join(ROOT, 'data', 'webra', 'rules.yaml')
 
 # Actors that are part of the current milestone.
 ACTORS = [
@@ -53,6 +55,12 @@ EXTRA_ACTORS = [
     # prerequisites and support powers.
     'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse',
     'SPEF',                    # France's fake Sub Pen: map-only (OpenRA Prerequisites ~disabled)
+]
+# WebRA's own actors (no OpenRA counterpart), defined in data/webra/rules.yaml
+# in OpenRA's MiniYaml and resolved against OpenRA's templates (webra_actor).
+# They come last, so adding one never moves the index of an OpenRA actor.
+WEBRA_ACTORS = [
+    'LROD',                    # Lightning Rod (engine/src/lightning.rs)
 ]
 PROXIES = {'barracks.upgraded', 'vehicles.upgraded', 'aircraft.upgraded', 'powerproxy.sonarpulse'}
 # The neutral world of OpenRA maps (data/source/rules/civilian.yaml,
@@ -1167,6 +1175,38 @@ def extra_actor(src, aid):
     }
 
 
+def webra_actor(src, aid):
+    """An actors.json-style record for one of WEBRA_ACTORS: its definition in
+    data/webra/rules.yaml, with `Inherits` resolved against OpenRA's rules
+    (the same parser and merge rules as data/source/parse.py)."""
+    defs = src.parse_miniyaml(open(WEBRA_RULES).read())
+    if aid not in defs:
+        raise SystemExit(f'{aid}: not in data/webra/rules.yaml')
+    tree, own = {}, {}
+    for k, (v, ch) in defs[aid][1].items():
+        if k == 'Inherits' or k.startswith('Inherits@'):
+            tree = src.merge(tree, src.rules[v])
+        else:
+            own[k] = [v, ch]
+    tree = src.merge(tree, own)
+    t = src.to_json(tree)
+    return {
+        'id': aid,
+        'name': src.g(tree, 'Tooltip/Name') or aid,
+        'description': src.g(tree, 'Buildable/Description') or '',
+        'queue': src.g(tree, 'Buildable/Queue'),
+        'cost': int(src.g(tree, 'Valued/Cost') or 0),
+        'buildDuration': src.g(tree, 'Buildable/BuildDuration'),
+        'buildDurationModifier': src.g(tree, 'Buildable/BuildDurationModifier'),
+        'buildPaletteOrder': int(src.g(tree, 'Buildable/BuildPaletteOrder') or 0),
+        'prerequisites': tokens(src.g(tree, 'Buildable/Prerequisites')),
+        'hp': int(src.g(tree, 'Health/HP') or 0),
+        'armor': src.g(tree, 'Armor/Type'),
+        'sight': src.g(tree, 'RevealsShroud/Range'),
+        'traits': t,
+    }
+
+
 def hurts(w):
     """Whether a weapon deals damage: a damage warhead with Damage, or cluster warheads (BarrelExplode)."""
     return any(k.startswith('Warhead') and isinstance(v, dict) and (
@@ -1513,6 +1553,8 @@ def main():
     for aid in EXTRA_ACTORS + WORLD_ACTORS:
         if aid not in actors:
             actors[aid] = extra_actor(src, aid)
+    for aid in WEBRA_ACTORS:
+        actors[aid] = webra_actor(src, aid)
     weapons = json.load(open(os.path.join(DATA, 'weapons.json')))
     wl = {k.lower(): k for k in weapons}
     locos = parse_locomotors()
@@ -1534,7 +1576,7 @@ def main():
 
     tilesets = load_tilesets(src)
     overlay_types = overlay_manager_types(src)
-    for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS:
+    for aid in ACTORS + EXTRA_ACTORS + WORLD_ACTORS + WEBRA_ACTORS:
         a = actors[aid]
         t = a['traits']
         kind = ('proxy' if aid in PROXIES else 'building' if 'Building' in t else 'mine' if 'Mine' in t else 'crate' if 'Crate' in t else 'husk' if 'Husk' in t
@@ -1956,6 +1998,10 @@ def main():
                                               for v in trait(t, 'ToggleConditionOnOrder').values())
             lco = t['Building'].get('LocalCenterOffset')
             e['building']['center_offset'] = ints(lco)[:2] if lco else [0, 0]
+            # WebRA trait LightningRod (data/webra/rules.yaml): lightning that
+            # would land within Range is grounded on it (engine/src/lightning.rs).
+            if 'LightningRod' in t:
+                e['building']['lightning_rod'] = wdist(t['LightningRod']['Range'])
         elif kind in ('mine', 'crate', 'husk', 'proxy'):
             pass  # Immobile mines, crates and husks, bodiless proxies: no unit info.
         else:

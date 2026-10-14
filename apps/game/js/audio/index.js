@@ -11,7 +11,7 @@ import { Mixer } from './mixer.js';
 import { SoundBank } from './bank.js';
 import { Speech } from './speech.js';
 import { Announcer } from './announcer.js';
-import { Director } from './director.js';
+import { Director, thunderCue } from './director.js';
 import { Jukebox } from './music.js';
 import { openContentStore, storeError } from './store.js';
 import { defaultRegistry } from '../registry.js';
@@ -125,6 +125,8 @@ export class AudioSystem {
     this.deferred = [];
     /** The game's own sounds wait (setPaused, holdsGameAudio). */
     this.paused = false;
+    /** The visible world rectangle of the last frame (frame()), in pixels. */
+    this.view = null;
     /** Loads of the installed sounds running now, and the promise of the last one. */
     this.loads = 0;
     this.loaded = Promise.resolve();
@@ -437,6 +439,7 @@ export class AudioSystem {
    * @param {Int32Array | number[]} [events] the frame's engine events when the caller took them already
    */
   frame(view, fog, events = null) {
+    this.view = view;
     if (!this.director || !this.game) return;
     events ??= this.game.take_audio_events();
     if (!events.length) return;
@@ -572,9 +575,17 @@ export class AudioSystem {
 
   // ---- Sink (director.js) --------------------------------------------------------
 
-  /** Thunder after a lightning flash (js/weather-fx.js), quieter far away. */
-  thunder(gain = 1) {
-    this.effect({ synth: 'thunder', originals: [] }, { gain: Math.max(0, Math.min(1, gain)) * 0.9, world: true });
+  /**
+   * Thunder after a lightning flash (js/weather-fx.js): `strike` { x, y, kind }
+   * in world pixels. Placed like the other sounds of the world (director.js
+   * thunderCue: the close, medium or distant cue by distance, gain and pan
+   * against the view of the last frame). A texture pack's `thunder` stands in
+   * for all three unless it replaces them one by one.
+   */
+  thunder(strike = {}) {
+    const cue = thunderCue(strike.x, strike.y, this.view, strike.kind ?? 0);
+    const synth = this.bank.packBuffer(cue.synth) || !this.bank.packBuffer('thunder') ? cue.synth : 'thunder';
+    this.effect({ synth, originals: [] }, { gain: cue.gain * 0.9, pan: cue.pan, world: true });
   }
 
   /** A sound effect; `world`: the simulation's (default: whether the director is handling engine events). */

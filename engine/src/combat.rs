@@ -1051,6 +1051,14 @@ impl World {
         if dmg <= 0 {
             return;
         }
+        self.apply_damage(u, dmg, source, types);
+    }
+
+    /// `damage_from` after the victim's modifiers: take `dmg` (positive) hit
+    /// points from living actor `u` with health, with every consequence
+    /// (events, notifications, smoke, the AI, death). Lightning
+    /// (lightning.rs) halves hit points through here, without modifiers.
+    pub(crate) fn apply_damage(&mut self, u: usize, dmg: i32, source: u32, types: u32) {
         let tick = self.tick;
         let attacker = self.observer.source;
         let a = &mut self.actors[u];
