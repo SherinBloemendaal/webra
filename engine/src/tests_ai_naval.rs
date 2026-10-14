@@ -191,7 +191,7 @@ fn a_yard_between_two_waters_launches_onto_the_one_that_reaches() {
     w.step();
     let (pond, sea) = (water(&w, 5, 5), water(&w, 22, 5));
     assert_ne!(pond, sea);
-    let launch = w.naval_spawn_cell(yard).unwrap();
+    let launch = w.naval_spawn_cell(yard, ty(&w, "PT")).unwrap();
     assert_eq!(water(&w, launch.0, launch.1), pond, "the larger pond by default");
     run(&mut w, 25 * 120);
     let (rx, ry) = w.actors[yard].rally.expect("a rally point");
@@ -474,9 +474,9 @@ fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
 ///   nothing;
 /// - the most ships idle at once stays within the scenario's bound. A fleet
 ///   with no enemy it can reach may wait. Measured after the merge of main
-///   at 7d0ab43: in both scenarios the peak is the Soviet bot's submarines
-///   (4 on the rivers, 9 on the islands) with no enemy ship afloat or only
-///   one it does not see (a Gunboat in the fog).
+///   at 121bb8b: in both scenarios the peak is the Soviet bot's submarines
+///   (3 on the rivers, 9 on the islands) with no enemy ship afloat or only
+///   ones it does not see (a Gunboat or Destroyer in the fog).
 ///
 /// To recalibrate after a change to the bots or the map generator (or a
 /// merge with another branch that changes them), run this test with
@@ -489,7 +489,7 @@ fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::world::{GameOptions, PlayerSetup};
     use std::collections::BTreeMap;
     // Style, seed, bot and the most ships idle at once (measured).
-    let scenarios = [(MapStyle::Rivers, 3u64, BotType::Naval, 4), (MapStyle::Islands, 3, BotType::Turtle, 9)];
+    let scenarios = [(MapStyle::Rivers, 3u64, BotType::Naval, 3), (MapStyle::Islands, 3, BotType::Turtle, 9)];
     for (style, seed, bot, idle_bound) in scenarios {
         let factions = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
         let players: Vec<PlayerSetup> =
