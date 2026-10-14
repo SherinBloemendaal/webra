@@ -12,6 +12,13 @@
 //! hierarchical path finder prunes such searches instead): it then counts
 //! as no route, and the move falls back to the next weaker check.
 //!
+//! A route to the nearest of a set of cells (OpenRA
+//! PathFinder.FindPathToTargetCells, which MoveWithinRange uses: the cells
+//! from which a target is in weapon range, `find_path_to_cells`) is searched
+//! backward as OpenRA does: from all of the cells at once toward the unit,
+//! so the estimate is the straight distance to one cell, the unit's. Such
+//! a search may be capped at a route cost, past which it counts as none.
+//!
 //! Unlike OpenRA's search there is no lane bias, and equally good cells are
 //! taken in an order that does not depend on the side of the map (nearest
 //! the goal, then nearest the map centre, as the flow fields do), so units
@@ -242,6 +249,142 @@ impl World {
             path.push(c);
             c = s.nodes[c as usize].parent;
         }
+        Some(path)
+    }
+}
+
+impl World {
+    /// OpenRA PathFinder.FindPathToTargetCells: the route of unit `i` from
+    /// cell `from` to the nearest (by route cost) of `goals` with the units
+    /// `check` counts as obstacles, next cell last (the goal reached
+    /// first); empty when `from` is one of them. None when there is none
+    /// costing at most `max_cost` (a straight step on clear ground costs
+    /// `COST_STRAIGHT`), or the search gave up at `SEARCH_LIMIT`. The goals
+    /// are taken as they are: callers pick cells the unit may enter and
+    /// stay in.
+    pub(crate) fn find_path_to_cells(&mut self, i: usize, from: u32, goals: &[u32], max_cost: u32, check: Blocking) -> Option<Vec<u32>> {
+        let _section = crate::profile::scope(crate::profile::Section::RouteSearch);
+        if from as usize >= self.map.cells() || goals.is_empty() {
+            return None;
+        }
+        if goals.contains(&from) {
+            return Some(Vec::new());
+        }
+        // A unit boxed in under `check` has no route: a backward search
+        // would only find that out after searching everything up to the cap.
+        let w = self.map.width;
+        let (fx, fy) = (from as i32 % w, from as i32 / w);
+        let way_out = DIRS.iter().any(|&(dx, dy)| {
+            self.map.contains(fx + dx, fy + dy) && {
+                let n = self.map.idx(fx + dx, fy + dy) as u32;
+                self.can_step(i, from, n) && self.can_enter_cell(i, n, check)
+            }
+        });
+        if !way_out {
+            return None;
+        }
+        let mut scratch = std::mem::take(&mut self.search);
+        let path = self.search_back(i, from, goals, max_cost, check, &mut scratch);
+        self.search = scratch;
+        path
+    }
+
+    /// The A* of `find_path_to_cells`, from every goal toward `from` (OpenRA
+    /// searches such routes in reverse too). A step from cell `c` to its
+    /// neighbour `n` is the unit's step from `n` into `c`: it costs what
+    /// entering `c` costs, and `n` must be a cell the unit may enter, unless
+    /// it is `from` itself.
+    fn search_back(&self, i: usize, from: u32, goals: &[u32], max_cost: u32, check: Blocking, s: &mut Scratch) -> Option<Vec<u32>> {
+        let ty = self.actors[i].ty as usize;
+        let loco = &self.rules.locomotors[self.rules.actors[ty].unit.as_ref()?.locomotor];
+        let w = self.map.width;
+        let (fx, fy) = (from as i32 % w, from as i32 / w);
+        // The straight-line octile distance on the fastest terrain (roads).
+        let estimate = |c: usize| -> u32 {
+            let (ax, ay) = ((c as i32 % w - fx).unsigned_abs(), (c as i32 / w - fy).unsigned_abs());
+            let (lo, hi) = (ax.min(ay), ax.max(ay));
+            (lo * COST_DIAGONAL + (hi - lo) * COST_STRAIGHT) * 80 / 100
+        };
+        let enter_cost = |c: usize| -> u32 { 10_000 / loco.speeds[self.map.speed_class(c)].max(1) as u32 };
+        let pass = self.pass_of(i);
+        let blocked = |c: usize| pass.blocked[c] && !(pass.crush[c] != 0 && self.crushes_wall_at(i, c));
+        // Ties: nearer the unit, then nearer the map centre (mirror neutral).
+        let tie = |c: usize| {
+            let (x, y) = (c as i32 % w, c as i32 / w);
+            ((x - fx).pow(2) + (y - fy).pow(2), crate::flowfield::centre_distance(&self.map, x, y))
+        };
+        s.begin(self.map.cells());
+        let mut heap = BinaryHeap::from(std::mem::take(&mut s.open));
+        for &g in goals {
+            let g = g as usize;
+            if g >= self.map.cells() || s.cost_of(g) == 0 {
+                continue;
+            }
+            s.set(g, 0, NONE);
+            let h = estimate(g);
+            heap.push(Reverse((h * HEURISTIC_WEIGHT / 100, h, tie(g), g as u32, 0u32)));
+        }
+        let mut expanded = 0u32;
+        let mut found = false;
+        while let Some(Reverse((_, _, _, c, g))) = heap.pop() {
+            let c = c as usize;
+            if c == from as usize {
+                found = true;
+                break;
+            }
+            if g > s.cost_of(c) {
+                continue;
+            }
+            expanded += 1;
+            if expanded > SEARCH_LIMIT {
+                s.limited += 1;
+                break;
+            }
+            let into = enter_cost(c);
+            let (x, y) = (c as i32 % w, c as i32 / w);
+            for (d, &(ox, oy)) in DIRS.iter().enumerate() {
+                let (nx, ny) = (x + ox, y + oy);
+                if !self.map.contains(nx, ny) {
+                    continue;
+                }
+                let n = self.map.idx(nx, ny);
+                // `from` may be a cell the unit cannot enter (it stands on it).
+                if n != from as usize {
+                    if blocked(n) {
+                        continue;
+                    }
+                    if s.step(n, |n| self.can_enter_cell(i, n as u32, check).then_some(0)).is_none() {
+                        continue;
+                    }
+                }
+                // Diagonal steps do not cut a blocked corner (flowfield::step).
+                if ox != 0 && oy != 0 && (blocked(self.map.idx(x + ox, y)) || blocked(self.map.idx(x, y + oy))) {
+                    continue;
+                }
+                let base = if d % 2 == 0 { COST_STRAIGHT } else { COST_DIAGONAL };
+                let ng = g + base * into / 100;
+                if ng < s.cost_of(n) && ng <= max_cost {
+                    s.set(n, ng, c as u32);
+                    let hn = estimate(n);
+                    heap.push(Reverse((ng + hn * HEURISTIC_WEIGHT / 100, hn, tie(n), n as u32, ng)));
+                }
+            }
+        }
+        s.expanded += expanded as u64;
+        s.open = heap.into_vec();
+        s.open.clear();
+        if !found {
+            return None;
+        }
+        // Parents lead from the unit to the goal: the route is that chain,
+        // goal first, the cell after `from` last.
+        let mut path = Vec::new();
+        let mut c = s.nodes[from as usize].parent;
+        while c != NONE {
+            path.push(c);
+            c = s.nodes[c as usize].parent;
+        }
+        path.reverse();
         Some(path)
     }
 }

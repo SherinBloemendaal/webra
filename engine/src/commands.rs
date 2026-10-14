@@ -149,6 +149,7 @@ impl World {
             a.hold = false;
             a.attack_move = false;
             a.chase_cell = NONE;
+            a.range_retry = 0;
             a.goal = NONE;
             a.group_size = 1;
             a.best_dist = i32::MAX;
@@ -171,10 +172,9 @@ impl World {
         let min_range = usable.iter().map(|&w| self.rules.weapons[w].min_range).min().unwrap();
         let d = dist(self.actors[i].x, self.actors[i].y, tx, ty);
         if d <= range && d >= min_range {
+            self.range_reached(i);
             self.aim_and_fire_at(i, crate::combat::FireTarget::Ground(tx, ty));
-        } else if d < min_range {
-            self.back_away_from(i, tx, ty);
-        } else if !self.approach(i, tx, ty, Some(range)) {
+        } else if !self.approach_range(i, crate::combat::FireTarget::Ground(tx, ty), min_range, range) {
             self.actors[i].activity = Activity::Idle;
         }
     }
@@ -216,6 +216,7 @@ impl World {
             a.hold = false;
             a.goal = NONE;
             a.chase_cell = NONE;
+            a.range_retry = 0;
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
@@ -262,6 +263,7 @@ impl World {
         a.hold = false;
         a.goal = NONE;
         a.chase_cell = NONE;
+        a.range_retry = 0;
         true
     }
 
@@ -329,16 +331,6 @@ impl World {
         }
         self.move_toward(i, goal);
         true
-    }
-
-    /// Artillery: step away from (x, y) until it is outside minimum range.
-    pub(crate) fn back_away_from(&mut self, i: usize, tx: i32, ty: i32) {
-        let (x, y) = (self.actors[i].x, self.actors[i].y);
-        let (ax, ay) = (x - tx, y - ty);
-        let len = dist(0, 0, ax, ay).max(1);
-        let (bx, by) = (x + ax * 2 * CELL / len, y + ay * 2 * CELL / len);
-        let unit = self.rules.actors[self.actors[i].ty as usize].unit.clone().unwrap();
-        self.step_toward(i, bx, by, &unit);
     }
 
     // ---- Scatter ------------------------------------------------------------------------

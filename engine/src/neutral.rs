@@ -1241,7 +1241,7 @@ impl World {
     /// for it (crushers: a wall of their class is open), the open neighbour
     /// nearest `goal` (ties by direction order, the same on every machine).
     /// None when no neighbour is open either.
-    fn standing_cell(&self, i: usize, pass: &crate::flowfield::Passability, mask: u8, goal: (i32, i32)) -> Option<usize> {
+    pub(crate) fn standing_cell(&self, i: usize, pass: &crate::flowfield::Passability, mask: u8, goal: (i32, i32)) -> Option<usize> {
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         if pass.open_for(ci, mask) {
             return Some(ci);

@@ -23,6 +23,7 @@ mod ai_support;
 mod ai_units;
 mod ai_upkeep;
 mod air;
+mod attack_range;
 pub mod beacons;
 pub mod bridges;
 mod cargo;
@@ -95,6 +96,8 @@ mod tests_ai;
 mod tests_ai_naval;
 #[cfg(test)]
 mod tests_antiair;
+#[cfg(test)]
+mod tests_attack_range;
 #[cfg(test)]
 mod tests_combat;
 #[cfg(test)]

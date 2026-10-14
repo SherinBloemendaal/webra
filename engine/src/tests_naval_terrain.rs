@@ -471,11 +471,13 @@ fn naval_bots_keep_every_ship_on_water() {
     // production exits (exit queue, exit production types) with lightning
     // (ai_lightning.rs), most ships alive at once over seeds 1 to 11: lakes
     // 3, 2, 2, 4, 1, 0, 6, 5, 2, 3, 2; rivers 3, 0, 0, 2, 1, 2, 6, 1, 1, 1,
-    // 3; islands 2, 2, 0, 2, 0, 3, 3, 2, 0, 1, 0. Rivers seed 3 and islands
-    // seed 2, used before, now build none and two (the least this checks);
-    // the seeds below build three to six.
-    game(MapStyle::Islands, 6, 12 * minutes);
-    let lakes = game(MapStyle::Lakes, 8, 12 * minutes);
-    game(MapStyle::Rivers, 7, 12 * minutes);
-    assert_eq!(game(MapStyle::Lakes, 8, 12 * minutes), lakes, "deterministic");
+    // 3; islands 2, 2, 0, 2, 0, 3, 3, 2, 0, 1, 0. Again after units moving
+    // into weapon range head for the nearest cell in range (attack_range.rs):
+    // lakes 4, 0, 1, 2, 2, 1, 0, 2, 3, 1, 2; rivers 2, 1, 0, 3, 2, 1, 1, 3,
+    // 1, 0, 6; islands 4, 2, 0, 1, 0, 2, 3, 1, 2, 2, 2. Rivers seed 7, used
+    // before, now builds one; the seeds below build four to six.
+    game(MapStyle::Islands, 1, 12 * minutes);
+    let lakes = game(MapStyle::Lakes, 1, 12 * minutes);
+    game(MapStyle::Rivers, 11, 12 * minutes);
+    assert_eq!(game(MapStyle::Lakes, 1, 12 * minutes), lakes, "deterministic");
 }

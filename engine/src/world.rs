@@ -96,6 +96,11 @@ pub struct Actor {
     pub opportunity: u32,
     pub forced: bool,
     pub chase_cell: u32,
+    /// Tick from which a move into weapon range searches its way again
+    /// (it waits short of range, or heads for a far cell in range along
+    /// the flow field), 0 while it follows a route it found
+    /// (attack_range.rs).
+    pub range_retry: u32,
     /// The move's goal is a stand-in for `dest`, the nearest cell that could
     /// be reached when the way was cut (a husk in a gap, a fallen bridge);
     /// the move goes back to `dest` when a later passability change opens
@@ -253,6 +258,7 @@ impl Actor {
             opportunity: NONE,
             forced: false,
             chase_cell: NONE,
+            range_retry: 0,
             retargeted: false,
             goal_version: 0,
             reload: [0; MAX_WEAPONS],
@@ -1081,6 +1087,13 @@ pub struct World {
     /// craft), crush mask, and the cell found. A cut-off group asks the
     /// same question once per unit; the answer only depends on these.
     pub(crate) retarget_memo: Vec<(u32, u32, u8, u8, u32)>,
+    /// This tick's cells in weapon range of a target, per kind of unit
+    /// (attack_range.rs `range_cells`): units of a group ask the same.
+    pub(crate) range_memo: Vec<(crate::attack_range::RangeKey, Vec<u32>)>,
+    /// Goal cells of the units moving into range, and whose (attack_range.rs
+    /// `build_range_claims`), as of tick `range_claims_tick`.
+    pub(crate) range_claims: Vec<(u32, u32)>,
+    pub(crate) range_claims_tick: u32,
     /// Which units hold which cells (OpenRA movement model, movement/occupancy.rs).
     pub(crate) occupancy: crate::movement::occupancy::Occupancy,
     /// Bookkeeping of the route searches (movement/search.rs); never game state.
@@ -1431,6 +1444,9 @@ impl World {
             terrain_dirty: true,
             jammed: Vec::new(),
             retarget_memo: Vec::new(),
+            range_memo: Vec::new(),
+            range_claims: Vec::new(),
+            range_claims_tick: u32::MAX,
             occupancy: Default::default(),
             search: Default::default(),
             claim_salt: seed.wrapping_mul(0xD1B5_4A32_D192_ED03),
@@ -2420,6 +2436,7 @@ impl World {
             a.hold = false;
             a.attack_move = false;
             a.chase_cell = NONE;
+            a.range_retry = 0;
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
@@ -2674,6 +2691,7 @@ impl World {
             self.occupancy_begin_tick();
         }
         self.retarget_memo.clear();
+        self.range_memo.clear();
         section.next(crate::profile::Section::Orders);
         self.apply_orders();
         if self.tokens_dirty {
@@ -2791,6 +2809,8 @@ impl World {
                 mix(a.powered_off as i64);
                 // Pathing (units.rs): waiting in a queue versus blocked for good.
                 mix(a.stall_ticks as i64);
+                // Moving into weapon range (attack_range.rs).
+                mix(a.range_retry as i64);
                 mix(self.jammed.get(i).copied().unwrap_or(false) as i64);
                 // Burning husks and crate timers (husks.rs, crates.rs), primary structures (primary.rs).
                 mix(a.leftover.ticks as i64);

@@ -2047,6 +2047,33 @@ Close to OpenRA, and the same for every player whatever its slot:
   outrun a missile. Projectiles fly flat, so OpenRA's `Arm` delay (no
   burst before a few ticks of flight) is left out: it counts 3D flight
   time the engine does not model, and would turn close shots into duds.
+- **Moving into range** (`engine/src/attack_range.rs`, OpenRA
+  `MoveWithinRange`). A ground unit or ship out of range of its target
+  (attack, force-fire on an actor or the ground, attack-move and guard
+  fights, AI attacks), or inside its minimum range, does not head for the
+  target's cell: it heads for the nearest cell, by route, from which the
+  target is within range and outside minimum range (measured to the
+  target's hit shape from the point the unit stands on; for infantry from
+  every sub-cell), that it can enter, stay in and reach (water for ships).
+  A unit in range does not move; the cell is found again when the target
+  moves on (`chase_replan`). Cells another unit stands in, or another unit
+  moving into range is heading for, do not count, so a row of artillery or
+  ships told to fire shifts up beside its front units. Routes: in the
+  OpenRA movement model around every unit, then standing ones, then those
+  that cannot be asked to move (`find_path_to_cells` in
+  `movement/search.rs`, OpenRA `FindPathToTargetCells`, searched backward
+  from all the cells toward the unit as OpenRA does); in the WebRA model
+  over the terrain, then along the flow field to the cell found.
+  Differences from OpenRA: a route to a free cell may cost at most twice
+  the straight way to the ring of cells in range plus ten cells. When only
+  farther free cells are left, the unit drives up behind the own units
+  holding the nearer ones and waits, looking again every 25 ticks
+  (`Actor.range_retry`, in the state hash), instead of circling the map;
+  with no such route at all (a target far round a lake) it follows the flow
+  field toward the cell in range nearest it and searches again every 25
+  ticks. A target with no reachable cell in range is let go (as before:
+  across a river, on an island). The cells in range of a target are worked
+  out once per tick per kind of unit (`World::range_memo`).
 - **Lost targets.** An attack whose target goes out of sight (or cloaks)
   keeps the target and heads for where it was last seen (`Actor.target_seen`,
   OpenRA's last visible target); seen again, it is attacked again; within

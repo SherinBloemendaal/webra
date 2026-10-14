@@ -272,13 +272,7 @@ impl World {
     /// then around standing ones, then around the ones that cannot be asked
     /// to move, else the flow field.
     fn start_move(&mut self, i: usize, dest: u32) {
-        let near = if self.actors[i].activity == Activity::Move { self.actors[i].mv.order_near } else { 0 };
-        let m = &mut self.actors[i].mv;
-        m.cancel();
-        m.dest = dest;
-        m.near = near;
-        m.result = MoveResult::InProgress;
-        if m.to == dest {
+        if !self.begin_move(i, dest) {
             return;
         }
         for check in [Blocking::All, Blocking::Stationary, Blocking::Immovable] {
@@ -290,6 +284,27 @@ impl World {
             }
         }
         self.actors[i].mv.field = true;
+    }
+
+    /// A new move of unit `i` to `dest` along `path`, a route already found
+    /// from the cell it moves into (next cell last; attack_range.rs finds
+    /// it toward any cell in weapon range, OpenRA MoveWithinRange).
+    pub(crate) fn start_move_along(&mut self, i: usize, dest: u32, path: Vec<u32>) {
+        if self.begin_move(i, dest) {
+            self.actors[i].mv.path = path;
+        }
+    }
+
+    /// The common start of a move of unit `i` to `dest`: false when it
+    /// already stands there.
+    fn begin_move(&mut self, i: usize, dest: u32) -> bool {
+        let near = if self.actors[i].activity == Activity::Move { self.actors[i].mv.order_near } else { 0 };
+        let m = &mut self.actors[i].mv;
+        m.cancel();
+        m.dest = dest;
+        m.near = near;
+        m.result = MoveResult::InProgress;
+        m.to != dest
     }
 
     /// Whether unit `i` stands on the point of its cell (not between cells).

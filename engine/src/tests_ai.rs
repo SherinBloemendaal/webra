@@ -935,7 +935,9 @@ fn play(seed: u64, size: i32, teams: &[u8], diff: AiDifficulty, limit_minutes: u
 
 /// OpenRA's bots gather larger squads than WebRA's old waves (Normal AI:
 /// SquadSize 40) and rebuild what they lose, so a four player game takes
-/// longer: measured 26 to 57 minutes on these seeds.
+/// longer: measured 26 to 57 minutes on these seeds, and 22, 100 and 30
+/// since units moving into weapon range head for the nearest cell in range
+/// (seeds 1 to 8: 22 to 49 minutes but seed 2's 100).
 #[test]
 fn four_player_ai_free_for_all_finishes() {
     let games: Vec<(u64, AiDifficulty)> = vec![(1, AiDifficulty::Normal), (2, AiDifficulty::Hard), (3, AiDifficulty::Easy)];
@@ -944,7 +946,7 @@ fn four_player_ai_free_for_all_finishes() {
             .iter()
             .map(|&(seed, diff)| {
                 s.spawn(move || {
-                    let (winner, w) = play(seed, 96, &[0, 0, 0, 0], diff, 90);
+                    let (winner, w) = play(seed, 96, &[0, 0, 0, 0], diff, 120);
                     (seed, winner, w.tick)
                 })
             })

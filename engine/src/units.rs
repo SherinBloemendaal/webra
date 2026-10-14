@@ -551,7 +551,9 @@ impl World {
 
     /// Turn and drive toward a world point, respecting turn rate and terrain
     /// speed, and on snow the vehicle's momentum (weather.rs). In the OpenRA
-    /// model ground units and ships move to the point's cell instead.
+    /// model ground units and ships move to the point's cell instead. Tests
+    /// drive units with it; the game moves them along routes.
+    #[cfg(test)]
     pub(crate) fn step_toward(&mut self, i: usize, wx: i32, wy: i32, unit: &crate::rules::UnitInfo) {
         if self.cell_moves() && self.occupies_cells(i) {
             let (cx, cy) = self.cell_of(wx, wy);

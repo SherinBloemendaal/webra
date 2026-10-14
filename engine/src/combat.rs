@@ -358,6 +358,7 @@ impl World {
         a.forced = false;
         a.hold = hold;
         a.chase_cell = NONE;
+        a.range_retry = 0;
         if a.kind != Kind::Building {
             a.activity = Activity::Attack;
         }
@@ -405,6 +406,7 @@ impl World {
         let (x, y) = (self.actors[i].x, self.actors[i].y);
         let d = self.target_distance(t, x, y);
         if d <= range && d >= min_range {
+            self.range_reached(i);
             // Dogs leap onto their prey instead of firing from range (dog.rs).
             if self.leaps(i) {
                 self.leap_attack(i, t);
@@ -421,46 +423,24 @@ impl World {
             a.activity = Activity::Idle;
             return;
         }
-        let (tx, ty) = self.tick_start_pos(t);
-        if d < min_range {
-            // Artillery: back away until the target is outside minimum range.
-            self.back_away_from(i, tx, ty);
-            return;
-        }
         // While attack-moving, a closer threat takes priority.
-        if !self.actors[i].forced && self.actors[i].attack_move && self.try_auto_target(i) {
+        if d > range && !self.actors[i].forced && self.actors[i].attack_move && self.try_auto_target(i) {
             return;
         }
-        // Chase: path toward the target's cell (or the nearest reachable
-        // one). A target the unit cannot get in range of (across a river,
-        // on an island) is let go, as OpenRA's Attack ends when its move
-        // within range falls short.
-        let reach = range + self.target_extent(t);
-        if !self.approach(i, tx, ty, Some(reach)) {
+        // Into range (OpenRA MoveWithinRange, attack_range.rs): toward the
+        // nearest cell from which the target is in range, out of minimum
+        // range too. A target the unit cannot get in range of (across a
+        // river, on an island) is let go, as OpenRA's Attack ends when its
+        // move within range falls short.
+        if !self.approach_range(i, FireTarget::Actor(t), min_range, range) {
             self.attack_over(i);
         }
-    }
-
-    /// Whether unit `i` can get within `range` of actor `t` at all: the
-    /// nearest cell it can reach to the target's cell lies that close
-    /// (aircraft always can). The same test `approach` applies on its
-    /// first step.
-    pub(crate) fn can_close_in(&self, i: usize, t: usize, range: i32) -> bool {
-        if self.domain_of(i) == crate::rules::Domain::Air {
-            return true;
-        }
-        let (tx, ty) = self.tick_start_pos(t);
-        let (ux, uy) = (self.actors[i].x, self.actors[i].y);
-        let tc = self.cell_toward(tx, ty, ux, uy);
-        let Some(goal) = self.nearest_reachable(i, tc, self.cell_of(ux, uy)) else { return false };
-        let (gx, gy) = (cell_center(goal as i32 % self.map.width), cell_center(goal as i32 / self.map.width));
-        dist(gx, gy, tx, ty) <= range + self.target_extent(t) + CELL
     }
 
     /// How far the hit shape of `t` reaches from its position at most
     /// (`target_distance` measures to the shape): half its footprint for a
     /// structure, else nothing a chase needs to allow for.
-    fn target_extent(&self, t: usize) -> i32 {
+    pub(crate) fn target_extent(&self, t: usize) -> i32 {
         let a = &self.actors[t];
         match self.rules.actors[a.ty as usize].building.as_ref() {
             Some(b) if a.kind == Kind::Building => b.width.max(b.height) * CELL / 2,
@@ -523,7 +503,7 @@ impl World {
         if !forced && self.actors[i].attack_move && self.try_auto_target(i) {
             return true;
         }
-        self.approach(i, lx, ly, Some(range))
+        self.approach_range(i, FireTarget::Ground(lx, ly), 0, range)
     }
 
     // ---- Opportunity fire (OpenRA AttackTurreted) -------------------------------

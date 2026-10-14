@@ -107,6 +107,7 @@ impl World {
             a.attack_move = false;
             a.goal = NONE;
             a.chase_cell = NONE;
+            a.range_retry = 0;
             a.group_size = 1;
             a.best_dist = i32::MAX;
             a.stuck_ticks = 0;
