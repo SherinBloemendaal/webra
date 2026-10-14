@@ -1126,9 +1126,12 @@ orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 6
+{player, client, name, tick}`, `error {code, message}`. Protocol version 7
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello`. Version 6 added lobby maps (the map details, `mapState`,
+at `hello` (the client then asks to reload the page). Version 7 made live
+lobby messages stricter: lobby options must carry `factoryLoss` (section
+3), and the host may change several slots at once (`slots`) and edit
+other players' team, handicap and spawn. Version 6 added lobby maps (the map details, `mapState`,
 `mapstate`, `kick`), the rematch (`rematch` both ways, rejoining the lobby),
 online saves (`save` both ways, `start.resume`, `lobby.resume`, online save
 files) and OpenRA's other lobby options (section 3: the option keys and the

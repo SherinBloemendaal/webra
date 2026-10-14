@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 // ---- Limits -------------------------------------------------------------------
 
