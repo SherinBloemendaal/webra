@@ -20,10 +20,16 @@
   --l-radius: var(--ui-radius);
 }
 
+/* The skirmish setup: the start screen's card, as wide as the window and
+   the rest of its height (css/startmenu.css). Its parts are laid out by the
+   card's width (container "lobby", below), so they follow the window
+   whatever the UI scale. */
 #menu .lobby {
-  width: min(1080px, 100%);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 18px 20px 20px;
+  container: lobby / inline-size;
   position: relative;
   background:
     var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
@@ -125,8 +131,10 @@
 /* ---- Columns and panels ----------------------------------------------------- */
 
 #menu .lobby-body {
+  flex: 1 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  align-content: start;
   gap: 14px;
   align-items: start;
 }
@@ -160,9 +168,11 @@
   color: var(--l-accent);
 }
 
+/* Each panel is a container ("lobby-panel"): the player slots and the
+   option grid follow the panel's width (Responsive, below). */
 #menu .lobby-panel-body {
   padding: 12px;
-  container-type: inline-size;
+  container: lobby-panel / inline-size;
 }
 
 /* ---- Form controls ---------------------------------------------------------- */
@@ -396,6 +406,11 @@
 
 #menu .lobby-modded p {
   margin: 0;
+  max-width: var(--ui-measure);
+}
+
+#menu .lobby-error-text {
+  max-width: var(--ui-measure);
 }
 
 #menu .lobby-modded-name {
@@ -1042,7 +1057,7 @@
 /* ---- Responsive ------------------------------------------------------------------ */
 
 /* Player slots stack into cards when their panel gets narrow. */
-@container (max-width: 560px) {
+@container lobby-panel (max-width: 560px) {
   #menu .lobby-slot-head {
     display: none;
   }
@@ -1099,7 +1114,23 @@
   }
 }
 
-@media (max-width: 960px) {
+/* Wide cards: the map, the players and the options side by side. The
+   players panel stays wider than 560 px from here (so its slots are a
+   table); the map column grows with the card up to 440 px. */
+@container lobby (min-width: 1440px) {
+  #menu .lobby-body {
+    grid-template-columns: minmax(0, clamp(300px, 26%, 440px)) minmax(0, 1fr);
+  }
+
+  #menu .lobby-side {
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* Narrow cards (a window of about 960 px and less): one column, the map
+   panel first, its preview and fields centred at a readable size. */
+@container lobby (max-width: 930px) {
   #menu .lobby-body {
     grid-template-columns: minmax(0, 1fr);
   }

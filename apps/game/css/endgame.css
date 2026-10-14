@@ -31,16 +31,20 @@
 
 /* ---- Statistics screen ---------------------------------------------------- */
 
+/* A screen card (theme.css --ui-screen-gap) over the dimmed battlefield:
+   the window less the gap, the grid around it. The card keeps the window's
+   height and its panel scrolls, so the tabs and the buttons stay in view. */
 #stats-screen {
   position: fixed;
   inset: 0;
   z-index: 50;
   display: grid;
-  place-items: safe center;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: auto;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
-  background: var(--ui-scan), rgba(0, 0, 0, 0.7);
+  padding: var(--ui-screen-pad);
+  padding-bottom: max(var(--ui-screen-gap), env(safe-area-inset-bottom), var(--ui-corner-clear));
+  background: var(--ui-scan), var(--ui-grid), rgba(0, 0, 0, 0.7);
 }
 
 #stats-screen[hidden] {
@@ -48,12 +52,17 @@
 }
 
 .menu-card.stats-card {
-  width: min(1040px, 100%);
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px);
+  width: auto;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+}
+
+/* Lines of text keep a readable length in the wide card. */
+.stats-card .tagline,
+.stats-card .hint {
+  max-width: var(--ui-measure);
 }
 
 .stats-card h1 {
@@ -251,7 +260,7 @@
 .stats-canvas {
   display: block;
   width: 100%;
-  height: clamp(180px, 42vh, 320px);
+  height: clamp(180px, 42vh, 480px);
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);

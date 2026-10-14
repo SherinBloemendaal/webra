@@ -16,19 +16,24 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  place-items: start center;
+  grid-template-columns: minmax(0, 1fr);
   overflow: auto;
-  padding: 24px 16px;
-  background:
-    var(--ui-scan),
-    var(--ui-grid),
-    radial-gradient(ellipse at top, color-mix(in srgb, var(--ui-accent-lo) 55%, var(--ui-bg)), var(--ui-bg) 70%);
+  /* A screen card (theme.css --ui-screen-gap): the window less the gap. */
+  padding: var(--ui-screen-pad);
+  padding-bottom: max(var(--ui-screen-gap), env(safe-area-inset-bottom), var(--ui-corner-clear));
+  background: var(--ui-screen-bg);
   user-select: text;
 }
 
+/* The server browser and the online lobby: one card the size of the
+   screen; the footer bar sits at the bottom. Laid out by the card's width
+   (container "online"). */
 .online-page {
-  width: min(1080px, 100%);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   padding: 18px 20px 20px;
+  container: online / inline-size;
   background:
     var(--ui-rivet) left 4px top 7px / 8px 8px no-repeat,
     var(--ui-rivet) right 4px top 7px / 8px 8px no-repeat,
@@ -57,6 +62,11 @@
 .online-head > :first-child {
   flex: 1;
   min-width: 0;
+}
+
+/* Lines of text keep a readable length in the wide card. */
+.online-page p:not(.online-caption) {
+  max-width: var(--ui-measure);
 }
 
 .online-title {
@@ -337,9 +347,35 @@
 /* ---- Lobby -------------------------------------------------------------- */
 
 .online-lobby-body {
+  flex: 1 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-content: start;
   gap: 14px;
+}
+
+/* Wide cards: the game options get a column of their own next to the slots
+   (the map and the chat stay on the right). The options span the rows of
+   the slots column; the last row takes what they need beyond it. */
+@container online (min-width: 1440px) {
+  .online-lobby-body {
+    grid-template-columns: minmax(0, 2.6fr) minmax(280px, 1fr);
+  }
+
+  .online-lobby-body > .online-col:first-child {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-rows: auto auto auto 1fr;
+    column-gap: 14px;
+  }
+
+  .online-lobby-body > .online-col:first-child > * {
+    grid-column: 1;
+  }
+
+  .online-lobby-body > .online-col:first-child > .online-options {
+    grid-column: 2;
+    grid-row: 1 / -1;
+  }
 }
 
 .online-col {

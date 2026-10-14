@@ -105,6 +105,62 @@
   flex-wrap: wrap;
 }
 
+/* ---- Load game: a screen card (js/records.js dialog `screen`) --------------------
+   The window less --ui-screen-gap (theme.css) on every side, over the grid
+   of the menu screens; the list takes the height and scrolls. The backdrop
+   falls back to the plain background where it cannot read the tokens. */
+
+.records-dialog.records-screen {
+  position: fixed;
+  inset: var(--ui-screen-pad);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 18px 20px 20px;
+  container: records / inline-size;
+}
+
+.records-dialog.records-screen[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.records-dialog.records-screen::backdrop {
+  background: var(--ui-screen-bg, var(--ui-bg, #0a0c0f));
+}
+
+.records-screen .records-dialog-body {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
+.records-screen .records-list {
+  max-height: none;
+  align-content: start;
+}
+
+.records-screen .records-muted,
+.records-screen .records-warning {
+  max-width: var(--ui-measure);
+}
+
+/* Wide: the name and the details of a save on one line. */
+@container records (min-width: 720px) {
+  .records-screen .records-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 16px;
+  }
+
+  .records-screen .records-info strong {
+    flex: 0 1 min(40%, 360px);
+  }
+}
+
 /* ---- Observer panel (spectators and replays) ------------------------------------ */
 
 .observer-panel {
