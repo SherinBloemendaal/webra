@@ -12,7 +12,7 @@
    Buttons     .ui-btn  .ui-btn-primary  .ui-btn-ghost  .ui-btn-hazard > span  .ui-btn-sm  .ui-btn-icon
    Dialog      .ui-dialog > .ui-dialog-body > .ui-dialog-title + .ui-dialog-text + .ui-dialog-actions
    Menu bar    .ui-menubar > .ui-menubar-brand + .ui-menubar-item[aria-current] (.ui-led inside)
-   Brand       .ui-brand > img.ui-brand-emblem + .ui-brand-word (WEB<span>RA</span>)
+   Brand       .ui-brand > img.ui-brand-emblem + (.ui-brand-word | text) WEB<span>RA</span>
    Slot row    .ui-slot-row (--slot-color from script) > .ui-slot-strip + cells
    Table       .ui-table (a <table> or role=table) with .ui-table-head row, [aria-selected=true] rows
    Toast       .ui-toast[role=status] > .ui-led + text
@@ -413,7 +413,8 @@
   white-space: nowrap;
 }
 
-.ui-brand-word > span {
+.ui-brand-word > span,
+.ui-brand > span {
   color: var(--ui-brand-red);
 }
 
