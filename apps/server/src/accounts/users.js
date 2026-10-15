@@ -109,6 +109,7 @@ export function selfUser(row, eff, pendingEmail = null) {
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
     usernameChangedAt: row.username_changed_at,
+    passwordChangedAt: row.password_changed_at ?? null,
     methods: {
       password: hasPassword(row),
       discord: row.discord_id ? { username: row.discord_username, linkedAt: row.discord_linked_at } : null,

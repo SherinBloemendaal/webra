@@ -37,6 +37,20 @@ export class MockAccountServer {
     this.replays = new Map();
     /** The admin stats' daily outbound mail budget. */
     this.mailBudget = { sentToday: 0, dailyLimit: 300, limitReached: false };
+    /**
+     * Friends (docs/accounts-api.md 5.11), off until enableFriends(): the
+     * routes answer 404 like a server without them. Pairs and blocks are
+     * `idA|idB` keys; requests `from|to` -> { createdAt, ignored }.
+     */
+    this.friendsOn = false;
+    this.friendPairs = new Map(); // 'a|b' (sorted) -> since
+    this.friendRequests = new Map();
+    this.blocks = new Map(); // 'blocker|blocked' -> createdAt
+    this.friendInvites = []; // { from, to, session, code, name, players, maxPlayers, map, locked, createdAt, expiresAt }
+    /** What each player is doing as friends see it: userId -> { status, session?, awayMs?, lastSeenAt? }. */
+    this.presence = new Map();
+    /** Lobbies by invite code (GET /api/invite/:code, without the dash): code -> invite, or 'expired'. */
+    this.inviteCodes = new Map();
     this.fetch = this.fetch.bind(this);
   }
 
@@ -96,6 +110,7 @@ export class MockAccountServer {
       createdAt: this.now - (fields.age ?? 0),
       lastSeenAt: this.now,
       usernameChangedAt: null,
+      passwordChangedAt: fields.password ? this.now - (fields.age ?? 0) : null,
       password: fields.password ?? null,
       passkeys: [],
       discord: null,
@@ -159,6 +174,7 @@ export class MockAccountServer {
       createdAt: u.createdAt,
       lastSeenAt: u.lastSeenAt,
       usernameChangedAt: u.usernameChangedAt,
+      passwordChangedAt: u.passwordChangedAt,
       methods: { password: !!u.password, discord: u.discord, passkeys: u.passkeys.length },
       ban: u.ban,
       canPlay: status === 'active' || (!this.site.gameRequiresAccount && status !== 'banned' && status !== 'deleted'),
@@ -199,6 +215,119 @@ export class MockAccountServer {
     this.audit.unshift({ id: newId(16), at: this.now, actor: actor ? { id: actor.id, username: actor.username } : null, action, target, before, after, reason });
   }
 
+  // ---- Friends ---------------------------------------------------------------------------
+
+  enableFriends() {
+    this.friendsOn = true;
+    return this;
+  }
+
+  /** Make two accounts friends (and drop requests between them). */
+  befriend(a, b) {
+    this.friendPairs.set([a.id, b.id].sort().join('|'), this.now);
+    this.friendRequests.delete(`${a.id}|${b.id}`);
+    this.friendRequests.delete(`${b.id}|${a.id}`);
+  }
+
+  friendView(u) {
+    return { username: u.username, displayName: u.displayName ?? u.username, avatarColor: u.avatarColor };
+  }
+
+  friendsDoc(me) {
+    const byId = (id) => this.users.get(id);
+    const friends = [];
+    for (const [k, since] of this.friendPairs) {
+      const [a, b] = k.split('|');
+      if (a !== me.id && b !== me.id) continue;
+      const other = byId(a === me.id ? b : a);
+      const p = this.presence.get(other.id) ?? { status: 'offline', lastSeenAt: null };
+      friends.push({ ...this.friendView(other), since, ...p });
+    }
+    const req = (dir) =>
+      [...this.friendRequests]
+        .filter(([k, r]) => (dir === 'in' ? k.endsWith(`|${me.id}`) && !r.ignored : k.startsWith(`${me.id}|`)))
+        .map(([k, r]) => ({ ...this.friendView(byId(k.split('|')[dir === 'in' ? 0 : 1])), createdAt: r.createdAt }));
+    const blocked = [...this.blocks].filter(([k]) => k.startsWith(`${me.id}|`)).map(([k, at]) => ({ ...this.friendView(byId(k.split('|')[1])), createdAt: at }));
+    const inv = (mine) => this.friendInvites.filter((i) => (mine ? i.from : i.to) === me.id).map(({ from, to, ...rest }) => ({ username: byId(mine ? to : from).username, ...rest }));
+    const doc = this.settingsDocs.get(me.id)?.settings?.social ?? {};
+    return {
+      friends,
+      incoming: req('in'),
+      outgoing: req('out'),
+      blocked,
+      invites: inv(false),
+      sentInvites: inv(true),
+      privacy: { showOnline: doc.showOnline ?? true, friendsJoin: doc.friendsJoin ?? true, allowSpectate: doc.allowSpectate ?? false },
+      limits: { friends: 200, outgoing: 50, blocked: 500 },
+    };
+  }
+
+  friendsRoute(me, method, path, body, { reply, fail }) {
+    const named = (name) => [...this.users.values()].find((x) => x.username.toLowerCase() === String(name ?? '').toLowerCase() && x.status === 'active');
+    const pair = (a, b) => [a.id, b.id].sort().join('|');
+    if (method === 'GET' && path === '/api/account/friends') return reply(200, this.friendsDoc(me));
+    if (method === 'POST' && path === '/api/account/friends/requests') {
+      const other = named(body.username);
+      if (!other) return fail(404, 'not_found', 'No player with this name.');
+      if (other.id === me.id) return fail(400, 'invalid', 'That is you.');
+      if (this.friendPairs.has(pair(me, other)) || this.friendRequests.has(`${me.id}|${other.id}`)) return fail(409, 'conflict', 'Already friends or asked.');
+      if (this.blocks.has(`${me.id}|${other.id}`)) return fail(409, 'blocked', 'You blocked this player.');
+      if (this.friendRequests.has(`${other.id}|${me.id}`)) {
+        this.befriend(me, other);
+        return reply(200, { friend: { ...this.friendView(other), since: this.now, status: 'offline', lastSeenAt: null } });
+      }
+      this.friendRequests.set(`${me.id}|${other.id}`, { createdAt: this.now, ignored: this.blocks.has(`${other.id}|${me.id}`) });
+      return reply(201, { request: { ...this.friendView(other), createdAt: this.now } });
+    }
+    let m = /^\/api\/account\/friends\/requests\/([^/]+)\/(accept|ignore)$/.exec(path);
+    if (m && method === 'POST') {
+      const other = named(decodeURIComponent(m[1]));
+      const k = other && `${other.id}|${me.id}`;
+      if (!other || !this.friendRequests.has(k)) return fail(404, 'not_found', 'No request from this player.');
+      if (m[2] === 'ignore') {
+        this.friendRequests.get(k).ignored = true;
+        return reply(204);
+      }
+      this.befriend(me, other);
+      return reply(200, { friend: { ...this.friendView(other), since: this.now, status: 'offline', lastSeenAt: null } });
+    }
+    m = /^\/api\/account\/friends\/requests\/([^/]+)$/.exec(path);
+    if (m && method === 'DELETE') {
+      const other = named(decodeURIComponent(m[1]));
+      if (!other || !this.friendRequests.delete(`${me.id}|${other.id}`)) return fail(404, 'not_found', 'No request to this player.');
+      return reply(204);
+    }
+    if (method === 'POST' && path === '/api/account/friends/blocks') {
+      const other = named(body.username);
+      if (!other) return fail(404, 'not_found', 'No player with this name.');
+      this.blocks.set(`${me.id}|${other.id}`, this.now);
+      this.friendPairs.delete(pair(me, other));
+      this.friendRequests.delete(`${me.id}|${other.id}`);
+      this.friendRequests.delete(`${other.id}|${me.id}`);
+      return reply(204);
+    }
+    m = /^\/api\/account\/friends\/blocks\/([^/]+)$/.exec(path);
+    if (m && method === 'DELETE') {
+      const other = named(decodeURIComponent(m[1]));
+      if (!other || !this.blocks.delete(`${me.id}|${other.id}`)) return fail(404, 'not_found', 'Not blocked.');
+      return reply(204);
+    }
+    m = /^\/api\/account\/friends\/invites\/([^/]+)$/.exec(path);
+    if (m && method === 'DELETE') {
+      const other = named(decodeURIComponent(m[1]));
+      const before = this.friendInvites.length;
+      this.friendInvites = this.friendInvites.filter((i) => !(other && i.from === other.id && i.to === me.id));
+      return before === this.friendInvites.length ? fail(404, 'not_found', 'No invite.') : reply(204);
+    }
+    m = /^\/api\/account\/friends\/([^/]+)$/.exec(path);
+    if (m && method === 'DELETE') {
+      const other = named(decodeURIComponent(m[1]));
+      if (!other || !this.friendPairs.delete(pair(me, other))) return fail(404, 'not_found', 'Not friends.');
+      return reply(204);
+    }
+    return null;
+  }
+
   // ---- fetch ------------------------------------------------------------------------------
 
   async fetch(url, init = {}) {
@@ -234,6 +363,13 @@ export class MockAccountServer {
 
     // ---- Public and auth
     if (key === 'GET /api/site') return reply(200, sitePublic);
+    const code = /^\/api\/invite\/([^/]+)$/.exec(path);
+    if (code && method === 'GET') {
+      const found = this.inviteCodes.get(decodeURIComponent(code[1]).replace(/-/g, '').toUpperCase());
+      if (!found) return fail(404, 'not_found', 'No lobby has this code.');
+      if (found === 'expired') return fail(410, 'expired', 'The lobby closed or the code was replaced.');
+      return reply(200, { invite: found });
+    }
     if (key === 'GET /api/auth/me') {
       if (!cur) return reply(200, { user: null, session: null });
       if (cur.user.ban || cur.user.status === 'deleted') {
@@ -319,6 +455,7 @@ export class MockAccountServer {
         if ('currentPassword' in body) return fail(400, 'invalid', 'Unknown field currentPassword.', { field: 'currentPassword' });
         if (!reauthed) return needReauth();
         me.password = body.newPassword;
+        me.passwordChangedAt = this.now;
         return reply(200, { user: this.self(me) });
       }
       if (key === 'POST /api/account/email') {
@@ -361,6 +498,12 @@ export class MockAccountServer {
         return reply(200, doc, { ETag: `"v${doc.version}"` });
       }
       if (key === 'PUT /api/account/settings') return this.putSettings(me, body, headers, { reply, fail });
+      if (path.startsWith('/api/account/friends')) {
+        if (!this.friendsOn) return fail(404, 'not_found', 'Not found.');
+        if (me.status !== 'active') return fail(403, 'account_inactive', 'This account is not active.');
+        const out = this.friendsRoute(me, method, path, body, { reply, fail });
+        if (out) return out;
+      }
       if (key === 'GET /api/account/replays') {
         const list = this.replays.get(me.id) ?? [];
         return reply(200, {

@@ -207,8 +207,14 @@ test('password sign-in: generic errors, one key derivation, rotation, no rehash 
   assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id = ?', t.user.id)[0].n, 2, 'the old cookie session was replaced');
   // Setting the password (after a re-authentication) upgrades the hash.
   assert.equal((await b.post('/api/auth/reauth', { password: PASSWORD })).status, 200);
-  assert.equal((await b.post('/api/account/password', { newPassword: 'a stronger passphrase' })).status, 200);
+  const changed = await b.post('/api/account/password', { newPassword: 'a stronger passphrase' });
+  assert.equal(changed.status, 200);
   assert.equal(env.DB.rows('SELECT password_iterations FROM users')[0].password_iterations, 30000);
+  // The account page says when the password was last changed.
+  const stored = env.DB.rows('SELECT password_changed_at FROM users')[0].password_changed_at;
+  assert.ok(Number.isFinite(stored));
+  assert.equal(changed.body.user.passwordChangedAt, stored);
+  assert.equal((await b.get('/api/account')).body.user.passwordChangedAt, stored);
 });
 
 test('lockout: username and email share one budget per account and address; the owner is never kept out', async () => {

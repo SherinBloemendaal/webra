@@ -104,6 +104,7 @@ body. Errors always look like this:
 | `flags` | string[] | Known flags only: `content_autoinstall` (may use the one-click Red Alert content relays: the package and the music) |
 | `createdAt`, `lastSeenAt` | number | `lastSeenAt` is updated at most hourly (or when the address changes) |
 | `usernameChangedAt` | number or null | Last self-service rename |
+| `passwordChangedAt` | number or null | When the password was last set, changed or removed (null: never) |
 
 Username and email normalization are exported by the protocol package
 (`validUsername`, `usernameKey`, `validEmail`, `emailKey`) so clients can
@@ -656,6 +657,7 @@ everything here.
     "createdAt": 0,
     "lastSeenAt": 0,
     "usernameChangedAt": null,
+    "passwordChangedAt": 0,
     "methods": { "password": true, "discord": { "username": "tanya", "linkedAt": 0 } | null, "passkeys": 2 },
     "ban": null,
     "canPlay": true,

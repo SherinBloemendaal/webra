@@ -3622,6 +3622,69 @@ and every mark under 40 px), `wordmark.svg`, `favicon-16.png`,
 attributes only; `node tools/gen-brand.mjs --check` and
 `tools/gen-brand.test.mjs` keep them in step with the script.
 
+### Website pages (`apps/website`)
+
+The pages follow the Website and Account boards with the design system's
+tokens (`site.css` maps the `--ui-*` names) and the shared controls from
+`/lib/` (`/lib/css/controls.css`, `/lib/js/ui/controls.js`). The CSP
+(`style-src 'self'`) allows no style attributes: everything is a class in
+`site.css` or `account.css`, values set at run time are custom properties
+set through CSSOM (`--avatar`, `--fill`, the select plate's `--sp-*`).
+
+- **Header and footer**: the same on every page: the emblem (40 px,
+  `/lib/brand/emblem.svg`) and WEBRA, then Multiplayer, Maps, Changelog,
+  Account (the current page `aria-current="page"`, accent text and a rule)
+  and Play. Under 680 px a Menu button opens the links.
+- **Home**: the hero's battlefield is an inline SVG animated with SMIL (no
+  script, no game sprites); `prefers-reduced-motion` and a Pause button stop
+  it (`svg.pauseAnimations()`), and it rests off screen. The badge over the
+  hero comes from `GET /api/site` (`registration.open`,
+  `registration.approvalRequired`) and `version.json`
+  (`assets/site-data.js` `betaBadge`: "Closed beta · v0.17"); the sign-up
+  buttons say "Request access" during a closed beta and lead to the sign-in
+  when signing up is closed. Texture packs are explained with pictures, not
+  chosen here.
+- **Selects**: the maps page's sort, the admin filters, the admin's user
+  form and audit filter and the settings editor
+  (`js/account/admin-forms.js`) use `selectPlate`; `assets/ui.js`
+  `selectField(label, options, { value, help, disabled, onChange })` gives a
+  labelled one. The website has no native `<select>` left.
+- **Multiplayer, "Join with a code"**: the field takes the six characters
+  (the dash fills in) or a pasted link (`assets/invite.js`
+  `typedInviteCode`), looks the code up (`GET /api/invite/:code`) and shows
+  the lobby or why not (unknown, expired, full: spectators); Join opens
+  `/join/<code>`, which the Worker sends into the game.
+- **Account page**: a side menu with the account's state on a lamp and a
+  lamp per section (the one in view is `aria-current`); sections Profile
+  (with Email), Sign-in methods (Password with `passwordChangedAt`,
+  Passkeys, Discord, each a row with a lamp and a detail), Replays (with a
+  bar of the space used), Friends, Devices, Your data. A pending account
+  gets a card with Check again (and back to the game once approved). From
+  the play gate (`?returnTo=`) the sign-in shows "Sign in to play", and a
+  game link with `?invite=` (an invite link `/join/<code>` while signed
+  out) shows the lobby the code names. A server that cannot be reached
+  gets "No connection" with Try again.
+- **Friends** (accounts API 5.11): grouped In a game, In a lobby, Online,
+  Offline with a search; Join (`/play/?join=<session>`) when the lobby is
+  joinable, Spectate when the friend allows it; More: Remove, Block;
+  requests (Accept, Ignore; sent ones Withdraw), lobby invites (Join by
+  `/join/<code>`, Dismiss), add and block by username, blocked players with
+  Unblock, and the switches `social.showOnline`, `social.friendsJoin`,
+  `social.allowSpectate` (written to the settings document). Polls every 30
+  s while the tab is visible; a server without the routes (404) says
+  friends are not available.
+- **Changelog**: each release as on the Release notes board: "Version
+  x.y.z", the date, a Live badge for the running version, and per kind of
+  change and part of the game a tagged heading (New, Fixed, Faster,
+  Breaking; `site-data.js` `releaseTag`).
+- **Adapters until the protocol round is merged**: `assets/invite.js`
+  (`normalizeInviteCode`, `formatInviteCode`, `invitePath`) and
+  `assets/friends.js` (`FriendsClient`, `SOCIAL_DEFAULTS`,
+  `FRIENDS_POLL_MS`) copy the names, rules and routes of
+  `packages/protocol/src/invite.js`, `friends.js` and
+  `apps/game/js/account/friends.js`; afterwards they import those from
+  `/lib/`.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
