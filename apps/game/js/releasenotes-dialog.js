@@ -12,10 +12,12 @@ import {
   normalizeVersion,
   readSeenVersion,
   sanitizeNotes,
+  sectionTag,
   whatsNew,
   writeSeenVersion,
 } from './releasenotes.js';
 import { defaultRegistry } from './registry.js';
+import { badge } from './ui/controls.js';
 
 const LOAD_TIMEOUT_MS = 8000;
 
@@ -75,9 +77,11 @@ export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_U
     return notesPromise;
   };
 
+  // "What's new" over the title in the What's new mode (ReleaseNotes board); the title is then the version.
+  const kicker = el('p', 'rn-kicker');
   const title = el('h1', 'rn-title');
   title.id = 'release-notes-title';
-  const badge = el('span', 'rn-badge rn-current-badge');
+  const currentBadge = el('span', 'rn-badge rn-current-badge');
   const close = el('button', 'rn-close', 'Close');
   close.type = 'button';
   close.setAttribute('aria-label', 'Close release notes');
@@ -88,12 +92,13 @@ export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_U
   const card = el('div', 'menu-card rn-card');
   card.setAttribute('role', 'dialog');
   card.setAttribute('aria-modal', 'true');
-  card.setAttribute('aria-labelledby', title.id);
+  kicker.id = 'release-notes-kicker';
+  card.setAttribute('aria-labelledby', `${kicker.id} ${title.id}`);
   card.setAttribute('aria-describedby', 'release-notes-intro');
   intro.id = 'release-notes-intro';
   const head = el('div', 'rn-head');
   const heading = el('div', 'rn-heading');
-  heading.append(title, badge);
+  heading.append(kicker, title, currentBadge);
   head.append(heading, close);
   card.append(head, intro, body, footer);
   panel.replaceChildren(card);
@@ -157,10 +162,14 @@ export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_U
     article.append(h2);
     if (!r.sections.length) article.append(el('p', 'hint', 'Maintenance release without player-facing changes.'));
     for (const section of r.sections) {
-      article.append(el('h3', `rn-section rn-section-${section.type}`, section.title));
+      // A group per scope, tagged with its section (NEW, FIXED): the tag is a word, not only a colour.
+      const tag = sectionTag(section.type, section.title);
       for (const group of groupByScope(section.entries, notes.scopes)) {
-        const block = el('div', 'rn-group');
-        block.append(el('h4', 'rn-scope', group.label));
+        const block = el('section', `rn-group rn-section-${section.type}`);
+        block.dataset.kind = tag.kind;
+        const h3 = el('h3', 'rn-scope');
+        h3.append(badge(tag.kind, tag.text, { led: false, title: section.title }), el('span', 'rn-scope-name', group.label));
+        block.append(h3);
         const list = el('ul', 'rn-entries');
         for (const entry of group.entries) {
           const li = el('li', 'rn-entry');
@@ -186,10 +195,14 @@ export function mountReleaseNotes(panel, { version = null, url = RELEASE_NOTES_U
   /** Fill the dialog. `fresh`: the releases a "What's new" open shows. */
   const render = (mode, fresh = []) => {
     const whatsNewMode = mode === 'whatsNew' && fresh.length > 0;
-    title.textContent = whatsNewMode ? "What's new" : 'Release notes';
-    badge.textContent = current ? `v${current}` : '';
-    badge.hidden = !current;
-    badge.title = 'The version you are playing';
+    // What's new: the kicker says it and the title is the newest version shown, with its date.
+    const top = whatsNewMode ? fresh[0] : null;
+    kicker.textContent = whatsNewMode ? "What's new" : '';
+    kicker.hidden = !whatsNewMode;
+    title.textContent = top ? `Version ${top.version}` : 'Release notes';
+    currentBadge.textContent = current && !top ? `v${current}` : '';
+    currentBadge.hidden = !current || !!top;
+    currentBadge.title = 'The version you are playing';
     footer.replaceChildren();
     if (!notes) {
       intro.textContent = 'Loading the release notes...';

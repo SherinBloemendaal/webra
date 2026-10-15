@@ -11,13 +11,39 @@
   background: var(--ui-scan), rgba(0, 0, 0, 0.62);
 }
 
+/* The ReleaseNotes board: a hazard stripe on top, "What's new" over the version. */
 .rn-card {
+  border-top: 1px solid var(--ui-edge);
+  padding-top: calc(28 * var(--ui-px));
   width: min(calc(640 * var(--ui-px)), 100%);
   max-height: calc(100vh - calc(32 * var(--ui-px)));
   max-height: calc(100dvh - calc(32 * var(--ui-px)));
   display: flex;
   flex-direction: column;
   user-select: text;
+}
+
+.rn-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(6 * var(--ui-px));
+  background: var(--ui-hazard);
+}
+
+.rn-kicker {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--ui-ok);
+  font: 600 var(--ui-fs-label) / 1.2 var(--ui-font-display);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.rn-kicker[hidden] {
+  display: none;
 }
 
 .rn-head {
@@ -113,41 +139,59 @@
   font-weight: 400;
 }
 
-.rn-section {
-  margin: calc(14 * var(--ui-px)) 0 calc(4 * var(--ui-px));
-  color: var(--accent);
-  font-size: calc(13 * var(--ui-px));
-  letter-spacing: 1.5px;
+/* A group: the section's tag (NEW, FIXED: a word on a badge) and the scope, then the entries,
+   each after a square in the tag's colour. */
+.rn-group {
+  margin: calc(14 * var(--ui-px)) 0 0;
+}
+
+.menu-card h3.rn-scope {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--ui-px));
+  margin: 0 0 calc(6 * var(--ui-px));
+  color: var(--ui-text);
+  font: 700 var(--ui-fs-l) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
   text-transform: uppercase;
 }
 
-.rn-section-breaking {
-  color: var(--danger);
-}
-
-.rn-group {
-  margin: calc(6 * var(--ui-px)) 0 0;
-}
-
-.rn-scope {
-  margin: calc(8 * var(--ui-px)) 0 calc(2 * var(--ui-px));
-  color: var(--text);
-  font-size: calc(13 * var(--ui-px));
-}
-
 .rn-entries {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--ui-px));
   margin: 0;
-  padding-left: calc(18 * var(--ui-px));
-  color: #ccd3da;
+  padding: 0;
+  list-style: none;
+  color: var(--ui-text-2);
 }
 
 .rn-entry {
-  margin: calc(3 * var(--ui-px)) 0;
+  position: relative;
+  padding-left: calc(16 * var(--ui-px));
   overflow-wrap: anywhere;
 }
 
-.rn-entry::marker {
-  color: var(--muted);
+.rn-entry::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: calc(6 * var(--ui-px));
+  height: calc(6 * var(--ui-px));
+  background: var(--ui-muted);
+}
+
+.rn-group[data-kind='ok'] .rn-entry::before {
+  background: var(--ui-ok);
+}
+
+.rn-group[data-kind='bad'] .rn-entry::before {
+  background: var(--ui-bad);
+}
+
+.rn-group[data-kind='info'] .rn-entry::before {
+  background: var(--ui-info-text);
 }
 
 .rn-link {
@@ -177,8 +221,22 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
+  padding-top: calc(12 * var(--ui-px));
+  border-top: 1px solid var(--ui-edge);
   gap: calc(8 * var(--ui-px));
   margin-top: calc(12 * var(--ui-px));
+}
+
+/* "All release notes" sits on the left as a link-like button; Got it (the main button) on the right. */
+.menu-card .rn-footer button.rn-all {
+  margin-right: auto;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--ui-accent-hi);
+  text-decoration: underline;
+  text-underline-offset: calc(3 * var(--ui-px));
 }
 
 .menu-card .rn-footer button,
@@ -210,5 +268,13 @@
 
   .menu-card .rn-footer button {
     flex: 1 1 auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .rn-card::before,
+  .rn-entry::before {
+    background: CanvasText;
+    forced-color-adjust: none;
   }
 }

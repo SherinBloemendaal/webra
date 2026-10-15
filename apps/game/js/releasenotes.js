@@ -40,6 +40,26 @@ export const SCOPE_LABELS = Object.freeze({
   deploy: 'Project',
 });
 
+/**
+ * The tag before each group of a release (the ReleaseNotes board): NEW for
+ * features, FIXED for bug fixes and so on, with its badge look
+ * (js/ui/controls.js BADGE_KINDS). Other sections use their own title.
+ */
+export function sectionTag(type, title = '') {
+  switch (type) {
+    case 'breaking':
+      return { text: 'Breaking', kind: 'bad' };
+    case 'features':
+      return { text: 'New', kind: 'ok' };
+    case 'fixes':
+      return { text: 'Fixed', kind: 'neutral' };
+    case 'performance':
+      return { text: 'Faster', kind: 'info' };
+    default:
+      return { text: title || 'Changes', kind: 'neutral' };
+  }
+}
+
 /** Label of entries without a scope. */
 export const GENERAL_LABEL = 'General';
 
