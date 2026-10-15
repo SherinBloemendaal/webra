@@ -957,6 +957,11 @@ fn a_queue_holds_at_most_queue_cap_items_even_with_all_tech() {
     let n1 = before.iter().filter(|&&t| t == types[1]).count();
     let mut expected = before.clone();
     let mut seen = 0;
-    expected.retain(|&t| t != types[1] || { seen += 1; seen <= n1 - 50 });
+    expected.retain(|&t| {
+        t != types[1] || {
+            seen += 1;
+            seen <= n1 - 50
+        }
+    });
     assert_eq!(after, expected);
 }
