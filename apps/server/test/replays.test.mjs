@@ -227,7 +227,8 @@ test('at most 100 replays per account: the oldest makes room, also for uploads a
   assert.equal(rows(env, b.user.id).some((r) => r.id === ids[2]), false);
   const list = await b.get('/api/account/replays');
   assert.equal(list.body.usage.count, ACCOUNT_REPLAYS_MAX);
-  assert.equal(list.body.replays[0].title, 'Game 11', 'newest first');
+  // The two uploads race, so either may be the newest; both lead the list.
+  assert.deepEqual(new Set(list.body.replays.slice(0, 2).map((r) => r.title)), new Set(['Game 10', 'Game 11']), 'newest first');
 });
 
 test('at most 100 MiB stored per account: the oldest go until the new one fits', async () => {
