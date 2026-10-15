@@ -22,7 +22,8 @@
     // served only to accounts that may play (src/playgate.js). Patterns
     // match the raw path; other spellings of game paths are redirected by
     // Static Assets to the canonical, gated path (docs/security.md).
-    "run_worker_first": ["/api/*", "/play", "/play/*"],
+    // /join/<code> turns an invite link into /play/?invite=<code> (src/index.js joinRedirect).
+    "run_worker_first": ["/api/*", "/play", "/play/*", "/join/*"],
     "not_found_handling": "404-page"
   },
   "durable_objects": {

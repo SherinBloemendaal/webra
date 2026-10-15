@@ -489,10 +489,11 @@ test('static-headers.js matches apps/website/_headers', () => {
   }
 });
 
-test('wrangler.jsonc runs the Worker first for /play and /play/*', () => {
+test('wrangler.jsonc runs the Worker first for /play, /play/* and invite links', () => {
   const text = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
   const config = JSON.parse(text);
-  assert.deepEqual(config.assets.run_worker_first, ['/api/*', '/play', '/play/*']);
+  // /join/* turns invite links into game URLs (src/index.js joinRedirect).
+  assert.deepEqual(config.assets.run_worker_first, ['/api/*', '/play', '/play/*', '/join/*']);
   assert.equal(config.assets.binding, 'ASSETS');
 });
 

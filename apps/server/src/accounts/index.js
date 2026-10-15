@@ -1,5 +1,5 @@
 // Account and admin API entry: routes, the request context and CSRF rules
-// for /api/site, /api/auth/*, /api/account/* (replays included), /api/admin/*
+// for /api/site, /api/auth/*, /api/account/* (replays and friends included), /api/admin/*
 // and /api/dev/*.
 
 import { checkCsrf } from '../http.js';
@@ -9,6 +9,7 @@ import { registerAdminRoutes } from './routes-admin.js';
 import { registerAuthRoutes } from './routes-auth.js';
 import { registerDevRoutes, withDevMail } from './dev.js';
 import { registerDiscordRoutes } from './routes-discord.js';
+import { registerFriendRoutes } from './friends.js';
 import { registerReplayRoutes } from './replays.js';
 import { Router } from './router.js';
 
@@ -20,6 +21,7 @@ const router = new Router();
 registerAuthRoutes(router);
 registerDiscordRoutes(router);
 registerAccountRoutes(router);
+registerFriendRoutes(router);
 registerReplayRoutes(router);
 registerAdminRoutes(router);
 registerDevRoutes(router);

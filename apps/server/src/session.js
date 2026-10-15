@@ -46,12 +46,34 @@
 // The members reload their page and come back with their rejoin keys
 // (`rejoinLobby`); a lost connection does not cost a returning member its
 // place until its return deadline.
+//
+// Protocol 8 (docs/contracts.md section 4):
+// - the start gate: the relay emits nothing past the empty start frames
+//   until every player reported `loaded` (lockstep.js `loading`); a player
+//   that does not within LOAD_TIMEOUT_MS is dropped (it can rejoin). Rejoins
+//   and resumed saves need no `loaded`: their `resume` says they caught up;
+// - network quality: `ping` is answered at once with `pong`; the sender's
+//   last measurement is kept in its socket attachment (it survives
+//   hibernation) and `netstat` goes to the whole room at most every
+//   NETSTAT_INTERVAL_MS, sent while handling a ping, so no alarm has to wake
+//   the lobby for it. In the game the alarm (every second) sends `waiting`
+//   while lockstep waits for a player beyond HOLD_GRACE_MS, and
+//   `waiting` with client null once it runs again; `stalls` answers with the
+//   game's stall log;
+// - invite codes: the host issues one (`newInvite`, invites.js); members see
+//   it in `lobby.invite`; it ends with the lobby;
+// - blocks: a signed-in player blocked by a present member cannot join;
+// - the directory has a row for every session (private ones are not
+//   listed) with a summary for the detail panel and the friends list.
 
 import { DurableObject } from 'cloudflare:workers';
 import {
   C2S,
   coopMission,
   DROP_AFTER_MS,
+  INVITE_TTL_MS,
+  NET_SILENT_MS,
+  NETSTAT_INTERVAL_MS,
   encodeServer,
   ERRORS,
   errorMessage,
@@ -79,7 +101,8 @@ import {
   verifyPassword,
   verifySeatKey,
 } from './crypto.js';
-import { HEARTBEAT_MS, removeSession, upsertSession } from './directory.js';
+import { HEARTBEAT_MS, removeSession, sessionSummary, upsertSession } from './directory.js';
+import { expireInviteCodes, issueInviteCode } from './invites.js';
 import { Lockstep, LockstepError } from './lockstep.js';
 import { lookupMap, mapTextByHash, storeMap } from './maps.js';
 import { gunzip, gzip, OrderLog } from './orderlog.js';
@@ -125,6 +148,14 @@ const LOG_MESSAGE_BUDGET = MAX_SERVER_MESSAGE_BYTES - 4 * 1024;
 /** Time a rejoining client gets to fast-forward, per tick of the game so far, and at most. */
 const RESUME_MS_PER_TICK = 5;
 const RESUME_MAX_MS = 15 * 60 * 1000;
+/** Pings per connection: twice a second at most, bursts of six ("Test again" sends three at once). */
+const PING_RATE = 2;
+const PING_BURST = 6;
+/** Stall log requests per connection: one every five seconds, bursts of two. */
+const STALLS_RATE = 0.2;
+const STALLS_BURST = 2;
+/** A directory change that only touches the summary waits this long after the last write. */
+const SUMMARY_WRITE_MS = 10 * 1000;
 /** Reasons after which a member can never come back. */
 const FINAL_REASONS = ['left', 'kicked', 'removed', 'expired'];
 
@@ -190,6 +221,14 @@ export class Session extends DurableObject {
     this.chatBuckets = new WeakMap();
     this.failures = new Map();
     this.lastDirectory = null;
+    this.lastDirectoryCore = null;
+    this.lastDirectoryAt = 0;
+    this.pingBuckets = new WeakMap();
+    this.stallBuckets = new WeakMap();
+    /** When `netstat` last went out. */
+    this.lastNetstat = 0;
+    /** The client the room was last told the game waits for, or null. */
+    this.waitingFor = null;
     ctx.blockConcurrencyWhile(async () => {
       const [meta, room] = await Promise.all([ctx.storage.get('meta'), ctx.storage.get('room')]);
       this.meta = meta ?? null;
@@ -357,6 +396,7 @@ export class Session extends DurableObject {
       return this.hello(ws, att, msg);
     }
     if (msg.t === C2S.HELLO) return this.reject(ws, ERRORS.STATE, 'Already joined.', false);
+    if (msg.t === C2S.PING) return this.ping(ws, att, msg);
 
     try {
       if (this.room.phase === 'lobby') await this.lobbyMessage(ws, att.client, msg);
@@ -401,6 +441,10 @@ export class Session extends DurableObject {
     // Anonymous players (accounts not required) cannot pose as an account.
     if (!att.account && (await this.nameBelongsToAccount(name))) {
       return this.reject(ws, ERRORS.INVALID, 'That name belongs to an account. Sign in, or choose another name.', true);
+    }
+    // A member who blocked this account does not want it here (docs/security.md "Friends and presence").
+    if (att.account && (await this.blockedByMember(att.account.id))) {
+      return this.reject(ws, ERRORS.FORBIDDEN, 'You cannot join this session.', true);
     }
     const spectate = msg.spectate === true;
     const phaseProblem = () => {
@@ -723,6 +767,7 @@ export class Session extends DurableObject {
         room.setOptions(client, msg.options);
         await this.saveRoom();
         this.broadcastLobby();
+        await this.syncDirectory();
         return;
       case C2S.MAP: {
         if (!room.isHost(client)) throw new RoomError('Only the host can change the map.', ERRORS.NOT_HOST);
@@ -762,6 +807,7 @@ export class Session extends DurableObject {
         room.setMaxSpectators(client, msg.max);
         await this.saveRoom();
         this.broadcastLobby();
+        await this.syncDirectory();
         return;
       case C2S.SPECTATE:
         room.spectate(client, msg.on);
@@ -788,12 +834,17 @@ export class Session extends DurableObject {
         await this.disconnect(ws, 'left');
         this.close(ws, CLOSE_NORMAL, 'bye');
         return;
+      case C2S.STALLS:
+        // No game, no stalls (a finished game's log went with its relay).
+        if (this.takeStallsToken(ws)) this.send(ws, { t: S2C.STALLS, stalls: [], totals: [] });
+        return;
       case C2S.ORDERS:
       case C2S.HASH:
       case C2S.RESUME:
       case C2S.SYNCED:
       case C2S.REMATCH:
       case C2S.SAVE:
+      case C2S.LOADED:
         throw new RoomError('The game has not started.', ERRORS.STATE);
       default:
         throw new RoomError('Unexpected message.', ERRORS.BAD_MESSAGE);
@@ -804,8 +855,12 @@ export class Session extends DurableObject {
     if (this.room.resume) return this.startResumed(client);
     const start = this.room.start(client, randomInt);
     const humans = this.room.seats.map((c, i) => (c === null ? -1 : i)).filter((i) => i >= 0);
-    this.lockstep = new Lockstep({ players: humans, delay: start.delay });
+    // The start gate: nothing past the start frames until every player's loading screen closed.
+    this.lockstep = new Lockstep({ players: humans, delay: start.delay, loading: humans });
     this.log = new OrderLog(this.ctx.storage);
+    this.meta.startedAt = Date.now();
+    await this.ctx.storage.put('meta', this.meta);
+    await this.endInvite();
     await this.saveRoom();
     this.broadcast({ t: S2C.START, ...start });
     this.emitFrames(this.lockstep.initialFrames());
@@ -892,6 +947,9 @@ export class Session extends DurableObject {
   async startResumed(client) {
     const chunks = this.room.resume.chunks;
     const start = this.room.start(client, randomInt);
+    this.meta.startedAt = Date.now();
+    await this.ctx.storage.put('meta', this.meta);
+    await this.endInvite();
     this.log = new OrderLog(this.ctx.storage);
     for (let i = 0; i < chunks; i++) {
       const bytes = await this.ctx.storage.get(`resume:${i}`);
@@ -1073,7 +1131,7 @@ export class Session extends DurableObject {
       return;
     }
     const seat = this.room.seatOf(client);
-    if (!this.lockstep && ![C2S.RESUME, C2S.SYNCED, C2S.CHAT, C2S.LEAVE].includes(msg.t)) {
+    if (!this.lockstep && ![C2S.RESUME, C2S.SYNCED, C2S.CHAT, C2S.LEAVE, C2S.LOADED, C2S.STALLS].includes(msg.t)) {
       // A resumed save waits for every player to catch up.
       throw new RoomError('The game continues once every player caught up.', ERRORS.STATE);
     }
@@ -1107,8 +1165,19 @@ export class Session extends DurableObject {
           return;
         }
         this.emitFrames(frames);
+        // The player the room waits for answered: tell everyone at once, not at the next alarm.
+        if (this.waitingFor !== null) this.updateWaiting(Date.now(), { onlyChanges: true });
         return;
       }
+      case C2S.LOADED: {
+        // Spectators, rejoining players and resumed saves have no start gate: ignored.
+        if (seat < 0 || !this.lockstep) return;
+        this.emitFrames(this.lockstep.loaded(seat));
+        return;
+      }
+      case C2S.STALLS:
+        if (this.takeStallsToken(ws)) this.send(ws, { t: S2C.STALLS, ...this.stallLog() });
+        return;
       case C2S.HASH: {
         const desync = this.lockstep.hash(seat, msg.tick, msg.hash);
         if (this.room.saving?.phase === 'agreed') await this.saveHash(client, msg.tick, msg.hash);
@@ -1269,6 +1338,7 @@ export class Session extends DurableObject {
     // A lost connection that cannot be rejoined (the order log is full) is reported as final.
     if (tell && name) this.broadcast({ t: S2C.LEFT, player: seat, client, name, reason: final || rejoinable ? reason : 'expired' });
     this.emitFrames(frames);
+    if (this.waitingFor !== null) this.updateWaiting(now, { onlyChanges: true });
     await this.endIfOver();
     await this.rematchAfterLoss(client, now);
     await this.saveAfterLoss(client, now);
@@ -1327,6 +1397,11 @@ export class Session extends DurableObject {
     const back = new Set(room.backToLobby(present, now));
     const log = this.log;
     this.lockstep = null;
+    this.waitingFor = null;
+    if (this.meta) {
+      delete this.meta.startedAt;
+      await this.ctx.storage.put('meta', this.meta);
+    }
     this.log = null;
     this.syncing.clear();
     this.catching.clear();
@@ -1374,11 +1449,16 @@ export class Session extends DurableObject {
     }
     if (this.room.phase === 'game') {
       if (!this.lockstep && !(this.room.resumeStart && this.log)) return this.sessionLost();
+      const loading = this.lockstep?.starting ?? false;
       for (const seat of this.lockstep ? this.lockstep.silent(now, DROP_AFTER_MS) : []) {
         const client = this.room.seats[seat];
         const ws = this.socketOf(client);
         if (ws) {
-          const message = this.canCatchUp() ? 'You were dropped for holding up the game. You can rejoin.' : 'You were dropped for not responding.';
+          const message = loading
+            ? `You did not finish loading in time.${this.canCatchUp() ? ' You can rejoin.' : ''}`
+            : this.canCatchUp()
+              ? 'You were dropped for holding up the game. You can rejoin.'
+              : 'You were dropped for not responding.';
           this.send(ws, { t: S2C.ERROR, code: ERRORS.DROPPED, message });
           await this.disconnect(ws, 'dropped');
           this.close(ws, CLOSE_NORMAL, 'dropped');
@@ -1429,6 +1509,11 @@ export class Session extends DurableObject {
         await this.saveRoom();
         this.broadcastSaveEnd('expired');
       }
+      if (this.room?.phase === 'game') {
+        this.updateWaiting(now);
+        // A summary change (a spectator came or went) that waited for its turn.
+        await this.syncDirectory();
+      }
       if (this.meta && this.room?.phase === 'game') await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
       return;
     }
@@ -1475,6 +1560,7 @@ export class Session extends DurableObject {
     this.catching.clear();
     if (id) {
       try {
+        await expireInviteCodes(this.env.DB, id, Date.now());
         await removeSession(this.env.DB, id);
         await this.env.DB.prepare('DELETE FROM game_presence WHERE session_id = ?1').bind(id).run();
       } catch (err) {
@@ -1569,13 +1655,19 @@ export class Session extends DurableObject {
 
   // ---- Directory ---------------------------------------------------------------------------------
 
-  async syncDirectory(heartbeat = false) {
-    if (!this.meta?.public || !this.room) return;
-    const snapshot = {
+  /**
+   * Write the session's directory row when it changed (or as the heartbeat).
+   * Every session has one (private ones are never listed). A change of the
+   * summary alone (options, AI slots, spectator places) is written at most
+   * every SUMMARY_WRITE_MS: the alarm writes it later.
+   */
+  async syncDirectory(heartbeat = false, now = Date.now()) {
+    if (!this.meta || !this.room) return;
+    const core = {
       id: this.meta.id,
       name: this.meta.name,
       host: this.room.hostName() ?? '',
-      public: true,
+      public: this.meta.public,
       locked: this.meta.password !== null,
       players: this.room.humans().length,
       maxPlayers: this.meta.maxPlayers,
@@ -1584,13 +1676,184 @@ export class Session extends DurableObject {
       version: this.meta.version,
       state: this.room.phase === 'lobby' ? 'lobby' : 'game',
     };
+    const snapshot = { ...core, summary: sessionSummary(this.room, { startedAt: this.room.phase === 'lobby' ? null : (this.meta.startedAt ?? null) }) };
+    const coreKey = JSON.stringify(core);
     const key = JSON.stringify(snapshot);
     if (!heartbeat && key === this.lastDirectory) return;
+    if (!heartbeat && coreKey === this.lastDirectoryCore && now - this.lastDirectoryAt < SUMMARY_WRITE_MS) {
+      await this.ensureAlarm(this.lastDirectoryAt + SUMMARY_WRITE_MS);
+      return;
+    }
     try {
-      await upsertSession(this.env.DB, snapshot);
+      await upsertSession(this.env.DB, snapshot, now);
       this.lastDirectory = key;
+      this.lastDirectoryCore = coreKey;
+      this.lastDirectoryAt = now;
     } catch (err) {
       logError('directory update failed', err);
+    }
+  }
+
+  // ---- Network quality --------------------------------------------------------------------------
+
+  /**
+   * `ping`: answer with `pong` at once, keep the sender's measurement and,
+   * when it is time, tell the room (`netstat`). Pings have their own small
+   * budget besides the connection's rate limit; pings beyond it get no pong
+   * (an honest client never sends that many), a flood closes the connection.
+   */
+  ping(ws, att, msg, now = Date.now()) {
+    let bucket = this.pingBuckets.get(ws);
+    if (!bucket) {
+      bucket = new TokenBucket(PING_RATE, PING_BURST, now);
+      this.pingBuckets.set(ws, bucket);
+    }
+    if (!bucket.take(now)) {
+      if (bucket.refused > FLOOD_LIMIT) this.reject(ws, ERRORS.RATE_LIMITED, 'Too many pings.', true);
+      return;
+    }
+    this.send(ws, { t: S2C.PONG, n: msg.n, at: msg.at });
+    att.net = msg.rtt === undefined ? { ...(att.net ?? { rtt: null, jitter: null, late: null }), at: now } : { rtt: msg.rtt, jitter: msg.jitter, late: msg.late, at: now };
+    ws.serializeAttachment(att);
+    if (now - this.lastNetstat >= NETSTAT_INTERVAL_MS) this.broadcastNetstat(now);
+  }
+
+  /** Whether `client` is a player (holds a lobby slot, or a seat of the running game). */
+  isPlayer(client) {
+    if (!this.room) return false;
+    return this.room.phase === 'lobby' ? this.room.slotOf(client) >= 0 : this.room.seatOf(client) >= 0;
+  }
+
+  /** The `netstat` entries: every connected player's last measurement (spectators are not listed). */
+  netstatPlayers(now = Date.now()) {
+    const out = new Map();
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = this.attachment(ws);
+      if (att.client === null || att.gone || out.has(att.client) || !this.isPlayer(att.client)) continue;
+      const net = att.net ?? null;
+      const entry = { client: att.client, rtt: net?.rtt ?? null, jitter: net?.jitter ?? null, late: net?.late ?? null };
+      const quiet = now - (net?.at ?? att.since ?? now);
+      if (quiet > NET_SILENT_MS) entry.silent = Math.min(quiet, 24 * 60 * 60 * 1000);
+      out.set(att.client, entry);
+    }
+    return [...out.values()];
+  }
+
+  broadcastNetstat(now = Date.now()) {
+    this.lastNetstat = now;
+    this.broadcast({ t: S2C.NETSTAT, players: this.netstatPlayers(now) });
+  }
+
+  /**
+   * Tell the room whom the game waits for (`waiting`, every alarm while it
+   * waits: the times move on), and `waiting` with client null once it runs
+   * again. `onlyChanges`: only when the answer is another client than before.
+   */
+  updateWaiting(now = Date.now(), { onlyChanges = false } = {}) {
+    const w = this.room?.phase === 'game' && this.lockstep ? this.lockstep.waiting(now, DROP_AFTER_MS) : null;
+    const client = w ? this.room.seats[w.seat] : null;
+    if (client === null) {
+      if (this.waitingFor === null) return;
+      this.waitingFor = null;
+      this.broadcast({ t: S2C.WAITING, client: null });
+      return;
+    }
+    if (onlyChanges && client === this.waitingFor) return;
+    this.waitingFor = client;
+    this.broadcast({ t: S2C.WAITING, client, heldMs: w.heldMs, dropInMs: w.dropInMs });
+  }
+
+  /** The running game's stall log by client: { stalls, totals }. */
+  stallLog() {
+    const ls = this.lockstep;
+    const seats = this.room?.seats ?? [];
+    if (!ls) return { stalls: [], totals: [] };
+    return {
+      stalls: ls.stalls.filter((x) => seats[x.seat] != null).map((x) => ({ tick: x.tick, client: seats[x.seat], ms: x.ms })),
+      totals: [...ls.totals].filter(([seat]) => seats[seat] != null).map(([seat, t]) => ({ client: seats[seat], ms: t.ms, count: t.count })),
+    };
+  }
+
+  takeStallsToken(ws) {
+    let bucket = this.stallBuckets.get(ws);
+    if (!bucket) {
+      bucket = new TokenBucket(STALLS_RATE, STALLS_BURST);
+      this.stallBuckets.set(ws, bucket);
+    }
+    if (bucket.take()) return true;
+    this.send(ws, { t: S2C.ERROR, code: ERRORS.RATE_LIMITED, message: 'Ask for the stall log at most every few seconds.' });
+    return false;
+  }
+
+  // ---- Invite codes -------------------------------------------------------------------------------
+
+  /**
+   * RPC from the Worker (POST /api/sessions/<id>/invite): the host gets a new
+   * invite code for the lobby; the previous one stops working. Valid while
+   * the lobby is open, at most INVITE_TTL_MS. Returns { ok, code, expiresAt }.
+   */
+  async newInvite({ member, account = null, ip = 'unknown' }) {
+    if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+    const client = await this.checkMember(member, account, ip);
+    if (typeof client !== 'number') return client;
+    const problem = () => {
+      if (!this.meta || !this.room) return rpcError(404, ERRORS.NOT_FOUND, 'No such session.');
+      if (this.room.phase !== 'lobby') return rpcError(409, ERRORS.STATE, 'The game has already started.');
+      if (!this.room.isHost(client)) return rpcError(403, ERRORS.NOT_HOST, 'Only the host can make an invite code.');
+      return null;
+    };
+    if (problem()) return problem();
+    const now = Date.now();
+    const expiresAt = now + INVITE_TTL_MS;
+    // The directory row the lookup reads is there before the code is.
+    await this.syncDirectory(true, now);
+    const code = await issueInviteCode(this.env.DB, this.meta.id, now, expiresAt);
+    // Re-checked after the awaits: the game may have started meanwhile.
+    const late = problem();
+    if (late) {
+      if (this.meta) await expireInviteCodes(this.env.DB, this.meta.id, Date.now());
+      return late;
+    }
+    this.meta.invite = { code, expiresAt };
+    await this.ctx.storage.put('meta', this.meta);
+    this.broadcastLobby();
+    return { ok: true, code, expiresAt };
+  }
+
+  /** The lobby's code ends (the game starts): in D1 and for the members. */
+  async endInvite() {
+    if (!this.meta?.invite) return;
+    this.meta.invite = null;
+    await this.ctx.storage.put('meta', this.meta);
+    try {
+      await expireInviteCodes(this.env.DB, this.meta.id, Date.now());
+    } catch (err) {
+      logError('invite expiry failed', err);
+    }
+  }
+
+  /** `lobby.invite` while the code is valid. */
+  inviteView(now = Date.now()) {
+    const inv = this.meta?.invite;
+    return inv && inv.expiresAt > now ? { invite: { code: inv.code, expiresAt: inv.expiresAt } } : {};
+  }
+
+  /**
+   * Whether a member present now blocked the account `userId` (D1
+   * user_blocks). A failed check lets the player in (blocking is a social
+   * tool, not access control; the error is logged).
+   */
+  async blockedByMember(userId) {
+    const members = this.room?.memberAccounts() ?? [];
+    if (members.length === 0) return false;
+    try {
+      const row = await this.env.DB.prepare('SELECT 1 AS b FROM user_blocks WHERE blocked_id = ?1 AND user_id IN (SELECT value FROM json_each(?2)) LIMIT 1')
+        .bind(userId, JSON.stringify(members))
+        .first();
+      return row !== null && row !== undefined;
+    } catch (err) {
+      logError('block check failed', err);
+      return false;
     }
   }
 
@@ -1665,7 +1928,7 @@ export class Session extends DurableObject {
   }
 
   broadcastLobby() {
-    this.broadcast({ t: S2C.LOBBY, ...this.room.lobbyView() });
+    this.broadcast({ t: S2C.LOBBY, ...this.room.lobbyView(), ...this.inviteView() });
   }
 
   /** Send to every member (or those `to(client)` accepts). */
