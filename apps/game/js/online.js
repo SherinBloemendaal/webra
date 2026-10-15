@@ -98,8 +98,7 @@ import { StalePreview, previewKey } from './mappreview.js';
 import { battlefieldSpawns, generatedMapPlayers } from '../protocol/spawns.js';
 import { NetQuality } from './netquality.js';
 import { clearInviteFromLocation, createInvite, inviteFromLocation, inviteLink, inviteMsLeft } from './invites.js';
-import { FriendsClient, FriendsStore } from './account/friends.js';
-import { friendsView } from './friends-ui.js';
+import { friendsView, sharedFriendsStore, useFriendsStore } from './friends-ui.js';
 import { confirmChoice, joinCodeDialog, modal } from './online-dialog.js';
 import {
   connectionCell,
@@ -508,6 +507,11 @@ export class OnlineUI {
       // An invite link: /join/<code> opens /play/?invite=<code>; the older ?join=<session id> too.
       const opened = inviteFromLocation() ?? inviteId();
       if (opened) this.joinByCode(opened);
+      else if (new URLSearchParams(globalThis.location?.search ?? '').has('invite')) {
+        // ?invite= with something that is not a code: say so and take it from the address bar.
+        clearInviteFromLocation();
+        this.setError('That invite link has no valid code. Ask your friend for the code and use Join with a code.');
+      }
     }
   }
 
@@ -695,15 +699,23 @@ export class OnlineUI {
   followFriends() {
     if (!this.account?.user || this.ctx.friendsStore === null) return null;
     if (!this.friendsStore) {
-      this.friendsStore = this.ctx.friendsStore ?? new FriendsStore({ client: new FriendsClient(this.account.api) });
+      // One store per page, shared with the friends screen (js/friends-ui.js): one poll, not two.
+      this.friendsStore = this.ctx.friendsStore ?? sharedFriendsStore(this.account.api);
       this.friendsStore.on('change', (doc) => {
         this.friendsDoc = doc;
         if (this.sessionList?.isConnected) this.renderSessions();
         if (this.inviteBox?.isConnected) this.renderInvite();
       });
+      this.friendsDoc = this.friendsStore.doc ?? null;
     }
-    this.friendsStore.start();
+    this.releaseFriends ??= useFriendsStore(this.friendsStore);
     return this.friendsStore;
+  }
+
+  /** This screen no longer needs the friends list (it stops polling unless the friends screen still shows). */
+  unfollowFriends() {
+    this.releaseFriends?.();
+    this.releaseFriends = null;
   }
 
   async refresh() {
@@ -978,7 +990,7 @@ export class OnlineUI {
             spectators: Number(spectators.get()),
             map: map ? String(map.get()) : 'generated',
           });
-        actions.append(button('Cancel', null, () => close(null)), button(saved ? 'Create lobby' : 'Create lobby', 'online-btn-primary', submit));
+        actions.append(button('Cancel', null, () => close(null)), button('Create lobby', 'online-btn-primary', submit));
         body.append(field('Game name', title), visRow, passSwitch.row, pass, steppers);
         if (map) body.append(field('Map', map), el('p', 'online-hint', 'Your own maps are shared with this lobby only; they are not published.'));
         body.append(actions);
@@ -1171,7 +1183,7 @@ export class OnlineUI {
 
   back() {
     this.leaveSession();
-    this.friendsStore?.stop();
+    this.unfollowFriends();
     this.ctx.onBack();
   }
 
@@ -1208,6 +1220,8 @@ export class OnlineUI {
     if (this.inGame) this.gameLine(`Server: ${refusal?.text ?? m.message}`, !!refusal);
     else if (refusal) this.setError(refusal.text, { signIn: refusal.signIn && !this.account?.user });
     else this.setError(m.message);
+    // A refused ready (not_ready, bad_state): the switch shows what the lobby says again.
+    if (!this.inGame && this.readyCtl && this.state) this.readyCtl.set(!!this.state.slots[this.mySlot()]?.ready);
   }
 
   onClose(reason, conn) {
@@ -1511,6 +1525,10 @@ export class OnlineUI {
     const box = this.selfNet;
     if (!box) return;
     const v = selfConnection(this.netq?.self ?? null);
+    // Every 2 s new numbers come in: the part is drawn again only when what it says changed.
+    const sig = `${v.quality}|${v.bars}|${v.title}|${v.detail}`;
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
     box.textContent = '';
     box.className = `online-self-net online-q-${v.quality ?? 'none'}`;
     const text = el('span', 'online-self-text');
@@ -1531,6 +1549,9 @@ export class OnlineUI {
       if (cell.dataset.client === undefined) continue;
       const client = Number(cell.dataset.client);
       const v = connectionCell(players.get(client) ?? null);
+      // New numbers every 2 s: a cell is drawn again only when what it says changed.
+      if (cell.dataset.sig === v.label) continue;
+      cell.dataset.sig = v.label;
       cell.textContent = '';
       cell.className = `online-cell online-cell-net online-q-${v.quality ?? 'none'}`;
       cell.title = v.label;
@@ -1541,21 +1562,42 @@ export class OnlineUI {
     const box = this.netWarning;
     if (!box) return;
     const w = connectionWarning({ slots: this.state.slots, players, you: this.state.you, hostId: this.state.hostId, isHost: this.isHost && !this.state.resume });
+    // The alert is said again only when its words or its buttons change; the focus stays on its button.
+    const sig = w ? `${w.text}|${w.client}|${w.slot}|${w.canKick}` : '';
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    const focusKey = box.contains(globalThis.document?.activeElement) ? (document.activeElement.dataset?.key ?? null) : null;
     box.hidden = !w;
     box.textContent = '';
     if (!w) return;
     box.append(badge('bad', 'Unstable'), el('span', 'online-net-warning-text', w.text));
     const actions = el('span', 'online-net-warning-actions');
-    actions.append(button('Test again', null, () => this.netq?.testAgain()));
+    const again = button('Test again', null, () => this.netq?.testAgain());
+    again.dataset.key = 'test-again';
+    actions.append(again);
     if (w.canKick) {
-      const kick = button('Kick', 'online-btn-danger', async () => {
-        const name = this.state.slots[w.slot]?.name ?? 'this player';
-        if (await confirmChoice('Kick player', `Remove ${name} from the lobby? Their slot opens for someone else.`, { yes: 'Kick', danger: true })) this.send({ t: 'slot', slot: w.slot, type: 'open' });
-      });
-      kick.setAttribute('aria-label', `Kick ${this.state.slots[w.slot]?.name ?? 'player'}`);
+      const kick = button('Kick', 'online-btn-danger', () => this.kickPoor(w));
+      kick.dataset.key = 'kick';
+      kick.setAttribute('aria-label', `Kick ${w.name}`);
       actions.append(kick);
     }
     box.append(actions);
+    if (focusKey) [...box.querySelectorAll('[data-key]')].find((b) => b.dataset.key === focusKey)?.focus();
+  }
+
+  /**
+   * Host: kick the player the warning names, after asking. The lobby may have
+   * changed while the question was open: only that player, still in that slot, goes.
+   */
+  async kickPoor(w) {
+    if (!(await confirmChoice('Kick player', `Remove ${w.name} from the lobby? Their slot opens for someone else.`, { yes: 'Kick', danger: true }))) return false;
+    const slot = this.state?.slots[w.slot];
+    if (this.inGame || !this.isHost || slot?.type !== 'human' || slot.client !== w.client) {
+      this.setError(`${w.name} is no longer in that slot: nobody was kicked.`);
+      return false;
+    }
+    this.send({ t: 'slot', slot: w.slot, type: 'open' });
+    return true;
   }
 
   // ---- Invite players ------------------------------------------------------------------
@@ -2749,7 +2791,7 @@ export class OnlineUI {
     this.inGame = true;
     this.root.hidden = true;
     // The friends list is not polled during the game; the connection quality goes on (statistics).
-    this.friendsStore?.stop();
+    this.unfollowFriends();
     clearInterval(this.inviteTimer);
     this.netq?.beginGame();
     this.buildGameOverlay(m.players, m.options.cheats === true, spectator, hasTeamChat(m.options.players, me ? me.player : null));

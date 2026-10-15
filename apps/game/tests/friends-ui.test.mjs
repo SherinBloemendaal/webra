@@ -211,3 +211,47 @@ test('friends screen: Invite while in a lobby; signed out it asks to sign in', a
     uninstallDom();
   }
 });
+
+test('mountFriends: a game start closes the screen and keeps the lobby hidden; the heartbeat restarts on a new sign-in; one store polls', async () => {
+  const doc = installDom();
+  try {
+    const { mountFriends, sharedFriendsStore, useFriendsStore } = await import('../js/friends-ui.js');
+    const listeners = [];
+    const account = { user: { username: 'Commander' }, api: {}, onChange: (fn) => listeners.push(fn) };
+    const starts = [];
+    const presence = { start: () => starts.push(1), stop() {} };
+    const root = doc.createElement('section');
+    const menu = doc.createElement('section');
+    const online = doc.createElement('section');
+    menu.hidden = true;
+    root.hidden = true;
+    doc.body.append(root, menu, online);
+    const f = mountFriends({ entry: null, root, account, registry: { get: () => true, set() {} }, cover: [menu, online], presence: () => presence });
+    // The shared store must not reach the network in this test.
+    const store = sharedFriendsStore(account.api);
+    store.client = { list: async () => DOC };
+    store.timers = { setTimeout: () => 1, clearTimeout() {} };
+    f.open();
+    assert.deepEqual([online.hidden, menu.hidden, root.hidden], [true, true, false]);
+    f.close();
+    assert.equal(online.hidden, false, 'Back shows the lobby again');
+    assert.equal(menu.hidden, true, 'what was hidden before stays hidden');
+    f.open();
+    f.close({ restore: false });
+    assert.deepEqual([online.hidden, root.hidden], [true, true], 'a game started: the lobby stays hidden behind it');
+    // The heartbeat: started at sign-in, and again on every account change while signed in (a 401 may have stopped it).
+    assert.equal(starts.length, 1);
+    for (const fn of listeners) fn(account);
+    assert.equal(starts.length, 2);
+    // One store: the online screens and the friends screen both use it; it polls until the last one is done.
+    const a = useFriendsStore(store);
+    const b = useFriendsStore(store);
+    a();
+    a();
+    assert.equal(store.running, true, 'the other screen still shows the list');
+    b();
+    assert.equal(store.running, false);
+  } finally {
+    uninstallDom();
+  }
+});

@@ -14,6 +14,42 @@ import { badge, led, toggle } from './ui/controls.js';
 import { confirmChoice } from './online-dialog.js';
 import { formatInviteCode } from './protocol.js';
 
+// ---- One friends list per page ------------------------------------------------------------
+
+/** The friends store of each account API: the online screens and the friends screen share it. */
+const stores = new WeakMap();
+
+/** The page's friends store for `api` (js/account/api.js AccountApi), made on first use. */
+export function sharedFriendsStore(api) {
+  let store = stores.get(api);
+  if (!store) {
+    store = new FriendsStore({ client: new FriendsClient(api) });
+    stores.set(api, store);
+  }
+  return store;
+}
+
+const users = new WeakMap();
+
+/**
+ * A screen that shows the friends list starts the store's polling; the
+ * function returned says it is done. The store polls while any screen uses it
+ * and stops when the last one is done (so two screens never poll twice, and
+ * closing one does not stop the other's list).
+ */
+export function useFriendsStore(store) {
+  users.set(store, (users.get(store) ?? 0) + 1);
+  store.start();
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    const left = (users.get(store) ?? 1) - 1;
+    users.set(store, left);
+    if (left <= 0) store.stop();
+  };
+}
+
 // ---- What to show ------------------------------------------------------------------------
 
 /** "just now", "5 minutes ago", "2 days ago", "3 weeks ago". */
@@ -164,7 +200,7 @@ export class FriendsScreen {
   constructor(root, ctx) {
     this.root = root;
     this.ctx = ctx;
-    this.store = ctx.store ?? new FriendsStore({ client: new FriendsClient(ctx.account.api) });
+    this.store = ctx.store ?? sharedFriendsStore(ctx.account.api);
     this.now = ctx.now ?? (() => Date.now());
     this.query = '';
     this.doc = null;
@@ -212,7 +248,12 @@ export class FriendsScreen {
     this.root.hidden = false;
     this.render();
     this.root.addEventListener('keydown', this.onKey);
-    if (this.ctx.account.user) this.store.start();
+    // A store the online screens already poll has the list at hand.
+    if (this.store.doc) this.doc = this.store.doc;
+    if (this.ctx.account.user) {
+      this.release?.();
+      this.release = useFriendsStore(this.store);
+    }
     queueMicrotask(() => this.root.querySelector('.friends-search')?.focus?.());
   }
 
@@ -220,7 +261,8 @@ export class FriendsScreen {
     if (!this.shown) return;
     this.shown = false;
     this.menuFor = null;
-    this.store.stop();
+    this.release?.();
+    this.release = null;
     this.root.removeEventListener('keydown', this.onKey);
     this.root.hidden = true;
     this.ctx.onClose?.();
@@ -559,9 +601,10 @@ export class FriendsScreen {
  * #start-friends): shown while a player is signed in; opens the screen.
  * Also starts the presence heartbeat (js/account/friends.js
  * PresenceTracker) while signed in, so friends see this player around.
- * `cover`: the screens it shows over (hidden meanwhile). Returns `{ open(from) }`.
+ * `cover`: the screens it shows over (hidden meanwhile); `presence`: makes
+ * the heartbeat (tests). Returns `{ open(from), close({ restore }) }`.
  */
-export function mountFriends({ entry, root, account, registry, signIn, onJoin, lobby, version, cover = [] }) {
+export function mountFriends({ entry, root, account, registry, signIn, onJoin, lobby, version, cover = [], presence: makePresence }) {
   let screen = null;
   let presence = null;
   // The screens under it are hidden while it shows (so they leave the tab order and the reader), then come back.
@@ -574,13 +617,15 @@ export function mountFriends({ entry, root, account, registry, signIn, onJoin, l
   const follow = () => {
     const signedIn = !!account.user;
     if (entry) entry.hidden = !signedIn;
-    if (signedIn && !presence) {
-      presence = new PresenceTracker({ client: new FriendsClient(account.api) });
+    if (signedIn) {
+      // start() does nothing while it runs; after a 401 or 403 stopped it, a new sign-in starts it again.
+      presence ??= makePresence ? makePresence() : new PresenceTracker({ client: new FriendsClient(account.api) });
       presence.start();
-    } else if (!signedIn && presence) {
+    } else if (presence) {
       presence.stop();
       presence = null;
     }
+    // Signed out while it shows: the screen says so (FriendsScreen follows the account itself).
   };
   account.onChange(follow);
   follow();
@@ -589,6 +634,14 @@ export function mountFriends({ entry, root, account, registry, signIn, onJoin, l
     for (const e of covered) e.hidden = true;
     get().open(from);
   };
+  /**
+   * Close the screen. `restore: false` leaves what it covered hidden: an
+   * online game started behind it, and the online screen hid itself for it.
+   */
+  const close = ({ restore = true } = {}) => {
+    if (!restore) covered = [];
+    screen?.close();
+  };
   entry?.addEventListener('click', () => open(entry));
-  return { open, screen: () => screen };
+  return { open, close, screen: () => screen, presence: () => presence };
 }

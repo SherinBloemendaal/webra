@@ -398,3 +398,86 @@ test("the game's net handle: one NetQuality as quality and source, the roster, y
     { client: 3, name: 'Ivan', color: 'rgb(0, 0, 255)' },
   ]);
 });
+
+test('review fixes: kick only the player still in the slot, keep the warning and its focus, the ready switch after a refusal', async () => {
+  const sent = [];
+  const players = new Map([[3, net(3, 210, 60, 4)]]);
+  const { root, ui } = await bareUi({
+    installed: new Map(),
+    mapStatus: { hash: null, text: '', ok: true },
+    serverMaps: [],
+    libraryMaps: [],
+    library: { list: async () => [] },
+    member: { client: 1, key: 'K'.repeat(43) },
+    send: (m) => sent.push(m),
+    netq: { players, self: null, testAgain() {} },
+    state: { you: 1, hostId: 1, session: { id: 'a'.repeat(64), name: 'Lobby', public: true, locked: false }, role: 'player', slots: [], spectators: [], maxSpectators: 2, options: null, map: null, lobbySeen: false, invite: null },
+  });
+  try {
+    ui.ctx.Game = { map_preview_styled: (seed, size) => new Uint8Array(size * size * 4) };
+    ui.buildLobby();
+    const { DEFAULT_OPTIONS } = await import('../js/protocol.js');
+    const slots = () => [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'human', client: 3, name: 'Ivan', faction: 'russia', color: 1, team: 2, ready: true },
+    ];
+    ui.onLobby({ slots: slots(), options: { ...DEFAULT_OPTIONS }, map: null, hostId: 1, spectators: [], maxSpectators: 2 });
+    const warning = root.querySelector('.online-net-warning');
+    const kick = warning.querySelectorAll('button').find((b) => b.textContent === 'Kick');
+    assert.equal(kick.getAttribute('aria-label'), 'Kick Ivan');
+    // New numbers, the same words: the bar and its buttons stay (the focus too).
+    kick.focus();
+    players.set(3, net(3, 210, 60, 4));
+    ui.renderConnections();
+    assert.equal(warning.querySelectorAll('button').find((b) => b.textContent === 'Kick'), kick);
+    assert.equal(document.activeElement, kick);
+    // Other words: drawn again, the focus back on Kick.
+    players.set(3, net(3, 320, 60, 4));
+    ui.renderConnections();
+    const kick2 = warning.querySelectorAll('button').find((b) => b.textContent === 'Kick');
+    assert.notEqual(kick2, kick);
+    assert.equal(document.activeElement, kick2);
+    // Ivan leaves while the question is open: nobody is kicked.
+    click(kick2);
+    await settle();
+    ui.state.slots[1] = { type: 'human', client: 9, name: 'Newcomer', ready: false };
+    click(document.body.querySelector('dialog').querySelectorAll('button').find((b) => b.textContent === 'Kick'));
+    await settle();
+    assert.ok(!sent.some((m) => m.t === 'slot' && m.type === 'open'), 'the newcomer stays');
+    assert.match(textOf(root.querySelector('.online-error')), /no longer in that slot/);
+    // Still there: kicked.
+    ui.state.slots = slots();
+    const w = connectionWarning({ slots: ui.state.slots, players, you: 1, hostId: 1, isHost: true });
+    const asked = ui.kickPoor(w);
+    await settle();
+    const dlg = document.body.querySelector('dialog');
+    assert.equal(document.activeElement.textContent, 'Cancel', 'the safe answer has the focus');
+    click(dlg.querySelectorAll('button').find((b) => b.textContent === 'Kick'));
+    assert.equal(await asked, true);
+    assert.deepEqual(sent.at(-1), { t: 'slot', slot: 1, type: 'open' });
+    // A refused ready: the switch shows the lobby's state again.
+    ui.readyCtl.set(true);
+    ui.onServerError({ code: 'not_ready', message: 'Install the map first.' });
+    assert.equal(ui.readyCtl.get(), false);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('join with a code: the field is left alone while an input method composes', async () => {
+  const doc = installDom();
+  const { joinCodeDialog } = await import('../js/online-dialog.js');
+  try {
+    joinCodeDialog({ version: V, lookup: async () => ({ ok: false, reason: 'unknown', message: 'x' }), timers: { setTimeout: () => 1, clearTimeout() {} } });
+    const dialog = doc.body.querySelector('dialog');
+    const input = dialog.querySelector('.invite-code-input');
+    const { FakeEvent } = await import('./dom-fixtures.mjs');
+    input.value = 'k7q2';
+    input.dispatchEvent(new FakeEvent('input', { isComposing: true }));
+    assert.equal(input.value, 'k7q2', 'not rewritten while composing');
+    input.dispatchEvent(new FakeEvent('compositionend'));
+    assert.equal(input.value, 'K7Q-2');
+  } finally {
+    uninstallDom();
+  }
+});

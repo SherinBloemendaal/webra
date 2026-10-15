@@ -64,9 +64,11 @@ export function confirmChoice(title, text, { yes = 'OK', no = 'Cancel', danger =
     body.append(el('p', 'online-dialog-text', text));
     const row = el('div', 'online-dialog-actions');
     const ok = button(yes, danger ? 'online-btn-danger' : 'online-btn-primary', () => close(true));
-    row.append(button(no, null, () => close(false)), ok);
+    const cancel = button(no, null, () => close(false));
+    row.append(cancel, ok);
     body.append(row);
-    queueMicrotask(() => ok.focus?.());
+    // The safe answer has the focus: Enter never removes, blocks or starts by accident.
+    queueMicrotask(() => cancel.focus?.());
   }).then((v) => v === true);
 }
 
@@ -198,7 +200,12 @@ export function joinCodeDialog({ initial = '', version, rtt = null, lookup = loo
         if (view.kind === 'session') close({ session: view.sessionId, name: 'Private session', locked: null, spectate: false });
         else close({ session: view.invite.session, name: view.invite.name, locked: !!view.invite.locked, spectate: !!view.spectate });
       };
-      input.addEventListener('input', () => onInput());
+      // While an input method composes (a phone keyboard, an IME), the field is left alone; the
+      // finished text is formatted at compositionend.
+      input.addEventListener('input', (e) => {
+        if (!e.isComposing) onInput();
+      });
+      input.addEventListener('compositionend', () => onInput());
       input.addEventListener('focus', () => box.classList.add('is-focused'));
       input.addEventListener('blur', () => box.classList.remove('is-focused'));
       input.addEventListener('keydown', (e) => {

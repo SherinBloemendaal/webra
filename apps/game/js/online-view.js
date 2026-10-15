@@ -120,6 +120,7 @@ export function connectionWarning({ slots, players, you, hostId, isHost }) {
     text: `${who} unstable: ${poorFigures(worst)}. ${WAITS_FOR_SLOWEST}${more}`,
     client: worst.client,
     slot: worst.slot,
+    name: worst.name,
     names: poor.map((p) => p.name),
     canKick: !!isHost && !worst.you && worst.client !== hostId,
   };

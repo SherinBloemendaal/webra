@@ -1373,7 +1373,11 @@ with fixtures in `tests/onlineui.test.mjs` and `tests/friends-ui.test.mjs`).
   `[{ client, player, name }]` (AI left out), `you` this member's client id
   (also for spectators, who are not in the roster) and `players()` the roster
   as `[{ client, name, color }]` with each player's colour as CSS (null when
-  unknown).
+  unknown). main.js hands it to the game as `online.net`.
+- The online screens and the friends screen share one friends store per page
+  (`friends-ui.js sharedFriendsStore`); it polls while either shows
+  (`useFriendsStore`). The friends screen closes when a game starts and then
+  leaves the lobby hidden behind the game. Confirmations focus Cancel.
 - **Friends screen** (`#friends-root`, signed-in players; the main menu's
   Friends entry and a Friends button on the online screens): the list by
   status (in a game, online with lobby and away, offline) with Join

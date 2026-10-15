@@ -693,8 +693,10 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null, net = null }) => {
           entry.hidden = true;
+          // A friends screen open over the lobby goes; the lobby it covered stays hidden behind the game.
+          friends?.then((f) => f.close({ restore: false })).catch(() => {});
           // A co-op mission: its players and colours; the people under their names.
           const missionPlayers = mission ? host.game.info.mission.players : null;
           if (missionPlayers) applyMissionColors(missionPlayers);
@@ -704,7 +706,8 @@ function setupOnline(lobby, gpuError) {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            online: { driver, onQuit, spectator, rematch, save, chat },
+            // net: connection quality for the HUD, the game menu and the statistics (online.js gameNet).
+            online: { driver, onQuit, spectator, rematch, save, chat, net },
             recorder,
             viewer: spectator ? roster : null,
             roster,
