@@ -915,14 +915,48 @@ fn a_queue_takes_up_to_item_limit_of_one_type_unless_all_tech() {
     let n = |w: &World, t: u16| w.players[0].queues[IQ].items.iter().filter(|it| it.ty == t).count() as i32;
     assert_eq!(n(&w, e1), crate::production::ITEM_LIMIT, "OpenRA ItemLimit 999");
     assert!(!w.can_start(0, e1));
-    assert_eq!(w.item_room(0, e1), Some(0));
+    assert_eq!(w.item_room(0, e1), 0);
     // The limit is per type: the queue itself has none (QueueLimit 0).
     w.queue_order(Order::StartProduction { player: 0, ty: e3, count: 5 });
     run(&mut w, 1);
     assert_eq!(n(&w, e3), 5);
     w.players[0].dev.all_tech = true;
-    assert_eq!(w.item_room(0, e1), None);
+    assert_eq!(w.item_room(0, e1), crate::production::QUEUE_CAP - 999 - 5, "only WebRA's queue cap is left");
     w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 2 });
     run(&mut w, 1);
     assert_eq!(n(&w, e1), crate::production::ITEM_LIMIT + 2, "the all tech cheat lifts it");
+}
+
+#[test]
+fn a_queue_holds_at_most_queue_cap_items_even_with_all_tech() {
+    use crate::production::QUEUE_CAP;
+    let mut w = World::new(35, 80, &[("allies", false), ("soviet", false)]);
+    infantry_base(&mut w);
+    // No credits: nothing is built, so the queue only changes by the orders.
+    w.players[0].cash = 0;
+    w.players[0].resources = 0;
+    let types: Vec<u16> = ["E1", "E3", "E6", "MEDI"].iter().map(|id| ty(&w, id)).collect();
+    // ItemLimit 999 per type would allow 3996; the queue stops at QUEUE_CAP.
+    for &t in &types {
+        for _ in 0..20 {
+            w.queue_order(Order::StartProduction { player: 0, ty: t, count: 50 });
+        }
+    }
+    run(&mut w, 1);
+    assert_eq!(w.players[0].queues[IQ].items.len() as i32, QUEUE_CAP);
+    assert!(types.iter().all(|&t| !w.can_start(0, t) && w.item_room(0, t) == 0));
+    w.players[0].dev.all_tech = true;
+    w.queue_order(Order::StartProduction { player: 0, ty: types[0], count: 5 });
+    run(&mut w, 1);
+    assert_eq!(w.players[0].queues[IQ].items.len() as i32, QUEUE_CAP, "the cheat does not lift it");
+    // A count cancel takes the last ones of its type in one pass and leaves the others in order.
+    let before: Vec<u16> = w.players[0].queues[IQ].items.iter().map(|it| it.ty).collect();
+    w.queue_order(Order::CancelProduction { player: 0, ty: types[1], count: 50 });
+    run(&mut w, 1);
+    let after: Vec<u16> = w.players[0].queues[IQ].items.iter().map(|it| it.ty).collect();
+    let n1 = before.iter().filter(|&&t| t == types[1]).count();
+    let mut expected = before.clone();
+    let mut seen = 0;
+    expected.retain(|&t| t != types[1] || { seen += 1; seen <= n1 - 50 });
+    assert_eq!(after, expected);
 }

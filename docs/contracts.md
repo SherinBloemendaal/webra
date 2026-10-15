@@ -1697,17 +1697,20 @@ and `pause_production {ty, paused}` serve every queue, structures included:
 - Queueing never depends on the credits (OpenRA ProductionQueue
   StartProduction and CanQueue): `start_production` queues as many as fit
   under Buildable.BuildLimit and ProductionQueueInfo ItemLimit (999 of one
-  type per queue, `ITEM_LIMIT`; Red Alert keeps OpenRA's default and its
-  QueueLimit 0, so a queue has no cap on the total). The "all tech" cheat
-  lifts both limits. Earlier WebRA versions capped every queue at 30 items,
-  which made further clicks do nothing. Production pays as it goes (OpenRA
+  type per queue, `ITEM_LIMIT`, Red Alert keeps OpenRA's default; the "all
+  tech" cheat lifts it and the BuildLimit). OpenRA's QueueLimit is 0 (no
+  cap on a queue's total); WebRA caps a queue at 2000 items (`QUEUE_CAP`,
+  also with the cheat), far above real use, because every client of a
+  lockstep game simulates every queue. Earlier WebRA versions capped every
+  queue at 30 items, which made further clicks do nothing. Production pays as it goes (OpenRA
   ProductionItem.Tick): each tick the head takes its share of the cost, and
   when the credits do not cover it the item stands still (no progress,
   InsufficientFunds, throttled) and goes on by itself once money comes in.
   `player_json().buildable[].itemRoom` is how many more of a type its queue
-  takes (null under "all tech"); queue items carry `paid` (credits paid so
-  far). `CancelUnbuildableItems` below asks each item type's availability
-  once per queue and tick, so long queues stay cheap.
+  takes (ItemLimit and QUEUE_CAP); queue items carry `paid` (credits paid
+  so far). `cancel_production` with a count and `CancelUnbuildableItems`
+  below each take one pass over the queue (the latter asks each item type's
+  availability once per queue and tick), so long queues stay cheap.
 
 - Structures queue like units (OpenRA): left click queues one, shift queues
   five. Only the first item of a queue is built. A finished structure waits
@@ -1790,7 +1793,13 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   whole queue's count) is not mapped, as Ctrl + click is a right click on
   macOS. A touch long press is the right click, the Add toggle is Shift.
   Each card counts the holds, resumes and cancels it sent as done until
-  `player_json` shows them (at most `PENDING_MS`, 1.5 s), so quick clicks
+  `player_json` shows them (at most `PENDING_MS`, 1.5 s): it takes the
+  smaller of the shown count and the count before its cancels minus them,
+  so cancels the engine already applied (or a first item that finished)
+  are never counted twice, and items queued meanwhile move that start
+  count up. A contextmenu event within 2 s of a right press on the cameo
+  is that press's own (`RIGHT_PRESS_MENU_MS`); later ones (the menu key)
+  act like a right click. Quick clicks
   act on what the earlier ones ordered rather than on a state a few ticks
   old (in the WebRA style that keeps a fast series of right clicks from
   reaching the item being built early).

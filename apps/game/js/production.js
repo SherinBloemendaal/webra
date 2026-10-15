@@ -48,14 +48,15 @@ export function clickAction({ queue, enabled, ready }, shift) {
 /**
  * Items of one actor type a production queue holds at most: OpenRA
  * ProductionQueueInfo ItemLimit (engine/src/production.rs ITEM_LIMIT). The
- * queue itself has no cap (QueueLimit 0).
+ * whole queue holds at most QUEUE_CAP (WebRA's cap; OpenRA's QueueLimit is 0).
  */
 export const ITEM_LIMIT = 999;
+export const QUEUE_CAP = 2000;
 
 /**
  * What OpenRA's ProductionQueue.CanQueue says about one more item: 'queued'
- * (QueuedAudio), 'limited' (LimitedAudio: ItemLimit reached) or 'blocked'
- * (BlockedAudio: its Buildable.BuildLimit is reached). Credits never matter.
+ * (QueuedAudio), 'limited' (LimitedAudio: ItemLimit or QUEUE_CAP reached) or
+ * 'blocked' (BlockedAudio: its Buildable.BuildLimit is reached). Credits never matter.
  * @param {{ itemRoom?: number | null, limitLeft?: number | null }} o player_json buildable `itemRoom` and `limitLeft` (null: no limit)
  */
 export function queueOutcome({ itemRoom = null, limitLeft = null }) {

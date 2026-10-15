@@ -1120,14 +1120,15 @@ syncs with the account; the privacy notice (`apps/website/privacy.html`,
   the shroud or fog. A player can probe hidden cells near the base with it.
   This matches OpenRA's rules by choice (docs/contracts.md, production
   queues).
-- **Long production queues (like OpenRA):** a queue holds up to 999 items of
-  each actor type and has no total cap (OpenRA ItemLimit and QueueLimit), so
-  a player can fill their own queues with thousands of items, which every
-  client simulates. Only the head of a queue is built, and the per tick scan
-  of a queue for items that became unbuildable asks each type once
-  (docs/contracts.md, production queues), so the cost stays a short loop per
-  item; `start_production` and `cancel_production` stay capped at 50 items
-  per order and 32 orders per tick.
+- **Long production queues:** a queue holds up to 999 items of each actor
+  type (OpenRA ItemLimit) and, unlike OpenRA (QueueLimit 0), at most 2000 in
+  all (`QUEUE_CAP`, also under the "all tech" cheat), since every client
+  simulates every player's queues. Only the head of a queue is built; a
+  count cancel and the per tick scan for items that became unbuildable each
+  take one pass over the queue (no per item shifting of the rest), so a
+  player spamming `start_production` and `cancel_production` (at most 50
+  items per order, 32 orders per tick) costs every peer a few linear scans
+  of at most 2000 items per order (docs/contracts.md, production queues).
 - **Shared fate:** an input that crashes one engine crashes all, which is why
   validation happens at the engine boundary (not only in the protocol) and is
   fuzz tested.

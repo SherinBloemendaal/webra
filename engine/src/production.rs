@@ -7,10 +7,16 @@ use crate::sound_events::{SoundEventKind, SOLD_STARTED};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
 /// Most items of one actor type a queue holds: OpenRA ProductionQueueInfo
-/// ItemLimit (999, which Red Alert's player.yaml keeps). Its QueueLimit, the
-/// cap on all items of a queue, is 0 there: no cap. The "all tech" cheat
-/// lifts both, like OpenRA's developer mode AllTech.
+/// ItemLimit (999, which Red Alert's player.yaml keeps), lifted by the "all
+/// tech" cheat like OpenRA's developer mode AllTech. Its QueueLimit, the cap
+/// on all items of a queue, is 0 there: no cap (WebRA: QUEUE_CAP).
 pub const ITEM_LIMIT: i32 = 999;
+
+/// Most items a queue holds in all. OpenRA has no such cap (QueueLimit 0);
+/// WebRA keeps one far above real use because every client in a lockstep
+/// game simulates every queue, so one player cannot make them all scan and
+/// keep tens of thousands of items. Not lifted by the "all tech" cheat.
+pub const QUEUE_CAP: i32 = 2000;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Requirement {
@@ -385,22 +391,24 @@ impl World {
     }
 
     /// How many more of `ty` `player` may queue: OpenRA StartProduction's
-    /// `fromLimit`, the smaller of ItemLimit minus those queued and
-    /// Buildable.BuildLimit minus those owned and queued (`build_limit_left`).
-    /// `i32::MAX` with the "all tech" cheat.
+    /// `fromLimit`, the smaller of the room under ItemLimit and QUEUE_CAP
+    /// (`item_room`) and Buildable.BuildLimit minus those owned and queued
+    /// (`build_limit_left`).
     pub fn queue_room(&self, player: u8, ty: u16) -> i32 {
-        self.item_room(player, ty).unwrap_or(i32::MAX).min(self.build_limit_left(player, ty))
+        self.item_room(player, ty).min(self.build_limit_left(player, ty))
     }
 
-    /// How many more of `ty` its queue takes under ItemLimit (None with the
-    /// "all tech" cheat, which lifts it).
-    pub fn item_room(&self, player: u8, ty: u16) -> Option<i32> {
-        if self.players[player as usize].dev.all_tech {
-            return None;
-        }
+    /// How many more of `ty` its queue takes under ItemLimit (lifted by the
+    /// "all tech" cheat) and WebRA's QUEUE_CAP on the whole queue.
+    pub fn item_room(&self, player: u8, ty: u16) -> i32 {
         let q = self.rules.actors[ty as usize].queue as usize;
-        let queued = self.players[player as usize].queues[q].items.iter().filter(|it| it.ty == ty).count() as i32;
-        Some((ITEM_LIMIT - queued).max(0))
+        let items = &self.players[player as usize].queues[q].items;
+        let total = (QUEUE_CAP - items.len() as i32).max(0);
+        if self.players[player as usize].dev.all_tech {
+            return total;
+        }
+        let queued = items.iter().filter(|it| it.ty == ty).count() as i32;
+        (ITEM_LIMIT - queued).max(0).min(total)
     }
 
     /// How many more of `ty` `player` may queue under its Buildable.BuildLimit
@@ -436,13 +444,28 @@ impl World {
             return;
         }
         let qi = self.rules.actors[ty as usize].queue as usize;
-        for _ in 0..count.max(1) {
-            if !self.players[player as usize].queues[qi].items.iter().any(|it| it.ty == ty) {
-                break;
+        // One pass over the queue whatever the count: the first `keep` items
+        // of the type stay, the ones after them go (OpenRA cancels the last
+        // one `count` times).
+        let queue = &mut self.players[player as usize].queues[qi].items;
+        let keep = queue.iter().filter(|it| it.ty == ty).count().saturating_sub(count.max(1) as usize);
+        let (mut seen, mut paid, mut first, mut i) = (0, 0, false, 0);
+        queue.retain(|it| {
+            let stays = it.ty != ty || {
+                seen += 1;
+                seen <= keep
+            };
+            if !stays {
+                paid += it.paid;
+                first |= i == 0;
             }
-            if self.cancel_last_of(player, qi, ty) {
-                self.sound.unblock(player, qi);
-            }
+            i += 1;
+            stays
+        });
+        self.refund(player, paid);
+        self.note_production_refund(player, paid);
+        if first {
+            self.sound.unblock(player, qi);
         }
     }
 
@@ -484,30 +507,35 @@ impl World {
             }
             let q = QueueType::from_index(qi);
             let producer = !q.is_structure() || self.has_producer(player, q);
-            // Back to front, so removing an item does not shift the ones still to check.
-            let mut cancelled = None;
-            // A queue may hold hundreds of items of a few types: ask once per type.
+            // A queue may hold thousands of items of a few types: ask once per
+            // type, then drop the unbuildable ones in one pass (no shifting
+            // the rest once per removed item).
             let mut checked: Vec<(u16, bool)> = Vec::new();
-            for i in (0..self.players[player as usize].queues[qi].items.len()).rev() {
-                let ty = self.players[player as usize].queues[qi].items[i].ty;
-                let buildable = match checked.iter().find(|c| c.0 == ty) {
-                    Some(&(_, ok)) => ok,
-                    None => {
-                        let ok = producer && self.availability(player, ty).enabled;
-                        checked.push((ty, ok));
-                        ok
-                    }
-                };
-                if buildable {
-                    continue;
+            for it in &self.players[player as usize].queues[qi].items {
+                if !checked.iter().any(|c| c.0 == it.ty) {
+                    checked.push((it.ty, producer && self.availability(player, it.ty).enabled));
                 }
-                let item = self.players[player as usize].queues[qi].items.remove(i);
-                self.refund(player, item.paid);
-                self.note_production_refund(player, item.paid);
-                cancelled = Some(ty);
-                if i == 0 {
-                    self.sound.unblock(player, qi);
+            }
+            if checked.iter().all(|c| c.1) {
+                continue;
+            }
+            let (mut paid, mut cancelled, mut first) = (0, None, false);
+            let mut i = 0;
+            self.players[player as usize].queues[qi].items.retain(|it| {
+                let keep = checked.iter().any(|c| c.0 == it.ty && c.1);
+                if !keep {
+                    paid += it.paid;
+                    // The audio names the frontmost one, as the back to front removal did.
+                    cancelled.get_or_insert(it.ty);
+                    first |= i == 0;
                 }
+                i += 1;
+                keep
+            });
+            self.refund(player, paid);
+            self.note_production_refund(player, paid);
+            if first {
+                self.sound.unblock(player, qi);
             }
             // OpenRA CancelUnbuildableItems: one CancelledAudio for the queue.
             if let Some(ty) = cancelled {

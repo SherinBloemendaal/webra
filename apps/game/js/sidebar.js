@@ -44,6 +44,8 @@ const QUEUE_BUILDINGS = 0;
  * the engine, and a quick second right click must not act on the old state.
  */
 export const PENDING_MS = 1500;
+/** A contextmenu event this soon (ms) after a right press on a cameo is that press's own. */
+export const RIGHT_PRESS_MENU_MS = 2000;
 
 // Cameo size in CSS pixels at UI scale 1: Red Alert's 64x48 cameos (OpenRA's
 // RA sidebar). The canvases are drawn at the size the cards really have on
@@ -367,17 +369,19 @@ export class Sidebar {
     // Right click acts on the press, like OpenRA (HandleMouseInput takes
     // MouseInputEvent.Down), and not on contextmenu: Firefox opens its own
     // menu for Shift + right click without a contextmenu event for the page.
-    let rightPress = false;
+    // The contextmenu event a right press brings follows it within moments
+    // (on release on Windows); Firefox sends none for Shift + right click.
+    let rightPressAt = -Infinity;
     btn.addEventListener('mousedown', (e) => {
-      rightPress = e.button === 2;
-      if (!rightPress) return;
+      if (e.button !== 2) return;
+      rightPressAt = e.timeStamp;
       this.onCardCancel(id, { shift: e.shiftKey });
     });
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      // The menu key (and a touch long press, which js/touch.js handles first) has no right press before it.
-      if (rightPress) rightPress = false;
-      else this.onCardCancel(id, { shift: e.shiftKey });
+      // The menu key (and a touch long press, which js/touch.js handles first) has no right press just before it.
+      if (e.timeStamp - rightPressAt > RIGHT_PRESS_MENU_MS) this.onCardCancel(id, { shift: e.shiftKey });
+      rightPressAt = -Infinity;
     });
     // OpenRA HandleMiddleClick: cancel at once, skipping "on hold".
     btn.addEventListener('auxclick', (e) => {
@@ -513,7 +517,11 @@ export class Sidebar {
     // OpenRA CanQueue: never the credits (items wait for money), only ItemLimit and BuildLimit.
     const outcome = queueOutcome({ itemRoom: b?.itemRoom ?? null, limitLeft: b?.limitLeft ?? null });
     this.callbacks.onProductionClick?.(id, queue.length ? null : outcome);
-    if (outcome === 'queued') this.game.start_production(this.playerId, id, action.count);
+    if (outcome === 'queued') {
+      this.game.start_production(this.playerId, id, action.count);
+      // Items queued while other orders are on their way count from here on (`viewHead`).
+      if (c.pending) c.pending.base += action.count;
+    }
   }
 
   /**
@@ -552,10 +560,15 @@ export class Sidebar {
   viewHead(c) {
     const p = c.pending;
     if (!p || this.now() - p.at > PENDING_MS) return c.head;
-    const count = Math.max(0, (c.head?.count ?? 0) - p.cancelled);
-    if (!c.head || count === 0) return undefined;
-    // Cancelling the held item itself (the last one left) leaves nothing on hold.
-    return { ...c.head, count, paused: p.paused ?? c.head.paused };
+    if (!c.head) return undefined;
+    // What the sent cancels leave, or fewer when the engine has applied some
+    // of them already (or finished the first one meanwhile): never count one twice.
+    const expected = p.base - p.cancelled;
+    const count = Math.max(0, Math.min(c.head.count, expected));
+    if (count === 0) return undefined;
+    // A hold or resume was for the first item; one that finished since leaves a new first item.
+    const sameFirst = c.head.count >= expected;
+    return { ...c.head, count, paused: sameFirst ? (p.paused ?? c.head.paused) : c.head.paused };
   }
 
   /** Remember an order sent for card `c` until player_json shows it (`viewHead`, `updateCard`). */

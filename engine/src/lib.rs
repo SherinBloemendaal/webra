@@ -1685,7 +1685,7 @@ impl Game {
                     "buildTicks": w.build_time_with(player, t as u16, w.producer_count_in(&factories, t as u16)),
                     // Buildable.BuildLimit: how many more may be queued (null: no limit).
                     "limitLeft": Some(w.build_limit_left(player, t as u16)).filter(|&n| n != i32::MAX),
-                    // ProductionQueue ItemLimit: how many more of it the queue takes (null: the "all tech" cheat).
+                    // How many more of it the queue takes: ProductionQueue ItemLimit and WebRA's QUEUE_CAP.
                     "itemRoom": w.item_room(player, t as u16),
                     // ProductionIconOverlayManager: the cameo's overlays ("Veterancy": produced with a level).
                     "overlays": w.production_overlays(player, t as u16),

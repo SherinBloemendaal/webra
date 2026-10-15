@@ -277,3 +277,35 @@ test('quick right clicks act on what the earlier ones ordered, not on the stale 
   s.fake.onCardCancel('E1', { shift: true });
   assert.deepEqual(s.orders, [['cancel', 'E1', 2], ['cancel', 'E1', 2]]);
 });
+
+test('quick clicks with the state partly caught up count each cancel once', async () => {
+  const building = (count, o = {}) => ({ count, done: false, paused: false, started: true, ...o });
+  // WebRA, 4 queued: two quick right clicks, the state then shows the first (3).
+  let s = await fakeSidebar([{ id: 'E1', head: building(4) }], { style: 'webra' });
+  const card = s.fake.cards.get('E1');
+  s.fake.onCardCancel('E1');
+  s.fake.onCardCancel('E1');
+  card.head = building(3);
+  s.fake.onCardCancel('E1');
+  assert.deepEqual(s.orders, [['cancel', 'E1', 1], ['cancel', 'E1', 1], ['cancel', 'E1', 1]], 'the third click still finds two queued');
+  card.head = building(2);
+  s.fake.onCardCancel('E1');
+  assert.deepEqual(s.orders.at(-1), ['pause', 'E1', true], 'then only the one being built is left');
+  // The first one finished meanwhile: the count drops, and a hold sent for it does not carry over.
+  s = await fakeSidebar([{ id: 'E1', head: building(3) }]);
+  s.fake.onCardCancel('E1');
+  s.fake.cards.get('E1').head = building(2, { started: true });
+  s.fake.onCardCancel('E1');
+  assert.deepEqual(s.orders, [['pause', 'E1', true], ['pause', 'E1', true]], 'the new first one is held, not cancelled');
+  // Left clicks while orders are on their way count too.
+  s = await fakeSidebar([{ id: 'E1', head: building(2) }], { style: 'webra' });
+  const stack = s.fake.cards.get('E1');
+  s.fake.onCardCancel('E1');
+  s.fake.onCardClick('E1', true);
+  s.fake.onCardCancel('E1', { shift: true });
+  assert.deepEqual(s.orders.at(-1), ['cancel', 'E1', 1], 'before the five show up only the one already queued goes');
+  // Then the state shows them: 2 - 1 - 1 + 5 = 5, the record stays in step.
+  stack.head = building(5);
+  s.fake.onCardCancel('E1', { shift: true });
+  assert.deepEqual(s.orders.at(-1), ['cancel', 'E1', 4], 'never the one being built');
+});
