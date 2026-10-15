@@ -11,10 +11,14 @@
 // the empty ones above). Civilians are not team coloured: OpenRA draws them
 // with fixed civilian palettes. Trees, ice and huts look like the map's biome
 // (`P.biome`: temperate, snow or desert; js/sprites.js buildAtlas passes it).
+//
+// Colours and materials follow the design canvas board "Wereldobjecten" (flat
+// tones, one seam or pattern layer: leaf spots, plank seams, roof tiles, crop
+// rows), named per object where it is drawn.
 
-import { C, rect, circle, poly, polyline, ring } from './kit.js';
+import { C, rect, circle, poly, polyline, ring, hazard } from './kit.js';
 import { pixelDraw } from './pixel.js';
-import { K, KY, tone, radial, quad, disc, oval, stroke, at, castShadows, box, patch, mark, cylinder, dome, gable, prism } from './volume.js';
+import { K, KY, tone, quad, disc, oval, stroke, at, castShadows, box, patch, mark, cylinder, dome, gable, prism } from './volume.js';
 
 /** Seeded pseudo random numbers in [0, 1). */
 function rng(seed) {
@@ -36,16 +40,24 @@ const biomeOf = (P) => P.biome ?? 'temperate';
 
 // ---- Trees ------------------------------------------------------------------------------
 
-/** Crown colours (dark, light) per biome. */
+/**
+ * Crown colours (shade, leaf, lit) per biome: flat tones as on the design
+ * canvas ("Wereldobjecten", Loofboom), the snow and desert ones in kind.
+ */
 const LEAVES = {
-  temperate: ['#1f3d18', '#4e7a2e'],
-  snow: ['#1d3a30', '#3d6656'],
-  desert: ['#4f6a24', '#8aa046'],
+  temperate: ['#163414', '#344e24', '#609240'],
+  snow: ['#12281f', '#24443a', '#4a7262'],
+  desert: ['#34481a', '#4f6a24', '#8aa046'],
 };
+/** Trunks, conifers, palms and cacti (design canvas: Loofboom, Den, Palm, Cactus). */
+const BARK = '#46321f';
+const PINE = { dark: '#16342c', light: '#2c5442', trunk: '#403024' };
+const PALM = { trunk: '#704e2e', ring: '#5a3e24', dark: '#3a6830', light: '#56a03e' };
+const CACTUS = { body: '#34682e', rib: '#568c3e', spine: '#e8e2ce' };
 
-/** A leafy crown of overlapping lumps around (cx, cy), lit from the top left. */
+/** A leafy crown of overlapping lumps around (cx, cy): flat shade, leaf and lit tones, light from the top left. */
 function crown(ctx, P, cx, cy, r, seed) {
-  const [dark, light] = LEAVES[biomeOf(P)] ?? LEAVES.temperate;
+  const [shade, leaf, lit] = LEAVES[biomeOf(P)] ?? LEAVES.temperate;
   const rnd = rng(seed);
   oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + r * 0.45, cy + r * 0.75, r, r * 0.6);
   const lumps = [];
@@ -55,10 +67,10 @@ function crown(ctx, P, cx, cy, r, seed) {
     lumps.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.85, r * (0.48 + rnd() * 0.14)]);
   }
   lumps.push([cx, cy, r * 0.62]);
-  for (const [x, y, rr] of lumps) disc(ctx, P.c(dark), x + 0.6, y + 0.8, rr);
-  for (const [x, y, rr] of lumps) {
-    disc(ctx, radial(ctx, P, K(light), x - rr * 0.45, y - rr * 0.45, 0, x, y, rr * 1.2, [[0, 0.32], [0.55, 0], [1, -0.45]]), x, y, rr);
-  }
+  for (const [x, y, rr] of lumps) disc(ctx, P.c(shade), x + 0.6, y + 0.8, rr);
+  for (const [x, y, rr] of lumps) disc(ctx, P.c(leaf), x, y, rr * 0.92);
+  // The lit side: a spot on each lump toward the top left (the board's dots).
+  for (const [x, y, rr] of lumps) disc(ctx, P.c(lit), x - rr * 0.32, y - rr * 0.36, rr * 0.38);
   if (biomeOf(P) === 'snow') {
     for (const [x, y, rr] of lumps.slice(0, 5)) oval(ctx, P.c('rgba(236,242,248,0.85)'), x - rr * 0.25, y - rr * 0.35, rr * 0.55, rr * 0.3);
   }
@@ -68,13 +80,13 @@ function crown(ctx, P, cx, cy, r, seed) {
 function pine(ctx, P, cx, base, h, w) {
   const snow = biomeOf(P) === 'snow';
   oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + w * 0.55, base - 1, w * 0.8, w * 0.35);
-  rect(ctx, P.c('#4a3420'), cx - 0.8, base - 4, 1.6, 4);
+  rect(ctx, P.c(PINE.trunk), cx - 0.8, base - 4, 1.6, 4);
   for (let k = 0; k < 4; k++) {
     const y1 = base - 3 - k * (h / 5);
     const y0 = y1 - h * 0.42;
     const hw = w * (1 - k * 0.2);
-    poly(ctx, P.c('#16301f'), [cx - hw, y1, cx + hw, y1, cx + 0.6, y0]);
-    poly(ctx, P.c('#2f5a3c'), [cx - hw + 0.8, y1 - 0.8, cx, y1 - 0.8, cx, y0 + 1]);
+    poly(ctx, P.c(PINE.dark), [cx - hw, y1, cx + hw, y1, cx + 0.6, y0]);
+    poly(ctx, P.c(PINE.light), [cx - hw + 0.8, y1 - 0.8, cx, y1 - 0.8, cx, y0 + 1]);
     if (snow) poly(ctx, P.c('rgba(236,242,248,0.9)'), [cx - hw * 0.5, y1 - h * 0.21, cx + hw * 0.35, y1 - h * 0.21, cx + 0.3, y0 + 0.6]);
   }
 }
@@ -82,28 +94,35 @@ function pine(ctx, P, cx, base, h, w) {
 /** A palm: a leaning trunk and drooping fronds. */
 function palm(ctx, P, cx, base) {
   oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + 7, base - 1, 9, 3);
-  polyline(ctx, P.c('#6b4a2a'), 2.2, [cx, base, cx + 1.5, base - 9, cx + 3.5, base - 18]);
-  polyline(ctx, P.c('#a07448'), 0.8, [cx - 0.5, base - 1, cx + 1, base - 9, cx + 3, base - 17]);
+  polyline(ctx, P.c(PALM.trunk), 2.2, [cx, base, cx + 1.5, base - 9, cx + 3.5, base - 18]);
+  // Ring seams up the trunk (the board's wood pattern).
+  for (let k = 1; k < 6; k++) {
+    const t = k / 6;
+    const x = t < 0.5 ? cx + 3 * t : cx + 1.5 + (t - 0.5) * 4;
+    stroke(ctx, P.c(PALM.ring), 0.6, x - 1.1, base - 18 * t, x + 1.1, base - 18 * t);
+  }
   const [hx, hy] = [cx + 3.5, base - 19];
   for (let k = 0; k < 7; k++) {
     const a = -Math.PI / 2 + (k - 3) * 0.55;
     const tip = [hx + Math.cos(a) * 10, hy + Math.sin(a) * 5 + 4];
-    polyline(ctx, P.c('#3e5a1c'), 1.8, [hx, hy, (hx + tip[0]) / 2, hy + Math.sin(a) * 4 - 1, tip[0], tip[1]]);
-    polyline(ctx, P.c('#7c9a3a'), 0.7, [hx, hy - 0.4, (hx + tip[0]) / 2, hy + Math.sin(a) * 4 - 1.4, tip[0], tip[1] - 0.4]);
+    polyline(ctx, P.c(PALM.dark), 1.8, [hx, hy, (hx + tip[0]) / 2, hy + Math.sin(a) * 4 - 1, tip[0], tip[1]]);
+    polyline(ctx, P.c(PALM.light), 0.7, [hx, hy - 0.4, (hx + tip[0]) / 2, hy + Math.sin(a) * 4 - 1.4, tip[0], tip[1] - 0.4]);
   }
-  disc(ctx, P.c('#5a3c20'), hx, hy, 1.4);
+  disc(ctx, P.c(PALM.ring), hx, hy, 1.4);
 }
 
 /** A saguaro-like cactus. */
 function cactus(ctx, P, cx, base) {
   oval(ctx, P.c('rgba(0,0,0,0.28)'), cx + 4, base - 1, 5, 2);
   const arm = (pts) => {
-    polyline(ctx, P.c('#2f5224'), 3, pts);
-    polyline(ctx, P.c('#6f9a46'), 1, pts.map((v, i) => (i % 2 ? v : v - 0.6)));
+    polyline(ctx, P.c(CACTUS.body), 3, pts);
+    polyline(ctx, P.c(CACTUS.rib), 1, pts.map((v, i) => (i % 2 ? v : v - 0.6)));
   };
   arm([cx, base, cx, base - 15]);
   arm([cx, base - 6, cx - 4, base - 6, cx - 4, base - 11]);
   arm([cx, base - 9, cx + 4, base - 9, cx + 4, base - 13]);
+  // Spines: pale dots along the stem.
+  for (const [x, y] of [[cx + 1.4, base - 13], [cx - 1.4, base - 9], [cx + 1.4, base - 4], [cx - 5.2, base - 10], [cx + 5.2, base - 12]]) disc(ctx, P.c(CACTUS.spine), x, y, 0.35);
 }
 
 /** A burnt stump on the cell centred at (cx, cy). */
@@ -111,8 +130,18 @@ function stump(ctx, P, cx, cy, seed) {
   const rnd = rng(seed);
   oval(ctx, P.c('rgba(20,16,12,0.55)'), cx, cy + 3, 9, 5);
   for (let k = 0; k < 5; k++) disc(ctx, P.c('rgba(40,36,30,0.6)'), cx - 6 + rnd() * 12, cy + rnd() * 6, 1.4 + rnd());
-  cylinder(ctx, P, cx, cy + 2, 2.6, 4 + rnd() * 3, K('#2e2418'), K('#5a4630'));
-  stroke(ctx, P.c('#1a140e'), 1, cx + 1, cy - 2, cx + 4, cy - 6);
+  // Design canvas "Stronk": bark sides, the cut top in growth rings, charred.
+  const z = 4 + rnd() * 3;
+  cylinder(ctx, P, cx, cy + 2, 2.6, z, K('#46321f'), K('#7a5838'));
+  const [tx, ty] = at(cx, cy + 2, z);
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(tx, ty, 1.5, 0.75, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = P.c('#5a3e24');
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.restore();
+  stroke(ctx, P.c('#2a1c12'), 1, cx + 1, cy - 2, cx + 4, cy - 6);
 }
 
 /** Centre of footprint cell (dx, dy). */
@@ -155,7 +184,7 @@ function treeAt(ctx, P, kind, cx, cy, seed, boxWidth = 24) {
       crown(ctx, P, cx, cy, 8, seed);
       break;
     default:
-      rect(ctx, P.c('#4a3420'), cx - 1, cy - 2, 2.2, 10);
+      rect(ctx, P.c(BARK), cx - 1, cy - 2, 2.2, 10);
       crown(ctx, P, cx + 1, cy - 8 * s, 12 * s, seed);
   }
 }
@@ -186,9 +215,10 @@ function stumpDraw(id, a) {
 
 // ---- Civilian buildings ---------------------------------------------------------------------
 
-const PLASTER = ['#cfc3a4', '#d8cfb8', '#c6b48e', '#b9ad96', '#d4c7b0'];
-const TILES = ['#8a3a2a', '#6a4a34', '#5b5f63', '#7a3226', '#4d4438'];
-const ADOBE = ['#c9a676', '#d4b486', '#bf9a68', '#caa880'];
+/** Design canvas "Wereldobjecten": Cottage plaster and roof tiles (red or slate), Adobe. */
+const PLASTER = ['#cfc3a4', '#d8cfb8', '#c6b48e'];
+const TILES = ['#8a3a2a', '#7a3226', '#5b5f63'];
+const ADOBE = ['#c9a676', '#d4b486', '#bf9a68'];
 
 /** A cottage: walls, a pitched roof, windows, a door and maybe a chimney. */
 function cottage(ctx, P, x, y, w, d, z, seed, o = {}) {
@@ -223,8 +253,9 @@ function adobe(ctx, P, x, y, w, d, z, seed, o = {}) {
   const r = rng(seed);
   const wall = K(ADOBE[Math.floor(r() * ADOBE.length)]);
   castShadows(ctx, P, [{ x, y, w, d, z }]);
-  const H = box(ctx, P, x, y, w, d, z, wall, K(tone(wall.c, 0.12)));
-  patch(ctx, P.c(tone(wall.c, -0.12)), H, 'roof', 1.2, 1.2, w - 1.2, d - 1.2);
+  // Lit flat roof over darker walls (the board's #d4b486 roof, #a8865a wall).
+  const H = box(ctx, P, x, y, w, d, z, K(tone(wall.c, -0.14)), K(tone(wall.c, 0.06)));
+  patch(ctx, P.c(tone(wall.c, -0.06)), H, 'roof', 1.2, 1.2, w - 1.2, d - 1.2);
   const n = Math.max(1, Math.floor(w / 6));
   for (let k = 0; k < n; k++) {
     const u = ((k + 0.5) * w) / n - 1.2;
@@ -243,36 +274,40 @@ function adobe(ctx, P, x, y, w, d, z, seed, o = {}) {
 function church(ctx, P, desert) {
   if (desert) {
     castShadows(ctx, P, [{ x: 6, y: 18, w: 34, d: 24, z: 9 }, { cx: 36, cy: 22, r: 3, z: 19 }]);
-    const H = box(ctx, P, 6, 18, 34, 24, 9, K('#d8c7a0'), K('#e4d6b4'));
+    const H = box(ctx, P, 6, 18, 34, 24, 9, K('#c9a676'), K('#d4b486'));
     patch(ctx, P.c('#3a2c20'), H, 'front', 14, 0, 19, 6);
     dome(ctx, P, 21, 30, 9, K('#e9e2cf'), { z0: 9 });
-    cylinder(ctx, P, 36, 22, 2.6, 19, K('#d8c7a0'), K('#e9e2cf'));
+    cylinder(ctx, P, 36, 22, 2.6, 19, K('#c9a676'), K('#e9e2cf'));
+    disc(ctx, P.c('#ffd98a'), ...at(21, 30, 18), 1);
     return;
   }
   // The steeple stands behind the nave; both stay inside the 2x2 footprint box.
   castShadows(ctx, P, [{ x: 8, y: 22, w: 30, d: 20, z: 14 }, { x: 10, y: 12, w: 9, d: 9, z: 15 }]);
-  const S = box(ctx, P, 10, 12, 9, 9, 11, K('#b0a998'), K('#c8c0ae'));
+  // Design canvas "Kerk": pale stone, slate roofs, a gold cross.
+  const S = box(ctx, P, 10, 12, 9, 9, 11, K('#c8bfa8'), K('#d8cfb8'));
   patch(ctx, P.c('#2c2c2c'), S, 'front', 3.2, 6.5, 5.8, 9.5);
   const [sx, sy] = at(14.5, 16.5, 11);
-  poly(ctx, P.c('#4a4e52'), [sx - 5, sy + 1.5, sx + 5, sy + 1.5, sx + 0.4, sy - 5]);
-  stroke(ctx, P.c('#e0c060'), 0.8, sx + 0.4, sy - 5, sx + 0.4, sy - 7.4);
-  stroke(ctx, P.c('#e0c060'), 0.8, sx - 1.1, sy - 6.4, sx + 1.9, sy - 6.4);
-  const N = box(ctx, P, 8, 22, 30, 20, 9, K('#b9b2a2'), K('#c8c0ae'));
+  poly(ctx, P.c('#3f4247'), [sx - 5, sy + 1.5, sx + 5, sy + 1.5, sx + 0.4, sy - 5]);
+  poly(ctx, P.c('#5b5f63'), [sx - 5, sy + 1.5, sx + 0.4, sy + 1.5, sx + 0.4, sy - 5]);
+  stroke(ctx, P.c('#ffd98a'), 0.8, sx + 0.4, sy - 5, sx + 0.4, sy - 7.4);
+  stroke(ctx, P.c('#ffd98a'), 0.8, sx - 1.1, sy - 6.4, sx + 1.9, sy - 6.4);
+  const N = box(ctx, P, 8, 22, 30, 20, 9, K('#c8bfa8'), K('#d8cfb8'));
   for (const u of [5, 13, 21]) patch(ctx, P.c('#2e3d55'), N, 'front', u, 2.5, u + 3, 7);
   gable(ctx, P, N, 7, K('#5b5f63'), { axis: 'y', overhang: 1, seams: 6 });
 }
 
 /** A field: rows of a crop on tilled soil. */
 function field(ctx, P, w, h, seed, crop) {
+  // Design canvas "Akker": soil with rows of the crop running north to south.
   const r = rng(seed);
-  const soil = biomeOf(P) === 'snow' ? '#b9bfc6' : '#6e5434';
+  const soil = biomeOf(P) === 'snow' ? '#b9bfc6' : '#6a5c3e';
+  const c = crop === 'rice' ? '#7caa48' : crop === 'wheat' ? '#d9b23a' : '#8e9a46';
   rect(ctx, P.c(soil), 1, 1, w - 2, h - 2);
-  for (let y = 3; y < h - 2; y += 3) {
-    rect(ctx, P.c(tone(soil, -0.25)), 2, y, w - 4, 1);
-    for (let x = 3; x < w - 3; x += 2.5 + r()) {
-      const c = crop === 'rice' ? '#7caa48' : crop === 'wheat' ? '#c9a83e' : '#5f8a36';
-      disc(ctx, P.c(c), x, y - 0.6, crop === 'wheat' ? 0.9 : 1.1);
-    }
+  for (let x = 2.5; x < w - 3; x += 3.5) {
+    rect(ctx, P.c(tone(soil, -0.25)), x + 2.2, 2, 0.8, h - 4);
+    // A row of plants, broken where a few are missing.
+    for (let y = 2; y < h - 3; y += 2) if (r() > 0.12) rect(ctx, P.c(c), x, y, 2, 1.6);
+    if (crop === 'wheat') for (let y = 2.5; y < h - 3; y += 4) rect(ctx, P.c(tone(c, 0.2)), x + 0.4, y, 1, 0.8);
   }
   if (crop === 'rice') {
     ctx.save();
@@ -301,24 +336,29 @@ function haystack(ctx, P, seed) {
     return;
   }
   const r = rng(seed);
+  // Design canvas "Hooiberg": straw dome, light straw strokes, a dark trodden base.
   castShadows(ctx, P, [{ cx: 12, cy: 14, r: 7.5, z: 9 }]);
-  dome(ctx, P, 12, 14, 8, K('#c9a83e'));
+  oval(ctx, P.c('#8a6a3a'), 12, 14.6, 8.6, 4.2);
+  dome(ctx, P, 12, 14, 8, K('#c9a64a'));
   for (let k = 0; k < 14; k++) {
     const [lx, ly] = at(6 + r() * 12, 9 + r() * 9, 3 + r() * 6);
-    stroke(ctx, P.c('#e4cf7a'), 0.4, lx, ly, lx + r() * 2 - 1, ly + 1.5);
+    stroke(ctx, P.c('#e0c06a'), 0.5, lx, ly, lx + 1, ly + 1.7);
   }
 }
 
 /** Oil pump (V19): a pumpjack on a pad. */
 function pumpjack(ctx, P, burnt = false) {
-  rect(ctx, P.c(burnt ? '#2a2620' : C.concreteDark), 2, 6, 20, 15);
-  rect(ctx, P.c(burnt ? '#3a342c' : C.concrete), 3, 7, 18, 13);
+  // Design canvas "Oliebron": a pad with a hazard edge, steel works.
+  if (burnt) rect(ctx, P.c('#2a2620'), 2, 6, 20, 15);
+  else hazard(ctx, P, 2, 6, 20, 15, 2);
+  rect(ctx, P.c(burnt ? '#3a342c' : C.concrete), 3.5, 7.5, 17, 12);
   const steel = burnt ? K('#2e2a26') : K('#55585c');
   castShadows(ctx, P, [{ x: 5, y: 10, w: 14, d: 5, z: 10 }]);
   box(ctx, P, 9, 11, 3, 4, 8, steel, steel);
   const [ax, ay] = at(10.5, 13, 8.5);
   stroke(ctx, P.c(burnt ? '#1c1a18' : '#33363a'), 2, ax - 8, ay + 2, ax + 7, ay - 1);
-  disc(ctx, P.c(burnt ? '#1c1a18' : '#c23a26'), ax - 8, ay + 3, 2.4);
+  disc(ctx, P.c(burnt ? '#1c1a18' : '#d9b23a'), ax - 8, ay + 3, 2.4);
+  if (!burnt) disc(ctx, P.c('#2b2b28'), ax - 8, ay + 3, 1);
   box(ctx, P, 16, 13, 3, 3, 3, steel, steel);
 }
 
@@ -326,11 +366,12 @@ function pumpjack(ctx, P, burnt = false) {
 
 function hospital(ctx, P) {
   castShadows(ctx, P, [{ x: 4, y: 12, w: 40, d: 30, z: 13 }]);
-  const H = box(ctx, P, 4, 12, 40, 30, 11, K('#d9d6cc'), K('#e8e6de'), { panel: 8 });
+  // Design canvas "Ziekenhuis": concrete walls, a white roof with the red cross.
+  const H = box(ctx, P, 4, 12, 40, 30, 11, K('#a4a193'), K('#e8e6dc'), { panel: 8 });
   for (let k = 0; k < 4; k++) patch(ctx, P.c('#3b5566'), H, 'front', 3 + k * 9.5, 4.5, 8 + k * 9.5, 8);
   patch(ctx, P.c('#3a3a3a'), H, 'front', 17, 0, 23, 4);
   // red cross on the roof (OpenRA HOSP: the Red Cross)
-  const cross = (u0, t0, u1, t1) => patch(ctx, P.c('#c8261c'), H, 'roof', u0, t0, u1, t1);
+  const cross = (u0, t0, u1, t1) => patch(ctx, P.c('#c8281e'), H, 'roof', u0, t0, u1, t1);
   patch(ctx, P.c('#f4f2ec'), H, 'roof', 11, 5, 29, 25);
   cross(18, 7, 22, 23);
   cross(13, 13, 27, 17);
@@ -339,9 +380,11 @@ function hospital(ctx, P) {
 
 function bioLab(ctx, P) {
   castShadows(ctx, P, [{ x: 4, y: 14, w: 26, d: 28, z: 10 }, { cx: 36, cy: 20, r: 7, z: 10 }, { cx: 36, cy: 38, r: 5, z: 7 }]);
-  const H = box(ctx, P, 4, 14, 26, 28, 9, K('#8e958a'), K('#a3aa9e'), { panel: 6 });
-  for (const u of [3, 10, 17]) patch(ctx, P.c('#4c6a4a'), H, 'front', u, 3.5, u + 4, 6.5);
-  patch(ctx, P.c('#c9b02c'), H, 'roof', 4, 4, 22, 24);
+  // Design canvas "Biolab": concrete, green glass and a glowing green sample tank.
+  const H = box(ctx, P, 4, 14, 26, 28, 9, K('#a4a193'), K('#b8b5a7'), { panel: 6 });
+  for (const u of [3, 10, 17]) patch(ctx, P.c('#4a7a34'), H, 'front', u, 3.5, u + 4, 6.5);
+  patch(ctx, P.c('#4a7a34'), H, 'roof', 3.4, 3.4, 22.6, 24.6);
+  patch(ctx, P.c('#9adf6a'), H, 'roof', 4, 4, 22, 24);
   const [tx, ty] = H.roof(13, 14);
   ctx.save();
   ctx.fillStyle = P.c('#1c1c1c');
@@ -352,10 +395,12 @@ function bioLab(ctx, P) {
     ctx.fill();
   }
   ctx.restore();
-  disc(ctx, P.c('#c9b02c'), tx, ty, 1.4);
-  dome(ctx, P, 36, 20, 7, K('#9cc0a0'), { z0: 2 });
-  cylinder(ctx, P, 36, 38, 4.6, 7, K('#7a8276'), K('#9aa496'));
-  stroke(ctx, P.c('#3a5a3a'), 1.2, 30, 26, 32, 22);
+  disc(ctx, P.c('#9adf6a'), tx, ty, 1.4);
+  dome(ctx, P, 36, 20, 7, K('#4a7a34'), { z0: 2 });
+  const [gx, gy] = at(34, 18, 7);
+  disc(ctx, P.c('#9adf6a'), gx, gy, 2);
+  cylinder(ctx, P, 36, 38, 4.6, 7, K('#8a877a'), K('#a4a193'));
+  stroke(ctx, P.c('#4a7a34'), 1.2, 30, 26, 32, 22);
 }
 
 function commCenter(ctx, P) {
@@ -364,13 +409,16 @@ function commCenter(ctx, P) {
   rect(ctx, P.c(C.concrete), 1, 49, 70, 22);
   for (let x = 12; x < 72; x += 12) rect(ctx, P.c(C.seam), x, 49, 1, 22);
   castShadows(ctx, P, [{ x: 4, y: 10, w: 64, d: 36, z: 12 }]);
-  const H = box(ctx, P, 4, 10, 64, 36, 11, K('#8f8c80'), K('#a7a497'), { panel: 8 });
-  for (let k = 0; k < 6; k++) patch(ctx, P.c('#35505e'), H, 'front', 4 + k * 10, 4.5, 9 + k * 10, 8);
+  // Design canvas "Comm. center": concrete roof, a band of glass with dark mullions, a pale dish.
+  const H = box(ctx, P, 4, 10, 64, 36, 11, K('#a4a193'), K('#b8b5a7'), { panel: 8 });
+  patch(ctx, P.c('#23363f'), H, 'front', 3, 4, 61, 8.5);
+  for (let k = 0; k < 6; k++) patch(ctx, P.c('#5f93ad'), H, 'front', 4 + k * 10, 4.5, 11 + k * 10, 8);
   patch(ctx, P.c('#3a3a3a'), H, 'front', 28, 0, 36, 5);
   // antennas and a dish on the roof
   const [dx, dy] = H.roof(18, 16);
   disc(ctx, P.c('#55585c'), dx, dy, 8);
-  disc(ctx, radial(ctx, P, K('#d8dde2'), dx - 3, dy - 3, 0, dx, dy, 8, [[0, 0.3], [1, -0.4]]), dx, dy, 7);
+  disc(ctx, P.c('#c4c7cb'), dx, dy, 7);
+  disc(ctx, P.c('#dfe2e5'), dx - 2, dy - 2, 3.4);
   disc(ctx, P.c('#3a3d42'), dx + 1, dy + 1, 1.4);
   for (const [u, t, h] of [[44, 14, 12], [52, 22, 10], [58, 12, 12]]) {
     const [bx, by] = H.roof(u, t);
@@ -385,14 +433,16 @@ function commandPost(ctx, P) {
   rect(ctx, P.c(C.concrete), 1, 49, 46, 22);
   rect(ctx, P.c(C.seam), 24, 49, 1, 22);
   castShadows(ctx, P, [{ x: 4, y: 12, w: 40, d: 34, z: 9 }]);
-  const H = box(ctx, P, 4, 12, 40, 34, 8, K('#6f7457'), K('#7f8466'), { panel: 10 });
+  // Design canvas "Commandopost": canvas over steel, seams across the roof.
+  const H = box(ctx, P, 4, 12, 40, 34, 8, K('#6a6a42'), K('#8a8a5a'), { panel: 10 });
+  for (let t = 4; t < 34; t += 5) mark(ctx, P.c('#6a6a42'), 0.6, H, 'roof', 1, t, 39, t);
   // sandbags along the front
-  for (let x = 4; x < 44; x += 5) oval(ctx, P.c('#8a8a5a'), x + 2.5, 46, 2.8, 1.8);
+  for (let x = 4; x < 44; x += 5) oval(ctx, P.c('#a09a70'), x + 2.5, 46, 2.8, 1.8);
   patch(ctx, P.c('#2c2c22'), H, 'front', 17, 0, 23, 5);
   for (const u of [6, 30]) patch(ctx, P.c('#1f2a22'), H, 'front', u, 4, u + 4, 6);
   // radar on a mast and a flag in the owner's colour
   const [rx, ry] = H.roof(28, 12);
-  stroke(ctx, P.c('#3f4247'), 1.2, rx, ry, rx + 2.5, ry - 9);
+  stroke(ctx, P.c('#55585c'), 1.2, rx, ry, rx + 2.5, ry - 9);
   oval(ctx, P.c('#c8ccd0'), rx + 2.5, ry - 10, 5, 2);
   const [fx, fy] = H.roof(9, 8);
   stroke(ctx, P.c('#3f4247'), 0.8, fx, fy, fx + 3, fy - 13);
@@ -401,16 +451,22 @@ function commandPost(ctx, P) {
 
 // ---- Barrels, boxes and other decorations ------------------------------------------------------
 
+/** Design canvas "Olievat": a red drum with darker hoops and a yellow band. */
 function oilBarrel(ctx, P, cx, cy, tint = '#a8321e') {
-  cylinder(ctx, P, cx, cy, 3.6, 7, K(tint), K(tone(tint, 0.15)), { bands: [[2, 2.6, K('#2c2c2c')], [4.6, 5.2, K('#2c2c2c')]] });
+  const hoop = K(tone(tint, -0.3));
+  cylinder(ctx, P, cx, cy, 3.6, 7, K(tint), K(tone(tint, 0.15)), { bands: [[1.6, 2.2, hoop], [3.2, 4.2, K('#d9b23a')], [5.2, 5.8, hoop]] });
 }
 
-function crateBox(ctx, P, x, y, s, z, wood = '#8a6a3a', seed = 1) {
+/** Design canvas "Kratten": wood with dark plank seams and a lit edge. */
+const WOOD = { plank: '#8a6a3a', seam: '#5e4624', lit: '#b08e58' };
+
+function crateBox(ctx, P, x, y, s, z, wood = WOOD.plank, seed = 1) {
   const r = rng(seed);
   const V = box(ctx, P, x, y, s, s, z, K(wood), K(tone(wood, 0.12)));
-  mark(ctx, P.c(tone(wood, -0.4)), 0.5, V, 'front', 0, 0, s, z);
-  mark(ctx, P.c(tone(wood, -0.4)), 0.5, V, 'front', s, 0, 0, z);
-  mark(ctx, P.c(tone(wood, -0.3)), 0.5, V, 'roof', r() * 2, s / 2, s, s / 2);
+  mark(ctx, P.c(WOOD.seam), 0.5, V, 'front', 0, 0, s, z);
+  mark(ctx, P.c(WOOD.seam), 0.5, V, 'front', s, 0, 0, z);
+  for (let u = 2.5; u < s; u += 2.5) mark(ctx, P.c(WOOD.seam), 0.35, V, 'roof', u + r() * 0.3, 0, u, s);
+  mark(ctx, P.c(WOOD.lit), 0.6, V, 'roof', 0, 0.3, s, 0.3);
   return V;
 }
 
@@ -421,15 +477,17 @@ function boxes(ctx, P, seed) {
   for (let k = 0; k < n; k++) items.push({ x: 3 + r() * 8, y: 7 + r() * 6, s: 6 + r() * 4, z: 5 + r() * 3 });
   castShadows(ctx, P, items.map((b) => ({ x: b.x, y: b.y, w: b.s, d: b.s, z: b.z })));
   items.sort((a, b) => a.y - b.y);
-  items.forEach((b, k) => crateBox(ctx, P, b.x, b.y, b.s, b.z, k % 2 ? '#7a5c30' : '#94744a', seed + k));
+  items.forEach((b, k) => crateBox(ctx, P, b.x, b.y, b.s, b.z, k % 2 ? tone(WOOD.plank, -0.08) : WOOD.plank, seed + k));
 }
 
 function ammoBox(ctx, P, seed) {
   const r = rng(seed);
   castShadows(ctx, P, [{ x: 3, y: 7, w: 18, d: 11, z: 6 }]);
-  const V = box(ctx, P, 3, 7, 18, 11, 6, K('#5c6a3a'), K('#6c7a48'));
-  for (const u of [4, 13]) patch(ctx, P.c('#3a4424'), V, 'front', u, 1, u + 2, 5);
-  patch(ctx, P.c('#c9b02c'), V, 'roof', 7 + r() * 2, 4, 11 + r() * 2, 7);
+  // Design canvas "Munitiekist": olive boxes, dark straps, a yellow stencil.
+  const V = box(ctx, P, 3, 7, 18, 11, 6, K('#4e5a30'), K('#5d6b3a'));
+  for (const u of [4, 13]) patch(ctx, P.c('#3e4826'), V, 'front', u, 1, u + 2, 5);
+  for (const u of [4, 13]) patch(ctx, P.c('#3e4826'), V, 'roof', u, 0, u + 2, 11);
+  patch(ctx, P.c('#d9b23a'), V, 'roof', 7 + r() * 1.5, 4, 11 + r() * 1.5, 7);
 }
 
 function iceFloe(ctx, P, a, seed) {
@@ -442,9 +500,10 @@ function iceFloe(ctx, P, a, seed) {
       const rr = 9 + r() * 3;
       pts.push(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr * 0.9);
     }
-    poly(ctx, P.c('rgba(20,40,60,0.35)'), pts.map((v, i) => v + (i % 2 ? 1.5 : 1)));
-    poly(ctx, P.c('#c8dbe8'), pts);
-    poly(ctx, P.c('#eef5fa'), pts.map((v, i) => (i % 2 ? cy + (v - cy) * 0.75 - 1 : cx + (v - cx) * 0.75 - 1)));
+    // Design canvas "IJsschots": a dark waterline, a blue-white rim, a white top.
+    poly(ctx, P.c('#466e8c'), pts.map((v, i) => v + (i % 2 ? 1.5 : 1)));
+    poly(ctx, P.c('#b4d6ec'), pts);
+    poly(ctx, P.c('#f4f8ff'), pts.map((v, i) => (i % 2 ? cy + (v - cy) * 0.75 - 1 : cx + (v - cx) * 0.75 - 1)));
   }
 }
 
@@ -452,12 +511,23 @@ function rocks(ctx, P, a, seed) {
   const r = rng(seed);
   const cells = occupied(a);
   castShadows(ctx, P, cells.map(([dx, dy]) => ({ cx: dx * 24 + 12, cy: dy * 24 + 13, r: 9, z: 6 })));
+  // Design canvas "Rotsen": grey boulders in three flat tones, a lit top
+  // facet, the body and a dark lower-right side.
   for (const [dx, dy] of cells) {
     const [cx, cy] = cellCentre(dx, dy);
-    for (let k = 0; k < 3; k++) {
-      const x = cx - 5 + r() * 10;
-      const y = cy - 3 + r() * 7;
-      dome(ctx, P, x, y, 4 + r() * 4, K(k % 2 ? '#8e6a48' : '#a27c56'));
+    const stones = [];
+    for (let k = 0; k < 3; k++) stones.push([cx - 5 + r() * 10, cy - 3 + r() * 7, 4 + r() * 4, r()]);
+    stones.sort((a, b) => a[1] - b[1]);
+    for (const [x, y, rr, j] of stones) {
+      const pts = [];
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2 + j;
+        const f = 0.82 + ((k * 37 + Math.floor(j * 97)) % 7) * 0.03;
+        pts.push(x + Math.cos(a) * rr * f, y + Math.sin(a) * rr * f * 0.8);
+      }
+      poly(ctx, P.c('#484034'), pts.map((v, i) => v + (i % 2 ? 1 : 0.6)));
+      poly(ctx, P.c('#76705e'), pts);
+      poly(ctx, P.c('#968c78'), pts.map((v, i) => (i % 2 ? y + (v - y) * 0.55 - rr * 0.25 : x + (v - x) * 0.6 - rr * 0.18)));
     }
   }
 }
@@ -490,16 +560,20 @@ function tankTrap(ctx, P, seed) {
 }
 
 function oreMine(ctx, P, gems) {
+  // Design canvas "Ertsmijn" and "Edelsteenmijn": a dark mound studded with
+  // gold nuggets, or with blue and magenta crystals.
   castShadows(ctx, P, [{ cx: 12, cy: 13, r: 8, z: 6 }]);
-  dome(ctx, P, 12, 13, 8.5, K('#6c5a44'));
+  dome(ctx, P, 12, 13, 8.5, K('#44433e'));
   const r = rng(gems ? 17 : 5);
   for (let k = 0; k < 9; k++) {
     const [x, y] = at(5 + r() * 14, 7 + r() * 10, 2 + r() * 5);
     if (gems) {
-      poly(ctx, P.c(k % 2 ? '#b03a9a' : '#5a8ae0'), [x, y - 2.6, x + 1.4, y, x, y + 1.4, x - 1.4, y]);
-      disc(ctx, P.c('#f4e0ff'), x - 0.4, y - 0.8, 0.4);
+      poly(ctx, P.c(k % 2 ? '#c84a9a' : '#4a7ac4'), [x, y - 2.6, x + 1.4, y, x, y + 1.4, x - 1.4, y]);
+      disc(ctx, P.c('#9fd8ff'), x - 0.4, y - 0.8, 0.45);
     } else {
-      disc(ctx, P.c(k % 2 ? C.ore : '#e2bd52'), x, y, 1.2 + r() * 0.6);
+      const rr = 1.2 + r() * 0.6;
+      disc(ctx, P.c(C.ore), x, y, rr);
+      disc(ctx, P.c('#e6c25a'), x - rr * 0.3, y - rr * 0.3, rr * 0.5);
     }
   }
 }
@@ -529,7 +603,7 @@ function chainLink(ctx, P) {
   ctx.lineTo(lx, 13 + ly);
   ctx.closePath();
   ctx.clip();
-  ctx.strokeStyle = P.c('#9aa0a4');
+  ctx.strokeStyle = P.c('#8a8e93');
   ctx.lineWidth = 0.45;
   for (let d = -30; d < 60; d += 2.4) {
     ctx.beginPath();
@@ -558,7 +632,7 @@ function barbedWire(ctx, P) {
   for (let x = -2; x < 28; x += 4) ring(ctx, P.c('#8a8e93'), x, 10.4, 3.6, 0.4);
   for (const x of [4, 20]) {
     const p = at(x, 15, 9);
-    stroke(ctx, P.c('#4a3420'), 1.2, x, 15, p[0], p[1]);
+    stroke(ctx, P.c('#6a4a34'), 1.2, x, 15, p[0], p[1]);
   }
   ctx.restore();
 }
@@ -572,12 +646,12 @@ function woodFence(ctx, P) {
   for (const h of [3, 7]) {
     const a = at(0, 14, h);
     const b = at(24, 14, h);
-    stroke(ctx, P.c('#6b4a2a'), 1.4, a[0], a[1], b[0], b[1]);
-    stroke(ctx, P.c('#a07448'), 0.5, a[0], a[1] - 0.6, b[0], b[1] - 0.6);
+    stroke(ctx, P.c('#6a4a34'), 1.4, a[0], a[1], b[0], b[1]);
+    stroke(ctx, P.c('#8e6c50'), 0.5, a[0], a[1] - 0.6, b[0], b[1] - 0.6);
   }
   for (const x of [3, 12, 21]) {
     const p = at(x, 14, 9);
-    stroke(ctx, P.c('#4a3420'), 1.6, x, 14, p[0], p[1]);
+    stroke(ctx, P.c('#4e3424'), 1.6, x, 14, p[0], p[1]);
   }
   ctx.restore();
 }
@@ -611,9 +685,10 @@ function bridgeDraw(a, destroyed) {
         const [px, py] = [x * 24, y * 24];
         if (c === 'k' || c === 'l') {
           // abutment
-          const V = box(ctx, P, px + 2, py + 4, 20, 18, destroyed ? 3 : 5, K('#7d776c'), K('#99938a'));
-          if (destroyed) for (let k = 0; k < 4; k++) disc(ctx, P.c('#5e5a52'), px + 6 + k * 4, py + 18 - (k % 2) * 4, 1.6);
-          else mark(ctx, P.c('#5e5a52'), 0.5, V, 'front', 0, 2.5, 20, 2.5);
+          // Concrete abutments (design canvas "Brug").
+          const V = box(ctx, P, px + 2, py + 4, 20, 18, destroyed ? 3 : 5, K(C.concreteDark), K(C.concrete));
+          if (destroyed) for (let k = 0; k < 4; k++) disc(ctx, P.c(C.seam), px + 6 + k * 4, py + 18 - (k % 2) * 4, 1.6);
+          else mark(ctx, P.c(C.seam), 0.5, V, 'front', 0, 2.5, 20, 2.5);
           continue;
         }
         if (c !== 'g') continue;
@@ -621,25 +696,27 @@ function bridgeDraw(a, destroyed) {
           // a stub of deck where the bank holds it, debris in the water elsewhere
           const bank = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => 'kl'.includes(letterAt(deck, x + dx, y + dy)));
           if (bank) {
-            rect(ctx, P.c('#5a4028'), px + 4, py + 6, 10, 12);
-            polyline(ctx, P.c('#2a1e14'), 0.8, [px + 14, py + 6, px + 16, py + 10, px + 13, py + 13, px + 16, py + 18]);
+            rect(ctx, P.c('#5e5240'), px + 4, py + 6, 10, 12);
+            polyline(ctx, P.c('#2e281e'), 0.8, [px + 14, py + 6, px + 16, py + 10, px + 13, py + 13, px + 16, py + 18]);
           } else {
-            for (let k = 0; k < 3; k++) rect(ctx, P.c('rgba(70,50,32,0.8)'), px + 4 + k * 6, py + 9 + (k % 2) * 6, 5, 1.6);
+            for (let k = 0; k < 3; k++) rect(ctx, P.c('rgba(78,68,52,0.85)'), px + 4 + k * 6, py + 9 + (k % 2) * 6, 5, 1.6);
           }
           continue;
         }
         rect(ctx, P.c('rgba(0,0,0,0.3)'), px + 2, py + 3, 24, 24);
-        rect(ctx, P.c('#6e5236'), px, py, 24, 24);
+        // Planks of weathered wood with dark seams (design canvas "Brug").
+        rect(ctx, P.c('#4e4434'), px, py, 24, 24);
         const vertical = isDeck(x, y - 1) || isDeck(x, y + 1);
         for (let k = 0; k < 24; k += 3) {
-          if (vertical) rect(ctx, P.c(k % 6 ? '#8a6a46' : '#7a5c3a'), px + 1, py + k, 22, 2.4);
-          else rect(ctx, P.c(k % 6 ? '#8a6a46' : '#7a5c3a'), px + k, py + 1, 2.4, 22);
+          const plank = P.c(k % 6 ? '#7a6a52' : '#706048');
+          if (vertical) rect(ctx, plank, px + 1, py + k, 22, 2.4);
+          else rect(ctx, plank, px + k, py + 1, 2.4, 22);
         }
         // railings where the deck does not continue
-        if (!isDeck(x - 1, y) && vertical) rect(ctx, P.c('#3a2c1e'), px, py, 2, 24);
-        if (!isDeck(x + 1, y) && vertical) rect(ctx, P.c('#3a2c1e'), px + 22, py, 2, 24);
-        if (!isDeck(x, y - 1) && !vertical) rect(ctx, P.c('#3a2c1e'), px, py, 24, 2);
-        if (!isDeck(x, y + 1) && !vertical) rect(ctx, P.c('#3a2c1e'), px, py + 22, 24, 2);
+        if (!isDeck(x - 1, y) && vertical) rect(ctx, P.c('#4e4434'), px, py, 2, 24);
+        if (!isDeck(x + 1, y) && vertical) rect(ctx, P.c('#4e4434'), px + 22, py, 2, 24);
+        if (!isDeck(x, y - 1) && !vertical) rect(ctx, P.c('#4e4434'), px, py, 24, 2);
+        if (!isDeck(x, y + 1) && !vertical) rect(ctx, P.c('#4e4434'), px, py + 22, 24, 2);
       }
     }
   };
@@ -728,7 +805,7 @@ const STRUCTURES = {
   'V19.HUSK': () => (ctx, P) => pumpjack(ctx, P, true),
   LHUS: () => (ctx, P) => {
     castShadows(ctx, P, [{ cx: 11, cy: 17, r: 4, z: 14 }]);
-    cylinder(ctx, P, 11, 17, 4, 13, K('#e8e4dc'), K('#c8261c'), { bands: [[4, 5.5, K('#c8261c')], [8.5, 10, K('#c8261c')]] });
+    cylinder(ctx, P, 11, 17, 4, 13, K('#e8e4dc'), K('#c8281e'), { bands: [[4, 5.5, K('#c8281e')], [8.5, 10, K('#c8281e')]] });
     const [lx, ly] = at(11, 17, 14);
     disc(ctx, P.c('rgba(255,230,140,0.5)'), lx, ly, 4);
     disc(ctx, P.c('#fff2b0'), lx, ly, 2);
@@ -764,7 +841,7 @@ const STRUCTURES = {
   BRL3: () => (ctx, P) => {
     castShadows(ctx, P, [{ cx: 8, cy: 11, r: 3.6, z: 7 }, { cx: 16, cy: 11, r: 3.6, z: 7 }, { cx: 12, cy: 17, r: 3.6, z: 7 }]);
     oilBarrel(ctx, P, 8, 11);
-    oilBarrel(ctx, P, 16, 11, '#8a6a2a');
+    oilBarrel(ctx, P, 16, 11, '#7a2214');
     oilBarrel(ctx, P, 12, 17);
   },
   AMMOBOX1: () => (ctx, P) => ammoBox(ctx, P, 1),
@@ -863,8 +940,8 @@ export const WORLD_DECORATIONS = [
   treeFire(0.7),
   [7, 7, (ctx, P) => {
     rect(ctx, P.c('#f4f2ec'), 0, 0, 7, 7);
-    rect(ctx, P.c('#c8261c'), 2.6, 1, 1.8, 5);
-    rect(ctx, P.c('#c8261c'), 1, 2.6, 5, 1.8);
+    rect(ctx, P.c('#c8281e'), 2.6, 1, 1.8, 5);
+    rect(ctx, P.c('#c8281e'), 1, 2.6, 5, 1.8);
   }],
   treeFire(0.85),
   treeFire(1),
