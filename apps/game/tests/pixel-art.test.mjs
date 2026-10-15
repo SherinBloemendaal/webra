@@ -61,7 +61,7 @@ test('the Lightning Rod is idle, damaged and a 12 frame make animation on its 1x
   }
   // Selectable DecorationBounds 1024, 2048, 0, -512: about 36 pixels above the cell's centre.
   const idle = frames[0];
-  assert.ok(idle.top <= -34 && idle.top >= -40, `the rod's tip at ${idle.top}`);
+  assert.ok(Math.abs(idle.top + 36) <= 1, `the rod's tip at ${idle.top}, not -36`);
   assert.ok(frames[1].top > idle.top + 6, 'the damaged mast is bent over');
   // The rod and its crown are copper, the damaged rod too.
   const pal = Uint8Array.from(atob(PIXEL_PALETTE), (ch) => ch.charCodeAt(0));
@@ -74,6 +74,30 @@ test('the Lightning Rod is idle, damaged and a 12 frame make animation on its 1x
   assert.equal(tops[tops.length - 1], idle.top, 'the last make frame is the whole rod');
   assert.equal(new Set(frames.map((f) => f.data.join())).size, 14, 'every frame differs');
   assert.ok(![...used(art, 2)].some(isRemap), 'make 0: no plinth, no owner\'s colour yet');
+});
+
+test('structures are drawn in Westwood\'s structure view: their pads fill the footprint, cast shadows darken the pad', () => {
+  // The ground is not shortened (Red Alert's cells are 24 x 24 on screen): the derrick's pad spans its two cells both ways.
+  const oil = pixelFrame(PIXEL_ART.OILB, 0);
+  assert.ok(oil.width >= 44 && oil.height >= 44, `derrick ${oil.width} x ${oil.height}`);
+  // The Lightning Rod's finished pad (make 2) covers its cell the same way, square.
+  const pad = pixelFrame(PIXEL_ART.LROD, 4);
+  assert.ok(pad.width >= 22 && pad.width <= 24 && Math.abs(pad.height - pad.width) <= 2, `pad ${pad.width} x ${pad.height}`);
+  // The plinth's cast shadow falls on the pad as a darker shade of the concrete (make 4 against the bare pad of make 2),
+  // not as the shadow index, which could only darken the ground under the sprite.
+  const plinth = pixelFrame(PIXEL_ART.LROD, 6);
+  const pal = Uint8Array.from(atob(PIXEL_PALETTE), (ch) => ch.charCodeAt(0));
+  const at = (f, x, y) => f.data[(y - f.top) * f.width + x - f.left];
+  const lum = (v) => pal[v * 3] + pal[v * 3 + 1] + pal[v * 3 + 2];
+  // The column of pad just east of the plinth (its east face is at x 5; the shadow is some 2.5 pixels wide).
+  const x = 6;
+  let darker = 0;
+  for (let y = -2; y <= 2; y++) {
+    const [before, after] = [at(pad, x, y), at(plinth, x, y)];
+    assert.ok(before !== SHADOW && after !== SHADOW && after !== 0, `(${x}, ${y}) is concrete`);
+    if (lum(after) < lum(before) - 60) darker++;
+  }
+  assert.ok(darker >= 3, `${darker} pad pixels in the plinth's shadow`);
 });
 
 test('the Black Hawk has 32 body facings, 8 ground and 4 air rotor frames and a cameo', () => {
@@ -108,6 +132,9 @@ test('the Black Hawk has 32 body facings, 8 ground and 4 air rotor frames and a 
   // About the Longbow's and the Hind's size: some 32 pixels nose to tail facing west.
   const west = pixelFrame(art, 8);
   assert.ok(west.width >= 28 && west.width <= 38, `${west.width} wide`);
+  // The stub wings with their rocket pods reach well past the cabin facing north (about 23 pixels tip to tip).
+  const north = pixelFrame(art, 0);
+  assert.ok(north.width >= 23 && north.width <= 28, `${north.width} wide facing north`);
   // Mirror images are not reused: east and west differ beyond a flip.
   const east = pixelFrame(art, 24);
   const flipped = new Uint8Array(west.data.length);
