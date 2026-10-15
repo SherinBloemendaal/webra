@@ -4,8 +4,8 @@
 // helper and the game's themed controls; each returns a promise of the
 // choice (null when cancelled).
 
-import { el } from './ui.js';
-import { segmented, toggle } from '../../js/ui/controls.js';
+import { el, selectField } from './ui.js';
+import { segmented, selectPlate, toggle } from '../../js/ui/controls.js';
 import {
   BIOMES as LOBBY_BIOMES,
   BOT_TYPES,
@@ -47,11 +47,8 @@ export function modal({ title, body, buttons, wide = false, id = null, onOpen = 
 }
 
 const field = (label, control, hint) => el('label', { class: 'field' }, [el('span', { class: 'label' }, label), control, hint ? el('span', { class: 'hint' }, hint) : null]);
-const select = (choices, value) => {
-  const s = el('select', {}, choices.map((c) => el('option', { value: String(c.value) }, c.label)));
-  s.value = String(value);
-  return s;
-};
+/** A labelled select plate (ui.js selectField) of `choices` ({ value, label }): `{ field, select }`. */
+const pick = (label, choices, value, o = {}, attrs = {}) => selectField(label, { options: choices, value, ...o }, attrs);
 const number = (value, min, max) => el('input', { type: 'number', class: 'ui-input', min: String(min), max: String(max), value: String(value) });
 
 /**
@@ -77,22 +74,23 @@ export async function newMapDialog({ width, height, materials, generator }) {
   });
   const w = number(width, LIMITS.minSize, LIMITS.maxSize);
   const h = number(height, LIMITS.minSize, LIMITS.maxSize);
-  const base = select(materials.map((t) => ({ value: t, label: TERRAIN_NAMES[t] })), materials[0]);
+  const base = pick('Ground', materials.map((t) => ({ value: t, label: TERRAIN_NAMES[t] })), materials[0]);
   const size = number(96, LIMITS.minSize, LIMITS.maxSize);
-  const players = select([2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: `${n} players` })), 2);
+  const players = pick('Players', [2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: `${n} players` })), 2);
   const seed = number(randomSeed(), 0, SEED_MAX);
   const reroll = el('button', { type: 'button', title: 'Another seed', onclick: () => (seed.value = String(randomSeed())) }, 'Random');
-  const style = select(MAP_STYLES, 'random');
-  const biome = select(LOBBY_BIOMES, 'random');
-  const tech = select(TECH_BUILDINGS, 'standard');
-  const blank = el('div', { class: 'grid2' }, [field('Width', w), field('Height', h), field('Ground', base)]);
+  const style = pick('Layout', MAP_STYLES, 'random');
+  const biome = pick('Biome', LOBBY_BIOMES, 'random');
+  const tech = pick('Tech buildings', TECH_BUILDINGS, 'standard');
+  tech.field.append(el('span', { class: 'hint' }, 'OpenRA\'s generator option "Buildings".'));
+  const blank = el('div', { class: 'grid2' }, [field('Width', w), field('Height', h), base.field]);
   const gen = el('div', { class: 'grid2' }, [
     field('Size', size, 'Cells along each side.'),
-    field('Players', players),
+    players.field,
     field('Seed', el('span', { class: 'row tight' }, [seed, reroll]), 'The same seed and options make the same map.'),
-    field('Layout', style),
-    field('Biome', biome),
-    field('Tech buildings', tech, 'OpenRA\'s generator option "Buildings".'),
+    style.field,
+    biome.field,
+    tech.field,
   ]);
   const sync = () => {
     blank.hidden = kind !== 'blank';
@@ -110,11 +108,11 @@ export async function newMapDialog({ width, height, materials, generator }) {
   if (ok !== 'ok') return null;
   const inRange = (n) => Number.isInteger(n) && n >= LIMITS.minSize && n <= LIMITS.maxSize;
   if (kind === 'blank') {
-    const r = { kind, width: Number(w.value), height: Number(h.value), base: Number(base.value) };
+    const r = { kind, width: Number(w.value), height: Number(h.value), base: Number(base.select.get()) };
     if (!inRange(r.width) || !inRange(r.height)) throw new Error(`Width and height must be ${LIMITS.minSize} to ${LIMITS.maxSize} cells.`);
     return r;
   }
-  const r = { kind, size: Number(size.value), players: Number(players.value), seed: Math.max(0, Math.min(SEED_MAX, Number(seed.value) | 0)), style: style.value, biome: biome.value, tech: tech.value };
+  const r = { kind, size: Number(size.value), players: Number(players.select.get()), seed: Math.max(0, Math.min(SEED_MAX, Number(seed.value) | 0)), style: style.select.get(), biome: biome.select.get(), tech: tech.select.get() };
   if (!inRange(r.size)) throw new Error(`The size must be ${LIMITS.minSize} to ${LIMITS.maxSize} cells.`);
   return r;
 }
@@ -191,25 +189,23 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
   for (let k = 0; k < n; k++) {
     const m = slot(k);
     const prev = last?.players?.[k] ?? { type: m.type === 'open' ? (k === firstOpen ? 'human' : 'ai') : m.type, difficulty: m.difficulty, bot: m.bot, faction: m.faction, team: m.team };
-    const type = select(types, prev.type === 'ai' ? `ai:${prev.difficulty ?? 'normal'}` : prev.type);
-    const bot = select(BOT_TYPES, prev.bot ?? 'normal');
-    const faction = select(factions, prev.faction ?? 'random');
-    const team = select(TEAMS, prev.team ?? 0);
-    const syncBot = () => (bot.disabled = !type.value.startsWith('ai'));
-    type.addEventListener('change', syncBot);
+    // In the table the column heads show what each select is; the plates carry the full name.
+    const cell = (what, choices, value, o = {}) => selectPlate({ label: `Slot ${k + 1} ${what}`, options: choices, value, small: true, block: true, ...o });
+    const bot = cell('bot', BOT_TYPES, prev.bot ?? 'normal');
+    const syncBot = () => bot.setDisabled(!String(type.get()).startsWith('ai'));
+    const type = cell('player', types, prev.type === 'ai' ? `ai:${prev.difficulty ?? 'normal'}` : prev.type, { onChange: syncBot });
+    const faction = cell('faction', factions, prev.faction ?? 'random');
+    const team = cell('team', TEAMS, prev.team ?? 0);
     syncBot();
-    rows.push({ type, bot, faction, team, tr: el('tr', {}, [el('th', {}, `Slot ${k + 1}`), el('td', {}, type), el('td', {}, bot), el('td', {}, faction), el('td', {}, team)]) });
+    rows.push({ type, bot, faction, team, tr: el('tr', {}, [el('th', {}, `Slot ${k + 1}`), el('td', {}, type.root), el('td', {}, bot.root), el('td', {}, faction.root), el('td', {}, team.root)]) });
   }
   // A lobby option picker: the map's value when it locks the option, else the last pick, the map's, OpenRA's.
-  const option = (key, choices) => {
+  const option = (key, label, choices, title) => {
     const locked = setup?.lockedOptions?.includes(key) ?? false;
-    const s = select(choices, (locked ? setup.options[key] : last?.[key]) ?? setup?.options?.[key] ?? 'openra');
-    s.disabled = locked;
-    s.title = locked ? 'Locked by the map' : '';
-    return s;
+    return pick(label, choices, (locked ? setup.options[key] : last?.[key]) ?? setup?.options?.[key] ?? 'openra', { disabled: locked, title: locked ? 'Locked by the map' : undefined }, { title });
   };
-  const movement = option('movement', MOVEMENT_MODELS);
-  const factoryLoss = option('factoryLoss', FACTORY_LOSS_RULES);
+  const movement = option('movement', 'Movement', MOVEMENT_MODELS, 'How units make room for each other: OpenRA (units hold their cells) or WebRA (soft crowd separation).');
+  const factoryLoss = option('factoryLoss', 'Factory loss', FACTORY_LOSS_RULES, 'When the last factory of a kind is lost: OpenRA (its queue is refunded and emptied) or WebRA (unit queues wait for a new factory).');
   const camera = toggle({ label: 'Start where the editor view is', checked: last?.camera ?? true, hint: 'Else the camera starts at your base.' });
   const autostart = toggle({ label: 'Start right away', checked: last?.autostart ?? true, hint: 'Else the lobby opens with these slots set.' });
   const error = el('p', { class: 'error', role: 'alert' });
@@ -219,8 +215,8 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
     wide: true,
     body: [
       el('table', { class: 'slots' }, [el('thead', {}, el('tr', {}, [el('th', {}, ''), el('th', {}, 'Player'), el('th', {}, 'Bot'), el('th', {}, 'Faction'), el('th', {}, 'Team')])), el('tbody', {}, rows.map((r) => r.tr))]),
-      el('label', { class: 'field', title: 'How units make room for each other: OpenRA (units hold their cells) or WebRA (soft crowd separation).' }, ['Movement', movement]),
-      el('label', { class: 'field', title: 'When the last factory of a kind is lost: OpenRA (its queue is refunded and emptied) or WebRA (unit queues wait for a new factory).' }, ['Factory loss', factoryLoss]),
+      movement.field,
+      factoryLoss.field,
       camera.row,
       autostart.row,
       el('p', { class: 'hint' }, 'The game opens in a new tab with this map; the editor keeps your work.'),
@@ -234,8 +230,8 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
       dialog.querySelector('form').addEventListener('submit', (e) => {
         if (e.submitter?.value !== 'ok') return;
         const players = rows.map((r) => {
-          const [type, difficulty] = r.type.value.split(':');
-          return { type, difficulty: difficulty ?? 'normal', bot: r.bot.value, faction: r.faction.value, team: Number(r.team.value) };
+          const [type, difficulty] = String(r.type.get()).split(':');
+          return { type, difficulty: difficulty ?? 'normal', bot: r.bot.get(), faction: r.faction.get(), team: Number(r.team.get()) };
         });
         const humans = players.filter((p) => p.type === 'human').length;
         const active = players.filter((p) => p.type !== 'closed').length;
@@ -244,7 +240,7 @@ export async function testPlayDialog({ spawns, last, setup = null }) {
           error.textContent = humans !== 1 ? 'Exactly one slot must be you.' : 'A game needs at least two players.';
           return;
         }
-        out = { players, movement: movement.value, factoryLoss: factoryLoss.value, camera: camera.get(), autostart: autostart.get() };
+        out = { players, movement: movement.select.get(), factoryLoss: factoryLoss.select.get(), camera: camera.get(), autostart: autostart.get() };
       }),
   });
   return result === 'ok' ? out : null;

@@ -12,7 +12,7 @@ import { defaultRegistry } from '../js/registry.js';
 import { settings } from '../js/settings.js';
 import { HotkeyRegistry, comboFromEvent, formatCombo, isMac, isReservedCombo } from '../js/hotkeys.js';
 import { attachTooltip } from '../js/ui/tooltip.js';
-import { segmented, slider, toggle } from '../js/ui/controls.js';
+import { badge, segmented, selectPlate, slider, toggle } from '../js/ui/controls.js';
 import { TEST_MAP_KEY, TEST_SETUP_KEY } from '../js/maploader.js';
 import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index.js';
 import { renderReport } from '../js/oramap/report.js';
@@ -21,7 +21,7 @@ import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
 import { InstalledTiles, TileWorker } from './js/tiles.js';
 import { idleTask } from './js/idle.js';
 import { MapDoc } from './js/doc.js';
-import { EditorView, isTyping } from './js/view.js';
+import { EditorView, controlOwnsKeys, isTyping } from './js/view.js';
 import { Controller, teamOf } from './js/controller.js';
 import { COMMANDS, HELP_TEXT, MATERIAL_KEYS, PAINT_LAYERS, TOOLS, actionName } from './js/commands.js';
 import { Minimap, previewCanvas } from './js/preview.js';
@@ -31,7 +31,7 @@ import { BRUSH_SIZES, copyRegion, clearRegion, regionFromData, regionToData, tra
 import { SYMMETRY_MODES, modeFits } from './js/symmetry.js';
 import { cropMap, resizeMap, shiftMap, turnMap } from './js/transform.js';
 import { findFixes } from './js/fixes.js';
-import { LAYERS, fairnessView, historyList, keysList, layersList, problemsView, stampsList } from './js/panels.js';
+import { LAYERS, checkVerdict, fairnessView, historyList, keysList, layersList, problemsView, stampsList } from './js/panels.js';
 import { mapSizeDialog, modal, newMapDialog, testPlayDialog, BIOME_CHOICES } from './js/dialogs.js';
 import { editorIcon } from './js/icons.js';
 import { actorStateView, editSetup, optionsView, parseTags, slotsView } from './js/setup.js';
@@ -43,7 +43,7 @@ import { LensArt } from '../js/maplens/source.js';
 import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
-import { download, el, store } from './js/ui.js';
+import { download, el, selectField, store } from './js/ui.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
 /**
@@ -179,9 +179,11 @@ async function boot() {
 
 async function start() {
   loadPrefs();
-  const { map: raw, note } = await initialMap();
+  const { map: raw, note, edited = false } = await initialMap();
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
+  // A restored draft with changes not saved to a file stays marked as edited.
+  fileVersion = edited ? -1 : doc.version;
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
   view = new EditorView($('#view'), renderer, {
     down: (c, e) => ctl.down(c, e),
@@ -261,9 +263,9 @@ async function initialMap() {
   const draft = store.get(DRAFT_KEY);
   if (draft) {
     try {
-      const { map, savedAt } = JSON.parse(draft);
+      const { map, savedAt, edited = true } = JSON.parse(draft);
       new MapDoc(map); // throws on undecodable layers
-      return { map, note: `Restored your draft from ${new Date(savedAt).toLocaleString()}.` };
+      return { map, edited: !!edited, note: `Restored your draft from ${new Date(savedAt).toLocaleString()}.` };
     } catch {
       store.remove(DRAFT_KEY);
     }
@@ -441,13 +443,14 @@ function updatePanels() {
   updateUndoButtons();
   updateModded();
   if (activeTab === 'history') renderHistory();
-  document.title = `${doc.meta.name || 'Untitled'} - WebRA Map Editor`;
+  updateTitle();
+  updateStatus();
 }
 
 function autosave() {
   autosaveTask.cancel();
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
-  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"map":${doc.snapshot().json}}`);
+  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"edited":${doc.version !== fileVersion},"map":${doc.snapshot().json}}`);
   $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
 }
 
@@ -499,6 +502,32 @@ function updateUndoButtons() {
   r.disabled = !doc.canRedo;
 }
 
+/** The checks' verdict as the top bar's badge: a lamp and a word (errors, warnings or valid). */
+let shownVerdict = '';
+function showVerdict(v) {
+  const key = `${v.kind}:${v.text}`;
+  if (key === shownVerdict) return;
+  shownVerdict = key;
+  const slot = $('#check-badge');
+  slot.replaceChildren(badge(v.kind, v.text, { led: true, title: `${v.title} Details in the Check tab.` }));
+}
+
+/** The map's name and whether it changed since it was opened or last saved to a file or published. */
+let fileVersion = 0;
+function markSaved() {
+  fileVersion = doc.version;
+  updateTitle();
+}
+function updateTitle() {
+  const name = doc.meta.name || 'Untitled';
+  const title = $('#map-title');
+  title.querySelector('.map-name').textContent = name;
+  const edited = doc.version !== fileVersion;
+  title.querySelector('.map-edited').hidden = !edited;
+  title.title = edited ? `${name}: changed since it was opened or saved (the draft in this browser keeps the changes)` : name;
+  document.title = `${edited ? '* ' : ''}${name} - WebRA Map Editor`;
+}
+
 function updateModded() {
   const modded = isModded({ rules: doc.rules });
   $('#modded-badge').hidden = !modded;
@@ -530,15 +559,15 @@ function runValidation() {
   checked = { version: doc.version, engine, js, fixes, listed: false, thumbnail: false };
   const head = $('#validation-head');
   const bytes = byteLength(text);
-  const problems = engine.errors.length + fixes.length;
+  // One verdict for the Check tab's head, its count and the top bar's badge (js/panels.js checkVerdict).
+  const verdict = checkVerdict({ engine, issues: js.issues, fixes });
   head.className = `verdict ${engine.ok ? 'ok' : 'bad'}`;
-  head.textContent = engine.ok
-    ? `Valid map${js.warnings.length ? `, ${js.warnings.length} warning${js.warnings.length === 1 ? '' : 's'}` : ''}`
-    : `${engine.errors.length} error${engine.errors.length === 1 ? '' : 's'}: fix before test play or publishing`;
+  head.textContent = verdict.title;
   const tab = $('[data-tab="check"]');
   tab.classList.toggle('bad', !engine.ok);
-  $('#check-count').hidden = problems === 0;
-  $('#check-count').textContent = String(problems);
+  $('#check-count').hidden = verdict.count === 0;
+  $('#check-count').textContent = String(verdict.count);
+  showVerdict(verdict);
   // The problems with their buttons and the thumbnail only where they show (big maps have hundreds of problems).
   if (activeTab === 'check') renderProblems();
   if (activeTab === 'map') renderThumbnail();
@@ -672,6 +701,7 @@ function buildTopbar() {
     el('button', { type: 'button', class: 'cmd', onclick: () => sizeDialog(), title: 'Resize, crop, shift, turn or mirror the map' }, 'Size'),
   ]);
   $('#commands').append(file, edit, map);
+  $('#modded-badge').append(badge('modded', 'Modded', { title: 'This map has rules overrides (Rules tab): it is published as a modded map.' }));
   $('#actions').append(
     commandButton('test', { icon: 'play', label: 'Test play', primary: true }),
     commandButton('publish', { icon: 'upload', label: 'Publish' }),
@@ -710,7 +740,15 @@ function buildTools() {
   const gems = slider({ id: 'gem-density', label: 'Gem density', min: 1, max: LIMITS.maxGems, value: state.gems, format: (v) => `${v} / ${LIMITS.maxGems}`, onInput: (v) => setGems(v) });
   const fillShapes = toggle({ id: 'shape-fill', label: 'Filled', hint: 'Rectangles and ellipses filled, or only their border.', checked: state.shapeFill, onChange: (on) => setPref('shapeFill', on) });
   const shore = toggle({ id: 'auto-shore', label: 'Beaches along water', hint: 'Painting water turns the land next to it into beach.', checked: state.autoShore, onChange: (on) => setPref('autoShore', on) });
-  const symmetry = el('select', { id: 'symmetry', class: 'ui-input', 'aria-label': 'Symmetry', onchange: () => setSymmetry(symmetry.value) }, SYMMETRY_MODES.map((m) => el('option', { value: m.id }, m.label)));
+  symmetrySelect = selectPlate({
+    id: 'symmetry',
+    label: 'Symmetry',
+    labelledBy: 'symmetry-title',
+    options: SYMMETRY_MODES.map((m) => ({ value: m.id, label: m.label })),
+    value: state.symmetry,
+    block: true,
+    onChange: (v) => setSymmetry(v),
+  });
   const pasteLayer = (key, label) => toggle({ label, checked: state.pasteLayers[key], small: true, onChange: (on) => (state.pasteLayers[key] = on) }).row;
   root.append(
     el('div', { class: 'tool-list', role: 'toolbar', 'aria-label': 'Tools' }, toolButtons),
@@ -746,12 +784,20 @@ function buildTools() {
         pasteLayer('resources', 'Ore and gems'),
         pasteLayer('actors', 'Actors'),
       ]),
-      el('section', { class: 'opt always' }, [el('h2', {}, 'Symmetry'), symmetry, el('p', { id: 'symmetry-note', class: 'hint' })]),
+      el('section', { class: 'opt always' }, [el('h2', { id: 'symmetry-title' }, 'Symmetry'), symmetrySelect.root, el('p', { id: 'symmetry-note', class: 'hint' })]),
       el('p', { id: 'tool-hint', class: 'hint' }),
     ]),
   );
   syncTools();
 }
+
+/** The select plates of the tool and panel options (js/ui/controls.js selectPlate), once built. */
+let symmetrySelect = null;
+let biomeSelect = null;
+let ownerSelect = null;
+let fogSelect = null;
+/** The spawn count the owner and fog lists were built for (rebuilt only when it changes). */
+let ownerListFor = -1;
 
 function syncTools() {
   document.querySelectorAll('[data-tool]').forEach((b) => {
@@ -768,8 +814,11 @@ function syncTools() {
   });
   $('#paint-layer') && document.querySelectorAll('#paint-layer input').forEach((i) => (i.checked = i.value === state.paint));
   document.querySelectorAll('#brush-size input').forEach((i) => (i.checked = Number(i.value) === state.size));
-  $('#symmetry').value = state.symmetry;
-  for (const o of $('#symmetry').options) o.disabled = !modeFits(o.value, doc.width, doc.height);
+  symmetrySelect.set(state.symmetry);
+  for (const m of SYMMETRY_MODES) {
+    const fits = modeFits(m.id, doc.width, doc.height);
+    symmetrySelect.setOptionDisabled(m.id, !fits, fits ? '' : 'Needs a square map');
+  }
   $('#symmetry-note').textContent = modeFits(state.symmetry, doc.width, doc.height) ? '' : 'This map is not square: the quarter turns and diagonals are left out.';
   $('#facing-value').textContent = `${state.facing} / 1024 (, and . turn it)`;
   const info = state.actorType ? catalog[state.actorType] : null;
@@ -958,23 +1007,7 @@ function buildMapPane() {
     field('author', 'Author', LIMITS.authorMax),
     field('description', 'Description and briefing', LIMITS.descriptionMax, true),
     tagsField(),
-    el('label', { class: 'field stacked', title: 'Terrain look and weather of the map. Not a rules change: the map stays unmodded.' }, [
-      el('span', { class: 'label' }, 'Biome'),
-      el(
-        'select',
-        {
-          id: 'meta-biome',
-          class: 'ui-input',
-          onchange: (e) => {
-            doc.begin('Edit biome', 'meta.biome');
-            doc.touchMeta();
-            doc.meta.biome = e.target.value;
-            doc.commit();
-          },
-        },
-        BIOME_CHOICES.map((b) => el('option', { value: b.value }, b.label)),
-      ),
-    ]),
+    biomeField(),
     graphicsControl(),
     el('div', { class: 'row wrap' }, [el('button', { type: 'button', onclick: () => sizeDialog() }, 'Size and turns...'), el('button', { type: 'button', onclick: () => run('new') }, 'New or generate...')]),
     el('p', { id: 'map-stats', class: 'hint' }),
@@ -983,6 +1016,27 @@ function buildMapPane() {
     el('p', { class: 'hint' }, 'Drawn from the map itself (terrain, ore, actors, spawns in their slot colours), never from installed art: what the community map list shows. Point at it for a closer look in the game\'s art.'),
     el('p', { class: 'hint' }, 'Player slots and the game options the lobby starts with are in the Setup tab. Custom maps carry no scripts.'),
   );
+}
+
+/** The biome: terrain look and weather (not a rules change). */
+function biomeField() {
+  const { field, select } = selectField(
+    'Biome',
+    {
+      id: 'meta-biome',
+      options: BIOME_CHOICES,
+      value: doc.meta.biome ?? 'temperate',
+      onChange: (v) => {
+        doc.begin('Edit biome', 'meta.biome');
+        doc.touchMeta();
+        doc.meta.biome = v;
+        doc.commit();
+      },
+    },
+    { class: 'stacked', title: 'Terrain look and weather of the map. Not a rules change: the map stays unmodded.' },
+  );
+  biomeSelect = select;
+  return field;
 }
 
 /** Tags: comma separated, kept lower case (packages/protocol mapsetup.js). */
@@ -1065,10 +1119,9 @@ function syncMetaFields() {
   }
   const tags = $('#meta-tags');
   if (tags && document.activeElement !== tags) tags.value = (doc.meta.tags ?? []).join(', ');
-  const biome = $('#meta-biome');
-  if (biome && biome.value !== (doc.meta.biome ?? 'temperate')) biome.value = doc.meta.biome ?? 'temperate';
+  if (biomeSelect && biomeSelect.get() !== (doc.meta.biome ?? 'temperate')) biomeSelect.set(doc.meta.biome ?? 'temperate');
   filterPalette();
-  if ($('#symmetry')) syncTools();
+  if (symmetrySelect) syncTools();
 }
 
 // ---- Actors pane ------------------------------------------------------------------------------
@@ -1079,15 +1132,20 @@ function ownerName(owner) {
 
 function buildActorsPane() {
   const pane = $('[data-pane="actors"]');
-  const owner = el('select', {
+  ownerSelect = selectPlate({
     id: 'owner',
-    class: 'ui-input',
-    onchange: () => {
-      state.owner = Number(owner.value);
+    label: 'Place for',
+    labelledBy: 'owner-title',
+    options: ownerChoices(),
+    value: state.owner,
+    block: true,
+    onChange: (v) => {
+      state.owner = Number(v);
       renderPaletteIcons();
       syncTools();
     },
   });
+  ownerListFor = doc.spawns.length;
   const search = el('input', { type: 'search', id: 'palette-search', class: 'ui-input', placeholder: 'Find an actor', 'aria-label': 'Find an actor', oninput: () => filterPalette() });
   const groups = PALETTE_GROUPS.map((g) => {
     const actors = Object.values(catalog).filter(g.test);
@@ -1120,8 +1178,8 @@ function buildActorsPane() {
   });
   pane.append(
     el('div', { id: 'selection-box' }),
-    el('h2', {}, 'Place for'),
-    owner,
+    el('h2', { id: 'owner-title' }, 'Place for'),
+    ownerSelect.root,
     el('p', { class: 'hint' }, 'Pre-placed actors belong to a spawn (the player who starts there) or are neutral, like the civilians and trees of OpenRA maps.'),
     search,
     ...groups,
@@ -1149,18 +1207,21 @@ function filterPalette() {
   });
 }
 
+/** The spawns as select options, with Neutral first for owners. */
+const spawnChoices = () => doc.spawns.map((_, k) => ({ value: k, label: `Spawn ${k + 1}` }));
+const ownerChoices = () => [{ value: -1, label: 'Neutral' }, ...spawnChoices()];
+
+/** The owner and fog preview lists: rebuilt when the spawn count changes (object edits come often, spawn changes rarely). */
 function renderOwnerOptions() {
-  const fog = $('#fog-spawn');
-  if (fog) {
-    if (state.fogSpawn >= doc.spawns.length) state.fogSpawn = 0;
-    fog.replaceChildren(...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`)));
-    fog.value = String(state.fogSpawn);
-  }
-  const owner = $('#owner');
-  if (!owner) return;
+  if (state.fogSpawn >= doc.spawns.length) state.fogSpawn = 0;
   if (state.owner >= doc.spawns.length) state.owner = -1;
-  owner.replaceChildren(el('option', { value: '-1' }, 'Neutral'), ...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`)));
-  owner.value = String(state.owner);
+  if (ownerListFor !== doc.spawns.length) {
+    ownerListFor = doc.spawns.length;
+    fogSelect?.setOptions(spawnChoices(), state.fogSpawn);
+    ownerSelect?.setOptions(ownerChoices(), state.owner);
+  }
+  fogSelect?.set(state.fogSpawn);
+  ownerSelect?.set(state.owner);
 }
 
 /** Palette pictures in the owner's colour, from the art in use (js/art.js paintPalette). */
@@ -1198,12 +1259,14 @@ function renderSelection() {
     return;
   }
   const owners = new Set(sel.map((a) => a.owner));
-  const owner = el(
-    'select',
-    { class: 'ui-input', onchange: () => ctl.setOwnerOfSelection(Number(owner.value)) },
-    [el('option', { value: '-1' }, 'Neutral'), ...doc.spawns.map((_, k) => el('option', { value: String(k) }, `Spawn ${k + 1}`))],
-  );
-  owner.value = owners.size === 1 ? String([...owners][0]) : '';
+  // Actors of several owners: no choice shown until one is made.
+  const owner = selectField('Owner', {
+    id: 'selection-owner',
+    options: ownerChoices(),
+    value: owners.size === 1 ? [...owners][0] : null,
+    placeholder: 'Several',
+    onChange: (v) => ctl.setOwnerOfSelection(Number(v)),
+  });
   const units = sel.filter((a) => catalog[a.type]?.kind !== 'building');
   const facings = new Set(units.map((a) => a.facing));
   const facing = slider({
@@ -1219,7 +1282,7 @@ function renderSelection() {
   box.replaceChildren(
     el('h2', {}, 'Selection'),
     el('p', {}, names),
-    el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Owner'), owner]),
+    owner.field,
     units.length ? facing.row : null,
     actorStateView(sel, catalog, ctl),
     el('div', { class: 'row' }, [el('button', { type: 'button', class: 'danger', onclick: () => ctl.deleteSelection() }, `Delete (${keyOf('delete')})`)]),
@@ -1230,11 +1293,12 @@ function renderSelection() {
 
 function buildLayersPane() {
   const pane = $('[data-pane="layers"]');
-  const fogSpawn = el('select', { id: 'fog-spawn', class: 'ui-input', 'aria-label': 'Fog preview of spawn', onchange: () => (state.fogSpawn = Number(fogSpawn.value)) });
+  const fog = selectField('Fog preview of', { id: 'fog-spawn', options: spawnChoices(), value: state.fogSpawn, onChange: (v) => (state.fogSpawn = Number(v)) }, { class: 'stacked' });
+  fogSelect = fog.select;
   pane.append(
     el('h2', {}, 'Show on the map'),
     layersList(state.layers, (key, on) => setLayer(key, on)),
-    el('label', { class: 'field stacked' }, [el('span', { class: 'label' }, 'Fog preview of'), fogSpawn]),
+    fog.field,
     el('p', { class: 'hint' }, 'Passability, buildable ground, zones, rush paths and reach are measured by the game engine on the map as a game starts it (trees, structures and walls block).'),
   );
 }
@@ -1380,7 +1444,10 @@ async function publish() {
   if (engine.modded && !confirm(`${MODDED_WARNING}\n\nPublish this MODDED map anyway?`)) return;
   out.replaceChildren(el('p', { class: 'hint' }, 'Publishing...'));
   try {
+    const version = doc.version;
     const { id, hash, localHash } = await publishMap(map);
+    // What was published is saved, unless the map changed while it went up.
+    if (doc.version === version) markSaved();
     const link = shareLink(id);
     const linkInput = el('input', { type: 'text', class: 'ui-input', readonly: 'readonly', value: link, onfocus: () => linkInput.select() });
     out.replaceChildren(
@@ -1427,7 +1494,7 @@ async function browse() {
 async function openPublished(m) {
   try {
     const { map } = await fetchMap(m.id, m.hash);
-    loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`);
+    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`)) markSaved();
   } catch (err) {
     toast(err.message, true);
   }
@@ -1491,7 +1558,7 @@ function openFile(file) {
       toast(err.message, true);
       return;
     }
-    loadMap(map, `Open ${file.name}`, `Opened ${file.name}.`);
+    if (loadMap(map, `Open ${file.name}`, `Opened ${file.name}.`)) markSaved();
   });
 }
 
@@ -1555,6 +1622,7 @@ function saveFile() {
   download(new Blob([mapFileText(map)], { type: 'application/json' }), mapFileName(map.name));
   // Saved: the upgrade (or repair) is kept now.
   opened = { notice: null, problems: opened.problems.filter((p) => !p.fixed) };
+  markSaved();
   runValidation();
   toast('Map downloaded.');
 }
@@ -1607,7 +1675,7 @@ async function newMap() {
   } else {
     map = newBlankMap(choice.width, choice.height, choice.base);
   }
-  loadMap(map, 'New map');
+  if (loadMap(map, 'New map')) markSaved();
 }
 
 async function sizeDialog() {
@@ -1672,7 +1740,8 @@ function helpOverlay() {
       el('p', { class: 'hint' }, 'Keys are kept with the game\'s (game menu, Settings, Controls) and follow your account.'),
     );
   const capture = (e) => {
-    if (!listening) return;
+    // Keys for a select's list, a stepper or tabs reach them untouched (js/ui/controls.js).
+    if (!listening || controlOwnsKeys(e)) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') {
@@ -1826,18 +1895,32 @@ function bindKeys() {
 
 // ---- Status and toasts ---------------------------------------------------------------------------
 
-function updateStatus(cell) {
-  const s = $('#status');
+/** The status bar's parts (spans made once, their text set on every hover). */
+let statusSpans = null;
+/** The cell under the pointer at the last hover (the history count changes without one). */
+let statusCell = null;
+function updateStatus(cell = statusCell) {
+  statusCell = cell;
   const sym = SYMMETRY_MODES.find((m) => m.id === state.symmetry).label;
-  if (!cell || !doc.inside(cell.x, cell.y)) {
-    s.textContent = `${doc.width} x ${doc.height}  |  symmetry: ${sym}`;
-    return;
+  let parts;
+  if (!cell || !doc.inside(cell.x, cell.y)) parts = [`${doc.width} x ${doc.height}`, '', `symmetry: ${sym}`];
+  else {
+    const i = doc.idx(cell.x, cell.y);
+    const ore = doc.ore[i] ? `, ore ${doc.ore[i]}` : doc.gems[i] ? `, gems ${doc.gems[i]}` : '';
+    const zone = ctl.analysis?.[i];
+    const z = zone !== undefined && zone >> 8 !== 255 && (state.layers.zones || activeTab === 'check') ? `, zone of spawn ${(zone >> 8) + 1}` : '';
+    parts = [`cell ${cell.x}, ${cell.y}  ${TERRAIN_NAMES[doc.terrain[i]]}${ore}${z}`, `zoom ${view.camera.zoom.toFixed(2)}`, `symmetry: ${sym}`];
   }
-  const i = doc.idx(cell.x, cell.y);
-  const ore = doc.ore[i] ? `, ore ${doc.ore[i]}` : doc.gems[i] ? `, gems ${doc.gems[i]}` : '';
-  const zone = ctl.analysis?.[i];
-  const z = zone !== undefined && zone >> 8 !== 255 && (state.layers.zones || activeTab === 'check') ? `, zone of spawn ${(zone >> 8) + 1}` : '';
-  s.textContent = `${cell.x}, ${cell.y}  ${TERRAIN_NAMES[doc.terrain[i]]}${ore}${z}  |  zoom ${view.camera.zoom.toFixed(2)}  |  symmetry: ${sym}`;
+  const steps = doc.undoStack.length;
+  parts.push(`history ${steps} step${steps === 1 ? '' : 's'}`);
+  if (!statusSpans) {
+    statusSpans = parts.map(() => el('span'));
+    $('#status').replaceChildren(...statusSpans);
+  }
+  for (const [k, span] of statusSpans.entries()) {
+    span.textContent = parts[k];
+    span.hidden = !parts[k];
+  }
 }
 
 let toastTimer = 0;

@@ -6,7 +6,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { installDom, uninstallDom, click, check, textOf, FakeNode } from './dom-fixtures.mjs';
-import { LAYERS, FAIRNESS_COLUMNS, fairnessView, historyList, keysList, layersList, problemsView, spread, stampsList } from '../editor/js/panels.js';
+import { LAYERS, FAIRNESS_COLUMNS, checkVerdict, problemEntries, fairnessView, historyList, keysList, layersList, problemsView, spread, stampsList } from '../editor/js/panels.js';
 import { EDITOR_ICONS, editorIcon } from '../editor/js/icons.js';
 import { COMMANDS, TOOLS, actionName } from '../editor/js/commands.js';
 import { HotkeyRegistry, normalizeCombo } from '../js/hotkeys.js';
@@ -148,4 +148,50 @@ test('shortcuts list: groups, keys shown, rebinding and defaults through the gam
   assert.equal(reg.resolve('K'), 'editor.tool.brush');
   reg.run('editor.tool.brush');
   assert.equal(ran, 1);
+});
+
+test('keys: a select list, a stepper and tabs keep their keys from the editor shortcuts and capture handlers', async () => {
+  const { controlOwnsKeys, isTyping } = await import('../editor/js/view.js');
+  const { selectPlate, stepper, tabs } = await import('../js/ui/controls.js');
+  const plate = selectPlate({ label: 'Symmetry', options: [{ value: 'none', label: 'None' }, { value: 'x', label: 'Mirror' }], value: 'none' });
+  const step = stepper({ label: 'Size', values: [1, 2, 3], value: 2 });
+  const tablist = tabs({ label: 'Panels', tabs: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] });
+  const plain = document.createElement('button');
+  document.body.append(plate.root, step.root, tablist.root, plain);
+  const key = (target) => ({ target, key: 'Escape' });
+  assert.equal(controlOwnsKeys(key(plate.listbox)), true, 'the open list');
+  assert.equal(controlOwnsKeys(key(plate.listbox.querySelector('[role="option"]'))), true, 'an option in it');
+  assert.equal(controlOwnsKeys(key(step.field)), true, 'the stepper');
+  assert.equal(controlOwnsKeys(key(tablist.buttons[0] ?? tablist.root.querySelector('[role="tab"]'))), true, 'a tab');
+  assert.equal(controlOwnsKeys(key(plain)), false, 'a plain button does not');
+  // The plate's button takes letters (typeahead) and arrows like a native select: shortcuts wait.
+  const saved = ['HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement'].map((n) => [n, globalThis[n]]);
+  for (const [n] of saved) globalThis[n] ??= class {};
+  try {
+    assert.equal(isTyping(key(plate.button)), true);
+    assert.equal(isTyping(key(plate.listbox)), true);
+    assert.equal(isTyping(key(step.field)), true, 'arrows step the stepper, not the map');
+    assert.equal(isTyping(key(tablist.buttons[0] ?? tablist.root.querySelector('[role="tab"]'))), false, 'tool keys work after a tab is clicked');
+    assert.equal(isTyping(key(plain)), false);
+  } finally {
+    for (const [n, v] of saved) if (v === undefined) delete globalThis[n];
+  }
+});
+
+test('check verdict: errors first, then warnings and fixable problems, else valid; counted as the Check tab lists them', () => {
+  const none = { engine: { ok: true, errors: [] }, issues: [], fixes: [] };
+  assert.deepEqual(checkVerdict(none), { kind: 'ok', count: 0, text: 'Valid', title: 'Valid map: ready to test play and publish.' });
+  const warn = { engine: { ok: true, errors: [] }, issues: [{ level: 'warning', message: 'Spawns 1 and 2 are very close.', x: 1, y: 1 }, { level: 'warning', message: 'Little ore.' }], fixes: [] };
+  assert.deepEqual([checkVerdict(warn).kind, checkVerdict(warn).count, checkVerdict(warn).text], ['warn', 2, '2 warnings']);
+  // A fix covers the engine error with the same message: listed (and counted) once.
+  const msg = 'Spawn 1 needs 3x4 clear ground for the construction yard.';
+  const bad = { engine: { ok: false, errors: [msg, 'a map needs 2 to 8 spawn points'] }, issues: [{ level: 'warning', message: 'Little ore.' }], fixes: [{ level: 'error', message: msg, x: 1, y: 2, fixes: [{ label: 'Move' }] }] };
+  assert.equal(problemEntries(bad).length, 3);
+  assert.deepEqual([checkVerdict(bad).kind, checkVerdict(bad).text], ['bad', '2 errors']);
+  assert.match(checkVerdict(bad).title, /fix before test play/);
+  // An editor error while the engine accepts the map is a warning.
+  const soft = { engine: { ok: true, errors: [] }, issues: [{ level: 'error', message: 'Actor off the map.', x: 0, y: 0 }], fixes: [] };
+  assert.deepEqual([checkVerdict(soft).kind, checkVerdict(soft).text], ['warn', '1 warning']);
+  // The engine refusing without a message still counts one error.
+  assert.equal(checkVerdict({ engine: { ok: false, errors: [] }, issues: [], fixes: [] }).text, '1 error');
 });

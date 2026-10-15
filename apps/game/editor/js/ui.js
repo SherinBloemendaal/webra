@@ -1,5 +1,7 @@
 // Tiny DOM helpers for the editor panels.
 
+import { selectPlate } from '../../js/ui/controls.js';
+
 /**
  * Create an element. `attrs`: `class`, `on<event>` handlers, boolean properties
  * (hidden, disabled, checked, selected) and plain attributes; undefined, null and
@@ -20,6 +22,23 @@ export function el(tag, attrs = {}, children = []) {
   append(node, children);
   return node;
 }
+
+/**
+ * A select with a visible label above it: the game's select plate
+ * (js/ui/controls.js selectPlate) in a `div.field` (not a <label>: a click on
+ * the words would open the list). `o` goes to selectPlate as is (options,
+ * value, onChange, small, ...); the plate is named by the label.
+ * `attrs`: attributes of the field (class, hidden, title).
+ * @returns {{ field: HTMLElement, select: ReturnType<typeof selectPlate> }}
+ */
+export function selectField(label, o, attrs = {}) {
+  const id = o.id ?? `ed-select-${++selectFields}`;
+  const name = el('span', { class: 'label', id: `${id}-name` }, label);
+  const select = selectPlate({ block: true, label, ...o, id, labelledBy: name.id });
+  const field = el('div', { ...attrs, class: `field${attrs.class ? ` ${attrs.class}` : ''}` }, [name, select.root]);
+  return { field, select };
+}
+let selectFields = 0;
 
 function append(node, children) {
   if (children === null || children === undefined || children === false) return;

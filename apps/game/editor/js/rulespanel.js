@@ -5,6 +5,7 @@ import { base_rules_json } from '../../pkg/webra_sim.js';
 import { rulesBaseFrom } from './rulesbase.js';
 import { SELL_VALUE, countOverrides, getPath, pruneOverrides, validateOverrides } from './overrides.js';
 import { el } from './ui.js';
+import { nextControlId, selectPlate } from '../../js/ui/controls.js';
 
 export const MODDED_WARNING = 'This map changes game rules (costs, damage, speed...). It can be unfair or act as a cheat.';
 
@@ -224,12 +225,18 @@ export class RulesPanel {
   fieldRow(f, baseValue, value, onSet) {
     const changed = value !== undefined && value !== baseValue;
     let input;
+    // A select plate is a button: its row is a div named by the label (a <label> around it would open the list).
+    const nameId = f.kind === 'armor' ? nextControlId('rules-armor') : null;
     if (f.kind === 'armor') {
-      input = el(
-        'select',
-        { onchange: () => onSet(Number(input.value)) },
-        this.base.armorTypes.map((name, i) => el('option', { value: String(i), selected: (value ?? baseValue) === i }, name)),
-      );
+      input = selectPlate({
+        label: f.label,
+        labelledBy: nameId,
+        options: this.base.armorTypes.map((name, i) => ({ value: i, label: name })),
+        value: value ?? baseValue,
+        block: true,
+        small: true,
+        onChange: (v) => onSet(Number(v)),
+      }).root;
     } else {
       input = el('input', {
         type: 'number',
@@ -253,8 +260,8 @@ export class RulesPanel {
       });
     }
     const shown = value ?? baseValue;
-    return el('label', { class: `field${changed ? ' changed' : ''}` }, [
-      el('span', { class: 'label' }, f.label),
+    return el(nameId ? 'div' : 'label', { class: `field${changed ? ' changed' : ''}` }, [
+      el('span', { class: 'label', id: nameId }, f.label),
       input,
       el('span', { class: 'default' }, [
         el('span', {}, [

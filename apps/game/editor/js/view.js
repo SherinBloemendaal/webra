@@ -339,7 +339,20 @@ const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit
 export function isTyping(e) {
   const t = e.target;
   if (t instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(t.type);
-  return t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || !!t?.isContentEditable;
+  if (t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t?.isContentEditable) return true;
+  // A select plate (js/ui/controls.js): its button and its open list take letters and arrows, like a native select.
+  // So does a stepper (arrows step it). Tabs do not: the shortcuts work right after a tab is clicked.
+  return !!t?.closest?.('.ui-select-plate, .ui-sp-panel, [role="listbox"], [role="spinbutton"]');
+}
+
+/**
+ * True when the key goes to one of the game's composite controls (a select's
+ * list, a stepper, tabs): capture-phase handlers (dialogs, key rebinding)
+ * must let such an event through untouched, so the control gets its arrows
+ * and Esc closes the list rather than the dialog.
+ */
+export function controlOwnsKeys(e) {
+  return !!e.target?.closest?.('[role="listbox"], [role="spinbutton"], [role="tablist"], .ui-sp-panel');
 }
 
 export { CELL, NEUTRAL_TEAM };

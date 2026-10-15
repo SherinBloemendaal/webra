@@ -6,8 +6,8 @@
 // change is one undoable document step. DOM through the editor's `el` and
 // the game's themed controls only (the CSP allows no markup strings).
 
-import { el } from './ui.js';
-import { checkbox, slider } from '../../js/ui/controls.js';
+import { el, selectField } from './ui.js';
+import { checkbox, selectPlate, slider } from '../../js/ui/controls.js';
 import {
   BOT_TYPES,
   COLOR_NAMES,
@@ -46,14 +46,8 @@ const SLOT_TYPES = [
 ];
 const LOCK_LABELS = { type: 'Player', faction: 'Faction', team: 'Team', color: 'Colour' };
 
-const select = (choices, value, attrs = {}) => {
-  const s = el('select', { class: 'ui-input', ...attrs }, choices.map((c) => el('option', { value: String(c.value) }, c.label)));
-  s.value = String(value);
-  return s;
-};
-
-/** Parse a select's value back to its choice's type (numbers, booleans). */
-const valueOf = (choices, text) => choices.find((c) => String(c.value) === text)?.value;
+/** A labelled select plate (ui.js selectField): `{ field, select }`; `onChange(value)` gets the choice's own value (numbers, booleans). */
+const pick = (label, choices, value, o = {}, attrs = {}) => selectField(label, { options: choices, value, small: true, ...o }, attrs);
 
 /**
  * Change the map's game setup as one undoable step: `fn(meta)` changes
@@ -94,12 +88,14 @@ export function slotsView(doc, teamCss) {
         f(next);
         setSlot(meta, k, next);
       });
-    const type = select(SLOT_TYPES, s.type, { 'aria-label': `Slot ${k + 1} player`, onchange: () => change('player', (x) => (x.type = type.value)) });
-    const difficulty = select(DIFFICULTIES, s.difficulty, { 'aria-label': `Slot ${k + 1} AI difficulty`, onchange: () => change('AI difficulty', (x) => (x.difficulty = difficulty.value)) });
-    const bot = select(BOT_TYPES, s.bot, { 'aria-label': `Slot ${k + 1} bot`, onchange: () => change('bot', (x) => (x.bot = bot.value)) });
-    const faction = select(factions, s.faction, { 'aria-label': `Slot ${k + 1} faction`, onchange: () => change('faction', (x) => (x.faction = faction.value)) });
-    const team = select(TEAMS, s.team, { 'aria-label': `Slot ${k + 1} team`, onchange: () => change('team', (x) => (x.team = Number(team.value))) });
-    const color = select(colors, s.color, { 'aria-label': `Slot ${k + 1} colour`, onchange: () => change('colour', (x) => (x.color = Number(color.value))) });
+    // Each plate is named by its visible label and the slot ("Slot 2 faction" on the phone sheet).
+    const slotPick = (label, what, choices, value, onChange, attrs) => pick(label, choices, value, { id: `slot-${k}-${what}`, onChange, label: `Slot ${k + 1} ${label.toLowerCase()}` }, attrs);
+    const type = slotPick('Player', 'player', SLOT_TYPES, s.type, (v) => change('player', (x) => (x.type = v)));
+    const difficulty = slotPick('AI', 'difficulty', DIFFICULTIES, s.difficulty, (v) => change('AI difficulty', (x) => (x.difficulty = v)), { hidden: s.type !== 'ai' });
+    const bot = slotPick('Bot', 'bot', BOT_TYPES, s.bot, (v) => change('bot', (x) => (x.bot = v)), { hidden: s.type !== 'ai' });
+    const faction = slotPick('Faction', 'faction', factions, s.faction, (v) => change('faction', (x) => (x.faction = v)));
+    const team = slotPick('Team', 'team', TEAMS, s.team, (v) => change('team', (x) => (x.team = Number(v))));
+    const color = slotPick('Colour', 'colour', colors, s.color, (v) => change('colour', (x) => (x.color = Number(v))));
     const locks = Object.entries(LOCK_LABELS).map(([lock, label]) => {
       const c = checkbox({
         label,
@@ -117,14 +113,7 @@ export function slotsView(doc, teamCss) {
     badge.style.setProperty('--dot', teamCss(k));
     return el('section', { class: 'slot-row', 'data-slot': String(k) }, [
       el('h3', {}, [badge, ` Slot ${k + 1}`]),
-      el('div', { class: 'grid2' }, [
-        el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Player'), type]),
-        el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Faction'), faction]),
-        el('label', { class: 'field', hidden: s.type !== 'ai' }, [el('span', { class: 'label' }, 'AI'), difficulty]),
-        el('label', { class: 'field', hidden: s.type !== 'ai' }, [el('span', { class: 'label' }, 'Bot'), bot]),
-        el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Team'), team]),
-        el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Colour'), color]),
-      ]),
+      el('div', { class: 'grid2' }, [type.field, faction.field, difficulty.field, bot.field, team.field, color.field]),
       el('div', { class: 'locks', role: 'group', 'aria-label': `Locked for slot ${k + 1}` }, [el('span', { class: 'label' }, 'Locked'), ...locks]),
     ]);
   });
@@ -136,14 +125,22 @@ export function optionsView(doc) {
   const rows = OPTION_ROWS.map((o) => {
     const set = Object.hasOwn(doc.meta.options, o.key);
     const choices = [{ value: '', label: 'Lobby decides' }, ...o.choices];
-    const value = select(choices, set ? doc.meta.options[o.key] : '', {
-      'aria-label': o.label,
-      onchange: () =>
+    // The row head names the plate (th id); choices keep their types (numbers, booleans).
+    const head = el('th', { id: `map-option-${o.key}` }, o.label);
+    const value = selectPlate({
+      id: `map-option-${o.key}-value`,
+      label: o.label,
+      labelledBy: head.id,
+      options: choices,
+      value: set ? doc.meta.options[o.key] : '',
+      small: true,
+      block: true,
+      onChange: (v) =>
         editSetup(doc, `Option ${o.label.toLowerCase()}`, (meta) => {
-          if (value.value === '') {
+          if (v === '') {
             delete meta.options[o.key];
             meta.lockedOptions = meta.lockedOptions.filter((k) => k !== o.key);
-          } else meta.options[o.key] = valueOf(o.choices, value.value);
+          } else meta.options[o.key] = v;
         }),
     });
     const lock = checkbox({
@@ -156,7 +153,7 @@ export function optionsView(doc) {
           meta.lockedOptions = on ? [...meta.lockedOptions.filter((k) => k !== o.key), o.key] : meta.lockedOptions.filter((k) => k !== o.key);
         }),
     });
-    return el('tr', { 'data-option': o.key }, [el('th', {}, o.label), el('td', {}, value), el('td', {}, lock.row)]);
+    return el('tr', { 'data-option': o.key }, [head, el('td', {}, value.root), el('td', {}, lock.row)]);
   });
   return el('table', { class: 'options-table' }, el('tbody', {}, rows));
 }
@@ -213,11 +210,13 @@ export function actorStateView(sel, catalog, ctl) {
       { value: 'return_fire', label: 'Return fire' },
       { value: 'hold_fire', label: 'Hold fire' },
     ];
-    const s = select(stances, same((a) => a.stance ?? '') ?? '', {
-      'aria-label': 'Stance',
-      onchange: () => ctl.setOnSelection('Change stance', (a) => (s.value ? (a.stance = s.value) : delete a.stance)),
+    // Several actors with different stances: no choice shown until one is made.
+    const stance = pick('Stance', stances, same((a) => a.stance ?? ''), {
+      id: 'actor-stance',
+      placeholder: 'Mixed',
+      onChange: (v) => ctl.setOnSelection('Change stance', (a) => (v ? (a.stance = v) : delete a.stance)),
     });
-    parts.push(el('label', { class: 'field' }, [el('span', { class: 'label' }, 'Stance'), s]));
+    parts.push(stance.field);
   }
   const levels = Math.min(...infos.map((i) => i?.levels ?? 0));
   if (levels > 0) {
@@ -243,18 +242,23 @@ function cargoView(actor, info, catalog, ctl) {
   const weight = (id) => catalog[id]?.passenger?.weight ?? 1;
   const used = cargo.reduce((n, id) => n + weight(id), 0);
   const fits = Object.values(catalog).filter((c) => c.passenger && info.cargo.types.includes(c.passenger.type) && c.kind !== 'proxy' && !c.world?.category);
-  const pick = el(
-    'select',
-    { class: 'ui-input', 'aria-label': 'Add a passenger' },
-    fits.map((c) => el('option', { value: c.id, disabled: used + c.passenger.weight > info.cargo.max }, `${c.name} (${c.passenger.weight})`)),
-  );
+  const room = (c) => used + c.passenger.weight <= info.cargo.max;
+  const passenger = selectPlate({
+    id: 'cargo-pick',
+    label: 'Add a passenger',
+    options: fits.map((c) => ({ value: c.id, label: `${c.name} (${c.passenger.weight})`, disabled: !room(c), title: room(c) ? undefined : 'Does not fit any more' })),
+    // The first one that fits, as the native list showed it.
+    value: fits.find(room)?.id ?? null,
+    placeholder: 'Nothing fits',
+    small: true,
+  });
   const add = el(
     'button',
     {
       type: 'button',
       disabled: used >= info.cargo.max || cargo.length >= ACTOR_CARGO_MAX,
       onclick: () => {
-        const id = pick.value;
+        const id = passenger.get();
         if (!id || used + weight(id) > info.cargo.max) return;
         ctl.setOnSelection('Add passenger', (a) => (a.cargo = [...(a.cargo ?? []), id]));
       },
@@ -288,6 +292,6 @@ function cargoView(actor, info, catalog, ctl) {
           ),
         )
       : el('p', { class: 'hint' }, 'Empty. Passengers start inside and belong to its owner.'),
-    el('div', { class: 'row' }, [pick, add]),
+    el('div', { class: 'row' }, [passenger.root, add]),
   ]);
 }
