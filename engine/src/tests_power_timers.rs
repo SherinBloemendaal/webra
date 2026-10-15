@@ -257,7 +257,8 @@ fn map_rules_cannot_give_a_power_bad_timer_relationships() {
     for bad in [serde_json::json!(["ally", "foe"]), serde_json::json!(["ally", "ally", "enemy", "neutral"])] {
         let mut nuke = powers_json(&w, "MSLO");
         nuke[0]["display_timer"] = bad.clone();
-        let r = crate::rules::Rules::load_with(Some(&serde_json::json!({ "actors": { "MSLO": { "abilities": { "support_powers": nuke } } } })));
+        let r =
+            crate::rules::Rules::load_with(Some(&serde_json::json!({ "actors": { "MSLO": { "abilities": { "support_powers": nuke } } } })));
         assert!(r.is_err(), "{bad}");
     }
 }
