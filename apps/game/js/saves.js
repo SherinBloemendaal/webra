@@ -113,11 +113,11 @@ export class SaveStore {
     return new SaveStore(idb ? new IdbBackend(idb) : new MemoryBackend());
   }
 
-  /** Saves without their data, newest first. */
+  /** Saves without their data, newest first; a stored picture only when it is still a valid one (validThumb). */
   async list() {
     const rows = await this.backend.all();
     return rows
-      .map(({ data, ...meta }) => ({ ...meta, bytes: typeof data === 'string' ? data.length : 0 }))
+      .map(({ data, ...meta }) => ({ ...meta, thumb: validThumb(meta.thumb), bytes: typeof data === 'string' ? data.length : 0 }))
       .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id);
   }
 

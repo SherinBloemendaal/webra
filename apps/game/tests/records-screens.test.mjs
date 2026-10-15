@@ -56,6 +56,31 @@ test('replay marks: defeats at their tick, destroyed structures, heavy fighting;
   assert.equal(m.marks.length, count);
 });
 
+test('replay marks: a short seek forward counts its skipped ticks as not watched', async () => {
+  const m = new ReplayMarks(10000);
+  m.observe([player(0)], 1000);
+  m.jump();
+  assert.equal(m.observe([player(0, { buildingsLost: 3 })], 1025), false, 'the 25 ticks skipped by one keyboard step');
+  assert.equal(m.observe([player(0, { buildingsLost: 4 })], 1050), true, 'then it counts again');
+  // The bar: a seek it sees (keyboard step on the seek bar) resets the baseline before the next frame.
+  installDom();
+  try {
+    const { ReplayBar } = await import('../js/records.js');
+    const c = { ticks: 2000, length: 10000, playing: true, speed: 1, ended: false, seeking: false, target: null, diverged: null, setSpeed() {}, togglePlay() {}, seek(t) { c.seeking = true; c.target = t; } };
+    const bar = new ReplayBar(document.createElement('div'), c);
+    bar.observe([player(0)], 2000);
+    bar.seek.value = '2025';
+    bar.seek.dispatchEvent(new FakeEvent('change'));
+    // The seek is done by the next frame.
+    c.seeking = false;
+    c.ticks = 2025;
+    bar.observe([player(0, { buildingsLost: 2 })], 2025);
+    assert.equal(bar.marks.marks.length, 0);
+  } finally {
+    uninstallDom();
+  }
+});
+
 test('replay marks: close marks merge, the more important kind wins', () => {
   const m = new ReplayMarks(10000);
   assert.equal(m.add('battle', 500), true);
@@ -216,6 +241,56 @@ test('Load game: tabs, rows with pictures, the chosen save\'s details, Load and 
   }
 });
 
+test('Load game: a delete runs once, a failed one says why, focus goes to the next row; bad pictures are not shown', async () => {
+  const doc = installDom();
+  try {
+    const { mountRecordEntries } = await import('../js/records.js');
+    const rows = [save(1), save(2), save(3, { thumb: 'data:image/svg+xml;base64,AAAA' })];
+    const removed = [];
+    let fail = true;
+    let release;
+    const store = {
+      list: async () => rows.filter((r) => !removed.includes(r.id)).map((r) => ({ ...r })).sort((a, b) => b.createdAt - a.createdAt),
+      load: async () => ({ ok: false, error: 'no' }),
+      remove: async (id) => {
+        if (fail) throw new Error('blocked storage');
+        await new Promise((r) => (release = r));
+        removed.push(id);
+      },
+    };
+    const root = doc.createElement('div');
+    mountRecordEntries(root, { version: 'test', canPlay: () => true, showError: () => {}, onLoadSave() {}, onWatchReplay() {}, store });
+    click(root.querySelectorAll('button').find((b) => b.textContent === 'Load game'));
+    await settle(20);
+    const dialog = doc.body.querySelector('dialog');
+    const list = () => dialog.querySelectorAll('[role="tabpanel"]')[0].querySelectorAll('.records-row');
+    assert.equal(list()[0].querySelector('img'), null, 'an SVG picture is never drawn');
+    assert.ok(list()[0].querySelector('.records-thumb-none'));
+    const detail = () => dialog.querySelector('.records-detail');
+    // Failing storage: a message, and the question stays.
+    click(detail().querySelector('.records-delete-ask'));
+    click(detail().querySelector('.records-delete-confirm'));
+    await settle(10);
+    assert.match(textOf(dialog.querySelector('.records-status')), /could not be deleted: blocked storage/);
+    assert.ok(detail().querySelector('.records-delete-confirm'));
+    // A delete under way: the button waits, a second click deletes nothing more.
+    fail = false;
+    const yes = detail().querySelector('.records-delete-confirm');
+    click(yes);
+    assert.equal(yes.disabled, true);
+    click(yes);
+    release();
+    await settle(20);
+    assert.deepEqual(removed, [3]);
+    // The next row is chosen and has the focus.
+    assert.equal(list().length, 2);
+    assert.equal(list()[0].getAttribute('aria-current'), 'true');
+    assert.equal(doc.activeElement, list()[0]);
+  } finally {
+    uninstallDom();
+  }
+});
+
 test('Replays: the account\'s storage as a bar, and an empty list says how replays get there', async () => {
   const doc = installDom();
   try {
@@ -291,9 +366,9 @@ test('the replay bar: play, speeds with lamps, the seek bar\'s marks, Download a
   }
 });
 
-// ---- Keys the controls keep -----------------------------------------------------------
+// ---- Esc the controls keep -------------------------------------------------------------
 
-test('a select\'s list, a stepper and a tab row keep their keys from the screens\' Esc', () => {
+test('an open select list keeps Esc from the screens; tab rows and steppers do not', () => {
   const doc = installDom();
   try {
     const wrap = (role) => {
@@ -305,8 +380,8 @@ test('a select\'s list, a stepper and a tab row keep their keys from the screens
       return inner;
     };
     assert.equal(controlOwnsKey(wrap('listbox')), true);
-    assert.equal(controlOwnsKey(wrap('spinbutton')), true);
-    assert.equal(controlOwnsKey(wrap('tablist')), true);
+    assert.equal(controlOwnsKey(wrap('spinbutton')), false, 'Esc on a stepper closes the screen');
+    assert.equal(controlOwnsKey(wrap('tablist')), false, 'Esc on a tab closes the screen');
     assert.equal(controlOwnsKey(wrap(null)), false);
     const panel = doc.createElement('div');
     panel.className = 'ui-sp-panel';

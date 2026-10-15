@@ -120,7 +120,7 @@ export class CampaignMenu {
     this.lens = ctx.lens?.() ?? null;
     root.hidden = true;
     root.addEventListener('keydown', (e) => {
-      // A select's list, a stepper or the campaign tabs keep their keys (js/ownkeys.js).
+      // An open select list keeps its Esc (js/ownkeys.js); from the tabs Esc closes the screen.
       if (e.key === 'Escape' && !e.defaultPrevented && !controlOwnsKey(e.target)) {
         e.preventDefault();
         this.close();

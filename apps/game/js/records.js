@@ -13,7 +13,7 @@
 // and a modded map asks for the usual warning first (main.js acceptMap).
 
 import { formatTicks, recordFileName, REPLAY_SPEEDS } from './replay.js';
-import { downloadText, pickFile, readFileText, SaveStore } from './saves.js';
+import { downloadText, pickFile, readFileText, SaveStore, validThumb } from './saves.js';
 import { encodeReplay, MODDED_WARNING, parseReplay } from './protocol.js';
 import { badge, led, setLed, styleSlider, syncSliderFill, tabs } from './ui/controls.js';
 import { blinkOn, completeText, replayStatus } from './gametimer.js';
@@ -66,7 +66,7 @@ export function dialog(title, build, { screen = false } = {}) {
     };
     d.addEventListener('cancel', (e) => {
       e.preventDefault();
-      // Esc from inside a select's list, a stepper or a tab row is that control's (js/ownkeys.js).
+      // Esc from inside an open select list is that list's (js/ownkeys.js).
       if (controlOwnsKey(document.activeElement)) return;
       close(null);
     });
@@ -171,8 +171,9 @@ function facts(pairs) {
   return dl;
 }
 
-/** A picture of a record (a save's map), or a plain plate that says there is none. */
-function picture(url, className) {
+/** A picture of a record (a save's map: only a small image data URL, validThumb), or a plain plate that says there is none. */
+function picture(thumb, className) {
+  const url = validThumb(thumb);
   if (url) {
     const img = el('img', className);
     img.setAttribute('src', url);
@@ -186,7 +187,9 @@ function picture(url, className) {
 
 /**
  * Delete with a second step: the button turns into "Delete <what>?" with
- * Keep and Delete, so one slip never removes a save or a replay.
+ * Keep and Delete, so one slip never removes a save or a replay. `run()`
+ * may be async: both buttons wait for it (no second delete), and when it
+ * resolves false (it failed and said why) the question stays to try again.
  */
 function deleteControl(what, run) {
   const box = el('span', 'records-delete');
@@ -196,7 +199,15 @@ function deleteControl(what, run) {
       reset();
       first.focus({ preventScroll: true });
     });
-    const yes = button('Delete', 'ui-btn ui-btn-sm ui-btn-ghost records-delete-confirm', () => run());
+    const yes = button('Delete', 'ui-btn ui-btn-sm ui-btn-ghost records-delete-confirm', async () => {
+      if (yes.disabled) return;
+      yes.disabled = true;
+      keep.disabled = true;
+      const ok = await run();
+      yes.disabled = false;
+      keep.disabled = false;
+      if (ok === false && yes.isConnected) yes.focus({ preventScroll: true });
+    });
     box.replaceChildren(question, keep, yes);
     keep.focus({ preventScroll: true });
   };
@@ -227,6 +238,9 @@ export class RecordBrowser {
     this.list.setAttribute('aria-label', label);
     this.empty = el('p', 'records-empty records-muted', empty);
     this.empty.hidden = true;
+    this.empty.tabIndex = -1;
+    /** After a delete: focus goes to the chosen row (or the empty list's text) once the list is redrawn. */
+    this.refocus = false;
     this.detail = el('section', 'records-detail');
     this.detail.setAttribute('aria-label', 'Details');
     this.detail.hidden = true;
@@ -263,6 +277,19 @@ export class RecordBrowser {
     this.list.hidden = items.length === 0;
     const keep = items.some((i) => i.key === this.selected) ? this.selected : (items[0]?.key ?? null);
     this.select(keep, false);
+    if (this.refocus) {
+      this.refocus = false;
+      const row = this.rows().find((r) => r.dataset.key === String(keep));
+      (row ?? this.empty).focus({ preventScroll: true });
+    }
+  }
+
+  /** Record `key` is being deleted: the row after it (else the one before) is chosen and focused when the list is redrawn. */
+  forget(key) {
+    const at = this.items.findIndex((i) => i.key === key);
+    const next = this.items[at + 1] ?? this.items[at - 1] ?? null;
+    this.selected = next?.key ?? null;
+    this.refocus = true;
   }
 
   rows() {
@@ -415,9 +442,11 @@ async function replaysDialog(ctx) {
               await api.deleteReplay(r.id);
             } catch (err) {
               say(`The replay could not be deleted: ${err.message ?? err}`);
-              return;
+              return false;
             }
-            render();
+            browser.forget(r.id);
+            await render();
+            return true;
           }),
           download,
           play,
@@ -512,8 +541,15 @@ async function loadDialog(store, ctx) {
         out.push(el('p', 'records-muted records-note', 'Loading plays the game again up to the save and checks its state hash, so a long game takes a moment.'));
         const row = el('div', 'records-detail-actions');
         const remove = deleteControl('this save', async () => {
-          await store.remove(s.id);
-          render();
+          try {
+            await store.remove(s.id);
+          } catch (err) {
+            say(`The save could not be deleted: ${err.message ?? err}`);
+            return false;
+          }
+          (s.mode === 'online' ? online : local).forget(s.id);
+          await render();
+          return true;
         });
         if (s.mode === 'online') row.append(remove);
         else {
@@ -771,7 +807,10 @@ export class ReplayBar {
    * seek bar's marks (js/replaymarks.js). Not while a seek re-simulates.
    */
   observe(players, tick) {
-    if (this.c.seeking) return;
+    if (this.c.seeking) {
+      this.marks.jump();
+      return;
+    }
     if (this.marks.observe(players, tick)) this.drawMarks();
   }
 
@@ -796,6 +835,8 @@ export class ReplayBar {
 
   update() {
     const c = this.c;
+    // A seek (also one keyboard step of 25 ticks): what it skips was not watched.
+    if (c.seeking) this.marks.jump();
     if (this.marks.length !== Math.max(1, c.length)) {
       this.marks.length = Math.max(1, c.length);
       this.seek.max = String(c.length);

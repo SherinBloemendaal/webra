@@ -84,6 +84,15 @@ export class ReplayMarks {
     return changed;
   }
 
+  /**
+   * A seek: the ticks it skips were not watched, so the next frame only sets
+   * the baseline again (however short the step).
+   */
+  jump() {
+    this.last = null;
+    this.window = [];
+  }
+
   /** Add a mark, merged with one close by. Returns true when the marks changed. */
   add(kind, tick) {
     const t = Math.max(0, Math.min(this.length, Math.round(tick)));

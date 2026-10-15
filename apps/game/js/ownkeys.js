@@ -1,14 +1,14 @@
-// Keys a control keeps for itself: a screen's own key handler (Esc closes
-// the campaign screen or a records dialog) lets them through untouched when
-// they come from inside a select's list, a stepper or a tab row
-// (js/ui/controls.js), or from a select's panel (focus is only there while
-// it is open), so the control gets its arrows and Esc closes the list
-// instead of the screen.
+// Esc a control keeps for itself: a screen's own Esc (closing the campaign
+// screen or a records dialog) does nothing while focus is in an open
+// select's list (js/ui/controls.js selectPlate: focus is only in its panel
+// while it is open), so Esc closes the list and not the screen. Tab rows and
+// steppers use only the arrows, Home, End and Page keys: Esc from them still
+// closes the screen.
 
-/** The controls that use the arrows, Home, End and Esc themselves. */
-export const OWN_KEYS_SELECTOR = '[role="listbox"], [role="spinbutton"], [role="tablist"], .ui-sp-panel';
+/** Where Esc belongs to the control: an open select list. */
+export const OWN_ESC_SELECTOR = '[role="listbox"], .ui-sp-panel';
 
-/** Whether a key event from `target` belongs to the control it came from. */
+/** Whether Esc from `target` belongs to the control it came from. */
 export function controlOwnsKey(target) {
-  return !!(target && typeof target.closest === 'function' && target.closest(OWN_KEYS_SELECTOR));
+  return !!(target && typeof target.closest === 'function' && target.closest(OWN_ESC_SELECTOR));
 }
