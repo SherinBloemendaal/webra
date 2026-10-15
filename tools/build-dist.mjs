@@ -4,6 +4,8 @@
 //   dist/play/protocol/ packages/protocol/src
 //   dist/lib/           the game modules the website imports (tools/shared-modules.mjs):
 //                       /play is gated by the Worker, the account page is not
+//   dist/lib/fonts/     the self-hosted fonts of the website and the game, one
+//                       copy for both, and dist/lib/brand/ the logo (tools/share-assets.mjs)
 //   dist/version.json   { version, commit, build, builtAt }
 //   dist/release-notes.json  CHANGELOG.md as data (tools/release-notes.mjs)
 //   dist/play/vendor/sentry.js, dist/lib/vendor/sentry.js  the error report SDK
@@ -17,6 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { writeReleaseNotes } from './release-notes.mjs';
 import { libModules } from './shared-modules.mjs';
+import { shareBrand, shareFonts } from './share-assets.mjs';
 import { clientConfigModule, connectSources, privacySections, releaseName, sentryBuildConfig } from './sentry-config.mjs';
 import { buildSentryBundle } from './vendor-sentry.mjs';
 
@@ -108,6 +111,16 @@ for (const rel of lib) {
   cpSync(join(game, rel), to, { dereference: true });
 }
 
+// The fonts: one copy under /lib/fonts/ that the website and the game share; the logo under /lib/brand/.
+let fonts;
+let brandFiles;
+try {
+  fonts = shareFonts({ dist, fontsDir: join(game, 'fonts') });
+  brandFiles = shareBrand({ dist, brandDir: join(game, 'brand') });
+} catch (err) {
+  fail(err.message);
+}
+
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const commit = gitCommit();
 // `build` equals the engine's version() string; multiplayer sessions and the
@@ -158,6 +171,6 @@ for (const base of [join(dist, 'play'), join(dist, 'lib')]) {
 const total = countFiles(dist);
 console.log(
   `build-dist: dist/ ready (webra ${info.version}, commit ${info.commit.slice(0, 12)}): ` +
-    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, ${lib.length} modules in lib/, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}, ` +
+    `${total.n} files, ${(total.bytes / 1024).toFixed(0)} KiB, ${lib.length} modules in lib/, ${fonts.files} font files in lib/fonts/ (game ${fonts.rewritten.join(', ') || 'unchanged'}), ${brandFiles} logo files in lib/brand/, release notes for ${notes.releases.length} release${notes.releases.length === 1 ? '' : 's'}, ` +
     `error reports ${sentry.dsn ? `to ${sentry.origin} (${sentry.environment}, traces ${sentry.tracesSampleRate}), SDK ${(sdkBytes / 1024).toFixed(0)} KiB with its map` : 'off (no SENTRY_DSN): no SDK, privacy notice says so'}`,
 );

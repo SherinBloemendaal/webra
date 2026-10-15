@@ -40,7 +40,8 @@ test('the base is absolute (/play/): every spelling of the editor URL resolves i
 
 test('the game theme, base sheet and themed controls load before the editor sheet', () => {
   const sheets = [...HTML.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(sheets.slice(0, 3), ['css/theme.css', 'css/style.css', 'css/controls.css']);
+  // The self-hosted fonts first (css/fonts.css, @font-face only), then the theme.
+  assert.deepEqual(sheets.slice(0, 4), ['css/fonts.css', 'css/theme.css', 'css/style.css', 'css/controls.css']);
   assert.equal(sheets.at(-1), 'editor/editor.css');
   assert.equal(new Set(sheets).size, sheets.length, 'each once');
   assert.doesNotMatch(HTML, /\sstyle=/, 'no style attributes (the CSP blocks them)');
