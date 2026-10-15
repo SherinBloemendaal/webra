@@ -184,8 +184,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   every merged value (ranges, list lengths, shapes, references to weapons and
   actors). **Any map with `rules` is a modded map**: the client
   shows a warning ("This map changes game rules (costs, damage, speed...). It
-  can be unfair or act as a cheat.") and the player must accept before the map
-  is installed. The lobby shows a MODDED badge for such maps.
+  can be unfair or act as a cheat.") with a list of what the rules change,
+  one line per value from the built-in value to the map's (times in ticks
+  also as game time at normal speed; `js/maprules.js` `describeMapRules`,
+  in the skirmish lobby, the online lobby and for replays and saves), and
+  the player must accept before the map is installed. The lobby shows a
+  MODDED badge for such maps.
 - Engine API (landed): `Game.from_map(mapJson, optionsJson)` builds a world
   from a map (players fill spawns in slot order, extra spawns stay empty,
   neutral actors get a passive owner); `Game.map_hash(mapJson)`,
