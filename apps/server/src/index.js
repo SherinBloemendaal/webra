@@ -26,7 +26,7 @@ import { listSessions, onlineCounts, pruneSessions } from './directory.js';
 import { blockedBySessionMember, lookupInviteCode } from './invites.js';
 import { networkOf } from './accounts/ip.js';
 import { checkJsonType, getMap, getMapThumbnail, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, uploadMap } from './maps.js';
-import { pruneQuotas, takeQuota } from './quota.js';
+import { countQuota, peekQuota, pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
 import { loadSaveRecord, missionDigest } from './onlinesaves.js';
@@ -152,15 +152,19 @@ const INVITE_MISS_LIMIT = 30;
 /**
  * POST /api/sessions/<id>/invite: the host makes a new invite code for its
  * lobby (the previous one stops working). Answers { code, expiresAt, path }.
+ * Only codes the session object actually issued count toward the network's
+ * quota (a refused request costs no quota and no write).
  */
 async function sessionInvite(ctx, id) {
   const member = memberOf(ctx.request);
   const stub = sessionStub(ctx.env, id);
   const account = await requirePlay(ctx);
-  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'invites', networkOf(ctx.ip), INVITE_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+  const network = networkOf(ctx.ip);
+  if ((await peekQuota(ctx.env.DB, ctx.salt(), 'invites', network, UPLOAD_WINDOW_MS, ctx.now)) >= INVITE_LIMIT) {
     throw new HttpError(429, 'rate_limited', 'Too many invite codes. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const r = rpcResult(await stub.newInvite({ member, account, ip: ctx.ip }));
+  await countQuota(ctx.env.DB, ctx.salt(), 'invites', network, UPLOAD_WINDOW_MS, ctx.now);
   return json({ code: formatInviteCode(r.code), expiresAt: r.expiresAt, path: `/join/${formatInviteCode(r.code)}` }, 201);
 }
 
@@ -177,10 +181,13 @@ async function inviteLookup(ctx, raw) {
   const code = normalizeInviteCode(raw);
   const r = code ? await lookupInviteCode(ctx.env.DB, code, ctx.now) : { status: 'unknown' };
   const { user } = await ctx.auth();
-  const blocked = r.status === 'ok' && user && (await blockedBySessionMember(ctx.env.DB, r.sessionId, user.id));
-  if (r.status === 'unknown' || blocked) {
+  const unknown = () => new HttpError(404, 'not_found', 'No lobby has this code. Check it with your friend.');
+  // A blocked player's lookup of a real code is no guess: answered like an unknown code, but it
+  // does not count toward the network's failures (others on that network are not locked out).
+  if (r.status === 'ok' && user && (await blockedBySessionMember(ctx.env.DB, r.sessionId, user.id))) throw unknown();
+  if (r.status === 'unknown') {
     await ctx.countFailure('invite-miss', network, UPLOAD_WINDOW_MS);
-    throw new HttpError(404, 'not_found', 'No lobby has this code. Check it with your friend.');
+    throw unknown();
   }
   if (r.status === 'expired') {
     await ctx.countFailure('invite-miss', network, UPLOAD_WINDOW_MS);

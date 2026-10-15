@@ -401,13 +401,22 @@ function messageOf(err) {
 
 // ---- Dialogs (js/online-dialog.js) ---------------------------------------------------
 
-/** The modded-map warning; resolves true only when the player accepts. */
-export function confirmModdedMap(mapName) {
+/**
+ * The modded-map warning with what the map's rules change (`changes`, lines
+ * of js/maprules.js); resolves true only when the player accepts.
+ */
+export function confirmModdedMap(mapName, changes = []) {
   return modal('Modded map', (body, close) => {
     body.append(
       el('p', 'online-warning', MODDED_WARNING),
       el('p', 'online-muted', `Map: ${mapName}`),
     );
+    if (changes.length) {
+      const list = el('ul', 'online-modded-rules');
+      list.setAttribute('aria-label', 'Rules this map changes');
+      for (const line of changes) list.append(el('li', null, line));
+      body.append(list);
+    }
     const row = el('div', 'online-dialog-actions');
     row.append(button('Decline', null, () => close(false)), button('Accept and install', 'online-btn-danger', () => close(true)));
     body.append(row);
@@ -2612,7 +2621,7 @@ export class OnlineUI {
     const textValue = await api.sessionMap(this.state.session.id, this.member, ref.hash);
     const map = await this.checkMap(textValue);
     if (map.hash !== ref.hash) throw new Error('The downloaded map does not match the lobby (hash mismatch).');
-    if (map.modded && !(await confirmModdedMap(map.name))) return null;
+    if (map.modded && !(await confirmModdedMap(map.name, this.ctx.describeRules?.(map.canonical) ?? []))) return null;
     await this.library.add(map.canonical, { source: 'lobby', expectHash: ref.hash }).catch((err) => console.warn('Map library:', err?.message ?? err));
     return map;
   }
@@ -2673,7 +2682,7 @@ export class OnlineUI {
         textValue = await file.text();
       }
       const map = await this.checkMap(textValue);
-      if (map.modded && !(await confirmModdedMap(map.name))) return;
+      if (map.modded && !(await confirmModdedMap(map.name, this.ctx.describeRules?.(map.canonical) ?? []))) return;
       await this.library.add(map.canonical, { source });
       this.libraryMaps = await this.library.list();
       // An older file: the lobby gets the upgraded map, the host a notice about the file.

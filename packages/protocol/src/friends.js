@@ -1,6 +1,8 @@
 // Friends (docs/accounts-api.md section 5.11): limits, the statuses a friend
 // can have, and the privacy settings the server enforces.
 
+import { SOCIAL_SETTING_DEFAULTS } from './accounts.js';
+
 /** What the friends list says a friend is doing. */
 export const FRIEND_STATUSES = ['offline', 'online', 'away', 'lobby', 'game'];
 
@@ -26,18 +28,17 @@ export const PRESENCE_AWAY_MS = 10 * 60_000;
 export const FRIENDS_POLL_MS = 30_000;
 
 /**
- * The `social` section of the settings document (declared keys, see
- * apps/game/js/registry.js) and its defaults: friends see when you are
- * around, friends can join your lobby without an invite when there is room,
- * friends cannot watch your games unless you allow it.
+ * The privacy settings come from the `social` section of the settings
+ * document (accounts.js SETTINGS_SECTIONS, defaults SOCIAL_SETTING_DEFAULTS:
+ * friends see when you are around, friends can join your lobby without an
+ * invite when there is room, friends cannot watch your games unless you
+ * allow it).
  */
-export const SOCIAL_DEFAULTS = Object.freeze({ showOnline: true, friendsJoin: true, allowSpectate: false });
-
 /** The effective privacy settings from a stored settings document (anything malformed takes the default). */
 export function socialSettings(doc) {
   const s = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc.social : null;
-  const out = { ...SOCIAL_DEFAULTS };
+  const out = { ...SOCIAL_SETTING_DEFAULTS };
   if (!s || typeof s !== 'object' || Array.isArray(s)) return out;
-  for (const k of Object.keys(SOCIAL_DEFAULTS)) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of Object.keys(SOCIAL_SETTING_DEFAULTS)) if (typeof s[k] === 'boolean') out[k] = s[k];
   return out;
 }

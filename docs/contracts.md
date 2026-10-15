@@ -184,8 +184,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   every merged value (ranges, list lengths, shapes, references to weapons and
   actors). **Any map with `rules` is a modded map**: the client
   shows a warning ("This map changes game rules (costs, damage, speed...). It
-  can be unfair or act as a cheat.") and the player must accept before the map
-  is installed. The lobby shows a MODDED badge for such maps.
+  can be unfair or act as a cheat.") with a list of what the rules change,
+  one line per value from the built-in value to the map's (times in ticks
+  also as game time at normal speed; `js/maprules.js` `describeMapRules`,
+  in the skirmish lobby, the online lobby and for replays and saves), and
+  the player must accept before the map is installed. The lobby shows a
+  MODDED badge for such maps.
 - Engine API (landed): `Game.from_map(mapJson, optionsJson)` builds a world
   from a map (players fill spawns in slot order, extra spawns stay empty,
   neutral actors get a passive owner); `Game.map_hash(mapJson)`,
@@ -594,12 +598,41 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   (build time follows the cost as in OpenRA, or `Buildable.BuildDuration` /
   `BuildDurationModifier`), `Health.HP`, `Mobile.Speed`,
   `Mobile.TurnSpeed`, `RevealsShroud.Range`, `Power.Amount`,
-  `Buildable.Prerequisites`; weapons `Range`, `MinRange`, `ReloadDelay`,
-  `Burst`, `Projectile.Speed`, `Projectile.Inaccuracy`, and `Damage` of a
-  single warhead. Each kept field is checked by the engine alone; refused
-  fields are dropped and reported. Everything else (removals, inheritance,
-  other traits, `Player`, `World`) is listed as unsupported and never
-  applied. Lua scripts are never run. Custom sequences, voices, music,
+  `Buildable.Prerequisites` (tech level tokens such as `~techlevel.low`
+  included); support powers, matched by the trait's full key (`NukePower`,
+  `AirstrikePower@spyplane`, `GrantExternalConditionPower@IRONCURTAIN`, ...):
+  `ChargeInterval` (ticks in both games: WebRA's tick is OpenRA's, 40 ms at
+  normal speed and 20 ms at fastest), `OneShot`, `StartFullyCharged`,
+  `Prerequisites` and `DisplayTimerRelationships`, written as the actor's
+  whole `abilities.support_powers` list with the built-in entries and the
+  changed fields (the list is replaced whole, see `rules` above); weapons
+  `Range`, `MinRange`, `ReloadDelay`, `Burst`, `Projectile.Speed`,
+  `Projectile.Inaccuracy`, and `Damage` of a single warhead. A later
+  duplicate of an actor merges into the earlier one (OpenRA MiniYaml), the
+  last value winning. A change to an actor also reaches the actors that
+  inherit it in OpenRA (`INHERITS` in `tables.js`, generated from
+  `data/source/rules`: AFLD.Ukraine from AFLD, SPY.England from SPY, E1R1
+  from E1, ...) except for the keys those set themselves, as OpenRA
+  resolves `Inherits` after merging a map's rules. Each kept field is
+  checked by the engine alone; refused fields are dropped and reported.
+- Lobby options in the `World` and `Player` rules become the map's
+  `options` and `lockedOptions` (not rules: the map is not modded for
+  them): `MapOptions` `TechLevel`, `GameSpeed` (`default` is `normal`),
+  `ShortGameCheckboxEnabled`; `CrateSpawner`, `MapBuildRadius` (build
+  radius, ally build radius), `MapStartingLocations` (separate team
+  spawns), `SpawnStartingUnits` `StartingUnitsClass` (`none` is `mcv`),
+  `TimeLimitManager` `TimeLimitDefault`, `PlayerResources` `DefaultCash`,
+  `DeveloperMode` (the debug menu), `Shroud` (fog, explored map) and the
+  `LobbyPrerequisiteCheckbox` options bounty, redeployable MCVs and
+  reusable engineers, each with its `...Locked` field. A locked option the
+  map does not set keeps OpenRA's default, as OpenRA's lobby does; a value
+  the lobby has no choice for (a starting cash of 3000) is reported, and
+  when the map locks it the option is left unset and unlocked (warned)
+  rather than locked at OpenRA's default or snapped to the nearest choice.
+- Everything else (removals, `Inherits`, templates, other traits and
+  fields such as `AllowMultiple` or the `...Visible` lobby flags, other
+  `World` and `Player` traits) is listed as unsupported and never applied.
+  Lua scripts are never run. Custom sequences, voices, music,
   notifications and other files are ignored and reported.
 - Import report (shown before the map is used): converted, rules applied,
   warnings, skipped, not supported, and the validation errors when the
@@ -1288,7 +1321,8 @@ may carry the dash, spaces, or be a whole link (`/join/<code>` or
 `?invite=<code>`).
 
 - `POST /api/sessions/:id/invite` (host only, its `X-WebRA-Member`
-  credential, 30 per network per hour): a new random code (the D1 primary
+  credential, 30 issued codes per network per hour; refused requests do not
+  count): a new random code (the D1 primary
   key is the collision check; another code is drawn on a clash), valid while
   the lobby is open and at most INVITE_TTL_MS (2 hours). The previous code
   stops working in the same step. Every member sees the current code in
@@ -1301,7 +1335,7 @@ may carry the dash, spaces, or be a whole link (`/join/<code>` or
   without D1 when the rate limit binding exists) and failed ones (404 and
   410) to 30 per network per hour, then 429 for every lookup until the hour
   ends. A signed-in player that a present member of the lobby blocked gets
-  404.
+  404 (not counted as a failed lookup).
 - The code is only a name: a password lobby still asks for its password
   (`invite.locked`), a full lobby can still be watched while there are
   spectator places, and the long link with the session id keeps working.
@@ -3027,7 +3061,16 @@ after it (OpenRA's Beacon only removes itself for a positive duration: with
 an advance of `flight_delay` or more it stays, in WebRA while the missile
 flies); drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
 `down` with the original graphics), `GpsPower` launches by itself when
-charged and is `OneShot` (it disappears from `powers` after launch). The
+charged and is `OneShot` (it disappears from `powers` after launch). A
+power charges for its `charge` ticks (OpenRA ChargeInterval) from empty, or
+starts ready when its `start_fully_charged` is set (OpenRA
+StartFullyCharged; no built-in power has it, map rules may set it), which
+applies only when a provider creates the player's instance. As in OpenRA's
+SupportPowerManager, a power whose `prerequisites` go missing leaves the
+power bar and resets to a full charge but its instance stays (also after
+its last provider is lost), so rebuilding the prerequisite charges it from
+empty; an instance whose prerequisites are met goes with its last
+provider. The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
 
 Support power timers (OpenRA `SupportPowerTimerWidget`, the
@@ -3787,14 +3830,27 @@ changes only, never on `set()`.
   Home, End, Page Up, Page Down move (disabled options are skipped, no
   wrap), typing jumps (`TYPEAHEAD_MS` 500; one letter again cycles), Enter
   or Space chooses, Tab chooses and moves on, Esc closes without a change
-  (and does not reach the menu behind). Focus returns to the button. A
-  press outside closes without a change. The list is a `popover="manual"`
+  and stops there (`stopPropagation`; a handler on the window in the
+  capture phase still sees it first, see the key rule below). Focus returns
+  to the button. A press outside closes without a change. The list is a `popover="manual"`
   in the top layer (over modal dialogs, not clipped by scrolling cards),
   placed at the button through `--sp-left`, `--sp-top`/`--sp-bottom`,
   `--sp-width`, `--sp-max-h`; above the button when there is no room
   below. In the phone layouts (`selectSheetMode(w, h)`, js/layout.js) it is
   a sheet at the bottom (`.ui-sp-sheet`) with the label as title, a close
-  button and 44 px options; a tap on the dimmed area closes it.
+  button and 44 px options; a tap on the dimmed area closes it. A resize
+  across that breakpoint reopens the open list in the other mode.
+- **Unmounting**: an open list keeps listeners on the document and the
+  window. Screens call `destroy()` on a select they remove (or `close()`
+  before hiding it); a list whose control left the page also closes itself
+  at the next press, scroll or resize.
+- **Screens with global key handlers** (a keydown listener on the window or
+  the document, often in the capture phase, such as the game menu and the
+  statistics): let the key through, without `preventDefault` or
+  `stopPropagation`, when `event.target` is inside `[role=listbox]`,
+  `[role=spinbutton]` or `[role=tablist]` (`target.closest(...)`), so the
+  control gets its arrows, Home/End, typing and Esc. Esc in an open list
+  closes the list, not the menu.
 - **Stepper**: an ARIA spinbutton (`aria-valuenow` is the index,
   `aria-valuetext` the formatted value); Up/Right and Down/Left step,
   Page Up/Down step a tenth, Home/End go to the ends; the minus and plus
@@ -3820,7 +3876,10 @@ changes only, never on `set()`.
 `.ui-btn-icon`; `.ui-dialog` with `.ui-dialog-body`, `.ui-dialog-title`,
 `.ui-dialog-text`, `.ui-dialog-actions`; `.ui-menubar` with
 `.ui-menubar-brand` and `.ui-menubar-item[aria-current]` (a `.ui-led`
-inside); `.ui-brand` with `.ui-brand-emblem` and `.ui-brand-word`;
+inside); `.ui-brand` with `.ui-brand-emblem` and the word (in a `.ui-brand-word`,
+or as plain text in the `.ui-brand` itself as the start screen's
+`h1.start-logo` has it; `RA` in a `<span>` takes `--ui-brand-red` either
+way, unless the screen's sheet colours it);
 `.ui-slot-row` with `.ui-slot-strip` (`--slot-color` set from script);
 `.ui-table` (`.ui-table-head`, `[aria-selected=true]` rows); `.ui-toast`;
 `.ui-meter` with `.ui-meter-seg.ui-ok|.ui-warn|.ui-bad`; `.ui-progress`
@@ -4287,7 +4346,9 @@ drawn.
 
 Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
 render setting; `js/content/atlas.js` `originalSlotInfo`, plus the slots of
-WebRA's own pixel art, `js/gameart.js` `applyGameArt`) are drawn the way
+WebRA's own pixel art, `js/gameart.js` `applyGameArt`, and the actor slots of
+texture packs with `"perspective": "classic"`, such as the built-in 3D
+minimal pack) are drawn the way
 OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
 slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
 10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
@@ -4307,7 +4368,13 @@ b side offset in world units, drawn from slot `2t + 1` with the idle
 pose), kind 1 a structure whose body shows the storage level (OpenRA
 WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
 capacity of its owner, mode 3), kind 2 the original damage smoke
-(milliseconds per frame, start frames, loop frames). Presentation only: the state hash is the
+(milliseconds per frame, start frames, loop frames), kind 5 the ground
+shear of an actor type's art (a: the pack's `groundShear` in 1024ths,
+clamped to plus or minus 1024): its turret, rotor and muzzle offsets move
+a / 1024 world pixels sideways per world pixel south, as its sheared hull
+does (`render.rs` `sheared_offset`), so every mount (the Cruiser has two
+turrets, the Chinook two rotors) carries its part in every facing.
+Presentation only: the state hash is the
 same either way.
 
 Sprite slots after the specials: the effects module (`fx_base`: 0 damage

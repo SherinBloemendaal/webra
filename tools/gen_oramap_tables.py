@@ -15,6 +15,11 @@ Output, compact:
 - BRIDGES[tileset id][template id] = [bridge actor id, template width]: the
   templates of every state of every bridge (OpenRA LegacyBridgeLayer turns
   them into bridge actors at the template's top-left cell).
+- INHERITS[actor id] = [parent actor id, own keys]: actors that inherit
+  another actor (not a ^template), with the "Trait.Field" keys (or "Trait"
+  for a trait without fields, "-Trait" for a removal) they set themselves.
+  OpenRA resolves inheritance after a map's rules are merged, so a map that
+  changes the parent changes these too, except where they set the key.
 
 Run: python3 tools/gen_oramap_tables.py
 """
@@ -118,6 +123,35 @@ def bridges():
     return out
 
 
+# The rules files data/source/parse.py resolves (its `rules`).
+RULES_FILES = ['defaults', 'infantry', 'vehicles', 'aircraft', 'ships', 'structures', 'fakes', 'misc', 'civilian',
+               'decoration', 'husks']
+
+
+def inherits():
+    """Actor id -> [parent actor id, sorted own keys] for actors inheriting a
+    concrete actor (OpenRA Inherits of an actor that is not a ^template)."""
+    defs = parse.load('rules', RULES_FILES)
+    out = {}
+    for name, (_v, node) in defs.items():
+        if name.startswith('^'):
+            continue
+        parents = [v for k, (v, _ch) in node.items() if (k == 'Inherits' or k.startswith('Inherits@')) and not v.startswith('^')]
+        if not parents:
+            continue
+        assert len(parents) == 1 and parents[0] in defs, (name, parents)
+        own = []
+        for k, (v, ch) in node.items():
+            if k == 'Inherits' or k.startswith('Inherits@'):
+                continue
+            if k.startswith('-') or not ch:
+                own.append(k)
+            else:
+                own.extend(f'{k}.{f}' for f in ch)
+        out[name] = [parents[0], sorted(own)]
+    return dict(sorted(out.items()))
+
+
 def main():
     tilesets = {}
     pick_any = {}
@@ -146,6 +180,9 @@ def main():
     lines.append('')
     lines.append('/** Bridge templates per tileset: template id -> [bridge actor id, template width] (OpenRA LegacyBridgeLayer). */')
     lines.append(f'export const BRIDGES = Object.freeze({json.dumps(bridge_table, separators=(",", ":"))});')
+    lines.append('')
+    lines.append('/** Actors inheriting another actor: id -> [parent id, keys it sets itself] (map rules on the parent reach them). */')
+    lines.append(f'export const INHERITS = Object.freeze({json.dumps(inherits(), separators=(",", ":"))});')
     lines.append('')
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, 'w') as f:

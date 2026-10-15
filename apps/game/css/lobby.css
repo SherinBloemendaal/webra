@@ -413,6 +413,20 @@
   max-width: var(--ui-measure);
 }
 
+/* What the map's rules change (js/maprules.js). */
+#menu .lobby-modded-rules {
+  max-height: 160px;
+  margin: 0;
+  padding-left: 18px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+#menu .lobby-modded-rules[hidden] {
+  display: none;
+}
+
 #menu .lobby-modded-name {
   color: #fff;
   overflow-wrap: anywhere;

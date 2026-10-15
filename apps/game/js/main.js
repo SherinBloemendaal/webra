@@ -39,6 +39,7 @@ import { CommandBar } from './commandbar.js';
 import { registerGameKeys } from './gamekeys.js';
 import { RadarPings } from './radarpings.js';
 import { Lobby } from './lobby.js';
+import { describeMapRules } from './maprules.js';
 import { mountStartMenu } from './startmenu.js';
 import { GeneratedPreviews, previewBackend } from './mappreview.js';
 import { aiName, COLOR_NAMES } from './lobby-state.js';
@@ -156,6 +157,8 @@ let uiScale = null;
 let lensArt = null;
 /** The lobby previews of generated maps (js/mappreview.js), or null without the engine. */
 let previews = null;
+/** The engine's built-in rules (`base_rules_json()`), parsed on first use. */
+let builtInRules = null;
 /** The loading screen (js/loadingscreen.js): from Start to the game's first frame. */
 let loader = null;
 /**
@@ -206,6 +209,8 @@ async function boot() {
       // The style shapes the map (the biome only paints it).
       spawns: (seed, size, players, style = 'random') => JSON.parse(Game.generated_map_styled(seed, size, players, style, 'temperate')).spawns,
       validate: (json) => JSON.parse(Game.validate_map(json)),
+      // What a modded map changes, for its warning (js/maprules.js).
+      describeRules: (json) => describeRules(json),
       filePreview: (json) => Game.map_file_preview(json),
       // OpenRA .oramap maps: converted in the browser, checked by the engine like any map file.
       importOramap: (bytes, fileName) =>
@@ -661,6 +666,7 @@ function setupOnline(lobby, gpuError) {
       const { mountOnline } = await playAccess.load(() => import('./online.js'));
       ui = mountOnline(root, {
         Game,
+        describeRules: (json) => describeRules(json),
         lens: newMapLens,
         previews,
         reducedMotion: motionIsReduced,
@@ -1227,13 +1233,27 @@ function skirmishTitle(options, player) {
   return `${faction} vs ${others} ${others === 1 ? 'opponent' : 'opponents'}`;
 }
 
+/**
+ * What a modded map file's rules change against the built-in rules, one line
+ * each, for the modded-map warnings (js/maprules.js). Empty without the engine.
+ */
+function describeRules(mapJson) {
+  if (!wasm) return [];
+  try {
+    builtInRules ??= JSON.parse(base_rules_json());
+    return describeMapRules(JSON.parse(mapJson)?.rules ?? null, builtInRules);
+  } catch {
+    return [];
+  }
+}
+
 /** Ask before running a modded map from a replay or save (docs/contracts.md section 2). */
 async function acceptMap(replay) {
   if (!replay.map) return true;
   const v = JSON.parse(Game.validate_map(replay.map));
   if (!v.ok) throw new Error(`The map in this file is invalid: ${v.errors.slice(0, 2).join('; ')}`);
   if (v.hash !== replay.mapHash) throw new Error('The map in this file does not match its hash.');
-  return !v.modded || records.confirmModdedMap(JSON.parse(replay.map).name);
+  return !v.modded || records.confirmModdedMap(JSON.parse(replay.map).name, describeRules(replay.map));
 }
 
 /** Continue a saved skirmish: re-simulate it, check its state hash, play on. */

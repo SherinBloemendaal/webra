@@ -759,6 +759,15 @@ The player's game settings, synchronized across devices.
 
 Version 0 with `settings: {}` means nothing is stored yet.
 
+Rolling upgrade of `game.graphics`: a client from before 0.17.0 knows only
+`"webra"` and `"original"`, so it reads `"webra2d"` and `"webra3d"` as
+`"webra"` and uploads that with its next change. A newer client
+(`js/account/sync.js` `keepGraphicsFromOldClients`) treats an incoming
+`"webra"` as "WebRA's own art": when it last synced `"webra2d"` or
+`"webra3d"` it keeps that choice and writes it back once; after `"original"`
+(a real choice on the old client) it takes `"webra2d"`. The old client
+itself still shows WebRA's art for `"webra3d"` until it is updated.
+
 `PUT /api/account/settings` with `If-Match: "v<version>"` and body
 `{ "settings": SettingsDocument }` replaces the whole document:
 
@@ -794,7 +803,7 @@ Serialized size at most 32 KiB.
     "hideReplayChat": false,       // OpenRA HideReplayChat: replay chat only in the chat history
     "uiFeedbackNotifications": true, // OpenRA TextNotificationPoolFilters Feedback
     "gameEventNotifications": true,  // OpenRA TextNotificationPoolFilters Transients
-    "graphics": "webra",           // "webra" | "original"
+    "graphics": "webra2d",         // "webra2d" | "webra3d" | "original"; "webra" (before 0.17.0) is still accepted, read as "webra2d"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
     "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
@@ -862,7 +871,11 @@ Serialized size at most 32 KiB.
 - `packs`: at most 64 entries with distinct ids; an id is 1 to 160
   characters of text without control characters.
 - `guide.done`: a JSON object with the same rules as `extra` below, at most
-  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`).
+  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`). The game merges it step
+  by step when two devices changed it (`mergeSettings` in
+  `apps/game/js/account/sync.js`): a step stays when both have it or one side
+  added it, a step one side removed stays removed; only a result over 2 KiB
+  is a conflict.
 - `lastOptions` and `extra`: JSON objects at most 4 levels deep, keys
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at
@@ -1053,7 +1066,8 @@ document and applies them; a missing or malformed value takes its default):
 | `social.friendsJoin` | on | Friends see (and may join) the player's lobby without an invite when it has room; off: a private lobby is not named to friends |
 | `social.allowSpectate` | off | Friends see (and may watch) the player's games; off: a private game is not named to friends |
 
-`GET /api/account/friends` -> `200`:
+`GET /api/account/friends` (burst limit per address: 20 a minute; 240 an
+hour without the binding) -> `200`:
 
 ```json
 {
@@ -1105,7 +1119,8 @@ code is valid.
   - 20 per hour per account (`429 rate_limited`).
 - `POST /api/account/friends/requests/:username/accept` -> `200 { friend }`
   (ignored requests can still be accepted); `404` without a request;
-  `409 limit` at 200 friends.
+  `409 blocked` while either player blocks the other; `409 limit` at 200
+  friends.
 - `POST /api/account/friends/requests/:username/ignore` -> `204`: hidden from
   the receiver; the sender still sees it waiting.
 - `DELETE /api/account/friends/requests/:username` -> `204`: withdraw an own
@@ -1133,8 +1148,9 @@ code is valid.
   game's heartbeat, every `PRESENCE_INTERVAL_MS` (60 s) while it is open and
   at once when the player goes away (no input for `PRESENCE_AWAY_MS`, 10
   minutes; `idleMs` how long, so `awayMs` counts from the last input) or
-  comes back. Stored at most every 45 s unless `away` changed, so a client
-  cannot turn it into many writes. Friends poll the list every
+  comes back. Stored at most every 45 s; a change of `away` sooner, but not
+  within 5 s of the last write, so a client cannot turn it into many writes.
+  Burst limit per address (20 a minute; 120 an hour without the binding). Friends poll the list every
   `FRIENDS_POLL_MS` (30 s) while a screen shows it; there is no socket.
 
 **Retention.** The daily job deletes requests older than 30 days, invites
@@ -1582,8 +1598,9 @@ write.
 | Friend requests (5.11) | 20 per hour per account |
 | Blocks (5.11) | 30 per hour per account |
 | Friend invites (5.11) | 30 per hour per account |
-| Presence heartbeat (5.11) | stored at most every 45 s per account (unless away changes) |
-| Invite codes (docs/contracts.md section 4) | 30 new codes per network per hour; lookups: burst per IP (20 per minute), 30 failed lookups per network per hour |
+| Presence heartbeat (5.11) | burst per IP (120 per hour); stored at most every 45 s per account, a change of away at most every 5 s |
+| Friends list (5.11) | burst per IP (240 per hour) |
+| Invite codes (docs/contracts.md section 4) | 30 issued codes per network per hour (refused requests do not count); lookups: burst per IP (20 per minute), 30 failed lookups per network per hour (a blocked player's lookups do not count) |
 | One-click package relay | 8 completed downloads and 24 requests per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
 | One-click music relay | 256 MiB and 96 requests per account per UTC day; 64 requests per network per hour (7.3) |
 | One-click movie relay | 1,500 MiB and 288 requests per account per UTC day; 192 requests per network per hour (7.3) |

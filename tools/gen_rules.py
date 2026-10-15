@@ -1972,6 +1972,9 @@ def main():
                     power['detect_range'] = wdist(det.get('Range', '5c0'))
                     power['detect_types'] = tokens(det.get('DetectionTypes', 'Cloak'))
                 power['one_shot'] = str(v.get('OneShot', 'False')).lower() == 'true'
+                # SupportPowerInfo.StartFullyCharged (default false; powers.rs): only written when set.
+                if str(v.get('StartFullyCharged', 'False')).lower() == 'true':
+                    power['start_fully_charged'] = True
                 # SupportPowerInfo.DisplayTimerRelationships (default None): to whom the
                 # top-left countdown shows, relative to the owner (powers.rs power_timers).
                 shown = [r.lower() for r in tokens(v.get('DisplayTimerRelationships')) if r.lower() != 'none']

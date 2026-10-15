@@ -1183,7 +1183,7 @@ impl World {
         ground: &mut Vec<f32>,
         out: &mut Vec<f32>,
     ) {
-        use crate::render::{classic_offset, posed, Pose};
+        use crate::render::{posed, sheared_offset, Pose};
         if !self.is_heli(i) {
             return;
         }
@@ -1203,8 +1203,9 @@ impl World {
                     (_, false) => Pose::AuxIdle,
                     (_, true) => Pose::AuxMove,
                 };
-                // OpenRA's placement on the pre-rendered body (classic perspective).
-                let (o0, o1) = (classic_offset(off, 0, a.pfacing), classic_offset(off, 0, a.facing));
+                // OpenRA's placement on the pre-rendered body (classic perspective, with the art's ground shear).
+                let g = self.render_opts.ground_shear(a.ty);
+                let (o0, o1) = (sheared_offset(off, 0, a.pfacing, g), sheared_offset(off, 0, a.facing, g));
                 let r = body.look(posed(slot, pose, 0), team, 1.0, 1.0, 0.0);
                 sink.sprite(out, r.offset_moving([o0[0], o0[1] - lift], [o1[0], o1[1] - lift]));
             }
