@@ -2975,6 +2975,13 @@ export class OnlineUI {
       action: () => ui.rematchAction(),
       /** Button text for the current action. */
       label: () => ({ propose: 'Rematch', accept: 'Accept rematch', waiting: 'Rematch proposed' })[ui.rematchAction()] ?? 'Rematch',
+      /** Who proposed the rematch and every player's answer (js/endgame.js), or null without a proposal. */
+      status: () => {
+        const r = ui.rematch;
+        if (!r) return null;
+        const voters = [...r.accepted.map((c) => ({ name: ui.clientName(c), accepted: true })), ...r.waiting.map((c) => ({ name: ui.clientName(c), accepted: false }))];
+        return { by: ui.clientName(r.by), voters };
+      },
       /** What the confirmation says. */
       text: () =>
         ui.rematchAction() === 'accept'

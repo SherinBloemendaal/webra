@@ -355,11 +355,14 @@ test('rematch: the host proposes, a player accepts or declines from the overlay,
     let returned = 0;
     handle.onLobby = () => returned++;
     assert.equal(handle.action(), null, 'a guest cannot propose');
+    assert.equal(handle.status(), null, 'no proposal, no status');
     handle.run();
     assert.equal(sent.length, 0);
     ui.onRematch({ t: 'rematch', state: 'open', by: 1, accepted: [1], waiting: [2], msLeft: 60000 });
     assert.equal(handle.action(), 'accept');
     assert.equal(handle.label(), 'Accept rematch');
+    // Who proposed and every player's answer (js/endgame.js).
+    assert.deepEqual(handle.status(), { by: 'Host', voters: [{ name: 'Host', accepted: true }, { name: 'Guest', accepted: false }] });
     assert.match(logText(ui), /Host proposes a rematch with the same settings/);
     assert.match(textOf(ui.rematchBar), /Host proposes a rematch/);
     const [accept, decline] = ui.rematchBar.querySelectorAll('button');
