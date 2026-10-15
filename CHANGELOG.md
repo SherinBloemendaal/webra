@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.16.0](https://github.com/SherinBloemendaal/webra/compare/v0.15.1...v0.16.0) (2026-10-15)
+
+
+### Features
+
+* **game:** build menu queues without credits, with shift right click and a right click style setting ([c74a86b](https://github.com/SherinBloemendaal/webra/commit/c74a86bc93e5415179a99cd7f9d56b6db520ab66))
+* **game:** restart and next mission without leaving the game, with a loading screen on every start ([c74a86b](https://github.com/SherinBloemendaal/webra/commit/c74a86bc93e5415179a99cd7f9d56b6db520ab66))
+
+
+### Bug Fixes
+
+* **engine:** ignore a depot repair order for units with nothing to repair ([c74a86b](https://github.com/SherinBloemendaal/webra/commit/c74a86bc93e5415179a99cd7f9d56b6db520ab66))
+* **engine:** no lightning while a thunderstorm dies down, strike bots and humans alike ([c74a86b](https://github.com/SherinBloemendaal/webra/commit/c74a86bc93e5415179a99cd7f9d56b6db520ab66))
+* **engine:** queue production like OpenRA regardless of credits, cap queues at 2000 items ([c74a86b](https://github.com/SherinBloemendaal/webra/commit/c74a86bc93e5415179a99cd7f9d56b6db520ab66))
+* **game:** show the blocked cursor over an own depot for undamaged units ([c74a86b](https://github.com/SherinBloemendaal/webra/commit/c74a86bc93e5415179a99cd7f9d56b6db520ab66))
+
 ## [0.15.1](https://github.com/SherinBloemendaal/webra/compare/v0.15.0...v0.15.1) (2026-10-15)
 
 
