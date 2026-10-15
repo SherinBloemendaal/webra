@@ -20,11 +20,15 @@
 // session only: the guest installs it by hash (checked with the protocol
 // package), the game starts on it, the players save it online, a rematch
 // brings both back into the lobby with their rejoin keys, and the save is
-// resumed in a new session.
+// resumed in a new session. Protocol 8: the start gate (no frame past the
+// start frames until every player sent `loaded`), invite codes, ping and
+// netstat, `waiting`, running games in the session list with their summary,
+// and the online counter (both lists are cached per isolate: polled).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { COOP_MISSIONS, encodeClient, encodeReplay, MAP_FORMAT_VERSION, mapHash, MEMBER_HEADER, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
+import { COOP_MISSIONS, encodeClient, encodeReplay, MAP_FORMAT_VERSION, mapHash, MEMBER_HEADER, normalizeInviteCode, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
+import { LIST_CACHE_MS, ONLINE_CACHE_MS } from '../../src/directory.js';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
 const ORIGIN = new URL(BASE).origin;
@@ -51,6 +55,30 @@ async function api(path, init = {}, who = null) {
   }
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null };
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Poll `path` until `ok(body)` holds: the session list and the online count
+ * are cached per isolate (directory.js LIST_CACHE_MS, ONLINE_CACHE_MS), so a
+ * change shows within that time plus a little. Returns the body that held.
+ */
+async function poll(path, ok, what, cacheMs) {
+  const deadline = Date.now() + cacheMs + 2000;
+  for (;;) {
+    const r = await api(path);
+    assert.equal(r.status, 200, `${path}: ${JSON.stringify(r.body)}`);
+    if (ok(r.body)) return r.body;
+    if (Date.now() > deadline) assert.fail(`${what}: not seen within ${cacheMs + 2000} ms (last answer ${JSON.stringify(r.body).slice(0, 600)})`);
+    await sleep(250);
+  }
+}
+
+/** The session `id` as GET /api/sessions lists it, once it is there and `ok(entry)` holds. */
+async function listedSession(id, ok = () => true, what = `session ${id} listed`) {
+  const list = await poll('/api/sessions', (b) => b.some((x) => x.id === id && ok(x)), what, LIST_CACHE_MS);
+  return list.find((x) => x.id === id && ok(x));
 }
 
 /** An address for `name` (every new account gives one; without email sending it stays unverified). */
@@ -128,6 +156,12 @@ class Client {
 
   type(t, extra = () => true) {
     return this.next((m) => m.t === t && extra(m), t);
+  }
+
+  /** Assert that no message matching `pred` arrives within `ms` (nothing is consumed). */
+  async quiet(pred, what, ms = 400) {
+    await sleep(ms);
+    assert.equal(this.inbox.some(pred), false, `${this.name}: ${what}`);
   }
 }
 
@@ -386,7 +420,7 @@ async function coopMissionLobby(HOST, GUEST) {
   const lobby = await guest.type('lobby', (l) => l.mission !== undefined);
   assert.deepEqual(lobby.mission, mission);
   assert.deepEqual(lobby.slots.map((x) => x.type), ['human', 'human', 'closed'], 'the mission has two places');
-  const listing = (await api('/api/sessions')).body.find((x) => x.id === id);
+  const listing = await listedSession(id, (x) => x.map?.mission === 'exodus', 'the co-op lobby listed with its mission');
   assert.deepEqual(listing.map, { mission: 'exodus', name: 'Exodus', modded: false }, 'listed under the mission title');
   host.send({ t: 'slot', slot: 1, type: 'ai' });
   assert.equal((await host.type('error')).code, 'invalid', 'people only');
@@ -401,6 +435,15 @@ async function coopMissionLobby(HOST, GUEST) {
   const gSeat = hs.players.find((p) => p.client === gw.you).player;
   const guestFrames = [];
   for (let tick = 0; tick < 30; tick++) {
+    if (tick === hs.delay) {
+      // The start gate (protocol 8): only the empty start frames go out until every
+      // player's loading screen closed, although frame `delay` has all its orders.
+      const past = (f) => f.t === 'frame' && f.tick >= hs.delay;
+      await host.quiet(past, 'no frame past the start frames while both are loading');
+      host.send({ t: 'loaded' });
+      await guest.quiet(past, 'no frame past the start frames while the guest is loading');
+      guest.send({ t: 'loaded' });
+    }
     const [, gf] = await Promise.all([host.type('frame', (f) => f.tick === tick), guest.type('frame', (f) => f.tick === tick)]);
     guestFrames.push(gf);
     // A production order for the mission's last actor type (past the engine's own rules).
@@ -473,7 +516,7 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   // Not public: not listed, not served by id, the session list shows its name only.
   assert.equal((await api('/api/maps')).body.some((m) => m.hash === shared.body.hash), false);
   assert.equal((await api(`/api/maps/${shared.body.id}`)).status, 404);
-  const listing = (await api('/api/sessions')).body.find((x) => x.id === id);
+  const listing = await listedSession(id, (x) => x.map?.name === custom.name, 'the lobby listed with its shared map');
   assert.deepEqual(listing.map, { name: custom.name, modded: false, shared: true });
   host.send({ t: 'map', map: { id: shared.body.id, hash: shared.body.hash, name: 'x', modded: false } });
   assert.equal((await host.type('error')).code, 'not_found', 'a shared map cannot be picked by id');
@@ -547,6 +590,9 @@ async function sharedMapLobby(HOST, GUEST, WATCHER) {
   host.send({ t: 'start' });
   const [hs, gs] = await Promise.all([host.type('start'), guest.type('start')]);
   assert.deepEqual(hs, gs);
+  // The start gate (protocol 8): every player's loading screen closed, so the frames run on.
+  host.send({ t: 'loaded' });
+  guest.send({ t: 'loaded' });
   assert.equal(hs.map.hash, shared.body.hash, 'the game runs on the shared map');
   // Both run ticks like net.js (orders for t + 3 after frame t, a hash every 25 ticks).
   const hSeat = hs.players.find((p) => p.client === hw.you).player;
@@ -821,9 +867,8 @@ async function main() {
   const firstLobby = await host.type('lobby');
   assert.equal(firstLobby.slots[0].account, true);
 
-  const listed = await api('/api/sessions');
-  const entry = listed.body.find((s) => s.id === id);
-  assert.ok(entry, 'public lobby is listed');
+  const entry = await listedSession(id, () => true, 'public lobby is listed');
+  assert.equal(entry.state, 'lobby');
   assert.equal(entry.host, HOST);
   assert.equal(entry.locked, true);
 
@@ -845,6 +890,35 @@ async function main() {
   assert.equal(gw.role, 'player');
   assert.match(gw.key, /^[A-Za-z0-9_-]{43}$/, 'every member gets a rejoin key');
   await host.type('lobby', (m) => m.slots[1].type === 'human');
+
+  // Invite codes (protocol 8): the host issues one, members see it, anyone looks it up, /join/ opens the game with it.
+  const invitePath = `/api/sessions/${id}/invite`;
+  const memberOf = (w) => ({ [MEMBER_HEADER]: `${w.you}.${w.key}` });
+  const notHost = await api(invitePath, { method: 'POST', body: '{}', headers: memberOf(gw) }, GUEST);
+  assert.deepEqual([notHost.status, notHost.body.error.code], [403, 'not_host']);
+  const invite = await api(invitePath, { method: 'POST', body: '{}', headers: memberOf(welcome) }, HOST);
+  assert.equal(invite.status, 201, JSON.stringify(invite.body));
+  assert.match(invite.body.code, /^[2-9A-HJKMNP-Z]{3}-[2-9A-HJKMNP-Z]{3}$/);
+  assert.equal(invite.body.path, `/join/${invite.body.code}`);
+  const code = normalizeInviteCode(invite.body.code);
+  assert.deepEqual((await guest.type('lobby', (m) => m.invite !== undefined)).invite, { code, expiresAt: invite.body.expiresAt }, 'members see the code');
+  const looked = await api(`/api/invite/${invite.body.code.toLowerCase()}`);
+  assert.equal(looked.status, 200, JSON.stringify(looked.body));
+  assert.deepEqual(
+    [looked.body.invite.session, looked.body.invite.host, looked.body.invite.locked, looked.body.invite.public, looked.body.invite.players, looked.body.invite.maxPlayers],
+    [id, HOST, true, true, 2, 3],
+    'the code names this lobby; its password still applies',
+  );
+  const joinLink = await rawRequest('GET', invite.body.path);
+  assert.deepEqual([joinLink.status, joinLink.location], [302, `/play/?invite=${invite.body.code}`]);
+  assert.equal((await rawRequest('GET', '/join/not-a-code!')).status, 404);
+
+  // Network quality (protocol 8): a ping is answered with its own pong, the room hears the measurement.
+  const pingAt = Date.now();
+  host.send({ t: 'ping', n: 7, at: pingAt, rtt: 40, jitter: 5, late: 0 });
+  assert.deepEqual(await host.type('pong'), { t: 'pong', n: 7, at: pingAt });
+  const netstat = await guest.type('netstat', (m) => m.players.some((p) => p.client === welcome.you && p.rtt !== null));
+  assert.deepEqual(netstat.players.find((p) => p.client === welcome.you), { client: welcome.you, rtt: 40, jitter: 5, late: 0 });
 
   // A spectator place: the host allows one, a watcher takes it (password rules as for players).
   host.send({ t: 'spectators', max: 1 });
@@ -898,9 +972,12 @@ async function main() {
   host.send({ t: 'start' });
   assert.match((await host.type('error')).message, /does not have the map/);
   watcher2.send({ t: 'mapstate', hash: up.body.hash, state: 'installed' });
-  await host.type('lobby', (m) => m.spectators[0].mapState === 'installed');
+  await host.type('lobby', (m) => m.spectators[0]?.mapState === 'installed');
   host.send({ t: 'start' });
   const [hs, gs, ws] = await Promise.all([host.type('start'), guest.type('start'), watcher2.type('start')]);
+  // The start gate (protocol 8): the players' loading screens closed; a spectator holds no seat.
+  host.send({ t: 'loaded' });
+  guest.send({ t: 'loaded' });
   assert.deepEqual(hs, gs);
   assert.deepEqual(hs, ws);
   assert.equal(hs.options.players.length, 3);
@@ -909,8 +986,22 @@ async function main() {
   const seatOf = (c, you) => hs.players.find((p) => p.client === you).player;
   const hSeat = seatOf(host, welcome.you);
   const gSeat = seatOf(guest, gw.you);
-  assert.equal((await api('/api/sessions')).body.some((s) => s.id === id), false, 'started games are not listed');
   assert.equal(hs.players.length, 3, 'the spectator does not play');
+  // Running games are listed too (protocol 8), with what the detail panel shows.
+  const running = await listedSession(id, (x) => x.state === 'game', 'the started game is listed as a game');
+  assert.deepEqual([running.host, running.players, running.maxPlayers, running.locked, running.map.id], [HOST, 2, 3, true, up.body.id]);
+  const { startedAt, players: summaryPlayers, ...summaryRest } = running.summary;
+  assert.ok(Number.isInteger(startedAt) && startedAt > 0, 'the summary says when the game started');
+  assert.deepEqual(summaryPlayers.map((p) => [p.name, p.ai === true]), [[HOST, false], [GUEST, false], [summaryPlayers[2].name, true]]);
+  assert.deepEqual([summaryRest.spectators, summaryRest.maxSpectators], [1, 1]);
+  assert.equal(typeof summaryRest.mode, 'string');
+  assert.deepEqual(Object.keys(summaryRest.options).sort(), ['crates', 'fog', 'gameSpeed', 'startingCash', 'techLevel', 'timeLimit']);
+  // The invite code ended with the lobby.
+  assert.equal((await api(`/api/invite/${invite.body.code}`)).status, 410, 'the code expired at the start');
+  // The online counter: the running game and its two players.
+  const online = await poll('/api/online', (b) => b.games >= 1 && b.players >= 2, 'the online counter counts the game', ONLINE_CACHE_MS);
+  assert.deepEqual(Object.keys(online).sort(), ['games', 'lobbies', 'players']);
+  assert.ok(Object.values(online).every((n) => Number.isInteger(n) && n >= 0));
 
   // ---- Lockstep -------------------------------------------------------------------
   // Each client behaves like net.js: after frame T arrives it runs tick T and
@@ -1029,7 +1120,9 @@ async function main() {
   lateWatcher.send({ t: 'synced' });
   assert.equal((await lateWatcher.type('error')).code, 'bad_state', 'confirmed once');
 
-  // Silence: the host stops sending and is dropped after about 10 s.
+  // Silence: the host stops sending; everyone hears whom the game waits for, and it is dropped after about 10 s.
+  const waiting = await host.next((m) => m.t === 'waiting' && m.client === welcome.you && m.heldMs > 0, 'waiting for the host', 12000);
+  assert.ok(waiting.dropInMs >= 0);
   const dropped = await host.next((m) => m.t === 'error' && m.code === 'dropped', 'drop', 15000);
   assert.equal(dropped.code, 'dropped');
   // The close frame needs a network round trip, much longer against a deployed Worker.
