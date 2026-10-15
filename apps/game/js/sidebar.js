@@ -38,6 +38,12 @@ const QUEUE_ICONS = ['buildings', 'defense', 'infantry', 'vehicles', 'aircraft',
 // The tab hotkeys (js/gamekeys.js, OpenRA ProductionType*), in queue order.
 const QUEUE_ACTIONS = ['productionTabBuildings', 'productionTabDefense', 'productionTabInfantry', 'productionTabVehicles', 'productionTabAircraft', 'productionTabNaval'];
 const QUEUE_BUILDINGS = 0;
+/**
+ * How long (ms) a card counts its holds, resumes and cancels as done before
+ * player_json shows them: orders take a few ticks (more online) to reach
+ * the engine, and a quick second right click must not act on the old state.
+ */
+export const PENDING_MS = 1500;
 
 // Cameo size in CSS pixels at UI scale 1: Red Alert's 64x48 cameos (OpenRA's
 // RA sidebar). The canvases are drawn at the size the cards really have on
@@ -413,6 +419,8 @@ export class Sidebar {
       paused: null,
       short: 0,
       head: undefined,
+      // Orders sent but not yet seen in player_json (`viewHead`).
+      pending: null,
       queued: -1,
       progress: -1,
     };
@@ -487,8 +495,9 @@ export class Sidebar {
   onCardClick(id, shift) {
     const c = this.cards.get(id);
     if (!c) return;
-    if (c.head?.paused) {
+    if (this.viewHead(c)?.paused) {
       this.game.pause_production(this.playerId, id, false);
+      this.notePending(c, { paused: false });
       this.callbacks.onProductionClick?.(id, 'resumed');
       return;
     }
@@ -518,18 +527,46 @@ export class Sidebar {
     const c = this.cards.get(id);
     if (!c) return;
     const many = shift || this.callbacks.shiftLatched?.() ? SHIFT_COUNT : 1;
+    const head = this.viewHead(c);
     // Disabled cards can be cancelled too, so nothing ever stays stuck.
-    const what = direct ? (c.head?.count ? { kind: 'cancel', count: many } : null) : rightClickAction(c.head, { style: this.callbacks.rightClickStyle?.(), many });
+    const what = direct ? (head?.count ? { kind: 'cancel', count: many } : null) : rightClickAction(head, { style: this.callbacks.rightClickStyle?.(), many });
     if (!what) return;
     if (what.kind === 'pause') {
       this.game.pause_production(this.playerId, id, true);
+      this.notePending(c, { paused: true });
       this.callbacks.onProductionClick?.(id, 'onHold');
       return;
     }
-    const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: c.queued }, what.count);
+    const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: head.count }, what.count);
     this.game.cancel_production(this.playerId, id, what.count);
+    this.notePending(c, { cancelled: what.count });
     this.callbacks.onProductionClick?.(id, 'cancelled');
     if (endsPlacement) this.callbacks.onCancelPlace?.();
+  }
+
+  /**
+   * The card's first queued item as the player last ordered it: player_json's
+   * (`c.head`) with the holds, resumes and cancels sent since but not yet
+   * shown (PENDING_MS), so quick clicks act on what they will find.
+   */
+  viewHead(c) {
+    const p = c.pending;
+    if (!p || this.now() - p.at > PENDING_MS) return c.head;
+    const count = Math.max(0, (c.head?.count ?? 0) - p.cancelled);
+    if (!c.head || count === 0) return undefined;
+    // Cancelling the held item itself (the last one left) leaves nothing on hold.
+    return { ...c.head, count, paused: p.paused ?? c.head.paused };
+  }
+
+  /** Remember an order sent for card `c` until player_json shows it (`viewHead`, `updateCard`). */
+  notePending(c, { paused = null, cancelled = 0 }) {
+    const live = c.pending && this.now() - c.pending.at <= PENDING_MS ? c.pending : null;
+    c.pending = {
+      at: this.now(),
+      base: live ? live.base : (c.head?.count ?? 0),
+      cancelled: (live?.cancelled ?? 0) + cancelled,
+      paused: paused ?? live?.paused ?? null,
+    };
   }
 
   /**
@@ -691,6 +728,9 @@ export class Sidebar {
     }
     c.head = s;
     const count = s ? s.count : 0;
+    // The orders sent for this card have arrived (or are taking too long): show the engine's state alone.
+    const p = c.pending;
+    if (p && (this.now() - p.at > PENDING_MS || (count <= p.base - p.cancelled && (p.paused === null || !s || !!s.paused === p.paused)))) c.pending = null;
     const ready = !!(s && s.done);
     const building = !!s && !ready;
     const paused = !!(s && s.paused && !ready);

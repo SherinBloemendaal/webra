@@ -1789,6 +1789,11 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   Shift cancels five the same way. Ctrl + right click (OpenRA: cancel the
   whole queue's count) is not mapped, as Ctrl + click is a right click on
   macOS. A touch long press is the right click, the Add toggle is Shift.
+  Each card counts the holds, resumes and cancels it sent as done until
+  `player_json` shows them (at most `PENDING_MS`, 1.5 s), so quick clicks
+  act on what the earlier ones ordered rather than on a state a few ticks
+  old (in the WebRA style that keeps a fast series of right clicks from
+  reaching the item being built early).
   `player_json().queues[][]` items have `paused` and `started` (something
   paid).
 - Short of credits: a cameo gets a red frame and a red "$" (class `short`,

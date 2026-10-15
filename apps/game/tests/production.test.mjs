@@ -197,7 +197,10 @@ async function fakeSidebar(cards, { style = 'openra', latched = false, state = n
   const { Sidebar } = await import('../js/sidebar.js');
   const orders = [];
   const said = [];
+  const clock = { t: 1000 };
   const fake = {
+    clock,
+    now: () => clock.t,
     playerId: 0,
     state: state ?? { funds: 0, queues: [[], [], [], [], [], []] },
     buildable: new Map(cards.map((c) => [c.id, { itemRoom: c.itemRoom ?? 999, limitLeft: null }])),
@@ -209,8 +212,7 @@ async function fakeSidebar(cards, { style = 'openra', latched = false, state = n
     },
     callbacks: { shiftLatched: () => latched, rightClickStyle: () => style, onProductionClick: (id, what) => said.push(what), onCancelPlace() {} },
   };
-  fake.onCardClick = Sidebar.prototype.onCardClick.bind(fake);
-  fake.onCardCancel = Sidebar.prototype.onCardCancel.bind(fake);
+  for (const m of ['onCardClick', 'onCardCancel', 'viewHead', 'notePending']) fake[m] = Sidebar.prototype[m].bind(fake);
   return { fake, orders, said };
 }
 
@@ -231,7 +233,7 @@ test('right and Shift + right clicks send hold or cancel orders by the style', a
   let s = await fakeSidebar([{ id: 'E1', head: building(7) }]);
   s.fake.onCardCancel('E1');
   s.fake.onCardCancel('E1', { shift: true });
-  assert.deepEqual(s.orders, [['pause', 'E1', true], ['pause', 'E1', true]], 'OpenRA: hold first');
+  assert.deepEqual(s.orders, [['pause', 'E1', true], ['cancel', 'E1', 5]], 'OpenRA: hold first, Shift does not skip it; then five go');
   s = await fakeSidebar([{ id: 'E1', head: { ...building(7), paused: true } }]);
   s.fake.onCardCancel('E1', { shift: true });
   s.fake.onCardCancel('E1');
@@ -252,4 +254,26 @@ test('right and Shift + right clicks send hold or cancel orders by the style', a
   s.fake.onCardCancel('E3');
   s.fake.onCardCancel('E3', { direct: true });
   assert.deepEqual(s.orders, [['cancel', 'E1', 1], ['cancel', 'E1', 5]]);
+});
+
+test('quick right clicks act on what the earlier ones ordered, not on the stale state (no stutter)', async () => {
+  const { PENDING_MS } = await import('../js/sidebar.js');
+  const building = (count) => ({ count, done: false, paused: false, started: true });
+  // WebRA: 3 -> 2 -> 1 -> hold -> cancel, all before player_json catches up.
+  let s = await fakeSidebar([{ id: 'E1', head: building(3) }], { style: 'webra' });
+  for (let i = 0; i < 5; i++) s.fake.onCardCancel('E1');
+  assert.deepEqual(s.orders, [['cancel', 'E1', 1], ['cancel', 'E1', 1], ['pause', 'E1', true], ['cancel', 'E1', 1]], 'never the one being built while others wait; nothing after the last');
+  // OpenRA: hold, then cancel; a left click on the held one resumes it.
+  s = await fakeSidebar([{ id: 'E1', head: building(2) }]);
+  s.fake.onCardCancel('E1');
+  s.fake.onCardCancel('E1');
+  s.fake.onCardClick('E1', false);
+  s.fake.onCardClick('E1', false);
+  assert.deepEqual(s.orders, [['pause', 'E1', true], ['cancel', 'E1', 1], ['pause', 'E1', false], ['start', 'E1', 1]]);
+  // Orders that never show up stop counting after PENDING_MS.
+  s = await fakeSidebar([{ id: 'E1', head: building(3) }], { style: 'webra' });
+  s.fake.onCardCancel('E1', { shift: true });
+  s.fake.clock.t += PENDING_MS + 1;
+  s.fake.onCardCancel('E1', { shift: true });
+  assert.deepEqual(s.orders, [['cancel', 'E1', 2], ['cancel', 'E1', 2]]);
 });

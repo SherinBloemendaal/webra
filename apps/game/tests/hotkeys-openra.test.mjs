@@ -245,6 +245,7 @@ test('slot hotkeys build the n-th item of the active tab, like a click', async (
     game: { start_production: (p, id, n) => started.push([id, n]) },
     callbacks: { onPlace: (id) => placed.push(id), shiftLatched: () => false },
     onCardClick: Sidebar.prototype.onCardClick,
+    viewHead: Sidebar.prototype.viewHead,
   };
   const reg = new HotkeyRegistry(createSettings());
   registerGameKeys(reg, { productionSlot: (n, e) => Sidebar.prototype.activateSlot.call(fake, n, { shift: !!e?.shiftKey }) });
