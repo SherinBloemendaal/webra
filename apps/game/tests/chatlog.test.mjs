@@ -259,6 +259,22 @@ test('without anyone to talk to the panel shows the history with the line off; E
   uninstallDom();
 });
 
+test('Esc in a select list, stepper or tab row stays with that control while the chat is open', async () => {
+  const { doc, p, byName } = await panel();
+  byName('openGeneralChat').handler();
+  for (const role of ['listbox', 'spinbutton', 'tablist']) {
+    const box = doc.createElement('div');
+    box.setAttribute('role', role);
+    const inner = doc.createElement('span');
+    box.append(inner);
+    doc.body.append(box);
+    const esc = keydown(inner, 'Escape');
+    assert.equal(p.isOpen, true, `${role}: the chat stays open`);
+    assert.equal(esc.defaultPrevented, false, `${role}: the control gets the key`);
+  }
+  uninstallDom();
+});
+
 test('Esc closes the open panel wherever the focus is, before the game sees it', async () => {
   const { doc, p, byName } = await panel();
   const game = [];
