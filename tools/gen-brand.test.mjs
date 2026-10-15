@@ -69,7 +69,7 @@ test('brand: the website and the game use the generated files, published under /
     assert.ok(html.includes('href="/lib/brand/apple-touch-icon.png"'), `${page} app icon`);
     assert.doesNotMatch(html, /href="data:image\/svg/, `${page} has no data-URI favicon left`);
     assert.doesNotMatch(html, /<svg class="brand-mark"/, `${page} has no old inline mark`);
-    if (/class="brand"/.test(html)) assert.match(html, /<img class="brand-mark" src="\/lib\/brand\/favicon\.svg" alt="" width="32" height="32" \/>/, `${page} header mark (under 40 px: the simplified emblem)`);
+    if (/class="brand"/.test(html)) assert.match(html, /<img class="brand-mark" src="\/lib\/brand\/emblem\.svg" alt="" width="40" height="40" \/>/, `${page} header mark (40 px: the emblem with its plate, as on the Website board)`);
   }
   const lib = libModules({ websiteDir: join(root, 'apps/website'), gameDir: join(root, 'apps/game') });
   for (const name of ['favicon.svg', 'favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png']) assert.ok(lib.includes(`brand/${name}`), `${name} under /lib/brand/`);

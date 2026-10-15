@@ -35,6 +35,14 @@ beforeEach(() => {
 });
 afterEach(() => uninstallDom());
 
+/** Pick an option of a select plate by its label: open it, click the option. */
+function choose(plate, label) {
+  click(plate.querySelector('.ui-sp-button'));
+  const option = [...plate.querySelectorAll('[role="option"]')].find((o) => o.querySelector('.ui-sp-label').textContent === label);
+  assert.ok(option, `option ${label}`);
+  click(option);
+}
+
 // ---- State ----------------------------------------------------------------------------------
 
 test('admin state: permissions follow the role table; moderators never ban staff or anyone themselves', () => {
@@ -128,9 +136,17 @@ test('settings forms: every setting gets a labelled control; values round-trip; 
 
   const form = buildSettingsForm({ audio: { master: 0.3 }, extra: { futureThing: 1 } });
   const labels = [...form.node.querySelectorAll('label')];
+  const plates = [...form.node.querySelectorAll('.ui-select-plate')];
   const count = Object.values(GROUPS).reduce((n, g) => n + Object.keys(g.settings).length, 0);
-  assert.equal(labels.length, count);
+  assert.ok(plates.length > 0, 'choices from a list are select plates');
+  assert.equal(labels.length + plates.length, count);
   for (const l of labels) assert.ok(form.node.querySelector(`#${l.getAttribute('for')}`), 'each label points at its control');
+  // A select plate is named by its label (aria-labelledby: the label, then the value).
+  for (const p of plates) {
+    const labelId = p.querySelector('.ui-sp-button').getAttribute('aria-labelledby').split(' ')[0];
+    assert.ok(form.node.querySelector(`#${labelId}`).textContent, 'each select has its label');
+  }
+  assert.equal(form.node.querySelectorAll('select').length, 0, 'no native selects');
   assert.equal(form.node.querySelectorAll('fieldset').length, Object.keys(GROUPS).length);
   const master = form.controls.find((c) => c.group === 'audio' && c.key === 'master');
   assert.equal(master.input.value, '0.3');
@@ -180,7 +196,10 @@ test('settings forms: the UI and game scale take "auto" or a number; the music s
   typeInto(game.input, '2.5');
   typeInto(ui.input, 'auto');
   const repeat = form.controls.find((c) => c.key === 'musicRepeat');
-  repeat.input.value = 'one';
+  assert.equal(repeat.select.get(), 'all', 'the default');
+  doc.body.append(form.node);
+  choose(repeat.select.root, 'Repeat one track');
+  assert.equal(repeat.select.get(), 'one');
   const r = form.read();
   assert.deepEqual(r.errors, []);
   assert.equal(r.document.game.gameScale, 2.5);
@@ -251,9 +270,9 @@ test('dashboard: filters, sorting and pages drive the API query; bulk approve', 
   await settle(20);
   assert.match(textOf(root.querySelector('.pager')), /26 to 32 of 32/);
   assert.match(location.hash, /page=2/);
-  const status = root.querySelectorAll('select')[0];
-  status.value = 'pending_approval';
-  status.dispatchEvent(new FakeEvent('change'));
+  assert.equal(root.querySelectorAll('select').length, 0, 'no native selects');
+  const status = root.querySelectorAll('.ui-select-plate')[0];
+  choose(status, 'Waiting for approval');
   await settle(20);
   assert.equal(root.querySelectorAll('tbody tr').length, 3);
   assert.match(server.requests.at(-1).url, /status=pending_approval/);
@@ -476,8 +495,7 @@ test('dashboard: IP bans, site settings with unavailable services, and the audit
   await settle(20);
   assert.match(textOf(root), /site\.update/);
   assert.match(textOf(root), /ipban\.create/);
-  const action = root.querySelector('select');
-  action.value = 'site.update';
+  choose(root.querySelector('.ui-select-plate'), 'site.update');
   submit(root.querySelector('form'));
   await settle(20);
   assert.match(server.requests.at(-1).url, /action=site\.update/);

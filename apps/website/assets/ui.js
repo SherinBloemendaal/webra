@@ -2,7 +2,7 @@
 // createElement and textContent: the site's CSP allows no inline scripts or
 // style attributes, and text from the server is never parsed as HTML.
 
-import { checkInput, switchInput } from '/lib/js/ui/controls.js';
+import { checkInput, selectPlate, switchInput } from '/lib/js/ui/controls.js';
 
 export function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -40,6 +40,24 @@ export function field(label, input, { help, wide = false } = {}) {
   if (helpEl) control.setAttribute('aria-describedby', helpEl.id);
   const row = el('div', { class: wide ? 'field field-wide' : 'field' }, el('label', { for: control.id, text: label }), control, helpEl);
   return { row, input: control };
+}
+
+/**
+ * A labelled select: the design system's select plate (the shared controls,
+ * /lib/js/ui/controls.js selectPlate) under a label, like field(). Options
+ * are `{ value, label, hint?, disabled? }`; `onChange(value)` fires on the
+ * player's choice only. Returns `{ row, select }` (select.get(), set(v),
+ * setDisabled(off), button).
+ */
+export function selectField(label, options, { value, help, disabled = false, wide = false, onChange } = {}) {
+  const id = nextId('s');
+  const labelEl = el('span', { class: 'field-label', id: `${id}-label`, text: label });
+  const helpEl = help ? el('p', { class: 'form-help', id: nextId('h'), text: help }) : null;
+  const select = selectPlate({ id, labelledBy: labelEl.id, describedBy: helpEl?.id, options, value, disabled, block: true, onChange });
+  // The label names the select; a click on it moves there, as a <label> would.
+  labelEl.addEventListener('click', () => select.button.focus());
+  const row = el('div', { class: wide ? 'field field-wide' : 'field' }, labelEl, select.root, helpEl);
+  return { row, select };
 }
 
 function checkRow(input, label, help) {
@@ -111,6 +129,7 @@ export function openDialog(title, build, { wide = false } = {}) {
       if (e.target === overlay) close(null);
     });
     overlay.addEventListener('keydown', (e) => {
+      // Esc belongs to the dialog; an open select list stops it itself (its keydown stops propagation).
       if (e.key === 'Escape') {
         e.preventDefault();
         close(null);

@@ -1,6 +1,11 @@
 /* WebRA website, same theme as the game (apps/game/css/theme.css; keep the
-   two palettes in step): gunmetal panels with bevels and rivets, faint
-   scanlines, and one accent: the Red Alert red of the WebRA star. */
+   two palettes in step): gunmetal panels with bevels and rivets, a faint
+   grid with a red glow at the top, and one accent: the Red Alert red of the
+   WebRA emblem. The layout follows the design boards (screens/Website and
+   Account, system/*): Barlow Condensed in tracked capitals for names and
+   buttons, Barlow for text, JetBrains Mono for numbers and facts. The site's
+   CSP allows no style attributes: everything is a class here, and values
+   that change at run time are custom properties set through CSSOM. */
 
 :root {
   --bg: #0a0c0f;
@@ -37,6 +42,8 @@
   --side-allies: #4d8cf2;
   --side-soviet: #ff5a3c;
   --ok: #4fd067;
+  /* The ground of a NEW tag (the Release notes board). */
+  --ok-lo: #14451f;
   --money: #f0cf63;
   --radius: 2px;
   --bevel: inset 1px 1px 0 rgba(255, 255, 255, 0.13), inset -1px -1px 0 rgba(0, 0, 0, 0.62);
@@ -46,7 +53,9 @@
   --brushed: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 4px);
   /* Backdrop of unit pictures, as on the game's build buttons (apps/game/js/cameo.js). */
   --cameo: linear-gradient(180deg, #2b333d, #1a2027 55%, #0f1317);
-  --max: 1160px;
+  /* The red glow at the top of every page (the boards' backdrop). */
+  --glow-top: #2a0f0c;
+  --max: 1200px;
   --gutter: 16px;
   /* The game's fonts, self-hosted under /lib/fonts/ (/lib/css/fonts.css, OFL). */
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -186,7 +195,11 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    radial-gradient(ellipse 140% 900px at 50% 0, var(--glow-top), var(--bg) 60%) no-repeat,
+    var(--bg);
   color: var(--text);
   font: 16px/1.6 var(--sans);
   overflow-x: hidden;
@@ -288,34 +301,23 @@ code {
   padding: 0 max(var(--gutter), env(safe-area-inset-right)) 0 max(var(--gutter), env(safe-area-inset-left));
 }
 
-/* ---- Header -------------------------------------------------------------- */
+/* ---- Header (the Website board's bar) ------------------------------------ */
 
 .site-header {
   position: sticky;
   top: 0;
   z-index: 50;
-  background:
-    var(--scan),
-    linear-gradient(180deg, rgba(40, 47, 56, 0.97), rgba(22, 26, 32, 0.97));
+  background: var(--ui-panel);
   border-bottom: 1px solid var(--edge-dark);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
     0 4px 14px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-}
-
-.site-header::after {
-  content: '';
-  display: block;
-  height: 3px;
-  background: repeating-linear-gradient(-45deg, var(--accent) 0 10px, #0b0d10 10px 20px);
-  opacity: 0.85;
 }
 
 .header-inner {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px 16px;
   min-height: 60px;
 }
 
@@ -323,25 +325,29 @@ code {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 44px;
   color: var(--text);
   text-decoration: none;
-  font-family: var(--display);
-  font-size: 1.3rem;
-  letter-spacing: 0.06em;
 }
 
 .brand:hover {
-  color: #fff;
+  color: var(--text);
 }
 
 .brand-mark {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: none;
 }
 
-.brand b {
-  color: var(--accent-hi);
+.brand-word {
+  font: 700 1.6rem/1 var(--display);
+  letter-spacing: var(--ui-track-display);
+  text-transform: uppercase;
+}
+
+.brand-word b {
+  color: var(--ui-brand-red);
   font-weight: inherit;
 }
 
@@ -349,13 +355,14 @@ code {
   display: none;
   margin-left: auto;
   min-height: 44px;
-  padding: 8px 14px;
-  background: var(--panel);
+  padding: 8px 16px;
+  background: var(--ui-raised);
   color: var(--text);
-  border: 1px solid var(--edge-hi);
+  border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
-  font: 700 0.85rem/1 var(--sans);
-  letter-spacing: 0.08em;
+  box-shadow: var(--bevel);
+  font: 700 1rem/1 var(--display);
+  letter-spacing: var(--ui-track-button);
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -374,31 +381,35 @@ code {
 }
 
 .site-nav a:not(.btn) {
-  display: block;
-  padding: 8px 12px;
-  color: var(--muted);
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  color: var(--ui-text-2);
   text-decoration: none;
-  font-weight: 600;
-  font-size: 0.95rem;
+  font: 700 1rem/1 var(--display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
   border-radius: var(--radius);
 }
 
 .site-nav a:not(.btn):hover {
   color: var(--text);
-  background: var(--panel);
+  background: var(--ui-metal-3);
 }
 
+/* The page you are on: accent text and a hazard rule under it (two signals). */
 .site-nav a:not(.btn)[aria-current='page'] {
   color: var(--accent-hi);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
 }
 
 .site-nav .nav-play {
   margin-left: 8px;
 }
 
-/* Seven links and the Play button need about 860px in one row. */
-@media (max-width: 880px) {
+/* Four links and the Play button need about 620px in one row. */
+@media (max-width: 680px) {
   .js .nav-toggle {
     display: block;
   }
@@ -410,7 +421,8 @@ code {
     right: 0;
     top: 100%;
     background: var(--bg-2);
-    border-bottom: 1px solid var(--edge);
+    border-bottom: 1px solid var(--edge-dark);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
     padding: 8px var(--gutter) 16px;
   }
 
@@ -431,15 +443,18 @@ code {
     margin: 8px 0 0;
   }
 
-  /* Touch-sized links in the opened menu. */
-  .js .site-nav a:not(.btn) {
-    display: flex;
-    align-items: center;
-    min-height: 44px;
+  .js .site-nav .nav-play .btn {
+    width: 100%;
   }
 }
 
-/* ---- Buttons ------------------------------------------------------------- */
+@media (max-width: 380px) {
+  .brand-word {
+    font-size: 1.35rem;
+  }
+}
+
+/* ---- Buttons (system/Controls: raised metal, the main action red) ------- */
 
 .btn {
   display: inline-flex;
@@ -447,29 +462,28 @@ code {
   justify-content: center;
   gap: 8px;
   min-height: 44px;
-  padding: 10px 18px;
+  padding: 0 20px;
   border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #3a424d, var(--panel-2));
+  background: var(--ui-raised);
   box-shadow: var(--bevel);
   color: var(--text);
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
-  font: 700 0.95rem/1.2 var(--sans);
-  letter-spacing: 0.06em;
+  font: 700 1.05rem/1.1 var(--display);
+  letter-spacing: var(--ui-track-button);
   text-transform: uppercase;
   text-decoration: none;
+  text-align: center;
   cursor: pointer;
-  transition: background-color 0.12s, border-color 0.12s, transform 0.12s;
+  transition: background-color 0.12s, box-shadow 0.12s;
 }
 
 .btn:hover {
-  color: #fff;
-  background: linear-gradient(180deg, #4a5360, #2d343e);
+  color: var(--text);
+  background: var(--ui-raised-hover);
 }
 
 .btn:active {
   box-shadow: var(--bevel-in);
-  transform: translateY(1px);
 }
 
 .btn[disabled],
@@ -479,56 +493,66 @@ code {
   pointer-events: none;
 }
 
-.btn-primary {
-  background: linear-gradient(var(--primary-hi), var(--primary));
+.btn-primary,
+.btn-accent {
+  background: var(--ui-primary-fill);
   color: #fff;
   box-shadow:
-    var(--bevel),
-    0 4px 0 var(--primary-shadow);
+    inset 1px 1px 0 rgba(255, 255, 255, 0.18),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.5),
+    var(--ui-primary-glow);
 }
 
-.btn-primary:hover {
-  background: linear-gradient(var(--primary-hover), var(--primary-hi));
-}
-
-.btn-primary:active {
-  background: linear-gradient(var(--primary), var(--primary-active));
+.btn-primary:hover,
+.btn-accent:hover {
+  background: var(--ui-primary-fill-hover);
+  color: #fff;
   box-shadow:
-    var(--bevel-in),
-    0 2px 0 var(--primary-shadow);
-  transform: translateY(2px);
+    inset 1px 1px 0 rgba(255, 255, 255, 0.18),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.5),
+    var(--ui-primary-glow-hover);
 }
 
+.btn-primary:active,
+.btn-accent:active {
+  background: var(--ui-primary-fill-active);
+  box-shadow: var(--bevel-in);
+}
+
+/* A disabled main button keeps its words readable. */
 .btn-primary[disabled],
 .btn-primary[aria-disabled='true'] {
+  opacity: 1;
   background: var(--primary-disabled);
+  box-shadow: none;
+  color: var(--ui-primary-disabled-text);
 }
 
-/* A second action next to the main one: a red plate without the big shadow. */
-.btn-accent {
-  background: linear-gradient(180deg, var(--primary-hi), var(--primary));
-  color: #fff;
+/* A quiet action: an outline with accent text. */
+.btn-ghost {
+  background: transparent;
+  border-color: var(--ui-metal-4);
+  box-shadow: none;
+  color: var(--accent-hi);
 }
 
-.btn-accent:hover {
-  background: linear-gradient(180deg, var(--primary-hover), var(--primary-hi));
-  color: #fff;
-}
-
-.btn-accent:active {
-  background: linear-gradient(180deg, var(--primary), var(--primary-active));
+.btn-ghost:hover {
+  background: var(--ui-metal-1);
+  border-color: var(--accent);
+  color: var(--accent-hover);
 }
 
 .btn-small {
   min-height: 36px;
-  padding: 6px 12px;
-  font-size: 0.8rem;
+  padding: 0 12px;
+  font-size: 0.9rem;
 }
 
 .btn-big {
-  min-height: 60px;
-  padding: 14px 34px;
-  font-size: 1.2rem;
+  min-height: 48px;
+  padding: 0 28px;
+  font-size: 1.15rem;
+  letter-spacing: var(--ui-track-label);
 }
 
 .btn-icon {
@@ -537,225 +561,501 @@ code {
   flex: none;
 }
 
-/* ---- Hero ---------------------------------------------------------------- */
-
-.hero {
-  position: relative;
-  overflow: hidden;
-  border-bottom: 1px solid var(--edge-dark);
-  background: var(--terrain);
-}
-
-.hero-scene {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.hero-scene-bg {
-  position: absolute;
-  inset: 0;
-  background:
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 32px),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 32px),
-    linear-gradient(115deg, #3b4a2c 40%, #46562f 70%, #3f4e2d);
-}
-
-.hero-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(10, 12, 15, 0.97) 0%, rgba(10, 12, 15, 0.9) 38%, rgba(10, 12, 15, 0.2) 66%, rgba(10, 12, 15, 0) 100%);
-  pointer-events: none;
-}
-
-@media (max-width: 760px) {
-  .hero-shade {
-    background: linear-gradient(180deg, rgba(10, 12, 15, 0.9), rgba(10, 12, 15, 0.78));
+/* Touch screens: every button is a 44 px target. */
+@media (pointer: coarse) {
+  .btn-small {
+    min-height: 44px;
   }
 }
 
+@media (forced-colors: active) {
+  .btn {
+    border-color: ButtonText;
+  }
+
+  .btn-primary,
+  .btn-accent {
+    border: 2px solid ButtonText;
+  }
+}
+
+/* ---- Lamps: a small round light next to a name (system/Controls) ------- */
+
+.lamp {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+@media (forced-colors: active) {
+  .lamp {
+    background: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* ---- Hero (the Website board) ---------------------------------------------- */
+
 .hero-inner {
-  position: relative;
-  z-index: 1;
-  padding-top: clamp(48px, 9vw, 110px);
-  padding-bottom: clamp(48px, 9vw, 110px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 48px;
+  padding-top: clamp(40px, 7vw, 72px);
+  padding-bottom: clamp(40px, 6vw, 56px);
 }
 
 .hero-copy {
-  max-width: 600px;
+  display: flex;
+  flex: 1 1 420px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+  min-width: 0;
 }
 
-.eyebrow {
+/* "Closed beta · v0.17": the lamp and the words, never colour alone. */
+.beta-badge {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 18px;
-  padding: 4px 10px;
-  border: 1px solid var(--edge-hi);
-  background: rgba(0, 0, 0, 0.35);
-  color: var(--accent-hi);
-  font: 700 0.75rem/1.4 var(--mono);
-  letter-spacing: 0.14em;
+  margin: 0;
+  padding: 5px 10px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-led-ok-edge);
+  color: var(--ok);
+  font: 700 0.82rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
 
-.eyebrow::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  background: var(--accent-hi);
-  box-shadow: 0 0 8px var(--accent-hi);
+.beta-badge .lamp {
+  width: 7px;
+  height: 7px;
+  background: var(--ui-led-ok);
+  box-shadow: var(--ui-led-ok-glow);
 }
 
-/* The WebRA name on a riveted, bevelled steel plate. */
+.beta-badge[data-kind='closed'] {
+  border-color: var(--ui-led-warn-edge);
+  color: var(--ui-warn);
+}
+
+.beta-badge[data-kind='closed'] .lamp {
+  background: var(--ui-led-warn);
+  box-shadow: var(--ui-led-warn-glow);
+}
+
 .hero h1 {
-  display: inline-block;
-  margin: 0 0 18px;
-  padding: 0.14em 0.34em 0.08em;
-  font-family: var(--display);
-  font-size: clamp(2.8rem, 11vw, 6.4rem);
-  line-height: 1;
-  letter-spacing: 0.04em;
-  color: #dfe4ea;
-  background:
-    var(--rivet) left 6px top 6px / 10px 10px no-repeat,
-    var(--rivet) right 6px top 6px / 10px 10px no-repeat,
-    var(--rivet) left 6px bottom 6px / 10px 10px no-repeat,
-    var(--rivet) right 6px bottom 6px / 10px 10px no-repeat,
-    var(--brushed),
-    linear-gradient(180deg, #6b7581, #3a414a 48%, #2a3037 52%, #47505a);
-  border: 2px solid var(--edge-dark);
-  border-radius: 3px;
-  box-shadow:
-    inset 2px 2px 0 rgba(255, 255, 255, 0.28),
-    inset -2px -2px 0 rgba(0, 0, 0, 0.6),
-    0 6px 0 rgba(0, 0, 0, 0.45),
-    0 18px 40px rgba(0, 0, 0, 0.5);
-  text-shadow:
-    0 -2px 0 rgba(0, 0, 0, 0.8),
-    0 2px 0 rgba(255, 255, 255, 0.25);
+  margin: 0;
+  font: 700 clamp(3rem, 7vw, 5.5rem) / 0.95 var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
-.hero .tagline {
-  margin: 0 0 14px;
-  font-family: var(--display);
-  font-size: clamp(1.35rem, 3.6vw, 2.1rem);
-  line-height: 1.2;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+.hero-accent {
+  color: var(--accent-hi);
 }
 
 .hero .lede {
-  max-width: 34em;
-  color: #c8d0d8;
-  font-size: 1.08rem;
-}
-
-.tech-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 28px;
-  padding: 0;
-  list-style: none;
-}
-
-.tech-tags li {
-  padding: 3px 10px;
-  border: 1px solid var(--edge-hi);
-  background: rgba(0, 0, 0, 0.4);
-  font: 600 0.8rem/1.6 var(--mono);
-  color: var(--text);
+  max-width: 56ch;
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: 1.125rem;
+  line-height: 1.55;
 }
 
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
-  align-items: center;
+  gap: 12px;
 }
 
 .hero-note {
-  margin: 18px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.hero-figure {
+  flex: 1 1 440px;
+  min-width: 0;
+  margin: 0;
+}
+
+.hero-frame {
+  position: relative;
+  padding: 10px;
+  background: var(--ui-panel);
+  border: 1px solid var(--edge-dark);
+  box-shadow:
+    inset 1px 1px 0 var(--ui-bevel-hi),
+    0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.hero-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--edge-dark);
+}
+
+/* Less motion asked for: the still picture instead of the animated one, by
+   CSS alone (SMIL cannot be paused from a stylesheet, and this works before
+   and without script). */
+.hero-still {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-live,
+  .hero-pause {
+    display: none !important;
+  }
+
+  .hero-still {
+    display: block;
+  }
+}
+
+.hero-figure figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* The battlefield's colours: the Allied team blue, water and the Tesla bolt
+   (art, not accents; the token test allows them in .hero-art rules). */
+.hero-art .ground {
+  fill: #344e24;
+}
+
+.hero-art .ally {
+  fill: #4d8cf2;
+}
+
+.hero-art .ally-edge {
+  stroke: #1c3c7a;
+}
+
+.hero-art .ally-mid {
+  fill: #3a6ac0;
+}
+
+.hero-art .ally-hi {
+  fill: #79abff;
+}
+
+.hero-art .ally-gun {
+  fill: #22344f;
+}
+
+.hero-art .glass {
+  fill: #7fb0c8;
+}
+
+.hero-art .river {
+  stroke: #2e5266;
+}
+
+.hero-art .river-deep {
+  stroke: #1e3440;
+}
+
+.hero-art .tesla {
+  stroke: #7fe0ff;
+}
+
+.hero-hud {
+  position: absolute;
+  left: 22px;
+  bottom: 22px;
+  display: flex;
+  gap: 10px;
+  font: 0.8rem/1.4 var(--mono);
+}
+
+.hero-hud span {
+  padding: 4px 8px;
+  background: rgba(10, 12, 15, 0.85);
+}
+
+.hud-money {
+  color: var(--money);
+}
+
+.hud-power {
+  color: var(--ok);
+}
+
+/* Moving pictures that run longer than five seconds can be paused (WCAG 2.2.2). */
+.hero-pause {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  min-height: 32px;
+  padding: 0 10px;
+  background: rgba(10, 12, 15, 0.85);
+  border: 1px solid var(--ui-metal-4);
+  color: var(--ui-text-2);
+  font: 700 0.8rem/1 var(--display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hero-pause:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+@media (pointer: coarse) {
+  .hero-pause {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-hud {
+    left: 16px;
+    bottom: 16px;
+    font-size: 0.7rem;
+  }
+
+  .hero-pause {
+    right: 16px;
+    bottom: 16px;
+  }
 }
 
 /* ---- Sections ------------------------------------------------------------ */
 
 .section {
-  padding: clamp(56px, 8vw, 96px) 0;
-  border-bottom: 1px solid var(--edge);
+  padding: clamp(48px, 7vw, 72px) 0;
 }
 
 .section-alt {
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 24px),
-    var(--bg-2);
+  border-top: 1px solid var(--ui-line-soft);
+  border-bottom: 1px solid var(--ui-line-soft);
+  background: var(--ui-metal-0);
 }
 
 .section-head {
-  max-width: 720px;
-  margin-bottom: 36px;
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+
+/* A section name with the short hazard rule in front of it. */
+.section-head h2,
+.packs h2,
+.cta-band h2 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  font: 700 clamp(1.6rem, 3.2vw, 2rem) / 1.1 var(--display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+}
+
+.section-head h2::before {
+  content: '';
+  flex: none;
+  width: 60px;
+  height: 4px;
+  background: var(--ui-hazard);
 }
 
 .section-head p {
-  color: var(--muted);
+  margin: 0;
+  color: var(--ui-text-2);
   font-size: 1.05rem;
 }
 
 .kicker {
-  display: block;
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
   color: var(--accent-hi);
-  font: 700 0.78rem/1 var(--mono);
-  letter-spacing: 0.18em;
+  font: 700 0.85rem/1 var(--display);
+  letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
 
-/* Riveted gunmetal plate. */
+.kicker::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+/* A riveted gunmetal plate (one rivet in the corner, as on the boards' cards). */
 .panel {
   background:
-    var(--rivet) left 3px top 3px / 8px 8px no-repeat,
-    var(--rivet) right 3px top 3px / 8px 8px no-repeat,
-    var(--rivet) left 3px bottom 3px / 8px 8px no-repeat,
-    var(--rivet) right 3px bottom 3px / 8px 8px no-repeat,
-    var(--scan),
-    linear-gradient(180deg, var(--panel-2), var(--panel));
+    var(--rivet) right 5px top 5px / 8px 8px no-repeat,
+    var(--ui-panel);
   border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
   box-shadow: var(--bevel);
 }
 
-/* ---- Feature grid -------------------------------------------------------- */
+/* ---- Feature cards --------------------------------------------------------- */
 
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .feature {
-  position: relative;
-  padding: 22px 22px 20px;
-  border-top: 3px solid var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
 }
 
-.feature-icon {
-  width: 40px;
-  height: 40px;
-  margin-bottom: 14px;
-  color: var(--accent-hi);
+.feature h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font: 700 1.375rem/1.1 var(--display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
 }
 
 .feature p {
   margin: 0;
+  color: var(--ui-text-2);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.feature-fact {
+  margin-top: auto;
+  color: var(--money);
+  font: 0.8rem/1.4 var(--mono);
+}
+
+/* ---- Texture packs: an explanation with pictures, not a setting ------------ */
+
+.packs {
+  background: var(--ui-metal-0);
+  border-top: 1px solid var(--ui-line-soft);
+  border-bottom: 1px solid var(--ui-line-soft);
+}
+
+.packs-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32px;
+  padding-top: clamp(40px, 6vw, 56px);
+  padding-bottom: clamp(40px, 6vw, 56px);
+}
+
+.packs-copy {
+  display: flex;
+  flex: 1 1 320px;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.packs-copy p {
+  max-width: 52ch;
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+.pack-list {
+  display: grid;
+  flex: 1 1 520px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--edge-dark);
+}
+
+.pack-on {
+  background: var(--accent-lo);
+  border-color: var(--accent);
+}
+
+.pack-swatch {
+  display: block;
+  height: 90px;
+  border: 1px solid var(--edge-dark);
+}
+
+.pack-2d {
+  background:
+    repeating-linear-gradient(0deg, #5d5b53 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(90deg, #5d5b53 0 1px, transparent 1px 12px),
+    linear-gradient(135deg, #b8b5a7 0 50%, #344e24 50%);
+}
+
+.pack-3d {
+  background: linear-gradient(135deg, #ece6d6 0 30%, #ddd6c4 30% 45%, #6abe4a 45% 70%, #4f8a3a 70%);
+}
+
+.pack-ra {
+  background:
+    radial-gradient(#55585c 1px, transparent 1.5px) 0 0 / 4px 4px,
+    linear-gradient(135deg, #78766e 0 40%, #3c5228 40%);
+}
+
+.pack-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 1rem/1.1 var(--display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+}
+
+.pack .lamp {
+  background: var(--ui-led-off);
+  box-shadow: var(--ui-led-off-glow);
+}
+
+.pack-on .lamp {
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+.pack-note {
   color: var(--muted);
+  font: 0.75rem/1.4 var(--mono);
+}
+
+.pack-on .pack-note {
+  color: var(--accent-hover);
+}
+
+@media (forced-colors: active) {
+  .pack-on {
+    border: 2px solid Highlight;
+  }
 }
 
 /* ---- Gallery ------------------------------------------------------------- */
@@ -776,17 +1076,30 @@ code {
 }
 
 .segmented button {
-  min-height: 40px;
-  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
   border: 0;
   border-right: 1px solid var(--edge-dark);
-  background: linear-gradient(180deg, #2d343e, var(--panel-2));
+  background: var(--ui-raised);
   box-shadow: var(--bevel);
-  color: var(--muted);
-  font: 700 0.8rem/1 var(--sans);
-  letter-spacing: 0.08em;
+  color: var(--ui-text-2);
+  font: 700 0.95rem/1 var(--display);
+  letter-spacing: var(--ui-track-button);
   text-transform: uppercase;
   cursor: pointer;
+}
+
+/* The chosen one: dark red with a lit lamp (a second signal next to colour). */
+.segmented button::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-led-off);
+  box-shadow: var(--ui-led-off-glow);
 }
 
 .segmented button:last-child {
@@ -794,9 +1107,25 @@ code {
 }
 
 .segmented button[aria-pressed='true'] {
-  background: linear-gradient(180deg, var(--accent), var(--accent-lo));
-  box-shadow: var(--bevel-in);
-  color: #fff;
+  background: var(--accent-lo);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-hi);
+}
+
+.segmented button[aria-pressed='true']::before {
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+@media (forced-colors: active) {
+  .segmented button[aria-pressed='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .segmented button[aria-pressed='true']::before {
+    background: Highlight;
+  }
 }
 
 .segmented button:focus-visible {
@@ -817,8 +1146,8 @@ code {
   float: left;
   margin-right: 6px;
   color: var(--muted);
-  font: 700 0.75rem/40px var(--mono);
-  letter-spacing: 0.12em;
+  font: 700 0.85rem/44px var(--display);
+  letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
 
@@ -835,8 +1164,8 @@ code {
 
 .swatch .chip {
   display: block;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border: 2px solid rgba(0, 0, 0, 0.6);
   border-radius: 3px;
   background: var(--c);
@@ -892,9 +1221,9 @@ code {
 }
 
 .gallery-item .name {
-  font-weight: 700;
-  font-size: 0.92rem;
-  line-height: 1.25;
+  font: 700 1rem/1.2 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .gallery-item .meta {
@@ -910,11 +1239,12 @@ code {
 }
 
 .notice {
-  padding: 16px 18px;
-  border: 1px solid var(--edge-hi);
+  padding: 14px 16px;
+  border: 1px solid var(--edge-dark);
   border-left: 4px solid var(--info);
   border-radius: var(--radius);
-  background: var(--panel);
+  background: var(--ui-metal-1);
+  box-shadow: var(--bevel);
   color: var(--text);
 }
 
@@ -962,8 +1292,8 @@ code {
 
 .side-head h3 {
   margin: 0;
-  font-family: var(--display);
-  font-size: 1.6rem;
+  font: 700 1.6rem/1.1 var(--display);
+  letter-spacing: var(--ui-track-section);
   text-transform: uppercase;
   color: var(--side);
 }
@@ -1013,8 +1343,8 @@ code {
   gap: 14px;
   align-items: center;
   padding: 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--edge);
+  background: var(--ui-metal-0);
+  border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
 }
 
@@ -1027,9 +1357,9 @@ code {
 
 .country h4 {
   margin: 0 0 2px;
-  font-size: 1rem;
+  font: 700 1.05rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-section);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .country p {
@@ -1077,13 +1407,17 @@ code {
   content: counter(step, decimal-leading-zero);
   display: block;
   margin-bottom: 10px;
-  color: var(--accent-hi);
+  color: var(--money);
   font: 700 0.85rem/1 var(--mono);
   letter-spacing: 0.14em;
 }
 
-.pipeline h3 {
-  color: var(--accent-hi);
+.pipeline h3,
+.stack h3,
+.credits h3 {
+  font: 700 1.25rem/1.15 var(--display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
 }
 
 .pipeline p {
@@ -1140,13 +1474,11 @@ code {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 28px;
-  border-left: 4px solid var(--accent);
+  gap: 24px;
 }
 
 .cta-band h2 {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .cta-band p {
@@ -1178,24 +1510,48 @@ code {
 
 /* ---- Data pages (maps, lobbies) ----------------------------------------- */
 
+/* A page's name with the hazard rule under it (system/Patterns, screen header). */
 .page-head {
-  padding: clamp(40px, 6vw, 72px) 0 28px;
-  border-bottom: 1px solid var(--edge);
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 24px),
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-lo) 45%, var(--bg)), var(--bg));
+  padding: clamp(32px, 6vw, 56px) 0 0;
+}
+
+.page-head .wrap {
+  position: relative;
+  padding-bottom: 20px;
+}
+
+.page-head .wrap::after {
+  content: '';
+  position: absolute;
+  left: max(var(--gutter), env(safe-area-inset-left));
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: 0;
+  height: 1px;
+  background: var(--ui-line);
+}
+
+.page-head .wrap::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: max(var(--gutter), env(safe-area-inset-left));
+  bottom: -1px;
+  width: min(220px, 40%);
+  height: 4px;
+  background: var(--ui-hazard);
 }
 
 .page-head h1 {
-  font-family: var(--display);
-  font-size: clamp(2.2rem, 6vw, 3.6rem);
+  margin: 0 0 10px;
+  font: 700 clamp(2.2rem, 6vw, var(--ui-fs-display)) / 1 var(--display);
+  letter-spacing: var(--ui-track-display);
   text-transform: uppercase;
 }
 
 .page-head p {
   max-width: 44em;
-  color: var(--muted);
+  margin: 0;
+  color: var(--ui-text-2);
   font-size: 1.05rem;
 }
 
@@ -1223,10 +1579,11 @@ code {
   flex: 1 1 220px;
 }
 
-.field label {
+.field label,
+.field .field-label {
   color: var(--muted);
-  font: 700 0.72rem/1.2 var(--mono);
-  letter-spacing: 0.12em;
+  font: 600 0.875rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
 
@@ -1237,10 +1594,14 @@ code {
   padding: 8px 12px;
   border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
-  background: #0e1115;
+  background: var(--ui-well);
   box-shadow: var(--bevel-in);
   color: var(--text);
   font: 1rem/1.2 var(--sans);
+}
+
+.field input:focus-visible {
+  border-color: var(--accent);
 }
 
 .status-line {
@@ -1275,10 +1636,9 @@ code {
 .card h2,
 .card h3 {
   margin: 0;
-  font-family: var(--sans);
-  font-size: 1.12rem;
+  font: 700 1.3rem/1.15 var(--display);
+  letter-spacing: 0.04em;
   text-transform: none;
-  letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
@@ -1336,8 +1696,8 @@ code {
 
 .tags li {
   padding: 1px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ui-metal-3);
+  background: var(--ui-metal-0);
   color: var(--muted);
   font: 0.75rem/1.6 var(--mono);
 }
@@ -1349,21 +1709,36 @@ code {
   margin-top: auto;
 }
 
+/* A label (system/Controls "badge"): the word in tracked capitals on a dark
+   well, the border and a lamp in its colour. The word is the signal; the
+   colour repeats it. */
 .badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: none;
   padding: 2px 8px;
   border: 1px solid currentColor;
-  border-radius: 2px;
-  font: 700 0.68rem/1.5 var(--mono);
-  letter-spacing: 0.12em;
+  border-radius: var(--radius);
+  background: var(--ui-metal-0);
+  color: var(--ui-text-2);
+  font: 700 0.78rem/1.5 var(--display);
+  letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-.badge-modded {
-  color: #ffb347;
-  background: rgba(255, 140, 0, 0.12);
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-modded,
+.badge-warn {
+  color: var(--ui-warn);
 }
 
 .badge-locked {
@@ -1378,8 +1753,8 @@ code {
   color: var(--ok);
 }
 
-.badge-warn {
-  color: #ffb347;
+.badge-live::before {
+  box-shadow: var(--ui-led-ok-glow);
 }
 
 .badges {
@@ -1427,17 +1802,24 @@ code {
 
 .lost .code {
   margin: 0;
-  font-family: var(--display);
-  font-size: clamp(5rem, 22vw, 11rem);
-  line-height: 1;
+  font: 700 clamp(5rem, 22vw, 11rem) / 1 var(--mono);
   color: transparent;
   -webkit-text-stroke: 3px var(--accent-hi);
 }
 
 .lost h1 {
-  font-family: var(--display);
-  font-size: clamp(1.6rem, 5vw, 2.6rem);
+  font: 700 clamp(1.8rem, 5vw, 2.75rem) / 1.1 var(--display);
+  letter-spacing: var(--ui-track-display);
   text-transform: uppercase;
+}
+
+.lost h1::after {
+  content: '';
+  display: block;
+  width: 120px;
+  height: 4px;
+  margin: 14px auto 0;
+  background: var(--ui-hazard);
 }
 
 .lost p {
@@ -1453,12 +1835,11 @@ code {
 /* ---- Footer -------------------------------------------------------------- */
 
 .site-footer {
-  padding: 32px 0 max(40px, env(safe-area-inset-bottom));
-  background:
-    var(--scan),
-    #07090b;
+  padding: 24px 0 max(32px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--edge-dark);
+  background: var(--ui-metal-0);
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 .footer-inner {
@@ -1482,6 +1863,9 @@ code {
 }
 
 .footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
   color: var(--muted);
 }
 
@@ -1524,7 +1908,7 @@ code {
   }
 }
 
-/* ---- Changelog page (release-notes.json) ------------------------------------- */
+/* ---- Changelog page (release-notes.json; the Release notes board) ----------- */
 
 .releases {
   display: grid;
@@ -1533,23 +1917,46 @@ code {
 }
 
 .release {
-  padding: 20px 22px 18px;
-  border-top: 3px solid var(--accent);
+  padding: 0;
   scroll-margin-top: 80px;
+}
+
+/* The hazard stripe across the top, as on the board's dialog. */
+.release::before {
+  content: '';
+  display: block;
+  height: 6px;
+  background: var(--ui-hazard);
 }
 
 .release-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--edge);
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.release-title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.release-kicker {
+  color: var(--accent-hi);
+  font: 700 0.8rem/1 var(--display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
 }
 
 .release-version {
   margin: 0;
-  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  font: 700 clamp(1.5rem, 3vw, var(--ui-fs-title)) / 1.1 var(--display);
+  letter-spacing: var(--ui-track-title);
+  text-transform: uppercase;
 }
 
 .release-version a {
@@ -1566,36 +1973,76 @@ code {
   font: 0.85rem/1.4 var(--mono);
 }
 
-.release-section h3 {
-  margin: 18px 0 6px;
-  color: var(--accent-hi);
-  font: 700 0.78rem/1.2 var(--mono);
-  letter-spacing: 0.16em;
+.release-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 22px 4px;
+}
+
+.release-group h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font: 700 1.1rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-section);
   text-transform: uppercase;
 }
 
-.release-breaking h3 {
-  color: var(--danger);
+/* NEW, FIXED: the word on a small plate; the colour repeats it. */
+.release-tag {
+  padding: 2px 8px;
+  border: 1px solid var(--ui-metal-4);
+  background: var(--ui-metal-0);
+  color: var(--muted);
+  font: 700 0.75rem/1.4 var(--display);
+  letter-spacing: var(--ui-track-label);
 }
 
-.release-group h4 {
-  margin: 12px 0 4px;
-  font-size: 0.95rem;
+.release-tag-new {
+  border-color: var(--ui-led-ok-edge);
+  background: var(--ok-lo);
+  color: var(--ok);
+}
+
+.release-tag-breaking {
+  border-color: var(--accent);
+  background: var(--accent-lo);
+  color: var(--accent-hi);
 }
 
 .release-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin: 0;
-  padding-left: 20px;
-  color: #d0d6dc;
+  padding: 0;
+  list-style: none;
+  color: var(--ui-text-2);
 }
 
 .release-entries li {
-  margin: 4px 0;
+  position: relative;
+  padding-left: 16px;
   overflow-wrap: anywhere;
 }
 
-.release-entries li::marker {
-  color: var(--muted);
+.release-entries li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.65em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.release-new .release-entries li::before,
+.release-features .release-entries li::before {
+  background: var(--ok);
 }
 
 .release-entries a {
@@ -1604,18 +2051,130 @@ code {
 
 .release-compare,
 .release-empty {
-  margin: 16px 0 0;
+  margin: 0;
+  padding: 14px 22px 18px;
   color: var(--muted);
 }
 
 @media (max-width: 420px) {
-  .release {
-    padding: 16px 14px;
+  .release-head,
+  .release-body,
+  .release-compare,
+  .release-empty {
+    padding-left: 14px;
+    padding-right: 14px;
   }
+}
 
-  .release-entries {
-    padding-left: 16px;
+@media (forced-colors: active) {
+  .release-tag {
+    border-color: CanvasText;
   }
+}
+
+/* ---- Maps: the sort select (the shared select plate) -------------------------- */
+
+.controls .ui-select-plate {
+  min-width: 180px;
+}
+
+/* ---- Multiplayer: join with a code (the Invite codes board) ------------------- */
+
+.join-code {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 620px;
+  margin-bottom: 24px;
+  padding: 18px 20px;
+}
+
+.join-code-title {
+  margin: 0;
+  font: 700 1.4rem/1.1 var(--display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+}
+
+.join-code-help {
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: 0.95rem;
+}
+
+.join-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* The code in wide mono cells' type: big, tracked, upper case. */
+.code-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--edge-dark);
+  border-radius: var(--radius);
+  background: var(--ui-well);
+  box-shadow: var(--bevel-in);
+  color: var(--text);
+  font: 600 1.6rem/1 var(--mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.code-input::placeholder {
+  color: var(--ui-dim);
+}
+
+.code-input:focus-visible {
+  border-color: var(--accent);
+}
+
+.join-code-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 1.5em;
+}
+
+.join-code-result:empty {
+  min-height: 0;
+}
+
+.join-code-result .lamp {
+  margin-top: 0.45em;
+}
+
+.join-code-result[data-state='ok'] .lamp {
+  background: var(--ui-led-ok);
+  box-shadow: var(--ui-led-ok-glow);
+}
+
+.join-code-result[data-state='warn'] .lamp {
+  background: var(--ui-led-warn);
+  box-shadow: var(--ui-led-warn-glow);
+}
+
+.join-code-result[data-state='bad'] .lamp {
+  background: var(--ui-led-bad);
+  box-shadow: var(--ui-led-bad-glow);
+}
+
+.join-code-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ui-text-2);
+  font-size: 0.95rem;
+}
+
+.join-code-text strong {
+  color: var(--text);
+  font: 700 1.05rem/1.2 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* Long-form text pages (privacy notice). */

@@ -32,7 +32,7 @@ import {
 import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
 import { checkDocument } from '/lib/js/registry.js';
 import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/lib/protocol/accounts.js';
-import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
+import { el, field, selectField, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
 
 const TABS = [
   ['overview', 'Overview', 'stats'],
@@ -179,24 +179,17 @@ export async function mountAdmin(root, deps = {}) {
   function renderUsers() {
     const status = statusLine();
     const q = field('Search', el('input', { type: 'search', value: table.query.q, maxlength: '100', placeholder: can.fullDetail ? 'Username, display name or email' : 'Username or display name' }));
-    const select = (label, options, value, all = 'All') => {
-      const s = el('select', {}, el('option', { value: '', text: all }), ...options.map(([v, t]) => el('option', { value: v, text: t })));
-      s.value = value;
-      return field(label, s);
-    };
-    const st = select('Status', STATUSES.map((s) => [s, STATUS_LABELS[s]]), table.query.status);
-    const role = select('Role', ROLES.map((r) => [r, r]), table.query.role);
-    const flag = select('Flag', Object.entries(FLAGS), table.query.flag);
-    const limit = select('Per page', [10, 25, 50, 100].map((n) => [String(n), String(n)]), String(table.query.limit), '25');
+    const select = (label, options, value, onChange, all = 'All') =>
+      selectField(label, [...(all === null ? [] : [{ value: '', label: all }]), ...options.map(([v, t]) => ({ value: v, label: t }))], { value, onChange });
+    const st = select('Status', STATUSES.map((s) => [s, STATUS_LABELS[s]]), table.query.status, (v) => (table.filter({ status: v }), load()));
+    const role = select('Role', ROLES.map((r) => [r, r]), table.query.role, (v) => (table.filter({ role: v }), load()));
+    const flag = select('Flag', Object.entries(FLAGS), table.query.flag, (v) => (table.filter({ flag: v }), load()));
+    const limit = select('Per page', [10, 25, 50, 100].map((n) => [String(n), String(n)]), String(table.query.limit), (v) => (table.filter({ limit: Number(v) }), load()), null);
     let timer = null;
     q.input.addEventListener('input', () => {
       clearTimeout(timer);
       timer = setTimeout(() => (table.filter({ q: q.input.value.trim() }), load()), 250);
     });
-    st.input.addEventListener('change', () => (table.filter({ status: st.input.value }), load()));
-    role.input.addEventListener('change', () => (table.filter({ role: role.input.value }), load()));
-    flag.input.addEventListener('change', () => (table.filter({ flag: flag.input.value }), load()));
-    limit.input.addEventListener('change', () => (table.filter({ limit: Number(limit.input.value) }), load()));
 
     const bulkApprove = el('button', { type: 'button', class: 'btn btn-small', text: 'Approve selected' });
     const bulkReject = el('button', { type: 'button', class: 'btn btn-small btn-danger', text: 'Reject selected' });
@@ -561,14 +554,18 @@ export async function mountAdmin(root, deps = {}) {
     const verified = switchRow('Email verified', { checked: u.emailVerified });
     // Without a colour of its own the game draws the avatar in the accent red (--ui-accent).
     const color = field('Colour', el('input', { type: 'color', value: u.avatarColor ?? '#e0301f' }));
-    const statusSel = el('select', {}, ...SETTABLE_STATUSES.map((s) => el('option', { value: s, text: STATUS_LABELS[s] })));
-    statusSel.value = SETTABLE_STATUSES.includes(u.storedStatus) ? u.storedStatus : 'active';
-    statusSel.disabled = u.storedStatus === 'deleted';
-    const st = field('Status', statusSel, { help: 'Bans and deletion have their own buttons.' });
-    const roleSel = el('select', {}, ...ROLES.map((r) => el('option', { value: r, text: r })));
-    roleSel.value = u.role;
-    roleSel.disabled = u.id === me.id;
-    const role = field('Role', roleSel, { help: u.id === me.id ? 'You cannot change your own role.' : 'A role change signs the account out everywhere.' });
+    const st = selectField('Status', SETTABLE_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })), {
+      value: SETTABLE_STATUSES.includes(u.storedStatus) ? u.storedStatus : 'active',
+      disabled: u.storedStatus === 'deleted',
+      help: 'Bans and deletion have their own buttons.',
+    });
+    const statusSel = st.select;
+    const role = selectField('Role', ROLES.map((r) => ({ value: r, label: r })), {
+      value: u.role,
+      disabled: u.id === me.id,
+      help: u.id === me.id ? 'You cannot change your own role.' : 'A role change signs the account out everywhere.',
+    });
+    const roleSel = role.select;
     const flags = Object.entries(FLAGS).map(([f, label]) => [f, switchRow(label, { checked: u.flags?.includes(f) })]);
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save changes' });
     const form = el('form', { class: 'form-grid', novalidate: true }, username.row, displayName.row, email.row, verified.row, color.row, st.row, role.row, el('fieldset', { class: 'check-group' }, el('legend', { text: 'Flags' }), ...flags.map(([, c]) => c.row)), el('div', { class: 'form-actions' }, save));
@@ -581,8 +578,8 @@ export async function mountAdmin(root, deps = {}) {
       if (mail !== (u.email ?? '')) patch.email = mail || null;
       if (verified.input.checked !== u.emailVerified) patch.emailVerified = verified.input.checked;
       if (color.input.value.toLowerCase() !== u.avatarColor) patch.avatarColor = color.input.value.toLowerCase();
-      if (!statusSel.disabled && statusSel.value !== u.storedStatus) patch.status = statusSel.value;
-      if (!roleSel.disabled && roleSel.value !== u.role) patch.role = roleSel.value;
+      if (!statusSel.button.disabled && statusSel.get() !== u.storedStatus) patch.status = statusSel.get();
+      if (!roleSel.button.disabled && roleSel.get() !== u.role) patch.role = roleSel.get();
       const nextFlags = flags.filter(([, c]) => c.input.checked).map(([f]) => f);
       if (JSON.stringify([...nextFlags].sort()) !== JSON.stringify([...(u.flags ?? [])].sort())) patch.flags = nextFlags;
       if (!Object.keys(patch).length) return status.show('Nothing changed.', 'info');
@@ -952,14 +949,13 @@ export async function mountAdmin(root, deps = {}) {
   // ---- Audit log ------------------------------------------------------------------------------------
   async function renderAudit() {
     const status = statusLine();
-    const action = el('select', {}, el('option', { value: '', text: 'All actions' }), ...AUDIT_ACTIONS.map((a) => el('option', { value: a, text: a })));
-    action.value = audit.action;
+    const action = selectField('Action', [{ value: '', label: 'All actions' }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))], { value: audit.action });
     const actor = field('Actor id', el('input', { type: 'text', value: audit.actor, spellcheck: 'false', maxlength: '32' }));
     const target = field('Target id', el('input', { type: 'text', value: audit.target, spellcheck: 'false', maxlength: '32' }));
     const since = field('From', el('input', { type: 'date', value: audit.since }));
     const until = field('To', el('input', { type: 'date', value: audit.until }));
     const apply = el('button', { type: 'submit', class: 'btn', text: 'Filter' });
-    const form = el('form', { class: 'controls', novalidate: true }, field('Action', action).row, actor.row, target.row, since.row, until.row, apply);
+    const form = el('form', { class: 'controls', novalidate: true }, action.row, actor.row, target.row, since.row, until.row, apply);
     const list = el('ol', { class: 'audit-list' });
     const range = el('span', { class: 'form-help' });
     const prev = el('button', { type: 'button', class: 'btn btn-small', text: 'Newer' });
@@ -990,7 +986,7 @@ export async function mountAdmin(root, deps = {}) {
     };
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const f = auditFilter({ action: action.value, actor: actor.input.value.trim(), target: target.input.value.trim(), since: since.input.value, until: until.input.value });
+      const f = auditFilter({ action: action.select.get() ?? '', actor: actor.input.value.trim(), target: target.input.value.trim(), since: since.input.value, until: until.input.value });
       if (actor.input.value.trim() && !f.actor) return status.show('The actor is a user id: 32 lower case hex characters.', 'error');
       if (target.input.value.trim() && !f.target) return status.show('The target is an id: lower case letters and digits.', 'error');
       audit = f;

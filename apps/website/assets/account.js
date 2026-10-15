@@ -29,6 +29,8 @@ import {
   validUsername,
 } from '/lib/protocol/accounts.js';
 import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
+import { FRIENDS_POLL_MS, FriendsClient, friendsSummary, groupFriends, socialSettings } from './friends.js';
+import { formatInviteCode, invitePath, inviteInPath, inviteSummary, lookupInvite, normalizeInviteCode } from './invite.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
 export const DEFAULT_RETURN = '/play/';
@@ -149,6 +151,21 @@ export async function mountAccountPage(root, deps = {}) {
   await session.refresh();
   if (session.error && !session.site) {
     notice.show(errorText(session.error), 'error');
+    // No connection (the Sign in again board): say so and offer to try again.
+    const again = el('button', { type: 'button', class: 'btn btn-small', text: 'Try again' });
+    again.addEventListener('click', () => {
+      root.replaceChildren(el('p', { class: 'status-line', text: 'Loading your account...' }));
+      mountAccountPage(root, deps);
+    });
+    root.append(
+      el(
+        'div',
+        { class: 'state-card state-off', role: 'status' },
+        el('div', { class: 'state-card-head' }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('strong', { text: 'No connection' })),
+        el('p', { text: 'The account server could not be reached. What runs in other tabs keeps running.' }),
+        el('div', { class: 'form-actions' }, again),
+      ),
+    );
   }
 
   // ---- Links from emails and Discord ---------------------------------------------------
@@ -171,7 +188,11 @@ export async function mountAccountPage(root, deps = {}) {
   }
   if (fragment.kind === 'signup' || fragment.kind === 'forgot') start = fragment.kind;
 
+  /** The friends list while the account shows (polls; stopped on every new render). */
+  let friendsView = null;
   const render = () => {
+    friendsView?.stop();
+    friendsView = null;
     if (fragment.kind === 'reset' && !fragment.used) return renderReset();
     if (session.user) renderAccount();
     else renderSignedOut(start);
@@ -233,13 +254,48 @@ export async function mountAccountPage(root, deps = {}) {
     panel.setAttribute('aria-labelledby', `tab-${tab}`);
     view.replaceChildren();
     if (target && session.site?.gameRequiresAccount !== false) {
-      view.append(el('p', { class: 'notice', role: 'status' }, el('strong', { text: 'Sign in to play. ' }), el('span', { text: 'The game needs a WebRA account. Sign in, or create one; new accounts may need an admin to approve them first.' })));
+      view.append(
+        el(
+          'div',
+          { class: 'state-card state-on gate-card', role: 'status' },
+          el('div', { class: 'state-card-head' }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('strong', { text: 'Sign in to play' })),
+          el('p', { text: 'The game needs a WebRA account. Sign in, or create one; new accounts may need an admin to approve them first. Your link opens once you are in.' }),
+        ),
+      );
     }
+    const invite = inviteInPath(target);
+    if (invite) view.append(inviteCard(invite));
     if (session.site?.motd) view.append(el('p', { class: 'notice', text: session.site.motd }));
     if (tab === 'signin') panel.append(signInForm(methods));
     else if (tab === 'signup') panel.append(signUpForm(methods));
     else panel.append(forgotForm());
     view.append(el('div', { class: 'panel form-card' }, list, panel));
+  }
+
+  /**
+   * The lobby an invite link names (/join/<code> -> the game -> the play
+   * gate -> here with ?returnTo=/play/?invite=<code>): looked up so the
+   * player sees where the sign-in leads.
+   */
+  function inviteCard(code) {
+    const card = el(
+      'div',
+      { class: 'state-card state-off invite-card', role: 'status' },
+      el('div', { class: 'state-card-head' }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('strong', { text: `Invite code ${formatInviteCode(code)}` })),
+      el('p', { text: 'Looking up the lobby...' }),
+    );
+    lookupInvite(code, { fetchImpl: api.fetchImpl }).then((r) => {
+      const [head, text] = [card.querySelector('strong'), card.querySelector('p')];
+      if (r.ok) {
+        card.className = `state-card ${r.full ? 'state-warn' : 'state-ok'} invite-card`;
+        head.textContent = `You are invited: ${typeof r.invite.name === 'string' && r.invite.name ? r.invite.name : 'a lobby'}`;
+        text.textContent = [inviteSummary(r.invite), r.message ?? 'Sign in, or create an account, and the game opens the lobby.'].filter(Boolean).join('. ');
+      } else {
+        card.className = 'state-card state-bad invite-card';
+        text.textContent = `${r.message} You can still sign in.`;
+      }
+    });
+    return card;
   }
 
   /** `email` (signup): reads the typed address, sent along for when Discord reports no verified one. */
@@ -266,6 +322,25 @@ export async function mountAccountPage(root, deps = {}) {
   function signInForm(methods) {
     const status = statusLine();
     const out = el('div', { class: 'form-stack' }, status.node);
+    // A passkey first, then "or" and the password (the Sign in again board).
+    if (methods.passkey) {
+      const b = el('button', { type: 'button', class: 'btn btn-passkey', text: 'Sign in with a passkey' });
+      b.addEventListener('click', () =>
+        busy(b, status, async () => {
+          try {
+            const { challengeId, credential } = await getPasskey(await api.passkeyOptions());
+            const r = await api.passkeyLogin(challengeId, credential);
+            await session.setUser(r.user);
+            if (goOn()) return;
+            render();
+          } catch (err) {
+            if (!isCancel(err)) throw err;
+          }
+        }, errorText),
+      );
+      out.append(b);
+      if (methods.password) out.append(el('div', { class: 'or-rule', 'aria-hidden': 'true' }, el('span', { text: 'or' })));
+    }
     if (methods.password) {
       const login = field('Username or email', el('input', { type: 'text', autocomplete: 'username webauthn', required: true, maxlength: String(EMAIL_MAX) }));
       const password = field('Password', el('input', { type: 'password', autocomplete: 'current-password', required: true, maxlength: '128' }));
@@ -288,25 +363,16 @@ export async function mountAccountPage(root, deps = {}) {
       out.append(form);
     }
     const others = el('div', { class: 'form-actions' });
-    if (methods.passkey) {
-      const b = el('button', { type: 'button', class: 'btn', text: 'Sign in with a passkey' });
-      b.addEventListener('click', () =>
-        busy(b, status, async () => {
-          try {
-            const { challengeId, credential } = await getPasskey(await api.passkeyOptions());
-            const r = await api.passkeyLogin(challengeId, credential);
-            await session.setUser(r.user);
-            if (goOn()) return;
-            render();
-          } catch (err) {
-            if (!isCancel(err)) throw err;
-          }
-        }, errorText),
-      );
-      others.append(b);
-    }
     if (methods.discord) others.append(discordButton('Sign in with Discord', 'login', status));
     if (others.childNodes.length) out.append(others);
+    if (methods.password && methods.email) {
+      const forgot = el('button', { type: 'button', class: 'link-button', text: 'Forgot your password?' });
+      forgot.addEventListener('click', () => {
+        renderSignedOut('forgot');
+        view.querySelector('#tab-forgot')?.focus();
+      });
+      out.append(el('p', { class: 'form-help' }, forgot));
+    }
     if (!methods.password && !methods.passkey && !methods.discord) out.append(el('p', { class: 'notice', text: 'Signing in is switched off right now.' }));
     return out;
   }
@@ -490,9 +556,139 @@ export async function mountAccountPage(root, deps = {}) {
   }
 
   // ---- Signed in ---------------------------------------------------------------------------------
+  const sectionId = (title) => `section-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`;
+
   function section(title, ...children) {
-    const id = `section-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`;
+    const id = sectionId(title);
     return el('section', { class: 'panel account-section', 'aria-labelledby': id }, el('h2', { id, text: title }), ...children);
+  }
+
+  /**
+   * One part of a section (a sign-in method): a row with a lamp, the name
+   * and a line of detail (the Account board), then its controls. Returns
+   * `{ node, setDetail(text, lit) }`.
+   */
+  function part(title, { lit = false, detail = '' } = {}, ...children) {
+    const id = sectionId(title);
+    const lamp = el('span', { class: lit ? 'lamp' : 'lamp lamp-off', 'aria-hidden': 'true' });
+    const detailEl = el('span', { class: 'part-detail', text: detail });
+    const node = el('div', { class: 'account-part', role: 'group', 'aria-labelledby': id }, el('div', { class: 'part-head' }, lamp, el('div', { class: 'part-name' }, el('h3', { id, text: title }), detailEl)), ...present(children));
+    return {
+      node,
+      setDetail(text, on = lit) {
+        detailEl.textContent = text;
+        lamp.className = on ? 'lamp' : 'lamp lamp-off';
+      },
+    };
+  }
+
+  /** The side menu's entries, in order: those whose section is on the page are shown. */
+  const MENU = [
+    ['Profile', 'section-profile'],
+    ['Sign-in methods', 'section-sign-in-methods'],
+    ['Replays', 'section-replays'],
+    ['Friends', 'section-friends'],
+    ['Devices', 'section-devices'],
+    ['Your data', 'section-your-data'],
+  ];
+
+  /**
+   * The side menu (the Account board): who is signed in with the account's
+   * state on a lamp, links to the sections with a lamp each (the section in
+   * view is lit and marked aria-current), Play and Sign out.
+   */
+  function sideMenu(user, state, sections, signOut) {
+    const avatar = el('span', { class: 'account-avatar', 'aria-hidden': 'true', text: (user.displayName || user.username || '?').slice(0, 1).toUpperCase() });
+    if (/^#[0-9a-f]{6}$/i.test(user.avatarColor ?? '')) avatar.style.setProperty('--avatar', user.avatarColor);
+    const stateLed = state.kind === 'active' ? 'ok' : state.kind === 'banned' ? 'bad' : 'warn';
+    const who = el(
+      'div',
+      { class: 'account-who' },
+      avatar,
+      el(
+        'span',
+        { class: 'account-who-text' },
+        el('strong', { class: 'account-username', text: user.username }),
+        user.displayName && user.displayName !== user.username ? el('span', { class: 'account-display', text: user.displayName }) : null,
+        el('span', { class: `account-state-word state-${stateLed}` }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('span', { text: state.kind === 'active' ? 'Active' : state.label })),
+        roleBadge(user.role),
+      ),
+    );
+    const ids = new Set(sections.map((n) => n.getAttribute('aria-labelledby')));
+    const links = MENU.filter(([, id]) => ids.has(id)).map(([label, id]) => el('a', { class: 'account-nav-link', href: `#${id}`, 'data-target': id }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('span', { text: label })));
+    const mark = (id) => {
+      for (const a of links) {
+        if (a.dataset.target === id) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      }
+    };
+    for (const a of links) {
+      // Scroll to the section without putting its id in the address (the fragment carries email links).
+      a.addEventListener('click', (e) => {
+        const heading = view.querySelector(`#${a.dataset.target}`);
+        if (!heading) return;
+        e.preventDefault();
+        heading.closest('section')?.scrollIntoView?.({ block: 'start' });
+        mark(a.dataset.target);
+      });
+    }
+    mark(links[0]?.dataset.target);
+    const actions = el('div', { class: 'account-nav-actions' }, user.canPlay ? el('a', { class: 'btn btn-primary btn-play', href: target ?? DEFAULT_RETURN, text: 'Play' }) : null, signOut);
+    const nav = el('nav', { class: 'account-nav', 'aria-label': 'Account sections' }, who, el('div', { class: 'account-nav-links' }, ...links), actions);
+    // The section in view lights its link.
+    if (typeof IntersectionObserver === 'function') {
+      const shown = new Map();
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) shown.set(e.target.getAttribute('aria-labelledby'), e.isIntersecting);
+          const first = MENU.map(([, id]) => id).find((id) => shown.get(id));
+          if (first) mark(first);
+        },
+        { rootMargin: '-80px 0px -45% 0px' },
+      );
+      for (const n of sections) io.observe(n);
+    }
+    return nav;
+  }
+
+  /**
+   * The account's state with what to do about it (the Sign in again board's
+   * cards): waiting for approval or an email to confirm, with "Check again"
+   * (and "Send the link again"), banned or inactive.
+   */
+  function stateCard(user, state) {
+    const led = state.kind === 'banned' ? 'bad' : state.kind === 'pending_email' || state.kind === 'pending_approval' ? 'warn' : 'off';
+    const s = statusLine();
+    const box = el(
+      'div',
+      { class: `state-card state-${led} account-state account-state-${state.kind}`, role: 'status' },
+      el('div', { class: 'state-card-head' }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('strong', { text: state.label })),
+      el('p', { text: state.text }),
+    );
+    const actions = el('div', { class: 'form-actions' });
+    if (state.kind === 'pending_email' && user.email) {
+      const resend = el('button', { type: 'button', class: 'btn btn-small', text: 'Send the link again' });
+      resend.addEventListener('click', () => busy(resend, s, async () => {
+        await api.resendVerification();
+        s.show(`A new link is on its way to ${user.email}.`, 'ok');
+      }, errorText));
+      actions.append(resend);
+    }
+    if (state.kind === 'pending_approval' || state.kind === 'pending_email') {
+      const again = el('button', { type: 'button', class: 'btn btn-small', text: 'Check again' });
+      again.addEventListener('click', () => busy(again, s, async () => {
+        const r = await api.account();
+        session.user = r.user;
+        if (r.user.status !== 'active') return s.show('Still waiting. You get an email once the account is active.', 'info');
+        if (goOn()) return;
+        notice.show('Your account is active.', 'ok');
+        render();
+      }, errorText));
+      actions.append(again);
+    }
+    if (actions.childNodes.length) box.append(actions);
+    box.append(s.node);
+    return box;
   }
 
   async function renderAccount() {
@@ -508,36 +704,24 @@ export async function mountAccountPage(root, deps = {}) {
       notice.show(errorText(err), 'error');
     }
     const state = accountState(user, session.site);
-    const parts = [];
-    if (session.site?.motd) parts.push(el('p', { class: 'notice', text: session.site.motd }));
+    friendsView?.stop();
+    friendsView = null;
+    const top = [];
+    if (session.site?.motd) top.push(el('p', { class: 'notice', text: session.site.motd }));
     const signOut = el('button', { type: 'button', class: 'btn', text: 'Sign out' });
     signOut.addEventListener('click', async () => {
+      friendsView?.stop();
       await session.signOut().catch(() => {});
       notice.show('You are signed out.', 'info');
       render();
     });
-    const head = el(
-      'div',
-      { class: 'panel account-head' },
-      el('div', { class: 'account-who' }, el('strong', { class: 'account-username', text: user.username }), user.displayName && user.displayName !== user.username ? el('span', { class: 'account-display', text: user.displayName }) : null, roleBadge(user.role)),
-      el('div', { class: 'form-actions' }, user.canPlay ? el('a', { class: 'btn btn-primary btn-play', href: target ?? DEFAULT_RETURN, text: 'Play' }) : null, signOut),
-    );
-    parts.push(head);
-    if (state.kind !== 'active') {
-      const box = el('div', { class: `notice account-state account-state-${state.kind}`, role: 'status' }, el('strong', { text: `${state.label}. ` }), el('span', { text: state.text }));
-      if (state.kind === 'pending_email' && user.email) {
-        const resend = el('button', { type: 'button', class: 'btn btn-small', text: 'Send the link again' });
-        const s = statusLine();
-        resend.addEventListener('click', () => busy(resend, s, async () => {
-          await api.resendVerification();
-          s.show(`A new link is on its way to ${user.email}.`, 'ok');
-        }, errorText));
-        box.append(el('div', { class: 'form-actions' }, resend), s.node);
-      }
-      parts.push(box);
-    }
-    parts.push(profileSection(user), emailSection(user), passwordSection(user), passkeySection(), discordSection(user), sessionsSection(), replaysSection(user), dataSection(user));
-    view.replaceChildren(...present(parts));
+    if (state.kind !== 'active') top.push(stateCard(user, state));
+    // Friends need an active account (the routes answer 403 otherwise).
+    friendsView = user.status === 'active' ? friendsSection(user) : null;
+    const sections = present(profileSection(user), signInSection(user), replaysSection(user), friendsView?.node, sessionsSection(), dataSection(user));
+    const main = el('div', { class: 'account-main' }, ...top, ...sections);
+    view.replaceChildren(el('div', { class: 'account-layout' }, sideMenu(user, state, sections, signOut), main));
+    friendsView?.start();
   }
 
   function roleBadge(role) {
@@ -569,7 +753,7 @@ export async function mountAccountPage(root, deps = {}) {
         status.show('Saved.', 'ok');
       }, errorText);
     });
-    return section('Profile', el('p', { class: 'form-help', text: `Account created ${formatDateTime(user.createdAt)}.` }), status.node, form);
+    return section('Profile', el('p', { class: 'form-help', text: `Account created ${formatDateTime(user.createdAt)}.` }), status.node, form, emailSection(user));
   }
 
   function emailSection(user) {
@@ -611,7 +795,7 @@ export async function mountAccountPage(root, deps = {}) {
       }, errorText));
       actions.append(resend);
     }
-    return section('Email', current, pending, unavailable, status.node, form, actions.childNodes.length ? actions : null);
+    return part('Email', { lit: !!user.email && user.emailVerified, detail: user.email ? (user.emailVerified ? 'Verified' : 'Not verified') : 'Not set' }, current, pending, unavailable, status.node, form, actions.childNodes.length ? actions : null).node;
   }
 
   function passwordSection(user) {
@@ -640,15 +824,19 @@ export async function mountAccountPage(root, deps = {}) {
         renderAccount();
       }, errorText);
     });
-    return section('Password', status.node, form, remove ? el('div', { class: 'form-actions' }, remove) : null);
+    const detail = !has ? 'Not set' : user.passwordChangedAt ? `Changed ${formatDateTime(user.passwordChangedAt)}` : 'Set';
+    return part('Password', { lit: has, detail }, status.node, form, remove ? el('div', { class: 'form-actions' }, remove) : null).node;
   }
 
-  function passkeySection() {
+  function passkeySection(user) {
     const status = statusLine();
+    const count = Number(user.methods?.passkeys) || 0;
+    const block = part('Passkeys', { lit: count > 0, detail: count ? `${count} ${count === 1 ? 'passkey' : 'passkeys'}` : 'None yet' });
     const list = el('ul', { class: 'item-list', 'aria-label': 'Passkeys' }, el('li', { class: 'form-help', text: 'Loading...' }));
     const load = async () => {
       try {
         const { passkeys } = await api.passkeys();
+        block.setDetail(passkeys.length ? `${passkeys.length} ${passkeys.length === 1 ? 'passkey' : 'passkeys'}: ${passkeys.map((p) => p.name).join(', ')}` : 'None yet', passkeys.length > 0);
         if (!passkeys.length) return list.replaceChildren(el('li', { class: 'form-help', text: 'No passkeys yet.' }));
         list.replaceChildren(
           ...passkeys.map((p) => {
@@ -694,7 +882,8 @@ export async function mountAccountPage(root, deps = {}) {
         }
       }, errorText),
     );
-    return section('Passkeys', el('p', { class: 'form-help', text: 'Sign in with your fingerprint, face or device PIN instead of a password.' }), status.node, list, el('div', { class: 'form-actions' }, add));
+    block.node.append(el('p', { class: 'form-help', text: 'Sign in with your fingerprint, face or device PIN instead of a password.' }), status.node, list, el('div', { class: 'form-actions' }, add));
+    return block.node;
   }
 
   function discordSection(user) {
@@ -724,7 +913,12 @@ export async function mountAccountPage(root, deps = {}) {
       );
       parts.push(el('p', { class: 'form-help', text: 'Then you can sign in with Discord too.' }), el('div', { class: 'form-actions' }, link));
     }
-    return section('Discord', ...parts);
+    return part('Discord', { lit: !!linked, detail: linked ? `Linked to ${linked.username}` : 'Not linked' }, ...parts).node;
+  }
+
+  /** Password, passkeys and Discord under one heading (the Account board's "Sign-in methods"). */
+  function signInSection(user) {
+    return section('Sign-in methods', passwordSection(user), passkeySection(user), discordSection(user));
   }
 
   function sessionsSection() {
@@ -785,7 +979,9 @@ export async function mountAccountPage(root, deps = {}) {
   function replaysSection(user) {
     if (session.site?.services?.replays === false) return null;
     const status = statusLine();
-    const usage = el('p', { class: 'form-help', text: 'Loading...' });
+    const usage = el('p', { class: 'form-help usage-text', text: 'Loading...' });
+    // How full the account's replay space is (a bar as on the Account board; the words above say the same).
+    const meter = el('div', { class: 'usage-meter', role: 'meter', 'aria-label': 'Replay space used', 'aria-valuemin': '0', 'aria-valuemax': '100', hidden: true }, el('span', { class: 'usage-fill' }));
     const list = el('ul', { class: 'item-list', 'aria-label': 'Replays' });
     const toggleRow = switchRow('Save replays to my account', {
       help: 'While you are signed in, the game uploads the replay of every game you finish or leave. Online replays hold the other players\' names and the chat.',
@@ -830,6 +1026,11 @@ export async function mountAccountPage(root, deps = {}) {
     const load = async () => {
       try {
         const data = await api.replays();
+        const share = data.limits?.bytes > 0 ? Math.min(1, Math.max(0, (Number(data.usage?.bytes) || 0) / data.limits.bytes)) : 0;
+        meter.hidden = !(data.limits?.bytes > 0);
+        meter.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+        meter.setAttribute('aria-valuetext', usageText(data.usage, data.limits));
+        meter.style.setProperty('--fill', `${(share * 100).toFixed(1)}%`);
         usage.textContent = `${usageText(data.usage, data.limits)}. Each replay is kept for ${Math.round(data.limits.retentionMs / 86400000)} days; when a new one does not fit, the oldest go first.`;
         if (!data.replays.length) return list.replaceChildren(el('li', { class: 'form-help', text: 'No replays yet.' }));
         list.replaceChildren(
@@ -864,7 +1065,320 @@ export async function mountAccountPage(root, deps = {}) {
     };
     loadSetting();
     load();
-    return section('Replays', toggleRow.row, status.node, usage, list);
+    return section('Replays', toggleRow.row, status.node, usage, meter, list);
+  }
+
+  /**
+   * Friends (docs/accounts-api.md 5.11, the Friends board): who is in a
+   * game, in a lobby, online or offline, with Join and Spectate where the
+   * friend allows it; requests and lobby invites; adding and blocking by
+   * username; and the three privacy switches (settings `social.*`, which the
+   * server applies). Polls every FRIENDS_POLL_MS while the tab is visible.
+   * Returns `{ node, start, stop, refresh }`; a server without the routes
+   * (404) gets a line saying so.
+   */
+  function friendsSection(user) {
+    const client = deps.friends ?? new FriendsClient(api);
+    const timers = deps.timers ?? globalThis;
+    const status = statusLine();
+    let doc = null;
+    let timer = null;
+    let running = false;
+    let settingsDoc = null;
+
+    const friendError = (err) => {
+      if (err instanceof AccountError) {
+        if (err.code === 'not_found') return 'No player with this name.';
+        if (err.code === 'blocked') return 'You blocked this player. Unblock them first.';
+        if (err.code === 'conflict') return 'You are friends already, or you asked already.';
+        if (err.code === 'limit') return 'You reached the most friends or open requests.';
+        if (err.code === 'rate_limited') return 'Too many requests. Try again in an hour.';
+      }
+      return errorText(err);
+    };
+    /** Run an action, then load the list again; resolves with the action's answer. */
+    const act = async (fn) => {
+      const out = await fn();
+      await refresh();
+      return out;
+    };
+    const button = (text, cls, onClick, label) => {
+      const b = el('button', { type: 'button', class: `btn btn-small ${cls}`.trim(), text, 'aria-label': label });
+      b.addEventListener('click', () => busy(b, status, onClick, friendError));
+      return b;
+    };
+    const avatar = (p) => {
+      const a = el('span', { class: 'friend-avatar', 'aria-hidden': 'true', text: (p.displayName || p.username || '?').slice(0, 1).toUpperCase() });
+      if (/^#[0-9a-f]{6}$/i.test(p.avatarColor ?? '')) a.style.setProperty('--avatar', p.avatarColor);
+      return a;
+    };
+    const nameOf = (p) => (p.displayName && p.displayName !== p.username ? `${p.displayName} (${p.username})` : p.username);
+    const nameForm = (label, buttonText, buttonClass, run) => {
+      const f = field(label, el('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', maxlength: String(USERNAME_MAX) }));
+      const b = el('button', { type: 'submit', class: `btn ${buttonClass}`, text: buttonText });
+      const form = el('form', { class: 'friends-add', novalidate: true }, f.row, b);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = f.input.value.trim();
+        if (!name) return status.show(`Enter the username of the player to ${buttonText.toLowerCase()}.`, 'error');
+        await busy(b, status, async () => {
+          await run(name);
+          f.input.value = '';
+        }, friendError);
+      });
+      return form;
+    };
+
+    // Who you are (friends add you by this name).
+    const summary = el('span', { class: 'friends-summary ui-num', text: 'Loading...' });
+    const copy = el('button', { type: 'button', class: 'btn btn-small', text: 'Copy', 'aria-label': 'Copy your username' });
+    copy.addEventListener('click', async () => {
+      try {
+        await globalThis.navigator.clipboard.writeText(user.username);
+        status.show('Your username is copied. Friends add you with it.', 'ok');
+      } catch {
+        status.show(`Your username is ${user.username}.`, 'info');
+      }
+    });
+    const head = el('div', { class: 'friends-head' }, summary, el('span', { class: 'friends-me' }, el('span', { class: 'part-detail', text: 'Your username' }), el('strong', { text: user.username }), copy));
+
+    const search = el('input', { type: 'search', class: 'friends-search', 'aria-label': 'Search friends', placeholder: 'Search friends', autocomplete: 'off' });
+    search.addEventListener('input', () => paint());
+    const list = el('div', { class: 'friends-list' });
+    const invites = el('div', { class: 'friends-block', hidden: true });
+    const requests = el('div', { class: 'friends-block' });
+    const blocked = el('div', { class: 'friends-block' });
+    const addForm = nameForm('Username', 'Send request', 'btn-primary', async (name) => {
+      const r = await act(() => client.request(name));
+      status.show(r?.friend ? `You and ${r.friend.username} are friends now.` : `Request sent to ${name}. They see it next time they look.`, 'ok');
+    });
+    const blockForm = nameForm('Block a player', 'Block', 'btn-danger', async (name) => {
+      await act(() => client.block(name));
+      status.show(`${name} is blocked.`, 'info');
+    });
+
+    function friendRow({ friend: f, status: st }) {
+      const sess = f.session && typeof f.session.id === 'string' ? f.session : null;
+      const actions = el('span', { class: 'friend-actions' });
+      if (user.canPlay && sess?.joinable) actions.append(el('a', { class: 'btn btn-small btn-primary', href: `/play/?join=${encodeURIComponent(sess.id)}`, text: 'Join', 'aria-label': `Join ${f.username}'s lobby` }));
+      if (user.canPlay && sess?.spectatable) actions.append(el('a', { class: 'btn btn-small', href: `/play/?join=${encodeURIComponent(sess.id)}`, text: 'Spectate', 'aria-label': `Watch ${f.username}'s game` }));
+      actions.append(
+        el(
+          'details',
+          { class: 'friend-more' },
+          el('summary', { class: 'btn btn-small', 'aria-label': `More for ${f.username}`, text: 'More' }),
+          el(
+            'span',
+            { class: 'friend-more-actions' },
+            button('Remove', '', async () => {
+              if (!(await confirmDialog('Remove friend', `Remove ${f.username} from your friends? Invites between you end too.`, { confirmText: 'Remove' }))) return;
+              await act(() => client.remove(f.username));
+              status.show(`${f.username} is no longer your friend.`, 'info');
+            }, `Remove ${f.username}`),
+            button('Block', 'btn-danger', async () => {
+              if (!(await confirmDialog('Block player', `Block ${f.username}? They can no longer send you requests or invites, or join your lobby.`, { confirmText: 'Block', danger: true }))) return;
+              await act(() => client.block(f.username));
+              status.show(`${f.username} is blocked.`, 'info');
+            }, `Block ${f.username}`),
+          ),
+        ),
+      );
+      return el(
+        'li',
+        { class: `friend-row friend-${st.group}` },
+        avatar(f),
+        el('span', { class: 'friend-text' }, el('strong', { text: nameOf(f) }), el('span', { class: `friend-status state-${st.led}` }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('span', { text: st.text }))),
+        actions,
+      );
+    }
+
+    const blockTitle = (text, n) => el('h3', { class: 'friends-block-title' }, el('span', { text }), n ? el('span', { class: 'count', text: String(n) }) : null);
+    const personRow = (p, detail, ...buttons) => el('li', { class: 'friend-row' }, avatar(p), el('span', { class: 'friend-text' }, el('strong', { text: nameOf(p) }), detail ? el('span', { class: 'part-detail', text: detail }) : null), el('span', { class: 'friend-actions' }, ...buttons));
+
+    function paint() {
+      if (!doc) return;
+      const friends = Array.isArray(doc.friends) ? doc.friends : [];
+      summary.textContent = friends.length ? friendsSummary(friends) : 'No friends yet';
+      const groups = groupFriends(friends, search.value);
+      if (!friends.length) list.replaceChildren(el('p', { class: 'form-help', text: 'Add a friend by username, or accept a request.' }));
+      else if (!groups.length) list.replaceChildren(el('p', { class: 'form-help', text: 'No friend matches your search.' }));
+      else list.replaceChildren(...groups.map((g) => el('div', { class: 'friend-group' }, el('h3', { class: 'friend-group-title', text: `${g.title} (${g.people.length})` }), el('ul', { class: 'friend-rows' }, ...g.people.map(friendRow)))));
+
+      // Lobby invites from friends: Join opens the lobby by its code (/join/<code>).
+      const got = Array.isArray(doc.invites) ? doc.invites : [];
+      invites.hidden = !got.length;
+      invites.replaceChildren(
+        blockTitle('Invites', got.length),
+        el(
+          'ul',
+          { class: 'friend-rows' },
+          ...got.map((i) => {
+            const code = normalizeInviteCode(String(i.code ?? ''));
+            const what = [typeof i.name === 'string' && i.name ? i.name : 'a lobby', inviteSummary(i)].filter(Boolean).join(' · ');
+            return el(
+              'li',
+              { class: 'friend-row' },
+              el('span', { class: 'lamp', 'aria-hidden': 'true' }),
+              el('span', { class: 'friend-text' }, el('strong', { text: `${i.username} invites you` }), el('span', { class: 'part-detail', text: what })),
+              el(
+                'span',
+                { class: 'friend-actions' },
+                ...present(
+                  user.canPlay && code ? el('a', { class: 'btn btn-small btn-primary', href: invitePath(code), text: 'Join', 'aria-label': `Join ${i.username}'s lobby by invite` }) : null,
+                  button('Dismiss', '', async () => act(() => client.dismissInvite(i.username)), `Dismiss the invite from ${i.username}`),
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+
+      // Requests: incoming with Accept and Ignore; sent ones with Withdraw.
+      const incoming = Array.isArray(doc.incoming) ? doc.incoming : [];
+      const outgoing = Array.isArray(doc.outgoing) ? doc.outgoing : [];
+      requests.replaceChildren(
+        ...present(
+          blockTitle('Requests', incoming.length),
+          incoming.length
+            ? el(
+                'ul',
+                { class: 'friend-rows' },
+                ...incoming.map((r) =>
+                  personRow(
+                    r,
+                    `Asked ${formatDateTime(r.createdAt)}`,
+                    button('Accept', 'btn-primary', async () => {
+                      await act(() => client.accept(r.username));
+                      status.show(`You and ${r.username} are friends now.`, 'ok');
+                    }, `Accept ${r.username}`),
+                    button('Ignore', '', async () => {
+                      await act(() => client.ignore(r.username));
+                      status.show(`The request from ${r.username} is hidden.`, 'info');
+                    }, `Ignore ${r.username}`),
+                  ),
+                ),
+              )
+            : el('p', { class: 'form-help', text: 'No requests waiting.' }),
+          outgoing.length ? el('ul', { class: 'friend-rows', 'aria-label': 'Sent requests' }, ...outgoing.map((r) => personRow(r, 'Sent, waiting for an answer', button('Withdraw', '', async () => act(() => client.withdraw(r.username)), `Withdraw the request to ${r.username}`)))) : null,
+        ),
+      );
+
+      // Blocked players with Unblock (the form to block by name stays, so typing survives a poll).
+      const blocks = Array.isArray(doc.blocked) ? doc.blocked : [];
+      blocked.replaceChildren(
+        ...present(
+          blockTitle('Blocked players', blocks.length),
+          el('p', { class: 'form-help', text: 'Blocked players cannot send you requests or invites, or join a lobby you are in.' }),
+          blocks.length ? el('ul', { class: 'friend-rows' }, ...blocks.map((b) => personRow(b, null, button('Unblock', '', async () => act(() => client.unblock(b.username)), `Unblock ${b.username}`)))) : null,
+        ),
+      );
+    }
+
+    // Privacy: the social settings of the account's settings document (the server applies them).
+    const switches = [
+      ['showOnline', 'Show me as online', 'Friends see when you are around. Off: you look offline to them.'],
+      ['friendsJoin', 'Friends can join my lobby', 'Without an invite, if there is room.'],
+      ['allowSpectate', 'Allow spectators', 'Friends can watch your games.'],
+    ].map(([key, label, help]) => {
+      const row = switchRow(label, { help });
+      row.input.disabled = true;
+      row.input.addEventListener('change', () =>
+        busy(row.input, status, async () => {
+          try {
+            await saveSocial(key, row.input.checked);
+            status.show('Saved.', 'ok');
+          } catch (err) {
+            row.input.checked = !row.input.checked;
+            throw err;
+          }
+        }, errorText),
+      );
+      return [key, row];
+    });
+    const loadSocial = async () => {
+      try {
+        settingsDoc = await api.settings();
+        const social = socialSettings(settingsDoc.settings);
+        for (const [key, row] of switches) {
+          row.input.checked = social[key];
+          row.input.disabled = false;
+        }
+      } catch (err) {
+        status.show(errorText(err), 'error');
+      }
+    };
+    const saveSocial = async (key, on, attempt = 0) => {
+      const settings = { ...(settingsDoc.settings ?? {}), social: { ...(settingsDoc.settings?.social ?? {}), [key]: on } };
+      try {
+        settingsDoc = await api.putSettings(settingsDoc.version, settings);
+      } catch (err) {
+        // Changed on another device meanwhile: apply the switch to the newer document.
+        if (err instanceof AccountError && err.code === 'version_conflict' && err.detail?.current && attempt < 2) {
+          settingsDoc = err.detail.current;
+          return saveSocial(key, on, attempt + 1);
+        }
+        throw err;
+      }
+    };
+
+    const node = section(
+      'Friends',
+      head,
+      status.node,
+      el(
+        'div',
+        { class: 'friends-grid' },
+        el('div', { class: 'friends-col' }, search, list),
+        el(
+          'div',
+          { class: 'friends-col' },
+          invites,
+          requests,
+          el('div', { class: 'friends-block' }, blockTitle('Add a friend'), addForm),
+          el('div', { class: 'friends-block friends-privacy' }, blockTitle('Privacy'), ...switches.map(([, r]) => r.row)),
+          el('div', { class: 'friends-block' }, blocked, blockForm),
+        ),
+      ),
+    );
+
+    async function refresh() {
+      if (timer !== null) timers.clearTimeout(timer);
+      timer = null;
+      try {
+        // A hidden tab does not ask; the next turn looks again.
+        if (doc && globalThis.document?.visibilityState === 'hidden') return;
+        doc = await client.list();
+        paint();
+      } catch (err) {
+        if (err instanceof AccountError && err.status === 404) {
+          // A server without friends yet: say so and stop asking.
+          running = false;
+          summary.textContent = 'Not available';
+          list.replaceChildren(el('p', { class: 'form-help', text: 'Friends are not available on this server yet.' }));
+          return;
+        }
+        if (err instanceof AccountError && (err.status === 401 || err.status === 403)) running = false;
+        status.show(errorText(err), 'error');
+      } finally {
+        if (running && timer === null) timer = timers.setTimeout(() => refresh(), FRIENDS_POLL_MS);
+      }
+    }
+
+    return {
+      node,
+      start() {
+        if (running) return;
+        running = true;
+        refresh();
+        loadSocial();
+      },
+      stop() {
+        running = false;
+        if (timer !== null) timers.clearTimeout(timer);
+        timer = null;
+      },
+      refresh,
+    };
   }
 
   function dataSection(user) {
@@ -877,7 +1391,8 @@ export async function mountAccountPage(root, deps = {}) {
         status.show('Your data is downloaded.', 'ok');
       }, errorText),
     );
-    const del = el('button', { type: 'button', class: 'btn btn-danger', text: 'Delete my account' });
+    // The striped danger button of the design system (the word on a well); the dialog still asks for the username.
+    const del = el('button', { type: 'button', class: 'btn btn-hazard' }, el('span', { text: 'Delete my account' }));
     del.addEventListener('click', async () => {
       const typed = await promptText('Delete account', `Type your username (${user.username}) to delete your account. It is removed for good after 30 days.`, '', 24, 'Delete');
       if (typed === null) return;

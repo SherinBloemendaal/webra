@@ -1,6 +1,7 @@
 /* The account page (/account/) and the admin dashboard (/admin.html):
    forms, tabs, dialogs, tables and the user drawer, on the site's gunmetal
-   theme (site.css tokens). */
+   theme (site.css tokens). The account page follows the Account board: a
+   side menu with lamps, sections on metal panels, rows on dark wells. */
 
 .account-root,
 .admin-root {
@@ -33,10 +34,21 @@
 
 .account-section h2,
 .form-card h2 {
-  margin: 0 0 12px;
-  font-size: 1.15rem;
+  margin: 0 0 14px;
+  font: 700 1.5rem/1.1 var(--display);
+  letter-spacing: var(--ui-track-section);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+}
+
+.account-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-margin-top: 80px;
+}
+
+.account-section > h2 {
+  margin-bottom: 2px;
 }
 
 .form-stack {
@@ -181,6 +193,48 @@ ul.form-status {
 
 .btn-danger:hover {
   background: linear-gradient(180deg, #a63625, #74211a);
+  color: #fff;
+}
+
+/* The striped danger button (system/Controls "hazard"): the word on a well. */
+.btn-hazard {
+  padding: 0 14px;
+  background: var(--ui-hazard);
+  box-shadow: none;
+}
+
+.btn-hazard > span {
+  padding: 4px 10px;
+  background: var(--ui-metal-0);
+  color: var(--accent-hi);
+}
+
+.btn-hazard:hover {
+  background: var(--ui-hazard);
+  box-shadow: var(--ui-primary-glow-hover);
+}
+
+.btn-passkey {
+  width: 100%;
+}
+
+/* "or" between the passkey and the password (the Sign in again board). */
+.or-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font: 600 0.85rem/1 var(--display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.or-rule::before,
+.or-rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--ui-line);
 }
 
 .btn-discord {
@@ -221,57 +275,367 @@ ul.form-status {
   border-bottom: 0;
   border-radius: var(--radius) var(--radius) 0 0;
   background: none;
-  color: var(--muted);
-  font: 700 0.85rem/1 var(--sans);
-  letter-spacing: 0.08em;
+  color: var(--ui-text-2);
+  font: 700 1rem/1 var(--display);
+  letter-spacing: var(--ui-track-button);
   text-transform: uppercase;
   cursor: pointer;
 }
 
-.tab[aria-selected='true'] {
-  border-color: var(--edge);
-  background: var(--panel-2);
+.tab:hover {
   color: var(--text);
+}
+
+/* The open tab: dark red with the accent rule on top (and aria-selected). */
+.tab[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-lo);
+  color: var(--accent-hi);
   box-shadow: inset 0 3px 0 var(--accent);
+}
+
+@media (forced-colors: active) {
+  .tab[aria-selected='true'] {
+    border: 2px solid Highlight;
+  }
 }
 
 .tab-panel:focus {
   outline: none;
 }
 
-/* ---- Account page ------------------------------------------------------------ */
+/* ---- Account page (the Account board) ------------------------------------------ */
 
-.account-head {
+.account-layout {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.account-nav {
+  position: sticky;
+  top: 76px;
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--edge-dark);
+}
+
+.account-main {
+  display: flex;
+  flex: 999 1 560px;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
 }
 
 .account-who {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 8px 6px 14px;
+  border-bottom: 1px solid var(--ui-line-soft);
+}
+
+/* The avatar: the first letter on the account's colour (set from script). */
+.account-avatar,
+.friend-avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: var(--avatar, var(--accent));
+  border: 1px solid var(--edge-dark);
+  color: #fff;
+  font: 700 1.4rem/1 var(--display);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.account-who-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
 }
 
 .account-username {
-  font: 700 1.4rem/1.2 var(--display);
-  text-transform: uppercase;
+  font: 600 1rem/1.2 var(--sans);
+  overflow-wrap: anywhere;
 }
 
 .account-display {
   color: var(--muted);
+  font-size: 0.9rem;
 }
 
-.account-state-banned {
-  border-left-color: var(--danger);
+.account-state-word,
+.friend-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 700 0.75rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
 }
 
-.account-state-pending_email,
-.account-state-pending_approval {
-  border-left-color: #ffb347;
+.friend-status {
+  font: 400 0.85rem/1.3 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ui-text-2);
+}
+
+.account-state-word .lamp,
+.friend-status .lamp {
+  width: 6px;
+  height: 6px;
+}
+
+/* Lamp states for a word next to them (the word is the signal). */
+.state-ok {
+  color: var(--ok);
+}
+
+.state-warn {
+  color: var(--ui-warn);
+}
+
+.state-bad {
+  color: var(--danger);
+}
+
+.state-ok .lamp {
+  background: var(--ui-led-ok);
+  box-shadow: var(--ui-led-ok-glow);
+}
+
+.state-warn .lamp {
+  background: var(--ui-led-warn);
+  box-shadow: var(--ui-led-warn-glow);
+}
+
+.state-bad .lamp {
+  background: var(--ui-led-bad);
+  box-shadow: var(--ui-led-bad-glow);
+}
+
+.state-off .lamp,
+.lamp.lamp-off {
+  background: var(--ui-led-off);
+  box-shadow: var(--ui-led-off-glow);
+}
+
+.account-nav-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.account-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  color: var(--ui-text-2);
+  font: 700 0.95rem/1 var(--display);
+  letter-spacing: var(--ui-track-button);
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.account-nav-link .lamp {
+  width: 7px;
+  height: 7px;
+  background: var(--ui-led-off);
+  box-shadow: var(--ui-led-off-glow);
+}
+
+.account-nav-link:hover {
+  color: var(--text);
+  background: var(--ui-metal-3);
+}
+
+/* The section in view: dark red, accent edge and a lit lamp. */
+.account-nav-link[aria-current='true'] {
+  background: var(--accent-lo);
+  border-color: var(--accent);
+  color: var(--accent-hi);
+}
+
+.account-nav-link[aria-current='true'] .lamp {
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+.account-nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-line-soft);
+}
+
+.account-nav-actions .btn {
+  flex: 1 1 auto;
+}
+
+@media (pointer: coarse) {
+  .account-nav-link {
+    min-height: 44px;
+  }
+}
+
+/* Narrow screens: the menu sits on top, its links in rows that wrap. */
+@media (max-width: 800px) {
+  .account-nav {
+    position: static;
+  }
+
+  .account-nav-links {
+    flex-flow: row wrap;
+  }
+
+  .account-nav-link {
+    flex: 1 1 140px;
+  }
+}
+
+@media (forced-colors: active) {
+  .account-nav-link[aria-current='true'] {
+    border: 2px solid Highlight;
+  }
+
+  .account-nav-link[aria-current='true'] .lamp {
+    background: Highlight;
+  }
+}
+
+/* A part of a section (a sign-in method): a row on a well with a lamp, the name and a detail. */
+.account-part {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--edge-dark);
+}
+
+.part-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.part-name {
+  display: flex;
+  flex-direction: column;
+}
+
+.part-name h3 {
+  margin: 0;
+  font: 600 1rem/1.25 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.part-detail {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* The account's state with what to do (the Sign in again board's cards). */
+.state-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--ui-metal-4);
+  border-left-width: 4px;
+  color: var(--text);
+}
+
+.state-card p {
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+.state-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 700 1.05rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
+}
+
+.state-card.state-ok {
+  border-color: var(--ui-led-ok-edge);
+}
+
+.state-card.state-warn {
+  border-color: var(--ui-led-warn-edge);
+}
+
+.state-card.state-bad {
+  border-color: var(--ui-led-bad-edge);
+}
+
+.state-card.state-on {
+  border-color: var(--accent);
+}
+
+.state-card.state-on .lamp {
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+.state-card.state-ok,
+.state-card.state-warn,
+.state-card.state-bad {
+  color: var(--text);
+}
+
+.gate-card,
+.invite-card {
+  max-width: 560px;
+}
+
+/* Replay space: a bar in a well (the share is set from script as --fill). */
+.usage-text {
+  font-family: var(--mono);
+}
+
+.usage-meter {
+  height: 10px;
+  padding: 2px;
+  background: var(--ui-well);
+  border: 1px solid var(--edge-dark);
+}
+
+.usage-fill {
+  display: block;
+  width: var(--fill, 0%);
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-active), var(--accent));
+}
+
+@media (forced-colors: active) {
+  .usage-fill {
+    background: Highlight;
+  }
 }
 
 .item-list {
@@ -287,14 +651,213 @@ ul.form-status {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--edge);
+  padding: 10px 14px;
+  border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--ui-metal-1);
 }
 
 .item .badge {
   margin-left: 8px;
+}
+
+/* ---- Friends (the Friends board) --------------------------------------------------- */
+
+.friends-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.friends-summary {
+  color: var(--ok);
+  font-size: 0.9rem;
+}
+
+.friends-me {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--edge-dark);
+}
+
+.friends-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.friends-col {
+  display: flex;
+  flex: 1 1 300px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.friends-col:first-child {
+  flex-grow: 2;
+}
+
+.friends-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--edge-dark);
+  border-radius: var(--radius);
+  background: var(--ui-well);
+  box-shadow: var(--bevel-in);
+  color: var(--text);
+  font: 1rem/1.2 var(--sans);
+}
+
+.friends-search:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.friends-list,
+.friends-block,
+.friends-privacy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.friends-block[hidden] {
+  display: none;
+}
+
+.friend-group-title,
+.friends-block-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font: 700 0.9rem/1.2 var(--display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.friends-block-title .count {
+  padding: 0 7px;
+  background: var(--accent-lo);
+  border: 1px solid var(--accent);
+  color: var(--accent-hi);
+  font-family: var(--mono);
+  letter-spacing: 0;
+}
+
+.friend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.friend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 10px;
+  background: var(--ui-metal-1);
+  border: 1px solid var(--edge-dark);
+}
+
+.friend-row > .lamp {
+  margin: 0 4px;
+}
+
+.friend-offline {
+  opacity: 0.75;
+}
+
+.friend-avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+}
+
+.friend-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.friend-text strong {
+  font-weight: 600;
+}
+
+.friend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.friend-more {
+  position: relative;
+}
+
+.friend-more > summary {
+  list-style: none;
+}
+
+.friend-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.friend-more-actions {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--ui-metal-2);
+  border: 1px solid var(--edge-dark);
+  box-shadow: var(--ui-shadow-pop);
+}
+
+.friends-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.friends-add .field {
+  flex: 1 1 180px;
+}
+
+@media (max-width: 520px) {
+  .friend-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .friend-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .friend-more-actions {
+    left: 0;
+    right: auto;
+  }
 }
 
 /* ---- Dialogs ------------------------------------------------------------------ */

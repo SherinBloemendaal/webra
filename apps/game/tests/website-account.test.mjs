@@ -283,7 +283,7 @@ test('returnTo: a password sign-in of an account that may play goes back to the 
   const server = new MockAccountServer();
   server.addUser({ username: 'Tanya', password: 'a long passphrase' });
   const { root, navigated } = await page(server, '', '?returnTo=%2Fplay%2F%3Fjoin%3Dabc');
-  assert.match(textOf(root), /Sign in to play\./);
+  assert.match(textOf(root), /Sign in to play.*The game needs a WebRA account/);
   inputByLabel(root, /Username or email/).value = 'tanya';
   inputByLabel(root, /^Password$/).value = 'a long passphrase';
   submit(root.querySelector('form'));
