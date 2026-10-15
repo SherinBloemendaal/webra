@@ -454,7 +454,11 @@ mod tests {
                     let s = e.tick(t, 64, 64);
                     let o = tick_without_calm(&mut old, t);
                     // The same sky, tick for tick: no draw of the cycle moved.
-                    assert_eq!((e.weather, e.since, e.until, e.next_flash), (old.weather, old.since, old.until, old.next_flash), "seed {seed} tick {t}");
+                    assert_eq!(
+                        (e.weather, e.since, e.until, e.next_flash),
+                        (old.weather, old.since, old.until, old.next_flash),
+                        "seed {seed} tick {t}"
+                    );
                     if e.weather == Weather::Thunderstorm && e.since == t {
                         storms += 1;
                     }
