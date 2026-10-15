@@ -349,7 +349,12 @@ async function onlineLobby({ you = 1, slots }) {
   return { ui, sent };
 }
 
-const labelled = (root, label) => root.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === label);
+/** The button of the select plate named `label` (js/ui/controls.js selectPlate). */
+const labelled = (root, label) =>
+  root
+    .querySelectorAll('.ui-select-plate')
+    .find((p) => p.querySelector('.ui-sr-only')?.textContent === label)
+    ?.querySelector('.ui-sp-button');
 
 const SLOTS = () => [
   { type: 'human', client: 1, name: 'Host', faction: 'random', color: 0, team: 0, ready: false },

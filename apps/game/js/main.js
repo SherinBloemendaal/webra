@@ -618,6 +618,19 @@ function setupOnline(lobby, gpuError) {
   if (!entry || !root) return;
   entry.hidden = false;
   let ui = null;
+  // Friends (js/friends-ui.js): the main menu's Friends entry and the online screens' Friends
+  // button; loaded once a player is signed in (it also sends the presence heartbeat).
+  let friends = null;
+  const loadFriends = () =>
+    (friends ??= playAccess.load(() => import('./friends-ui.js')).then(({ mountFriends }) =>
+      mountFriends({ entry: $('start-friends'), root: $('friends-root'), cover: [$('menu'), root], account, registry: defaultRegistry(), version: version(), signIn: (reason) => openSignIn(account, { reason }), lobby: () => ui?.currentLobby() ?? null, onJoin: async (session, o) => {
+          await open();
+          ui?.joinElsewhere(session, o);
+        } }),
+    ));
+  const followFriends = () => account?.user && loadFriends().catch((err) => console.warn('Friends unavailable:', err?.message ?? err));
+  account?.onChange(followFriends);
+  followFriends();
   const open = async () => {
     if (gpuError || !renderer) {
       lobby.showError(gpuError || 'WebGPU is not available.');
@@ -646,6 +659,7 @@ function setupOnline(lobby, gpuError) {
             fileName,
           }),
         account: account ? { session: account, signIn: (reason) => openSignIn(account, { reason }) } : undefined,
+        friends: account ? { open: (from) => loadFriends().then((f) => f.open(from)) } : undefined,
         // OpenRA's lobby and chat sounds (ChatLine, PlayerJoined, PlayerLeft, LobbyOptionChanged).
         sounds: audio ? { chatLine: () => audio.chatLine(), lobby: (event) => audio.lobby(event) } : undefined,
         // Co-op missions: this game's own mission files (pinned by hash) and their index entries.
@@ -692,7 +706,8 @@ function setupOnline(lobby, gpuError) {
   entry.addEventListener('click', open);
   // Invite links (?join=<session id>, also #join=) open the online screen
   // directly, and so does a reload during an online game (it rejoins).
-  if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash) || hasRejoinRecord()) open();
+  // Invite codes too (/join/<code> leads to ?invite=<code>, js/invites.js).
+  if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash) || /[?&]invite=[^&]+/.test(location.search) || hasRejoinRecord()) open();
 }
 
 /**

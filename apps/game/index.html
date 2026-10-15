@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="css/minimap.css" />
     <link rel="stylesheet" href="css/lobby.css" />
     <link rel="stylesheet" href="css/online.css" />
+    <link rel="stylesheet" href="css/friends.css" />
     <link rel="stylesheet" href="css/chat.css" />
     <link rel="stylesheet" href="css/powers.css" />
     <link rel="stylesheet" href="css/audio.css" />
@@ -56,6 +57,8 @@
         <div id="records-entry" class="start-group start-records" role="group" aria-label="Saved games" hidden></div>
         <div class="start-end">
           <!-- The account: sign in, who is signed in, message of the day (js/account/ui.js) -->
+          <!-- Friends (js/friends-ui.js): signed-in players -->
+          <button id="start-friends" class="start-item" type="button" title="Your friends: who is online, join their games, invite them" hidden>Friends</button>
           <div id="account-entry" aria-label="Account" hidden></div>
           <div class="start-more">
             <button id="start-more-button" class="start-item" type="button" aria-expanded="false" aria-controls="start-more-list">More</button>
@@ -74,6 +77,9 @@
 
     <!-- Online multiplayer (js/online.js, loaded on demand by js/main.js) -->
     <section id="online-root" hidden></section>
+
+    <!-- Friends (js/friends-ui.js, loaded once signed in) -->
+    <section id="friends-root" hidden></section>
 
     <!-- The campaign's mission browser (js/campaign/menu.js) -->
     <section id="campaign-root" hidden></section>

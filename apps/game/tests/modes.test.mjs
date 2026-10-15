@@ -393,7 +393,7 @@ test('online lobby: the host picks a mode and sends plain options', async () => 
 });
 
 test('online lobby: guests see the mode and its options but cannot change them', async () => {
-  const { root, sent, lobby } = await mountOnline({ host: false });
+  const { root, ui, sent, lobby } = await mountOnline({ host: false });
   try {
     lobby({ ...DEFAULT_OPTIONS, ...builtin('winter').options, seed: 3 });
     const select = root.querySelector('.mode-select');
@@ -403,8 +403,9 @@ test('online lobby: guests see the mode and its options but cannot change them',
     assert.equal(root.querySelector('.mode-tools').hidden, true, 'no saving or deleting for guests');
     // The World group and every option show the values, read only.
     const world = root.querySelector('fieldset.online-world');
-    assert.deepEqual(world.querySelectorAll('select').map((s) => s.value), ['random', 'snow', 'standard', 'full']);
-    for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options input[type="checkbox"]')]) {
+    assert.equal(world.querySelectorAll('.ui-select-plate').length, 4);
+    assert.deepEqual(['mapStyle', 'biome', 'techBuildings', 'weather'].map((k) => ui.optionControls[k].get()), ['random', 'snow', 'standard', 'full']);
+    for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options .ui-sp-button'), ...root.querySelectorAll('.online-options input[type="checkbox"]')]) {
       assert.equal(c.disabled, true, c.id);
     }
     assert.equal(sent.length, 0);
@@ -422,7 +423,9 @@ test('online lobby: every option has a "?" tip', async () => {
     const shown = new Set(root.querySelectorAll('.info-btn').map((b) => b.dataset.help));
     for (const key of ONLINE_HELP_KEYS) assert.ok(shown.has(key), `no "?" for ${key}`);
     const tips = new Set(root.querySelectorAll('[role="tooltip"]').map((t) => t.id));
-    for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options input[type="checkbox"]'), ...root.querySelectorAll('.online-slots select')]) {
+    const plates = [...root.querySelectorAll('.online-options .ui-sp-button'), ...root.querySelectorAll('.online-slots .ui-sp-button')];
+    assert.ok(plates.length > 10, 'the selects are plates');
+    for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options input[type="checkbox"]'), ...plates]) {
       const ids = (c.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
       assert.ok(ids.length && ids.every((id) => tips.has(id)), `${c.id || c.getAttribute('aria-label')} has no help`);
     }

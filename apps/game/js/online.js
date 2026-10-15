@@ -35,6 +35,9 @@ import {
   COLOR_COUNT,
   COOP_MISSIONS,
   coopMission,
+  DEFAULT_MAX_SPECTATORS,
+  formatInviteCode,
+  normalizeInviteCode,
   DIFFICULTIES,
   BOTS,
   GAME_SPEEDS,
@@ -76,7 +79,7 @@ import { api, ApiError, Connection } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { reportMessage } from './telemetry/index.js';
 import { onlineRefusal } from './account/ui.js';
-import { switchInput } from './ui/controls.js';
+import { badge, led, segmented, selectPlate, setLed, stepper, switchInput, toggle } from './ui/controls.js';
 import { infoTip, describedBy } from './infotip.js';
 import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
@@ -93,6 +96,27 @@ import { planBulk } from './lobby-bulk.js';
 import { BulkBar } from './lobby-bulkbar.js';
 import { StalePreview, previewKey } from './mappreview.js';
 import { battlefieldSpawns, generatedMapPlayers } from '../protocol/spawns.js';
+import { NetQuality } from './netquality.js';
+import { clearInviteFromLocation, createInvite, inviteFromLocation, inviteLink, inviteMsLeft } from './invites.js';
+import { FriendsClient, FriendsStore } from './account/friends.js';
+import { friendsView } from './friends-ui.js';
+import { confirmChoice, joinCodeDialog, modal } from './online-dialog.js';
+import {
+  connectionCell,
+  connectionWarning,
+  filterSessions,
+  friendSessionIds,
+  inviteLeftText,
+  notReady,
+  onlineText,
+  QUALITY_LEDS,
+  selfConnection,
+  SESSION_FILTERS,
+  sessionDetail,
+  sessionRow,
+  startCheck,
+  waitingText,
+} from './online-view.js';
 
 /** Per tab: { id, client, key, name } of the online game this tab is in (see the header). */
 const REJOIN_KEY = 'webra.rejoin.v1';
@@ -186,6 +210,7 @@ export const ONLINE_HELP_KEYS = [
   'spawn',
   'spectators',
   'bulk',
+  'connection',
 ];
 /** What a member's map state says in the lobby (protocol MAP_STATES). */
 const MAP_STATE_TEXT = { installed: 'Has map', missing: 'No map', declined: 'Declined map' };
@@ -216,45 +241,65 @@ function button(label, className, onClick) {
   return b;
 }
 
-/** <select> from [value, label] pairs or [groupLabel, pairs] groups. */
-function select(choices, value, onChange, grouped = false) {
-  const s = el('select', 'online-select');
-  const add = (parent, [v, label]) => {
-    const o = el('option', null, label);
-    o.value = String(v);
-    parent.append(o);
-  };
-  if (grouped) {
-    for (const [label, items] of choices) {
-      const g = el('optgroup');
-      g.label = label;
-      items.forEach((c) => add(g, c));
-      s.append(g);
-    }
-  } else {
-    choices.forEach((c) => add(s, c));
-  }
-  s.value = String(value);
-  if (onChange) s.addEventListener('change', () => onChange(s.value));
-  return s;
+/** selectPlate options from [value, label] pairs, or from [groupLabel, pairs] groups with `grouped`. */
+export function plateOptions(choices, grouped = false) {
+  const opt = ([value, label]) => ({ value, label: String(label) });
+  return grouped ? choices.map(([label, items]) => ({ label, options: items.map(opt) })) : choices.map(opt);
+}
+
+/**
+ * A select (js/ui/controls.js selectPlate) from [value, label] pairs or
+ * [groupLabel, pairs] groups. `onChange` gets the value as a string, like a
+ * native select gave it. `label`: its accessible name (a row's label may name
+ * it instead, see field()).
+ */
+function select(choices, value, onChange, { grouped = false, label = '', small = true, labelledBy } = {}) {
+  return selectPlate({
+    label,
+    labelledBy,
+    options: plateOptions(choices, grouped),
+    value,
+    small,
+    block: true,
+    className: 'online-plate',
+    onChange: onChange ? (v) => onChange(String(v)) : undefined,
+  });
 }
 
 let uid = 0;
 
 /**
  * A label + control row; with `helpKey`, the option's "?" help (js/help.js).
- * `target` is what the label names (the control, or a compound control's input).
+ * `target` is what the label names (the control, or a compound control's
+ * input); a select plate is named through aria-labelledby (its button keeps
+ * the value in its name too).
  */
 function field(label, control, helpKey = null, target = control) {
   const row = el('div', 'online-field');
   const head = el('span', 'online-field-head');
-  const name = el('label', 'online-field-label', label);
-  if (!target.id) target.id = `online-ctl-${++uid}`;
-  name.htmlFor = target.id;
+  const plate = target && target.button && target.root ? target : null;
+  const name = el(plate ? 'span' : 'label', 'online-field-label', label);
+  name.id = `online-lbl-${++uid}`;
+  if (plate) {
+    plate.button.setAttribute('aria-labelledby', `${name.id} ${plate.button.id}-value`);
+    plate.listbox.setAttribute('aria-labelledby', name.id);
+    name.addEventListener('click', () => plate.button.focus());
+  } else {
+    if (!target.id) target.id = `online-ctl-${uid}`;
+    name.htmlFor = target.id;
+  }
   head.append(name);
-  if (helpKey) head.append(infoTip(helpKey, { label, describes: target }).root);
-  row.append(head, control);
+  if (helpKey) head.append(infoTip(helpKey, { label, describes: plate ? plate.button : target }).root);
+  row.append(head, control.root && control.button ? control.root : control);
   return row;
+}
+
+/** The bars of a connection (four, the lit ones in the quality's colour) and its word; `size` small in the slots. */
+function signalBars(cell) {
+  const bars = el('span', `online-bars online-q-${cell.quality ?? 'none'}`);
+  bars.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 4; i++) bars.append(el('span', i < cell.bars ? 'online-bar is-lit' : 'online-bar'));
+  return bars;
 }
 
 function rgbCss(c) {
@@ -355,35 +400,7 @@ function messageOf(err) {
   return `Unexpected error: ${err && err.message ? err.message : err}`;
 }
 
-// ---- Modal dialogs -------------------------------------------------------------
-
-/**
- * Show a modal built by `build(body, close)`; resolves with what close() got.
- * Escape and the backdrop cancel (resolve null).
- */
-function modal(title, build) {
-  return new Promise((resolve) => {
-    const dialog = el('dialog', 'online-dialog');
-    dialog.append(el('h2', 'online-dialog-title', title));
-    const body = el('div', 'online-dialog-body');
-    dialog.append(body);
-    let done = false;
-    const close = (value) => {
-      if (done) return;
-      done = true;
-      dialog.close();
-      dialog.remove();
-      resolve(value);
-    };
-    dialog.addEventListener('cancel', (e) => {
-      e.preventDefault();
-      close(null);
-    });
-    build(body, close);
-    document.body.append(dialog);
-    dialog.showModal();
-  });
-}
+// ---- Dialogs (js/online-dialog.js) ---------------------------------------------------
 
 /** The modded-map warning; resolves true only when the player accepts. */
 export function confirmModdedMap(mapName) {
@@ -469,7 +486,25 @@ export class OnlineUI {
     this.root.classList.add('online');
     const rejoin = loadRejoin();
     if (rejoin) this.rejoinAfterReload(rejoin);
-    else this.showBrowser();
+    else {
+      this.showBrowser();
+      // An invite link: /join/<code> opens /play/?invite=<code>; the older ?join=<session id> too.
+      const opened = inviteFromLocation() ?? inviteId();
+      if (opened) this.joinByCode(opened);
+    }
+  }
+
+  /** The online lobby this player is in (the friends screen's Invite), or null. */
+  currentLobby() {
+    return this.state && this.conn && !this.inGame && this.slotBox ? { session: this.state.session.id } : null;
+  }
+
+  /** Join from the friends screen: leave a lobby this player is in first. */
+  async joinElsewhere(session, o = {}) {
+    if (this.inGame) return;
+    if (this.conn && this.state?.session.id === session.id) return;
+    if (this.conn) this.showBrowser();
+    await this.join(session, o);
   }
 
   /** A reload during an online game: rejoin it with the stored key. */
@@ -491,10 +526,23 @@ export class OnlineUI {
   showBrowser(error = '') {
     this.leaveSession();
     this.root.textContent = '';
-    const page = el('div', 'online-page');
+    this.slotBox = null;
+    const page = el('div', 'online-page online-browser');
 
     const head = el('header', 'online-head');
-    head.append(el('h1', 'online-title', 'Play online'), button('Back to skirmish', null, () => this.back()));
+    const titleBox = el('div', 'online-head-title');
+    // The online counter (GET /api/online) and this browser's round trip to the server.
+    this.presenceLine = el('p', 'online-presence');
+    this.presenceLine.setAttribute('role', 'status');
+    titleBox.append(el('h1', 'online-title', 'Play online'), this.presenceLine);
+    const actions = el('div', 'online-head-actions');
+    if (this.ctx.friends && this.account?.user) actions.append(button('Friends', null, (e) => this.ctx.friends.open(e.currentTarget)));
+    actions.append(
+      button('Join with a code', null, () => this.joinByCode()),
+      button('Resume a saved game', null, () => this.resumeDialog()),
+      button('Host game', 'online-btn-primary', () => this.hostDialog()),
+    );
+    head.append(titleBox, actions, button('Back', null, () => this.back()));
 
     this.banner = el('div', 'online-error');
     this.banner.setAttribute('role', 'alert');
@@ -511,41 +559,57 @@ export class OnlineUI {
     });
     this.nameInput = nameInput;
 
-    const joinId = el('input', 'online-input online-join-id');
-    joinId.placeholder = 'Session ID or invite link';
-    joinId.spellcheck = false;
-    const invite = inviteId();
-    if (invite) joinId.value = invite;
-    const joinById = (spectate = false) => {
-      const id = (/([0-9a-f]{64})/.exec(joinId.value.trim()) || [])[1];
-      if (!id || !SESSION_ID_RE.test(id)) return this.setError('That is not a valid session ID.');
-      this.join({ id, name: 'Private session', locked: null }, { spectate });
-    };
-    joinId.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') joinById();
-    });
-
-    const tools = el('div', 'online-tools');
+    // Search, the filter and Hide full: client side, over the list the server sent.
+    this.browse ??= { filter: 'all', query: '', hideFull: false, selected: null };
+    const tools = el('div', 'online-toolbar');
     const user = this.account?.user;
     // Signed in: the lobby name is the username (the server sets it). Otherwise the typed name, when the site allows anonymous play.
-    const nameField = user ? field('Playing as', el('span', 'online-account-name', user.username)) : field('Your name', nameInput);
-    tools.append(
-      nameField,
-      button('Host game', 'online-btn-primary', () => this.hostDialog()),
-      button('Resume a saved game', null, () => this.resumeDialog()),
-      button('Refresh', null, () => this.refresh()),
-    );
-    const joinRow = el('div', 'online-tools');
-    joinRow.append(
-      field('Join by ID', joinId),
-      button('Join', null, () => joinById()),
-      button('Watch', null, () => joinById(true)),
-    );
+    tools.append(user ? field('Playing as', el('span', 'online-account-name', user.username)) : field('Your name', nameInput));
+    const search = el('input', 'online-input online-search');
+    search.type = 'search';
+    search.placeholder = 'Search servers, maps or hosts';
+    search.setAttribute('aria-label', 'Search servers');
+    search.value = this.browse.query;
+    search.addEventListener('input', () => {
+      this.browse.query = search.value;
+      this.renderSessions();
+    });
+    const filter = segmented({
+      label: 'Show',
+      options: SESSION_FILTERS.map((f) => ({ value: f.value, label: f.label })),
+      value: this.browse.filter,
+      onChange: (v) => {
+        this.browse.filter = v;
+        this.renderSessions();
+      },
+    });
+    // Friends: signed-in players only (the friends list says where they are).
+    if (!user) {
+      filter.setDisabled('friends', true);
+      filter.setTitle('friends', 'Sign in to see the games of your friends');
+    }
+    const hideFull = toggle({
+      label: 'Hide full',
+      checked: this.browse.hideFull,
+      rowClass: 'online-hide-full',
+      onChange: (on) => {
+        this.browse.hideFull = on;
+        this.renderSessions();
+      },
+    });
+    tools.append(search, filter.root, hideFull.row, button('Refresh', null, () => this.refresh()));
 
-    const table = el('div', 'online-sessions');
-    table.setAttribute('role', 'table');
+    const body = el('div', 'online-browser-body');
+    const table = el('div', 'online-sessions ui-table');
+    table.setAttribute('role', 'grid');
+    table.setAttribute('aria-label', 'Sessions');
+    table.addEventListener('keydown', (e) => this.sessionKey(e));
     this.sessionList = table;
-    this.listStatus = el('p', 'online-muted', 'Loading sessions...');
+    this.detailBox = el('aside', 'online-detail');
+    this.detailBox.setAttribute('aria-label', 'Selected session');
+    body.append(table, this.detailBox);
+    this.listStatus = el('p', 'online-muted online-list-status', 'Loading sessions...');
+    this.listStatus.setAttribute('role', 'status');
 
     page.append(head, this.banner);
     if (!user && this.account && !this.account.canPlayOnline) {
@@ -559,8 +623,11 @@ export class OnlineUI {
     } else if (user && !user.canPlayOnline) {
       page.append(el('div', 'online-account-prompt', onlineRefusal(user.status === 'banned' ? 'banned' : 'account_inactive')?.text ?? 'Your account cannot play online right now.'));
     }
-    page.append(tools, joinRow, table, this.listStatus);
+    page.append(tools, body, this.listStatus);
     this.root.append(page);
+    this.sessions ??= [];
+    this.renderSessions();
+    this.followFriends();
     this.refresh();
     this.refreshTimer = setInterval(() => this.refresh(), REFRESH_MS);
   }
@@ -603,93 +670,316 @@ export class OnlineUI {
     }
   }
 
+  /**
+   * The friends list (js/account/friends.js) while a signed-in player is on
+   * the online screens: the browser's Friends filter and the lobby's Invite
+   * players panel. Polled every 30 s; stopped when the player leaves for a game.
+   */
+  followFriends() {
+    if (!this.account?.user || this.ctx.friendsStore === null) return null;
+    if (!this.friendsStore) {
+      this.friendsStore = this.ctx.friendsStore ?? new FriendsStore({ client: new FriendsClient(this.account.api) });
+      this.friendsStore.on('change', (doc) => {
+        this.friendsDoc = doc;
+        if (this.sessionList?.isConnected) this.renderSessions();
+        if (this.inviteBox?.isConnected) this.renderInvite();
+      });
+    }
+    this.friendsStore.start();
+    return this.friendsStore;
+  }
+
   async refresh() {
     try {
+      const t0 = performance.now();
       const v = await api.version();
+      // One round trip to the Worker: the browser's ping to the server (the lobby measures each player).
+      this.serverRtt = Math.round(performance.now() - t0);
       if (v.protocol !== PROTOCOL_VERSION) {
         this.setError('The server uses a newer multiplayer protocol. Reload the page to update.');
       }
-      const sessions = await api.sessions();
+      const [sessions, online] = await Promise.all([api.sessions(), api.online().catch(() => null)]);
       if (!this.sessionList?.isConnected) return;
-      this.renderSessions(Array.isArray(sessions) ? sessions : []);
+      this.sessions = Array.isArray(sessions) ? sessions : [];
+      this.onlineCount = online;
+      this.listError = '';
+      this.renderSessions();
     } catch (err) {
-      if (this.listStatus) this.listStatus.textContent = messageOf(err);
+      this.listError = messageOf(err);
+      if (this.listStatus) this.listStatus.textContent = this.listError;
     }
   }
 
-  renderSessions(sessions) {
+  /** The sessions after search and filter, as rows (js/online-view.js). */
+  shownSessions() {
+    const friendSessions = friendSessionIds(this.friendsDoc);
+    return filterSessions(this.sessions ?? [], { ...this.browse, friendSessions }).map((s) => ({ s, row: sessionRow(s, { version: this.ctx.version, friendSessions }) }));
+  }
+
+  renderSessions() {
     const table = this.sessionList;
-    table.textContent = '';
-    const head = el('div', 'online-row online-row-head');
-    for (const h of ['Session', 'Host', 'Players', 'Map', '']) head.append(el('div', 'online-cell', h));
-    head.setAttribute('role', 'row');
-    table.append(head);
-    for (const s of sessions) {
-      const row = el('div', 'online-row');
-      row.setAttribute('role', 'row');
-      const name = el('div', 'online-cell online-cell-name');
-      name.append(el('span', null, String(s.name)));
-      if (s.locked) name.append(el('span', 'online-badge', 'PASSWORD'));
-      const map = el('div', 'online-cell');
-      map.append(el('span', null, s.map ? String(s.map.name) : 'Generated'));
-      if (s.map && s.map.mission) map.append(el('span', 'online-badge', 'CO-OP'));
-      if (s.map && s.map.modded) map.append(el('span', 'online-badge online-badge-modded', 'MODDED'));
-      const same = s.version === this.ctx.version;
-      const join = button('Join', 'online-btn-primary', () => this.join(s));
-      const watch = button('Watch', null, () => this.join(s, { spectate: true }));
-      for (const b of [join, watch]) {
-        b.disabled = !same;
-        if (!same) b.title = `Needs game version ${s.version}`;
+    if (!table) return;
+    const counter = onlineText(this.onlineCount);
+    if (this.presenceLine) {
+      this.presenceLine.textContent = '';
+      if (counter) {
+        const c = el('span', 'online-count');
+        c.title = counter.title;
+        c.append(led('ok'), el('span', null, counter.text));
+        this.presenceLine.append(c);
       }
-      row.append(el('div', 'online-cell', String(s.host)), el('div', 'online-cell', `${s.players} / ${s.maxPlayers}`), map);
-      row.prepend(name);
-      const action = el('div', 'online-cell');
-      action.append(join, watch);
-      row.append(action);
-      table.append(row);
+      if (Number.isFinite(this.serverRtt)) this.presenceLine.append(el('span', 'online-rtt', `${this.serverRtt} ms to the server`));
     }
-    this.listStatus.textContent = sessions.length ? '' : 'No open public sessions. Host one!';
+    const shown = this.shownSessions();
+    const focused = table.contains(document.activeElement);
+    if (!shown.some((x) => x.s.id === this.browse.selected)) this.browse.selected = shown[0]?.s.id ?? null;
+    table.textContent = '';
+    const head = el('div', 'online-row online-row-head ui-table-head');
+    head.setAttribute('role', 'row');
+    for (const h of ['Server', 'Map', 'Mode', 'Players']) {
+      const c = el('div', 'online-cell', h);
+      c.setAttribute('role', 'columnheader');
+      head.append(c);
+    }
+    table.append(head);
+    this.sessionRows = [];
+    for (const { s, row: r } of shown) {
+      const row = el('div', `online-row online-session online-session-${r.state}`);
+      row.setAttribute('role', 'row');
+      const chosen = s.id === this.browse.selected;
+      row.setAttribute('aria-selected', String(chosen));
+      row.tabIndex = chosen ? 0 : -1;
+      row.dataset.id = s.id;
+      const name = el('div', 'online-cell online-cell-name');
+      name.setAttribute('role', 'gridcell');
+      // The lamp says open (green), running (yellow) or full (off); the word says it too.
+      name.append(led(r.led));
+      const who = el('span', 'online-session-who');
+      who.append(el('span', 'online-session-name', r.name), el('span', 'online-session-host', `host ${r.host}`));
+      name.append(who);
+      const tags = el('span', 'online-tags');
+      tags.append(el('span', 'ui-sr-only', `${r.stateWord}.`));
+      for (const [kind, text] of r.tags) tags.append(badge(kind, text));
+      name.append(tags);
+      const cells = [name, el('div', 'online-cell', r.map), el('div', 'online-cell online-cell-mode', r.mode), el('div', 'online-cell online-cell-num', r.players)];
+      for (const c of cells.slice(1)) c.setAttribute('role', 'gridcell');
+      row.append(...cells);
+      row.addEventListener('click', () => this.selectSession(s.id));
+      row.addEventListener('dblclick', () => this.joinSelected());
+      table.append(row);
+      this.sessionRows.push(row);
+    }
+    const total = this.sessions?.length ?? 0;
+    this.listStatus.textContent = this.listError || (!total ? 'No public sessions right now. Host one!' : !shown.length ? 'No session matches the search or filter.' : `${shown.length} of ${total} sessions`);
+    this.renderDetail();
+    if (focused) this.sessionRows.find((r) => r.tabIndex === 0)?.focus();
+  }
+
+  selectSession(id, focus = false) {
+    this.browse.selected = id;
+    for (const r of this.sessionRows ?? []) {
+      const on = r.dataset.id === id;
+      r.setAttribute('aria-selected', String(on));
+      r.tabIndex = on ? 0 : -1;
+      if (on && focus) r.focus();
+    }
+    this.renderDetail();
+  }
+
+  /** The session list as a grid: Up and Down (Home, End) choose a row, Enter joins it (or watches a running game). */
+  sessionKey(e) {
+    const rows = this.sessionRows ?? [];
+    if (!rows.length) return;
+    const at = rows.findIndex((r) => r.dataset.id === this.browse.selected);
+    let next = -1;
+    if (e.key === 'ArrowDown') next = Math.min(rows.length - 1, at + 1);
+    else if (e.key === 'ArrowUp') next = Math.max(0, at - 1);
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = rows.length - 1;
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      this.joinSelected();
+      return;
+    } else return;
+    e.preventDefault();
+    this.selectSession(rows[next].dataset.id, true);
+  }
+
+  selectedSession() {
+    return (this.sessions ?? []).find((s) => s.id === this.browse?.selected) ?? null;
+  }
+
+  /** Join the chosen session, or watch it when it runs or is full. */
+  joinSelected() {
+    const s = this.selectedSession();
+    if (!s) return;
+    const d = sessionDetail(s, { version: this.ctx.version });
+    if (d.canJoin) this.join(s);
+    else if (d.canWatch) this.join(s, { spectate: true });
+  }
+
+  /** The detail panel of the chosen session: who plays (team colour), the options and Join or Spectate. */
+  renderDetail() {
+    const box = this.detailBox;
+    if (!box) return;
+    box.textContent = '';
+    box.append(el('div', 'online-detail-stripe'));
+    const s = this.selectedSession();
+    if (!s) {
+      box.append(el('p', 'online-muted', 'Pick a session to see who plays and how.'));
+      return;
+    }
+    const d = sessionDetail(s, { version: this.ctx.version });
+    const head = el('div', 'online-detail-head');
+    head.append(el('h2', 'online-detail-title', d.title), el('p', 'online-detail-sub', d.sub));
+    box.append(head);
+    const players = el('ul', 'online-detail-players');
+    players.setAttribute('aria-label', 'Players');
+    for (const p of d.players) {
+      const li = el('li', 'ui-slot-row online-detail-player');
+      if (p.color !== null && this.ctx.colors?.[p.color]) li.style.setProperty('--slot-color', rgbCss(this.ctx.colors[p.color]));
+      li.append(el('span', 'ui-slot-strip'), el('span', 'online-detail-name', p.ai ? `${p.name} (AI)` : p.name), el('span', 'online-detail-team ui-num', p.team ? `Team ${p.team}` : 'No team'));
+      players.append(li);
+    }
+    for (let i = 0; i < d.open; i++) {
+      const li = el('li', 'ui-slot-row online-detail-player is-open');
+      li.append(el('span', 'ui-slot-strip'), el('span', 'online-detail-name', 'Open slot'));
+      players.append(li);
+    }
+    if (!d.players.length && !d.open) players.append(el('li', 'online-muted', 'No players listed.'));
+    box.append(players);
+    if (d.chips.length) {
+      const chips = el('ul', 'online-chips');
+      chips.setAttribute('aria-label', 'Options');
+      for (const c of d.chips) chips.append(el('li', 'online-chip', c));
+      box.append(chips);
+    }
+    const actions = el('div', 'online-detail-actions');
+    const watch = button('Spectate', null, () => this.join(s, { spectate: true }));
+    watch.disabled = !d.canWatch;
+    if (d.watchTitle) watch.title = d.watchTitle;
+    const join = button(d.locked ? 'Join (password)' : 'Join game', 'online-btn-primary', () => this.join(s));
+    join.disabled = !d.canJoin;
+    if (d.joinTitle) join.title = d.joinTitle;
+    actions.append(watch, join);
+    box.append(actions);
+    if (d.joinTitle && !d.canJoin) box.append(el('p', 'online-muted online-detail-note', d.joinTitle));
+  }
+
+  /** "Join with a code": a six-character invite code, a pasted link, or an older long session link. */
+  async joinByCode(initial = '') {
+    const r = await joinCodeDialog({ initial, version: this.ctx.version, rtt: Number.isFinite(this.serverRtt) ? this.serverRtt : null });
+    // Used or not, the link's code goes from the address bar (a reload does not ask again).
+    clearInviteFromLocation();
+    if (inviteId()) history.replaceState(null, '', location.pathname);
+    if (!r) return;
+    await this.join({ id: r.session, name: r.name, locked: r.locked }, { spectate: r.spectate });
+  }
+
+  /** The host's map picker choices: generated, the host's own maps, community maps, co-op missions. */
+  mapChoices(current = null) {
+    const groups = [
+      ['My maps', this.libraryMaps.map((m) => [`mine:${m.hash}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
+      ['Community maps', this.serverMaps.map((m) => [`community:${m.id}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
+    ];
+    const st = this.state;
+    if (current && st?.map && ![...groups[0][1], ...groups[1][1]].some(([v]) => v === current)) groups[st.map.shared ? 0 : 1][1].push([current, st.map.name]);
+    // OpenRA's co-op missions (map.yaml Visibility: Lobby), played by people only.
+    groups.push(['Co-op missions', COOP_MISSIONS.map((m) => [`mission:${m.id}`, `${m.title} (co-op, ${m.players.length} players)`])]);
+    return [['Generated', [['generated', 'Generated map']]], ...groups.filter(([, items]) => items.length)];
   }
 
   /**
-   * The host dialog; creates the session and joins it. `resume`: the text
-   * and parsed replay of an online save to continue in it.
+   * The host dialog (the HostGame board); creates the session and joins it,
+   * then sets its spectator places and map as the first lobby messages.
+   * `resume`: the text and parsed replay of an online save to continue in it.
    */
   async hostDialog(resume = null) {
     const name = this.playerName();
     if (!name) return;
     const saved = resume?.replay ?? null;
-    const input = await modal(saved ? 'Resume a saved game' : 'Host a game', (body, close) => {
-      if (saved) body.append(el('p', 'online-muted', `${saved.title}: ${formatTicks(saved.ticks)} played. Its players come back by their accounts.`));
-      const title = el('input', 'online-input');
-      title.maxLength = SESSION_NAME_MAX;
-      title.value = saved ? saved.title.slice(0, SESSION_NAME_MAX) : `${name}'s game`;
-      const pub = switchInput({ checked: !saved });
-      const pass = el('input', 'online-input');
-      pass.type = 'password';
-      pass.maxLength = PASSWORD_MAX;
-      pass.autocomplete = 'new-password';
-      pass.placeholder = 'Optional';
-      const need = saved ? Math.max(MIN_PLAYERS, saved.options.players.length) : MIN_PLAYERS;
-      const max = select(
-        Array.from({ length: MAX_PLAYERS - need + 1 }, (_, i) => [i + need, String(i + need)]),
-        saved ? need : 4,
-      );
-      const pubRow = el('label', 'online-toggle');
-      pubRow.append(pub, el('span', null, 'List in the server browser'));
-      const actions = el('div', 'online-dialog-actions');
-      const submit = () =>
-        close({ name: title.value, public: pub.checked, password: pass.value, maxPlayers: Number(max.value) });
-      actions.append(button('Cancel', null, () => close(null)), button('Create', 'online-btn-primary', submit));
-      body.append(field('Session name', title), pubRow, field('Password', pass), field('Max players', max), actions);
-      title.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
-    });
+    if (!saved) await this.loadMapLists();
+    const input = await modal(
+      saved ? 'Resume a saved game' : 'Host game',
+      (body, close) => {
+        if (saved) body.append(el('p', 'online-muted', `${saved.title}: ${formatTicks(saved.ticks)} played. Its players come back by their accounts.`));
+        const title = el('input', 'online-input');
+        title.maxLength = SESSION_NAME_MAX;
+        title.value = saved ? saved.title.slice(0, SESSION_NAME_MAX) : `${name}'s game`;
+        const visHint = el('p', 'online-hint');
+        visHint.id = `online-vis-${++uid}`;
+        const hints = { public: 'Listed in the server browser.', private: 'Hidden from the list: only an invite code or link gets in.' };
+        const vis = segmented({
+          label: 'Who can join',
+          options: [
+            { value: 'public', label: 'Public' },
+            { value: 'private', label: 'Private' },
+          ],
+          value: saved ? 'private' : 'public',
+          block: true,
+          describedBy: visHint.id,
+          onChange: (v) => (visHint.textContent = hints[v]),
+        });
+        visHint.textContent = hints[vis.get()];
+        const visRow = el('div', 'online-field');
+        visRow.append(el('span', 'online-field-label', 'Who can join'), vis.root, visHint);
+        const pass = el('input', 'online-input');
+        pass.type = 'password';
+        pass.maxLength = PASSWORD_MAX;
+        pass.autocomplete = 'new-password';
+        pass.setAttribute('aria-label', 'Lobby password');
+        pass.hidden = true;
+        const passSwitch = toggle({
+          label: 'Password',
+          hint: 'Players and spectators need it to join.',
+          onChange: (on) => {
+            pass.hidden = !on;
+            if (on) pass.focus();
+          },
+        });
+        const need = saved ? Math.max(MIN_PLAYERS, saved.options.players.length) : MIN_PLAYERS;
+        const playersRow = el('div', 'online-field');
+        const playersLabel = el('span', 'online-field-label', 'Players');
+        playersLabel.id = `online-lbl-${++uid}`;
+        const players = stepper({ labelledBy: playersLabel.id, values: Array.from({ length: MAX_PLAYERS - need + 1 }, (_, i) => i + need), value: saved ? need : 4, decLabel: 'Fewer players', incLabel: 'More players' });
+        playersRow.append(playersLabel, players.root);
+        const specRow = el('div', 'online-field');
+        const specLabel = el('span', 'online-field-label', 'Spectator places');
+        specLabel.id = `online-lbl-${++uid}`;
+        const spectators = stepper({ labelledBy: specLabel.id, values: Array.from({ length: MAX_SPECTATORS + 1 }, (_, i) => i), value: DEFAULT_MAX_SPECTATORS, decLabel: 'Fewer places', incLabel: 'More places' });
+        specRow.append(specLabel, spectators.root);
+        const steppers = el('div', 'online-host-steppers');
+        steppers.append(playersRow, specRow);
+        const map = saved ? null : select(this.mapChoices(), 'generated', null, { grouped: true, label: 'Map', small: false });
+        const actions = el('div', 'online-dialog-actions');
+        const submit = () =>
+          close({
+            name: title.value,
+            public: vis.get() === 'public',
+            password: passSwitch.get() ? pass.value : '',
+            maxPlayers: Number(players.get()),
+            spectators: Number(spectators.get()),
+            map: map ? String(map.get()) : 'generated',
+          });
+        actions.append(button('Cancel', null, () => close(null)), button(saved ? 'Create lobby' : 'Create lobby', 'online-btn-primary', submit));
+        body.append(field('Game name', title), visRow, passSwitch.row, pass, steppers);
+        if (map) body.append(field('Map', map), el('p', 'online-hint', 'Your own maps are shared with this lobby only; they are not published.'));
+        body.append(actions);
+        title.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
+      },
+      { className: 'online-host-dialog' },
+    );
     if (!input) return;
     try {
       const body = { name: input.name, public: input.public, maxPlayers: input.maxPlayers, version: this.ctx.version };
       if (input.password) body.password = input.password;
       const { id, hostKey } = await api.createSession(body);
       await this.connect(id, { name, hostKey });
+      // The first lobby messages: what the dialog set beyond the session itself.
+      if (input.spectators !== DEFAULT_MAX_SPECTATORS) this.send({ t: 'spectators', max: input.spectators });
+      if (input.map !== 'generated') await this.pickMap(input.map);
+      // A private lobby is found by its code: make one at once.
+      if (!input.public && !resume) this.newInvite();
       if (resume) await this.loadResume(resume.text);
     } catch (err) {
       this.showProblem(err);
@@ -800,6 +1090,9 @@ export class OnlineUI {
     // The map endpoints take the same key (a rejoin keeps the one from the first join).
     if (welcome.key) this.member = { client: welcome.you, key: welcome.key };
     else if (hello.rejoin) this.member = { client: hello.rejoin.client, key: hello.rejoin.key };
+    // Connection quality (js/netquality.js): pings every 2 s in the lobby and the game; one per page,
+    // so a reconnect keeps the statistics series.
+    this.attachNet(conn, welcome.you);
     if (reconnect && this.driver) {
       // Same game, new connection: the driver catches up from the server's log.
       this.driver.reattach(conn);
@@ -820,9 +1113,11 @@ export class OnlineUI {
       // A start without a lobby before it means joining a running game (catch up).
       lobbySeen: false,
       rejoin,
+      invite: null,
     };
     this.lobbyClients = null;
     if (inviteId()) history.replaceState(null, '', location.pathname);
+    clearInviteFromLocation();
     if (rejoin || welcome.role === 'spectator') this.pendingNet = [];
     if (!rejoin) {
       this.buildLobby();
@@ -844,8 +1139,11 @@ export class OnlineUI {
 
   leaveSession() {
     clearInterval(this.refreshTimer);
+    clearInterval(this.inviteTimer);
     clearRejoin();
     this.reconnecting = false;
+    this.netq?.detach();
+    this.netq = null;
     if (this.conn) {
       const c = this.conn;
       this.conn = null;
@@ -856,7 +1154,22 @@ export class OnlineUI {
 
   back() {
     this.leaveSession();
+    this.friendsStore?.stop();
     this.ctx.onBack();
+  }
+
+  /**
+   * Measure this connection (ping and pong) and hear everyone's (`netstat`):
+   * the lobby's Connection column, its warning bar and own status; in the
+   * game the HUD and the statistics read the same object (onStartGame `net`).
+   */
+  attachNet(conn, you) {
+    if (!this.netq) {
+      this.netq = this.ctx.netQuality?.() ?? new NetQuality();
+      this.netq.on('players', () => this.renderConnections());
+      this.netq.on('self', () => this.renderSelfNet());
+    }
+    this.netq.attach(conn, { you });
   }
 
   /**
@@ -954,19 +1267,21 @@ export class OnlineUI {
     const s = this.state.session;
     const page = el('div', 'online-page online-lobby');
 
-    const head = el('header', 'online-head');
-    const title = el('div');
-    title.append(el('h1', 'online-title', s.name), el('p', 'online-muted', s.public ? 'Public session' : 'Private session'));
-    const invite = button('Copy invite link', null, async () => {
-      const link = `${location.origin}${location.pathname}?join=${s.id}`;
-      try {
-        await navigator.clipboard.writeText(link);
-        invite.textContent = 'Copied';
-      } catch {
-        this.setError(`Invite link: ${link}`);
-      }
-    });
-    head.append(title, invite, button('Leave', null, () => this.showBrowser()));
+    const head = el('header', 'online-head online-lobby-head');
+    const title = el('div', 'online-head-title');
+    const tags = el('p', 'online-lobby-tags');
+    tags.append(badge(s.public ? 'neutral' : 'info', s.public ? 'Public' : 'Private'));
+    // Protocol 8: the session says whether it has a password (welcome.session.locked).
+    if (s.locked) tags.append(badge('locked', 'Password'));
+    title.append(el('h1', 'online-title', s.name), tags);
+    // This player's own connection, top right (the NetLobby board).
+    this.selfNet = el('div', 'online-self-net');
+    this.selfNet.setAttribute('role', 'status');
+    this.selfNet.setAttribute('aria-label', 'Your connection');
+    const headActions = el('div', 'online-head-actions');
+    if (this.ctx.friends && this.account?.user) headActions.append(button('Friends', null, (e) => this.ctx.friends.open(e.currentTarget)));
+    headActions.append(button('Leave', null, () => this.showBrowser()));
+    head.append(title, this.selfNet, headActions);
 
     this.banner = el('div', 'online-error');
     this.banner.setAttribute('role', 'alert');
@@ -981,7 +1296,7 @@ export class OnlineUI {
     this.slotHead = el('div', 'online-slot online-row-head');
     this.slotHead.setAttribute('role', 'row');
     this.columnTips = {};
-    for (const [label, key] of [['Player', 'playerOnline'], ['Faction', 'faction'], ['Color', 'colorOnline'], ['Team', 'team'], ['', null]]) {
+    for (const [label, key] of [['Player', 'playerOnline'], ['Faction', 'faction'], ['Color', 'colorOnline'], ['Team', 'team'], ['Connection', 'connection'], ['', null]]) {
       const c = el('div', 'online-cell', label);
       c.setAttribute('role', 'columnheader');
       if (key) {
@@ -1015,7 +1330,8 @@ export class OnlineUI {
     this.chatLog.setAttribute('aria-live', 'polite');
     const chatInput = el('input', 'online-input');
     chatInput.maxLength = CHAT_MAX;
-    chatInput.placeholder = 'Say something';
+    chatInput.placeholder = 'Message the lobby';
+    chatInput.setAttribute('aria-label', 'Message the lobby');
     chatInput.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' || !chatInput.value.trim()) return;
       this.send({ t: 'chat', text: chatInput.value });
@@ -1025,23 +1341,44 @@ export class OnlineUI {
 
     const body = el('div', 'online-lobby-body');
     this.spectatorBox = el('section', 'online-panel online-spectator-box');
+    // Someone's connection is poor: who, Test again, and for the host Kick (renderConnections).
+    this.netWarning = el('div', 'online-net-warning');
+    this.netWarning.setAttribute('role', 'alert');
+    this.netWarning.hidden = true;
+    const players = el('div', 'online-players');
+    players.append(this.slotBox, this.netWarning);
     const left = el('div', 'online-col');
-    left.append(bulkBox, this.slotBox, this.spectatorBox, this.optionBox);
+    left.append(bulkBox, players, this.spectatorBox, this.optionBox);
+    // Invite players: the lobby's invite code, its link, and friends to invite (renderInvite).
+    this.inviteBox = el('section', 'online-panel online-invite');
+    this.inviteBox.setAttribute('aria-labelledby', 'online-invite-title');
     const right = el('div', 'online-col');
-    right.append(this.mapBox, chat);
+    right.append(this.mapBox, this.inviteBox, chat);
     body.append(left, right);
 
     const bar = el('footer', 'online-bar');
-    this.readyBtn = button('Ready', 'online-btn-primary', () => this.toggleReady());
-    this.startBtn = button('Start game', 'online-btn-primary', () => this.send({ t: 'start' }));
-    this.barStatus = el('span', 'online-muted');
-    bar.append(this.barStatus, this.readyBtn, this.startBtn);
+    // "I'm ready" is a switch (the Lobby board); the host starts instead.
+    this.readyCtl = toggle({ label: "I'm ready", rowClass: 'online-ready-row', onChange: () => this.toggleReady() });
+    this.startBtn = button('Start game', 'online-btn-primary', () => this.startGame());
+    this.barStatus = el('span', 'online-bar-status');
+    this.barLed = led('off');
+    const status = el('span', 'online-bar-line');
+    status.setAttribute('role', 'status');
+    status.append(this.barLed, this.barStatus);
+    bar.append(this.readyCtl.row, status, this.startBtn);
 
     this.resumeBox = el('section', 'online-panel online-resume');
     this.resumeBox.setAttribute('role', 'status');
     this.resumeBox.hidden = true;
     page.append(head, this.banner, this.resumeBox, body, bar);
     this.root.append(page);
+    this.followFriends();
+    this.renderSelfNet();
+    this.renderInvite();
+    // The time left on the invite code.
+    clearInterval(this.inviteTimer);
+    this.inviteTimer = setInterval(() => this.renderInviteTime(), 30_000);
+    this.inviteTimer?.unref?.();
   }
 
   onLobby(m) {
@@ -1071,12 +1408,15 @@ export class OnlineUI {
       resume: m.resume ?? null,
       mission: m.mission ?? null,
       lobbySeen: true,
+      // Protocol 8: the lobby's invite code while one is valid (every member sees it).
+      invite: m.invite ?? null,
     });
     this.state.role = m.spectators.some((x) => x.client === this.state.you) ? 'spectator' : 'player';
     if (mapChanged) this.ensureMap(m.map);
     // The host's New seed arrived (its loader then waits for the map only).
     if (m.options?.seed === this.seedPending) this.seedPending = null;
     this.renderLobby();
+    this.renderInvite();
     this.settleBulk({ slots: m.slots });
   }
 
@@ -1112,25 +1452,215 @@ export class OnlineUI {
     const me = this.state.slots[this.mySlot()];
     const mapReady = this.mapReady();
     this.renderSpectators();
-    this.readyBtn.hidden = this.isHost || !me;
+    this.readyCtl.row.hidden = this.isHost || !me;
     this.startBtn.hidden = !this.isHost;
-    this.readyBtn.textContent = me && me.ready ? 'Not ready' : this.state.resume ? 'Ready to continue' : 'Ready';
+    this.readyCtl.label.textContent = this.state.resume ? 'Ready to continue' : "I'm ready";
+    this.readyCtl.set(!!me?.ready);
     this.renderResume();
-    this.readyBtn.disabled = !mapReady && !(me && me.ready);
-    const waiting = this.state.slots.filter((s) => s.type === 'human' && s.client !== this.state.hostId && !s.ready).length;
+    this.readyCtl.input.disabled = !mapReady && !(me && me.ready);
+    // The players (by name) who are not ready yet (js/online-view.js).
+    const waiting = notReady(this.state.slots, this.state.hostId);
     // Who still lacks the lobby's map (players and spectators; the server checks this too).
     const lacking = this.lackingMap();
     // A generated map still being made (renderMap): Start game waits for it.
-    this.startBtn.disabled = waiting > 0 || !mapReady || lacking.length > 0 || !!this.previewBusy;
-    this.barStatus.textContent = !mapReady
+    this.startBtn.disabled = waiting.length > 0 || !mapReady || lacking.length > 0 || !!this.previewBusy;
+    const text = !mapReady
       ? this.mapStatus.text || 'Waiting for the map.'
       : lacking.length > 0
         ? `Waiting for ${lacking.join(', ')} to install the map.`
-        : waiting > 0
-          ? `Waiting for ${waiting} player${waiting === 1 ? '' : 's'} to be ready.`
+        : waiting.length > 0
+          ? `${waitingText(waiting)} to be ready.`
           : this.isHost
             ? 'Everyone is ready.'
             : 'Waiting for the host to start.';
+    this.barStatus.textContent = text;
+    // The lamp beside the words: yellow while waiting, green when the game can start.
+    setLed(this.barLed, mapReady && !lacking.length && !waiting.length ? 'ok' : 'warn');
+    this.renderConnections();
+  }
+
+  /**
+   * Host: Start game. A poor connection is said first (the start check of
+   * the NetLobby board) but never blocks: the host may start anyway.
+   */
+  async startGame() {
+    const check = startCheck({ slots: this.state.slots, players: this.netq?.players, you: this.state.you });
+    if (check && !(await confirmChoice('Start the game?', check.text, { yes: 'Start anyway', no: 'Wait' }))) return;
+    this.send({ t: 'start' });
+  }
+
+  /** This player's own connection, top right. */
+  renderSelfNet() {
+    const box = this.selfNet;
+    if (!box) return;
+    const v = selfConnection(this.netq?.self ?? null);
+    box.textContent = '';
+    box.className = `online-self-net online-q-${v.quality ?? 'none'}`;
+    const text = el('span', 'online-self-text');
+    text.append(el('span', 'online-self-title', v.title), el('span', 'online-self-detail', v.detail));
+    box.append(signalBars(v), text);
+  }
+
+  /**
+   * The Connection column (bars, ms and the detail line per player) and the
+   * warning bar, from the last netstat (js/netquality.js). Called on every
+   * lobby render and whenever new numbers come in, without rebuilding the slots.
+   */
+  renderConnections() {
+    if (!this.slotBox || !this.state) return;
+    const players = this.netq?.players ?? new Map();
+    for (const cell of this.slotBox.querySelectorAll('.online-cell-net')) {
+      // AI and empty slots have no connection.
+      if (cell.dataset.client === undefined) continue;
+      const client = Number(cell.dataset.client);
+      const v = connectionCell(players.get(client) ?? null);
+      cell.textContent = '';
+      cell.className = `online-cell online-cell-net online-q-${v.quality ?? 'none'}`;
+      cell.title = v.label;
+      const text = el('span', 'online-net-text');
+      text.append(el('span', 'online-net-ms', v.ms || v.word), el('span', 'online-net-detail', v.ms ? `${v.word} · ${v.detail}` : v.detail));
+      cell.append(signalBars(v), text, el('span', 'ui-sr-only', v.label));
+    }
+    const box = this.netWarning;
+    if (!box) return;
+    const w = connectionWarning({ slots: this.state.slots, players, you: this.state.you, hostId: this.state.hostId, isHost: this.isHost && !this.state.resume });
+    box.hidden = !w;
+    box.textContent = '';
+    if (!w) return;
+    box.append(badge('bad', 'Unstable'), el('span', 'online-net-warning-text', w.text));
+    const actions = el('span', 'online-net-warning-actions');
+    actions.append(button('Test again', null, () => this.netq?.testAgain()));
+    if (w.canKick) {
+      const kick = button('Kick', 'online-btn-danger', async () => {
+        const name = this.state.slots[w.slot]?.name ?? 'this player';
+        if (await confirmChoice('Kick player', `Remove ${name} from the lobby? Their slot opens for someone else.`, { yes: 'Kick', danger: true })) this.send({ t: 'slot', slot: w.slot, type: 'open' });
+      });
+      kick.setAttribute('aria-label', `Kick ${this.state.slots[w.slot]?.name ?? 'player'}`);
+      actions.append(kick);
+    }
+    box.append(actions);
+  }
+
+  // ---- Invite players ------------------------------------------------------------------
+
+  /**
+   * The Invite players panel (the InviteCode board): the lobby's code (every
+   * member sees it; the host makes a new one), Copy code and Copy link, the
+   * time it has left, the long session link, and friends to invite.
+   */
+  renderInvite() {
+    const box = this.inviteBox;
+    if (!box || !this.state) return;
+    const st = this.state;
+    const focusKey = box.contains(globalThis.document?.activeElement) ? (document.activeElement.dataset?.key ?? null) : null;
+    box.textContent = '';
+    const title = el('h2', 'online-panel-title', 'Invite players');
+    title.id = 'online-invite-title';
+    box.append(title);
+    const inv = st.invite;
+    const host = this.isHost && !st.resume;
+    const code = el('div', 'online-invite-code');
+    code.append(el('span', 'online-field-label', 'Invite code'));
+    if (inv) {
+      const shown = formatInviteCode(inv.code);
+      const line = el('div', 'online-invite-line');
+      const value = el('span', 'online-invite-value', shown);
+      value.setAttribute('aria-label', `Invite code ${[...inv.code].join(' ')}`);
+      const copyCode = button('Copy code', 'online-btn-small', () => this.copyText(shown, `Copied the code ${shown}.`));
+      copyCode.dataset.key = 'copy-code';
+      const copyLink = button('Copy link', 'online-btn-small', () => this.copyText(inviteLink(inv.code), 'Copied the invite link.'));
+      copyLink.dataset.key = 'copy-link';
+      line.append(value, copyCode, copyLink);
+      this.inviteTime = el('p', 'online-hint online-invite-time');
+      code.append(line, this.inviteTime);
+      this.renderInviteTime();
+      if (host) {
+        const again = button('New code', 'online-btn-small', () => this.newInvite());
+        again.dataset.key = 'new-code';
+        again.title = 'The old code stops working at once';
+        code.append(again);
+      }
+    } else {
+      this.inviteTime = null;
+      code.append(el('p', 'online-hint', host ? 'No invite code yet. A code lets friends join without the long link, also when the lobby is private.' : 'No invite code yet: the host can make one.'));
+      if (host) {
+        const make = button('Make a code', 'online-btn-primary online-btn-small', () => this.newInvite());
+        make.dataset.key = 'new-code';
+        code.append(make);
+      }
+    }
+    box.append(code);
+    // The long link (the session id) keeps working, code or not.
+    const long = button('Copy session link', 'online-btn-small online-invite-long', () => this.copyText(`${location.origin}${location.pathname}?join=${st.session.id}`, 'Copied the session link.'));
+    long.dataset.key = 'copy-long';
+    box.append(long);
+    this.inviteStatus = el('p', 'online-hint online-invite-status');
+    this.inviteStatus.setAttribute('role', 'status');
+    box.append(this.inviteStatus);
+    // Friends who are around (signed-in players).
+    if (this.account?.user && this.friendsDoc) {
+      const v = friendsView(this.friendsDoc, { lobby: { session: st.session.id }, version: this.ctx.version });
+      const people = v.groups.flatMap((g) => g.people).filter((p) => p.actions.some((a) => a.id === 'invite'));
+      const list = el('ul', 'online-invite-friends');
+      list.setAttribute('aria-label', 'Invite a friend');
+      for (const p of people) {
+        const action = p.actions.find((a) => a.id === 'invite');
+        const li = el('li', 'online-invite-friend');
+        const who = el('span', 'online-invite-who');
+        who.append(el('span', 'online-invite-name', p.name), el('span', 'online-hint', `${p.word}: ${p.status}`));
+        const b = button(action.label, action.disabled ? 'online-btn-small' : 'online-btn-small online-btn-primary', () => this.inviteFriend(p));
+        b.disabled = action.disabled || !inv;
+        b.title = !inv ? (host ? 'Make an invite code first' : 'The host makes an invite code first') : action.title;
+        b.setAttribute('aria-label', `${action.label}: ${p.name}`);
+        b.dataset.key = `invite:${p.username}`;
+        li.append(led(p.led), who, b);
+        list.append(li);
+      }
+      const sub = el('h3', 'online-invite-sub', 'Invite a friend');
+      box.append(sub, people.length ? list : el('p', 'online-hint', 'None of your friends is online right now.'));
+    }
+    if (focusKey) [...box.querySelectorAll('[data-key]')].find((e) => e.dataset.key === focusKey && !e.disabled)?.focus();
+  }
+
+  /** "Valid while this lobby is open, at most 2 hours. 1 h 42 min left." */
+  renderInviteTime() {
+    const inv = this.state?.invite;
+    if (!this.inviteTime || !inv) return;
+    this.inviteTime.textContent = `Valid while this lobby is open, at most 2 hours: ${inviteLeftText(inviteMsLeft(inv.expiresAt))}. The link opens ${inviteLink(inv.code).replace(/^https?:\/\//, '')}.`;
+  }
+
+  /** Host: a new invite code (the old one stops working). */
+  async newInvite() {
+    if (!this.isHost || !this.member || !this.state?.session) return;
+    try {
+      const r = await createInvite(this.state.session.id, this.member);
+      if (!this.state) return;
+      this.state.invite = { code: normalizeInviteCode(r.code) ?? r.code, expiresAt: r.expiresAt };
+      this.renderInvite();
+      this.inviteStatus.textContent = `New code: ${formatInviteCode(this.state.invite.code)}.`;
+    } catch (err) {
+      if (this.inviteStatus) this.inviteStatus.textContent = `No code: ${messageOf(err)}`;
+    }
+  }
+
+  /** Invite a friend into this lobby (they see it in their friends list, with the code). */
+  async inviteFriend(p) {
+    if (!this.friendsStore || !this.state?.session) return;
+    try {
+      await this.friendsStore.invite(p.username, this.state.session.id);
+      if (this.inviteStatus) this.inviteStatus.textContent = `Invited ${p.name}.`;
+    } catch (err) {
+      if (this.inviteStatus) this.inviteStatus.textContent = `Could not invite ${p.name}: ${err?.message ?? err}`;
+    }
+  }
+
+  async copyText(text, done) {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (this.inviteStatus) this.inviteStatus.textContent = done;
+    } catch {
+      if (this.inviteStatus) this.inviteStatus.textContent = `Copy it by hand: ${text}`;
+    }
   }
 
   /** The saved game this lobby resumes, and whose players it still waits for. */
@@ -1189,13 +1719,21 @@ export class OnlineUI {
     box.append(list);
     const controls = el('div', 'online-tools');
     if (this.isHost) {
-      const places = select(
-        Array.from({ length: MAX_SPECTATORS + 1 }, (_, i) => [i, String(i)]).filter(([i]) => i >= st.spectators.length),
-        st.maxSpectators,
-        (v) => this.send({ t: 'spectators', max: Number(v) }),
-      );
-      describedBy(places, this.spectatorTip);
-      controls.append(field('Spectator places', places));
+      // Never fewer places than spectators watching.
+      const label = el('span', 'online-field-label', 'Spectator places');
+      label.id = `online-lbl-${++uid}`;
+      const places = stepper({
+        labelledBy: label.id,
+        values: Array.from({ length: MAX_SPECTATORS + 1 }, (_, i) => i).filter((i) => i >= st.spectators.length),
+        value: st.maxSpectators,
+        decLabel: 'Fewer places',
+        incLabel: 'More places',
+        onChange: (v) => this.send({ t: 'spectators', max: Number(v) }),
+      });
+      describedBy(places.field, this.spectatorTip);
+      const row = el('div', 'online-field');
+      row.append(label, places.root);
+      controls.append(row);
     }
     const watching = st.role === 'spectator';
     const toggle = button(watching ? 'Play' : 'Spectate', null, () => this.send({ t: 'spectate', on: !watching }));
@@ -1257,8 +1795,27 @@ export class OnlineUI {
     this.bulk.report(wait.summary);
   }
 
+  /**
+   * A select of the slot table, remembered by `key` (slot and part) so a
+   * lobby update can give the focus back to the same control; `tip`: its
+   * column's help.
+   */
+  slotPlate(key, choices, value, onChange, { label, disabled = false, title = '', tip = null, grouped = false }) {
+    const p = select(choices, value, onChange, { label, grouped });
+    p.setDisabled(disabled);
+    if (title) p.button.title = title;
+    p.button.dataset.ctl = key;
+    if (tip) describedBy(p.button, tip);
+    this.slotPlates.push(p);
+    return p;
+  }
+
   renderSlots() {
     const box = this.slotBox;
+    // The selects of the last render go (an open list closes); the focused one is found again by its key.
+    const focusKey = box.contains(globalThis.document?.activeElement) ? (document.activeElement.dataset?.ctl ?? null) : null;
+    for (const p of this.slotPlates ?? []) p.destroy();
+    this.slotPlates = [];
     box.textContent = '';
     box.append(this.slotHead);
     const host = this.isHost;
@@ -1278,97 +1835,98 @@ export class OnlineUI {
       // another player's team, handicap and start, not its faction or colour.
       const editable = !this.state.resume && ((slot.type === 'human' && i === mine) || (slot.type === 'ai' && host));
       const hostSets = editable || (!this.state.resume && host && slot.type === 'human');
-      if (mission && slot.type === 'human') {
+      // The connection of a person in the slot (renderConnections fills it).
+      const net = el('div', 'online-cell online-cell-net');
+      if (slot.type === 'human') net.dataset.client = String(slot.client);
+      else net.classList.add('is-empty');
+      const nameBadges = () => {
         who.append(el('span', 'online-player-name', slot.name));
         if (slot.account) who.append(accountMark());
         if (slot.client === this.state.hostId) who.append(el('span', 'online-badge', 'HOST'));
         if (i === mine) who.append(el('span', 'online-badge online-badge-you', 'YOU'));
-        row.append(who, el('div', 'online-cell online-muted', 'Set by the mission'), el('div', 'online-cell'), el('div', 'online-cell'));
+      };
+      if (mission && slot.type === 'human') {
+        nameBadges();
+        row.append(who, el('div', 'online-cell online-muted', 'Set by the mission'), el('div', 'online-cell'), el('div', 'online-cell'), net);
       } else if (slot.type === 'human' || slot.type === 'ai') {
         row.style.setProperty('--slot-color', rgbCss(this.ctx.colors[slot.color] || [1, 1, 1]));
         if (slot.type === 'human') {
-          who.append(el('span', 'online-player-name', slot.name));
-          if (slot.account) who.append(accountMark());
-          if (slot.client === this.state.hostId) who.append(el('span', 'online-badge', 'HOST'));
-          if (i === mine) who.append(el('span', 'online-badge online-badge-you', 'YOU'));
+          nameBadges();
         } else {
           // The OpenRA bot this AI plays (absent in lobbies from before bot types: Normal AI).
-          const bot = select(BOTS.map((b) => [b, LABELS.bot[b]]), slot.bot ?? 'normal', (v) => this.send({ t: 'slot', slot: i, bot: v }));
-          bot.disabled = !host || Boolean(this.state.resume);
-          bot.setAttribute('aria-label', `Player ${i + 1} bot`);
-          describedBy(bot, this.columnTips.playerOnline);
-          who.append(bot);
-          const diff = select(DIFFICULTIES.map((d) => [d, LABELS.difficulty[d]]), slot.difficulty, (v) =>
-            this.send({ t: 'slot', slot: i, difficulty: v }),
-          );
-          diff.disabled = !host;
-          diff.setAttribute('aria-label', `Player ${i + 1} difficulty`);
-          describedBy(diff, this.columnTips.playerOnline);
-          who.append(diff);
+          const bot = this.slotPlate(`${i}:bot`, BOTS.map((b) => [b, LABELS.bot[b]]), slot.bot ?? 'normal', (v) => this.send({ t: 'slot', slot: i, bot: v }), {
+            label: `Player ${i + 1} bot`,
+            disabled: !host || Boolean(this.state.resume),
+            tip: this.columnTips.playerOnline,
+          });
+          const diff = this.slotPlate(`${i}:difficulty`, DIFFICULTIES.map((d) => [d, LABELS.difficulty[d]]), slot.difficulty, (v) => this.send({ t: 'slot', slot: i, difficulty: v }), {
+            label: `Player ${i + 1} difficulty`,
+            disabled: !host,
+            tip: this.columnTips.playerOnline,
+          });
+          who.append(bot.root, diff.root);
         }
-        const faction = select(FACTION_GROUPS, slot.faction, (v) => this.send({ t: 'slot', slot: i, faction: v }), true);
         // The lobby map's locks (map format version 2): the server refuses changes to them.
         const setup = this.state.map?.setup ?? null;
         const locked = (part) => !!setup && !this.state.resume && slotLocked(setup, i, part);
-        faction.disabled = !editable || locked('faction');
-        if (locked('faction')) faction.title = 'Locked by the map';
-        faction.setAttribute('aria-label', `Player ${i + 1} faction`);
-        describedBy(faction, this.columnTips.faction);
-        const color = select(
+        const lockTitle = (part) => (locked(part) ? 'Locked by the map' : '');
+        const faction = this.slotPlate(`${i}:faction`, FACTION_GROUPS, slot.faction, (v) => this.send({ t: 'slot', slot: i, faction: v }), {
+          label: `Player ${i + 1} faction`,
+          grouped: true,
+          disabled: !editable || locked('faction'),
+          title: lockTitle('faction'),
+          tip: this.columnTips.faction,
+        });
+        const color = this.slotPlate(
+          `${i}:color`,
           Array.from({ length: COLOR_COUNT }, (_, c) => [c, this.ctx.colorNames[c] || `Color ${c + 1}`]),
           slot.color,
           (v) => this.send({ t: 'slot', slot: i, color: Number(v) }),
+          { label: `Player ${i + 1} color`, disabled: !editable || locked('color'), title: lockTitle('color'), tip: this.columnTips.colorOnline },
         );
-        color.disabled = !editable || locked('color');
-        if (locked('color')) color.title = 'Locked by the map';
-        color.setAttribute('aria-label', `Player ${i + 1} color`);
-        describedBy(color, this.columnTips.colorOnline);
-        const team = select(
+        const team = this.slotPlate(
+          `${i}:team`,
           Array.from({ length: TEAM_MAX + 1 }, (_, t) => [t, t === 0 ? 'None' : `Team ${t}`]),
           slot.team,
           (v) => this.send({ t: 'slot', slot: i, team: Number(v) }),
+          { label: `Player ${i + 1} team`, disabled: !hostSets || locked('team'), title: lockTitle('team'), tip: this.columnTips.team },
         );
-        team.disabled = !hostSets || locked('team');
-        if (locked('team')) team.title = 'Locked by the map';
-        team.setAttribute('aria-label', `Player ${i + 1} team`);
-        describedBy(team, this.columnTips.team);
         // OpenRA handicap: each player sets its own, the host an AI's.
-        const handicap = select(
+        const handicap = this.slotPlate(
+          `${i}:handicap`,
           HANDICAPS.map((h) => [h, `${h}%`]),
           slot.handicap ?? 0,
           (v) => this.send({ t: 'slot', slot: i, handicap: Number(v) }),
+          { label: `Player ${i + 1} handicap`, disabled: !hostSets, tip: this.columnTips.handicap },
         );
-        handicap.disabled = !hostSets;
-        handicap.setAttribute('aria-label', `Player ${i + 1} handicap`);
-        describedBy(handicap, this.columnTips.handicap);
         // Start position (OpenRA's spawn dropdown): automatic, or a spawn no other slot picked.
         const markers = this.markerList ?? [];
         const auto = markers.find((m) => m.slot === i && !m.picked);
-        const spawn = select(
+        const spawn = this.slotPlate(
+          `${i}:spawn`,
           [['auto', auto ? `Automatic (${auto.letter})` : 'Automatic'], ...markers.filter((m) => !this.state.slots.some((x, k) => k !== i && x.spawn === m.index)).map((m) => [m.index, `Position ${m.letter}`])],
           Number.isInteger(slot.spawn) && markers.some((m) => m.index === slot.spawn) ? slot.spawn : 'auto',
           (v) => this.send({ t: 'slot', slot: i, spawn: v === 'auto' ? null : Number(v) }),
+          { label: `Player ${i + 1} start position`, disabled: !hostSets || !this.spawnsEnabled(), tip: this.columnTips.spawn },
         );
-        spawn.disabled = !hostSets || !this.spawnsEnabled();
-        spawn.setAttribute('aria-label', `Player ${i + 1} start position`);
-        describedBy(spawn, this.columnTips.spawn);
-        const cells = [faction, color, [team, handicap, spawn]].map((c) => {
+        const cells = [[faction.root], [color.root], [team.root, handicap.root, spawn.root]].map((c) => {
           const cell = el('div', 'online-cell');
-          cell.append(...[c].flat());
+          cell.append(...c);
           return cell;
         });
-        row.append(who, ...cells);
+        row.append(who, ...cells, net);
       } else {
         who.append(el('span', 'online-muted', slot.type === 'open' ? 'Open' : 'Closed'));
-        row.append(who, el('div', 'online-cell'), el('div', 'online-cell'), el('div', 'online-cell'));
+        row.append(who, el('div', 'online-cell'), el('div', 'online-cell'), el('div', 'online-cell'), net);
       }
       const action = el('div', 'online-cell online-cell-action');
       if (slot.type === 'human' && slot.client !== this.state.hostId) {
-        action.append(el('span', slot.ready ? 'online-ready' : 'online-muted', slot.ready ? 'Ready' : 'Not ready'));
+        // The word with a lamp: green Ready, yellow Not ready.
+        action.append(badge(slot.ready ? 'ready' : 'waiting', slot.ready ? 'Ready' : 'Not ready'));
       }
       if (slot.type === 'human') {
-        const badge = this.mapBadge(slot);
-        if (badge) action.append(badge);
+        const mapState = this.mapBadge(slot);
+        if (mapState) action.append(mapState);
       }
       const missionPlaces = this.state.mission ? coopMission(this.state.mission.id).players.length : Infinity;
       if (host && i !== mine && !this.state.resume && i < missionPlaces) {
@@ -1376,22 +1934,24 @@ export class OnlineUI {
         // People play a co-op mission: no computer players (OpenRA AllowBots: False).
         const choices = this.state.mission ? [['open', 'Open'], ['closed', 'Closed']] : [['open', 'Open'], ['closed', 'Closed'], ['ai', 'Computer']];
         if (slot.type === 'human') choices.unshift(['human', 'Player (kick)']);
-        const type = select(choices, current, (v) => {
-          if (v !== 'human') this.send({ t: 'slot', slot: i, type: v });
-        });
-        type.setAttribute('aria-label', `Player ${i + 1} slot type`);
-        if (this.state.map?.setup && slotLocked(this.state.map.setup, i, 'type')) {
-          type.disabled = true;
-          type.title = 'Locked by the map';
-        }
-        describedBy(type, this.columnTips.playerOnline);
-        action.append(type);
+        const typeLocked = !!this.state.map?.setup && slotLocked(this.state.map.setup, i, 'type');
+        const type = this.slotPlate(
+          `${i}:type`,
+          choices,
+          current,
+          (v) => {
+            if (v !== 'human') this.send({ t: 'slot', slot: i, type: v });
+          },
+          { label: `Player ${i + 1} slot type`, disabled: typeLocked, title: typeLocked ? 'Locked by the map' : '', tip: this.columnTips.playerOnline },
+        );
+        action.append(type.root);
       }
       if (slot.type === 'open' && !this.state.resume && i < missionPlaces) action.append(button('Take', null, () => this.send({ t: 'slot', slot: i })));
       row.append(action);
       box.append(row);
     });
     this.bulk?.sync();
+    if (focusKey) this.slotPlates.find((p) => p.button.dataset.ctl === focusKey && !p.button.disabled)?.button.focus();
   }
 
   /** Send the options with `patch` applied (host only; the server checks). */
@@ -1424,7 +1984,7 @@ export class OnlineUI {
     };
     const selectRow = ([key, label, choices]) => {
       const numeric = typeof choices[0][0] === 'number';
-      const s = select(choices, choices[0][0], (v) => edit(key, numeric ? Number(v) : v));
+      const s = select(choices, choices[0][0], (v) => edit(key, numeric ? Number(v) : v), { label, small: false });
       this.optionControls[key] = s;
       const row = field(label, s, key);
       this.optionRows[key] = row;
@@ -1465,9 +2025,10 @@ export class OnlineUI {
     const setup = this.state.map?.setup ?? null;
     const lockedOption = (key) => !!setup && optionLocked(setup, key);
     for (const [key] of [...WORLD_OPTIONS, ...SELECT_OPTIONS]) {
-      this.optionControls[key].value = String(o[key]);
-      this.optionControls[key].disabled = !host || lockedOption(key);
-      this.optionControls[key].title = lockedOption(key) ? 'Locked by the map' : '';
+      const p = this.optionControls[key];
+      p.set(o[key]);
+      p.setDisabled(!host || lockedOption(key));
+      p.button.title = lockedOption(key) ? 'Locked by the map' : '';
     }
     for (const [key] of TOGGLES) {
       this.optionControls[key].checked = o[key];
@@ -1565,30 +2126,10 @@ export class OnlineUI {
     if (!this.isHost || st.resume) return;
 
     // Host controls: a generated map, a community map or one of the host's own maps.
-    const source = el('select', 'online-select');
-    const option = (parent, value, label) => {
-      const o = el('option', null, label);
-      o.value = value;
-      parent.append(o);
-    };
-    option(source, 'generated', 'Generated map');
     const current = st.mission ? `mission:${st.mission.id}` : st.map ? (st.map.shared ? `mine:${st.map.hash}` : `community:${st.map.id}`) : 'generated';
-    const groups = [
-      ['My maps', this.libraryMaps.map((m) => [`mine:${m.hash}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
-      ['Community maps', this.serverMaps.map((m) => [`community:${m.id}`, `${m.name} (${m.players}p${m.modded ? ', modded' : ''})`])],
-    ];
-    if (st.map && ![...groups[0][1], ...groups[1][1]].some(([v]) => v === current)) groups[st.map.shared ? 0 : 1][1].push([current, st.map.name]);
-    // OpenRA's co-op missions (map.yaml Visibility: Lobby), played by people only.
-    groups.push(['Co-op missions', COOP_MISSIONS.map((m) => [`mission:${m.id}`, `${m.title} (co-op, ${m.players.length} players)`])]);
-    for (const [label, items] of groups) {
-      if (!items.length) continue;
-      const g = el('optgroup');
-      g.label = label;
-      for (const [v, text] of items) option(g, v, text);
-      source.append(g);
-    }
-    source.value = current;
-    source.addEventListener('change', () => this.pickMap(source.value));
+    this.mapPicker?.destroy();
+    const source = select(this.mapChoices(current), current, (v) => this.pickMap(v), { grouped: true, label: 'Map', small: false });
+    this.mapPicker = source;
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
     // Back to the generated map, with the seed and size the options kept (like Generated map in the list).
@@ -1598,9 +2139,10 @@ export class OnlineUI {
       controls.append(unload);
     }
     if (!st.map && !st.mission) {
-      const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) =>
-        this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }),
-      );
+      const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) => this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }), {
+        label: 'Map size',
+        small: false,
+      });
       const seedRow = el('div', 'online-seed');
       const seed = el('input', 'online-input');
       seed.inputMode = 'numeric';
@@ -1662,15 +2204,18 @@ export class OnlineUI {
         .catch(() => {});
     }
     const box = el('div', 'online-mission');
+    this.missionPlates = [];
     if (entry?.briefing) box.append(el('p', 'online-mission-briefing', entry.briefing));
     const host = this.isHost && !st.resume;
     for (const [key, o] of Object.entries(m.options)) {
       const label = entry?.options?.[key]?.label ?? key;
       const names = Object.fromEntries(entry?.options?.[key]?.values ?? []);
-      const control = select(o.values.map((v) => [v, names[v] ?? v]), st.mission.options[key], (v) =>
-        this.send({ t: 'mission', mission: { ...st.mission, options: { ...st.mission.options, [key]: v } } }),
-      );
-      control.disabled = !host;
+      const control = select(o.values.map((v) => [v, names[v] ?? v]), st.mission.options[key], (v) => this.send({ t: 'mission', mission: { ...st.mission, options: { ...st.mission.options, [key]: v } } }), {
+        label,
+        small: false,
+      });
+      control.setDisabled(!host);
+      this.missionPlates.push(control);
       box.append(field(label, control));
     }
     box.append(el('p', 'online-muted', 'Every place needs a player. Your game keeps the mission file of this version of WebRA; the server checks it is the same for everyone.'));
@@ -1874,6 +2419,12 @@ export class OnlineUI {
 
   /** The community map list and the host's own maps, for the map picker. */
   async loadServerMaps() {
+    await this.loadMapLists();
+    if (this.state && this.slotBox) this.renderLobby();
+  }
+
+  /** The host's own maps and the community maps (the host dialog's map picker and the lobby's). */
+  async loadMapLists() {
     try {
       this.libraryMaps = await this.library.list();
     } catch (err) {
@@ -1885,7 +2436,6 @@ export class OnlineUI {
     } catch (err) {
       console.warn('Map list unavailable:', err.message);
     }
-    if (this.state && this.slotBox) this.renderLobby();
   }
 
   // ---- Maps ------------------------------------------------------------------------
@@ -2181,6 +2731,10 @@ export class OnlineUI {
     for (const [type, msg] of pending) this.net(type, msg);
     this.inGame = true;
     this.root.hidden = true;
+    // The friends list is not polled during the game; the connection quality goes on (statistics).
+    this.friendsStore?.stop();
+    clearInterval(this.inviteTimer);
+    this.netq?.beginGame();
     this.buildGameOverlay(m.players, m.options.cheats === true, spectator, hasTeamChat(m.options.players, me ? me.player : null));
     this.ctx.onStartGame({
       host,
@@ -2199,6 +2753,9 @@ export class OnlineUI {
       save: this.saveHandle(),
       about: this.gameAbout(m, mapText),
       chat: this.chatHandle,
+      // Connection quality of this game (js/netquality.js): the HUD's signal bars and warnings, the
+      // game menu's and the statistics' Network tabs.
+      net: this.netq ?? null,
     });
     if (m.resume) this.gameLine(`Resuming the saved game after ${formatTicks(m.resume.ticks)}: catching up...`, true);
   }
