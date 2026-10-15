@@ -1817,7 +1817,8 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
     const bar = replayBar.root;
     new ResizeObserver(() => $('field').style.setProperty('--replay-bar-height', `${bar.offsetHeight}px`)).observe(bar);
   }
-  const progress = records ? new records.ProgressOverlay($('field')) : null;
+  // Saves loading, catching up and seeking (js/records.js); not the campaign's `progress`.
+  const progressOverlay = records ? new records.ProgressOverlay($('field')) : null;
   // HUD buttons in one row at the top right: Debug, Build / Map (phones), Menu.
   $('sidebar-toggle').before(debug.button);
   // Handle for debugging from the browser console.
@@ -2388,7 +2389,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
       uploadedFog = f.instances === 'gpu' ? fog : null;
       instanceInfo = { path: f.instances, reason: f.instances === choice.path ? choice.reason : 'switching', buildMs: f.buildMs, bytes: f.renderBytes };
     }
-    progress?.show(busy() ? progressText() : null);
+    progressOverlay?.show(busy() ? progressText() : null);
     // Sounds of what happened, heard from the camera (fog hides enemy sounds),
     // and radar pings. Fast-forwarding (loading, rejoining, seeking) stays
     // silent: the simulation drops the events.
