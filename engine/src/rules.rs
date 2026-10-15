@@ -642,6 +642,10 @@ pub struct SupportPowerInfo {
     /// Fires once per game (GPS Satellite).
     #[serde(default)]
     pub one_shot: bool,
+    /// StartFullyCharged: a new instance starts ready instead of empty
+    /// (OpenRA SupportPowerInstance; no Red Alert power sets it, maps may).
+    #[serde(default)]
+    pub start_fully_charged: bool,
     /// DisplayTimerRelationships: who sees the power's countdown in the
     /// top-left timer list, relative to its owner ("ally", "neutral", "enemy";
     /// the owner counts as an ally). Empty: nobody (OpenRA's default None).
@@ -2029,6 +2033,11 @@ impl Rules {
         within(&n("range"), p.range, 0, 64 * CELLS)?;
         within(&n("max_distance"), p.max_distance, 0, 256)?;
         count(&n("prerequisites"), p.prerequisites.len(), 16)?;
+        // DisplayTimerRelationships: who sees the countdown (powers.rs power_timers).
+        count(&n("display_timer"), p.display_timer.len(), 3)?;
+        if let Some(r) = p.display_timer.iter().find(|r| !matches!(r.as_str(), "ally" | "neutral" | "enemy")) {
+            return Err(format!("{}: unknown relationship {}", n("display_timer"), truncate(r)));
+        }
         // SpawnActorPower (Sonar Pulse): a detector for `duration` ticks.
         within(&n("detect_range"), p.detect_range, 0, 64 * CELLS)?;
         count(&n("detect_types"), p.detect_types.len(), 8)?;

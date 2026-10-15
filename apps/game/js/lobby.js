@@ -848,6 +848,9 @@ export class Lobby {
     moddedTitle.id = `lobby-modded-${++uid}`;
     this.moddedBox.setAttribute('aria-labelledby', moddedTitle.id);
     this.moddedName = el('p', 'lobby-modded-name');
+    // What the map's rules change (js/maprules.js), when the engine can tell.
+    this.moddedRules = el('ul', 'lobby-modded-rules');
+    this.moddedRules.setAttribute('aria-label', 'Rules this map changes');
     const moddedButtons = el('div', 'lobby-modded-buttons');
     this.acceptBtn = el('button', 'lobby-btn lobby-btn-danger', 'Accept and install');
     this.acceptBtn.type = 'button';
@@ -862,7 +865,7 @@ export class Lobby {
       this.loadBtn.focus();
     });
     moddedButtons.append(this.acceptBtn, cancel);
-    this.moddedBox.append(moddedTitle, this.moddedName, el('p', null, MODDED_WARNING), moddedButtons);
+    this.moddedBox.append(moddedTitle, this.moddedName, el('p', null, MODDED_WARNING), this.moddedRules, moddedButtons);
 
     this.mapErrorList = el('ul', 'lobby-map-errors');
     this.mapErrorList.setAttribute('role', 'alert');
@@ -1399,6 +1402,9 @@ export class Lobby {
     if (this.pendingMap) {
       const i = this.pendingMap.info;
       this.moddedName.textContent = `"${i.name}" by ${i.author}`;
+      const changes = this.maps.describeRules?.(this.pendingMap.json) ?? [];
+      this.moddedRules.replaceChildren(...changes.map((line) => el('li', null, line)));
+      this.moddedRules.hidden = changes.length === 0;
       this.fileField.hidden = false;
     }
 

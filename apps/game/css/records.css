@@ -98,6 +98,16 @@
   font-size: 12px;
 }
 
+/* What a modded map's rules change (js/maprules.js). */
+.records-modded-rules {
+  max-height: 200px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
 .records-actions {
   display: flex;
   justify-content: flex-end;

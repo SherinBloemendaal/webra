@@ -468,12 +468,158 @@ test('convert: rules that map onto WebRA become a modded map, the rest is report
   assert.match(unsupported, /Lua scripts \(x\.lua\) are not run/);
   assert.match(unsupported, /E1\.MadeUp\.Field/);
   assert.match(unsupported, /E1\.-Selectable/);
-  assert.match(unsupported, /Player \(not a WebRA actor\)/);
+  assert.match(unsupported, /Player\.PlayerResources\.DefaultCash \(1 is not a lobby choice\)/);
+  assert.match(unsupported, /World\.LuaScript\.Scripts/);
   assert.match(unsupported, /NotAWeapon/);
   assert.match(unsupported, /M1Carbine\.ReloadDelay/);
   assert.match(unsupported, /campaign-rules\.yaml comes from the OpenRA mod/);
   assert.match(unsupported, /sprite sequences/);
   assert.ok(report.warnings.some((w) => w.includes('missing.yaml')));
+  assert.ok(protocolParseMap(JSON.stringify(map), { rules: BASE_RULES }).ok);
+});
+
+test('convert: support power charge times and switches become the power entries of a modded map', async () => {
+  const rules = [
+    'MSLO:',
+    '\tNukePower:',
+    '\t\tChargeInterval: 50000',
+    '\t\tDisplayTimerRelationships: Ally',
+    'IRON:',
+    '\tGrantExternalConditionPower@IRONCURTAIN:',
+    '\t\tStartFullyCharged: True',
+    '\t\tOneShot: true',
+    '\t\tChargeInterval: -5',
+    '\t\tAllowMultiple: true',
+    'AFLD:',
+    '\tParatroopersPower@paratroopers:',
+    '\t\tChargeInterval: 9000',
+    '\t\tPrerequisites: aircraft.soviet, ~techlevel.high',
+    '\tAirstrikePower@spyplane:',
+    '\t\tChargeInterval: 1000',
+    'AFLD.Ukraine:',
+    '\tAirstrikePower@spyplane:',
+    '\t\tChargeInterval: 2000',
+    '\tNukePower:',
+    '\t\tChargeInterval: 1',
+    // A later duplicate merges into the earlier one (OpenRA MiniYaml), the last value wins.
+    'MSLO:',
+    '\tNukePower:',
+    '\t\tChargeInterval: 45000',
+    '',
+  ].join('\n');
+  const bytes = sampleOramap({ rulesRef: 'rules.yaml', extraFiles: [{ name: 'rules.yaml', data: rules }] });
+  const { map, report } = await parse(bytes);
+  const builtIn = (id) => BASE_RULES.actors.find((a) => a.id === id).abilities.support_powers;
+  const powers = (id) => map.rules.actors[id].abilities.support_powers;
+
+  // The whole list is replaced (docs/contracts.md section 2), each entry keeps its kind and other fields.
+  assert.deepEqual(powers('MSLO'), [{ ...builtIn('MSLO')[0], charge: 45000, display_timer: ['ally'] }]);
+  assert.deepEqual(powers('IRON'), [{ ...builtIn('IRON')[0], start_fully_charged: true, one_shot: true }], 'a negative charge time is not applied');
+  const afld = builtIn('AFLD');
+  const at = (list, key) => list.find((p) => p.key === key);
+  assert.equal(at(powers('AFLD'), 'ParatroopersPower@paratroopers').charge, 9000);
+  assert.deepEqual(at(powers('AFLD'), 'ParatroopersPower@paratroopers').prerequisites, ['aircraft.soviet', '~techlevel.high']);
+  assert.equal(at(powers('AFLD'), 'AirstrikePower@spyplane').charge, 1000);
+  assert.deepEqual(at(powers('AFLD'), 'AirstrikePower@parabombs'), at(afld, 'AirstrikePower@parabombs'), 'untouched powers stay as built in');
+  // AFLD.Ukraine inherits AFLD in OpenRA: the map's AFLD changes reach it, its own setting wins.
+  assert.equal(at(powers('AFLD.Ukraine'), 'ParatroopersPower@paratroopers').charge, 9000);
+  assert.equal(at(powers('AFLD.Ukraine'), 'AirstrikePower@spyplane').charge, 2000);
+  assert.equal(map.rules.actors['AFLD.Ukraine'].prerequisites, undefined);
+
+  const applied = report.rules.applied.map((a) => a.text);
+  assert.ok(applied.includes('MSLO NukePower.ChargeInterval: 45000 ticks (Atom Bomb charges in 30:00 at normal speed)'), applied.join('\n'));
+  assert.equal(applied.filter((t) => t.startsWith('MSLO NukePower.ChargeInterval')).length, 1, 'a duplicate is listed once');
+  assert.ok(applied.some((t) => t.startsWith('AFLD.Ukraine ParatroopersPower@paratroopers.ChargeInterval: 9000 ticks') && t.endsWith('(inherited from AFLD)')), applied.join('\n'));
+  const unsupported = report.unsupported.join('\n');
+  assert.match(unsupported, /IRON\.GrantExternalConditionPower@IRONCURTAIN\.ChargeInterval/);
+  assert.match(unsupported, /IRON\.GrantExternalConditionPower@IRONCURTAIN\.AllowMultiple/);
+  assert.match(unsupported, /AFLD\.Ukraine\.NukePower/, 'a power the actor does not have');
+  assert.doesNotMatch(unsupported, /MSLO/);
+  assert.ok(protocolParseMap(JSON.stringify(map), { rules: BASE_RULES }).ok);
+});
+
+test('convert: lobby options and their locks from the World and Player rules', async () => {
+  const rules = [
+    'World:',
+    '\tMapOptions:',
+    '\t\tTechLevelDropdownLocked: false',
+    '\t\tTechLevel: medium',
+    '\t\tShortGameCheckboxEnabled: false',
+    '\t\tShortGameCheckboxLocked: true',
+    '\t\tShortGameCheckboxVisible: false',
+    '\t\tGameSpeed: default',
+    '\t\tGameSpeedDropdownLocked: True',
+    '\tCrateSpawner:',
+    '\t\tCheckboxLocked: true',
+    '\tSpawnStartingUnits:',
+    '\t\tStartingUnitsClass: heavy',
+    '\tTimeLimitManager:',
+    '\t\tTimeLimitDefault: 45',
+    '\tResourceLayer:',
+    '\t\tRecalculateResourceDensity: false',
+    'Player:',
+    '\tDeveloperMode:',
+    '\t\tCheckboxEnabled: true',
+    '\t\tCheckboxLocked: false',
+    '\tPlayerResources:',
+    '\t\tDefaultCash: 10000',
+    '\t\tDefaultCashDropdownLocked: true',
+    '\tShroud:',
+    '\t\tExploredMapCheckboxEnabled: true',
+    '\tLobbyPrerequisiteCheckbox@GLOBALBOUNTY:',
+    '\t\tEnabled: True',
+    '\t\tLocked: True',
+    '',
+  ].join('\n');
+  const bytes = sampleOramap({ rulesRef: 'rules.yaml', extraFiles: [{ name: 'rules.yaml', data: rules }] });
+  const { map, report } = await parse(bytes);
+  assert.equal(map.rules, null, 'lobby options are not rules: the map is not modded');
+  assert.equal(report.modded, false);
+  assert.deepEqual(map.options, {
+    startingCash: 10000,
+    startingUnits: 'heavy',
+    techLevel: 'medium',
+    gameSpeed: 'normal',
+    explored: true,
+    cheats: true,
+    crates: true,
+    shortGame: false,
+    bounty: true,
+  });
+  assert.deepEqual(map.lockedOptions, ['startingCash', 'gameSpeed', 'crates', 'shortGame', 'bounty']);
+  assert.ok(report.converted.some((l) => l.startsWith("Lobby options from the map's rules: starting cash 10000 (locked), starting units heavy, tech level medium")));
+  const unsupported = report.unsupported.join('\n');
+  assert.match(unsupported, /World\.MapOptions\.ShortGameCheckboxVisible/);
+  assert.match(unsupported, /World\.TimeLimitManager\.TimeLimitDefault \(45 is not a lobby choice\)/);
+  assert.match(unsupported, /World\.ResourceLayer\.RecalculateResourceDensity/);
+  const checked = protocolParseMap(JSON.stringify(map), { rules: BASE_RULES });
+  assert.ok(checked.ok, checked.errors?.join('; '));
+});
+
+test('convert: a locked lobby value the lobby has no choice for is left unlocked, not locked at the default', async () => {
+  const rules = [
+    'World:',
+    '\tTimeLimitManager:',
+    '\t\tTimeLimitDefault: 45',
+    '\t\tTimeLimitLocked: true',
+    '\tMapOptions:',
+    '\t\tTechLevel: ultra',
+    '\t\tTechLevel: low',
+    '\t\tTechLevelDropdownLocked: true',
+    'Player:',
+    '\tPlayerResources:',
+    '\t\tDefaultCash: 3000',
+    '\t\tDefaultCashDropdownLocked: true',
+    '',
+  ].join('\n');
+  const bytes = sampleOramap({ rulesRef: 'rules.yaml', extraFiles: [{ name: 'rules.yaml', data: rules }] });
+  const { map, report } = await parse(bytes);
+  assert.deepEqual(map.options, { techLevel: 'low' }, 'no starting cash or time limit the map did not ask for');
+  assert.deepEqual(map.lockedOptions, ['techLevel'], 'a later valid value keeps its lock');
+  const warnings = report.warnings.join('\n');
+  assert.match(warnings, /locks starting cash at 3000 \(Player\.PlayerResources\.DefaultCash\), which the lobby has no choice for; the option is left unlocked/);
+  assert.match(warnings, /locks time limit at 45/);
+  assert.doesNotMatch(warnings, /tech level/);
   assert.ok(protocolParseMap(JSON.stringify(map), { rules: BASE_RULES }).ok);
 });
 
@@ -574,6 +720,26 @@ test('isOramapFile: by extension or ZIP signature', () => {
   assert.ok(!isOramapFile('x.json', enc.encode('{"format":1}')));
 });
 
+/** Inline Rules and Weapons mixing Object.prototype member names with real actors, traits and fields. */
+function fuzzRules(next) {
+  const proto = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'isPrototypeOf'];
+  const pick = (list) => list[next() % list.length];
+  const actors = [...proto, 'MSLO', 'AFLD', 'E1', 'World', 'Player'];
+  const traits = [...proto, 'NukePower', 'AirstrikePower@spyplane', 'Valued', 'Buildable', 'MapOptions', 'PlayerResources', 'DeveloperMode'];
+  const fields = [...proto, 'ChargeInterval', 'OneShot', 'Cost', 'Prerequisites', 'TechLevel', 'GameSpeed', 'DefaultCash', 'CheckboxLocked', 'DefaultCashDropdownLocked'];
+  const values = [...proto, '1', '5000', 'true', 'default', 'none', 'Ally'];
+  const lines = ['Rules:'];
+  for (let a = 0; a < 3; a++) {
+    lines.push(`\t${pick(actors)}:`);
+    for (let t = 0; t < 2; t++) {
+      lines.push(`\t\t${pick(traits)}:`);
+      for (let f = 0; f < 2; f++) lines.push(`\t\t\t${pick(fields)}: ${pick(values)}`);
+    }
+  }
+  lines.push('Weapons:', `\t${pick([...proto, 'M1Carbine'])}:`, `\t\t${pick([...proto, 'Range', 'Projectile'])}: ${pick(values)}`);
+  return `${lines.join('\n')}\n`;
+}
+
 test('convert fuzz: random map.yaml and map.bin content never crashes the converter', () => {
   const next = rng(23);
   const parsedYaml = parseMiniYaml(mapYaml({ actors: [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }] }));
@@ -586,6 +752,8 @@ test('convert fuzz: random map.yaml and map.bin content never crashes the conver
       if (n.key === 'Bounds' && i % 2) return { ...n, value: `${(next() % 80) - 10},${next() % 50},${next() % 300},${next() % 70}` };
       return n;
     });
+    // Rules and weapons with names of Object.prototype members among real ones.
+    yaml.push(...parseMiniYaml(fuzzRules(next)));
     try {
       const { map } = convertOramap({ yaml, bin }, { baseRules: BASE_RULES });
       assert.ok(protocolParseMap(JSON.stringify(map)).ok);
@@ -624,6 +792,48 @@ test('round trip: the engine validates, hashes and starts a converted map', asyn
   for (let i = 0; i < 20; i++) game.tick();
   assert.equal(game.player_count(), 2, 'the neutral owner of the pillbox is not a player');
   assert.equal(map.format, 2);
+});
+
+test('round trip: a map changing the Atom Bomb charge time charges it that long in the game and its timers', async () => {
+  // The owner of a map like this saw the nuke timer keep OpenRA's default: the importer dropped NukePower.ChargeInterval.
+  const rules = 'MSLO:\n\tNukePower:\n\t\tChargeInterval: 50000\nIRON:\n\tGrantExternalConditionPower@IRONCURTAIN:\n\t\tStartFullyCharged: true\n';
+  const base = [
+    { type: 'mpspawn', x: 8, y: 8 },
+    { type: 'mpspawn', x: 38, y: 38 },
+    { type: 'mslo', owner: 'Multi0', x: 16, y: 4 },
+    { type: 'iron', owner: 'Multi0', x: 16, y: 7 },
+    { type: 'apwr', owner: 'Multi0', x: 4, y: 14 },
+    { type: 'apwr', owner: 'Multi0', x: 8, y: 14 },
+    { type: 'apwr', owner: 'Multi0', x: 12, y: 14 },
+  ];
+  const bytes = sampleOramap({ actors: base, rulesRef: 'rules.yaml', extraFiles: [{ name: 'rules.yaml', data: rules }] });
+  const { map, json, report } = await importOramap(bytes, { baseRules: BASE_RULES, validate: engineValidate });
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
+  assert.deepEqual(report.rules.rejected, []);
+  assert.equal(map.actors.filter((a) => a.owner === 0).length, 5, report.skipped.join('; '));
+  const v = engineValidate(json);
+  assert.ok(v.ok && v.modded, v.errors.join('; '));
+  const game = Game.from_map(json, JSON.stringify({
+    seed: 3,
+    players: [
+      { slot: 0, type: 'human', faction: 'england' },
+      { slot: 1, type: 'human', faction: 'russia' },
+    ],
+    startingUnits: 'mcv',
+    techLevel: 'unrestricted',
+    fog: true,
+    explored: false,
+  }));
+  for (let i = 0; i < 25; i++) game.tick();
+  const powers = JSON.parse(game.player_json(0)).powers;
+  const nuke = powers.find((p) => p.key === 'NukePower');
+  assert.ok(nuke && nuke.charging, JSON.stringify(powers));
+  assert.ok(nuke.remainingTicks > 49900 && nuke.remainingTicks < 50000, `charges from 50000 ticks: ${nuke.remainingTicks}`);
+  assert.ok(nuke.progress < 0.01);
+  // The top-left timer every player sees (DisplayTimerRelationships of the Atom Bomb) counts the same.
+  const timer = JSON.parse(game.power_timers_json(1)).find((t) => t.key === 'NukePower');
+  assert.equal(timer.remainingTicks, nuke.remainingTicks);
+  assert.equal(powers.find((p) => p.kind === 'GrantExternalConditionPower').ready, true, 'StartFullyCharged starts ready');
 });
 
 test('round trip: rules the engine refuses are dropped one by one and reported', async () => {
