@@ -3670,7 +3670,7 @@ Main thread to worker:
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours, `terrain`: the terrain bytes at the start, so the terrain art and the minimap are made before the first frame (frames carry terrain only when it changed later), `timings { createMs, infoMs }`: the engine's time to make the game, for the performance capture, section 10) |
 | `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
-| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `background` (`[on]`: tick a hidden local game on a timer, see "Hidden pages"; answers whether the timer runs), `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
+| `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `background` (`[on]`: tick a hidden local game on a timer, see "Hidden pages"; answers whether the timer runs; false while held), `begin` (a held game starts, see "Start"; answers whether it was held), `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances, perf }`, `recycle` | `frame` |
 
 Worker to main thread, unasked: `event { type, payload }` (`send { msg, epoch }`
@@ -3696,7 +3696,8 @@ mission, options, recorder }` (the mission file's text and its start
 options, section 9), `save { replay, mission? }`, `replay { replay,
 mission? }` (a mission save or replay also gets its mission file's text),
 `stress { seed, units, size }`, `online { options, map, player, spectator,
-delay, rejoining, recorder }`, each with `tickMs`. A mission's `info` adds
+delay, rejoining, recorder }`, each with `tickMs` and `held` (the page
+always passes true: the game waits for `begin`, see "Start"). A mission's `info` adds
 `mission { camera, players }`: where the camera starts (world pixels) and
 the players' names and colours in engine order.
 
@@ -3754,6 +3755,38 @@ throttle; in direct mode it is the page's, throttled to about once a second
 (Chrome: once a minute after 5 minutes hidden and silent). Browsers that
 suspend hidden pages (Safari, phones) stop it; the game then stands still
 until shown.
+
+Start: a game starts only once its loading screen is gone. Every start of
+the page (skirmish, a mission, Restart and Next mission in place, a loaded
+save, a replay, the map editor's test play, the stress test, an online game)
+passes `held: true`, and one sequence in `js/main.js` runGame follows:
+
+1. The game is made at tick 0 and held (`SimCore.held`): `step` runs no
+   tick and banks no wall time, `background [true]` does not start the
+   timer, `debugStep` does nothing, and the lockstep driver does not run
+   the frames that arrive while the page is hidden. Only fast-forwards
+   through recorded history go on: a save re-simulating (with its
+   progress), an online catch-up after a rejoin.
+2. The frame loop runs from the end of the setup with `dt` 0
+   (`js/gamesession.js` GameStart): the first frame draws the map at tick 0
+   behind the screen and begins the screen's close (`FirstFrameGuard`,
+   `LoadingScreen.done`). The input stays suspended.
+3. The screen closes with the stylesheet's transition or animation on
+   `#loading.is-closing` (at once with "Reduce motion" or none), staying
+   modal; its end event, or a timer of its duration plus `CLOSE_GRACE_MS`
+   (100) in a tab that runs no transitions, hides it and resolves `closed`.
+4. Then `GameStart.begin`: `begin` goes to the simulation (its time
+   counts from now, so the screen's time is never caught up in a burst of
+   ticks), the frame clock restarts, the input follows, a hidden page's
+   background timer may start, "Battle control online" plays, and an
+   online player (not a spectator, who holds no seat) sends
+   `loaded {}` (section 4) on its connection (`js/net.js sendLoaded`).
+   Online, the game then runs as the server's frames arrive, as before.
+
+A game taken down before its screen is gone (a restart, leaving) never
+starts. `apps/game/tests/startgate.test.mjs` plays these starts headless
+with a Normal AI and checks that nothing changed until `closed` and that
+the game then runs in real time.
 
 ### Shared frames
 
@@ -4568,7 +4601,8 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
   capture of that game. The loading screen (`js/loadingscreen.js`) follows
   the same trace (`PerfTrace.onSpan`, called when a span of the start
   begins): `content.load`, `sim.host`, `sim.start` and `rules.parse` begin
-  its steps, and the first drawn frame closes it. Before `start()` builds the
+  its steps, and the first drawn frame closes it; the game itself starts
+  once the screen is gone (section 8, "Start"). Before `start()` builds the
   battlefield in one go the page lets one frame paint, so that step shows;
   that frame (about 16 ms, none in a hidden tab) is all the screen adds to a
   start.

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FirstFrameGuard, LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
+import { CLOSE_GRACE_MS, closeDuration, FirstFrameGuard, LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
 import { Events } from '../js/sim/host.js';
 import { FakeEvent } from './dom-fixtures.mjs';
 import { PerfTrace } from '../js/perfcapture.js';
@@ -21,7 +21,7 @@ function recordStyles(doc) {
   };
 }
 
-function setup({ reduced = false } = {}) {
+function setup({ reduced = false, closeMs = undefined, timers = undefined } = {}) {
   const doc = installDom();
   recordStyles(doc);
   const root = doc.createElement('section');
@@ -31,7 +31,7 @@ function setup({ reduced = false } = {}) {
   // The Start button had the focus.
   doc.activeElement = start;
   const focus = (el) => () => (doc.activeElement = el);
-  const screen = new LoadingScreen(root, { reducedMotion: () => reduced, doc });
+  const screen = new LoadingScreen(root, { reducedMotion: () => reduced, doc, ...(closeMs === undefined ? {} : { closeMs: () => closeMs }), ...(timers ? { timers } : {}) });
   start.focus = focus(start);
   screen.card.focus = focus(screen.card);
   return { doc, root, screen, start };
@@ -310,4 +310,139 @@ test('a frame that throws before the first one is drawn ends the start; once dra
     console.error = errors;
     uninstallDom();
   }
+});
+
+/** Timeouts the test fires by hand. */
+function handTimers() {
+  const due = new Map();
+  let id = 0;
+  return {
+    due,
+    setTimeout: (fn, ms) => (due.set(++id, { fn, ms }), id),
+    clearTimeout: (k) => due.delete(k),
+    fire() {
+      for (const [k, t] of [...due]) {
+        due.delete(k);
+        t.fn();
+      }
+    },
+  };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+test('the close: the screen stays (modal) while its transition runs, then hides and resolves closed; the game starts only then', async () => {
+  const timers = handTimers();
+  const { root, screen } = setup({ closeMs: 300, timers });
+  screen.begin(loadingPlan('skirmish'));
+  let closed = 0;
+  screen.closed.then(() => closed++);
+  const guard = new FirstFrameGuard({ screen, stop() {}, back() {} });
+  let started = 0;
+  guard.firstFrame().then(() => started++);
+  assert.equal(screen.state, 'closing');
+  assert.equal(screen.active, false, 'no start is loading any more');
+  assert.equal(root.hidden, false);
+  assert.ok(root.classList.contains('is-closing'));
+  assert.equal(root.getAttribute('aria-busy'), 'false');
+  assert.equal(screen.covered.length > 0, true, 'the page behind stays inert while it fades');
+  assert.equal([...timers.due.values()][0].ms, 300 + CLOSE_GRACE_MS, 'a fallback timer for a tab that runs no transition');
+  // A second first frame or done() changes nothing.
+  assert.equal(guard.firstFrame(), guard.closed);
+  screen.done();
+  await settle();
+  assert.equal(closed + started, 0, 'nothing before the transition ended');
+  // An end event of something inside the card is not the screen's.
+  const child = screen.card;
+  child.dispatchEvent(new FakeEvent('transitionend'));
+  await settle();
+  assert.equal(closed, 0);
+  root.dispatchEvent(new FakeEvent('transitionend'));
+  assert.equal(root.hidden, true);
+  assert.equal(root.classList.contains('is-closing'), false);
+  assert.equal(screen.covered.length, 0);
+  assert.equal(timers.due.size, 0, 'the fallback timer was cleared');
+  await settle();
+  assert.equal(closed, 1);
+  assert.equal(started, 1);
+  // Later events do nothing.
+  root.dispatchEvent(new FakeEvent('animationend'));
+  timers.fire();
+  await settle();
+  assert.equal(closed, 1);
+  uninstallDom();
+});
+
+test('the close: the fallback timer ends it in a tab that runs no transitions; Reduce motion and no transition close at once', async () => {
+  const timers = handTimers();
+  const a = setup({ closeMs: 250, timers });
+  a.screen.begin(loadingPlan('replay'));
+  let closed = false;
+  a.screen.done().then(() => (closed = true));
+  timers.fire();
+  assert.equal(a.root.hidden, true);
+  await settle();
+  assert.equal(closed, true);
+  uninstallDom();
+
+  for (const o of [{ reduced: true, closeMs: 400 }, { closeMs: 0 }]) {
+    const b = setup({ ...o, timers });
+    b.screen.begin(loadingPlan('save'));
+    let done = false;
+    b.screen.done().then(() => (done = true));
+    assert.equal(b.root.hidden, true, 'hidden at once');
+    assert.equal(b.root.classList.contains('is-closing'), false, 'no closing class with Reduce motion');
+    assert.equal(timers.due.size, 0);
+    await settle();
+    assert.equal(done, true);
+    uninstallDom();
+  }
+
+  // No start showing (an online game whose lobby did not begin one): closed is resolved already.
+  const c = setup();
+  let now = false;
+  await c.screen.done().then(() => (now = true));
+  assert.equal(now, true);
+  await c.screen.closed;
+  uninstallDom();
+});
+
+test('the close: a start replaced (Restart) or failing while the screen fades never resolves its closed', async () => {
+  const timers = handTimers();
+  const { root, screen } = setup({ closeMs: 300, timers });
+  screen.begin(loadingPlan('skirmish'));
+  const first = screen.closed;
+  let firstDone = false;
+  first.then(() => (firstDone = true));
+  screen.done();
+  // Restart while it fades: the new start's screen shows, the old close is dropped.
+  screen.begin(loadingPlan('skirmish', { restart: true }));
+  assert.equal(screen.state, 'loading');
+  assert.equal(root.hidden, false);
+  assert.equal(root.classList.contains('is-closing'), false);
+  assert.equal(timers.due.size, 0);
+  assert.notEqual(screen.closed, first);
+  root.dispatchEvent(new FakeEvent('transitionend'));
+  assert.equal(root.hidden, false, 'the old close does not hide the new start');
+  // The new start fails while its own close runs.
+  let secondDone = false;
+  screen.done().then(() => (secondDone = true));
+  screen.fail('The simulation stopped.');
+  assert.equal(screen.state, 'failed');
+  assert.equal(root.classList.contains('is-closing'), false);
+  timers.fire();
+  root.dispatchEvent(new FakeEvent('transitionend'));
+  assert.equal(root.hidden, false, 'the error stays');
+  await settle();
+  assert.equal(firstDone, false);
+  assert.equal(secondDone, false);
+  uninstallDom();
+});
+
+test('closeDuration: the longest transition or animation with its delay, from the computed style', () => {
+  const at = (cs) => closeDuration({ ownerDocument: { defaultView: { getComputedStyle: () => cs } } });
+  assert.equal(at({ transitionDuration: '0.3s, 120ms', transitionDelay: '0s, 400ms', animationDuration: '0s', animationDelay: '0s' }), 520);
+  assert.equal(at({ transitionDuration: '0s', transitionDelay: '0s', animationDuration: '250ms', animationDelay: '0.05s' }), 300);
+  assert.equal(at({ transitionDuration: '', transitionDelay: '', animationDuration: '', animationDelay: '' }), 0);
+  assert.equal(closeDuration({ ownerDocument: null }), 0);
 });
