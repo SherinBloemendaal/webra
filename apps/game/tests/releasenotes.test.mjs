@@ -14,6 +14,7 @@ import {
   readSeenVersion,
   sanitizeNotes,
   scopeLabel,
+  sectionTag,
   whatsNew,
   writeSeenVersion,
 } from '../js/releasenotes.js';
@@ -196,4 +197,54 @@ test('the dialog builds its content with textContent only', () => {
   const src = readFileSync(new URL('../js/releasenotes-dialog.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotMatch(src, /\.style\b|setAttribute\('style'/, 'no inline styles under the CSP');
+});
+
+test('section tags: NEW for features, FIXED for fixes, the title for the rest; each with a badge look', () => {
+  assert.deepEqual(sectionTag('features', 'Features'), { text: 'New', kind: 'ok' });
+  assert.deepEqual(sectionTag('fixes', 'Bug Fixes'), { text: 'Fixed', kind: 'neutral' });
+  assert.deepEqual(sectionTag('breaking', 'Breaking changes'), { text: 'Breaking', kind: 'bad' });
+  assert.deepEqual(sectionTag('performance', 'Performance Improvements'), { text: 'Faster', kind: 'info' });
+  assert.deepEqual(sectionTag('reverts', 'Reverts'), { text: 'Reverts', kind: 'neutral' });
+});
+
+test("the dialog: What's new names the version under the kicker, groups are tagged NEW or FIXED with their scope", async () => {
+  const { installDom, uninstallDom, settle, textOf } = await import('./dom-fixtures.mjs');
+  const { mountReleaseNotes } = await import('../js/releasenotes-dialog.js');
+  const doc = installDom();
+  const fetch = globalThis.fetch;
+  const notes = {
+    releases: [
+      { version: '0.17.0', date: '2026-10-20', sections: [
+        { type: 'features', title: 'Features', entries: [{ scope: 'game', text: 'The menus have a new look.' }, { scope: 'editor', text: 'Select plates in the editor.' }] },
+        { type: 'fixes', title: 'Bug Fixes', entries: [{ scope: 'game', text: 'Placement follows OpenRA.' }] },
+      ] },
+      { version: '0.16.0', date: '2026-10-14', sections: [{ type: 'features', title: 'Features', entries: [{ scope: 'game', text: 'Loading screen.' }] }] },
+    ],
+  };
+  globalThis.fetch = async () => new Response(JSON.stringify(notes), { headers: { 'content-type': 'application/json' } });
+  try {
+    const panel = doc.createElement('section');
+    doc.body.append(panel);
+    const registry = registryOver();
+    writeSeenVersion('0.16.0', registry);
+    const rn = mountReleaseNotes(panel, { version: '0.17.0', registry });
+    assert.equal(await rn.showWhatsNewOnce(), true);
+    await settle();
+    assert.equal(textOf(panel.querySelector('.rn-kicker')), "What's new");
+    assert.equal(textOf(panel.querySelector('.rn-title')), 'Version 0.17.0');
+    assert.equal(panel.querySelector('[role="dialog"]').getAttribute('aria-labelledby'), 'release-notes-kicker release-notes-title');
+    const groups = panel.querySelectorAll('.rn-group');
+    assert.deepEqual(groups.map((g) => textOf(g.querySelector('h3'))), ['NewGame', 'NewMap editor', 'FixedGame']);
+    assert.ok(groups[0].querySelector('.ui-badge-ok'), 'NEW in green with the word');
+    assert.equal(groups[2].dataset.kind, 'neutral');
+    assert.equal(textOf(panel.querySelector('.rn-done')), 'Got it');
+    // The full list: the plain title and the running version.
+    await rn.open();
+    assert.equal(textOf(panel.querySelector('.rn-title')), 'Release notes');
+    assert.equal(panel.querySelector('.rn-kicker').hidden, true);
+    assert.equal(textOf(panel.querySelector('.rn-current-badge')), 'v0.17.0');
+  } finally {
+    globalThis.fetch = fetch;
+    uninstallDom();
+  }
 });

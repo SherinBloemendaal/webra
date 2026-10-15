@@ -109,18 +109,28 @@ afterEach(() => {
 });
 
 const newDoc = () => new MapDoc(createMap({ width: 40, height: 40, name: 'Setup', author: 'T' }));
-const changeSelect = (s, value) => {
-  s.value = String(value);
-  s.dispatchEvent(new FakeEvent('change'));
+/**
+ * Choose the option labelled `label` in a select plate (js/ui/controls.js) as a
+ * player does: open it, click the option. `plate` is its .ui-select-plate root;
+ * the view it is in must be on the page (a list only opens there).
+ */
+const choose = (plate, label) => {
+  if (!plate.isConnected) doc.body.append(plate.closest('.slots-view, .options-table, .actor-state') ?? plate);
+  click(plate.querySelector('.ui-sp-button'));
+  const option = plate.querySelectorAll('[role="option"]').find((o) => textOf(o.querySelector('.ui-sp-label')) === label);
+  assert.ok(option, `option ${label}`);
+  click(option);
 };
+const plates = (root) => root.querySelectorAll('.ui-select-plate');
 
 test('Setup tab: slot rows per spawn, changes are undoable map edits, trailing default slots are dropped', () => {
   const m = newDoc();
   const view = slotsView(m, () => 'rgb(1,2,3)');
   const rows = view.querySelectorAll('.slot-row');
   assert.equal(rows.length, 2, 'one per spawn');
-  const selects = rows[1].querySelectorAll('select');
-  changeSelect(selects[0], 'ai');
+  // Named by their label and the slot, for the phone sheet and screen readers.
+  assert.equal(rows[1].querySelector(`#${rows[1].querySelector('.ui-sp-button').getAttribute('aria-labelledby').split(' ')[0]}`).textContent, 'Player');
+  choose(plates(rows[1])[0], 'AI');
   assert.deepEqual(m.toMap().players[1], { faction: 'random', team: 0, color: -1, type: 'ai', difficulty: 'normal', bot: 'normal', lock: [] });
   assert.deepEqual(m.toMap().players[0], canonicalSlot({}), 'earlier slots are filled with the defaults');
   const again = slotsView(m, () => '').querySelectorAll('.slot-row')[1];
@@ -141,14 +151,15 @@ test('Setup tab: options set, locked and back to the lobby (which drops the lock
   assert.equal(optionsView(m).querySelectorAll('tr').length, OPTION_ROWS.length);
   const row = () => optionsView(m).querySelector('[data-option="startingCash"]');
   assert.equal(row().querySelector('input').disabled, true, 'nothing to lock before a value is set');
-  changeSelect(row().querySelector('select'), '10000');
-  assert.deepEqual(m.toMap().options, { startingCash: 10000 });
+  const cash = OPTION_ROWS.find((o) => o.key === 'startingCash').choices.find((c) => c.value === 10000).label;
+  choose(row().querySelector('.ui-select-plate'), cash);
+  assert.deepEqual(m.toMap().options, { startingCash: 10000 }, 'numbers stay numbers');
   check(row().querySelector('input'));
   assert.deepEqual(m.toMap().lockedOptions, ['startingCash']);
-  const fog = optionsView(m).querySelector('[data-option="fog"] select');
-  changeSelect(fog, 'false');
+  const fog = optionsView(m).querySelector('[data-option="fog"] .ui-select-plate');
+  choose(fog, 'Off');
   assert.equal(m.toMap().options.fog, false, 'booleans stay booleans');
-  changeSelect(row().querySelector('select'), '');
+  choose(row().querySelector('.ui-select-plate'), 'Lobby decides');
   assert.deepEqual(m.toMap().options, { fog: false });
   assert.deepEqual(m.toMap().lockedOptions, []);
   assert.ok(validateMap(m.toMap()).ok);
@@ -183,11 +194,10 @@ test('actor properties: health, stance, veterancy and passengers of the selectio
   health.dispatchEvent(new FakeEvent('input'));
   vet.value = '2';
   vet.dispatchEvent(new FakeEvent('input'));
-  changeSelect(box.querySelector('[aria-label="Stance"]'), 'hold_fire');
+  choose(box.querySelector('#actor-stance-root'), 'Hold fire');
   box = actorStateView([...ctl.selection], catalog, ctl);
-  // The fake DOM's selectors split at spaces: the passenger picker is the select after the stance.
-  const picker = box.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Add a passenger');
-  changeSelect(picker, 'E1');
+  doc.body.replaceChildren(box);
+  choose(box.querySelector('#cargo-pick-root'), 'Rifle Infantry (1)');
   click([...box.querySelectorAll('button')].find((b) => textOf(b) === 'Add'));
   const a = m.toMap().actors[0];
   assert.deepEqual([a.health, a.veterancy, a.stance, a.cargo], [35, 2, 'hold_fire', ['E1']]);
@@ -197,7 +207,7 @@ test('actor properties: health, stance, veterancy and passengers of the selectio
   ctl.selection.clear();
   ctl.selection.add(m.actors[1]);
   box = actorStateView([...ctl.selection], catalog, ctl);
-  assert.equal(box.querySelector('[aria-label="Stance"]'), null);
+  assert.equal(box.querySelector('#actor-stance-root'), null);
   assert.equal(box.querySelectorAll('input[type="range"]').length, 1);
   assert.deepEqual(Object.keys(m.toMap().actors[1]), ['type', 'owner', 'x', 'y', 'facing']);
 });

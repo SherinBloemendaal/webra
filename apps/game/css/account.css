@@ -143,6 +143,96 @@
   width: min(440px, 100%);
 }
 
+/* The SignIn board: a hazard stripe instead of the red edge, the emblem or a lamp before the title. */
+.menu-card.account-dialog {
+  border-top: 1px solid var(--ui-edge);
+  padding-top: 28px;
+}
+
+.menu-card.account-dialog::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  background: var(--ui-hazard);
+}
+
+.account-dialog h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-emblem {
+  flex: none;
+  width: 34px;
+  height: 34px;
+}
+
+/* Why the dialog opened (the sign-in ended; a refused or unreachable server). */
+.account-reason {
+  margin: 0;
+  color: var(--ui-text-2);
+  font: 400 var(--ui-fs-body) / var(--ui-lh-body) var(--ui-font);
+}
+
+.account-check:empty {
+  display: none;
+}
+
+/* "or" between the passkey and the password: a word between two rules. */
+.account-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.account-or::before,
+.account-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--ui-line);
+}
+
+.menu-card button.account-passkey {
+  min-height: 46px;
+}
+
+.menu-card .account-form label {
+  color: var(--ui-muted);
+  font: 600 var(--ui-fs-label) / 1.3 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+/* Sign in and Discord side by side, each half the row. */
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.menu-card .account-actions > button {
+  flex: 1 1 140px;
+  width: auto;
+  margin: 0;
+  min-height: 42px;
+}
+
+@media (forced-colors: active) {
+  .menu-card.account-dialog::before {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
 .account-dialog-body {
   display: flex;
   flex-direction: column;
@@ -157,7 +247,7 @@
 
 .menu-card .account-form label {
   display: block;
-  margin: 6px 0 0;
+  margin: 8px 0 2px;
 }
 
 .menu-card .account-form input {

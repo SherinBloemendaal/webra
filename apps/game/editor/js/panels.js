@@ -107,38 +107,61 @@ export function fairnessView(report, teamCss, onJump, warnAt = 1.25) {
 // ---- Problems ---------------------------------------------------------------------------
 
 /**
+ * The problems of the validation as the Check tab lists them, each once: the
+ * quick fixes (js/fixes.js) first, then engine errors no fix covers, then the
+ * editor's own issues (located ones, and every warning). An editor error is a
+ * warning while the engine accepts the map.
+ * @returns {{ level: string, message: string, fix?: object, x?: number, y?: number }[]}
+ */
+export function problemEntries({ engine, issues, fixes }) {
+  const out = [];
+  const fixed = new Set();
+  // While the engine accepts the map, what the editor calls an error is a warning (fixes and issues alike).
+  const soft = (level) => (level === 'error' && engine.errors.length === 0 ? 'warning' : level);
+  for (const p of fixes) {
+    out.push({ level: soft(p.level), message: p.message, fix: p, x: p.x, y: p.y });
+    fixed.add(p.message);
+  }
+  for (const e of engine.errors) if (![...fixed].some((m) => e.includes(m) || m.includes(e))) out.push({ level: 'error', message: e });
+  for (const i of issues) {
+    if (fixed.has(i.message)) continue;
+    const level = soft(i.level);
+    const located = i.x !== undefined && i.y !== undefined;
+    if (level !== 'warning' && !located) continue;
+    out.push({ level, message: i.message, x: located ? i.x : undefined, y: located ? i.y : undefined });
+  }
+  return out;
+}
+
+/**
+ * The verdict for the top bar's badge and the Check tab: the engine refuses
+ * the map (bad, the errors counted), problems to look at (warn, warnings and
+ * fixable problems counted), or a valid map (ok). `text` is the badge's word,
+ * `title` the sentence for its tooltip.
+ */
+export function checkVerdict({ engine, issues, fixes }) {
+  const entries = problemEntries({ engine, issues, fixes });
+  const errors = engine.ok ? 0 : Math.max(1, entries.filter((e) => e.level === 'error').length);
+  const warnings = entries.length - entries.filter((e) => e.level === 'error').length;
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  if (errors) return { kind: 'bad', count: errors, text: n(errors, 'error', 'errors'), title: `${n(errors, 'error', 'errors')}: fix before test play or publishing.` };
+  if (warnings) return { kind: 'warn', count: warnings, text: n(warnings, 'warning', 'warnings'), title: `Valid map, ${n(warnings, 'warning', 'warnings')} to look at.` };
+  return { kind: 'ok', count: 0, text: 'Valid', title: 'Valid map: ready to test play and publish.' };
+}
+
+/**
  * The validation: the engine's verdict, located problems to jump to, and
  * quick fixes (js/fixes.js) as buttons. `onFix(problem, fix)`, `onJump(x, y)`.
  */
 export function problemsView({ engine, issues, fixes }, onFix, onJump) {
-  const items = [];
-  const fixed = new Set();
-  for (const p of fixes) {
-    const located = p.x !== undefined;
-    items.push(
-      el('li', { class: p.level }, [
-        el('span', { class: 'issue-text' }, p.message),
-        el('span', { class: 'issue-actions' }, [
-          located ? el('button', { type: 'button', class: 'link', onclick: () => onJump(p.x, p.y) }, 'Show') : null,
-          ...p.fixes.map((f) => el('button', { type: 'button', class: 'fix', onclick: () => onFix(p, f) }, f.label)),
-        ]),
-      ]),
-    );
-    fixed.add(p.message);
-  }
-  for (const e of engine.errors) if (![...fixed].some((m) => e.includes(m) || m.includes(e))) items.push(el('li', { class: 'error' }, el('span', { class: 'issue-text' }, e)));
-  for (const i of issues) {
-    if (fixed.has(i.message)) continue;
-    const level = i.level === 'error' && engine.errors.length === 0 ? 'warning' : i.level;
-    const located = i.x !== undefined && i.y !== undefined;
-    if (level !== 'warning' && !located) continue;
-    items.push(
-      el('li', { class: level }, [
-        el('span', { class: 'issue-text' }, i.message),
-        located ? el('span', { class: 'issue-actions' }, el('button', { type: 'button', class: 'link', onclick: () => onJump(i.x, i.y) }, 'Show')) : null,
-      ]),
-    );
-  }
+  const items = problemEntries({ engine, issues, fixes }).map((p) => {
+    const located = p.x !== undefined && p.y !== undefined;
+    const actions = [
+      located ? el('button', { type: 'button', class: 'link', onclick: () => onJump(p.x, p.y) }, 'Show') : null,
+      ...(p.fix?.fixes ?? []).map((f) => el('button', { type: 'button', class: 'fix', onclick: () => onFix(p.fix, f) }, f.label)),
+    ].filter(Boolean);
+    return el('li', { class: p.level }, [el('span', { class: 'issue-text' }, p.message), actions.length ? el('span', { class: 'issue-actions' }, actions) : null]);
+  });
   return el('ul', { class: 'issues' }, items);
 }
 

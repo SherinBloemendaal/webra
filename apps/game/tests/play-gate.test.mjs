@@ -90,6 +90,20 @@ test('load: allowed again means one more try; other failures keep their error', 
   }
 });
 
+test('load: no answer or a server error tells the player once (onUnreachable) and keeps the error', async () => {
+  const told = [];
+  let open = null;
+  const access = new PlayAccess({ onLost: () => assert.fail('no sign-in prompt'), onUnreachable: (state) => (told.push(state), (open = new Promise((r) => setTimeout(r, 5)))), probe: async () => 'offline' });
+  await assert.rejects(access.load(() => Promise.reject(new Error('fetch failed'))), /fetch failed/);
+  await assert.rejects(access.load(() => Promise.reject(new Error('fetch failed again'))), /fetch failed again/);
+  assert.deepEqual(told, ['offline'], 'one message while it is open');
+  await open;
+  await access.prompt;
+  access.probe = async () => 'error';
+  await assert.rejects(access.load(() => Promise.reject(new Error('502'))), /502/);
+  assert.deepEqual(told, ['offline', 'error']);
+});
+
 test('a failing prompt does not break later loads', async () => {
   const access = new PlayAccess({
     onLost: () => {

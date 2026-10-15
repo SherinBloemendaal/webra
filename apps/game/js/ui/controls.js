@@ -614,14 +614,20 @@ export function selectPlate({
     activate(at === 'first' ? first() : at === 'last' ? lastItem() : enabled(current) ? current : first());
     place();
     listbox.focus({ preventScroll: true });
-    // A press outside closes the list without a choice. The sheet's dim area
-    // is the panel itself: its click handler closes it, so the press never
-    // reaches what lies under the sheet.
+    // A press outside closes the list without a choice, and is used up by
+    // that: it and its release and click never reach what lies under it (a
+    // map editor tool, a game order). The select's own button toggles. The
+    // sheet's dim area is the panel itself: its click handler closes it.
     // A list whose control left the page (a screen re-rendered, a menu
     // closed) closes itself at the next event; screens still call destroy().
     const onDown = (e) => {
+      if (!root.isConnected) return close(false);
       const t = e.target;
-      if (!root.isConnected || (!panel.contains(t) && !button.contains(t))) close(false);
+      if (panel.contains(t) || button.contains(t)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      swallowPress();
+      close(false);
     };
     const onMove = () => {
       if (!root.isConnected) return close(false);
@@ -644,6 +650,24 @@ export function selectPlate({
       () => window.removeEventListener?.('scroll', onMove, true),
     ];
     onOpen?.();
+  }
+
+  /** Eat the rest of a press that closed the list: its pointerup, mouseup, click (or context menu). */
+  function swallowPress() {
+    const kinds = ['pointerup', 'mouseup', 'click', 'auxclick', 'contextmenu'];
+    const eat = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type === 'click' || e.type === 'auxclick' || e.type === 'contextmenu') done();
+    };
+    // A press that never makes a click (released elsewhere) ends at the next press.
+    const next = () => done();
+    const done = () => {
+      for (const k of kinds) document.removeEventListener(k, eat, true);
+      document.removeEventListener('pointerdown', next, true);
+    };
+    for (const k of kinds) document.addEventListener(k, eat, true);
+    setTimeout(() => document.addEventListener('pointerdown', next, true), 0);
   }
 
   function close(focusButton = true) {

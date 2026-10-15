@@ -8,7 +8,7 @@ import { installDom, uninstallDom, FakeEvent, click, settle, textOf, submit, mem
 import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
 import { AccountSession, accountState, signInMethods } from '../js/account/session.js';
-import { askConflict, mountAccountEntry, onlineRefusal, openSignIn, settingLabel, valueText } from '../js/account/ui.js';
+import { accessProblem, askConflict, mountAccountEntry, onlineRefusal, openAccessProblem, openSignIn, settingLabel, valueText } from '../js/account/ui.js';
 import { createRegistry } from '../js/registry.js';
 import { canAutoInstall } from '../js/content/download.js';
 
@@ -124,4 +124,108 @@ test('the one-click content install follows the account; the conflict dialog nam
   await settle();
   doc.body.querySelector('.account-overlay').dispatchEvent(new FakeEvent('keydown', { key: 'Escape' }));
   assert.equal(await closed, 'remote', 'closing keeps the account\'s values');
+});
+
+test('sign in again: the title says it, the reason says what keeps running, the emblem and the stripe are there', async () => {
+  const server = new MockAccountServer();
+  server.site.login = { password: true, passkey: false, discord: true, email: true };
+  server.services.discord = true;
+  server.services.email = true;
+  const s = session(server);
+  await s.refresh();
+  const r = openSignIn(s, { reason: 'Your sign-in has ended. The game that is running keeps running.' });
+  await settle();
+  const dialog = doc.body.querySelector('[role="dialog"]');
+  assert.equal(textOf(dialog.querySelector('h1')), 'Sign in again');
+  assert.ok(dialog.querySelector('h1 img.account-emblem'), 'the emblem');
+  assert.equal(dialog.querySelector('h1 img').getAttribute('alt'), '', 'decoration: the title names the dialog');
+  assert.match(textOf(dialog.querySelector('.account-reason')), /keeps running/);
+  // No passkey here: the password's Sign in is the main (red) button, Discord next to it.
+  const submitButton = dialog.querySelector('form button[type="submit"]');
+  assert.ok(submitButton.classList.contains('primary'));
+  assert.ok(byText(dialog.querySelector('.account-actions'), 'button', /Discord/));
+  assert.ok(dialog.querySelector('a[href="/account/#forgot"]'), 'Forgot your password? with email on');
+  click(dialog.querySelector('.audio-close'));
+  assert.equal(await r, null);
+  assert.equal(textOf(await (async () => (openSignIn(s), await settle(), doc.body.querySelector('[role="dialog"] h1')))()), 'Sign in');
+});
+
+test('sign in: with a passkey it comes first as the main button, then "or" and the password form', async () => {
+  const server = new MockAccountServer();
+  server.site.login = { password: true, passkey: true, discord: false, email: false };
+  const s = session(server);
+  await s.refresh();
+  const win = globalThis.window;
+  const was = { pk: win.PublicKeyCredential, nav: win.navigator };
+  win.PublicKeyCredential = function PublicKeyCredential() {};
+  Object.defineProperty(win, 'navigator', { value: { credentials: { create() {}, get() {} } }, configurable: true });
+  try {
+    openSignIn(s);
+    await settle();
+    const dialog = doc.body.querySelector('[role="dialog"]');
+    const passkey = byText(dialog, 'button', /passkey/i);
+    assert.ok(passkey.classList.contains('primary'));
+    assert.ok(dialog.querySelector('.account-or'));
+    assert.equal(dialog.querySelector('form button[type="submit"]').classList.contains('primary'), false, 'one main button');
+    assert.equal(dialog.querySelector('a[href="/account/#forgot"]'), null, 'no email: no reset link');
+  } finally {
+    win.PublicKeyCredential = was.pk;
+    Object.defineProperty(win, 'navigator', { value: was.nav, configurable: true });
+  }
+});
+
+test('access problems: refused, offline and server errors say why with a lamp; the account state picks the words', () => {
+  assert.deepEqual(
+    [accessProblem('offline').title, accessProblem('offline').led, accessProblem('offline').action],
+    ['No connection', 'off', 'retry'],
+  );
+  assert.match(accessProblem('offline').text, /keeps running/);
+  assert.equal(accessProblem('error').title, 'Server problem');
+  const waiting = accessProblem('forbidden', { status: 'pending_approval' });
+  assert.deepEqual([waiting.title, waiting.led, waiting.action], ['Waiting for approval', 'warn', 'retry']);
+  assert.match(waiting.text, /closed beta/);
+  assert.equal(accessProblem('forbidden', { status: 'pending_email' }).title, 'Verify your email');
+  const banned = accessProblem('forbidden', { status: 'banned', ban: { reason: 'Cheating' } });
+  assert.deepEqual([banned.title, banned.led, banned.action], ['Account not allowed', 'bad', 'account']);
+  assert.match(banned.text, /Reason: Cheating.*Contact the admins/);
+  assert.equal(accessProblem('forbidden', { status: 'active' }).action, 'account', 'an active account refused: a banned network');
+});
+
+test('access problem dialog: Try again asks the gate; back resolves ok, an ended sign-in resolves signin, else it updates', async () => {
+  const answers = ['offline', 'error', 'ok'];
+  const probes = [];
+  const r = openAccessProblem(null, 'offline', { probe: async () => (probes.push(1), answers.shift()) });
+  await settle();
+  const dialog = doc.body.querySelector('[role="dialog"]');
+  assert.match(textOf(dialog.querySelector('h1')), /No connection/);
+  assert.ok(dialog.querySelector('h1 .ui-led-off'), 'a lamp next to the words');
+  const tryAgain = byText(dialog, 'button', /Try again/);
+  click(tryAgain);
+  await settle();
+  assert.match(textOf(dialog.querySelector('.account-check')), /Still the same/);
+  click(tryAgain);
+  await settle();
+  assert.match(textOf(dialog.querySelector('h1')), /Server problem/, 'another problem now');
+  assert.ok(dialog.querySelector('h1 .ui-led-warn'));
+  click(tryAgain);
+  assert.equal(await r, 'ok');
+  assert.equal(probes.length, 3);
+  assert.equal(doc.body.querySelector('[role="dialog"]'), null);
+
+  // Waiting for approval: Check again refreshes the account first; an ended sign-in hands over to the sign-in dialog.
+  let refreshed = 0;
+  const fake = { user: { status: 'pending_approval' }, site: null, refresh: async () => refreshed++ };
+  const again = openAccessProblem(fake, 'forbidden', { probe: async () => 'signin' });
+  await settle();
+  click(byText(doc.body.querySelector('[role="dialog"]'), 'button', /Check again/));
+  assert.equal(await again, 'signin');
+  assert.equal(refreshed, 1);
+
+  // Banned: the account page, and Close leaves everything as it was.
+  const went = [];
+  const banned = openAccessProblem({ user: { status: 'banned' }, site: null }, 'forbidden', { navigate: (u) => went.push(u), probe: async () => assert.fail('no probe') });
+  await settle();
+  click(byText(doc.body.querySelector('[role="dialog"]'), 'button', /Account page/));
+  assert.equal(await banned, null);
+  assert.deepEqual(went, ['/account/']);
 });

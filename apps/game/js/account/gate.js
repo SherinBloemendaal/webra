@@ -39,11 +39,13 @@ export class PlayAccessLost extends Error {
 
 export class PlayAccess {
   /**
-   * @param {{ onLost: (state: 'signin' | 'forbidden') => unknown, probe?: () => Promise<string> }} o
-   *   onLost: show the sign-in prompt (called once while it is open)
+   * @param {{ onLost: (state: 'signin' | 'forbidden') => unknown, onUnreachable?: (state: 'offline' | 'error') => unknown, probe?: () => Promise<string> }} o
+   *   onLost: show the sign-in prompt (called once while it is open);
+   *   onUnreachable: say that the game files could not be reached (no answer, or a server error), once while it is open
    */
-  constructor({ onLost, probe = () => probePlayAccess() }) {
+  constructor({ onLost, onUnreachable = null, probe = () => probePlayAccess() }) {
     this.onLost = onLost;
+    this.onUnreachable = onUnreachable;
     this.probe = probe;
     this.prompt = null;
   }
@@ -67,6 +69,8 @@ export class PlayAccess {
         throw new PlayAccessLost(state, err);
       }
       if (state === 'ok') return load();
+      // The original error stays the load's outcome; the player is told the server could not be reached.
+      if ((state === 'offline' || state === 'error') && this.onUnreachable) this.lost(state);
       throw err;
     }
   }
@@ -75,7 +79,7 @@ export class PlayAccess {
   lost(state) {
     if (this.prompt) return this.prompt;
     this.prompt = Promise.resolve()
-      .then(() => this.onLost(state))
+      .then(() => (state === 'offline' || state === 'error' ? this.onUnreachable(state) : this.onLost(state)))
       .catch((err) => console.warn('play access prompt failed:', err))
       .finally(() => {
         this.prompt = null;

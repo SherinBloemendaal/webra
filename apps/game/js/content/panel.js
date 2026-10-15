@@ -18,7 +18,7 @@
 // Text from files and the server only ever goes in through textContent.
 
 import { GRAPHICS_SETTING } from './index.js';
-import { segmented, toggle } from '../ui/controls.js';
+import { badge, led, segmented, setLed, toggle } from '../ui/controls.js';
 import { packSummary, PackError } from './packs.js';
 import {
   downloadQuickInstall,
@@ -170,6 +170,67 @@ export function installResultLines(r) {
   return lines;
 }
 
+/**
+ * The three graphics choices (the content setting `graphics`, content/index.js) as the
+ * dialog lists them, with how each is installed on this device.
+ */
+export const GRAPHICS_PACKS = Object.freeze([
+  Object.freeze({ value: 'webra2d', label: '2D minimal', detail: "WebRA's flat art" }),
+  Object.freeze({ value: 'webra3d', label: '3D minimal', detail: "WebRA's blocky low-poly art" }),
+  Object.freeze({ value: 'original', label: 'Red Alert original', detail: 'From your own Red Alert files' }),
+]);
+
+/**
+ * The install status of each graphics pack (GRAPHICS_PACKS): `led` (a lamp
+ * state, LED_STATES) and `word` (the same status in words), and whether it
+ * is the one in use. The built-in packs ship with WebRA; 3D minimal says
+ * when its archives could not be read (content.builtinError) or are being
+ * read for the first time. The original is installed or not. An older
+ * setting value (`webra`) is 2D minimal.
+ */
+export function graphicsPackStates(content) {
+  const g = content.graphics;
+  const chosen = g === 'original' || g === 'webra3d' ? g : 'webra2d';
+  return GRAPHICS_PACKS.map((p) => {
+    let led = 'ok';
+    let word = 'Built in';
+    if (p.value === 'webra3d') {
+      if (content.builtinError) [led, word] = ['bad', 'Could not load'];
+      else if (chosen === 'webra3d' && content.builtinLoaded === false) [led, word] = ['warn', 'Loading'];
+    } else if (p.value === 'original') [led, word] = content.hasOriginalGraphics ? ['ok', 'Installed'] : ['off', 'Not installed'];
+    return { ...p, led, word, chosen: p.value === chosen };
+  });
+}
+
+/**
+ * The overview cards of the dialog: each part of the original content
+ * (PART_LABELS) with a lamp, a word and how much of it is there (0 to 1).
+ * `s` is content/install.js contentSummary.
+ */
+export function partOverview(s) {
+  const b = s.byCategory;
+  const packageParts = [b.graphics, b.effects, b.voices, b.announcer].filter((n) => n > 0).length;
+  const state = contentState(s);
+  const movies = b.movies ?? 0;
+  const card = (id, have, total, detail) => {
+    const fraction = total ? Math.min(1, have / total) : 0;
+    const led = fraction >= 1 ? 'ok' : fraction > 0 ? 'warn' : 'off';
+    const word = fraction >= 1 ? 'Installed' : fraction > 0 ? 'Partly installed' : 'Not installed';
+    return { id, label: PART_LABELS[id], led, word, fraction, detail };
+  };
+  return [
+    card('package', state.parts.package ? Math.min(packageParts, 3) : 4, 4, b.graphics ? `${plural(b.graphics, 'graphics file', 'graphics files')}, ${plural(b.effects + b.voices + b.announcer, 'sound', 'sounds')}` : 'ra-quickinstall.zip'),
+    card('music', b.music ? 1 : 0, 1, b.music ? plural(b.music, 'track', 'tracks') : 'Two freeware CDs: Allied and Soviet scores'),
+    card('movies', movies, MOVIE_FILES.size, movies ? `${movies} of ${MOVIE_FILES.size}, optional` : 'Briefings and cutscenes, optional'),
+  ];
+}
+
+/** The read log: the last `max` lines of an install's progress, the newest last. */
+export function pushLog(lines, text, max = 5) {
+  if (lines.at(-1) === text) return lines;
+  return [...lines, text].slice(-max);
+}
+
 /** Split dropped or picked files: texture packs, Red Alert content, and the rest. */
 export async function classifyFiles(files, isPack = isPackZip) {
   const packs = [];
@@ -308,18 +369,29 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     handleFiles([...(e.dataTransfer.files ?? [])]);
   });
 
-  // Live progress: a bar (with a value while downloading) and a line of text.
+  // Live progress: a bar (with a value while downloading) and a line of text;
+  // for files read in this browser also the last few lines read (the read log).
   const bar = el('progress', { class: 'content-bar', max: '1', 'aria-label': 'Install progress' });
   const progressText = el('p', { class: 'audio-progress', role: 'status', 'aria-live': 'polite' });
-  const progressBox = el('div', { class: 'content-progress', hidden: true }, bar, progressText);
+  const readLog = el('ul', { class: 'content-log', 'aria-label': 'Read so far', hidden: true });
+  const progressBox = el('div', { class: 'content-progress', hidden: true }, bar, progressText, readLog);
+  let logLines = [];
   const showProgress = (text, fraction = null) => {
     progressBox.hidden = false;
     progressText.textContent = text;
     if (fraction === null) bar.removeAttribute('value');
     else bar.value = Math.max(0, Math.min(1, fraction));
   };
+  /** A line of the read log: the earlier ones are done (a green lamp), the newest is being read. */
+  const logLine = (text) => {
+    logLines = pushLog(logLines, text);
+    readLog.replaceChildren(...logLines.map((t, k) => el('li', { 'data-state': k === logLines.length - 1 ? 'reading' : 'done' }, led(k === logLines.length - 1 ? 'on' : 'ok'), el('span', { text: t }))));
+    readLog.hidden = false;
+  };
   const hideProgress = () => {
     progressBox.hidden = true;
+    readLog.hidden = true;
+    logLines = [];
   };
 
   // The result of the last install: what came in, and the switch to use it.
@@ -387,6 +459,29 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     el('div', { class: 'audio-buttons content-actions' }, installAll, installMovies, cancel, checkMissing, reinstall, remove),
     confirmBox,
   );
+  // The overview (Content board): a card per part with a lamp, its state in words and a bar, and the storage used.
+  const overviewCards = el('div', { class: 'content-overview-cards', role: 'list', 'aria-label': 'Parts of the original content' });
+  const storageText = el('span', { class: 'content-storage' });
+  const overview = el('div', { class: 'content-overview' }, overviewCards, storageText);
+  const renderOverview = (s) => {
+    overviewCards.replaceChildren(
+      ...partOverview(s).map((p) => {
+        const meter = el('span', { class: 'content-part-bar', 'aria-hidden': 'true' });
+        meter.style.setProperty('--part-done', `${Math.round(p.fraction * 100)}%`);
+        return el(
+          'div',
+          { class: 'content-overview-card', role: 'listitem', 'data-part': p.id, 'data-state': p.led },
+          el('span', { class: 'content-overview-name' }, led(p.led), el('span', { text: p.label })),
+          el('span', { class: 'content-overview-word', text: p.word }),
+          el('span', { class: 'content-overview-detail', text: p.detail }),
+          meter,
+        );
+      }),
+    );
+    const bytes = (s.bytes.sounds ?? 0) + (s.bytes.graphics ?? 0) + (s.bytes.movies ?? 0);
+    storageText.textContent = s.total ? `${formatBytes(bytes)} in this browser` : '';
+  };
+
   // One line per part while (and after) the one-click install runs.
   const partList = el('ul', { class: 'content-parts', 'aria-label': 'Parts of the install', hidden: true });
 
@@ -503,6 +598,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
         ? 'Original sounds: effects, unit voices, announcer lines and music from your files. WebRA keeps its own sounds for anything missing.'
         : 'Original is off until the original content is installed: install it below to hear the original sounds.';
       const state = contentState(s);
+      renderOverview(s);
       // What is kept, without reading the kept files (the package's small record, the music pieces' keys).
       const kept = !!(await (content.keptInfo ?? content.keptPackage)?.call(content).catch(() => null));
       let musicKept = 0;
@@ -537,6 +633,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     }
     renderAction();
     renderPacks();
+    renderGraphicsPacks();
   };
 
   /** "Installed 9 October 2026. 31.2 MB in this browser; WebRA uses 48.0 MB of storage on this device." */
@@ -565,7 +662,12 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     showProgress('Reading your files in this browser...');
     let report = null;
     try {
-      report = await content.install(list, { onProgress: (t) => showProgress(`${t}...`) });
+      report = await content.install(list, {
+        onProgress: (t) => {
+          showProgress(`${t}...`);
+          logLine(t);
+        },
+      });
       await audio?.reloadInstalled();
       hideProgress();
       showResult(report.added ? 'Installed' : 'Nothing installed', installResultLines(report), report.added > 0);
@@ -584,19 +686,26 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   // ---- The one-click install run ---------------------------------------------------------
   let abort = null;
   const partRows = new Map();
+  /** A part's lamp per phase: the phase is in words in its status too. */
+  const PHASE_LEDS = { waiting: 'off', running: 'on', done: 'ok', failed: 'bad', cancelled: 'warn' };
   /** Set a part's line: `phase` (waiting, running, done, failed, cancelled), its text, and a retry for a failed part. */
   const setPart = (id, phase, text, retry = false) => {
     let row = partRows.get(id);
     if (!row) {
-      const label = el('strong', { text: PART_LABELS[id] });
+      const lamp = led('off');
+      const label = el('strong', {}, lamp, el('span', { text: PART_LABELS[id] }));
       const status = el('span', { class: 'content-part-status' });
       const again = el('button', { type: 'button', class: 'ui-mini', text: 'Retry', 'aria-label': `Retry: ${PART_LABELS[id]}` });
       again.addEventListener('click', () => runParts([id]));
       retryButtons.add(again);
-      row = { li: el('li', { class: 'content-part' }, label, status, again), status, again };
+      // The part's own share of the progress (the overall bar is above); decoration, the words say it.
+      const meter = el('span', { class: 'content-part-bar', 'aria-hidden': 'true' });
+      row = { li: el('li', { class: 'content-part' }, label, status, again, meter), status, again, lamp, meter };
       partRows.set(id, row);
       partList.append(row.li);
     }
+    setLed(row.lamp, PHASE_LEDS[phase] ?? 'off');
+    if (phase === 'done') row.meter.style.setProperty('--part-done', '100%');
     row.li.dataset.phase = phase;
     row.status.textContent = text;
     row.again.hidden = !retry;
@@ -684,6 +793,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     const total = ids.reduce((n, id) => n + sizes.get(id), 0);
     const got = new Map(ids.map((id) => [id, 0]));
     const draw = () => {
+      for (const [id, n] of got) partRows.get(id)?.meter.style.setProperty('--part-done', `${Math.floor((n / (sizes.get(id) || 1)) * 100)}%`);
       const n = [...got.values()].reduce((a, b) => a + b, 0);
       showProgress(`Installing the original content: ${formatBytes(n)} of ${formatBytes(total)} (${Math.floor((n / total) * 100)}%)`, n / total);
     };
@@ -870,6 +980,23 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     if (file) inspectPackFile(file);
   });
 
+  // ---- Graphics packs: what each choice needs and whether it is here ----------------------
+  const graphicsPacks = el('ul', { class: 'content-gfx-packs', 'aria-label': 'Graphics on this device' });
+  function renderGraphicsPacks() {
+    graphicsPacks.replaceChildren(
+      ...graphicsPackStates(content).map((p) =>
+        el(
+          'li',
+          { class: 'content-gfx-pack', 'data-pack': p.value, 'data-state': p.led, 'aria-current': p.chosen ? 'true' : null },
+          led(p.led),
+          el('span', { class: 'content-gfx-name' }, el('strong', { text: p.label }), el('span', { class: 'content-gfx-detail', text: p.detail })),
+          el('span', { class: 'content-gfx-word', text: p.word }),
+          p.chosen ? badge('accent', 'In use') : null,
+        ),
+      ),
+    );
+  }
+
   // ---- Pack manager -------------------------------------------------------------------
   const renderPacks = () => {
     const packs = content.packs;
@@ -983,6 +1110,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     for (const [tid, , panel] of TABS) {
       const b = tabButtons.get(tid);
       const on = tid === id;
+      setLed(b.firstChild, on ? 'on' : 'off');
       b.setAttribute('aria-selected', String(on));
       b.tabIndex = on ? 0 : -1;
       panel.hidden = !on;
@@ -990,7 +1118,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     if (focus) tabButtons.get(id).focus();
   };
   for (const [id, label] of TABS) {
-    const b = el('button', { type: 'button', class: 'content-tab', role: 'tab', id: `content-tab-${id}`, 'aria-controls': `content-panel-${id}` , text: label });
+    const b = el('button', { type: 'button', class: 'content-tab', role: 'tab', id: `content-tab-${id}`, 'aria-controls': `content-panel-${id}` }, led('off'), el('span', { text: label }));
     b.addEventListener('click', () => showTab(id));
     // Arrow keys, Home and End move between the tabs (WAI-ARIA tabs).
     b.addEventListener('keydown', (e) => {
@@ -1017,6 +1145,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       'section',
       { class: 'audio-content', 'aria-labelledby': 'content-install-title' },
       el('h2', { id: 'content-install-title', text: 'Install the original content' }),
+      overview,
       stateBox,
       progressBox,
       partList,
@@ -1052,6 +1181,8 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       preview,
     ),
   );
+  // The graphics packs' status goes under the Graphics choice (kept out of the section's list above).
+  graphics.root.closest('.ui-row')?.after(graphicsPacks);
   sync();
   return {
     // Opening the dialog tries a built-in pack that failed to load again (its reload calls sync when done).

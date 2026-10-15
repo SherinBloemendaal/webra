@@ -339,7 +339,26 @@ const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit
 export function isTyping(e) {
   const t = e.target;
   if (t instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(t.type);
-  return t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || !!t?.isContentEditable;
+  if (t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t?.isContentEditable) return true;
+  // A select plate (js/ui/controls.js): its button and its open list take letters and arrows, like a native select.
+  // So does a stepper (arrows step it). Tabs do not: the shortcuts work right after a tab is clicked.
+  return !!t?.closest?.('.ui-select-plate, .ui-sp-panel, [role="listbox"], [role="spinbutton"]');
+}
+
+/** The keys tabs and steppers use themselves (js/ui/controls.js). */
+const CONTROL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+
+/**
+ * True when the key belongs to one of the game's composite controls:
+ * capture-phase handlers (dialogs, key rebinding) must let it through
+ * untouched. An open select list owns every key (it stops Esc itself);
+ * tabs and steppers own only their arrows, Home, End and Page keys, so Esc
+ * from them still closes the dialog.
+ */
+export function controlOwnsKeys(e) {
+  const t = e.target;
+  if (t?.closest?.('[role="listbox"], .ui-sp-panel')) return true;
+  return CONTROL_KEYS.has(e.key) && !!t?.closest?.('[role="spinbutton"], [role="tablist"]');
 }
 
 export { CELL, NEUTRAL_TEAM };

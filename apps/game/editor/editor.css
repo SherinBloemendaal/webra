@@ -18,17 +18,18 @@ body.editor {
   --ed-bar: 2.75rem;
 }
 
-/* ---- Buttons and fields ------------------------------------------------- */
+/* ---- Buttons and fields -------------------------------------------------
+   The select plates (js/ui/controls.js, css/controls.css) are buttons too:
+   the editor's own button look leaves them out. */
 
-.editor button,
-.editor select,
+.editor button:where(:not(.ui-sp-button, .ui-sp-close)),
 .editor input,
 .editor textarea {
   font: inherit;
   color: var(--ui-text);
 }
 
-.editor button {
+.editor button:where(:not(.ui-sp-button, .ui-sp-close)) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -39,31 +40,33 @@ body.editor {
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
+  /* Command buttons as on the Map editor board: Barlow Condensed 700 in tracked capitals. */
+  font-family: var(--ui-font-display);
   font-weight: 700;
-  font-size: var(--ui-fs-s);
-  letter-spacing: 0.06em;
+  font-size: var(--ui-fs-m);
+  letter-spacing: var(--ui-track-button, 0.1em);
   text-transform: uppercase;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
   cursor: pointer;
   white-space: nowrap;
 }
 
-.editor button:hover:not(:disabled) {
+.editor button:where(:not(.ui-sp-button, .ui-sp-close)):hover:not(:disabled) {
   background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
 }
 
-.editor button:active:not(:disabled) {
+.editor button:where(:not(.ui-sp-button, .ui-sp-close)):active:not(:disabled) {
   box-shadow: var(--ui-bevel-in);
 }
 
-.editor button:focus-visible,
+.editor button:where(:not(.ui-sp-button, .ui-sp-close)):focus-visible,
 .editor .palette-item:focus-visible,
 .editor .tool:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
 
-.editor button:disabled {
+.editor button:where(:not(.ui-sp-button, .ui-sp-close)):disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -127,9 +130,7 @@ body.editor {
 }
 
 /* Fields outside the cards look like the cards' (css/controls.css .ui-input). */
-.editor .ui-input,
-.editor #side select,
-.editor #tools select {
+.editor .ui-input {
   width: 100%;
   min-height: 2rem;
   padding: 0.3em 0.55em;
@@ -145,24 +146,17 @@ body.editor {
   min-height: 5em;
 }
 
-.editor .ui-input:focus-visible,
-.editor #side select:focus-visible,
-.editor #tools select:focus-visible {
+.editor .ui-input:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 0;
 }
 
-.editor select option {
-  background: var(--ui-metal-1);
-  color: var(--ui-text);
-}
-
 .editor h2 {
   margin: 1.1em 0 0.45em;
-  font: 700 var(--ui-fs-s) / 1.3 var(--ui-font);
-  letter-spacing: 0.14em;
+  font: 600 var(--ui-fs-m) / 1.3 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label, 0.14em);
   text-transform: uppercase;
-  color: var(--ui-accent-hi);
+  color: var(--ui-muted);
 }
 
 .editor .hint {
@@ -212,13 +206,14 @@ body.editor {
   text-transform: uppercase;
 }
 
-.editor .badge.modded {
-  padding: 0.15em 0.5em;
-  border: 1px solid var(--ui-bad);
-  border-radius: var(--ui-radius);
-  color: var(--ui-bad);
-  font: 700 var(--ui-fs-xs) / 1.4 var(--ui-font);
-  letter-spacing: 0.1em;
+/* The top bar's badges (js/ui/controls.js badge in a slot): rules overrides, the checks' verdict. */
+.badge-slot {
+  display: inline-flex;
+  flex: none;
+}
+
+.badge-slot[hidden] {
+  display: none;
 }
 
 .editor .dot {
@@ -251,25 +246,42 @@ body.editor {
   z-index: 5;
 }
 
+/* The emblem (brand/favicon.svg: the plate-less mark under 40 px) and the editor's name. */
 #topbar .brand {
-  color: var(--ui-text);
-  text-decoration: none;
-  font: 900 1.15rem/1 var(--ui-font-display);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  gap: 0.5rem;
+  margin-right: 0.4rem;
+  font-size: 1.15rem;
+}
+
+#topbar .brand .ui-brand-emblem {
+  width: 30px;
+  height: 30px;
+}
+
+#topbar .brand:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* The map's name, "edited" (a word, not only a colour) while it has unsaved changes. */
+.map-title {
+  min-width: 0;
+  max-width: 18rem;
+  overflow: hidden;
+  font: 600 var(--ui-fs-body, 15px) / 1.2 var(--ui-font);
   white-space: nowrap;
-  text-shadow: 2px 2px 0 #000;
+  text-overflow: ellipsis;
 }
 
-#topbar .brand span {
-  color: var(--ui-accent-hi);
-}
-
-#topbar .brand small {
-  margin-left: 0.3em;
+.map-edited {
+  margin-left: 0.4em;
   color: var(--ui-muted);
-  font: 700 var(--ui-fs-xs) / 1 var(--ui-font);
-  letter-spacing: 0.14em;
+  font-weight: 400;
+}
+
+.map-edited::before {
+  content: '\00b7';
+  margin-right: 0.3em;
 }
 
 #topbar nav,
@@ -315,7 +327,7 @@ body.editor {
   overscroll-behavior: contain;
   background:
     var(--ui-brushed),
-    linear-gradient(180deg, var(--ui-metal-1), var(--ui-bg));
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
   scrollbar-color: var(--ui-metal-4) transparent;
 }
 
@@ -342,11 +354,22 @@ body.editor {
 
 .editor .tool {
   justify-content: flex-start;
-  min-height: 2.25rem;
+  min-height: 2.625rem;
   padding: 0.25em 0.5em;
   text-transform: none;
   letter-spacing: 0.02em;
+  font-family: var(--ui-font);
+  font-weight: 600;
   font-size: var(--ui-fs-m);
+}
+
+/* The chosen tool (Map editor board): a dark red plate, a red edge and a light red icon;
+   aria-pressed says it for screen readers, the edge for forced colours. */
+.editor .tool.active {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .editor .tool .ed-icon {
@@ -361,26 +384,41 @@ body.editor {
 .swatches {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.25rem;
+  gap: 0.375rem;
 }
 
+/* Terrain tiles: the ground's colour as a block over its name (Map editor board). */
 .editor .swatch {
-  justify-content: flex-start;
-  min-height: 1.9rem;
-  padding: 0.2em 0.4em;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  min-height: 0;
+  padding: 0.25rem;
+  background: var(--ui-metal-0);
+  box-shadow: none;
   text-transform: none;
+  text-shadow: none;
   letter-spacing: 0;
-  font-weight: 600;
+  font-family: var(--ui-font);
+  font-weight: 400;
   font-size: var(--ui-fs-s);
+  color: var(--ui-text-2, var(--ui-text));
+}
+
+.editor .swatch.active {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-text);
+  box-shadow: none;
 }
 
 .swatch i {
-  width: 1.1em;
-  height: 1.1em;
+  display: block;
+  height: 1.75rem;
   flex: none;
   border: 1px solid var(--ui-edge);
-  border-radius: 2px;
-  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.12);
   /* The terrain's colour in the map preview, set by editor.js (MATERIALS). */
   background: var(--swatch, var(--ui-metal-3));
 }
@@ -473,22 +511,38 @@ body.editor {
   padding: 0;
 }
 
+/* The status bar along the map's foot (Map editor board): cell, zoom, symmetry, history, in mono. */
 #status {
   position: absolute;
-  left: 0.6rem;
-  bottom: 0.6rem;
-  max-width: calc(100% - 1.2rem);
-  padding: 0.2em 0.6em;
-  background: rgba(6, 8, 11, 0.78);
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 0.4rem 1rem;
+  padding: 0.35em 0.75rem;
+  padding-bottom: max(0.35em, env(safe-area-inset-bottom));
+  background: rgba(6, 7, 8, 0.85);
+  border-top: 1px solid var(--ui-edge);
   color: var(--ui-muted);
-  font: var(--ui-fs-s) / 1.6 var(--ui-font-mono);
+  font: var(--ui-fs-s) / 1.5 var(--ui-font-mono);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   pointer-events: none;
+}
+
+#status > span {
+  flex: none;
+}
+
+#status > span:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#status > span[hidden] {
+  display: none;
 }
 
 .boot {
@@ -522,31 +576,47 @@ body.editor {
   touch-action: none;
 }
 
+/* The panel tabs (Map editor board): a well with metal tabs; the open one is red with white
+   text and aria-selected, its count in a dot. Nine real tabs wrap in rows of five. */
 #side .tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem;
-  padding: 0.6rem 0.6rem 0;
-  border-bottom: 1px solid var(--ui-line);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr));
+  gap: 2px;
+  margin: 0.6rem 0.6rem 0.4rem;
+  padding: 2px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
 }
 
 #side .tabs button {
-  min-height: 1.9rem;
-  padding: 0.2em 0.6em;
-  border-bottom: none;
-  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
-  font-size: var(--ui-fs-xs);
+  min-height: 2rem;
+  padding: 0.2em 0.4em;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+  letter-spacing: 0.08em;
+}
+
+#side .tabs button:hover:not(:disabled) {
+  color: var(--ui-text);
 }
 
 #side .tabs button.active {
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
-  color: var(--ui-text);
-  border-color: var(--ui-edge);
-  box-shadow: inset 0 2px 0 var(--ui-accent);
+  background: var(--ui-primary-fill);
+  color: #fff;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 #side .tabs button.bad {
   color: var(--ui-bad);
+}
+
+#side .tabs button.active.bad {
+  color: #fff;
+  text-decoration: underline;
 }
 
 #panes {
@@ -776,6 +846,17 @@ body.editor {
   width: min(48rem, calc(100vw - 2rem));
 }
 
+/* The hazard stripe on top, as on css/patterns.css .ui-dialog (a modal dialog is the containing block). */
+.editor dialog.menu-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  background: var(--ui-hazard);
+}
+
 .editor dialog::backdrop {
   background: rgba(0, 0, 0, 0.65);
 }
@@ -784,7 +865,7 @@ body.editor {
   font-size: 1.6rem;
 }
 
-.editor .menu-card button {
+.editor .menu-card button:where(:not(.ui-sp-button, .ui-sp-close)) {
   width: auto;
   margin-top: 0;
 }
@@ -793,7 +874,7 @@ body.editor {
   margin-top: 1rem;
 }
 
-.editor .menu-card label.field {
+.editor .menu-card .field {
   display: grid;
   justify-content: stretch;
   margin: 0.4em 0;
@@ -839,8 +920,9 @@ body.editor {
   width: 55%;
 }
 
-.editor table.slots select {
+.editor table.slots .ui-select-plate {
   width: 100%;
+  min-width: 6.5em;
 }
 
 .editor .key-bind {
@@ -886,7 +968,8 @@ body.editor {
     gap: 0.3rem;
   }
 
-  #topbar .brand small,
+  #topbar .brand .ui-brand-word,
+  .map-title,
   #save-state,
   #topbar .cmd:not(.icon-only):not(.primary) span {
     display: none;
@@ -944,7 +1027,7 @@ body.editor {
     transform: none;
   }
 
-  .editor button {
+  .editor button:where(:not(.ui-sp-button, .ui-sp-close)) {
     min-height: 2.75rem;
   }
 
@@ -1050,4 +1133,20 @@ body.editor {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+/* Forced colours: the chosen tool, terrain and tab keep a mark besides their colour. */
+@media (forced-colors: active) {
+  .editor .tool.active,
+  .editor .swatch.active,
+  #side .tabs button.active {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border: 1px solid HighlightText;
+  }
+
+  #status {
+    border-top: 1px solid CanvasText;
+  }
 }

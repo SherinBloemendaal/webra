@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { installDom, uninstallDom, FakeEvent, click, check, settle, textOf } from './dom-fixtures.mjs';
-import { mountContentSettings, mountContentPanel, mountContentNotice, installResultLines, contentState, classifyFiles, QUICKINSTALL_MIRRORS } from '../js/content/panel.js';
+import { mountContentSettings, mountContentPanel, mountContentNotice, installResultLines, contentState, classifyFiles, graphicsPackStates, partOverview, pushLog, QUICKINSTALL_MIRRORS } from '../js/content/panel.js';
 import { QUICKINSTALL_BYTES } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
 import { createSettings } from '../js/settings.js';
@@ -703,4 +703,88 @@ test('dialog: everyone gets the freeware CD images as plain links, and an .iso i
   assert.match(textOf(root.querySelector('#content-panel-manual .content-other')), /drop the \.iso here.*never the whole image/);
   const r = await classifyFiles([new File([new Uint8Array(4)], 'CD1_ALLIED_DISC.ISO'), new File(['x'], 'notes.txt')]);
   assert.deepEqual(r.content.map((f) => f.name), ['CD1_ALLIED_DISC.ISO']);
+});
+
+test('graphics packs: three choices with their install status in a lamp and a word, the one in use marked', async () => {
+  const states = (c) => graphicsPackStates(c).map((p) => [p.value, p.led, p.word, p.chosen]);
+  assert.deepEqual(states({ graphics: 'webra', hasOriginalGraphics: false }), [
+    ['webra2d', 'ok', 'Built in', true],
+    ['webra3d', 'ok', 'Built in', false],
+    ['original', 'off', 'Not installed', false],
+  ], 'the old value webra is 2D minimal');
+  assert.deepEqual(states({ graphics: 'webra3d', builtinLoaded: false, hasOriginalGraphics: true })[1], ['webra3d', 'warn', 'Loading', true]);
+  assert.deepEqual(states({ graphics: 'webra3d', builtinLoaded: false, builtinError: 'offline', hasOriginalGraphics: true })[1], ['webra3d', 'bad', 'Could not load', true]);
+  assert.deepEqual(states({ graphics: 'original', hasOriginalGraphics: true })[2], ['original', 'ok', 'Installed', true]);
+  // In the dialog: a list under the Graphics choice that follows installs.
+  const content = fakeContent();
+  const { root, view } = mount(content);
+  await settle();
+  const list = root.querySelector('.content-gfx-packs');
+  assert.equal(list.parentElement, root.querySelector('#content-use-title').parentElement, 'in the Use section');
+  const row = (v) => list.querySelector(`[data-pack="${v}"]`);
+  assert.match(textOf(row('original')), /Red Alert original.*Not installed/);
+  assert.equal(row('webra2d').getAttribute('aria-current'), 'true');
+  assert.match(textOf(row('webra2d')), /In use/);
+  content.installed = true;
+  content.settings.set('graphics', 'original');
+  // The content system tells the dialog (content.onChange); here the dialog is refreshed by hand.
+  await view.refresh();
+  assert.match(textOf(row('original')), /Installed.*In use/);
+  assert.equal(row('original').querySelector('.ui-led').classList.contains('ui-led-ok'), true);
+  assert.equal(row('webra2d').getAttribute('aria-current'), null);
+});
+
+test('overview: a card per part with a lamp, its state in words, a bar and the storage used', async () => {
+  const cards = (s) => partOverview(s).map((p) => [p.id, p.led, p.word, p.fraction]);
+  assert.deepEqual(cards(EMPTY), [
+    ['package', 'off', 'Not installed', 0],
+    ['music', 'off', 'Not installed', 0],
+    ['movies', 'off', 'Not installed', 0],
+  ]);
+  const content = fakeContent();
+  content.installed = true;
+  const { root } = mount(content);
+  await settle(10);
+  const card = (id) => root.querySelector(`.content-overview-card[data-part="${id}"]`);
+  assert.match(textOf(card('package')), /Graphics, sounds, voices and announcer.*Installed.*20 graphics files, 90 sounds/);
+  assert.equal(card('music').dataset.state, 'off');
+  assert.match(textOf(card('movies')), /Not installed.*optional/);
+  assert.match(textOf(root.querySelector('.content-storage')), /^8\.6 MB in this browser$/);
+});
+
+test('read log: the last lines an install read, the newest being read, the rest done; gone afterwards', async () => {
+  assert.deepEqual(pushLog(['a', 'b'], 'b'), ['a', 'b'], 'a repeated line is not added again');
+  assert.deepEqual(pushLog(['1', '2', '3', '4', '5'], '6'), ['2', '3', '4', '5', '6']);
+  let release;
+  const content = fakeContent({
+    install: async (files, opts) => {
+      opts.onProgress('Reading main.mix');
+      opts.onProgress('Reading conquer.mix');
+      await new Promise((r) => (release = r));
+      return { ...REPORT, switched: false };
+    },
+  });
+  const { root, view } = mount(content);
+  const done = view.install([zipFile()]);
+  await settle();
+  const items = root.querySelectorAll('.content-log li');
+  assert.deepEqual(items.map((li) => [textOf(li), li.dataset.state]), [
+    ['Reading main.mix', 'done'],
+    ['Reading conquer.mix', 'reading'],
+  ]);
+  assert.equal(items[1].querySelector('.ui-led').classList.contains('ui-led-on'), true);
+  release();
+  await done;
+  assert.equal(root.querySelector('.content-log').hidden, true);
+});
+
+test('tabs: the open way to install has a lit lamp besides aria-selected', async () => {
+  const { root } = mount(fakeContent(), fakeAudio(), { autoInstall: true });
+  await settle();
+  const [oneClick, manual] = root.querySelectorAll('.content-tab');
+  assert.equal(oneClick.querySelector('.ui-led').classList.contains('ui-led-on'), true);
+  click(manual);
+  assert.equal(oneClick.querySelector('.ui-led').classList.contains('ui-led-off'), true);
+  assert.equal(manual.querySelector('.ui-led').classList.contains('ui-led-on'), true);
+  assert.equal(textOf(manual), 'Other ways to install');
 });

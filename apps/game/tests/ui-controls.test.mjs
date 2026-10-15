@@ -395,6 +395,46 @@ test('select: a press outside closes it without a choice and leaves the focus al
   assert.equal(s.isOpen(), false);
 });
 
+test('select: the press that closes the list is used up: its release and click reach nothing under it', async () => {
+  doc = installDom({ windowEvents: true });
+  const s = selectPlate({ label: 'AI type', options: AI, value: 'rush' });
+  const map = doc.createElement('canvas');
+  doc.body.append(s.root, map);
+  const seen = [];
+  for (const k of ['pointerdown', 'pointerup', 'mouseup', 'click', 'contextmenu']) map.addEventListener(k, () => seen.push(k));
+  click(s.button);
+  const down = new FakeEvent('pointerdown');
+  map.dispatchEvent(down);
+  assert.equal(s.isOpen(), false, 'closed');
+  assert.equal(down.defaultPrevented, true);
+  for (const k of ['pointerup', 'mouseup', 'click']) map.dispatchEvent(new FakeEvent(k));
+  assert.deepEqual(seen, [], 'no tool or order runs');
+  // The next press is the player's own again.
+  await new Promise((r) => setTimeout(r, 0));
+  map.dispatchEvent(new FakeEvent('pointerdown'));
+  map.dispatchEvent(new FakeEvent('click'));
+  assert.deepEqual(seen, ['pointerdown', 'click']);
+  // A right press that closes it eats its context menu; one that never clicks ends at the next press.
+  seen.length = 0;
+  click(s.button);
+  map.dispatchEvent(new FakeEvent('pointerdown', { button: 2 }));
+  map.dispatchEvent(new FakeEvent('contextmenu'));
+  await new Promise((r) => setTimeout(r, 0));
+  click(s.button);
+  map.dispatchEvent(new FakeEvent('pointerdown'));
+  map.dispatchEvent(new FakeEvent('pointerup'));
+  await new Promise((r) => setTimeout(r, 0));
+  map.dispatchEvent(new FakeEvent('pointerdown'));
+  map.dispatchEvent(new FakeEvent('pointerup'));
+  assert.deepEqual(seen, ['pointerdown', 'pointerup']);
+  // The select's own button still toggles it.
+  click(s.button);
+  s.button.dispatchEvent(new FakeEvent('pointerdown'));
+  assert.equal(s.isOpen(), true);
+  click(s.button);
+  assert.equal(s.isOpen(), false);
+});
+
 test('select: on phones the list is a bottom sheet with a title and a close button', () => {
   assert.equal(selectSheetMode(390, 844), true, 'phone, portrait');
   assert.equal(selectSheetMode(844, 390), true, 'phone, landscape');
