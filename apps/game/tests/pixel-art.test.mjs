@@ -76,6 +76,30 @@ test('the Lightning Rod is idle, damaged and a 12 frame make animation on its 1x
   assert.ok(![...used(art, 2)].some(isRemap), 'make 0: no plinth, no owner\'s colour yet');
 });
 
+test('structures are drawn in Westwood\'s structure view: their pads fill the footprint, cast shadows darken the pad', () => {
+  // The ground is not shortened (Red Alert's cells are 24 x 24 on screen): the derrick's pad spans its two cells both ways.
+  const oil = pixelFrame(PIXEL_ART.OILB, 0);
+  assert.ok(oil.width >= 44 && oil.height >= 44, `derrick ${oil.width} x ${oil.height}`);
+  // The Lightning Rod's finished pad (make 2) covers its cell the same way, square.
+  const pad = pixelFrame(PIXEL_ART.LROD, 4);
+  assert.ok(pad.width >= 22 && pad.width <= 24 && Math.abs(pad.height - pad.width) <= 2, `pad ${pad.width} x ${pad.height}`);
+  // The plinth's cast shadow falls on the pad as a darker shade of the concrete (make 4 against the bare pad of make 2),
+  // not as the shadow index, which could only darken the ground under the sprite.
+  const plinth = pixelFrame(PIXEL_ART.LROD, 6);
+  const pal = Uint8Array.from(atob(PIXEL_PALETTE), (ch) => ch.charCodeAt(0));
+  const at = (f, x, y) => f.data[(y - f.top) * f.width + x - f.left];
+  const lum = (v) => pal[v * 3] + pal[v * 3 + 1] + pal[v * 3 + 2];
+  let darker = 0;
+  for (let y = -2; y <= 2; y++) {
+    for (let x = 6; x <= 6; x++) {
+      const [before, after] = [at(pad, x, y), at(plinth, x, y)];
+      assert.ok(before !== SHADOW && after !== SHADOW && after !== 0, `(${x}, ${y}) is concrete`);
+      if (lum(after) < lum(before) - 60) darker++;
+    }
+  }
+  assert.ok(darker >= 3, `${darker} pad pixels in the plinth's shadow`);
+});
+
 test('the Black Hawk has 32 body facings, 8 ground and 4 air rotor frames and a cameo', () => {
   const art = PIXEL_ART.MH60;
   assert.deepEqual(art.body, { idle: { start: 0, facings: 32 } });
@@ -108,6 +132,9 @@ test('the Black Hawk has 32 body facings, 8 ground and 4 air rotor frames and a 
   // About the Longbow's and the Hind's size: some 32 pixels nose to tail facing west.
   const west = pixelFrame(art, 8);
   assert.ok(west.width >= 28 && west.width <= 38, `${west.width} wide`);
+  // The stub wings with their rocket pods reach well past the cabin facing north (about 23 pixels tip to tip).
+  const north = pixelFrame(art, 0);
+  assert.ok(north.width >= 23 && north.width <= 28, `${north.width} wide facing north`);
   // Mirror images are not reused: east and west differ beyond a flip.
   const east = pixelFrame(art, 24);
   const flipped = new Uint8Array(west.data.length);
