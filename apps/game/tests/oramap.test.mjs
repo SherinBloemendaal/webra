@@ -596,6 +596,33 @@ test('convert: lobby options and their locks from the World and Player rules', a
   assert.ok(checked.ok, checked.errors?.join('; '));
 });
 
+test('convert: a locked lobby value the lobby has no choice for is left unlocked, not locked at the default', async () => {
+  const rules = [
+    'World:',
+    '\tTimeLimitManager:',
+    '\t\tTimeLimitDefault: 45',
+    '\t\tTimeLimitLocked: true',
+    '\tMapOptions:',
+    '\t\tTechLevel: ultra',
+    '\t\tTechLevel: low',
+    '\t\tTechLevelDropdownLocked: true',
+    'Player:',
+    '\tPlayerResources:',
+    '\t\tDefaultCash: 3000',
+    '\t\tDefaultCashDropdownLocked: true',
+    '',
+  ].join('\n');
+  const bytes = sampleOramap({ rulesRef: 'rules.yaml', extraFiles: [{ name: 'rules.yaml', data: rules }] });
+  const { map, report } = await parse(bytes);
+  assert.deepEqual(map.options, { techLevel: 'low' }, 'no starting cash or time limit the map did not ask for');
+  assert.deepEqual(map.lockedOptions, ['techLevel'], 'a later valid value keeps its lock');
+  const warnings = report.warnings.join('\n');
+  assert.match(warnings, /locks starting cash at 3000 \(Player\.PlayerResources\.DefaultCash\), which the lobby has no choice for; the option is left unlocked/);
+  assert.match(warnings, /locks time limit at 45/);
+  assert.doesNotMatch(warnings, /tech level/);
+  assert.ok(protocolParseMap(JSON.stringify(map), { rules: BASE_RULES }).ok);
+});
+
 test('convert: refuses maps for other mods, unknown tilesets, too few spawns and huge bounds', async () => {
   const pkg = (yaml, w = 48, h = 48) => buildZip([
     { name: 'map.yaml', data: yaml },
@@ -693,6 +720,26 @@ test('isOramapFile: by extension or ZIP signature', () => {
   assert.ok(!isOramapFile('x.json', enc.encode('{"format":1}')));
 });
 
+/** Inline Rules and Weapons mixing Object.prototype member names with real actors, traits and fields. */
+function fuzzRules(next) {
+  const proto = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'isPrototypeOf'];
+  const pick = (list) => list[next() % list.length];
+  const actors = [...proto, 'MSLO', 'AFLD', 'E1', 'World', 'Player'];
+  const traits = [...proto, 'NukePower', 'AirstrikePower@spyplane', 'Valued', 'Buildable', 'MapOptions', 'PlayerResources', 'DeveloperMode'];
+  const fields = [...proto, 'ChargeInterval', 'OneShot', 'Cost', 'Prerequisites', 'TechLevel', 'GameSpeed', 'DefaultCash', 'CheckboxLocked', 'DefaultCashDropdownLocked'];
+  const values = [...proto, '1', '5000', 'true', 'default', 'none', 'Ally'];
+  const lines = ['Rules:'];
+  for (let a = 0; a < 3; a++) {
+    lines.push(`\t${pick(actors)}:`);
+    for (let t = 0; t < 2; t++) {
+      lines.push(`\t\t${pick(traits)}:`);
+      for (let f = 0; f < 2; f++) lines.push(`\t\t\t${pick(fields)}: ${pick(values)}`);
+    }
+  }
+  lines.push('Weapons:', `\t${pick([...proto, 'M1Carbine'])}:`, `\t\t${pick([...proto, 'Range', 'Projectile'])}: ${pick(values)}`);
+  return `${lines.join('\n')}\n`;
+}
+
 test('convert fuzz: random map.yaml and map.bin content never crashes the converter', () => {
   const next = rng(23);
   const parsedYaml = parseMiniYaml(mapYaml({ actors: [{ type: 'mpspawn', x: 8, y: 8 }, { type: 'mpspawn', x: 38, y: 38 }] }));
@@ -705,6 +752,8 @@ test('convert fuzz: random map.yaml and map.bin content never crashes the conver
       if (n.key === 'Bounds' && i % 2) return { ...n, value: `${(next() % 80) - 10},${next() % 50},${next() % 300},${next() % 70}` };
       return n;
     });
+    // Rules and weapons with names of Object.prototype members among real ones.
+    yaml.push(...parseMiniYaml(fuzzRules(next)));
     try {
       const { map } = convertOramap({ yaml, bin }, { baseRules: BASE_RULES });
       assert.ok(protocolParseMap(JSON.stringify(map)).ok);

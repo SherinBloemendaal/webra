@@ -496,7 +496,7 @@ export function convertOramap(input, opts) {
   }
 
   // ---- Rules ----------------------------------------------------------------------------------
-  const lobby = { options: {}, locked: new Set() };
+  const lobby = { options: {}, locked: new Set(), unmapped: new Map() };
   const rules = translateRules(yaml, yamlFile, base, report, lobby);
   const { options, lockedOptions } = lobbySetup(lobby, report);
   const luaInRules = report.luaInRules === true;
@@ -848,15 +848,16 @@ const WEAPON_FIELDS = {
  * default, which a locked option the map does not set keeps.
  */
 const OPENRA_GAME_SPEEDS = { slowest: 'slowest', slower: 'slower', default: 'normal', fast: 'fast', faster: 'faster', fastest: 'fastest' };
+const OPENRA_STARTING_UNITS = { none: 'mcv', light: 'light', heavy: 'heavy' };
 const LOBBY_OPTIONS = [
   { actor: 'world', trait: 'MapOptions', value: 'TechLevel', lock: 'TechLevelDropdownLocked', option: 'techLevel', openra: 'unrestricted', parse: (v) => String(v).trim().toLowerCase() },
-  { actor: 'world', trait: 'MapOptions', value: 'GameSpeed', lock: 'GameSpeedDropdownLocked', option: 'gameSpeed', openra: 'normal', parse: (v) => OPENRA_GAME_SPEEDS[String(v).trim().toLowerCase()] },
+  { actor: 'world', trait: 'MapOptions', value: 'GameSpeed', lock: 'GameSpeedDropdownLocked', option: 'gameSpeed', openra: 'normal', parse: (v) => ownValue(OPENRA_GAME_SPEEDS, String(v).trim().toLowerCase()) },
   { actor: 'world', trait: 'MapOptions', value: 'ShortGameCheckboxEnabled', lock: 'ShortGameCheckboxLocked', option: 'shortGame', openra: true, parse: parseBool },
   { actor: 'world', trait: 'CrateSpawner', value: 'CheckboxEnabled', lock: 'CheckboxLocked', option: 'crates', openra: true, parse: parseBool },
   { actor: 'world', trait: 'MapBuildRadius', value: 'BuildRadiusCheckboxEnabled', lock: 'BuildRadiusCheckboxLocked', option: 'buildRadius', openra: true, parse: parseBool },
   { actor: 'world', trait: 'MapBuildRadius', value: 'AllyBuildRadiusCheckboxEnabled', lock: 'AllyBuildRadiusCheckboxLocked', option: 'allyBuildRadius', openra: true, parse: parseBool },
   { actor: 'world', trait: 'MapStartingLocations', value: 'SeparateTeamSpawnsCheckboxEnabled', lock: 'SeparateTeamSpawnsCheckboxLocked', option: 'separateTeamSpawns', openra: true, parse: parseBool },
-  { actor: 'world', trait: 'SpawnStartingUnits', value: 'StartingUnitsClass', lock: 'DropdownLocked', option: 'startingUnits', openra: 'mcv', parse: (v) => ({ none: 'mcv', light: 'light', heavy: 'heavy' })[String(v).trim().toLowerCase()] },
+  { actor: 'world', trait: 'SpawnStartingUnits', value: 'StartingUnitsClass', lock: 'DropdownLocked', option: 'startingUnits', openra: 'mcv', parse: (v) => ownValue(OPENRA_STARTING_UNITS, String(v).trim().toLowerCase()) },
   { actor: 'world', trait: 'TimeLimitManager', value: 'TimeLimitDefault', lock: 'TimeLimitLocked', option: 'timeLimit', openra: 0, parse: parseInteger },
   { actor: 'player', trait: 'PlayerResources', value: 'DefaultCash', lock: 'DefaultCashDropdownLocked', option: 'startingCash', openra: 5000, parse: parseInteger },
   { actor: 'player', trait: 'DeveloperMode', value: 'CheckboxEnabled', lock: 'CheckboxLocked', option: 'cheats', openra: false, parse: parseBool },
@@ -888,6 +889,11 @@ const LOBBY_OPTION_LABELS = {
 };
 
 const INT32 = 2 ** 31 - 1;
+
+/** `table[key]` when it is the table's own entry: names from the map never reach Object.prototype. */
+function ownValue(table, key) {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
 
 function getIn(obj, path) {
   let v = obj;
@@ -944,9 +950,13 @@ function lobbyOptionFields(actor, top, lobby, note) {
       const value = spec.parse(field.value);
       if (value === undefined || value === null || !MAP_OPTION_VALUES[spec.option].includes(value)) {
         note(`${what} (${cleanText(field.value, 20)} is not a lobby choice)`);
+        // The map meant this value: a lock must not hold the lobby at another one (lobbySetup).
+        delete lobby.options[spec.option];
+        lobby.unmapped.set(spec.option, { what, value: cleanText(field.value, 20) });
         continue;
       }
       lobby.options[spec.option] = value;
+      lobby.unmapped.delete(spec.option);
     }
   }
 }
@@ -1056,7 +1066,7 @@ function translateRules(yaml, yamlFile, base, report, lobby) {
       const builtInPowers = entry.abilities?.support_powers;
       const index = Array.isArray(builtInPowers) ? builtInPowers.findIndex((p) => p?.key === traitKey) : -1;
       if (index >= 0) {
-        const spec = SUPPORT_POWER_FIELDS[fieldKey];
+        const spec = ownValue(SUPPORT_POWER_FIELDS, fieldKey);
         const value = spec ? parseField(spec, raw) : undefined;
         if (!spec || value === undefined) {
           note(`${entry.id}.${cleanText(rawKey, 60)}`);
@@ -1071,7 +1081,7 @@ function translateRules(yaml, yamlFile, base, report, lobby) {
         continue;
       }
       const key = `${traitKey.includes('@') && traitName !== 'Buildable' ? traitKey : traitName}.${fieldKey}`;
-      const spec = ACTOR_FIELDS[key];
+      const spec = ownValue(ACTOR_FIELDS, key);
       const builtIn = spec ? getIn(entry, spec.path) : undefined;
       const value = spec ? parseField(spec, raw) : undefined;
       if (!spec || builtIn === undefined || builtIn === null || value === undefined || Array.isArray(builtIn) !== Array.isArray(value)) {
@@ -1120,7 +1130,7 @@ function translateRules(yaml, yamlFile, base, report, lobby) {
       } else fields.push([n.key, n.value, n.nodes.length > 0]);
     }
     for (const [key, raw, nested] of fields) {
-      const spec = WEAPON_FIELDS[key];
+      const spec = ownValue(WEAPON_FIELDS, key);
       const builtIn = spec ? getIn(w, spec.path) : undefined;
       const value = spec && !nested ? parseField(spec, raw) : undefined;
       if (!spec || typeof builtIn !== 'number' || value === undefined) {
@@ -1143,7 +1153,11 @@ function translateRules(yaml, yamlFile, base, report, lobby) {
 /**
  * The map's lobby options from its rules (`lobby` of translateRules): a
  * locked option the map does not set keeps OpenRA's default, as OpenRA's
- * lobby does. Returns `{ options, lockedOptions }` in the lobby's order.
+ * lobby does. A locked value the lobby has no choice for (a starting cash
+ * of 3000) is neither set nor locked, with a warning: snapping it to the
+ * nearest choice would guess at what the author wanted, and locking the
+ * default would hold every game at a value the map never asked for.
+ * Returns `{ options, lockedOptions }` in the lobby's order.
  */
 function lobbySetup(lobby, report) {
   const options = {};
@@ -1151,7 +1165,14 @@ function lobbySetup(lobby, report) {
   for (const key of MAP_OPTION_KEYS) {
     const spec = LOBBY_OPTIONS.find((o) => o.option === key);
     if (!spec) continue;
-    const locked = lobby.locked.has(key);
+    let locked = lobby.locked.has(key);
+    const unmapped = lobby.unmapped.get(key);
+    if (unmapped && locked) {
+      // Locking OpenRA's default instead would hold every game at a value the
+      // map never asked for, with no way for the host to choose: left unlocked.
+      report.warnings.push(`The map locks ${LOBBY_OPTION_LABELS[key]} at ${unmapped.value} (${unmapped.what}), which the lobby has no choice for; the option is left unlocked.`);
+      locked = false;
+    }
     if (Object.hasOwn(lobby.options, key)) options[key] = lobby.options[key];
     else if (locked) options[key] = spec.openra;
     else continue;

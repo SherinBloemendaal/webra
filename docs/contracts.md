@@ -626,7 +626,9 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   `LobbyPrerequisiteCheckbox` options bounty, redeployable MCVs and
   reusable engineers, each with its `...Locked` field. A locked option the
   map does not set keeps OpenRA's default, as OpenRA's lobby does; a value
-  the lobby has no choice for (a starting cash of 3000) is reported.
+  the lobby has no choice for (a starting cash of 3000) is reported, and
+  when the map locks it the option is left unset and unlocked (warned)
+  rather than locked at OpenRA's default or snapped to the nearest choice.
 - Everything else (removals, `Inherits`, templates, other traits and
   fields such as `AllowMultiple` or the `...Visible` lobby flags, other
   `World` and `Player` traits) is listed as unsupported and never applied.

@@ -43,6 +43,11 @@ export function ticksToTime(ticks) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** The label of `key` in `labels`, or the key itself (own entries only). */
+function label(labels, key) {
+  return Object.hasOwn(labels, key) ? labels[key] : key;
+}
+
 function show(v) {
   if (v === undefined || v === null) return 'none';
   if (typeof v === 'boolean') return v ? 'yes' : 'no';
@@ -79,20 +84,20 @@ function diff(patch, base, path, labels, out) {
         const name = power?.name || power?.key || `power ${i + 1}`;
         for (const [f, x] of Object.entries(power ?? {})) {
           const old = was?.[f] ?? (typeof x === 'boolean' ? false : Array.isArray(x) ? [] : undefined);
-          if (!same(old, x)) out.push(change(`${name} ${POWER_LABELS[f] ?? f}`, f, old, x));
+          if (!same(old, x)) out.push(change(`${name} ${label(POWER_LABELS, f)}`, f, old, x));
         }
       });
     } else if (k === 'warheads' && Array.isArray(v)) {
       v.forEach((h, i) => {
         const was = Array.isArray(b) ? b[i] : undefined;
         for (const [f, x] of Object.entries(h ?? {})) {
-          if (!same(was?.[f], x)) out.push(change(`${v.length > 1 ? `warhead ${i + 1} ` : ''}${WEAPON_LABELS[f] ?? f}`, f, was?.[f], x));
+          if (!same(was?.[f], x)) out.push(change(`${v.length > 1 ? `warhead ${i + 1} ` : ''}${label(WEAPON_LABELS, f)}`, f, was?.[f], x));
         }
       });
     } else if (v && typeof v === 'object' && !Array.isArray(v)) {
       diff(v, b, p, labels, out);
     } else if (!same(b, v)) {
-      out.push(change(labels[p] ?? p, k, b, v));
+      out.push(change(label(labels, p), k, b, v));
     }
   }
 }
