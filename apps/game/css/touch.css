@@ -212,6 +212,8 @@ body.touch #app:not([hidden]) ~ #version,
 
 #app[data-layout='portrait'] #sidebar .sb-tools {
   grid-area: tools;
+  flex-wrap: wrap;
+  padding: 0;
 }
 
 #app[data-layout='portrait'] #sidebar .sb-radar {
@@ -267,8 +269,14 @@ body.touch #app:not([hidden]) ~ #version,
   overflow: hidden;
 }
 
-#app[data-layout='portrait'] #sidebar .sb-sel-detail {
+#app[data-layout='portrait'] #sidebar .sb-sel-detail,
+#app[data-layout='portrait'] #sidebar .sb-sel-cameo,
+#app[data-layout='portrait'] #sidebar .sb-sel-types {
   display: none;
+}
+
+#app[data-layout='portrait'] #sidebar .sb-sel-group {
+  align-self: center;
 }
 
 #app[data-layout='portrait'] #sidebar .sb-hp {
@@ -291,6 +299,12 @@ body.touch #app:not([hidden]) ~ #version,
 
 #app[data-layout='landscape'] #sidebar .sb-status {
   font-size: calc(15 * var(--ui-px));
+}
+
+/* The narrow drawer: the tools wrap rather than squeeze below their size. */
+#app[data-layout='landscape'] #sidebar .sb-tools {
+  flex-wrap: wrap;
+  padding: 0;
 }
 
 #app[data-layout='landscape'] #sidebar .sb-sel {

@@ -45,7 +45,9 @@ export function worldTooltipPosition(mouse, size, viewport) {
  * when the sell mode is on and it may be sold (OpenRA Sellable's tooltip
  * text, for the owner only; walls show $0), else -1.
  * @param {null | { kind: string, label: string, id?: number | null, owner?: number | null, faction?: string | null, extras?: string[] }} tip
- * @returns {null | { label: string, owner: null | { name: string, color: string, faction: string }, extras: string[] }}
+ * `kind` is the answer's kind (the panel mutes "Unrevealed Terrain"); the
+ * refund is a line of its own (in the money colour, Tooltips board).
+ * @returns {null | { label: string, kind: string, owner: null | { name: string, color: string, faction: string }, extras: string[], refund: string | null }}
  */
 export function worldTooltipContent(tip, { nameOf, colorOf, refund = -1 }) {
   if (!tip || !tip.label) return null;
@@ -54,8 +56,7 @@ export function worldTooltipContent(tip, { nameOf, colorOf, refund = -1 }) {
       ? null
       : { name: nameOf(tip.owner), color: cssColor(colorOf(tip.owner)), faction: tip.faction ?? '' };
   const extras = [...(tip.extras ?? [])];
-  if (tip.kind === 'actor' && refund >= 0) extras.push(`Refund: $${refund}`);
-  return { label: tip.label, owner, extras };
+  return { label: tip.label, kind: tip.kind ?? 'actor', owner, extras, refund: tip.kind === 'actor' && refund >= 0 ? `Refund: $${refund}` : null };
 }
 
 function cssColor(c) {
@@ -127,7 +128,8 @@ export class WorldTooltip {
     this.ownerName = el('span', 'world-tooltip-owner-name');
     this.ownerEl.append(this.flagEl, this.ownerName);
     this.extrasEl = el('div', 'world-tooltip-extras');
-    this.el.append(this.labelEl, this.ownerEl, this.extrasEl);
+    this.refundEl = el('div', 'world-tooltip-refund');
+    this.el.append(this.labelEl, this.ownerEl, this.extrasEl, this.refundEl);
     doc.body.append(this.el);
   }
 
@@ -164,6 +166,7 @@ export class WorldTooltip {
     if (key !== this.key) {
       this.key = key;
       this.labelEl.textContent = content.label;
+      this.el.dataset.kind = content.kind;
       this.ownerEl.hidden = !content.owner;
       if (content.owner) {
         this.flagEl.dataset.faction = content.owner.faction;
@@ -172,6 +175,8 @@ export class WorldTooltip {
       }
       this.extrasEl.hidden = content.extras.length === 0;
       this.extrasEl.textContent = content.extras.join('\n');
+      this.refundEl.hidden = !content.refund;
+      this.refundEl.textContent = content.refund ?? '';
     }
     this.el.hidden = false;
     const r = inp.canvas.getBoundingClientRect();

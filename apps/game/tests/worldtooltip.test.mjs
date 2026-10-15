@@ -50,20 +50,25 @@ test('content: name, owner row in the owner colour and extra lines; refund only 
   assert.equal(worldTooltipContent(null, ctx), null);
   assert.deepEqual(worldTooltipContent({ kind: 'unexplored', label: 'Unrevealed Terrain', owner: null }, ctx), {
     label: 'Unrevealed Terrain',
+    kind: 'unexplored',
     owner: null,
     extras: [],
+    refund: null,
   });
   const tip = { kind: 'actor', label: 'Heavy Tank', id: 7, owner: 1, faction: 'russia', extras: ['Captured'] };
   assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: 350 }), {
     label: 'Heavy Tank',
+    kind: 'actor',
     owner: { name: 'Bob', color: 'rgb(0, 128, 255)', faction: 'russia' },
-    extras: ['Captured', 'Refund: $350'],
+    extras: ['Captured'],
+    refund: 'Refund: $350',
   });
-  assert.deepEqual(worldTooltipContent({ ...tip, kind: 'frozen' }, { ...ctx, refund: 350 }).extras, ['Captured'], 'no refund for remembered structures');
+  assert.equal(worldTooltipContent({ ...tip, kind: 'frozen' }, { ...ctx, refund: 350 }).refund, null, 'no refund for remembered structures');
   // OpenRA Sellable shows the refund whenever it may be sold: walls (CustomSellValue 0) say $0; -1 (or none) cannot be sold.
-  assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: 0 }).extras, ['Captured', 'Refund: $0']);
-  assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: -1 }).extras, ['Captured']);
-  assert.deepEqual(worldTooltipContent(tip, ctx).extras, ['Captured']);
+  assert.equal(worldTooltipContent(tip, { ...ctx, refund: 0 }).refund, 'Refund: $0');
+  assert.equal(worldTooltipContent(tip, { ...ctx, refund: -1 }).refund, null);
+  assert.equal(worldTooltipContent(tip, ctx).refund, null);
+  assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: 0 }).extras, ['Captured'], 'the refund is a line of its own');
 });
 
 test('the worker proxy asks world_tooltip like pick and sends the placement as UI state', () => {
@@ -196,7 +201,9 @@ test('the panel: label, owner row and extras from the query, hidden until the mo
     game.sell_value = () => 300;
     input.mode = 'sell';
     tip.frame(1500);
-    assert.equal(panel.querySelector('.world-tooltip-extras').textContent, 'Refund: $300', 'OpenRA Sellable in sell mode');
+    assert.equal(panel.querySelector('.world-tooltip-refund').textContent, 'Refund: $300', 'OpenRA Sellable in sell mode');
+    assert.equal(panel.querySelector('.world-tooltip-refund').hidden, false);
+    assert.equal(panel.querySelector('.world-tooltip-extras').hidden, true);
     input.drag = true;
     tip.frame(1600);
     assert.equal(panel.hidden, true, 'not while box selecting');

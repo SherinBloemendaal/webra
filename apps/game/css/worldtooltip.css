@@ -54,3 +54,14 @@
   font: 400 var(--ui-fs-m) / 1.35 var(--ui-font);
   white-space: pre-line;
 }
+
+/* Sell mode: the refund in the money colour (Tooltips board, "Verkoopmodus"). */
+.world-tooltip-refund {
+  color: var(--ui-money);
+  font: 400 var(--ui-fs-m) / 1.35 var(--ui-font);
+}
+
+/* Unexplored cells: a muted name, no owner (Tooltips board, "Slagveld"). */
+#world-tooltip[data-kind='unexplored'] .world-tooltip-label {
+  color: var(--ui-muted);
+}

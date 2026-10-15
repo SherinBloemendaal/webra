@@ -25,13 +25,14 @@
   padding: calc(4 * var(--ui-px)) calc(6 * var(--ui-px)) calc(6 * var(--ui-px));
   background:
     var(--ui-scan),
-    linear-gradient(180deg, rgba(34, 40, 48, 0.92), rgba(20, 24, 29, 0.92));
+    linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(24, 29, 35, 0.94));
   border: 1px solid var(--ui-edge);
   border-left: 3px solid var(--ui-accent-lo);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1);
   color: var(--ui-text);
-  font: 600 var(--ui-fs-s) / 1.2 var(--ui-font);
+  font: 700 calc(13 * var(--ui-px)) / 1.2 var(--ui-font-display);
+  text-shadow: 1px 1px 0 #000;
   text-align: left;
   cursor: default;
 }
@@ -43,7 +44,7 @@
 }
 
 #powers .power-time {
-  font: var(--ui-fs-xs) var(--ui-font-mono);
+  font: 400 var(--ui-fs-xs) var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ui-muted);
 }
@@ -51,7 +52,7 @@
 #powers .power-bar {
   grid-column: 1 / -1;
   height: calc(4 * var(--ui-px));
-  background: var(--ui-metal-0);
+  background: #06080a;
   border: 1px solid var(--ui-edge);
   overflow: hidden;
 }
@@ -98,7 +99,7 @@
 }
 
 #powers .power:focus-visible {
-  outline: 2px solid var(--ui-focus);
+  outline: var(--ui-focus-ring);
   outline-offset: 1px;
 }
 
@@ -114,20 +115,34 @@
   }
 }
 
+@media (forced-colors: active) {
+  #powers .power.ready,
+  #powers .power.targeting {
+    border: 2px solid Highlight;
+  }
+
+  #powers .power-fill {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
+
 /* Support power timers (js/powertimers.js, OpenRA SupportPowerTimer): the
    superweapon countdowns right of the power bar (#hud-row, css/style.css),
    or in its place when there is no bar, one line each in the owner's colour
-   (set from script) with OpenRA's one pixel contrast shadow, in OpenRA's
-   Bold font size (14) and line gap (5). Long lines end in an ellipsis rather
-   than leave the battlefield. Over the map, not clickable. */
+   (set from script) with OpenRA's one pixel contrast shadow, in Barlow
+   Condensed bold (the InGame board) with OpenRA's line gap (5 at 14; 3 at
+   the board's 16). Long lines end in an ellipsis rather than leave the
+   battlefield. Over the map, not clickable. */
 #power-timers {
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
-  gap: calc(5 * var(--ui-px));
+  gap: calc(3 * var(--ui-px));
   min-width: 0;
   max-width: 100%;
-  font: 700 calc(14 * var(--ui-px)) / 1 var(--ui-font);
+  font: 700 calc(16 * var(--ui-px)) / 1.05 var(--ui-font-display);
+  letter-spacing: 0.02em;
   pointer-events: none;
 }
 

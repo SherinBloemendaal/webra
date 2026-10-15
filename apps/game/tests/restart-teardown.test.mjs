@@ -80,6 +80,20 @@ function page() {
   return { doc, app, field, view, hudRow, hudButtons, toggle, menuButton, sidebar, gameover, stats, gameMenu };
 }
 
+/** The session's NetQuality (js/netquality.js) lives in the online screen, across games: its listeners must go with each game. */
+const netListeners = new Map();
+const netQuality = {
+  self: null,
+  players: new Map(),
+  waiting: null,
+  on(type, fn) {
+    if (!netListeners.has(type)) netListeners.set(type, new Set());
+    netListeners.get(type).add(fn);
+    return () => netListeners.get(type).delete(fn);
+  },
+};
+const netListenerCount = () => [...netListeners.values()].reduce((n, set) => n + set.size, 0);
+
 /** Build the parts of one game like js/main.js runGame, into `scope`. */
 async function buildGame(p, scope, { hotkeys, settings }) {
   const { Input } = await import('../js/input.js');
@@ -126,6 +140,9 @@ async function buildGame(p, scope, { hotkeys, settings }) {
   scope.own(new MuteIndicator(p.hudButtons, { muted: () => muted, subscribe: (fn) => (prefSubs.add(fn), () => prefSubs.delete(fn)) }));
   scope.own(new PowerBar(p.hudRow, { ticksPerSecond: 25, onSelect() {}, hotkeys }));
   scope.own(new PowerTimers(p.hudRow));
+  // An online game's connection parts (js/netwarn.js) on a NetQuality stand-in that outlives the game.
+  const { NetWarn } = await import('../js/netwarn.js');
+  scope.own(new NetWarn({ quality: netQuality, roster: [{ client: 1, player: 0, name: 'P' }], you: 1, field: p.field, slot: sidebar.netSlot, registry: settings.registry, line() {} }));
   const debug = scope.own(new DebugMenu(p.field, { game, input, player: 0, rules, colors: [[1, 1, 1]], online: false, tickMs: 40, perf: { recorder: { recording: false, last: null, progress: () => null }, toggle() {}, download() {}, settings } }));
   p.toggle.before(debug.button);
   const feed = { state: null, take: () => [] };
@@ -198,6 +215,7 @@ test('the game screen comes down completely: three restarts leave no listener, p
       assert.equal(prefSubs.size, 1);
       scope.dispose();
       assert.equal(prefSubs.size, 0, 'the mute indicator stopped following the sound settings');
+      assert.equal(netListenerCount(), 0, 'the connection parts stopped following the session');
       after.push({ ...counts(), window: winOwn() });
     }
     // The shared tooltip layer and the hotkeys' focus watcher listen to the

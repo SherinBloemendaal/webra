@@ -13,7 +13,7 @@
   display: grid;
   gap: 4px;
   pointer-events: none;
-  font: 600 var(--ui-fs-s, 12px) / 1.4 var(--ui-font, system-ui, sans-serif);
+  font: 500 calc(14 * var(--ui-px)) / 1.4 var(--ui-font, system-ui, sans-serif);
 }
 
 .chat-panel.above-replay-bar {
@@ -46,7 +46,7 @@ body.touch .hud-buttons .hud-chat {
 
 .chat-overlay {
   display: grid;
-  gap: 2px;
+  gap: calc(3 * var(--ui-px));
 }
 
 .chat-overlay[hidden],
@@ -65,31 +65,38 @@ body.touch .hud-buttons .hud-chat {
     -1px 1px 0 #000;
 }
 
+/* Over the map the lines stand on their own, outlined (InGame board); a faint
+   shade keeps them readable over snow and ore. */
 .chat-overlay .chat-line {
   justify-self: start;
-  padding: 1px 6px;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
+  padding: 0 calc(4 * var(--ui-px));
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .chat-time {
   display: inline-block;
   min-width: 3.4em;
-  color: #c8ccd2;
+  color: var(--ui-muted);
+  font: 400 0.86em var(--ui-font-mono, monospace);
 }
 
+/* The sender (or "Battlefield Control"), in the colour the line brings. */
 .chat-prefix {
   margin-right: 0.35em;
+  font-weight: 600;
 }
 
 .chat-chrome {
   display: grid;
-  gap: 4px;
-  padding: 6px;
-  background: rgba(6, 8, 11, 0.82);
+  gap: calc(4 * var(--ui-px));
+  padding: calc(6 * var(--ui-px));
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(24, 29, 35, 0.94));
   border: 1px solid var(--ui-edge, rgba(255, 255, 255, 0.2));
-  border-radius: var(--ui-radius, 3px);
-  box-shadow: var(--ui-bevel, none);
+  border-top: 2px solid var(--ui-accent);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08), var(--ui-shadow-toast);
   pointer-events: auto;
 }
 
@@ -98,9 +105,18 @@ body.touch .hud-buttons .hud-chat {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 3px 4px;
+  gap: calc(4 * var(--ui-px));
+  padding: calc(3 * var(--ui-px)) calc(4 * var(--ui-px));
+  background: rgba(6, 8, 10, 0.6);
+  border: 1px solid var(--ui-edge);
   outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-metal-4) transparent;
+}
+
+.chat-history:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: -2px;
 }
 
 /* Lines sit at the bottom while there are few (OpenRA Align: Bottom). */
@@ -118,13 +134,29 @@ body.touch .hud-buttons .hud-chat {
 .chat-close,
 .chat-mute-button {
   min-width: 3.4em;
-  padding: 2px 8px;
-  font: inherit;
-  color: #e6e4d6;
-  background: rgba(40, 46, 54, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
+  padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
+  font: 700 calc(12 * var(--ui-px)) / 1.4 var(--ui-font-display, sans-serif);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
+  color: var(--ui-text);
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
   cursor: pointer;
+}
+
+.chat-mode:hover:not(:disabled),
+.chat-close:hover,
+.chat-mute-button:hover {
+  background: var(--ui-raised-hover);
+}
+
+.chat-mode:focus-visible,
+.chat-close:focus-visible,
+.chat-mute-button:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 .chat-close {
@@ -145,13 +177,15 @@ body.touch .hud-buttons .hud-chat {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  color: #c8ccd2;
+  gap: calc(4 * var(--ui-px));
+  color: var(--ui-text-2);
 }
 
+/* Muted: the warning colour and a pressed look (the word says Unmute too). */
 .chat-mute-button[aria-pressed='true'] {
-  color: #ffd27a;
-  border-color: #ffd27a;
+  color: var(--ui-warn);
+  border-color: var(--ui-led-warn-edge);
+  box-shadow: var(--ui-bevel-in);
 }
 
 /* ---- Audio Muted (OpenRA MUTE_INDICATOR) ---------------------------------------- */

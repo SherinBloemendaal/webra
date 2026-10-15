@@ -226,7 +226,7 @@ export class FakeElement extends FakeNode {
         },
       },
     );
-    this.style = new Proxy({ setProperty() {}, removeProperty() {} }, { set: () => true });
+    this.style = new Proxy({ setProperty() {}, removeProperty() {}, getPropertyValue: () => '' }, { set: () => true });
     this._value = '';
     this._checked = false;
     this.files = [];
