@@ -897,12 +897,16 @@ Serialized size at most 32 KiB.
   only shared with online sessions, and when a session last used them),
   saved online games it played in (`onlineSaves`: record id, time, session
   name, ticks, game version and its seat), the replays kept in the account
-  (`replays`: the list entries of 5.10; the files download from there), and
-  audit log entries that target the account.
+  (`replays`: the list entries of 5.10; the files download from there),
+  friends (`friends`: `{ friends: [{ username, since }], incoming,
+  outgoing, blocked, invites, sentInvites, presence: { seenAt, awaySince }
+  | null }`, 5.11), and audit log entries that target the account.
 - `DELETE /api/account` `{ "confirm": "<username>" }` (recent
   re-authentication) -> `204`: the account becomes `deleted`, every session
   is revoked and the cookie cleared. Its replays (5.10) are deleted at once,
-  their files right after. It is purged 30 days later (an admin can restore
+  their files right after, and so are its friendships, friend requests,
+  blocks (both ways), friend invites and presence heartbeat (5.11); an
+  account restored by an admin has no friends left. It is purged 30 days later (an admin can restore
   it until then, without the replays). The username stays reserved until the
   purge.
 
@@ -1021,6 +1025,127 @@ which loads that replay. The id is kept in the tab's sessionStorage
 along) opens in the game after the sign-in. Watching checks the file with `parseReplay` and the
 running version: one made by another version says so (docs/contracts.md
 section 7).
+
+### 5.11 Friends, blocks and presence
+
+Friends of signed-in players (protocol 8). Every route needs an **active**
+account (`401 unauthenticated`, `403 banned`, `403 account_inactive`);
+reads carry `X-WebRA-CSRF`, writes the full CSRF rules (1.1). Players are
+addressed by username (case and width folded like signup), never by
+account id; a username that is not an active account is `404 not_found`
+"No player with this name." Usernames are public anyway (every lobby shows
+them), so nothing more is revealed. Tables: migration 0009
+(`friendships`, `friend_requests`, `user_blocks`, `user_presence`) and 0010
+(`friend_invites`, `invite_codes`).
+
+Limits (protocol `friends.js`): `FRIENDS_MAX` 200 friends,
+`FRIEND_REQUESTS_OUT_MAX` 50 open requests sent, `FRIEND_REQUESTS_IN_MAX`
+100 shown requests received, `BLOCKS_MAX` 500 blocks; requests are
+forgotten after `FRIEND_REQUEST_TTL_MS` (30 days).
+
+**Privacy settings** (the `social` section of the settings document, 5.8,
+declared keys of the game's settings; the server reads them from the stored
+document and applies them; a missing or malformed value takes its default):
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `social.showOnline` | on | Off: friends see the player as offline, without a last-seen time |
+| `social.friendsJoin` | on | Friends see (and may join) the player's lobby without an invite when it has room; off: a private lobby is not named to friends |
+| `social.allowSpectate` | off | Friends see (and may watch) the player's games; off: a private game is not named to friends |
+
+`GET /api/account/friends` -> `200`:
+
+```json
+{
+  "friends": [Friend],
+  "incoming": [{ "username": "Viper", "displayName": "Viper", "avatarColor": "#c8402a", "createdAt": 0 }],
+  "outgoing": [{ "username": "Tomas", "displayName": "Tomas", "avatarColor": "#2a6fc8", "createdAt": 0 }],
+  "blocked": [{ "username": "Pest", "displayName": "Pest", "avatarColor": "#3a9a3a", "createdAt": 0 }],
+  "invites": [FriendInvite],
+  "sentInvites": [FriendInvite],
+  "privacy": { "showOnline": true, "friendsJoin": true, "allowSpectate": false },
+  "limits": { "friends": 200, "outgoing": 50, "blocked": 500 }
+}
+```
+
+`Friend`: `{ username, displayName, avatarColor, since, status }` with
+`status` one of `FRIEND_STATUSES`:
+
+- `offline`, with `lastSeenAt` (rounded down to the hour; null while the
+  friend hides its status);
+- `online` (the game is open: a presence heartbeat in the last
+  `PRESENCE_ONLINE_MS`, 150 s) or `away` with `awayMs` (no input for 10
+  minutes);
+- `lobby` or `game`: the friend is a member of a session (D1
+  `game_presence` and the session directory). With `session` when the
+  session is public, or a lobby while the friend's `friendsJoin` is on, or a
+  game while its `allowSpectate` is on: `{ id, name, state, players,
+  maxPlayers, map, mode, locked, version, playingMs?, spectators,
+  maxSpectators, joinable, spectatable }` (`map` the map's name or null,
+  `mode` the game mode id, `playingMs` how long the game runs, `joinable`
+  a lobby with room whose friend allows joining, `spectatable` the friend
+  allows watching and the session has a free spectator place).
+
+`FriendInvite`: `{ username, session, code, name, players, maxPlayers, map,
+locked, createdAt, expiresAt }` (the other player, the session id, the
+lobby's invite code without the dash and what the lobby is); only while the
+code is valid.
+
+- `POST /api/account/friends/requests` `{ username }`:
+  - `201 { request: { username, displayName, avatarColor, createdAt } }`:
+    waiting for an answer;
+  - `200 { friend: Friend }`: the other player had asked already (also an
+    ignored request): now friends;
+  - `400 invalid` for the own name; `404 not_found`; `409 conflict` already
+    friends or already asked; `409 blocked` the sender blocked that player
+    (unblock first); `409 limit` too many friends or open requests;
+  - a player who blocked the sender, or who has 100 requests waiting, never
+    sees the request, and the sender gets `201` like any other (its request
+    just waits): blocking cannot be detected this way.
+  - 20 per hour per account (`429 rate_limited`).
+- `POST /api/account/friends/requests/:username/accept` -> `200 { friend }`
+  (ignored requests can still be accepted); `404` without a request;
+  `409 limit` at 200 friends.
+- `POST /api/account/friends/requests/:username/ignore` -> `204`: hidden from
+  the receiver; the sender still sees it waiting.
+- `DELETE /api/account/friends/requests/:username` -> `204`: withdraw an own
+  request.
+- `DELETE /api/account/friends/:username` -> `204`: no longer friends (their
+  invites both ways go too); `404` when not friends.
+- `POST /api/account/friends/blocks` `{ username }` -> `204`: the player can
+  no longer send requests or invites to the blocker, and cannot join a
+  session one of whose present members blocked it (the session refuses it at
+  `hello`, docs/contracts.md section 4) nor look such a lobby's invite code
+  up (`404`). Any friendship, request and invite between the two ends. 30 per
+  hour per account; at most 500.
+- `DELETE /api/account/friends/blocks/:username` -> `204`; `404` when not
+  blocked.
+- `POST /api/account/friends/invites` `{ username, session }` -> `201 {
+  invite: { username, session, code, createdAt, expiresAt } }`: invite a
+  friend into the session the caller is a member of, with the lobby's
+  current invite code (docs/contracts.md section 4, "Invite codes"). `404`
+  not a friend; `403 forbidden` not a member of that session; `409 no_code`
+  the lobby has no valid code (the host makes one). One invite per pair, the
+  newest wins; it ends with the code. 30 per hour per account.
+- `DELETE /api/account/friends/invites/:username` -> `204`: dismiss the
+  invite from that player; with `?sent=1` withdraw the one sent to it.
+- `POST /api/account/presence` `{ away: bool, idleMs? }` -> `204`: the
+  game's heartbeat, every `PRESENCE_INTERVAL_MS` (60 s) while it is open and
+  at once when the player goes away (no input for `PRESENCE_AWAY_MS`, 10
+  minutes; `idleMs` how long, so `awayMs` counts from the last input) or
+  comes back. Stored at most every 45 s unless `away` changed, so a client
+  cannot turn it into many writes. Friends poll the list every
+  `FRIENDS_POLL_MS` (30 s) while a screen shows it; there is no socket.
+
+**Retention.** The daily job deletes requests older than 30 days, invites
+whose code ended, heartbeats older than a day, and every friends row of an
+account that is deleted in any way (self-service deletion removes them at
+once). Purging an account removes what is left (foreign keys).
+
+**Client.** `apps/game/js/account/friends.js`: `FriendsClient` (these
+routes), `FriendsStore` (polls the list while started, refreshes after every
+action, events `change` and `error`), `PresenceTracker` (the heartbeat and
+the away detection).
 
 ## 6. Bans
 
@@ -1454,6 +1579,11 @@ write.
 | Data export | 5 per hour per account |
 | Replay uploads (5.10) | 60 per hour per account |
 | Replay downloads (5.10) | 300 per hour per account |
+| Friend requests (5.11) | 20 per hour per account |
+| Blocks (5.11) | 30 per hour per account |
+| Friend invites (5.11) | 30 per hour per account |
+| Presence heartbeat (5.11) | stored at most every 45 s per account (unless away changes) |
+| Invite codes (docs/contracts.md section 4) | 30 new codes per network per hour; lookups: burst per IP (20 per minute), 30 failed lookups per network per hour |
 | One-click package relay | 8 completed downloads and 24 requests per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
 | One-click music relay | 256 MiB and 96 requests per account per UTC day; 64 requests per network per hour (7.3) |
 | One-click movie relay | 1,500 MiB and 288 requests per account per UTC day; 192 requests per network per hour (7.3) |

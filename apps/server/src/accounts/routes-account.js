@@ -37,6 +37,7 @@ import { HOUR, requirePasskeys, verifyPasskeyRegistration } from './routes-auth.
 import { MAIL_LIMITS, queueAddressMail } from './verification.js';
 import { networkOf } from './ip.js';
 import { deleteAccountReplaysStatement, drainReplayTrash, listReplayRows, replayView } from './replays.js';
+import { friendsCleanupStatements, friendsExport } from './friends.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const lastMethod = () => new HttpError(409, 'conflict', 'Keep at least one way to sign in.');
@@ -386,6 +387,8 @@ async function exportData(ctx) {
     ).map((r) => ({ id: r.id, createdAt: r.created_at, title: r.title, ticks: r.ticks, engine: r.engine, seat: r.seat })),
     // Replays kept in the account (what the list shows; the files download from the Replays list).
     replays: (await listReplayRows(db, user.id, ctx.now)).map(replayView),
+    // Friends, requests, blocks, invites and the presence heartbeat (5.11).
+    friends: await friendsExport(db, user.id, ctx.now),
     gamePresence: (await all('SELECT session_id, client, updated_at FROM game_presence WHERE user_id = ?1')).map((p) => ({
       session: p.session_id,
       client: p.client,
@@ -412,6 +415,8 @@ async function deleteAccount(ctx) {
     ctx.db.prepare('DELETE FROM email_tokens WHERE user_id = ?1').bind(user.id),
     // Replays in the account go at once (they hold other players' names and chat), their files right after.
     deleteAccountReplaysStatement(ctx.db, user.id),
+    // Friends, requests, blocks, invites and presence go at once (others see the account vanish).
+    ...friendsCleanupStatements(ctx.db, user.id),
   ]);
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
   ctx.cookies.push(...signOutCookies(ctx.request));

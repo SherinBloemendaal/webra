@@ -411,3 +411,84 @@ test('a surrender is relayed to every peer like any order, stamped with the send
   ls.submit(2, 4, []);
   assert.deepEqual(ls.submit(1, 4, [{ o: 'surrender', player: 1 }]), [{ tick: 4, orders: [] }]);
 });
+
+// ---- Protocol 8: the start gate, the stall log, the waiting player -----------------------------
+
+import { LOAD_TIMEOUT_MS } from '@webra/protocol';
+
+test('start gate: no frame past the start frames until every seat loaded; the wait costs nobody anything', () => {
+  const t0 = 1_000_000;
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: t0, loading: [0, 1] });
+  assert.deepEqual(ls.initialFrames().map((f) => f.tick), [0, 1, 2]);
+  assert.equal(ls.starting, true);
+  // Seat 0 loaded fast and runs ahead to its limit; seat 1 is still loading.
+  assert.deepEqual(ls.loaded(0, t0 + 1000), []);
+  ls.submit(0, 3, [], t0 + 1000);
+  ls.submit(1, 3, [], t0 + 1000);
+  assert.equal(ls.next, 3, 'frame 3 waits for the gate even with every order in');
+  assert.deepEqual(ls.silent(t0 + 30_000, 10_000), [], 'a long load is no stall');
+  assert.equal(ls.waiting(t0 + 30_000, 10_000), null);
+  for (const w of ls.windows.values()) assert.deepEqual([w.heldMs, w.debtMs], [0, 0]);
+  // The last seat loads: the frames go out and the stall clocks start now.
+  const t1 = t0 + 40_000;
+  assert.deepEqual(ls.loaded(1, t1).map((f) => f.tick), [3]);
+  assert.equal(ls.starting, false);
+  assert.deepEqual(ls.loaded(1, t1), [], 'a repeat is ignored');
+  assert.equal(ls.stalls.length, 0);
+  for (const w of ls.windows.values()) assert.equal(w.debtMs, 0);
+  assert.deepEqual(ls.silent(t1 + 500, 10_000), []);
+});
+
+test('start gate: a seat that never loads is reported after LOAD_TIMEOUT_MS; dropping it starts the others', () => {
+  const t0 = 2_000_000;
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: t0, loading: [0, 1] });
+  ls.initialFrames();
+  ls.loaded(0, t0 + 2000);
+  ls.submit(0, 3, [], t0 + 2000);
+  assert.deepEqual(ls.silent(t0 + LOAD_TIMEOUT_MS, 10_000), []);
+  assert.deepEqual(ls.silent(t0 + LOAD_TIMEOUT_MS + 1, 10_000), [1]);
+  const { frames } = ls.suspend(1, t0 + LOAD_TIMEOUT_MS + 1);
+  assert.deepEqual(frames.map((f) => f.tick), [3]);
+  assert.equal(ls.starting, false);
+  assert.equal(ls.stalls.length, 0, 'the load wait is not a stall');
+});
+
+test('stall log: waits beyond the grace are logged per seat with the frame they held; waiting names the seat', () => {
+  const t0 = 3_000_000;
+  const ls = new Lockstep({ players: [0, 1], delay: 3, now: t0 });
+  ls.initialFrames();
+  // Both deliver frame 3 at once: nothing logged.
+  ls.submit(0, 3, [], t0 + 100);
+  ls.submit(1, 3, [], t0 + 100);
+  // Seat 0 delivers 4; seat 1 could have since frame 3 went out (t0 + 100) but takes 2.5 s.
+  ls.submit(0, 4, [], t0 + 150);
+  assert.equal(ls.waiting(t0 + 800, 10_000), null, 'within the grace nobody waits');
+  const w = ls.waiting(t0 + 1500, 10_000);
+  assert.equal(w.seat, 1);
+  assert.equal(w.heldMs, 1400);
+  // Its window counted 500 ms beyond the grace: 9.5 s left.
+  assert.equal(w.dropInMs, 9500);
+  ls.submit(1, 4, [], t0 + 2600);
+  assert.deepEqual(ls.stalls, [{ tick: 4, seat: 1, ms: 2500 }]);
+  assert.deepEqual(ls.totals.get(1), { ms: 2500, count: 1 });
+  assert.equal(ls.waiting(t0 + 2600, 10_000), null, 'the frames behind a stall are not stalls of their own');
+  // A wait that ends with the seat leaving is logged too (frame 5 waits since frame 4 went out).
+  ls.submit(0, 5, [], t0 + 2700);
+  ls.suspend(1, t0 + 5000);
+  assert.deepEqual(ls.stalls.at(-1), { tick: 5, seat: 1, ms: 2400 });
+  assert.equal(ls.totals.get(1).count, 2);
+});
+
+test('stall log keeps the newest STALL_LOG_MAX entries; totals keep counting', async () => {
+  const { STALL_LOG_MAX } = await import('@webra/protocol');
+  const ls = new Lockstep({ players: [0], delay: 1, now: 0 });
+  ls.initialFrames();
+  let now = 0;
+  for (let t = 1; t <= STALL_LOG_MAX + 5; t++) {
+    now += 1500;
+    ls.submit(0, t, [], now);
+  }
+  assert.equal(ls.stalls.length, STALL_LOG_MAX);
+  assert.equal(ls.totals.get(0).count, STALL_LOG_MAX + 5);
+  assert.equal(ls.stalls.at(-1).tick, STALL_LOG_MAX + 5);
+});

@@ -2,7 +2,7 @@
 // (docs/contracts.md, section 4). Value sets mirror apps/game/js/lobby-state.js.
 
 /** Bumped whenever a message shape changes incompatibly. */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 // ---- Limits -------------------------------------------------------------------
 
@@ -51,6 +51,58 @@ export const HASH_INTERVAL = 25;
 /** The server drops an in-game player that sent no orders for this long. */
 export const DROP_AFTER_MS = 10_000;
 export const TICKS_PER_SECOND = 25;
+
+/**
+ * The start gate (protocol 8): every player's client sends `loaded` once its
+ * loading screen has closed, and the server emits no frame past the empty
+ * start frames until every seat did. The wait counts toward no stall budget;
+ * a seat that has not loaded this long after the start is dropped like a
+ * stalling one (it can rejoin).
+ */
+export const LOAD_TIMEOUT_MS = 60_000;
+
+// ---- Network quality (protocol 8) ------------------------------------------------
+
+/** Clients send `ping` this often, in the lobby and in the game. */
+export const PING_INTERVAL_MS = 2000;
+/** The server sends `netstat` to the room at most this often. */
+export const NETSTAT_INTERVAL_MS = 2000;
+/** A pong that takes longer than this (or never comes) is a late ping, WebRA's "loss". */
+export const LATE_PING_MS = 1000;
+/** Quality is judged on the median of this many recent measurements. */
+export const NET_SAMPLES = 10;
+/** Late pings are counted over this many recent pings (100 pings: about 3 minutes). */
+export const NET_LATE_WINDOW = 100;
+/**
+ * Thresholds shared by the lobby, the game and the statistics: good below
+ * NET_GOOD_RTT_MS with jitter up to NET_GOOD_JITTER_MS and no late pings;
+ * poor above NET_POOR_RTT_MS or more than NET_POOR_LATE_PCT percent late
+ * pings; fair in between (NET_GOOD_RTT_MS to NET_POOR_RTT_MS, or jitter above
+ * NET_GOOD_JITTER_MS, or a few late pings).
+ */
+export const NET_GOOD_RTT_MS = 80;
+export const NET_POOR_RTT_MS = 150;
+export const NET_GOOD_JITTER_MS = 20;
+export const NET_POOR_LATE_PCT = 2;
+export const NET_QUALITIES = ['good', 'fair', 'poor'];
+/** `netstat` marks a player `silent` (milliseconds since its last ping) beyond this. */
+export const NET_SILENT_MS = 5000;
+/** Largest round trip or jitter a client reports, in milliseconds. */
+export const NET_RTT_MAX = 60_000;
+/** Stalls the server keeps per game for the statistics (the newest). */
+export const STALL_LOG_MAX = 500;
+
+// ---- Invite codes (protocol 8) ----------------------------------------------------
+
+/**
+ * Invite codes: six characters from an alphabet without the look-alikes 0/O
+ * and 1/I/L (31 characters, 31^6 codes), shown as `K7Q-2MX`. A code names
+ * one lobby while it is open, at most INVITE_TTL_MS; a new code replaces it.
+ */
+export const INVITE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+export const INVITE_CODE_LENGTH = 6;
+export const INVITE_CODE_RE = /^[2-9A-HJKMNP-Z]{6}$/;
+export const INVITE_TTL_MS = 2 * 60 * 60 * 1000;
 
 // ---- Reconnect and spectators ---------------------------------------------------
 
@@ -330,6 +382,12 @@ export const C2S = Object.freeze({
   REMATCH: 'rematch',
   /** Propose or accept saving the running game (`accept: true`), or decline / withdraw it. */
   SAVE: 'save',
+  /** Network quality: a ping the server answers at once with `pong` (with the sender's last measurement). */
+  PING: 'ping',
+  /** Ask for the running game's stall log (`stalls`). */
+  STALLS: 'stalls',
+  /** The start gate: this player's loading screen has closed (once per game). */
+  LOADED: 'loaded',
 });
 
 /** Server to client. */
@@ -352,6 +410,14 @@ export const S2C = Object.freeze({
   REMATCH: 'rematch',
   /** Saving the game: proposed, agreed (the save point), saved (the record's id), or cancelled. */
   SAVE: 'save',
+  /** The answer to `ping`: its `n` and `at` echoed. */
+  PONG: 'pong',
+  /** Every player's last reported connection quality, to the whole room. */
+  NETSTAT: 'netstat',
+  /** The game waits for a player (`client`), or runs again (`client: null`). */
+  WAITING: 'waiting',
+  /** The running game's stall log, in answer to `stalls`. */
+  STALLS: 'stalls',
 });
 
 /** Error codes the server sends in `error` messages and HTTP error bodies. */

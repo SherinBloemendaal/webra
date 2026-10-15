@@ -13,9 +13,17 @@
 //   too, so a client that never says so still cannot act);
 // - a suspended player (connection lost) is out of the game until it rejoins:
 //   nobody waits for it meanwhile. It rejoins at a future tick (`rejoin`) with
-//   the stall budget it left with (`suspend` returns it), never a fresh one.
+//   the stall budget it left with (`suspend` returns it), never a fresh one;
+// - the start gate: seats listed in `loading` have not closed their loading
+//   screen yet (`loaded`). Until all of them did, no frame past the empty
+//   start frames goes out and nothing counts toward a stall budget, the
+//   waiting player or the stall log; a seat still loading LOAD_TIMEOUT_MS
+//   after the start is reported by `silent` (dropped like a stalling one);
+// - the stall log: every time a seat answered a frame later than
+//   HOLD_GRACE_MS after it could have (`stalls`, `totals`), for the
+//   statistics; `waiting` names the seat the game waits for right now.
 
-import { HASH_INTERVAL, TICKS_PER_SECOND } from '@webra/protocol';
+import { HASH_INTERVAL, LOAD_TIMEOUT_MS, STALL_LOG_MAX, TICKS_PER_SECOND } from '@webra/protocol';
 
 /**
  * Drop windows renew whenever this many frames went out since they began
@@ -55,11 +63,12 @@ export class LockstepError extends Error {
 
 export class Lockstep {
   /**
-   * @param {{ players: number[], delay: number, now?: number, start?: number }} config
+   * @param {{ players: number[], delay: number, now?: number, start?: number, loading?: number[] }} config
    *   players: game player indices controlled by connected humans;
-   *   start: the first frame to emit (a resumed online save continues after its ticks)
+   *   start: the first frame to emit (a resumed online save continues after its ticks);
+   *   loading: players whose loading screen is still open (the start gate, see `loaded`)
    */
-  constructor({ players, delay, now = Date.now(), start = 0 }) {
+  constructor({ players, delay, now = Date.now(), start = 0, loading = [] }) {
     this.delay = delay;
     /** First frame of this relay (0, or the save point + 1 of a resumed game). */
     this.start = start;
@@ -99,6 +108,46 @@ export class Lockstep {
     this.agreed = null;
     /** Seats that reported their defeat: their orders are dropped (kept across suspend and rejoin). */
     this.defeated = new Set();
+    /** The start gate: seats that have not reported `loaded`, and until when they may take. */
+    this.loading = new Set(loading.filter((p) => this.seats.has(p)));
+    this.loadUntil = now + LOAD_TIMEOUT_MS;
+    /** Seat -> the frame it holds right now: { tick, since } (since: when it could first send it). */
+    this.stalling = new Map();
+    /** The newest STALL_LOG_MAX waits beyond HOLD_GRACE_MS: { tick, seat, ms }, oldest first. */
+    this.stalls = [];
+    /** Seat -> { ms, count } of every such wait of this game. */
+    this.totals = new Map();
+  }
+
+  /**
+   * A player's loading screen closed. Once every seat that was loading did
+   * (or was dropped), the game begins: the stall clocks start now. Returns
+   * the frames that became complete. Repeats and unknown seats are ignored.
+   */
+  loaded(player, now = Date.now()) {
+    if (!this.loading.delete(player)) return [];
+    if (this.loading.size === 0) this.begin(now);
+    const frames = this.flush(now);
+    this.track(now);
+    return frames;
+  }
+
+  /** Whether the start gate still holds the game. */
+  get starting() {
+    return this.loading.size > 0;
+  }
+
+  /** The start gate opened: every stall clock starts from `now`, as if the start frames went out now. */
+  begin(now) {
+    this.startedAt = now;
+    for (const t of this.emitted.keys()) this.emitted.set(t, now);
+    for (const w of this.windows.values()) {
+      w.heldMs = 0;
+      w.at = null;
+      w.ready = now + HOLD_GRACE_MS;
+      w.drainedAt = now;
+    }
+    this.stalling.clear();
   }
 
   /**
@@ -140,6 +189,8 @@ export class Lockstep {
     const expected = this.expected.get(player);
     if (tick !== expected) throw new LockstepError(`orders for tick ${expected} expected`);
     if (tick > this.next + this.delay) throw new LockstepError('orders are too far ahead');
+    // Bring the clocks up to now first, so a hold that ends with this very delivery is seen.
+    this.track(now);
     this.expected.set(player, tick + 1);
     let byPlayer = this.pending.get(tick);
     if (!byPlayer) {
@@ -161,6 +212,8 @@ export class Lockstep {
   flush(now = Date.now()) {
     const frames = [];
     while (this.active.size > 0) {
+      // The start gate: only the empty start frames until every seat loaded.
+      if (this.loading.size > 0 && this.next >= this.start + this.delay) break;
       const byPlayer = this.pending.get(this.next) ?? new Map();
       // Rejoined players count from their join tick on.
       const due = [...this.active].filter((p) => this.joinTick.get(p) <= this.next);
@@ -194,6 +247,10 @@ export class Lockstep {
     this.track(now);
     const w = this.windows.get(player);
     const record = { frame: w.frame, heldMs: w.heldMs, debtMs: w.debtMs, drainedAt: w.drainedAt };
+    // A wait that ends with the seat leaving is a stall too.
+    const holding = this.stalling.get(player);
+    if (holding) this.endStall(player, holding, now);
+    this.stalling.delete(player);
     this.active.delete(player);
     this.expected.delete(player);
     this.joinTick.delete(player);
@@ -201,6 +258,8 @@ export class Lockstep {
     this.lastHashTick.delete(player);
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
+    // The last seat still loading left: the others begin.
+    if (this.loading.delete(player) && this.loading.size === 0) this.begin(now);
     const frames = this.flush(now);
     this.track(now);
     return { frames, record };
@@ -237,8 +296,16 @@ export class Lockstep {
     return at;
   }
 
-  /** Bring the drop windows (see `windows`) up to `now`. */
+  /** Bring the drop windows (see `windows`) and the stall log up to `now`. */
   track(now) {
+    if (this.loading.size > 0) {
+      // Waiting at the start costs nobody anything.
+      for (const w of this.windows.values()) {
+        w.drainedAt = now;
+        w.at = null;
+      }
+      return;
+    }
     // When the grace for holding frame `next` ends.
     const ready = (this.emitted.get(this.next - this.delay) ?? this.startedAt) + HOLD_GRACE_MS;
     const renew = [...this.windows.values()].some((w) => this.next - w.frame >= MIN_PROGRESS_FRAMES);
@@ -259,7 +326,56 @@ export class Lockstep {
       const holding = this.expected.get(p) <= this.next;
       w.at = holding ? now : null;
       w.ready = ready;
+      const cur = this.stalling.get(p);
+      if (holding) {
+        if (!cur || cur.tick !== this.next) {
+          if (cur) this.endStall(p, cur, now);
+          // The game waits for frame `next` from when the seat could send it (frame next - delay
+          // went out) and the frame before it was out: a seat catching up after one long stall
+          // does not log the frames behind it as stalls of their own.
+          const could = this.emitted.get(this.next - this.delay) ?? this.startedAt;
+          const prev = this.emitted.get(this.next - 1) ?? this.startedAt;
+          this.stalling.set(p, { tick: this.next, since: Math.max(could, prev) });
+        }
+      } else if (cur) {
+        this.endStall(p, cur, now);
+        this.stalling.delete(p);
+      }
     }
+  }
+
+  /** A seat answered the frame it held (or left): log the wait when it was longer than HOLD_GRACE_MS. */
+  endStall(seat, hold, now) {
+    const ms = Math.max(0, now - hold.since);
+    if (ms <= HOLD_GRACE_MS) return;
+    this.stalls.push({ tick: hold.tick, seat, ms });
+    if (this.stalls.length > STALL_LOG_MAX) this.stalls.shift();
+    const t = this.totals.get(seat) ?? { ms: 0, count: 0 };
+    t.ms += ms;
+    t.count++;
+    this.totals.set(seat, t);
+  }
+
+  /**
+   * The seat the game waits for right now, beyond HOLD_GRACE_MS: { seat,
+   * heldMs (since it could have sent the frame and the frame before went out), dropInMs (until
+   * `silent` reports it with this `limitMs`) }, the longest wait when several
+   * seats hold; null while the game runs (or the start gate holds it).
+   */
+  waiting(now, limitMs) {
+    if (this.loading.size > 0) return null;
+    this.track(now);
+    let best = null;
+    for (const [seat, hold] of this.stalling) {
+      const heldMs = now - hold.since;
+      if (heldMs <= HOLD_GRACE_MS || (best && best.heldMs >= heldMs)) continue;
+      const w = this.windows.get(seat);
+      // Both the window's hold time and the debt grow while it holds (the debt minus its drain).
+      const byWindow = limitMs - w.heldMs;
+      const byDebt = (limitMs - w.debtMs) / (1 - DEBT_DRAIN);
+      best = { seat, heldMs: Math.round(heldMs), dropInMs: Math.max(0, Math.ceil(Math.min(byWindow, byDebt))) };
+    }
+    return best;
   }
 
   /**
@@ -276,6 +392,8 @@ export class Lockstep {
    * dropped. Round trips are not counted (see HOLD_GRACE_MS).
    */
   silent(now, limitMs) {
+    // The start gate: only seats that did not load in time.
+    if (this.loading.size > 0) return now > this.loadUntil ? [...this.loading] : [];
     this.track(now);
     const out = [];
     for (const [p, w] of this.windows) {

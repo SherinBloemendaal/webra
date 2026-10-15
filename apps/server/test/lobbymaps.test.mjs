@@ -349,7 +349,7 @@ test('routes: map files from before map versions and their versioned form share 
 });
 
 test('the public session list names a shared map without its id, hash or author', async () => {
-  const { directoryMap, listSessions, upsertSession } = await import('../src/directory.js');
+  const { clearDirectoryCache, directoryMap, listSessions, upsertSession } = await import('../src/directory.js');
   assert.deepEqual(directoryMap(MAP), { name: 'Twin', modded: false, shared: true });
   assert.deepEqual(directoryMap({ ...MAP, shared: false }), { id: MAP.id, name: 'Twin', hash: MAP.hash, modded: false });
   const env = makeEnv({ email: false });
@@ -359,6 +359,8 @@ test('the public session list names a shared map without its id, hash or author'
   // A co-op mission is listed under its own title; a stored row naming no known mission lists no map.
   await upsertSession(env.DB, { id: 'f'.repeat(64), name: 'Coop', host: 'H', public: true, locked: false, players: 1, maxPlayers: 2, map: { mission: 'exodus', name: '<b>x</b>' }, version: '1', state: 'lobby' }, Date.now());
   await upsertSession(env.DB, { id: 'd'.repeat(64), name: 'Odd', host: 'H', public: true, locked: false, players: 1, maxPlayers: 2, map: { mission: 'allies-01', name: 'x' }, version: '1', state: 'lobby' }, Date.now());
+  // The list is cached for a few seconds per isolate.
+  clearDirectoryCache();
   const rows = await listSessions(env.DB, Date.now());
   assert.deepEqual(rows.find((x) => x.name === 'Coop').map, { mission: 'exodus', name: 'Exodus', modded: false });
   assert.equal(rows.find((x) => x.name === 'Odd').map, null);
