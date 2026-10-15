@@ -3771,16 +3771,23 @@ passes `held: true`, and one sequence in `js/main.js` runGame follows:
    (`js/gamesession.js` GameStart): the first frame draws the map at tick 0
    behind the screen and begins the screen's close (`FirstFrameGuard`,
    `LoadingScreen.done`). The input stays suspended.
-3. The screen closes with the stylesheet's transition or animation on
-   `#loading.is-closing` (at once with "Reduce motion" or none), staying
-   modal; its end event, or a timer of its duration plus `CLOSE_GRACE_MS`
-   (100) in a tab that runs no transitions, hides it and resolves `closed`.
+3. The screen closes after the stylesheet's transition or animation on
+   `#loading.is-closing`, if any (at once with "Reduce motion" or none;
+   the fade itself is css/loading.css's), staying modal; its end event,
+   or a timer of its duration plus `CLOSE_GRACE_MS` (100) in a tab that
+   runs no transitions, hides it and resolves `closed`. A transition must
+   change a property on `.is-closing`, else no end event comes and the
+   timer ends the close. A start whose screen failed (`LoadingScreen.fail`,
+   from anywhere) never resolves `closed`, so its game never begins.
 4. Then `GameStart.begin`: `begin` goes to the simulation (its time
    counts from now, so the screen's time is never caught up in a burst of
    ticks), the frame clock restarts, the input follows, a hidden page's
    background timer may start, "Battle control online" plays, and an
    online player (not a spectator, who holds no seat) sends
-   `loaded {}` (section 4) on its connection (`js/net.js sendLoaded`).
+   `loaded {}` on its connection (`js/net.js sendLoaded`) once the
+   protocol defines `C2S.LOADED` (work/netround's protocol 8 round, with
+   the server holding the frames until every seat sent it); without it
+   nothing is sent.
    Online, the game then runs as the server's frames arrive, as before.
 
 A game taken down before its screen is gone (a restart, leaving) never

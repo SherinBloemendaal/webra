@@ -205,7 +205,8 @@ export class LoadingScreen {
   /**
    * The screen of the current start is gone after its first frame (`done`):
    * a promise, resolved once (after the close transition; with "Reduce
-   * motion" or no transition at once). Resolved already when no start shows.
+   * motion" or no transition at once). Never resolved for a start that
+   * failed (`fail`, by whoever), resolved already when no start ever showed.
    */
   get closed() {
     return this.closing?.promise ?? Promise.resolve();
@@ -288,8 +289,9 @@ export class LoadingScreen {
    * without one). It stays modal until it is hidden. Returns `closed`.
    */
   done() {
-    if (this.state === 'closing') return this.closed;
-    if (this.state !== 'loading') return Promise.resolve();
+    // Closing already, or no start loading: the current start's close (resolved
+    // after a close that ended, never after a failure; resolved with no start at all).
+    if (this.state !== 'loading') return this.closed;
     // The game has the screen now: the focus stays where the game puts it.
     this.before = null;
     this.state = 'closing';
@@ -332,6 +334,8 @@ export class LoadingScreen {
   fail(message, { label = 'Back', run = null } = {}) {
     const doc = this.doc;
     this.finishClose?.(false);
+    // A failed start never starts its game: its `closed` stays pending, also after Back.
+    this.closing = { promise: new Promise(() => {}), resolve() {} };
     this.state = 'failed';
     this.root.setAttribute('aria-busy', 'false');
     this.root.classList.remove('is-closing');

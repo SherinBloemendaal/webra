@@ -446,3 +446,36 @@ test('closeDuration: the longest transition or animation with its delay, from th
   assert.equal(at({ transitionDuration: '', transitionDelay: '', animationDuration: '', animationDelay: '' }), 0);
   assert.equal(closeDuration({ ownerDocument: null }), 0);
 });
+
+test('a failed screen never resolves closed: not on a later first frame, not after Back, not without a begin', async () => {
+  const { root, screen } = setup({ closeMs: 0 });
+  // A start error from the online lobby or GameSession.fallback (not the FirstFrameGuard) fails the screen.
+  screen.begin(loadingPlan('online'));
+  screen.fail('Could not start the game.');
+  let started = 0;
+  const guard = new FirstFrameGuard({ screen, stop() {}, back() {} });
+  guard.firstFrame().then(() => started++);
+  screen.done().then(() => started++);
+  screen.closed.then(() => started++);
+  await settle();
+  assert.equal(started, 0);
+  assert.equal(screen.state, 'failed', 'the error card stays');
+  assert.equal(root.hidden, false);
+  // Back closes the error; a frame drawn after it still does not start the game.
+  root.querySelector('button').dispatchEvent(new FakeEvent('click'));
+  assert.equal(root.hidden, true);
+  screen.done().then(() => started++);
+  await settle();
+  assert.equal(started, 0);
+  // A failure without a begin (no start showed before) is the same.
+  const other = setup({ closeMs: 0 });
+  other.screen.fail('The online game could not start.');
+  other.screen.done().then(() => started++);
+  await settle();
+  assert.equal(started, 0);
+  // The next start's close resolves as usual.
+  screen.begin(loadingPlan('skirmish'));
+  await screen.done();
+  assert.equal(root.hidden, true);
+  uninstallDom();
+});
