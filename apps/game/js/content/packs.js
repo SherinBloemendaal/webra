@@ -43,6 +43,20 @@ export const PACK_LIMITS = Object.freeze({
   maxCameos: 512,
 });
 
+/**
+ * Limits of the built-in 3D minimal pack (content/index.js builtinPacks): a pack that WebRA ships and
+ * generates itself (tools/gen_minimal3d) holds far more sprites than a player's pack may.
+ */
+export const BUILTIN_LIMITS = Object.freeze({
+  ...PACK_LIMITS,
+  maxArchiveBytes: 128 * 1024 * 1024,
+  maxEntries: 16384,
+  maxTotalBytes: 512 * 1024 * 1024,
+  maxImagePixels: 256 * 1024 * 1024,
+  maxSprites: 8192,
+  maxCameos: 2048,
+});
+
 /** Engine sprite slots after the actors that packs may replace (engine/src/render.rs SpriteIds). */
 export const SPECIALS = Object.freeze([
   'bullet',
@@ -117,7 +131,7 @@ export function safePath(p) {
  * of sound keys } (unknown ones are warnings: the pack may be for a newer
  * WebRA).
  */
-export function validateManifest(raw, known = {}) {
+export function validateManifest(raw, known = {}, limits = PACK_LIMITS) {
   const errors = [];
   const warnings = [];
   const err = (m) => errors.push(m);
@@ -167,7 +181,7 @@ export function validateManifest(raw, known = {}) {
   // Sprites.
   if (raw.sprites !== undefined) {
     if (!Array.isArray(raw.sprites)) err('"sprites" must be a list');
-    else if (raw.sprites.length > PACK_LIMITS.maxSprites) err(`at most ${PACK_LIMITS.maxSprites} sprites`);
+    else if (raw.sprites.length > limits.maxSprites) err(`at most ${limits.maxSprites} sprites`);
     else {
       const seen = new Set();
       raw.sprites.forEach((s, i) => {
@@ -236,7 +250,7 @@ export function validateManifest(raw, known = {}) {
     if (!isObject(raw.cameos)) err('"cameos" must map actor ids to PNG files');
     else {
       const entries = Object.entries(raw.cameos);
-      if (entries.length > PACK_LIMITS.maxCameos) err(`at most ${PACK_LIMITS.maxCameos} cameos`);
+      if (entries.length > limits.maxCameos) err(`at most ${limits.maxCameos} cameos`);
       for (const [id, p] of entries) {
         if (!NAME_RE.test(id) || id.length > 32) {
           err(`cameos: bad actor id "${id}"`);
@@ -321,8 +335,7 @@ export function soundType(bytes) {
  * Map(path -> Uint8Array), warnings, size }`; throws PackError with every
  * problem found.
  */
-export async function readPack(bytes, known = {}) {
-  const lim = PACK_LIMITS;
+export async function readPack(bytes, known = {}, lim = PACK_LIMITS) {
   let zip;
   try {
     zip = openZip(bytes, lim);
@@ -354,7 +367,7 @@ export async function readPack(bytes, known = {}) {
   } catch (err) {
     throw new PackError(`manifest.json is not valid JSON: ${err.message}`);
   }
-  const { manifest, errors, warnings, files: wanted } = validateManifest(raw, known);
+  const { manifest, errors, warnings, files: wanted } = validateManifest(raw, known, lim);
   if (errors.length) throw new PackError(errors.join('; '));
   const files = new Map();
   let pixels = 0;

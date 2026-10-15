@@ -16,6 +16,22 @@ Priority, per sprite part, cameo, terrain and sound: **enabled texture packs
 (first in the player's list wins) > original Red Alert content > WebRA's own
 art and sounds**.
 
+## Built-in pack: 3D minimal
+
+WebRA ships one texture pack itself, **3D minimal**: every actor, cameo and the terrain redrawn in a blocky,
+bright, low-poly style (boxes, octagons instead of circles, stepped domes, three flat tones per face, no outlines,
+no dither) in the game's own 3/4 camera. The **Graphics** setting has three choices: **2D minimal** (WebRA's flat
+art, the default; `webra` in older settings means this), **3D minimal** and **Red Alert original** (the player's own
+installed files). With 3D minimal the built-in pack sits **below** the packs the player installed and above
+WebRA's flat art; it is read from the game's own files (`apps/game/packs/minimal3d*.webrapack`, one archive per
+biome set), nothing is downloaded.
+
+The archives are generated and committed: `python3 tools/gen_minimal3d/generate.py` writes them,
+`--check` (CI) fails when they are out of date, `--preview ID ...` draws models enlarged. The generator is
+plain Python (`tools/gen_minimal3d/`): `core.py` is the renderer (primitives, flat tones, z-buffer, PNG), one
+`models_*.py` file per category declares the actors, `models_terrain.py` the tiles. Its archives are bigger than a
+player's pack may be (`BUILTIN_LIMITS` in `content/packs.js`).
+
 ## Format version 1
 
 A pack is a ZIP archive, named `*.webrapack` (or `*.zip`), with

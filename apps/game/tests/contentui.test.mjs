@@ -71,7 +71,7 @@ function fakeContent({ install } = {}) {
       }),
     async removeOriginal() {
       c.installed = false;
-      settings.set('graphics', 'webra');
+      settings.set('graphics', 'webra2d');
     },
   };
   // The music's kept pieces live in the store (content/cdmusic.js).
@@ -323,7 +323,7 @@ test('dialog: dropping the ZIP on the drop zone installs it with progress, then 
   const useAll = root.querySelector('#content-use-all');
   assert.equal(useAll.checked, true);
   check(useAll, false);
-  assert.equal(content.settings.get('graphics'), 'webra');
+  assert.equal(content.settings.get('graphics'), 'webra2d');
   assert.equal(audio.prefs.get().original, false);
   check(useAll, true);
   assert.equal(content.settings.get('graphics'), 'original');
@@ -478,7 +478,7 @@ test('the toast lives outside the game view, so a message about a file dropped o
   assert.match(css, /#toast \{\s*position: fixed;/);
 });
 
-test('dialog: Graphics and Sounds are segmented controls (WebRA | Original); Original waits for installed content', async () => {
+test('dialog: Graphics and Sounds are segmented controls (2D minimal | 3D minimal | Red Alert original, WebRA | Original); Original waits for installed content', async () => {
   const content = fakeContent();
   const audio = fakeAudio();
   audio.prefs.set({ original: false });
@@ -487,18 +487,18 @@ test('dialog: Graphics and Sounds are segmented controls (WebRA | Original); Ori
   const gfx = root.querySelector('[role="radiogroup"][aria-label="Graphics"]');
   const snd = root.querySelector('[role="radiogroup"][aria-label="Sounds"]');
   assert.ok(gfx.classList.contains('ui-segmented') && snd.classList.contains('ui-segmented'));
-  assert.deepEqual(gfx.querySelectorAll('label').map((l) => l.textContent), ['WebRA', 'Original']);
-  assert.equal(root.querySelectorAll('input[type="radio"]').length, 4);
+  assert.deepEqual(gfx.querySelectorAll('label').map((l) => l.textContent), ['2D minimal', '3D minimal', 'Red Alert original']);
+  assert.equal(root.querySelectorAll('input[type="radio"]').length, 5);
 
   // Nothing installed: Original is off for both, with the reason in a note the group points to.
   const gOriginal = root.querySelector('#content-graphics-original');
   const sOriginal = root.querySelector('#content-sounds-original');
   assert.equal(gOriginal.disabled, true);
   assert.equal(sOriginal.disabled, true);
-  assert.equal(root.querySelector('#content-graphics-webra').checked, true);
+  assert.equal(root.querySelector('#content-graphics-webra2d').checked, true);
   assert.equal(root.querySelector('#content-sounds-webra').checked, true);
   const note = root.querySelector(`#${gfx.getAttribute('aria-describedby')}`);
-  assert.match(textOf(note), /Original is off until the original content is installed/);
+  assert.match(textOf(note), /Red Alert original is off until the original content is installed/);
   assert.match(root.querySelector('label[for="content-graphics-original"]').getAttribute('title'), /Install the original content/);
   assert.match(textOf(root.querySelector(`#${snd.getAttribute('aria-describedby')}`)), /Original is off until/);
 
@@ -513,8 +513,8 @@ test('dialog: Graphics and Sounds are segmented controls (WebRA | Original); Ori
   assert.equal(content.settings.get('graphics'), 'original');
   check(sOriginal, true);
   assert.equal(audio.prefs.get().original, true);
-  check(root.querySelector('#content-graphics-webra'), true);
-  assert.equal(content.settings.get('graphics'), 'webra');
+  check(root.querySelector('#content-graphics-webra2d'), true);
+  assert.equal(content.settings.get('graphics'), 'webra2d');
   check(root.querySelector('#content-sounds-webra'), true);
   assert.equal(audio.prefs.get().original, false);
 });
@@ -533,7 +533,7 @@ test('dialog: the segmented controls follow changes made elsewhere (Sound dialog
   await content.install([zipFile()], { onProgress() {} });
   await settle();
   assert.equal(root.querySelector('#content-graphics-original').checked, true);
-  assert.equal(root.querySelector('#content-graphics-webra').checked, false);
+  assert.equal(root.querySelector('#content-graphics-webra2d').checked, false);
 });
 
 test('dialog: the use-all switch is a labelled switch and keeps both settings together', async () => {

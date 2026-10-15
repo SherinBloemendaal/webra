@@ -245,8 +245,9 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     label: 'Graphics',
     describedBy: graphicsNote.id,
     options: [
-      { value: 'webra', label: 'WebRA' },
-      { value: 'original', label: 'Original' },
+      { value: 'webra2d', label: '2D minimal' },
+      { value: 'webra3d', label: '3D minimal' },
+      { value: 'original', label: 'Red Alert original' },
     ],
     value: content.graphics,
     onChange: (value) => settings.set(GRAPHICS_SETTING, value),
@@ -326,7 +327,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     label: 'Use the original graphics and sounds',
     rowClass: 'audio-row',
     onChange: (on) => {
-      settings.set(GRAPHICS_SETTING, on && content.hasOriginalGraphics ? 'original' : 'webra');
+      settings.set(GRAPHICS_SETTING, on && content.hasOriginalGraphics ? 'original' : content.graphics === 'original' ? 'webra2d' : content.graphics);
       audio?.prefs.set({ original: on });
     },
   });
@@ -482,8 +483,8 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     graphics.setDisabled('original', !content.hasOriginalGraphics);
     graphics.setTitle('original', content.hasOriginalGraphics ? '' : ORIGINAL_NOT_INSTALLED);
     graphicsNote.textContent = content.hasOriginalGraphics
-      ? 'Original graphics: units, structures, infantry animations, cameos and terrain from your files. Effects keep WebRA art. The choice applies at once, also in a running game.'
-      : 'Original is off until the original content is installed: install it below to use the original graphics.';
+      ? '2D minimal is WebRA\'s flat art, 3D minimal its blocky low-poly art (built in, texture packs you install come first). Red Alert original: units, structures, infantry animations, cameos and terrain from your files, effects keep WebRA art. The choice applies at once, also in a running game.'
+      : '2D minimal is WebRA\'s flat art, 3D minimal its blocky low-poly art (built in, texture packs you install come first). Red Alert original is off until the original content is installed: install it below to use the original graphics.';
     sounds.set(audio?.prefs.get().original ? 'original' : 'webra');
     useAll.checked = content.graphics === 'original' && !!audio?.prefs.get().original;
     try {

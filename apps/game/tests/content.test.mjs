@@ -1475,14 +1475,14 @@ test('content system: the first graphics install switches to them at once; remov
   assert.equal(content.originalActive, true, 'no reload needed');
   assert.ok(changes >= 1, 'listeners (the running game, cameos) heard about it');
   // A reinstall does not override a choice the player made since.
-  settings.set('graphics', 'webra');
+  settings.set('graphics', 'webra2d');
   const again = await content.install([quickinstallZip()]);
   assert.equal(again.switched, false);
-  assert.equal(settings.get('graphics'), 'webra');
+  assert.equal(settings.get('graphics'), 'webra2d');
   settings.set('graphics', 'original');
   await content.removeOriginal();
   assert.equal(content.hasOriginalGraphics, false);
-  assert.equal(settings.get('graphics'), 'webra');
+  assert.equal(settings.get('graphics'), 'webra2d');
   // Sounds only: nothing to switch.
   const { sounds } = contentMix();
   const r3 = await content.install([new File([sounds], 'sounds.mix')]);
@@ -1530,7 +1530,7 @@ test('content system: storage problems become clear messages; nothing half insta
   const { content, settings } = contentSystem(store);
   await assert.rejects(content.install([quickinstallZip()]), /no room left/);
   assert.equal((await content.summary()).total, 0);
-  assert.equal(settings.get('graphics'), 'webra');
+  assert.equal(settings.get('graphics'), 'webra2d');
 });
 
 test('pack order: the settings order and choices win; unknown packs keep their stored order', () => {

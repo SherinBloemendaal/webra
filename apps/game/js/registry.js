@@ -142,11 +142,13 @@ export const GROUPS = deepFreeze({
       gameEventNotifications: { type: 'boolean', default: true, label: 'Show game event notifications', help: 'Text lines for game events.' },
       graphics: {
         type: 'choice',
-        default: 'webra',
-        options: ['webra', 'original'],
-        labels: { webra: 'WebRA art', original: 'Original Red Alert (when installed)' },
+        default: 'webra2d',
+        options: ['webra2d', 'webra3d', 'original'],
+        labels: { webra2d: '2D minimal', webra3d: '3D minimal', original: 'Red Alert original (when installed)' },
+        // 'webra' was WebRA's only own art before the 3D minimal pack: it is now called 2D minimal.
+        aliases: { webra: 'webra2d' },
         label: 'Graphics',
-        help: 'Original graphics need the original content installed on the device.',
+        help: '2D minimal is WebRA\'s flat art, 3D minimal its blocky low-poly art; original graphics need the original content installed on the device.',
       },
       hotkeys: { type: 'keymap', default: {}, maxEntries: 200, maxKeys: 4, label: 'Changed hotkeys', help: 'An empty list leaves the action without a key.' },
       attackMoveTipSeen: {
@@ -539,6 +541,9 @@ export function checkValue(spec, value) {
 /** A valid value for `spec` from anything: clamps numbers, trims text, drops bad entries, else the default. */
 export function normalizeValue(spec, value) {
   switch (spec.type) {
+    case 'choice':
+      // A renamed option (spec.aliases: old value -> new) keeps what the player chose.
+      return checkValue(spec, spec.aliases?.[value] ?? value) ? defaultOf(spec) : (spec.aliases?.[value] ?? value);
     case 'number':
     case 'integer': {
       if (typeof value !== 'number' || !Number.isFinite(value)) return defaultOf(spec);
