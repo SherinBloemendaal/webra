@@ -8,7 +8,7 @@
 // come from ./kit.js, the materials from ./unitkit.js.
 
 import { C, rect, rrect, circle, poly, line, trefoil, dish, crate } from './kit.js';
-import { U, plate, steel, treads, tyres, glass, bubble, copper, tarp, stripes, oreLoad } from './unitkit.js';
+import { U, PANEL_SHADE, plate, steel, treads, tyres, glass, bubble, copper, tarp, stripes, oreLoad } from './unitkit.js';
 import { pixelUnitDraw } from './pixel.js';
 
 const MISSILE = '#e8e6dc';
@@ -18,7 +18,7 @@ const RED = '#c23a26';
 function drum(ctx, P, cx, cy, r, level = 0.82) {
   circle(ctx, P.c(U.steelDark), cx, cy, r);
   circle(ctx, P.team(level), cx, cy, r - 0.9);
-  circle(ctx, P.team(level * 0.82), cx + r * 0.15, cy + r * 0.2, r * 0.55);
+  circle(ctx, P.team(level * PANEL_SHADE), cx + r * 0.15, cy + r * 0.2, r * 0.55);
   circle(ctx, P.team(Math.min(1, level + 0.18)), cx - r * 0.35, cy - r * 0.35, r * 0.28);
 }
 
@@ -301,7 +301,7 @@ export const VEHICLE_DRAW = {
       treads(ctx, P, 17, 3, 5, 21);
       poly(ctx, P.c(U.steelDark), [12, 0.5, 18.5, 5, 18.5, 22, 15, 25.5, 9, 25.5, 5.5, 22, 5.5, 5]);
       poly(ctx, P.team(0.55), [12, 1.5, 17.5, 5.5, 17.5, 21.5, 14.5, 24.5, 9.5, 24.5, 6.5, 21.5, 6.5, 5.5]);
-      for (const y of [9, 19]) rect(ctx, P.team(0.55 * 0.82), 7, y, 10, 0.5); // panel lines
+      for (const y of [9, 19]) rect(ctx, P.team(0.55 * PANEL_SHADE), 7, y, 10, 0.5); // panel lines
       poly(ctx, P.team(0.82), [12, 1.5, 17.5, 5.5, 6.5, 5.5]);
       // chrono core
       circle(ctx, P.c('rgba(90,220,240,0.45)'), 12, 14, 4.4);
@@ -321,7 +321,7 @@ export const VEHICLE_DRAW = {
       poly(ctx, P.team(0.5), [7.5, 2, 16.5, 2, 18.5, 5.5, 18.5, 24, 5.5, 24, 5.5, 5.5]);
       poly(ctx, P.team(0.76), [7.5, 2, 16.5, 2, 18.5, 5.5, 5.5, 5.5]);
       grille(ctx, P, 5.5, 21.5, 13, 2.5);
-      for (const y of [8, 19]) rect(ctx, P.team(0.5 * 0.82), 5.5, y, 13, 0.6); // panel seams
+      for (const y of [8, 19]) rect(ctx, P.team(0.5 * PANEL_SHADE), 5.5, y, 13, 0.6); // panel seams
     }],
     turret: [24, 26, (ctx, P) => {
       rrect(ctx, P.c(U.steelDark), 8, 9, 8, 9, 2);
