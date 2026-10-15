@@ -121,6 +121,74 @@ fn power_plants_attract_lightning_and_black_out_their_owners_power() {
     assert!(w.players[0].power_gen > 0);
 }
 
+/// Lightning makes no difference between humans and bots: six players (two
+/// humans and a bot of every lobby type, in three teams of allies) with the
+/// same plants each, struck by a long run of the sky's own strikes (400 games
+/// of 50 minutes, one sky per seed). Every player's plants are struck about
+/// equally often, the bots' as often as the humans'.
+#[test]
+fn every_players_power_plants_are_struck_alike_humans_and_bots() {
+    use crate::ai_bots::BotType;
+    let bot = |b: BotType| Some((b, AiDifficulty::Normal));
+    let seats = [
+        ("allies", None, 1, (6, 6)),
+        ("soviet", bot(BotType::Rush), 1, (6, 50)),
+        ("england", bot(BotType::Normal), 2, (50, 6)),
+        ("russia", bot(BotType::Turtle), 2, (50, 50)),
+        ("france", bot(BotType::Naval), 3, (6, 80)),
+        ("ukraine", None, 3, (50, 80)),
+    ];
+    let mut w = arena(96, &seats);
+    w.env = Environment::new(Biome::Temperate, WeatherMode::Full, 1);
+    w.sound.set_enabled(true);
+    let mut plants = Vec::new();
+    for (p, seat) in seats.iter().enumerate() {
+        let (x, y) = seat.3;
+        for (id, dx) in [("POWR", 6), ("POWR", 10), ("APWR", 14)] {
+            plants.push(put(&mut w, id, p as u8, x + dx, y));
+        }
+    }
+    w.update_power();
+    assert!(w.players.iter().all(|p| !p.neutral));
+    assert_eq!(w.players.iter().filter(|p| p.is_ai).count(), 4);
+    let mut per_player = [0usize; 6];
+    let mut per_plant = vec![0usize; plants.len()];
+    let mut total = 0;
+    for seed in 0..400u64 {
+        let mut sky = Environment::new(Biome::Temperate, WeatherMode::Full, seed);
+        for t in 0..25 * 60 * 50 {
+            let Some(s) = sky.tick(t, w.map.width, w.map.height) else { continue };
+            total += 1;
+            w.strike_lightning(s);
+            for e in strikes(&mut w).iter().filter(|e| e[5] == StrikeKind::PowerPlant as i32) {
+                per_player[e[4] as usize] += 1;
+            }
+            // Full health again: every strike finds the same plants.
+            for (k, &i) in plants.iter().enumerate() {
+                if w.actors[i].hp < max_hp(&w, i) {
+                    per_plant[k] += 1;
+                    w.actors[i].hp = max_hp(&w, i);
+                }
+            }
+        }
+    }
+    let struck: usize = per_player.iter().sum();
+    assert!(total > 12_000 && struck > total / 5, "{struck} of {total} strikes hit a plant");
+    assert_eq!(per_plant.iter().sum::<usize>(), struck, "one plant per plant strike");
+    let mean = struck / per_player.len();
+    for (p, &n) in per_player.iter().enumerate() {
+        let ai = w.players[p].is_ai;
+        assert!(n.abs_diff(mean) * 100 <= mean * 12, "player {p} (bot {ai}): {n} plant strikes, mean {mean}: {per_player:?}");
+    }
+    let plant_mean = struck / plants.len();
+    for (k, &n) in per_plant.iter().enumerate() {
+        assert!(n.abs_diff(plant_mean) * 100 <= plant_mean * 20, "plant {k}: {n}, mean {plant_mean}: {per_plant:?}");
+    }
+    let humans: usize = [0, 5].iter().map(|&p| per_player[p]).sum();
+    let bots: usize = (1..5).map(|p| per_player[p]).sum();
+    assert!((humans * 2).abs_diff(bots) * 100 <= bots * 8, "humans {humans} for 2 players, bots {bots} for 4");
+}
+
 #[test]
 fn a_running_outage_is_only_lengthened() {
     let mut w = world();
