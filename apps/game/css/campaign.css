@@ -18,7 +18,8 @@
 }
 
 /* The mission browser: one card the size of the screen, laid out by its
-   width (container "campaign"). */
+   width (container "campaign"): the missions on the left, the briefing on
+   the right (the Campaign board). */
 .campaign-page {
   display: flex;
   flex-direction: column;
@@ -43,38 +44,407 @@
   align-items: center;
   gap: 12px;
   padding-bottom: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   border-bottom: 1px solid var(--ui-line);
 }
 
 .campaign-title {
   flex: 1;
   margin: 0;
-  font: 900 30px/1.1 var(--ui-font-display);
-  letter-spacing: 1.5px;
+  font: 700 var(--ui-fs-title) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
   text-transform: uppercase;
 }
 
-/* The mission list keeps the width of its names (up to 420 px); the chosen
-   mission takes the rest of the card. */
+/* The missions keep up to 420 px (40 % of a narrower card); the briefing
+   takes the rest. Both columns are panels that end at their content. */
 .campaign-body {
   flex: 1 0 auto;
   display: grid;
   grid-template-columns: minmax(0, min(40%, 420px)) minmax(0, 1fr);
-  align-content: start;
-  gap: 18px;
+  align-items: start;
+  gap: 16px;
 }
 
-.campaign-tabs {
+/* One column on a narrow card (phones, a small window): missions, then the briefing. */
+@container campaign (max-width: 760px) {
+  .campaign-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.campaign-left,
+.campaign-details {
+  min-width: 0;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+}
+
+.campaign-left {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+/* ---- Campaign tabs (js/ui/controls.js tabs): plates that wrap, the open one red. */
+
+.campaign-tabs.ui-tabs {
   flex-wrap: wrap;
   gap: 4px;
-  margin-bottom: 10px;
+  overflow: visible;
+  border-bottom: 0;
 }
 
-.campaign-btn,
-.campaign-tab,
+.campaign-tabs > .ui-tab {
+  min-height: max(var(--ctl-row), 36px);
+  margin: 0;
+  padding: 0 12px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  font: 700 14px / 1.1 var(--ui-font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.campaign-tabs > .ui-tab:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+  color: var(--ui-text);
+}
+
+.campaign-tabs > .ui-tab[aria-selected='true'] {
+  background: var(--ui-primary-fill);
+  border-color: var(--ui-edge);
+  color: #fff;
+}
+
+.campaign-tabs > .ui-tab:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.campaign-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.campaign-panel:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+/* "Allied Campaign ... 4 / 14 won" and the bar under it. */
+.campaign-count {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--ui-muted);
+  font: 600 14px / 1.2 var(--ui-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.campaign-count-value {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.campaign-progress.ui-progress {
+  height: 8px;
+  padding: 1px;
+}
+
+.campaign-progress.ui-progress::before {
+  background: linear-gradient(90deg, var(--ui-primary-active), var(--ui-accent));
+}
+
+/* ---- Missions: number, name, and the state as a lamp and a word ---------- */
+
+.campaign-missions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .campaign-mission {
+  display: grid;
+  grid-template-columns: 2.4em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: max(var(--ctl-row), 46px);
+  padding: 4px 12px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-text);
+  font: 600 15px / 1.25 var(--ui-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.campaign-mission:hover {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+.campaign-mission:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.campaign-mission[data-state='next'] {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+}
+
+.campaign-mission[data-state='locked'] {
+  background: var(--ui-metal-0);
+  box-shadow: none;
+  color: var(--ui-muted);
+}
+
+/* The chosen mission: a bar on its left edge and a light border, on top of its state's look. */
+.campaign-mission[aria-current='true'] {
+  border-color: var(--ui-accent-hi);
+  box-shadow:
+    inset 4px 0 0 var(--ui-accent-hi),
+    var(--ui-bevel);
+}
+
+.campaign-mission-number {
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.campaign-mission-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.campaign-mission-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ui-muted);
+  font: 700 12px / 1 var(--ui-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.campaign-mission[data-state='won'] .campaign-mission-state {
+  color: var(--ui-ok);
+}
+
+.campaign-mission[data-state='next'] .campaign-mission-state {
+  color: var(--ui-accent-hi);
+}
+
+/* An open mission says nothing: its lamp stays dark and takes no room. */
+.campaign-mission[data-state='open'] .campaign-mission-state {
+  display: none;
+}
+
+/* ---- Briefing: the mission's text and map, then its options and Play ----- */
+
+.campaign-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.campaign-stripe {
+  height: 6px;
+}
+
+.campaign-brief {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 20px;
+}
+
+.campaign-text {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.campaign-media {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.campaign-kicker {
+  margin: 0;
+  color: var(--ui-accent-hi);
+  font: 600 14px / 1.2 var(--ui-font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.campaign-mission-name {
+  margin: 0;
+  font: 700 clamp(26px, 4cqi, 40px) / 1.05 var(--ui-font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.campaign-briefing {
+  margin: 0;
+  max-width: var(--ui-measure);
+  color: var(--ui-text-2);
+  font: 400 16px / 1.55 var(--ui-font);
+  white-space: pre-wrap;
+}
+
+/* The map: as wide as its column, as tall as the map's shape allows. */
+.campaign-frame {
+  position: relative;
+  border: 1px solid var(--ui-edge);
+  background: #000;
+}
+
+.campaign-preview {
+  display: block;
+  width: 100%;
+  max-height: min(60vh, 560px);
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.campaign-caption {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+/* The briefing movie: a plate at the bottom of the map (the map stays free for the lens). */
+.campaign-movie {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  pointer-events: none;
+}
+
+.campaign-movie[data-state='missing'] {
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--ui-bg) 88%, transparent);
+  border: 1px solid var(--ui-metal-4);
+  color: var(--ui-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.campaign-movie > * {
+  pointer-events: auto;
+}
+
+.campaign-movie > span {
+  pointer-events: none;
+}
+
+/* Options and Play on a darker bar at the bottom of the briefing. */
+.campaign-launch {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--ui-metal-0);
+  border-top: 1px solid var(--ui-edge);
+}
+
+.campaign-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 18px;
+  min-width: 0;
+}
+
+.campaign-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.campaign-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.campaign-field-label {
+  color: var(--ui-muted);
+  font-size: 14px;
+}
+
+.campaign-plate {
+  min-width: 11em;
+}
+
+.campaign-go {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.campaign-play.ui-btn {
+  min-height: max(var(--ctl-row), 48px);
+  padding: 0 30px;
+  font-size: 18px;
+}
+
+.campaign-muted,
+.campaign-loading {
+  margin: 0;
+  color: var(--ui-muted);
+}
+
+.campaign-locked-note {
+  max-width: 32em;
+  text-align: right;
+}
+
+.campaign-error {
+  margin: 0;
+  color: var(--ui-bad);
+  overflow-wrap: anywhere;
+}
+
+/* The game's buttons in a mission (js/campaign/view.js: Skip, Restart mission, Leave). */
+.campaign-btn {
   padding: 7px 12px;
   background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
   color: var(--ui-text);
@@ -83,29 +453,15 @@
   box-shadow: var(--ui-bevel);
   font: 700 12px var(--ui-font);
   letter-spacing: 1px;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
-.campaign-btn,
-.campaign-tab {
-  text-transform: uppercase;
-}
-
-.campaign-btn:hover:not(:disabled),
-.campaign-tab:hover,
-.campaign-mission:hover {
+.campaign-btn:hover:not(:disabled) {
   filter: brightness(1.2);
 }
 
-.campaign-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.campaign-btn:focus-visible,
-.campaign-tab:focus-visible,
-.campaign-mission:focus-visible,
-.campaign-select:focus-visible {
+.campaign-btn:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
@@ -124,158 +480,45 @@
   background: var(--ui-primary-fill-active);
 }
 
-.campaign-btn-primary:disabled {
-  background: var(--ui-primary-disabled);
-}
-
-.campaign-tab[aria-selected='true'] {
-  border-color: var(--ui-accent);
-  color: var(--ui-accent-hi);
-}
-
-.campaign-missions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.campaign-mission {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: 10px;
-  text-align: left;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.campaign-mission[aria-current='true'] {
-  border-color: var(--ui-accent);
-  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-accent-lo));
-}
-
-.campaign-mission[data-state='closed'] {
-  color: var(--ui-muted);
-}
-
-.campaign-mission-state {
-  flex: none;
-  color: var(--ui-muted);
-  font-weight: 400;
-}
-
-.campaign-mission[data-state='won'] .campaign-mission-state {
-  color: var(--ui-ok);
-}
-
-.campaign-details {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-/* A wide card (the chosen mission 760 px wide or more): the map preview on
-   the left, the briefing, options and Play beside it. The preview spans the
-   rows of the text column; the last row takes what it needs beyond them. */
-@container campaign (min-width: 1200px) {
-  .campaign-details {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    grid-template-rows: repeat(6, auto) 1fr;
-    align-content: start;
-    gap: 10px 20px;
+/* Phones: Play takes the width of the bar, under the options. */
+@container campaign (max-width: 480px) {
+  .campaign-go {
+    align-items: stretch;
+    width: 100%;
   }
 
-  .campaign-details > * {
-    grid-column: 2;
-  }
-
-  .campaign-details > .campaign-preview {
-    grid-column: 1;
-    grid-row: 1 / -1;
-    max-height: min(70vh, 640px);
-  }
-
-  .campaign-details > .campaign-btn-primary {
-    justify-self: start;
+  .campaign-locked-note {
+    text-align: left;
   }
 }
 
-.campaign-preview {
-  width: 100%;
-  max-height: 320px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  background: #000;
-  border: 1px solid var(--ui-edge);
-}
-
-.campaign-mission-name {
-  margin: 0;
-  font: 800 20px var(--ui-font-display);
-  letter-spacing: 1px;
-}
-
-.campaign-briefing {
-  margin: 0;
-  max-width: var(--ui-measure);
-  white-space: pre-wrap;
-  line-height: 1.45;
-}
-
-.campaign-muted,
-.campaign-loading {
-  margin: 0;
-  color: var(--ui-muted);
-}
-
-.campaign-error {
-  margin: 0;
-  color: var(--ui-bad);
-  overflow-wrap: anywhere;
-}
-
-.campaign-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.campaign-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.campaign-select {
-  padding: 6px 8px;
-  background: var(--ui-metal-0);
-  color: var(--ui-text);
-  border: 1px solid var(--ui-line);
-  border-radius: 2px;
-  font: inherit;
-}
-
-.campaign-details > .campaign-btn-primary {
-  align-self: flex-start;
-  padding: 10px 22px;
-  font-size: 14px;
-}
-
-@media (max-width: 700px) {
-  .campaign-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .campaign-btn,
-  .campaign-tab,
-  .campaign-mission,
-  .campaign-select {
+@media (pointer: coarse) {
+  .campaign-btn {
     min-height: max(44px, calc(44 * var(--ui-px)));
+  }
+}
+
+@media (forced-colors: active) {
+  .campaign-left,
+  .campaign-details,
+  .campaign-mission,
+  .campaign-tabs > .ui-tab {
+    border: 1px solid ButtonText;
+  }
+
+  .campaign-mission[aria-current='true'],
+  .campaign-tabs > .ui-tab[aria-selected='true'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .campaign-mission[data-state='next'] {
+    border-width: 3px;
+  }
+
+  .campaign-progress.ui-progress::before {
+    background: CanvasText;
   }
 }
 
