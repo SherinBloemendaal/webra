@@ -121,7 +121,8 @@ test('screens: the cards have no width cap, the compact dialogs keep theirs', ()
   const capped = {
     '.menu-card': 440,
     '.game-menu-card': 560,
-    '.endgame-card': 460,
+    // The GameOver and Defeat boards: the title and the results table, at most 1100 px.
+    '.endgame-card': 1100,
     '.online-dialog': 420,
     '.account-dialog': 440,
     '.audio-card': 520,

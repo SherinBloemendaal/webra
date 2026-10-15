@@ -2,31 +2,566 @@
    statistics screen (js/stats.js). Colours come from css/theme.css; player
    colours arrive as --player-color (set through the CSSOM, never inline). */
 
-/* ---- The end-game dialog --------------------------------------------------- */
+/* ---- The end-game dialog ----------------------------------------------------
+   The GameOver and Defeat boards: the whole screen in the result's light
+   (green for a victory, red for a defeat, neutral for spectators), effects
+   behind (flash, ring, rays or scan lines), the title in large display type,
+   the results table and the actions. Every effect is decoration
+   (aria-hidden) and stops with "Reduce motion" (.is-still or the
+   browser's). */
+
+#gameover[data-outcome] {
+  place-items: start center;
+  padding: 32px 16px;
+  overflow-x: hidden;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    radial-gradient(ellipse at 50% 20%, var(--endgame-glow), rgba(10, 12, 15, 0.94) 60%);
+  --endgame-glow: #1a1f26;
+  --endgame-accent: var(--ui-text);
+}
+
+#gameover[data-outcome='victory'] {
+  --endgame-glow: #10301a;
+  --endgame-accent: var(--ui-ok);
+}
+
+#gameover[data-outcome='defeat'] {
+  --endgame-glow: #3a0d0b;
+  --endgame-accent: var(--ui-bad);
+}
 
 .endgame-card {
-  width: min(460px, 100%);
-  /* The title scales with the card (cqi) so the longest one, "Mission
-     accomplished", stays inside it at any UI scale. */
+  position: relative;
+  width: min(1100px, 100%);
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
   container-type: inline-size;
 }
 
-/* "ACCOMPLISHED" in Arial Black is about 10 em wide with the letter spacing,
-   so 8.5% of the card leaves room for the padding and the text shadow. */
-.endgame-card h1 {
-  font-size: min(calc(34 * var(--ui-px)), 8.5cqi);
+.endgame-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
 }
 
-.endgame-card[data-kind='defeat'] {
-  border-top-color: var(--ui-bad);
+#gameover[data-outcome='defeat'] .endgame-body {
+  animation: endgame-shake 0.5s 0.55s both;
 }
 
-.endgame-card[data-kind='victory'] {
-  border-top-color: var(--ui-ok);
+/* ---- Effects ---- */
+
+.endgame-fx {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.endgame-card .tagline {
-  margin-bottom: 14px;
+.endgame-fx > span {
+  position: absolute;
+  pointer-events: none;
+}
+
+.endgame-flash {
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  animation: endgame-flash 0.7s ease-out both;
+}
+
+#gameover[data-outcome='defeat'] .endgame-flash {
+  background: var(--ui-bad);
+}
+
+#gameover[data-outcome='neutral'] .endgame-flash,
+#gameover[data-outcome='neutral'] .endgame-ring {
+  display: none;
+}
+
+.endgame-ring {
+  left: 50%;
+  top: 150px;
+  width: 320px;
+  height: 320px;
+  border: 3px solid var(--endgame-accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: endgame-ring 1.1s 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.endgame-rays {
+  display: none;
+  left: 50%;
+  top: 150px;
+  width: 1400px;
+  height: 1400px;
+  background: repeating-conic-gradient(rgba(79, 208, 103, 0.09) 0 6deg, transparent 6deg 18deg);
+  mask-image: radial-gradient(circle, #000 0, transparent 60%);
+  transform: translate(-50%, -50%);
+  animation:
+    endgame-in 1.2s 0.4s both,
+    endgame-rays 60s linear infinite;
+}
+
+#gameover[data-outcome='victory'] .endgame-rays {
+  display: block;
+}
+
+.endgame-scan {
+  display: none;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 2px, transparent 2px 6px);
+  animation: endgame-scan 0.4s linear infinite;
+}
+
+#gameover[data-outcome='defeat'] .endgame-scan {
+  display: block;
+}
+
+/* ---- Head ---- */
+
+.endgame-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.endgame-kicker {
+  margin: 0;
+  color: var(--endgame-accent);
+  font: 600 16px/1.2 var(--ui-font-display);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  animation: endgame-fade 0.5s 0.9s both;
+}
+
+.endgame-kicker:empty {
+  display: none;
+}
+
+.endgame-heading {
+  position: relative;
+}
+
+.endgame-card h1.endgame-title,
+.endgame-glitch {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  font: 800 min(128px, max(44px, 10cqi)) / 0.9 var(--ui-font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  overflow-wrap: anywhere;
+  color: var(--endgame-accent);
+  text-shadow: none;
+}
+
+.endgame-card h1.endgame-title {
+  animation:
+    endgame-slam 0.75s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    endgame-glow 2.6s 1.2s ease-in-out infinite;
+}
+
+/* The defeat's glitch: a blue copy over the title, shown in short cuts. */
+.endgame-glitch {
+  display: none;
+  position: absolute;
+  inset: 0;
+  color: var(--ui-info);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  opacity: 0;
+  animation: endgame-glitch 3.2s 1s steps(1) infinite;
+}
+
+#gameover[data-outcome='defeat'] .endgame-glitch {
+  display: block;
+}
+
+.endgame-card .endgame-text {
+  margin: 4px 0 0;
+  max-width: var(--ui-measure);
+  color: var(--ui-text-2);
+  animation: endgame-fade 0.5s 1s both;
+}
+
+.endgame-replay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 14px;
+  animation: endgame-fade 0.5s 1.1s both;
+}
+
+.endgame-replay[hidden],
+.endgame-results[hidden],
+.endgame-rematch[hidden] {
+  display: none;
+}
+
+/* ---- Results ---- */
+
+.endgame-results {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel);
+  animation: endgame-fade 0.5s 1s both;
+}
+
+.endgame-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+}
+
+.endgame-table thead th {
+  padding: 12px 16px;
+  background: var(--ui-metal-1);
+  border-bottom: 1px solid var(--ui-edge);
+  color: var(--ui-muted);
+  font: 600 13px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.endgame-table td,
+.endgame-table tbody th {
+  padding: 8px 16px;
+  border-top: 1px solid var(--ui-line-soft);
+  text-align: left;
+}
+
+.endgame-table .num {
+  font: 14px/1.3 var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.endgame-table tr {
+  animation: endgame-row 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(1.15s + var(--row-delay, 0s));
+}
+
+/* A team's head: its name, "Winner" in green (the word says it too). */
+.endgame-team th {
+  padding: 8px 16px;
+  background: var(--ui-metal-0);
+  color: var(--ui-muted);
+  font: 700 14px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.endgame-team.is-won th {
+  color: var(--ui-ok);
+}
+
+.endgame-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding-left: 12px;
+  border-left: 6px solid var(--player-color, var(--ui-neutral));
+}
+
+.endgame-name {
+  font: 600 16px/1.2 var(--ui-font);
+  color: var(--ui-text);
+}
+
+.endgame-sub {
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ---- Rematch and buttons ---- */
+
+.endgame-foot {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  animation: endgame-fade 0.5s 1.4s both;
+}
+
+.endgame-rematch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-line);
+}
+
+.endgame-rematch-title {
+  font: 700 15px/1 var(--ui-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.endgame-rematch-text {
+  color: var(--ui-muted);
+  font-size: 14px;
+}
+
+.endgame-rematch-lamps {
+  display: flex;
+  gap: 4px;
+}
+
+.endgame-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.endgame-buttons button {
+  min-height: max(44px, var(--ctl-row, 44px));
+  margin: 0;
+}
+
+/* ---- Phones ---- */
+
+@media (max-width: 600px) {
+  #gameover[data-outcome] {
+    padding: 20px 16px;
+  }
+
+  .endgame-buttons {
+    width: 100%;
+  }
+
+  .endgame-buttons button {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---- Reduce motion and contrast ---- */
+
+#gameover.is-still .endgame-fx,
+#gameover.is-still .endgame-glitch {
+  display: none !important;
+}
+
+#gameover.is-still *,
+#gameover.is-still .endgame-body {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #gameover .endgame-fx,
+  #gameover .endgame-glitch {
+    display: none !important;
+  }
+
+  #gameover *,
+  #gameover .endgame-body {
+    animation: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .endgame-fx,
+  .endgame-glitch {
+    display: none !important;
+  }
+
+  .endgame-results,
+  .endgame-rematch {
+    border-color: CanvasText;
+  }
+
+  .endgame-who {
+    border-left-color: CanvasText;
+  }
+}
+
+@keyframes endgame-flash {
+  0% {
+    opacity: 0.85;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes endgame-ring {
+  from {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0.9;
+  }
+
+  to {
+    transform: translate(-50%, -50%) scale(3.2);
+    opacity: 0;
+  }
+}
+
+@keyframes endgame-rays {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes endgame-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes endgame-scan {
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: 0 6px;
+  }
+}
+
+@keyframes endgame-slam {
+  0% {
+    opacity: 0;
+    transform: scale(2.3);
+    letter-spacing: 0.5em;
+    filter: blur(10px);
+  }
+
+  55% {
+    opacity: 1;
+    transform: scale(0.94);
+    filter: blur(0);
+  }
+
+  75% {
+    transform: scale(1.03);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    letter-spacing: 0.08em;
+  }
+}
+
+@keyframes endgame-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 24px color-mix(in srgb, var(--endgame-accent) 40%, transparent);
+  }
+
+  50% {
+    text-shadow: 0 0 44px color-mix(in srgb, var(--endgame-accent) 90%, transparent);
+  }
+}
+
+@keyframes endgame-glitch {
+  0%,
+  86%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    transform: none;
+    opacity: 0;
+  }
+
+  88% {
+    clip-path: inset(18% 0 58% 0);
+    transform: translateX(-10px);
+    opacity: 0.9;
+  }
+
+  91% {
+    clip-path: inset(62% 0 12% 0);
+    transform: translateX(9px);
+    opacity: 0.9;
+  }
+
+  94% {
+    clip-path: inset(34% 0 40% 0);
+    transform: translateX(-5px);
+    opacity: 0.9;
+  }
+}
+
+@keyframes endgame-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+
+  15% {
+    transform: translate(-8px, 3px);
+  }
+
+  30% {
+    transform: translate(7px, -4px);
+  }
+
+  45% {
+    transform: translate(-5px, 2px);
+  }
+
+  60% {
+    transform: translate(4px, -1px);
+  }
+
+  80% {
+    transform: translate(-2px, 1px);
+  }
+}
+
+@keyframes endgame-row {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes endgame-fade {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---- Statistics screen ---------------------------------------------------- */
@@ -122,28 +657,324 @@
   text-transform: uppercase;
 }
 
+/* The panels and the content side by side (the Statistics board): the tab
+   list on the left, its lamp lit on the open panel; below 760 px the list
+   runs across over the content. */
+.stats-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 14px;
+}
+
 .stats-tabs {
-  flex: none;
+  align-self: start;
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 14px 0 0;
-  border-bottom: 1px solid var(--ui-line);
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
 }
 
 .menu-card button.stats-tab {
-  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: max(38px, var(--ctl-row, 38px));
   margin: 0;
-  padding: 6px 12px;
-  font-size: var(--ui-fs-s);
-  border-bottom-width: 0;
-  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ui-text-2);
+  font: 700 15px/1.1 var(--ui-font-display);
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.menu-card button.stats-tab:hover {
+  background: var(--ui-metal-2);
+  color: var(--ui-text);
 }
 
 .menu-card button.stats-tab[aria-selected='true'] {
   background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+  box-shadow: none;
+}
+
+@media (max-width: 760px) {
+  .stats-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stats-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .menu-card button.stats-tab {
+    width: auto;
+  }
+}
+
+/* A team's head row in the tables ("Team 1 · Winner": the word says it too). */
+.stats-table tr.stats-team th {
+  padding-top: 8px;
+  background: var(--ui-metal-0);
+  color: var(--ui-muted);
+  font: 700 13px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.stats-table tr.stats-team.is-won th {
+  color: var(--ui-ok);
+}
+
+.stats-graph-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.stats-graph-label {
+  color: var(--ui-muted);
+  font: 600 14px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.stats-graph-select {
+  min-width: min(260px, 100%);
+}
+
+/* ---- Network tab (js/netstats.js, the NetStats board) ---- */
+
+.net-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.net-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+}
+
+.net-tile-label,
+.net-title {
+  margin: 0;
+  color: var(--ui-muted);
+  font: 600 13px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.net-title {
   color: var(--ui-text);
-  box-shadow: inset 0 -2px 0 var(--ui-accent);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.net-tile-value {
+  font: 600 24px/1.2 var(--ui-font-mono);
+  color: var(--ui-text);
+}
+
+.net-tile.net-good .net-tile-value,
+.net-quality.net-good {
+  color: var(--ui-ok);
+}
+
+.net-tile.net-fair .net-tile-value,
+.net-quality.net-fair {
+  color: var(--ui-warn);
+}
+
+.net-tile.net-poor .net-tile-value,
+.net-quality.net-poor,
+.net-bad-text {
+  color: var(--ui-bad);
+}
+
+.net-tile-hint {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.net-chart,
+.net-players,
+.net-stalls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel);
+}
+
+.net-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.net-legend-stall::before {
+  background: rgba(236, 69, 50, 0.45);
+  height: 10px;
+}
+
+.net-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+}
+
+.net-band-poor {
+  fill: rgba(236, 69, 50, 0.08);
+}
+
+.net-band-fair {
+  fill: rgba(240, 192, 48, 0.06);
+}
+
+.net-grid {
+  stroke: var(--ui-line-soft);
+}
+
+.net-axis {
+  fill: var(--ui-dim);
+  font: 11px var(--ui-font-mono);
+}
+
+.net-stall {
+  fill: rgba(236, 69, 50, 0.22);
+  cursor: pointer;
+}
+
+.net-stall:hover {
+  fill: rgba(236, 69, 50, 0.4);
+}
+
+.net-stall-label {
+  fill: var(--ui-bad);
+  font: 600 12px var(--ui-font-display);
+}
+
+.net-line {
+  fill: none;
+  stroke-width: 2;
+}
+
+.net-note {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+.net-note:empty {
+  display: none;
+}
+
+.net-lower {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.net-players {
+  flex: 1.5 1 480px;
+  min-width: 0;
+}
+
+.net-stalls {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.net-quality {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stats-table tr.net-row-poor {
+  background: rgba(236, 69, 50, 0.08);
+}
+
+.net-stall-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.menu-card button.net-stall-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: max(42px, var(--ctl-row, 42px));
+  margin: 0;
+  padding: 0 10px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font: 400 14px/1.3 var(--ui-font);
+}
+
+.net-stall-at {
+  color: var(--ui-muted);
+  font: 13px var(--ui-font-mono);
+}
+
+.net-stall-len {
+  color: var(--ui-bad);
+  font: 13px var(--ui-font-mono);
+}
+
+@media (forced-colors: active) {
+  .menu-card button.stats-tab[aria-selected='true'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .net-stall {
+    fill: Highlight;
+  }
+
+  .net-tile,
+  .net-chart,
+  .net-players,
+  .net-stalls {
+    border-color: CanvasText;
+  }
 }
 
 .stats-panel {
@@ -359,10 +1190,6 @@
 
   .stats-card h1 {
     font-size: 22px;
-  }
-
-  .menu-card button.stats-tab {
-    padding: 5px 8px;
   }
 
   .stats-table th,

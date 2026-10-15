@@ -1138,15 +1138,14 @@
 /* Wide cards: the map, the players and the options side by side. The
    players panel stays wider than 560 px from here (so its slots are a
    table); the map column grows with the card up to 440 px. */
-@container lobby (min-width: 1200px) {
-  /* The board's three cards: map 1, players 2, options 1 (the side column's
-     two panels become cards of the row). */
+@container lobby (min-width: 1440px) {
   #menu .lobby-body {
-    grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr) minmax(300px, 1fr);
+    grid-template-columns: minmax(0, clamp(300px, 26%, 440px)) minmax(0, 1fr);
   }
 
   #menu .lobby-side {
-    display: contents;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    align-items: start;
   }
 }
 
