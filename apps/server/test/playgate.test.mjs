@@ -500,7 +500,17 @@ test('wrangler.jsonc runs the Worker first for /play, /play/* and invite links',
 // ---- The map editor through the gate -------------------------------------------------------
 
 const GAME_DIR = new URL('../../game/', import.meta.url);
-const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', wgsl: 'text/plain; charset=utf-8', wasm: 'application/wasm', json: 'application/json' };
+const TYPES = {
+  html: 'text/html; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  wgsl: 'text/plain; charset=utf-8',
+  wasm: 'application/wasm',
+  json: 'application/json',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  woff2: 'font/woff2',
+};
 
 /**
  * Workers Static Assets over apps/game as dist/play/ has it: an index.html is
@@ -575,7 +585,7 @@ test('the map editor: every spelling of its URL ends on /play/editor/, and it an
       assert.equal(asset.res.headers.get('content-type'), TYPES[p.split('.').pop()], p);
       assert.equal(asset.res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
       assertSecurityHeaders(asset.res);
-      if (!p.endsWith('.wasm')) assert.equal(asset.body, readFileSync(new URL(p.slice('/play/'.length), GAME_DIR), 'utf8'), p);
+      if (!/\.(wasm|png|woff2)$/.test(p)) assert.equal(asset.body, readFileSync(new URL(p.slice('/play/'.length), GAME_DIR), 'utf8'), p);
     }
   }
   // Signed out: the page goes to sign in and back, its files are refused.

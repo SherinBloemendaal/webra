@@ -48,9 +48,10 @@
   --cameo: linear-gradient(180deg, #2b333d, #1a2027 55%, #0f1317);
   --max: 1160px;
   --gutter: 16px;
-  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --display: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
+  /* The game's fonts, self-hosted under /lib/fonts/ (/lib/css/fonts.css, OFL). */
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sans: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif;
   color-scheme: dark;
 
   /* The names the game's shared controls sheet uses (/play/css/controls.css,
@@ -88,9 +89,85 @@
   --ui-brushed: var(--brushed);
   --ui-radius: var(--radius);
   --ui-font: var(--sans);
+  --ui-font-display: var(--display);
   --ui-font-mono: var(--mono);
+  --ui-fs-xs: 10px;
   --ui-fs-m: 13px;
   --ui-fs-s: 11px;
+  --ui-fs-l: 15px;
+
+  /* The rest of the game's design tokens (apps/game/css/theme.css, same
+     values), for the shared controls and patterns sheets (/lib/css/). */
+  --ui-bg: var(--bg);
+  --ui-line-soft: #1d2329;
+  --ui-brand-red: #ff4a36;
+  --ui-bevel-hi: rgba(255, 255, 255, 0.13);
+  --ui-bevel-lo: rgba(0, 0, 0, 0.62);
+  --ui-text-2: #c3cad2;
+  --ui-money: var(--money);
+  --ui-ok: var(--ok);
+  --ui-warn: #f0c030;
+  --ui-info-text: #8fb6e6;
+  --ui-primary-disabled-text: #8a6a66;
+  --ui-focus-ring: 2px solid var(--focus);
+  --ui-focus-offset: 2px;
+  --ui-led-off: #0b0e11;
+  --ui-led-off-edge: var(--ui-edge);
+  --ui-led-off-glow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --ui-led-on: var(--ui-accent-hi);
+  --ui-led-on-edge: var(--ui-accent);
+  --ui-led-on-glow: 0 0 8px rgba(224, 48, 31, 0.6);
+  --ui-led-ok: var(--ui-ok);
+  --ui-led-ok-edge: #2a7a3a;
+  --ui-led-ok-glow: 0 0 8px rgba(79, 208, 103, 0.55);
+  --ui-led-warn: var(--ui-warn);
+  --ui-led-warn-edge: #9c7d20;
+  --ui-led-warn-glow: 0 0 8px rgba(240, 192, 48, 0.55);
+  --ui-led-bad: var(--ui-bad);
+  --ui-led-bad-edge: #8f1a12;
+  --ui-led-bad-glow: 0 0 8px rgba(236, 69, 50, 0.6);
+  --ui-led-info: var(--ui-info);
+  --ui-led-info-edge: #2c4f78;
+  --ui-led-info-glow: 0 0 8px color-mix(in srgb, var(--ui-info) 55%, transparent);
+  --ui-allies: var(--side-allies);
+  --ui-soviet: var(--side-soviet);
+  --ui-neutral: var(--steel);
+  --ui-terrain: var(--terrain);
+  --ui-tip-bg: rgba(6, 7, 8, 0.94);
+  --ui-tip-rim: #5a5f66;
+  --ui-tip-key: #f2d64b;
+  --ui-tip-text: var(--ui-text-2);
+  --ui-tip-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.6);
+  --ui-fs-display: 44px;
+  --ui-fs-title: 26px;
+  --ui-fs-section: 20px;
+  --ui-fs-label: 14px;
+  --ui-fs-body: 15px;
+  --ui-track-display: 0.06em;
+  --ui-track-title: 0.08em;
+  --ui-track-section: 0.1em;
+  --ui-track-button: 0.12em;
+  --ui-track-label: 0.14em;
+  --ui-lh-body: 1.5;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-space-6: 32px;
+  --ui-space-7: 48px;
+  --ui-shadow: 0 18px 60px rgba(0, 0, 0, 0.65);
+  --ui-shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.65);
+  --ui-shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --ui-scan: var(--scan);
+  --ui-hazard: repeating-linear-gradient(-45deg, var(--accent) 0 6px, #0b0d10 6px 12px);
+  --ui-well: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  --ui-raised: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  --ui-raised-hover: linear-gradient(180deg, #4a535f, var(--ui-metal-3));
+  --ui-panel: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  --ui-primary-glow: 0 0 14px -4px rgba(224, 48, 31, 0.6);
+  --ui-primary-glow-hover: 0 0 14px -2px rgba(224, 48, 31, 0.7);
+  --ui-px: 1px;
 }
 
 *,

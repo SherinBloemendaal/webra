@@ -25,6 +25,7 @@ import { SCHEMA as SETTINGS_SCHEMA, KEYS as SETTINGS_KEYS } from '../js/settings
 import { DEFAULT_PREFS } from '../js/audio/prefs.js';
 import { VIEWS } from '../js/debug.js';
 import { memoryStorage } from './dom-fixtures.mjs';
+import { mergeSettings } from '../js/account/sync.js';
 
 const throwingStorage = () => ({
   getItem: () => {
@@ -48,7 +49,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     }
   }
   // The groups and keys are the account's settings document sections.
-  assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'privacy', 'extra']);
+  assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'privacy', 'net', 'social', 'guide', 'extra']);
   assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), [
     'attackMoveTipSeen',
     'buildRightClick',
@@ -417,4 +418,57 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
   r.patch('game', { uiScale: 1.35, gameScale: 2.5 });
   r.patch('audio', { musicOn: false, musicShuffle: false, musicRepeat: 'off' });
   assert.doesNotThrow(() => protocol.validateSettingsDocument(r.document()));
+});
+
+test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips) are declared, validated and synced', async () => {
+  const protocol = await import('../protocol/accounts.js');
+  assert.deepEqual(Object.keys(GROUPS.net.settings), ['warnSelf', 'warnOthers', 'signalBars']);
+  assert.deepEqual(Object.keys(GROUPS.social.settings), ['showOnline', 'friendsJoin', 'allowSpectate']);
+  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'lastTip']);
+  const r = createRegistry({ storage: null });
+  // Defaults: every network aid on; shown online and joinable by friends, spectating off; the tour on.
+  assert.deepEqual(r.values().net, { warnSelf: true, warnOthers: true, signalBars: true });
+  assert.deepEqual(r.values().social, { showOnline: true, friendsJoin: true, allowSpectate: false });
+  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, lastTip: -1 });
+  assert.deepEqual(r.values().net, { ...protocol.NET_SETTING_DEFAULTS });
+  assert.deepEqual(r.values().social, { ...protocol.SOCIAL_SETTING_DEFAULTS }, 'the server applies the same defaults');
+  assert.equal(GROUPS.guide.settings.done.maxBytes, protocol.SETTINGS_GUIDE_DONE_MAX_BYTES);
+  assert.equal(GROUPS.guide.settings.lastTip.max, protocol.LOADING_TIP_INDEX_MAX);
+
+  // Values the registry keeps pass the server; what it refuses, the server refuses too.
+  r.patch('net', { warnSelf: false, signalBars: false });
+  r.patch('social', { allowSpectate: true, showOnline: false });
+  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, lastTip: 12 });
+  const doc = r.document();
+  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, lastTip: 12 });
+  assert.deepEqual(doc.social, { showOnline: false, friendsJoin: true, allowSpectate: true });
+  for (const bad of [
+    { net: { warnSelf: 'yes' } },
+    { social: { allowSpectate: 1 } },
+    { social: { invisible: true } },
+    { guide: { lastTip: -2 } },
+    { guide: { lastTip: 1000 } },
+    { guide: { lastTip: 1.5 } },
+    { guide: { done: [] } },
+    { guide: { done: { 'bad key!': true } } },
+    { guide: { done: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`chapter.step${i}`, true])) } },
+  ]) {
+    assert.equal(checkDocument(bad).ok, false, JSON.stringify(bad).slice(0, 60));
+    assert.throws(() => protocol.validateSettingsDocument({ schema: 1, ...bad }), JSON.stringify(bad).slice(0, 60));
+  }
+  // A stored value of the wrong type falls back to the default instead of breaking the game.
+  assert.equal(normalizeValues({ guide: { lastTip: 'x' }, net: { signalBars: 3 } }).values.guide.lastTip, -1);
+  assert.equal(normalizeValues({ net: { signalBars: 3 } }).values.net.signalBars, true);
+
+  // Sync: they are declared keys, so a change on one side merges and both-sided changes conflict.
+  const base = normalizeValues({}).values;
+  const local = normalizeValues({ guide: { lastTip: 4 }, net: { warnOthers: false } }).values;
+  const remote = normalizeValues({ social: { allowSpectate: true }, net: { warnOthers: true, warnSelf: false } }).values;
+  const m = mergeSettings({ base, local, remote });
+  assert.equal(m.merged.guide.lastTip, 4);
+  assert.equal(m.merged.social.allowSpectate, true);
+  assert.equal(m.merged.net.warnSelf, false);
+  assert.deepEqual(m.conflicts, []);
+  const both = mergeSettings({ base, local: normalizeValues({ guide: { done: { a: true } } }).values, remote: normalizeValues({ guide: { done: { b: true } } }).values });
+  assert.deepEqual(both.conflicts.map((c) => `${c.group}.${c.key}`), ['guide.done']);
 });

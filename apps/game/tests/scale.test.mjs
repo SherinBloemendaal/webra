@@ -171,8 +171,11 @@ const SCALED_SHEETS = ['theme.css', 'style.css', 'sidebar.css', 'minimap.css', '
  * Properties that keep fixed pixels: hairlines, shadows, decorations, motion, and the
  * window's own margins around the menu screens (--ui-screen-gap and the corner clearance,
  * theme.css; the corner buttons' part of it is scaled with --ui-scale where it is set).
+ * The token families that theme.css declares again over --ui-px for the scaled parts
+ * (--ui-fs-*, --ui-space-*) keep their plain pixels at :root, and the focus ring, lamp
+ * glows and tooltip shadow are outlines and shadows like the properties above.
  */
-const FIXED = /^(border|outline|box-shadow|text-shadow|transform|transition|animation|background|filter|backdrop-filter|mask|-webkit-|scrollbar|--ui-(bevel|rivet|scan|brushed|grid|hazard|shadow|fs-|radius|screen-gap|corner-clear))/;
+const FIXED = /^(border|outline|box-shadow|text-shadow|transform|transition|animation|background|filter|backdrop-filter|mask|-webkit-|scrollbar|--ui-(bevel|rivet|scan|brushed|grid|hazard|shadow|fs-|space-|focus-|led-|tip-shadow|primary-glow|radius|screen-gap|corner-clear))/;
 
 test('ui scale css: the chrome is sized in --ui-px, scaled for the game screen, menu and dialogs only', () => {
   for (const sheet of SCALED_SHEETS) {
@@ -191,7 +194,9 @@ test('ui scale css: the chrome is sized in --ui-px, scaled for the game screen, 
   const scoped = /#app,\s*#game-menu,[^{]*{([^}]*)}/s.exec(theme);
   assert.ok(scoped, 'the scaled parts redeclare --ui-px');
   assert.match(scoped[1], /--ui-px:\s*calc\(1px \* var\(--ui-scale\)\)/);
-  for (const token of ['--ui-fs-xs', '--ui-fs-s', '--ui-fs-m', '--ui-fs-l']) assert.match(scoped[1], new RegExp(`${token}: calc\\(\\d+ \\* var\\(--ui-px\\)\\)`));
+  for (const token of ['--ui-fs-xs', '--ui-fs-s', '--ui-fs-m', '--ui-fs-l', '--ui-fs-display', '--ui-fs-title', '--ui-fs-section', '--ui-fs-label', '--ui-fs-body', ...[1, 2, 3, 4, 5, 6, 7].map((n) => `--ui-space-${n}`)]) {
+    assert.match(scoped[1], new RegExp(`${token}: calc\\(\\d+ \\* var\\(--ui-px\\)\\)`), token);
+  }
   assert.match(scoped[1], /font-size: calc\(14 \* var\(--ui-px\)\)/, 'inherited text scales too');
   for (const id of ['#app', '#game-menu', '#ui-tooltip', '#gameover', '#toast', '#audio-panel', '#content-panel', '#release-notes']) assert.ok(scoped[0].includes(id), id);
   assert.ok(!scoped[0].includes('#menu,') && !scoped[0].includes('#menu {'), 'the lobby keeps its size');

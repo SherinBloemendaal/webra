@@ -250,6 +250,18 @@ export const SETTINGS_SCHEMA_VERSION = 1;
 export const SETTINGS_MAX_BYTES = 32 * 1024;
 export const SETTINGS_EXTRA_MAX_BYTES = 8 * 1024;
 export const SETTINGS_LAST_OPTIONS_MAX_BYTES = 4 * 1024;
+/** guide.done: the guide and tour steps a player has done ({ stepId: true }), at most this many bytes. */
+export const SETTINGS_GUIDE_DONE_MAX_BYTES = 2 * 1024;
+/** guide.lastTip: the index of the last loading screen tip shown (-1: none yet), below this. */
+export const LOADING_TIP_INDEX_MAX = 999;
+/**
+ * social.*: the friends privacy switches (docs/accounts-api.md 5.8). The
+ * server applies them to friends lists, joins and spectating; a document
+ * without them means these defaults.
+ */
+export const SOCIAL_SETTING_DEFAULTS = Object.freeze({ showOnline: true, friendsJoin: true, allowSpectate: false });
+/** net.*: the network warnings and signal bars in online games, all on by default. */
+export const NET_SETTING_DEFAULTS = Object.freeze({ warnSelf: true, warnOthers: true, signalBars: true });
 const HOTKEY_ACTIONS_MAX = 200;
 const HOTKEY_COMBOS_MAX = 4;
 const PACKS_MAX = 64;
@@ -293,6 +305,10 @@ const scale = ({ min, max }) => (v, f) => {
 };
 const boolean = (v, f) => {
   if (typeof v !== 'boolean') bad(f, 'Must be true or false.');
+  return v;
+};
+const integer = (min, max) => (v, f) => {
+  if (!Number.isInteger(v) || v < min || v > max) bad(f, `Must be an integer from ${min} to ${max}.`);
   return v;
 };
 const choice = (options) => (v, f) => {
@@ -453,6 +469,13 @@ const SETTINGS_SECTIONS = {
   // Error reports (docs/security.md, "Error reports"): on unless the player switched them off.
   // cloudReplays: the game keeps replays in the account (docs/accounts-api.md 5.10), on unless switched off.
   privacy: { errorReports: boolean, cloudReplays: boolean },
+  // Online games: the warning about the player's own connection, the chat line and waiting
+  // dialog when someone else holds the game up, and the signal bars next to the clock.
+  net: { warnSelf: boolean, warnOthers: boolean, signalBars: boolean },
+  // Friends (privacy): shown as online, friends may join the lobby without an invite, friends may spectate.
+  social: { showOnline: boolean, friendsJoin: boolean, allowSpectate: boolean },
+  // The guide and the tour: the tour in the player's own skirmish games, the steps done, the last loading tip.
+  guide: { tourInGames: boolean, done: freeObject(SETTINGS_GUIDE_DONE_MAX_BYTES), lastTip: integer(-1, LOADING_TIP_INDEX_MAX) },
 };
 
 /**

@@ -3649,6 +3649,136 @@ the rules below.
   release notes, the bulk repair and sell chooser, help tips and tooltips,
   and the map editor's dialogs keep their widths.
 
+### Design system: tokens, fonts, controls and patterns (`apps/game/css`, `js/ui/controls.js`)
+
+The design system boards (Foundations, Controls, Patterns, Tooltips, Logo)
+in code. Screens use these parts instead of their own copies; the website
+loads the same sheets and modules from `/lib/`.
+
+**Tokens** (`css/theme.css` `:root`; `apps/website/assets/site.css` offers
+the same values under the same `--ui-*` names, checked by
+`tests/theme-tokens.test.mjs`, which also checks contrast):
+
+- Metal: `--ui-bg`, `--ui-metal-0` (wells) to `--ui-metal-4`, `--ui-edge`,
+  `--ui-line`, `--ui-line-soft` (between table rows), `--ui-bevel`,
+  `--ui-bevel-in`, `--ui-rivet`, `--ui-scan`, `--ui-hazard`; surfaces
+  `--ui-well`, `--ui-raised`, `--ui-raised-hover`, `--ui-panel`.
+- Text (4.5:1 on every panel and well): `--ui-text`, `--ui-text-2` (body copy
+  in dialogs and tooltips), `--ui-muted`, `--ui-money`, `--ui-ok`,
+  `--ui-warn`, `--ui-info-text`; `--ui-bad` is text only on `--ui-bg`,
+  `--ui-metal-0` and tooltips; `--ui-dim` is decoration only.
+- Accent: `--ui-accent` (parts), `--ui-accent-hi` (text, focus),
+  `--ui-accent-hover`, `--ui-accent-lo` (chosen backgrounds),
+  `--ui-accent-glow`, `--ui-primary*` and `--ui-primary-fill*` (main
+  buttons), `--ui-primary-glow`, `--ui-primary-glow-hover`,
+  `--ui-primary-disabled-text`, `--ui-brand-red` (the logo's RA).
+- Lamps: `--ui-led-{off,on,ok,warn,bad,info}` with `-edge` and `-glow`.
+- Sides and ground: `--ui-allies`, `--ui-soviet`, `--ui-neutral`,
+  `--ui-terrain`, `--ui-info`.
+- Tooltips: `--ui-tip-bg`, `--ui-tip-rim`, `--ui-tip-key` (`#f2d64b`, hotkeys
+  and times only), `--ui-tip-text`, `--ui-tip-shadow`.
+- Type: `--ui-font` (Barlow), `--ui-font-display` (Barlow Condensed),
+  `--ui-font-mono` (JetBrains Mono); sizes `--ui-fs-xs/s/m/l` (10, 11, 13,
+  15) and the board's scale `--ui-fs-display` 44, `--ui-fs-title` 26,
+  `--ui-fs-section` 20, `--ui-fs-label` 14, `--ui-fs-body` 15 (Barlow
+  Condensed 700 in capitals for the first three, 600 for labels), tracking
+  `--ui-track-{display,title,section,button,label}`, `--ui-lh-body`.
+- Space and shape: `--ui-space-1` to `--ui-space-7` (4, 8, 12, 16, 24, 32,
+  48 px), `--ui-radius` (2 px), `--ui-focus-ring` and `--ui-focus-offset`
+  (2 px, 2 px), shadows `--ui-shadow` (dialogs), `--ui-shadow-pop`
+  (drop-downs), `--ui-shadow-toast`.
+- Inside the scaled parts (`#app`, `#game-menu`, the tooltips and dialogs
+  listed in theme.css) the sizes and spaces follow the UI scale (`--ui-px`).
+
+**Fonts**: `css/fonts.css` (written by `tools/gen-fonts.mjs` from the
+pinned `@fontsource/*` packages; do not edit) declares Barlow 400 to 700,
+Barlow Condensed 500 to 700 and JetBrains Mono 400 to 700, Latin subset,
+woff2, `font-display: swap`. The files and their OFL licences are in
+`apps/game/fonts/`. The game links `css/fonts.css` and preloads
+`fonts/barlow-latin-400.woff2` and `fonts/barlow-condensed-latin-700.woff2`;
+the website links `/lib/css/fonts.css` and preloads the same two from
+`/lib/fonts/`. In `dist/` the game's references point at `/lib/fonts/` too
+(`tools/share-assets.mjs`), so there is one copy for both. `font-src 'self'`
+in the CSP allows them; COEP on `/play` allows same-origin files.
+
+**Controls** (`js/ui/controls.js`, styled by `css/controls.css`). Every
+builder returns its elements and `get`/`set`; callbacks fire on user
+changes only, never on `set()`.
+
+| Builder | Returns | Notes |
+|---|---|---|
+| `toggle({ id?, label, hint?, checked?, disabled?, title?, rowClass?, onChange?(on) })` | `{ row, input, label, get, set }` | switch row; `switchInput()` alone |
+| `checkbox({ ... })`, `checkInput({ ... })` | as toggle | |
+| `segmented({ name?, id?, label, options: [{ value, label, disabled?, title? }], value, block?, describedBy?, disabled?, onChange?(v) })` | `{ root, inputs, labels, get, set, setDisabled, setTitle }` | 2 to 5 choices, lamp on the chosen one |
+| `slider({ id?, label, min, max, step?, value, format?, disabled?, rowClass?, onInput?(v) })`, `styleSlider(input)` | `{ row, input, output, get, set }` | |
+| `selectPlate({ id?, label \| labelledBy, describedBy?, options, value?, placeholder?, disabled?, block?, small?, title?, sheet?: 'auto'\|'always'\|'never', className?, onChange?(value, option), onOpen?, onClose? })` | `{ root, button, listbox, panel, get, set, option, setOptions(options, value?), setDisabled, setOptionDisabled(value, off, title?), open(at?), close(focus?), isOpen, isSheet, destroy }` | options `{ value, label, hint?, disabled?, title?, led? }` or groups `{ label, options }`; values compare as strings |
+| `selectRow({ id?, label, hint?, rowClass?, ...selectPlate })` | `{ row, label, select }` | label + select row (`.ui-row-choice`) |
+| `stepper({ id?, label \| labelledBy, describedBy?, values, value?, format?, disabled?, block?, decLabel?, incLabel?, onChange?(v) })` | `{ root, field, dec, inc, get, set, setValues(values, value?), setDisabled }` | discrete values, the value in mono |
+| `tabs({ id?, label, vertical?, value?, tabs: [{ id, label, panel?, disabled?, title? }], onChange?(id) })` | `{ root, buttons, get, set, setDisabled }` | panels get `role=tabpanel` and `hidden` |
+| `badge(kind, text, { led?, title? })` | element | kinds `BADGE_KINDS`: neutral, accent, ok, warn, bad, info, hazard, allies, soviet; names `BADGE_ALIASES`: ready, online, host, ingame, modded, locked, full, kicked, waiting, away, primary, ai, spectator, offline |
+| `led(state, label?)`, `setLed(el, state)` | element | `LED_STATES`: off, on, ok, warn, bad, info; decorative unless `label` |
+
+- **Select**: the WAI-ARIA collapsible listbox. The button has
+  `aria-haspopup="listbox"`, `aria-expanded`, `aria-controls` and is named by
+  the label and the value; focus moves to the listbox
+  (`aria-activedescendant`). Keys: on the button Down, Up, Home, End and
+  typing open the list (Enter and Space click it); in the list Up, Down,
+  Home, End, Page Up, Page Down move (disabled options are skipped, no
+  wrap), typing jumps (`TYPEAHEAD_MS` 500; one letter again cycles), Enter
+  or Space chooses, Tab chooses and moves on, Esc closes without a change
+  (and does not reach the menu behind). Focus returns to the button. A
+  press outside closes without a change. The list is a `popover="manual"`
+  in the top layer (over modal dialogs, not clipped by scrolling cards),
+  placed at the button through `--sp-left`, `--sp-top`/`--sp-bottom`,
+  `--sp-width`, `--sp-max-h`; above the button when there is no room
+  below. In the phone layouts (`selectSheetMode(w, h)`, js/layout.js) it is
+  a sheet at the bottom (`.ui-sp-sheet`) with the label as title, a close
+  button and 44 px options; a tap on the dimmed area closes it.
+- **Stepper**: an ARIA spinbutton (`aria-valuenow` is the index,
+  `aria-valuetext` the formatted value); Up/Right and Down/Left step,
+  Page Up/Down step a tenth, Home/End go to the ends; the minus and plus
+  buttons are for the pointer (`tabindex=-1`) and disable at the ends.
+- **Tabs**: roving `tabindex`, arrows (Up/Down when `vertical`), Home/End,
+  automatic activation; disabled tabs are skipped.
+- Class names for screens: `.ui-row`, `.ui-row-switch`, `.ui-row-check`,
+  `.ui-row-slider`, `.ui-row-choice`, `.ui-label`, `.ui-hint`, `.ui-value`,
+  `.ui-field` with `.ui-field-label` and `.ui-field-error`, `.ui-input`,
+  `.ui-select` (native select look, until every select is a plate),
+  `.ui-switch`, `.ui-check`, `.ui-segmented`, `.ui-slider`,
+  `.ui-select-plate` (`.ui-block`, `.ui-sm`), `.ui-sp-*`, `.ui-stepper`,
+  `.ui-tabs` (`.ui-vertical`), `.ui-tab`, `.ui-badge-*`, `.ui-led-*`.
+  Every animation has a `prefers-reduced-motion` rule and every state a
+  `forced-colors` rule; rows are at least `--ctl-row` (44 px on touch).
+
+**Patterns** (`css/patterns.css`, tokens only): `.ui-panel`, `.ui-card`,
+`.ui-well`, `.ui-plate` (theme.css, riveted), `.ui-hazard`,
+`.ui-hazard-rule`, `.ui-head` with `.ui-head-title` and `.ui-head-sub`,
+`.ui-title`, `.ui-section-title`, `.ui-caps`, `.ui-num`, `.ui-money`,
+`.ui-muted-text`, buttons `.ui-btn` with `.ui-btn-primary`,
+`.ui-btn-ghost`, `.ui-btn-hazard` (word in a `<span>`), `.ui-btn-sm`,
+`.ui-btn-icon`; `.ui-dialog` with `.ui-dialog-body`, `.ui-dialog-title`,
+`.ui-dialog-text`, `.ui-dialog-actions`; `.ui-menubar` with
+`.ui-menubar-brand` and `.ui-menubar-item[aria-current]` (a `.ui-led`
+inside); `.ui-brand` with `.ui-brand-emblem` and `.ui-brand-word`;
+`.ui-slot-row` with `.ui-slot-strip` (`--slot-color` set from script);
+`.ui-table` (`.ui-table-head`, `[aria-selected=true]` rows); `.ui-toast`;
+`.ui-meter` with `.ui-meter-seg.ui-ok|.ui-warn|.ui-bad`; `.ui-progress`
+(`--ui-progress` set from script).
+
+**Tooltips** (`css/tooltip.css`, `css/worldtooltip.css`): Red Alert's dark
+panel (`--ui-tip-*`), the name in Barlow Condensed 700 (no capitals, no
+tracking), hotkeys in `--ui-tip-key`, description in `--ui-tip-text`,
+production stats in mono. The logic (`js/ui/tooltip.js`,
+`js/worldtooltip.js`) is unchanged.
+
+**Logo** (`tools/gen-brand.mjs`, output in `apps/game/brand/`, published
+under `/lib/brand/` for the website): `emblem.svg` (with the plate, 40 px
+and larger), `favicon.svg` (the simplified one-colour emblem: the favicon
+and every mark under 40 px), `wordmark.svg`, `favicon-16.png`,
+`favicon-32.png`, `apple-touch-icon.png` (180 px, opaque). Presentation
+attributes only; `node tools/gen-brand.mjs --check` and
+`tools/gen-brand.test.mjs` keep them in step with the script.
+
 ## 6. Deployment
 
 One Worker named `webra` on the `WebRA` Cloudflare account serves
@@ -3660,11 +3790,12 @@ everything on `webra.sherin.dev`:
   only to accounts that may play while the site setting `gameRequiresAccount`
   is on (accounts API, section 7.1): page loads without access go to
   `/account/?returnTo=<path>`, other requests get 401 or 403
-- `/lib/*`: the game modules and stylesheets the website's account and admin
-  pages load, copied from `apps/game` with the same layout
-  (`tools/shared-modules.mjs` lists them from the website's `/lib/` imports
-  and links); public. No website page, script or stylesheet loads from
-  `/play` (the build fails otherwise)
+- `/lib/*`: the game modules and stylesheets the website's pages load,
+  copied from `apps/game` with the same layout (`tools/shared-modules.mjs`
+  lists them from the website's `/lib/` imports and links), with the logo
+  (`/lib/brand/`) and the fonts (`/lib/fonts/`, also used by the game:
+  `tools/share-assets.mjs`); public. No website page, script or stylesheet
+  loads from `/play` (the build fails otherwise)
 - `/api/*`: the Worker's fetch handler (`apps/server/src`)
 
 `wrangler.jsonc` runs the Worker first for `/api/*`, `/play` and `/play/*`;

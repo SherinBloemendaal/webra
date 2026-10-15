@@ -13,17 +13,12 @@
   z-index: 190;
   width: max-content;
   max-width: min(calc(360 * var(--ui-px)), calc(100vw - 12 * var(--ui-px)));
-  padding: calc(2 * var(--ui-px)) calc(7 * var(--ui-px)) calc(4 * var(--ui-px));
-  background:
-    var(--ui-scan),
-    linear-gradient(180deg, rgba(22, 24, 27, 0.97), rgba(10, 11, 13, 0.97));
-  border: 1px solid #6d7178;
-  outline: 1px solid var(--ui-edge);
-  box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
-    0 6px 18px rgba(0, 0, 0, 0.65);
-  color: #fff;
-  font: 700 var(--ui-fs-m) / calc(23 * var(--ui-px)) var(--ui-font);
+  padding: calc(4 * var(--ui-px)) calc(10 * var(--ui-px)) calc(6 * var(--ui-px));
+  background: var(--ui-tip-bg);
+  border: 1px solid var(--ui-tip-rim);
+  box-shadow: var(--ui-tip-shadow);
+  color: var(--ui-text);
+  font: 700 calc(17 * var(--ui-px)) / calc(23 * var(--ui-px)) var(--ui-font-display);
   text-align: left;
   white-space: nowrap;
   pointer-events: none;
@@ -50,10 +45,12 @@
 }
 
 .world-tooltip-owner-name {
+  font: 600 calc(14 * var(--ui-px)) / calc(21 * var(--ui-px)) var(--ui-font);
   text-shadow: 1px 1px 0 #000;
 }
 
 .world-tooltip-extras {
-  line-height: 1.35;
+  color: var(--ui-tip-text);
+  font: 400 var(--ui-fs-m) / 1.35 var(--ui-font);
   white-space: pre-line;
 }

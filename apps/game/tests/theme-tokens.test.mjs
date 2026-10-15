@@ -156,6 +156,92 @@ test('theme: accent contrast on the dark panels (WCAG AA)', () => {
   assert.ok(Math.abs(hsl(game('--ui-info')).h - hsl(game('--ui-accent')).h) > 90, 'info is not a shade of the accent');
 });
 
+// Design tokens of the Foundations board that the website offers under the
+// game's names too (for the shared controls and patterns sheets), resolved
+// to the same values.
+const SHARED = [
+  '--ui-text-2',
+  '--ui-info-text',
+  '--ui-money',
+  '--ui-ok',
+  '--ui-warn',
+  '--ui-primary-disabled-text',
+  '--ui-focus-offset',
+  ...['off', 'on', 'ok', 'warn', 'info'].flatMap((k) => [`--ui-led-${k}`, `--ui-led-${k}-edge`, `--ui-led-${k}-glow`]),
+  '--ui-led-bad-edge',
+  '--ui-led-bad-glow',
+  '--ui-line-soft',
+  '--ui-brand-red',
+  '--ui-allies',
+  '--ui-soviet',
+  '--ui-neutral',
+  '--ui-terrain',
+  '--ui-tip-bg',
+  '--ui-tip-rim',
+  '--ui-tip-key',
+  '--ui-tip-text',
+  '--ui-tip-shadow',
+  ...['display', 'title', 'section', 'label', 'body'].map((k) => `--ui-fs-${k}`),
+  ...['display', 'title', 'section', 'button', 'label'].map((k) => `--ui-track-${k}`),
+  '--ui-lh-body',
+  ...[1, 2, 3, 4, 5, 6, 7].map((n) => `--ui-space-${n}`),
+  '--ui-radius',
+  '--ui-shadow',
+  '--ui-shadow-pop',
+  '--ui-shadow-toast',
+  '--ui-primary-glow',
+  '--ui-primary-glow-hover',
+];
+
+/** A token's value with every var() replaced by what it resolves to (for tokens that are not a bare colour). */
+function expand(tokens, name, seen = new Set()) {
+  assert.ok(!seen.has(name), `token cycle at ${name}`);
+  const value = tokens[name];
+  assert.ok(value !== undefined, `${name} is not defined`);
+  return value.replace(/var\((--[a-z0-9-]+)\)/g, (_, ref) => expand(tokens, ref, new Set([...seen, name])));
+}
+
+test('theme: the website mirrors the Foundations tokens under the game names', () => {
+  for (const name of SHARED) assert.equal(expand(SITE, name), expand(GAME, name), `${name} (website) equals the game's`);
+  // Space in steps of 4 px, the Foundations scale.
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((n) => GAME[`--ui-space-${n}`]), ['4px', '8px', '12px', '16px', '24px', '32px', '48px']);
+  // The self-hosted fonts come first in every font token, with system fallbacks after them.
+  for (const [tokens, names] of [
+    [GAME, ['--ui-font', '--ui-font-display', '--ui-font-mono']],
+    [SITE, ['--sans', '--display', '--mono']],
+  ]) {
+    const [sans, display, mono] = names.map((n) => tokens[n]);
+    assert.match(sans, /^'Barlow',.*sans-serif$/);
+    assert.match(display, /^'Barlow Condensed',.*sans-serif$/);
+    assert.match(mono, /^'JetBrains Mono',.*monospace$/);
+  }
+});
+
+test('theme: text colours read on every panel and well (WCAG AA)', () => {
+  const surfaces = ['--ui-bg', '--ui-metal-0', '--ui-metal-1', '--ui-metal-2'];
+  const ratio = (fg, bg) => contrast(game(fg), game(bg));
+  for (const fg of ['--ui-text', '--ui-text-2', '--ui-muted', '--ui-money', '--ui-ok', '--ui-warn', '--ui-info-text', '--ui-tip-key', '--ui-led-on']) {
+    for (const bg of surfaces) assert.ok(ratio(fg, bg) >= 4.5, `${fg} on ${bg}: ${ratio(fg, bg).toFixed(2)}:1`);
+    // Chosen rows (accent-lo) carry text too.
+    assert.ok(ratio(fg, '--ui-accent-lo') >= 4.5, `${fg} on --ui-accent-lo`);
+  }
+  // The red of errors is text only on the window background and the wells (and tooltips, below).
+  for (const bg of ['--ui-bg', '--ui-metal-0']) assert.ok(ratio('--ui-bad', bg) >= 4.5, `--ui-bad on ${bg}`);
+  // Tooltips: the panel is near black at 94%; checked as the opaque colour over the darkest ground.
+  const tip = (() => {
+    const [r, g, b] = GAME['--ui-tip-bg'].match(/[\d.]+/g).map(Number);
+    return `#${[r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+  })();
+  for (const fg of ['--ui-text', '--ui-tip-text', '--ui-tip-key', '--ui-money', '--ui-bad', '--ui-muted']) assert.ok(contrast(game(fg), tip) >= 4.5, `${fg} on the tooltip`);
+  // Lamps are not text: 3:1 against the well they sit in, and every lit lamp differs from the off one.
+  for (const k of ['on', 'ok', 'warn', 'bad', 'info']) {
+    assert.ok(contrast(game(`--ui-led-${k}`), game('--ui-metal-0')) >= 3, `--ui-led-${k} shows on a well`);
+    assert.notEqual(game(`--ui-led-${k}`), game('--ui-led-off'));
+  }
+  // Disabled parts are exempt from the contrast rules, but the label must still differ from its ground.
+  assert.ok(contrast(game('--ui-primary-disabled-text'), game('--ui-primary-disabled')) > 1.5);
+});
+
 // Blues that are meanings, not accents: allowed where listed, with the reason.
 const ALLOWED_BLUES = [
   { file: 'apps/game/css/lobby.css', near: /lobby-flag/, why: 'country flags and the Random Allies chip (faction art)' },
@@ -228,4 +314,6 @@ test('theme: every stylesheet token in use is defined', () => {
   assert.match(read('apps/game/editor/index.html'), /href="css\/theme\.css"/);
   // The website's account and admin pages load the game's controls sheet from /lib/ over site.css.
   assert.deepEqual(check([...SITE_CSS, 'apps/game/css/controls.css']), []);
+  // The shared patterns sheet works on the website too (it can load it from /lib/css/patterns.css).
+  assert.deepEqual(check([...SITE_CSS, 'apps/game/css/controls.css', 'apps/game/css/patterns.css']), []);
 });

@@ -38,7 +38,17 @@ import { SYMMETRY_MODES } from '../editor/js/symmetry.js';
 import { BRUSH_SIZES } from '../editor/js/edits.js';
 import { FACTIONS } from '../protocol/constants.js';
 import { text as protocolText } from '../protocol/check.js';
-import { UI_SCALE_LIMITS, GAME_SCALE_LIMITS, ZOOM_FACTOR_LIMITS, MUSIC_REPEAT_MODES, PERF_CAPTURE_SECONDS } from '../protocol/accounts.js';
+import {
+  UI_SCALE_LIMITS,
+  GAME_SCALE_LIMITS,
+  ZOOM_FACTOR_LIMITS,
+  MUSIC_REPEAT_MODES,
+  PERF_CAPTURE_SECONDS,
+  SETTINGS_GUIDE_DONE_MAX_BYTES,
+  LOADING_TIP_INDEX_MAX,
+  SOCIAL_SETTING_DEFAULTS,
+  NET_SETTING_DEFAULTS,
+} from '../protocol/accounts.js';
 import { PRESETS_MAX, presetNameKey, validateSavedPresets } from '../protocol/presets.js';
 
 /** localStorage key of the registry document. */
@@ -311,6 +321,48 @@ export const GROUPS = deepFreeze({
         label: 'Save replays to my account',
         help: 'While you are signed in, the replay of every game you finish or leave is kept in your account for 30 days (at most 100 replays and 100 MB; the oldest go first). Online replays hold the other players\' names and the chat.',
       },
+    },
+  },
+  net: {
+    label: 'Network',
+    description: 'Warnings about slow connections and the signal bars in online games.',
+    scope: 'game',
+    settings: {
+      warnSelf: { type: 'boolean', default: NET_SETTING_DEFAULTS.warnSelf, label: 'Warn me about my connection', help: 'A banner when your own ping or loss is poor.' },
+      warnOthers: {
+        type: 'boolean',
+        default: NET_SETTING_DEFAULTS.warnOthers,
+        label: 'Warn me about other players',
+        help: 'A chat line and the waiting dialog when someone holds the game up.',
+      },
+      signalBars: { type: 'boolean', default: NET_SETTING_DEFAULTS.signalBars, label: 'Signal bars next to the clock', help: 'Your connection at a glance, all game long.' },
+    },
+  },
+  social: {
+    label: 'Friends',
+    description: 'What your friends see of you and may do. The server applies these to your friends list.',
+    scope: 'game',
+    settings: {
+      showOnline: { type: 'boolean', default: SOCIAL_SETTING_DEFAULTS.showOnline, label: 'Show me as online', help: 'Friends see when you are around.' },
+      friendsJoin: { type: 'boolean', default: SOCIAL_SETTING_DEFAULTS.friendsJoin, label: 'Friends can join my lobby', help: 'Without an invite, if there is room.' },
+      allowSpectate: { type: 'boolean', default: SOCIAL_SETTING_DEFAULTS.allowSpectate, label: 'Allow spectators', help: 'Friends can watch your games.' },
+    },
+  },
+  guide: {
+    label: 'Guide and tips',
+    description: 'The tour in your first games, the guide steps you have done and the loading screen tips.',
+    scope: 'game',
+    settings: {
+      tourInGames: {
+        type: 'boolean',
+        default: true,
+        label: 'Tour in my games',
+        help: 'The tour starts by itself in your skirmish games (not in missions, online games or replays) until its steps are done or you skip it.',
+      },
+      // Step id -> true for every guide and tour step done (js/guide, the 0.17 guide work).
+      done: { type: 'json', default: {}, maxBytes: SETTINGS_GUIDE_DONE_MAX_BYTES, label: 'Guide steps done', help: 'The steps of the guide and the tour you have done.' },
+      // The loading screen shows the tips in turn: the index of the last one shown, -1 before the first.
+      lastTip: { type: 'integer', default: -1, min: -1, max: LOADING_TIP_INDEX_MAX, label: 'Last loading tip shown' },
     },
   },
   extra: {

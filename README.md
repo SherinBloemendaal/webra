@@ -273,7 +273,7 @@ webra/
 ├── packages/
 │   └── protocol/           multiplayer messages shared by game and server
 ├── data/                   Red Alert catalog and campaign missions from OpenRA mods/ra
-├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, map-upgrade.mjs, shader-check (naga), check-js.mjs
+├── tools/                  gen_rules.py, gen_oramap_tables.py, gen_missions.py, gen-audio-catalog.mjs, gen-fonts.mjs, gen-brand.mjs (the logo), map-upgrade.mjs, shader-check (naga), check-js.mjs
 └── docs/                   contracts, accounts API, security, deploy, README assets
 ```
 
@@ -502,8 +502,9 @@ Notes on browsers:
 
 - **[OpenRA](https://github.com/OpenRA/OpenRA)**: the open-source reimplementation of the classic Westwood RTS games. WebRA's gameplay values (costs, build times, health, armour, weapons, prerequisites, timing) come from OpenRA's `mods/ra` rules, which are licensed under GPLv3. Many thanks to the OpenRA contributors.
 - **Westwood Studios and Electronic Arts**: for the original *Command & Conquer: Red Alert*.
+- **Fonts**: [Barlow and Barlow Condensed](https://github.com/jpt/barlow) by Jeremy Tribby and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) by JetBrains, under the SIL Open Font License 1.1 (`apps/game/fonts/OFL-*.txt`), self-hosted from the [Fontsource](https://fontsource.org/) packages by `tools/gen-fonts.mjs`.
 
-*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are WebRA's own, generated procedurally by the game at runtime (the pixel art of the oil derrick, the Black Hawk, the Mobile Flak and the Lightning Rod by a script in `tools/`), and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
+*Command & Conquer* and *Red Alert*, and the names of their units, buildings and factions, are trademarks or property of Electronic Arts. WebRA is an unofficial fan project and is not affiliated with or endorsed by Electronic Arts or the OpenRA project. It contains **no original game assets**: all graphics are WebRA's own, generated procedurally by the game at runtime (the pixel art of the oil derrick, the Black Hawk, the Mobile Flak and the Lightning Rod by a script in `tools/`, the logo by `tools/gen-brand.mjs`), and all sounds are synthesized. Players who own Red Alert can install its original sounds from their own files; they are read and stored in the player's browser only and never uploaded or distributed.
 
 ## License
 

@@ -1,10 +1,13 @@
 /* The shared tooltip (js/ui/tooltip.js), drawn like OpenRA's Red Alert
-   tooltips (mods/common/chrome/tooltips.yaml): a dark "dialog4" panel with a
-   thin light rim, the name in bold white, the hotkey after it in yellow
-   (TextColor FFFF00), a smaller description under it, and for production
-   items cost, build time and power in a column on the right, in red when
-   they cannot be met. The panel is fixed to the viewport and never takes
-   the pointer, so it does not get in the way of the map or the buttons. */
+   tooltips (mods/common/chrome/tooltips.yaml) in the look of the Tooltips
+   board: Red Alert's dark "dialog4" panel with a thin light rim (never a
+   metal plate: no capitals, no letter spacing), the name in Barlow Condensed,
+   the hotkey after it in yellow (--ui-tip-key, only hotkeys and times are
+   yellow), the description under it, and for production items cost, build
+   time and power in a mono column on the right, in red when they cannot be
+   met (red only for what is missing or costs power). The panel is fixed to
+   the viewport and never takes the pointer, so it does not get in the way of
+   the map or the buttons; js/ui/tooltip.js flips it at the screen edges. */
 
 #ui-tooltip {
   position: fixed;
@@ -15,18 +18,13 @@
   gap: calc(12 * var(--ui-px));
   width: max-content;
   max-width: min(calc(320 * var(--ui-px)), calc(100vw - 12 * var(--ui-px)));
-  padding: calc(5 * var(--ui-px)) calc(8 * var(--ui-px)) calc(6 * var(--ui-px));
-  background:
-    var(--ui-scan),
-    linear-gradient(180deg, rgba(22, 24, 27, 0.97), rgba(10, 11, 13, 0.97));
-  border: 1px solid #6d7178;
-  outline: 1px solid var(--ui-edge);
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
+  background: var(--ui-tip-bg);
+  border: 1px solid var(--ui-tip-rim);
   border-radius: 0;
-  box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
-    0 6px 18px rgba(0, 0, 0, 0.65);
-  color: #fff;
-  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+  box-shadow: var(--ui-tip-shadow);
+  color: var(--ui-text);
+  font: 400 var(--ui-fs-m) / 1.4 var(--ui-font);
   text-align: left;
   text-shadow: 1px 1px 0 #000;
   pointer-events: none;
@@ -45,29 +43,39 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  column-gap: calc(5 * var(--ui-px));
+  column-gap: calc(8 * var(--ui-px));
+}
+
+#ui-tooltip .ui-tooltip-title {
+  color: var(--ui-text);
+  font: 700 calc(17 * var(--ui-px)) / 1.2 var(--ui-font-display);
 }
 
 #ui-tooltip .ui-tooltip-key {
-  color: #ffff00;
+  color: var(--ui-tip-key);
+  font: 700 var(--ui-fs-l) / 1.2 var(--ui-font-display);
   white-space: nowrap;
 }
 
 #ui-tooltip .ui-tooltip-requires {
   margin-top: calc(1 * var(--ui-px));
   color: var(--ui-bad);
-  font-size: var(--ui-fs-xs);
+  font-size: calc(12 * var(--ui-px));
 }
 
 #ui-tooltip .ui-tooltip-desc,
 #ui-tooltip .ui-tooltip-note {
-  margin-top: calc(3 * var(--ui-px));
+  margin-top: calc(2 * var(--ui-px));
   max-width: calc(240 * var(--ui-px));
-  color: #d8d8d8;
-  font-size: var(--ui-fs-xs);
-  font-weight: 700;
-  line-height: 1.35;
+  color: var(--ui-tip-text);
+  font-size: var(--ui-fs-m);
+  line-height: 1.4;
   white-space: pre-line;
+}
+
+#ui-tooltip.ui-tooltip-wide .ui-tooltip-desc,
+#ui-tooltip.ui-tooltip-wide .ui-tooltip-note {
+  font-size: calc(12 * var(--ui-px));
 }
 
 #ui-tooltip .ui-tooltip-warn {
@@ -76,7 +84,6 @@
 
 #ui-tooltip .ui-tooltip-hint {
   color: var(--ui-muted);
-  font-weight: 400;
 }
 
 #ui-tooltip .ui-tooltip-stats {
@@ -92,6 +99,8 @@
   display: flex;
   align-items: center;
   gap: calc(5 * var(--ui-px));
+  font: 400 var(--ui-fs-m) / 1.35 var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -101,21 +110,27 @@
   fill: currentColor;
 }
 
-#ui-tooltip .ui-tooltip-stat-cost .ui-icon {
+#ui-tooltip .ui-tooltip-stat-cost {
   color: var(--ui-money);
 }
 
 #ui-tooltip .ui-tooltip-stat-time .ui-icon {
-  color: #cfd6dd;
+  color: var(--ui-text);
 }
 
 #ui-tooltip .ui-tooltip-stat-power .ui-icon {
-  color: #ffd84a;
+  color: var(--ui-text);
 }
 
 #ui-tooltip .ui-tooltip-bad,
 #ui-tooltip .ui-tooltip-bad .ui-icon {
   color: var(--ui-bad);
+}
+
+@media (forced-colors: active) {
+  #ui-tooltip {
+    border-color: CanvasText;
+  }
 }
 
 /* Targets: a long press opens the tooltip, so no text selection or callout. */

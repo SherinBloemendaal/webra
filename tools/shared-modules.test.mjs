@@ -34,7 +34,12 @@ test('the real website: the account client and protocol checks, nothing that dra
   for (const gated of ['js/main.js', 'js/sprites.js', 'js/renderer.js', 'js/sim/worker.js', 'js/account/ui.js', 'index.html']) {
     assert.ok(!lib.includes(gated), gated);
   }
-  assert.ok(lib.every((p) => /\.(js|css)$/.test(p) && !p.startsWith('pkg/') && !p.startsWith('shaders/')), lib.join(', '));
+  // Modules and stylesheets, plus the shared fonts (fonts/*.woff2) and the logo (brand/*.svg, *.png).
+  assert.ok(
+    lib.every((p) => (/\.(js|css)$/.test(p) || /^fonts\/[a-z0-9-]+\.woff2$/.test(p) || /^brand\/[a-z0-9-]+\.(svg|png)$/.test(p)) && !p.startsWith('pkg/') && !p.startsWith('shaders/')),
+    lib.join(', '),
+  );
+  for (const needed of ['css/fonts.css', 'fonts/barlow-latin-400.woff2', 'brand/favicon.svg']) assert.ok(lib.includes(needed), needed);
 });
 
 test('a website script that imports the gated /play/ path statically, or a missing module, fails the build', () => {
