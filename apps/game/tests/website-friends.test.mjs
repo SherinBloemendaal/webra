@@ -8,7 +8,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { installDom, uninstallDom, click, check, settle, textOf, submit, strayValues, typeInto } from './dom-fixtures.mjs';
+import { installDom, uninstallDom, click, check, settle, textOf, submit, strayValues, typeInto, FakeEvent } from './dom-fixtures.mjs';
 import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
 
@@ -16,6 +16,7 @@ const { mountAccountPage } = await import('../../website/assets/account.js');
 const { friendStatus, groupFriends, friendsSummary, socialSettings, spanText, clockText, SOCIAL_DEFAULTS } = await import('../../website/assets/friends.js');
 const { normalizeInviteCode, formatInviteCode, invitePath, typedInviteCode, inviteInPath, lookupInvite, inviteSummary, INVITE_MESSAGES } = await import('../../website/assets/invite.js');
 const { betaBadge, releaseTag } = await import('../../website/assets/site-data.js');
+const { openDialog, selectField } = await import('../../website/assets/ui.js');
 
 let doc;
 beforeEach(() => {
@@ -309,4 +310,25 @@ test('website pages: one navigation with the right current page, no style attrib
     const src = readFileSync(`${dir}assets/${f}`, 'utf8');
     assert.doesNotMatch(src, /setAttribute\(\s*['"]style['"]|innerHTML|insertAdjacentHTML/, f);
   }
+});
+
+test('dialogs: Esc in an open select list closes the list only; Esc again closes the dialog', async () => {
+  const key = (el, k) => el.dispatchEvent(new FakeEvent('keydown', { key: k }));
+  let select;
+  const done = openDialog('Pick', (body) => {
+    const f = selectField('Sort by', [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], { value: 'a' });
+    select = f.select;
+    body.append(f.row);
+  });
+  let closed = false;
+  done.then(() => (closed = true));
+  click(select.button);
+  assert.equal(select.isOpen(), true);
+  key(select.listbox, 'Escape');
+  await settle();
+  assert.equal(select.isOpen(), false);
+  assert.equal(closed, false, 'the dialog stays');
+  key(select.button, 'Escape');
+  await settle();
+  assert.equal(closed, true, 'Esc on the closed select closes the dialog');
 });

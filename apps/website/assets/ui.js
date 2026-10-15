@@ -129,8 +129,7 @@ export function openDialog(title, build, { wide = false } = {}) {
       if (e.target === overlay) close(null);
     });
     overlay.addEventListener('keydown', (e) => {
-      // Keys inside a select's list, a stepper or tabs are theirs (Esc closes the list, not the dialog).
-      if (e.target?.closest?.('[role="listbox"], [role="spinbutton"], [role="tablist"]')) return;
+      // Esc belongs to the dialog; an open select list stops it itself (its keydown stops propagation).
       if (e.key === 'Escape') {
         e.preventDefault();
         close(null);
