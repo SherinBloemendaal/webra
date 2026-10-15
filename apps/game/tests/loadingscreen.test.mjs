@@ -37,7 +37,7 @@ function setup({ reduced = false } = {}) {
   return { doc, root, screen, start };
 }
 
-const steps = (root) => root.querySelectorAll('.loading-step').map((li) => [li.dataset.step, li.dataset.state]);
+const steps = (root) => [...root.querySelectorAll('.loading-step')].map((li) => [li.dataset.step, li.dataset.state]);
 
 test('loadingPlan: the steps of each kind of start, with real work only', () => {
   assert.deepEqual(

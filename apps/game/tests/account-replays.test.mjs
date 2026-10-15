@@ -331,23 +331,23 @@ test('the game\'s Replays button lists the account\'s replays: Watch loads and c
       store: { list: async () => [] },
       accountReplays: { available: () => true, api: new AccountApi({ fetchImpl: server.fetch }) },
     });
-    click(root.querySelectorAll('button').find((b) => b.textContent === 'Replays'));
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Replays'));
     await settle(20);
     const dialog = doc.body.querySelector('dialog');
     assert.match(textOf(dialog), /2 of 100 replays/);
-    const rows = dialog.querySelectorAll('.records-row');
+    const rows = [...dialog.querySelectorAll('.records-row')];
     assert.deepEqual(rows.map((r) => r.querySelector('strong').textContent), ['This version', 'Older version']);
     assert.equal(textOf(rows[0]).includes('Made with WebRA'), false);
     assert.match(textOf(rows[1]), /Made with WebRA 0\.13\.0/);
-    click(rows[1].querySelectorAll('button').find((b) => b.textContent === 'Watch'));
+    click([...rows[1].querySelectorAll('button')].find((b) => b.textContent === 'Watch'));
     await settle(20);
     // Another version: only the header, so the viewer explains the version (js/replay.js engineMismatch).
     assert.equal(watched[0].engine, '0.13.0');
     assert.equal(watched[0].frames, undefined);
-    click(root.querySelectorAll('button').find((b) => b.textContent === 'Replays'));
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Replays'));
     await settle(20);
     const again = doc.body.querySelector('dialog');
-    click(again.querySelectorAll('.records-row')[0].querySelectorAll('button').find((b) => b.textContent === 'Watch'));
+    click([...again.querySelectorAll('.records-row')[0].querySelectorAll('button')].find((b) => b.textContent === 'Watch'));
     await settle(20);
     assert.equal(watched[1].engine, '0.14.0');
     assert.deepEqual(watched[1].frames, [], 'checked in full');

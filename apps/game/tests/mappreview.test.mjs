@@ -288,7 +288,7 @@ test('online lobby: the host New seed waits for the lobby and the map; Start gam
   try {
     ui.buildLobby();
     ui.renderLobby();
-    const dice = () => ui.mapBox.querySelectorAll('button').find((b) => b.classList.contains('online-dice'));
+    const dice = () => [...ui.mapBox.querySelectorAll('button')].find((b) => b.classList.contains('online-dice'));
     assert.equal(ui.previewBusy, true);
     assert.ok(ui.mapBox.querySelector('.online-preview-loading'));
     assert.equal(ui.startBtn.disabled, true);

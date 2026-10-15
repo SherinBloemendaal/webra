@@ -150,7 +150,7 @@ test('markers are buttons: click, right-click and Delete pick and free; focus an
   const list = spawnMarkers(CORNERS.slice(0, 2), 48, 48, state);
   const view = { slots: state.players, you: 0, host: true, colors: COLORS, nameOf: () => 'Normal AI', enabled: true };
   markersView.render(list, view);
-  const buttons = layer.querySelectorAll('button.spawn-marker');
+  const buttons = [...layer.querySelectorAll('button.spawn-marker')];
   assert.equal(buttons.length, 2);
   assert.deepEqual(buttons.map((b) => b.textContent), ['A', 'B']);
   assert.match(buttons[0].getAttribute('aria-label'), /^Start position A: You \(P1\) start here/);
@@ -161,7 +161,7 @@ test('markers are buttons: click, right-click and Delete pick and free; focus an
   // Right-click and Delete free a picked spawn (the context menu stays shut).
   state.players[1].spawn = 0;
   markersView.render(spawnMarkers(CORNERS.slice(0, 2), 48, 48, state), view);
-  const [a] = layer.querySelectorAll('button.spawn-marker');
+  const [a] = [...layer.querySelectorAll('button.spawn-marker')];
   const menu = new FakeEvent('contextmenu', { cancelable: true });
   a.dispatchEvent(menu);
   assert.equal(menu.defaultPrevented, true);
@@ -236,18 +236,18 @@ test('skirmish lobby: a click on a marker picks the spawn, the start list follow
   lobby.ctx = lobby.canvas.getContext();
   lobby.drawPreview();
   assert.equal(asked.at(-1), lobby.state.mapStyle, 'the spawns of the map style shown');
-  let markers = root.querySelectorAll('.lobby-markers button.spawn-marker');
+  let markers = [...root.querySelectorAll('.lobby-markers button.spawn-marker')];
   assert.deepEqual(markers.map((b) => b.textContent), ['A', 'B']);
   const list = () => lobby.slotRows[0].spawn;
-  assert.deepEqual(list().querySelectorAll('option').map((o) => o.textContent), ['Automatic (A)', 'Position A', 'Position B']);
+  assert.deepEqual([...list().querySelectorAll('option')].map((o) => o.textContent), ['Automatic (A)', 'Position A', 'Position B']);
   // You click B: you start there, the AI moves to A.
   markers[1].click();
   assert.equal(lobby.state.players[0].spawn, 1);
   lobby.drawPreview();
-  markers = root.querySelectorAll('.lobby-markers button.spawn-marker');
+  markers = [...root.querySelectorAll('.lobby-markers button.spawn-marker')];
   assert.ok(markers[1].classList.contains('spawn-marker-picked'));
   assert.equal(list().value, '1');
-  assert.deepEqual(lobby.slotRows[1].spawn.querySelectorAll('option').map((o) => o.textContent), ['Automatic (A)', 'Position A'], 'B is yours: not offered to the AI');
+  assert.deepEqual([...lobby.slotRows[1].spawn.querySelectorAll('option')].map((o) => o.textContent), ['Automatic (A)', 'Position A'], 'B is yours: not offered to the AI');
   // The host places its AI through its list (keyboard path).
   lobby.slotRows[1].spawn.value = '0';
   lobby.slotRows[1].spawn.dispatchEvent(new FakeEvent('change'));
@@ -307,7 +307,7 @@ test('online lobby: markers on the preview send slot messages; the host frees a 
     ui.markerList = ui.lobbyMarkers();
     assert.deepEqual(ui.markerList.map((m) => [m.letter, m.slot, m.picked]), [['A', 0, false], ['B', 1, true]], 'one spawn per player of a generated map');
     ui.renderMap();
-    const markers = ui.mapBox.querySelectorAll('button.spawn-marker');
+    const markers = [...ui.mapBox.querySelectorAll('button.spawn-marker')];
     assert.equal(markers.length, 2);
     markers[1].click();
     assert.deepEqual(sent, [], 'taken by the guest');

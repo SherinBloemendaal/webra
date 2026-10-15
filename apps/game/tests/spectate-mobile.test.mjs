@@ -164,7 +164,7 @@ test('the observer panel works by taps: every view is a button, the statistics a
     { name: 'Di', color: [1, 1, 0] },
   ];
   const panel = new ObserverPanel(field, { players, view: OBSERVER_VIEW, onView: (v) => views.push(v), onStats: () => views.push('stats') });
-  const buttons = panel.root.querySelector('.observer-views').querySelectorAll('button');
+  const buttons = [...panel.root.querySelector('.observer-views').querySelectorAll('button')];
   assert.deepEqual(
     buttons.map((b) => b.textContent),
     ['All players', 'No shroud', 'Ann', 'Bo', 'Cy', 'Di', 'Statistics'],

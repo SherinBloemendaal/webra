@@ -329,7 +329,7 @@ test('the statistics screen: tabs, graphs with their data table, actions, Esc cl
     assert.equal(loads, 1);
     assert.match(textOf(root), /Statistics/);
     assert.match(textOf(root), /Me \(you\)/);
-    const tabs = root.querySelectorAll('[role="tab"]');
+    const tabs = [...root.querySelectorAll('[role="tab"]')];
     assert.deepEqual(
       tabs.map((t) => t.textContent),
       STATS_TABS.map(([, label]) => label),
@@ -338,13 +338,13 @@ test('the statistics screen: tabs, graphs with their data table, actions, Esc cl
     tabs.find((t) => t.textContent === 'Production').click();
     assert.equal(root.querySelector('[aria-selected="true"]').textContent, 'Production');
     assert.match(textOf(root), /Ivan: built/);
-    root.querySelectorAll('[role="tab"]').find((t) => t.textContent === 'Graphs').click();
+    [...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'Graphs').click();
     assert.ok(root.querySelector('canvas'), 'a graph');
     assert.equal(root.querySelector('canvas').getAttribute('role'), 'img');
     const table = root.querySelector('details table');
     assert.ok(table, 'the accessible table behind the graph');
     assert.equal(table.querySelectorAll('thead th').length, 4, 'time plus one column per player');
-    root.querySelectorAll('button').find((b) => b.textContent === 'Play again').click();
+    [...root.querySelectorAll('button')].find((b) => b.textContent === 'Play again').click();
     assert.deepEqual(played, ['again']);
     // Esc closes it (capture phase, before game hotkeys).
     const key = listeners.find((l) => l.type === 'keydown' && l.capture === true);
@@ -426,7 +426,7 @@ test('the game menu: Restart asks first; Statistics only while watching', () => 
       onExit() {},
     });
     menu.open();
-    const button = (label) => root.querySelectorAll('button').find((b) => b.textContent === label);
+    const button = (label) => [...root.querySelectorAll('button')].find((b) => b.textContent === label);
     assert.equal(button('Statistics'), undefined, 'a player still in the game sees no live statistics');
     button('Restart').click();
     assert.equal(restarts, 0, 'not without confirming');

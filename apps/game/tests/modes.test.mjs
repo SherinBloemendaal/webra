@@ -131,11 +131,11 @@ test('skirmish lobby: every option has a "?" tip wired to its control', async ()
   const { root } = await mountLobby();
   try {
     const { HELP_KEYS } = await import('../js/lobby.js');
-    const shown = new Set(root.querySelectorAll('.info-btn').map((b) => b.dataset.help));
+    const shown = new Set([...root.querySelectorAll('.info-btn')].map((b) => b.dataset.help));
     for (const key of HELP_KEYS) assert.ok(shown.has(key), `no "?" for ${key}`);
-    const tips = new Set(root.querySelectorAll('[role="tooltip"]').map((t) => t.id));
+    const tips = new Set([...root.querySelectorAll('[role="tooltip"]')].map((t) => t.id));
     for (const t of root.querySelectorAll('[role="tooltip"]')) {
-      const button = root.querySelectorAll('.info-btn').find((b) => b.getAttribute('aria-describedby') === t.id);
+      const button = [...root.querySelectorAll('.info-btn')].find((b) => b.getAttribute('aria-describedby') === t.id);
       assert.equal(t.textContent, HELP[button.dataset.help]);
     }
     // Every option control is described by a tip of this lobby.
@@ -147,9 +147,9 @@ test('skirmish lobby: every option has a "?" tip wired to its control', async ()
       assert.ok(ids.length && ids.every((id) => tips.has(id)), `${c.id || c.className} has no help`);
     }
     // Slot controls follow their column's help.
-    for (const c of root.querySelectorAll('.lobby-slots select')) assert.ok(tips.has(c.getAttribute('aria-describedby')), c.getAttribute('aria-label'));
+    for (const c of [...root.querySelectorAll('.lobby-slots select')]) assert.ok(tips.has(c.getAttribute('aria-describedby')), c.getAttribute('aria-label'));
     // Labels name their controls.
-    for (const label of root.querySelectorAll('label.lobby-field-label')) assert.ok(root.querySelector(`#${label.getAttribute('for')}`), textOf(label));
+    for (const label of [...root.querySelectorAll('label.lobby-field-label')]) assert.ok(root.querySelector(`#${label.getAttribute('for')}`), textOf(label));
   } finally {
     done();
   }
@@ -158,10 +158,10 @@ test('skirmish lobby: every option has a "?" tip wired to its control', async ()
 test('skirmish lobby: a slot shows its type, difficulty and bot in full, each select naming its choice', async () => {
   const { root } = await mountLobby();
   try {
-    const ai = root.querySelectorAll('.lobby-slot').find((r) => r.classList.contains('lobby-slot-ai'));
+    const ai = [...root.querySelectorAll('.lobby-slot')].find((r) => r.classList.contains('lobby-slot-ai'));
     assert.ok(ai, 'the default game has an AI slot');
     // Type (with the difficulty) and bot share one wrapping box next to the badge (css/lobby.css .lobby-who).
-    const selects = ai.querySelectorAll('.lobby-cell-player .lobby-who select');
+    const selects = [...ai.querySelectorAll('.lobby-cell-player .lobby-who select')];
     assert.deepEqual(
       selects.map((s) => s.className),
       ['lobby-select lobby-type', 'lobby-select lobby-bot'],
@@ -181,7 +181,7 @@ test('skirmish lobby: a slot shows its type, difficulty and bot in full, each se
     assert.equal(type.title, before);
     // Faction, team and handicap name their choice too.
     for (const s of ai.querySelectorAll('.lobby-cell-faction select, .lobby-cell-team select')) {
-      const chosen = s.querySelectorAll('option').find((o) => o.value === s.value);
+      const chosen = [...s.querySelectorAll('option')].find((o) => o.value === s.value);
       assert.equal(s.title, chosen.textContent, s.getAttribute('aria-label'));
     }
     // Your own slot keeps its name field in the same box.
@@ -196,9 +196,9 @@ test('skirmish lobby: map style, biome, tech buildings and weather form the Worl
   try {
     const world = root.querySelector('fieldset.lobby-world');
     assert.equal(textOf(world.querySelector('legend')), 'World');
-    const selects = world.querySelectorAll('select');
+    const selects = [...world.querySelectorAll('select')];
     assert.deepEqual(selects, [lobby.styleSelect, lobby.biomeSelect, lobby.techSelect, lobby.weatherSelect]);
-    assert.deepEqual(world.querySelectorAll('.info-btn').map((b) => b.dataset.help), ['mapStyle', 'biome', 'techBuildings', 'weather']);
+    assert.deepEqual([...world.querySelectorAll('.info-btn')].map((b) => b.dataset.help), ['mapStyle', 'biome', 'techBuildings', 'weather']);
     lobby.techSelect.value = 'oilrush';
     lobby.techSelect.dispatchEvent(new FakeEvent('change'));
     assert.equal(lobby.getOptions().techBuildings, 'oilrush');
@@ -214,7 +214,7 @@ test('skirmish lobby: a mode applies its exact options; any change switches to C
   const { root, lobby, modeSelect, pick } = await mountLobby();
   try {
     const seed = lobby.state.seed;
-    const offered = modeSelect.querySelectorAll('option').map((o) => o.value);
+    const offered = [...modeSelect.querySelectorAll('option')].map((o) => o.value);
     assert.deepEqual(offered, [...BUILTIN_MODES.map((m) => m.id), CUSTOM]);
     for (const mode of BUILTIN_MODES) {
       pick(mode.id);
@@ -260,7 +260,7 @@ test('skirmish lobby: save, pick and delete your own modes', async () => {
     const units = lobby.optionSelects.startingUnits;
     units.value = 'heavy';
     units.dispatchEvent(new FakeEvent('change'));
-    const [saveAs] = root.querySelectorAll('.mode-tools button');
+    const [saveAs] = [...root.querySelectorAll('.mode-tools button')];
     click(saveAs);
     const form = root.querySelector('.mode-save');
     assert.equal(form.hidden, false);
@@ -278,7 +278,7 @@ test('skirmish lobby: save, pick and delete your own modes', async () => {
     assert.doesNotThrow(() => validateSettingsDocument(defaultRegistry().document()));
     assert.equal(modeSelect.value, savedId('Hot tanks'));
     assert.deepEqual(
-      modeSelect.querySelectorAll('optgroup').map((g) => g.label),
+      [...modeSelect.querySelectorAll('optgroup')].map((g) => g.label),
       ['Modes', 'Your modes'],
     );
     // Another mode, then back to the saved one.
@@ -305,7 +305,7 @@ test('skirmish lobby: save, pick and delete your own modes', async () => {
     assert.equal(del.hidden, true);
     // A mode synced from the account shows up at once.
     defaultRegistry().applyDocument({ lobby: { presets: [{ name: 'From laptop', options: builtin('turtle').options }] } });
-    assert.ok(modeSelect.querySelectorAll('option').some((o) => o.value === savedId('From laptop')));
+    assert.ok([...modeSelect.querySelectorAll('option')].some((o) => o.value === savedId('From laptop')));
   } finally {
     done();
   }
@@ -365,7 +365,7 @@ test('online lobby: the host picks a mode and sends plain options', async () => 
     lobby({ ...DEFAULT_OPTIONS, seed: 9 });
     const select = root.querySelector('.mode-select');
     assert.equal(select.disabled, false);
-    const offered = select.querySelectorAll('option').map((o) => o.value);
+    const offered = [...select.querySelectorAll('option')].map((o) => o.value);
     assert.ok(!offered.includes('sandbox'), 'Sandbox is skirmish only');
     assert.ok(offered.includes(savedId('My war')), 'the host can use saved modes');
     select.value = 'rush';
@@ -398,12 +398,12 @@ test('online lobby: guests see the mode and its options but cannot change them',
     lobby({ ...DEFAULT_OPTIONS, ...builtin('winter').options, seed: 3 });
     const select = root.querySelector('.mode-select');
     assert.equal(select.disabled, true);
-    assert.equal(select.querySelectorAll('option').find((o) => o.value === select.value).textContent, 'Winter');
+    assert.equal([...select.querySelectorAll('option')].find((o) => o.value === select.value).textContent, 'Winter');
     assert.equal(textOf(root.querySelector('.mode-desc')), builtin('winter').description);
     assert.equal(root.querySelector('.mode-tools').hidden, true, 'no saving or deleting for guests');
     // The World group and every option show the values, read only.
     const world = root.querySelector('fieldset.online-world');
-    assert.deepEqual(world.querySelectorAll('select').map((s) => s.value), ['random', 'snow', 'standard', 'full']);
+    assert.deepEqual([...world.querySelectorAll('select')].map((s) => s.value), ['random', 'snow', 'standard', 'full']);
     for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options input[type="checkbox"]')]) {
       assert.equal(c.disabled, true, c.id);
     }
@@ -419,9 +419,9 @@ test('online lobby: every option has a "?" tip', async () => {
     lobby({ ...DEFAULT_OPTIONS });
     ui.renderSpectators();
     const { ONLINE_HELP_KEYS } = await import('../js/online.js');
-    const shown = new Set(root.querySelectorAll('.info-btn').map((b) => b.dataset.help));
+    const shown = new Set([...root.querySelectorAll('.info-btn')].map((b) => b.dataset.help));
     for (const key of ONLINE_HELP_KEYS) assert.ok(shown.has(key), `no "?" for ${key}`);
-    const tips = new Set(root.querySelectorAll('[role="tooltip"]').map((t) => t.id));
+    const tips = new Set([...root.querySelectorAll('[role="tooltip"]')].map((t) => t.id));
     for (const c of [...root.querySelectorAll('.online-options select'), ...root.querySelectorAll('.online-options input[type="checkbox"]'), ...root.querySelectorAll('.online-slots select')]) {
       const ids = (c.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
       assert.ok(ids.length && ids.every((id) => tips.has(id)), `${c.id || c.getAttribute('aria-label')} has no help`);

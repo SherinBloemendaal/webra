@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 afterEach(() => uninstallDom());
 
-const byText = (root, tag, re) => root.querySelectorAll(tag).find((b) => re.test(b.textContent));
+const byText = (root, tag, re) => [...root.querySelectorAll(tag)].find((b) => re.test(b.textContent));
 
 function session(server, registry = createRegistry({ storage: null })) {
   return new AccountSession({ api: new AccountApi({ fetchImpl: server.fetch }), registry, storage: memoryStorage() });

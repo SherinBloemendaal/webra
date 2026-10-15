@@ -181,7 +181,7 @@ test('the panel draws its tabs and switches between them', () => {
   };
   draw();
   assert.equal(root.querySelector('h2').textContent, 'Coastal Clash');
-  assert.deepEqual(root.querySelectorAll('[role="tab"]').map((b) => b.textContent), ['Objectives', 'Briefing', 'Options']);
+  assert.deepEqual([...root.querySelectorAll('[role="tab"]')].map((b) => b.textContent), ['Objectives', 'Briefing', 'Options']);
   const text = textOf(root);
   assert.match(text, /Mission: In progress/);
   assert.match(text, /Destroy all opposition!/);
@@ -219,8 +219,8 @@ function menuWith(opts = {}) {
   return { menu, root };
 }
 
-const buttons = (root) => root.querySelectorAll('button').map((b) => b.textContent);
-const byText = (root, text) => root.querySelectorAll('button').find((b) => b.textContent === text);
+const buttons = (root) => [...root.querySelectorAll('button')].map((b) => b.textContent);
+const byText = (root, text) => [...root.querySelectorAll('button')].find((b) => b.textContent === text);
 
 test('Surrender: shown for a player of a game with more people, asks first, then gives the order once', () => {
   let people = 2;
@@ -238,7 +238,7 @@ test('Surrender: shown for a player of a game with more people, asks first, then
   assert.equal(orders, 0);
   assert.ok(byText(root, 'Resume'));
   click(byText(root, 'Surrender'));
-  click(root.querySelectorAll('button.ui-btn-primary').find((x) => x.textContent === 'Surrender'));
+  click([...root.querySelectorAll('button.ui-btn-primary')].find((x) => x.textContent === 'Surrender'));
   assert.equal(orders, 1);
   assert.equal(menu.isOpen, false, 'the menu closes like OpenRA CloseMenu');
   // Decided: disabled (OpenRA IsDisabled while WinState is not Undefined).

@@ -64,6 +64,37 @@ export class FakeEvent {
   }
 }
 
+/**
+ * A static NodeList like querySelectorAll's: indexes, length, item(),
+ * forEach, keys, values, entries and iteration, but no array methods
+ * (filter, find, map), so code that treats it as an array fails here as it
+ * does in a browser. Tests spread it: [...root.querySelectorAll(sel)].
+ */
+export class FakeNodeList {
+  constructor(nodes) {
+    nodes.forEach((n, i) => Object.defineProperty(this, i, { value: n, enumerable: true }));
+    Object.defineProperty(this, 'length', { value: nodes.length });
+  }
+  item(i) {
+    return this[i] ?? null;
+  }
+  forEach(fn, thisArg) {
+    for (let i = 0; i < this.length; i++) fn.call(thisArg, this[i], i, this);
+  }
+  *[Symbol.iterator]() {
+    for (let i = 0; i < this.length; i++) yield this[i];
+  }
+  values() {
+    return this[Symbol.iterator]();
+  }
+  *keys() {
+    for (let i = 0; i < this.length; i++) yield i;
+  }
+  *entries() {
+    for (let i = 0; i < this.length; i++) yield [i, this[i]];
+  }
+}
+
 export class FakeNode {
   constructor(doc) {
     this.ownerDocument = doc;
@@ -265,7 +296,7 @@ export class FakeElement extends FakeNode {
   }
   get value() {
     if (this.localName === 'select' && !this._valueSet) {
-      const opt = this.querySelectorAll('option').find((o) => o.selected) ?? this.querySelector('option');
+      const opt = [...this.querySelectorAll('option')].find((o) => o.selected) ?? this.querySelector('option');
       return opt ? opt.value : '';
     }
     if (this.localName === 'option' && !this.hasAttribute('value')) return this.textContent;
@@ -331,7 +362,7 @@ export class FakeElement extends FakeNode {
       }
     };
     walk(this);
-    return out;
+    return new FakeNodeList(out);
   }
   querySelector(selector) {
     return this.querySelectorAll(selector)[0] ?? null;
@@ -447,7 +478,7 @@ export class FakeDocument extends FakeNode {
   querySelectorAll(s) {
     // Like the DOM: <html> itself is in the document's results.
     const root = this.documentElement;
-    return [...(root.matches(s) ? [root] : []), ...root.querySelectorAll(s)];
+    return new FakeNodeList([...(root.matches(s) ? [root] : []), ...root.querySelectorAll(s)]);
   }
 }
 

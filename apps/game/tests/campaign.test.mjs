@@ -286,9 +286,9 @@ test('the campaign screen lists campaigns and missions, keeps chapters closed an
     });
     await menu.open();
     assert.equal(menu.isOpen, true);
-    const tabs = root.querySelectorAll('.campaign-tab');
+    const tabs = [...root.querySelectorAll('.campaign-tab')];
     assert.equal(tabs.length, INDEX.campaigns.length);
-    const missions = () => root.querySelectorAll('.campaign-mission');
+    const missions = () => [...root.querySelectorAll('.campaign-mission')];
     assert.equal(missions()[0].getAttribute('aria-current'), 'true', 'the first open mission is chosen');
     assert.equal(missions()[1].dataset.state, 'closed');
     // A closed mission cannot be played.
@@ -299,7 +299,7 @@ test('the campaign screen lists campaigns and missions, keeps chapters closed an
     progress.won('allies-01', null);
     assert.equal(missions()[0].dataset.state, 'won');
     missions()[1].click();
-    const selects = root.querySelectorAll('.campaign-select');
+    const selects = [...root.querySelectorAll('.campaign-select')];
     assert.equal(selects.length, 2, 'difficulty and game speed');
     selects[0].value = 'hard';
     selects[0].dispatchEvent(new FakeEvent('change'));

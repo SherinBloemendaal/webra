@@ -29,7 +29,7 @@ test('history: oldest first, the current step marked, clicks go back or forward 
   const undo = [{ label: 'Paint terrain', time: 1 }, { label: 'Add spawn', time: 2 }];
   const redo = [{ label: 'Delete actors', time: 4 }, { label: 'Fill', time: 3 }];
   const list = historyList(undo, redo, (n) => went.push(n));
-  const steps = list.querySelectorAll('.history-step');
+  const steps = [...list.querySelectorAll('.history-step')];
   assert.deepEqual(steps.map((s) => textOf(s.querySelector('.history-label'))), ['Opened', 'Paint terrain', 'Add spawn', 'Fill', 'Delete actors']);
   assert.deepEqual(steps.map((s) => s.className.split(' ')[1]), ['past', 'past', 'current', 'future', 'future']);
   assert.equal(steps[2].querySelector('button').disabled, true, 'the current state is no step to go to');
@@ -42,7 +42,7 @@ test('history: oldest first, the current step marked, clicks go back or forward 
 test('layers: one switch per layer, in order, telling which changed', () => {
   const changes = [];
   const root = layersList({ grid: true, zones: false }, (k, on) => changes.push([k, on]));
-  const boxes = root.querySelectorAll('input');
+  const boxes = [...root.querySelectorAll('input')];
   assert.equal(boxes.length, LAYERS.length);
   assert.equal(boxes[0].checked, true);
   check(boxes[LAYERS.findIndex((l) => l.key === 'zones')]);
@@ -67,10 +67,10 @@ test('fairness: a row per start, spreads, unfair columns marked, cut-off starts 
   assert.equal(spread([{ rush: 3 }], 'rush'), null);
   const jumps = [];
   const view = fairnessView(REPORT, (k) => `rgb(${k},0,0)`, (k) => jumps.push(k));
-  const rows = view.querySelectorAll('tbody tr');
+  const rows = [...view.querySelectorAll('tbody tr')];
   assert.equal(rows.length, 4, 'three starts and the spread');
   assert.equal(textOf(rows[2].querySelectorAll('td')[0]), 'none', 'no rush distance');
-  const spreadCells = rows[3].querySelectorAll('td');
+  const spreadCells = [...rows[3].querySelectorAll('td')];
   assert.equal(spreadCells.length, FAIRNESS_COLUMNS.length);
   const ore = spreadCells[FAIRNESS_COLUMNS.findIndex((c) => c.key === 'ore')];
   assert.equal(ore.className, 'unfair');
@@ -88,7 +88,7 @@ test('problems: fixes as buttons, located ones jump, engine errors without a fix
   const engine = { ok: false, errors: ['Spawn 1 needs 3x4 clear ground for the construction yard.', 'a map needs 2 to 8 spawn points'] };
   const issues = [{ level: 'warning', message: 'Spawns 1 and 2 are very close.', x: 9, y: 9 }, { level: 'error', message: 'unlocated js error' }];
   const view = problemsView({ engine, issues, fixes }, (p, f) => fixed.push(f.label), (x, y) => jumps.push([x, y]));
-  const items = view.querySelectorAll('li');
+  const items = [...view.querySelectorAll('li')];
   assert.deepEqual(items.map((li) => textOf(li.querySelector('.issue-text'))), [fixes[0].message, 'a map needs 2 to 8 spawn points', 'Spawns 1 and 2 are very close.']);
   click(items[0].querySelector('button.fix'));
   click(items[0].querySelector('button.link'));
@@ -104,9 +104,9 @@ test('stamps: use, rename, delete; a hint without any', () => {
     onRename: (k) => calls.push(['rename', k]),
     onDelete: (k) => calls.push(['delete', k]),
   });
-  const items = list.querySelectorAll('li');
+  const items = [...list.querySelectorAll('li')];
   assert.match(textOf(items[1]), /Bridge 6 x 3/);
-  for (const b of items[1].querySelectorAll('button')) click(b);
+  for (const b of [...items[1].querySelectorAll('button')]) click(b);
   assert.deepEqual(calls, [['use', 1], ['rename', 1], ['delete', 1]]);
   assert.match(textOf(stampsList([], {})), /No stamps yet/);
 });
@@ -135,8 +135,8 @@ test('shortcuts list: groups, keys shown, rebinding and defaults through the gam
   const calls = [];
   const render = (listening) => keysList(reg.list(), { listening, mac: false, onRebind: (n) => calls.push(['rebind', n]), onReset: (n) => calls.push(['reset', n]) });
   let view = render(null);
-  assert.deepEqual(view.querySelectorAll('h2').map(textOf), ['Map editor: Tools', 'Map editor: Edit']);
-  assert.deepEqual(view.querySelectorAll('.key-bind').map(textOf), ['B', 'Ctrl+Z']);
+  assert.deepEqual([...view.querySelectorAll('h2')].map(textOf), ['Map editor: Tools', 'Map editor: Edit']);
+  assert.deepEqual([...view.querySelectorAll('.key-bind')].map(textOf), ['B', 'Ctrl+Z']);
   click(view.querySelectorAll('.key-bind')[0]);
   click(view.querySelectorAll('button.link')[0]);
   assert.deepEqual(calls, [['rebind', 'editor.tool.brush'], ['reset', 'editor.tool.brush']]);

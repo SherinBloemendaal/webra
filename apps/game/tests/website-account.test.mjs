@@ -30,9 +30,9 @@ async function page(server, hash = '', search = '', storage = null) {
   return { root, view, replaced, navigated };
 }
 
-const byText = (root, tag, re) => root.querySelectorAll(tag).find((b) => re.test(b.textContent));
+const byText = (root, tag, re) => [...root.querySelectorAll(tag)].find((b) => re.test(b.textContent));
 const inputByLabel = (root, re) => {
-  const label = root.querySelectorAll('label').find((l) => re.test(l.textContent));
+  const label = [...root.querySelectorAll('label')].find((l) => re.test(l.textContent));
   return label ? root.querySelector(`#${label.getAttribute('for')}`) : null;
 };
 
@@ -51,7 +51,7 @@ test('account page: sign in with a password; wrong ones say so; the account sect
   const server = new MockAccountServer();
   server.addUser({ username: 'Tanya', password: 'a long passphrase', email: 'tanya@example.com', emailVerified: true });
   const { root } = await page(server);
-  const tabs = root.querySelectorAll('[role="tab"]').map((t) => t.textContent);
+  const tabs = [...root.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
   assert.deepEqual(tabs, ['Sign in', 'Create account'], 'no forgot tab while email is unavailable');
   assert.equal(byText(root, 'button', /Discord/), undefined, 'Discord not configured: no button');
   inputByLabel(root, /Username or email/).value = 'tanya';
@@ -207,7 +207,7 @@ test('account page: email verification and password reset links, then the fragme
   doc = installDom();
   user.resetToken = 'r'.repeat(43);
   const b = await page(server, `#reset=${'r'.repeat(43)}`);
-  const inputs = b.root.querySelectorAll('input[type="password"]');
+  const inputs = [...b.root.querySelectorAll('input[type="password"]')];
   inputs[0].value = 'a brand new passphrase';
   inputs[1].value = 'a brand new passphrase';
   submit(b.root.querySelector('form'));
@@ -361,7 +361,7 @@ test('account page replays: the list with usage, Watch opens the game, Delete as
   await settle(20);
   const section = root.querySelector('#section-replays').closest('section');
   assert.match(textOf(section), /2 of 100 replays, 4 KB of 100 MB\. Each replay is kept for 30 days/);
-  const items = section.querySelectorAll('li.item');
+  const items = [...section.querySelectorAll('li.item')];
   assert.deepEqual(items.map((li) => li.querySelector('strong').textContent), ['New game', 'Old game'], 'newest first');
   assert.match(textOf(items[0]), /Online on Generated map with Tanya and Boris\. Won, 2 KB, 30 days left/);
   const id = server.replays.get(user.id)[0].view.id;

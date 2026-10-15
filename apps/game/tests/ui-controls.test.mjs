@@ -258,7 +258,7 @@ test('select: a button with a listbox, named, with every option and the choice o
   assert.equal(doc.getElementById(valueId).textContent, 'Normal AI');
   assert.equal(s.listbox.getAttribute('role'), 'listbox');
   assert.equal(s.listbox.getAttribute('aria-labelledby'), labelId);
-  const opts = s.listbox.querySelectorAll('[role="option"]');
+  const opts = [...s.listbox.querySelectorAll('[role="option"]')];
   assert.deepEqual(opts.map((o) => o.querySelector('.ui-sp-label').textContent), AI.map((o) => o.label));
   assert.deepEqual(opts.map((o) => o.getAttribute('aria-selected')), ['false', 'true', 'false', 'false', 'false']);
   assert.equal(opts[3].getAttribute('aria-disabled'), 'true');
@@ -283,7 +283,7 @@ test('select: click opens and closes; a click on an option chooses it and return
   assert.equal(s.panel.hidden, false);
   assert.equal(doc.activeElement, s.listbox, 'focus moves into the list');
   assert.equal(s.listbox.getAttribute('aria-activedescendant'), s.listbox.querySelectorAll('[role="option"]')[1].id, 'the chosen option is highlighted');
-  const opts = s.listbox.querySelectorAll('[role="option"]');
+  const opts = [...s.listbox.querySelectorAll('[role="option"]')];
   click(opts[3]);
   assert.equal(s.isOpen(), true, 'a disabled option does nothing');
   click(opts[2]);
@@ -456,7 +456,7 @@ test('select: groups, placeholder, set() without onChange, new options, disabled
   assert.equal(s.button.querySelector('.ui-sp-value').textContent, 'Pick a map');
   assert.ok(s.root.classList.contains('ui-sp-empty'));
   assert.ok(s.button.querySelector('.ui-led').classList.contains('ui-led-off'));
-  const groups = s.listbox.querySelectorAll('[role="group"]');
+  const groups = [...s.listbox.querySelectorAll('[role="group"]')];
   assert.equal(groups.length, 2);
   assert.equal(doc.getElementById(groups[0].getAttribute('aria-labelledby')).textContent, 'Two players');
   assert.equal(groups[0].querySelectorAll('[role="option"]').length, 2);

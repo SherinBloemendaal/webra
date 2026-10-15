@@ -330,7 +330,7 @@ test('the open panel lists the other people with a mute toggle', async () => {
   const { p, log, byName } = await panel({ mutable: () => people });
   byName('openGeneralChat').handler();
   assert.equal(p.muteBar.hidden, false);
-  const buttons = () => p.muteBar.querySelectorAll('.chat-mute-button');
+  const buttons = () => [...p.muteBar.querySelectorAll('.chat-mute-button')];
   assert.deepEqual(buttons().map((b) => b.textContent), ['Mute Bob', 'Mute Watcher']);
   buttons()[0].click();
   assert.equal(log.isMuted(2), true);

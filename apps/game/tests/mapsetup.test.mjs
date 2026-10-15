@@ -117,9 +117,9 @@ const changeSelect = (s, value) => {
 test('Setup tab: slot rows per spawn, changes are undoable map edits, trailing default slots are dropped', () => {
   const m = newDoc();
   const view = slotsView(m, () => 'rgb(1,2,3)');
-  const rows = view.querySelectorAll('.slot-row');
+  const rows = [...view.querySelectorAll('.slot-row')];
   assert.equal(rows.length, 2, 'one per spawn');
-  const selects = rows[1].querySelectorAll('select');
+  const selects = [...rows[1].querySelectorAll('select')];
   changeSelect(selects[0], 'ai');
   assert.deepEqual(m.toMap().players[1], { faction: 'random', team: 0, color: -1, type: 'ai', difficulty: 'normal', bot: 'normal', lock: [] });
   assert.deepEqual(m.toMap().players[0], canonicalSlot({}), 'earlier slots are filled with the defaults');
@@ -176,7 +176,7 @@ test('actor properties: health, stance, veterancy and passengers of the selectio
   ctl.selection.add(m.actors[0]);
   let box = actorStateView([...ctl.selection], catalog, ctl);
   assert.equal(box.querySelectorAll('input[type="range"]').length, 2, 'health and veterancy');
-  const [health, vet] = box.querySelectorAll('input[type="range"]');
+  const [health, vet] = [...box.querySelectorAll('input[type="range"]')];
   health.value = '40';
   health.dispatchEvent(new FakeEvent('input'));
   health.value = '35';
@@ -186,7 +186,7 @@ test('actor properties: health, stance, veterancy and passengers of the selectio
   changeSelect(box.querySelector('[aria-label="Stance"]'), 'hold_fire');
   box = actorStateView([...ctl.selection], catalog, ctl);
   // The fake DOM's selectors split at spaces: the passenger picker is the select after the stance.
-  const picker = box.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === 'Add a passenger');
+  const picker = [...box.querySelectorAll('select')].find((x) => x.getAttribute('aria-label') === 'Add a passenger');
   changeSelect(picker, 'E1');
   click([...box.querySelectorAll('button')].find((b) => textOf(b) === 'Add'));
   const a = m.toMap().actors[0];
