@@ -2738,8 +2738,13 @@ impl World {
             SmartAction::Repair => {
                 let t = self.actor_at(player, x, y).unwrap();
                 let (veh, others): (Vec<usize>, Vec<usize>) = units.iter().partition(|&&i| self.repairs_at(i, t));
+                // Units with nothing to repair or rearm there ignore the order and
+                // go on with what they were doing (OpenRA Repairable.ResolveOrder),
+                // an ore truck at work keeps harvesting.
                 for i in veh {
-                    self.send_to_repair_depot(i, t);
+                    if self.needs_service(i, t) {
+                        self.send_to_repair_depot(i, t);
+                    }
                 }
                 self.order_move(&others, x, y, false);
             }

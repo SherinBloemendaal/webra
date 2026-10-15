@@ -118,6 +118,8 @@ mod tests_fx;
 #[cfg(test)]
 mod tests_gamerules;
 #[cfg(test)]
+mod tests_harv_depot;
+#[cfg(test)]
 mod tests_helis;
 #[cfg(test)]
 mod tests_infantry;
