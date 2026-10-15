@@ -96,7 +96,12 @@ function fakeContext(log, bounds) {
       log.push(`fill:${ctx.fillStyle}`);
       if (path.length) addBox(Math.min(...path.map((p) => p[0])), Math.min(...path.map((p) => p[1])), Math.max(...path.map((p) => p[0])), Math.max(...path.map((p) => p[1])));
     },
-    stroke() { log.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}`); },
+    stroke() {
+      log.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}`);
+      // A stroke reaches half its width past its path.
+      const hw = ctx.lineWidth / 2;
+      if (path.length && transforms === 0 && clips === 0 && bounds) bounds.push({ x0: Math.min(...path.map((p) => p[0])) - hw, y0: Math.min(...path.map((p) => p[1])) - hw, x1: Math.max(...path.map((p) => p[0])) + hw, y1: Math.max(...path.map((p) => p[1])) + hw, style: ctx.strokeStyle, stroke: true });
+    },
     clip() { clips++; log.push('clip'); },
     getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4) }; },
     putImageData() {},
@@ -192,6 +197,7 @@ for (const a of buildings) {
           draw(ctx, passes(counter, biome)[pass]);
           assert.equal(ctx.depth, 0, `${a.id} leaves save/restore unbalanced`);
           for (const b of bounds) {
+            if (b.stroke && !world) continue; // strokes are checked for the neutral world's art (art/world.js)
             const margin = isShadow(b.style) ? 8 : 1.5;
             assert.ok(
               b.x0 >= -margin && b.y0 >= -margin && b.x1 <= w + margin && b.y1 <= h + margin,

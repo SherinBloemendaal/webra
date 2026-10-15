@@ -91,17 +91,22 @@ function pine(ctx, P, cx, base, h, w) {
   }
 }
 
-/** A palm: a leaning trunk and drooping fronds. */
+/**
+ * A palm: a leaning trunk and drooping fronds. Its head stands up to 19
+ * pixels above `base`, lower near the top of the box so the fronds stay inside.
+ */
 function palm(ctx, P, cx, base) {
+  const H = Math.min(19, base - 5);
+  const sk = H / 19;
   oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + 7, base - 1, 9, 3);
-  polyline(ctx, P.c(PALM.trunk), 2.2, [cx, base, cx + 1.5, base - 9, cx + 3.5, base - 18]);
+  polyline(ctx, P.c(PALM.trunk), 2.2, [cx, base, cx + 1.5, base - 9 * sk, cx + 3.5, base - 18 * sk]);
   // Ring seams up the trunk (the board's wood pattern).
   for (let k = 1; k < 6; k++) {
     const t = k / 6;
     const x = t < 0.5 ? cx + 3 * t : cx + 1.5 + (t - 0.5) * 4;
-    stroke(ctx, P.c(PALM.ring), 0.6, x - 1.1, base - 18 * t, x + 1.1, base - 18 * t);
+    stroke(ctx, P.c(PALM.ring), 0.6, x - 1.1, base - 18 * sk * t, x + 1.1, base - 18 * sk * t);
   }
-  const [hx, hy] = [cx + 3.5, base - 19];
+  const [hx, hy] = [cx + 3.5, base - H];
   for (let k = 0; k < 7; k++) {
     const a = -Math.PI / 2 + (k - 3) * 0.55;
     const tip = [hx + Math.cos(a) * 10, hy + Math.sin(a) * 5 + 4];
@@ -823,8 +828,8 @@ const STRUCTURES = {
     disc(ctx, P.c('#3a2c20'), hx, hy, 1.4);
   },
   RUSHOUSE: () => (ctx, P) => cottage(ctx, P, 2, 15, 19, 29, 9, 31, { wall: '#7a5a3a', roof: '#4d4438', axis: 'y' }),
-  SNOWHUT: () => (ctx, P) => cottage(ctx, P, 2, 13, 20, 31, 8, 37, { wall: '#8a6a4a', roof: '#e8eef4', axis: 'y' }),
-  ASIANHUT: () => (ctx, P) => cottage(ctx, P, 3, 6, 18, 15, 6, 41, { wall: '#b9a27a', roof: '#c9a83e', chimney: false }),
+  SNOWHUT: () => (ctx, P) => cottage(ctx, P, 2, 13, 19.5, 31, 8, 37, { wall: '#8a6a4a', roof: '#e8eef4', axis: 'y' }),
+  ASIANHUT: () => (ctx, P) => cottage(ctx, P, 2, 6, 18, 15, 6, 41, { wall: '#b9a27a', roof: '#c9a83e', chimney: false }),
   RAILMINE: () => (ctx, P) => {
     rect(ctx, P.c('#5a4a3a'), 0, 4, 48, 18);
     for (let x = 2; x < 48; x += 4) rect(ctx, P.c('#4a3420'), x, 12, 2, 8);
@@ -881,7 +886,7 @@ function houseDraw(id, a) {
     if (desert) {
       adobe(ctx, P, 2, big ? 10 : 7, w - 5, h - (big ? 14 : 10), big ? 11 : 8, seed, { dome: seed % 3 === 0, tower: big && seed % 2 === 0 });
     } else {
-      cottage(ctx, P, 3, big ? 10 : 7, w - 7, h - (big ? 16 : 10), big ? 10 : 7, seed);
+      cottage(ctx, P, 2, big ? 10 : 7, w - 7, h - (big ? 16 : 10), big ? 10 : 7, seed);
     }
   };
 }
