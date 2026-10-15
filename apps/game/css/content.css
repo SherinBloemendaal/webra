@@ -55,7 +55,7 @@
   left: 0;
   right: 0;
   top: 0;
-  height: 6px;
+  height: calc(6 * var(--ui-px));
   background: var(--ui-hazard);
 }
 
@@ -119,7 +119,7 @@
 /* A part's bar: how much of it is there (--part-done from script); red while it comes, green when done. */
 .content-part-bar {
   display: block;
-  height: 6px;
+  height: calc(6 * var(--ui-px));
   background: #06080a;
   border: 1px solid var(--ui-edge);
 }
@@ -345,7 +345,7 @@
 .content-bar {
   width: 100%;
   height: calc(16 * var(--ui-px));
-  padding: 2px;
+  padding: calc(2 * var(--ui-px));
   appearance: none;
   background: #06080a;
   border: 1px solid var(--ui-edge);
@@ -357,11 +357,11 @@
 }
 
 .content-bar::-webkit-progress-value {
-  background: repeating-linear-gradient(-45deg, var(--ui-accent) 0 8px, var(--ui-primary) 8px 16px);
+  background: repeating-linear-gradient(-45deg, var(--ui-accent) 0 calc(8 * var(--ui-px)), var(--ui-primary) calc(8 * var(--ui-px)) calc(16 * var(--ui-px)));
 }
 
 .content-bar::-moz-progress-bar {
-  background: repeating-linear-gradient(-45deg, var(--ui-accent) 0 8px, var(--ui-primary) 8px 16px);
+  background: repeating-linear-gradient(-45deg, var(--ui-accent) 0 calc(8 * var(--ui-px)), var(--ui-primary) calc(8 * var(--ui-px)) calc(16 * var(--ui-px)));
 }
 
 /* What the last install did, with the switch to use it. */
@@ -541,7 +541,7 @@
 .menu-card button.content-tab[aria-selected='true'] {
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-1));
   color: var(--ui-text);
-  box-shadow: inset 0 2px 0 var(--ui-accent);
+  box-shadow: inset 0 calc(2 * var(--ui-px)) 0 var(--ui-accent);
 }
 
 .content-tabpanel {
