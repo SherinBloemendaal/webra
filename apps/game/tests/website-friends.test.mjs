@@ -13,7 +13,7 @@ import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
 
 const { mountAccountPage } = await import('../../website/assets/account.js');
-const { friendStatus, groupFriends, friendsSummary, socialSettings, spanText, clockText, SOCIAL_DEFAULTS } = await import('../../website/assets/friends.js');
+const { friendStatus, groupFriends, friendsSummary, socialSettings, spanText, clockText, SOCIAL_SETTING_DEFAULTS: SOCIAL_DEFAULTS, FriendsClient } = await import('../../website/assets/friends.js');
 const { normalizeInviteCode, formatInviteCode, invitePath, typedInviteCode, inviteInPath, lookupInvite, inviteSummary, INVITE_MESSAGES } = await import('../../website/assets/invite.js');
 const { betaBadge, releaseTag } = await import('../../website/assets/site-data.js');
 const { openDialog, selectField } = await import('../../website/assets/ui.js');
@@ -76,6 +76,8 @@ test('friends helpers: statuses in words with a lamp and a group; groups, search
   assert.equal(friendsSummary(friends), '3 online · 1 in a game');
   assert.deepEqual(socialSettings({ social: { showOnline: false, friendsJoin: 'yes' } }), { ...SOCIAL_DEFAULTS, showOnline: false });
   assert.deepEqual(socialSettings(null), SOCIAL_DEFAULTS);
+  assert.deepEqual(SOCIAL_DEFAULTS, { showOnline: true, friendsJoin: true, allowSpectate: false });
+  assert.equal(typeof new FriendsClient().list, 'function', "the game's client");
 });
 
 test('invite codes: typed, pasted and linked codes; the dash fills in; game links carry the code', () => {

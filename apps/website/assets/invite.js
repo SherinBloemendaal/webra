@@ -3,49 +3,14 @@
 // follows (/join/<code> -> /play/?invite=<code> -> the play gate -> the
 // account page with ?returnTo=/play/?invite=<code>), and friends' invites on
 // the account page. The Worker owns /join/<code> (a redirect into the game);
-// the game looks the code up and joins.
-//
-// Adapter: the protocol round (branch work/netround) adds
-// packages/protocol/src/invite.js (published as /lib/protocol/invite.js)
-// with normalizeInviteCode, formatInviteCode and invitePath, and the lookup
-// GET /api/invite/:code. These functions have the same names, rules and
-// results; once both are merged, import the three from
-// /lib/protocol/invite.js and drop the copies here.
+// the game looks the code up and joins. The code rules are the protocol's
+// (invite.js, from /lib/); this module adds what the website's fields and
+// cards need and looks codes up with GET /api/invite/:code.
 
-/** The characters of a code: no 0/O or 1/I/L (INVITE_ALPHABET of the protocol). */
-export const INVITE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-export const INVITE_CODE_LENGTH = 6;
-const CODE_RE = new RegExp(`^[${INVITE_ALPHABET}]{${INVITE_CODE_LENGTH}}$`);
+import { INVITE_ALPHABET, INVITE_CODE_LENGTH } from '/lib/protocol/constants.js';
+import { formatInviteCode, invitePath, normalizeInviteCode } from '/lib/protocol/invite.js';
 
-/**
- * The code in what a player typed or pasted: any case, with or without the
- * dash or spaces, or a whole link ending in `/join/<code>` or carrying
- * `invite=<code>`. Returns the six characters (upper case, no dash) or null.
- */
-export function normalizeInviteCode(input) {
-  if (typeof input !== 'string' || input.length > 512) return null;
-  let s = input.trim();
-  const link = /(?:\/join\/|[?&#]invite=)([^/?#&]+)/i.exec(s);
-  if (link) {
-    try {
-      s = decodeURIComponent(link[1]);
-    } catch {
-      return null;
-    }
-  }
-  s = s.replace(/[\s-]/g, '').toUpperCase();
-  return CODE_RE.test(s) ? s : null;
-}
-
-/** `K7Q2MX` -> `K7Q-2MX` (anything that is not a code is returned as it is). */
-export function formatInviteCode(code) {
-  return typeof code === 'string' && CODE_RE.test(code) ? `${code.slice(0, 3)}-${code.slice(3)}` : code;
-}
-
-/** The path of an invite link on this site: `/join/K7Q-2MX`. */
-export function invitePath(code) {
-  return `/join/${formatInviteCode(code)}`;
-}
+export { formatInviteCode, invitePath, normalizeInviteCode };
 
 /**
  * What a player has typed so far, as the field shows it: the allowed

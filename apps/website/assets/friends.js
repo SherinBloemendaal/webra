@@ -1,50 +1,11 @@
-// Friends on the account page (docs/accounts-api.md 5.11): the API calls
-// and the words for each friend's status. No DOM.
-//
-// Adapter: the protocol round (branch work/netround) adds the same client
-// as apps/game/js/account/friends.js (FriendsClient, published under
-// /lib/js/account/friends.js). FriendsClient here has the same methods and
-// routes; once both are merged, import it from /lib/js/account/friends.js
-// and keep only the helpers below the client.
+// Friends on the account page (docs/accounts-api.md 5.11): the words for
+// each friend's status and the list's groups. No DOM. The API client is
+// the game's (js/account/friends.js FriendsClient) and the limits and
+// privacy defaults are the protocol's (friends.js), both from /lib/.
 
-import { AccountApi } from '/lib/js/account/api.js';
-
-const enc = encodeURIComponent;
-
-/** The friends list is polled this often while the page shows it (FRIENDS_POLL_MS of the protocol). */
-export const FRIENDS_POLL_MS = 30_000;
-
-/** The `social` settings (declared keys of the settings document) and their defaults (SOCIAL_DEFAULTS). */
-export const SOCIAL_DEFAULTS = Object.freeze({ showOnline: true, friendsJoin: true, allowSpectate: false });
-
-/** The friends endpoints. Every method resolves with the parsed answer or throws an AccountError. */
-export class FriendsClient {
-  constructor(api = new AccountApi()) {
-    this.api = api;
-  }
-
-  /** `{ friends, incoming, outgoing, blocked, invites, sentInvites, privacy, limits }`. */
-  list = () => this.api.get('/api/account/friends');
-  /** `{ request }` (waiting) or `{ friend }` when the other player had asked already. */
-  request = (username) => this.api.post('/api/account/friends/requests', { username });
-  accept = (username) => this.api.post(`/api/account/friends/requests/${enc(username)}/accept`);
-  ignore = (username) => this.api.post(`/api/account/friends/requests/${enc(username)}/ignore`);
-  withdraw = (username) => this.api.del(`/api/account/friends/requests/${enc(username)}`);
-  remove = (username) => this.api.del(`/api/account/friends/${enc(username)}`);
-  block = (username) => this.api.post('/api/account/friends/blocks', { username });
-  unblock = (username) => this.api.del(`/api/account/friends/blocks/${enc(username)}`);
-  /** Dismiss an invite from `username`, or with `sent` withdraw one sent to `username`. */
-  dismissInvite = (username, { sent = false } = {}) => this.api.del(`/api/account/friends/invites/${enc(username)}${sent ? '?sent=1' : ''}`);
-}
-
-/** The effective privacy settings from a settings document (anything malformed takes the default). */
-export function socialSettings(settings) {
-  const s = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings.social : null;
-  const out = { ...SOCIAL_DEFAULTS };
-  if (!s || typeof s !== 'object' || Array.isArray(s)) return out;
-  for (const k of Object.keys(SOCIAL_DEFAULTS)) if (typeof s[k] === 'boolean') out[k] = s[k];
-  return out;
-}
+export { FriendsClient } from '/lib/js/account/friends.js';
+export { FRIENDS_POLL_MS, socialSettings } from '/lib/protocol/friends.js';
+export { SOCIAL_SETTING_DEFAULTS } from '/lib/protocol/accounts.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

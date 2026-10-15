@@ -3894,18 +3894,14 @@ set through CSSOM (`--avatar`, `--fill`, the select plate's `--sp-*`).
   x.y.z", the date, a Live badge for the running version, and per kind of
   change and part of the game a tagged heading (New, Fixed, Faster,
   Breaking; `site-data.js` `releaseTag`).
-- **Depends on the protocol round** (branch work/netround): "Join with a
-  code", the invite card and the friends section need its routes
-  (`/join/<code>`, `GET /api/invite/:code`, `/api/account/friends/*`) and
-  work once it is merged; before that the lookup answers unknown and the
-  friends section says friends are not available.
-- **Adapters until the protocol round is merged**: `assets/invite.js`
-  (`normalizeInviteCode`, `formatInviteCode`, `invitePath`) and
-  `assets/friends.js` (`FriendsClient`, `SOCIAL_DEFAULTS`,
-  `FRIENDS_POLL_MS`) copy the names, rules and routes of
-  `packages/protocol/src/invite.js`, `friends.js` and
-  `apps/game/js/account/friends.js`; afterwards they import those from
-  `/lib/`.
+- **Shared with the game and the server**: the code rules come from the
+  protocol (`/lib/protocol/invite.js`: `normalizeInviteCode`,
+  `formatInviteCode`, `invitePath`), the friends client from the game
+  (`/lib/js/account/friends.js` `FriendsClient`) and the poll interval and
+  privacy defaults from the protocol (`/lib/protocol/friends.js`
+  `FRIENDS_POLL_MS`, `socialSettings`). The routes are the Worker's:
+  `/join/<code>` (the redirect into the game), `GET /api/invite/:code` and
+  `/api/account/friends/*` (see "Invite codes" and the accounts API 5.11).
 
 ## 6. Deployment
 
