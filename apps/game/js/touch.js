@@ -67,7 +67,7 @@ export function touchControls() {
     ['A-Move / Force', 'Attack move / force attack the next tap'],
     ['Tap the radar', 'Units selected: give the order there (Add queues, Force force attacks); otherwise move the camera'],
     ['Drag on the radar', 'Move the camera'],
-    ['Long press a sidebar card', 'Cancel one'],
+    ['Long press a sidebar card', 'Right click: hold or cancel (5 with Add)'],
     ['Placing a building', 'Tap or drag to move it, then Place (or Cancel)'],
     ['Menu, Build / Map', 'Game menu; show or hide the build sidebar on phones'],
     ['Chat', 'Online games and replays with chat: open the chat'],

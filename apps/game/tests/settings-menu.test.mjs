@@ -13,7 +13,7 @@ import { GameMenu, scaleLabel, MENU_SETTINGS, DISPLAY_HELP } from '../js/gamemen
 import { UiScale, crispGameScales, autoGameScale, screenOf } from '../js/scale.js';
 import { AudioSystem } from '../js/audio/index.js';
 import { mountAudioPanel, musicText, AUDIO_HELP_KEYS } from '../js/audio/panel.js';
-import { MENU_HELP_KEYS } from '../js/gamemenu.js';
+import { MENU_HELP_KEYS, CONTROLS_SETTINGS } from '../js/gamemenu.js';
 import { HELP } from '../js/help.js';
 import { Jukebox, playOrder } from '../js/audio/music.js';
 import { DEFAULT_PREFS, busGain } from '../js/audio/prefs.js';
@@ -545,4 +545,21 @@ test('privacy: the error report switch, with a note while this build reports not
   } finally {
     resetTelemetry();
   }
+});
+
+test('controls page: Right click in the build menu, OpenRA by default, with help; reset hotkeys leaves it', () => {
+  const { settings, root, menu } = setup();
+  menu.show('controls');
+  assert.ok(root.querySelectorAll('h2').map((h) => h.textContent).includes('Build menu'));
+  const openra = root.querySelector('#game-menu-buildRightClick-openra');
+  const webra = root.querySelector('#game-menu-buildRightClick-webra');
+  assert.ok(openra && webra);
+  assert.equal(settings.get('buildRightClick'), 'openra', 'the sidebar always did what OpenRA does');
+  assert.ok(openra.checked);
+  check(webra);
+  assert.equal(settings.get('buildRightClick'), 'webra');
+  assert.ok(CONTROLS_SETTINGS.includes('buildRightClick') && !MENU_SETTINGS.includes('buildRightClick'));
+  assert.match(HELP['settings.buildRightClick'], /stack/);
+  assert.match(HELP['controls.production'], /whether you have the credits or not/);
+  assert.ok(textOf(root).includes(HELP['controls.production']), 'the build menu note is on the page');
 });

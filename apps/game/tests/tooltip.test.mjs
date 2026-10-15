@@ -298,7 +298,7 @@ test('tooltip specs: production cameo like OpenRA (name, key, cost, time, power,
   const inf = productionTip(e1, { enabled: false, exclusive: 'Soviet only', buildTicks: 100 }, state);
   assert.deepEqual(inf.stats.map((s) => s.kind), ['cost', 'time']);
   assert.equal(inf.requires, 'Soviet only');
-  assert.match(tooltipText(inf), /Shift: build 5/);
+  assert.match(tooltipText(inf), /Shift: 5 at a time/);
   assert.equal(formatPower(0), '0');
 });
 

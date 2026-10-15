@@ -338,8 +338,8 @@ Press **Esc** in a game (or the cog button at the top of the sidebar, or **Menu*
 | Mouse wheel | Zoom |
 | Esc | Cancel placement, targeting, a sidebar mode or attack-move; otherwise open the game menu. With the mouse captured it also releases the mouse (Settings: "Esc also opens the menu"); after the release key (Option + E, Alt + Shift + E) released it, Esc opens no menu until a click into the game |
 | Click into the game | Capture the mouse (in fullscreen by default; Settings, Mouse capture), see the notes below |
-| Sidebar left click | Build or queue, structures too (Shift + click queues 5) |
-| Sidebar right click | Put the one being built on hold ("On hold"); on one that is on hold, finished or not started yet: cancel the last queued one (refunds what was paid). Left click resumes a held one, middle click cancels at once |
+| Sidebar left click | Build or queue, structures too (Shift + click queues 5). Queueing never needs the credits: production waits while the money is short and goes on once it comes in (OpenRA). A red frame and a red $ on a cameo: your credits do not cover all of its queued items yet |
+| Sidebar right click | By Controls, "Right click in the build menu". OpenRA (default): put the one being built on hold ("On hold"); on one that is on hold, finished or not started yet: cancel the most recently queued one. WebRA: remove the most recently queued ones first, then hold and cancel the one being built. Shift + right click cancels 5 the same way; cancelling refunds what was paid. Left click resumes a held one, middle click cancels at once (Shift: 5) |
 | Click a finished building in the sidebar | Start placing it (the next queued one starts once it is placed) |
 
 Game commands (OpenRA defaults):
@@ -427,7 +427,7 @@ Touch and pen input works next to the mouse and keyboard; the touch action bar a
 | **Stop**, **Deploy**, **All**, **Cancel** | Stop; deploy, unload or use an ability; select everything on screen (twice: the whole map); cancel the mode or clear the selection |
 | Placing a building | Tap or drag anywhere to move the footprint, then **Place** (or **Cancel**) |
 | Support power | Tap the target; drag from the target to choose the direction aircraft fly in |
-| Long press a sidebar card | Cancel the last queued one |
+| Long press a sidebar card | The right click: hold or cancel (5 with Add) |
 | **Build** / **Map** (phones) | Show or hide the build sidebar drawer; it also tucks away while you place a building |
 | **Menu** | Game menu (pause, settings, controls, sound, leave) |
 | **Chat** | Online games and replays with chat: open the chat (touch screens have no Enter key) |

@@ -167,7 +167,7 @@ pub(crate) fn cancel_luxuries(w: &mut World, player: u8) {
             // A refinery by reachable ore is the way out.
             let refinery = ore && w.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.refinery.is_some());
             if !power && !truck && !refinery {
-                w.cancel_production(player, ty);
+                w.cancel_production(player, ty, 1);
             }
         }
     }

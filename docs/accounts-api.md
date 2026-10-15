@@ -802,7 +802,8 @@ Serialized size at most 32 KiB.
     "mouseCaptureSpeed": 1,        // number 0.25..3 (pointer speed while captured)
     "mouseCaptureEscMenu": true,   // true (default): Esc releases the mouse and opens the menu at once
     "mouseCaptureNotice": "always", // "always" | "first" (the first 3 captures) | "off": the "Mouse captured" notice
-    "pauseWhenHidden": false       // single player: true opens the menu (pauses) when the page is hidden
+    "pauseWhenHidden": false,      // single player: true opens the menu (pauses) when the page is hidden
+    "buildRightClick": "openra"    // "openra" (hold first) | "webra" (last queued first): right click on a sidebar cameo
   },
   "audio": {
     "enabled": true, "master": 0.8, "effects": 0.8, "voices": 0.9, "music": 0.5,   // volumes 0..1

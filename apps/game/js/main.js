@@ -1526,6 +1526,7 @@ function start(host, { stress, tickMs, player = PLAYER, online = null, replay = 
         placementEnded();
       },
       shiftLatched: () => !!touch?.queue,
+      rightClickStyle: () => settings.get('buildRightClick'),
       onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),

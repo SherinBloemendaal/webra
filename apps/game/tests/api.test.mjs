@@ -436,3 +436,24 @@ test('weather options are checked and the sky is reported', () => {
   const info = JSON.parse(g.actor_json(g.pick(0, ...g.start_position(0))));
   if (info) assert.equal(info.heat, 0);
 });
+
+test('production queues without credits, waits for them, and Shift cancels five (player_json paid, itemRoom)', () => {
+  const game = newGame({ startingUnits: 'base', startingCash: 0 });
+  ticks(game, 1);
+  let state = JSON.parse(game.player_json(0));
+  assert.equal(state.funds, 0);
+  const id = state.buildable.find((b) => b.enabled && b.queue === 0).id;
+  // Seven Shift clicks: more than the 30 per queue older versions allowed.
+  for (let i = 0; i < 7; i++) game.start_production(0, id, 5);
+  ticks(game, 60);
+  state = JSON.parse(game.player_json(0));
+  assert.equal(state.queues[0].length, 35, 'queued without any credits');
+  assert.deepEqual([state.queues[0][0].paid, state.queues[0][0].started, state.queues[0][0].progress], [0, false, 0], 'waiting for money');
+  assert.equal(state.buildable.find((b) => b.id === id).itemRoom, 999 - 35, 'OpenRA ItemLimit');
+  // Shift + right click, then a right click: six fewer, the last ones first.
+  game.cancel_production(0, id, 5);
+  game.cancel_production(0, id, 1);
+  ticks(game, 1);
+  state = JSON.parse(game.player_json(0));
+  assert.equal(state.queues[0].length, 29);
+});

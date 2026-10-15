@@ -35,6 +35,7 @@ export function summarizeQueues(queues) {
  * What a left click on a card does: place the finished structure, or queue
  * one more (five with shift). Structures queue like units: the first one is
  * built and waits for placement, the ones behind it start once it is placed.
+ * Money plays no part: items queue without credits and wait for them.
  *
  * @returns {{place: true} | {place: false, count: number} | null} null when the card is disabled
  */
@@ -44,40 +45,88 @@ export function clickAction({ queue, enabled, ready }, shift) {
   return { place: false, count: shift ? SHIFT_COUNT : 1 };
 }
 
-/** Items one production queue holds at most (engine/src/production.rs MAX_QUEUED). */
-export const QUEUE_MAX = 30;
+/**
+ * Items of one actor type a production queue holds at most: OpenRA
+ * ProductionQueueInfo ItemLimit (engine/src/production.rs ITEM_LIMIT). The
+ * whole queue holds at most QUEUE_CAP (WebRA's cap; OpenRA's QueueLimit is 0).
+ */
+export const ITEM_LIMIT = 999;
+export const QUEUE_CAP = 2000;
 
 /**
  * What OpenRA's ProductionQueue.CanQueue says about one more item: 'queued'
- * (QueuedAudio), 'limited' (LimitedAudio: the queue is full) or 'blocked'
- * (BlockedAudio: its Buildable.BuildLimit is reached).
- * @param {{ queueLength: number, limitLeft?: number | null }} o limitLeft: player_json buildable `limitLeft` (null: no limit)
+ * (QueuedAudio), 'limited' (LimitedAudio: ItemLimit or QUEUE_CAP reached) or
+ * 'blocked' (BlockedAudio: its Buildable.BuildLimit is reached). Credits never matter.
+ * @param {{ itemRoom?: number | null, limitLeft?: number | null }} o player_json buildable `itemRoom` and `limitLeft` (null: no limit)
  */
-export function queueOutcome({ queueLength, limitLeft = null }) {
-  if (queueLength >= QUEUE_MAX) return 'limited';
+export function queueOutcome({ itemRoom = null, limitLeft = null }) {
+  if (itemRoom !== null && itemRoom !== undefined && itemRoom <= 0) return 'limited';
   if (limitLeft !== null && limitLeft !== undefined && limitLeft <= 0) return 'blocked';
   return 'queued';
 }
 
+/** The "Right click in the build menu" setting (settings.js `buildRightClick`). */
+export const RIGHT_CLICK_STYLES = Object.freeze(['openra', 'webra']);
+
 /**
- * What a right click on a card does (OpenRA ProductionPaletteWidget
- * HandleRightClick): put the first queued item of it on hold ('pause'), or
- * cancel one ('cancel') when that item is on hold, finished or not started
- * (nothing paid yet); null with nothing queued.
+ * What a right click on a card does, by the player's style (`buildRightClick`):
+ * `{ kind: 'pause' }`, `{ kind: 'cancel', count }` (the engine cancels the
+ * last `count` queued items of the type, the most recently queued first) or
+ * null with nothing queued. `many` is the click's count: 1, or 5 with Shift.
+ *
+ * - 'openra' (OpenRA ProductionPaletteWidget HandleRightClick): the first
+ *   queued item of the type is put on hold while it is being built; when it
+ *   is on hold, finished or not started (nothing paid yet) `many` are
+ *   cancelled. The item on hold stays until it is the last one left.
+ * - 'webra' (a stack): the item being built lies at the bottom and every
+ *   item queued after it on top; a right click takes from the top, so the
+ *   most recently queued items go first, never the one being built while
+ *   others are queued. Once only that one is left it goes on hold, then is
+ *   cancelled. With nothing paid yet (or on hold, or finished) it is the
+ *   same as 'openra'.
  * @param {{ count: number, done: boolean, paused: boolean, started: boolean } | undefined} head perId summary of the card
+ * @param {{ style?: string, many?: number }} [o]
  */
-export function rightClickAction(head) {
+export function rightClickAction(head, { style = 'openra', many = 1 } = {}) {
   if (!head || !head.count) return null;
-  return head.paused || head.done || !head.started ? 'cancel' : 'pause';
+  const building = head.started && !head.paused && !head.done;
+  if (!building) return { kind: 'cancel', count: many };
+  if (style === 'webra' && head.count > 1) return { kind: 'cancel', count: Math.min(many, head.count - 1) };
+  return { kind: 'pause' };
 }
 
 /**
- * Whether a right click on a card ends placement mode. The engine cancels the
- * last queued item of that type, so the finished structure only goes away
- * when it is the only one queued.
+ * Whether cancelling `count` items of a card ends placement mode. The engine
+ * cancels the last queued items of that type, so the finished structure only
+ * goes away when no more than `count` are queued.
  */
-export function cancelEndsPlacement({ queue, ready, queued }) {
-  return isStructureQueue(queue) && !!ready && queued <= 1;
+export function cancelEndsPlacement({ queue, ready, queued }, count = 1) {
+  return isStructureQueue(queue) && !!ready && queued <= count;
+}
+
+/**
+ * Which queued items the credits do not cover yet, per actor id: walking
+ * each queue from its head, what is still to pay for an item and all items
+ * ahead of it in its queue (cost minus `paid`; finished ones are paid) is
+ * more than `funds`. Production takes the money as it goes, so these wait
+ * for credits (OpenRA: production pauses while the money is short). Each
+ * queue is counted on its own; the queues draw on the same credits.
+ * @param {Array<Array<{id: string, done: boolean, paid?: number}>>} queues player_json().queues
+ * @param {number} funds credits (cash and stored ore)
+ * @param {(id: string) => number} costOf the actor's cost
+ * @returns {Map<string, number>} id -> how many of its queued items are short
+ */
+export function shortOfFunds(queues, funds, costOf) {
+  const short = new Map();
+  for (const items of queues) {
+    let due = 0;
+    for (const it of items) {
+      if (it.done) continue;
+      due += Math.max(0, (costOf(it.id) || 0) - (it.paid ?? 0));
+      if (due > funds) short.set(it.id, (short.get(it.id) ?? 0) + 1);
+    }
+  }
+  return short;
 }
 
 /**
@@ -169,9 +218,10 @@ export function formatPower(power) {
  * @param {{ name: string, description?: string, cost: number, power?: number, kind?: string, queue: number }} actor rules_json actor
  * @param {{ enabled?: boolean, requires?: string[], exclusive?: string | null, buildTicks?: number } | undefined} item player_json `buildable` entry
  * @param {{ funds?: number, cash?: number, resources?: number, powerGenerated?: number, powerUsed?: number, lowPower?: boolean } | null} state player_json
- * @param {{ hotkey?: string | null, ticksPerSecond?: number, lowPowerModifier?: number }} [o]
+ * @param {{ hotkey?: string | null, ticksPerSecond?: number, lowPowerModifier?: number, short?: number, rightClickStyle?: string }} [o]
+ *   short: queued items the credits do not cover yet (`shortOfFunds`); rightClickStyle: the `buildRightClick` setting
  */
-export function productionTip(actor, item, state, { hotkey = null, ticksPerSecond = 25, lowPowerModifier = 100 } = {}) {
+export function productionTip(actor, item, state, { hotkey = null, ticksPerSecond = 25, lowPowerModifier = 100, short = 0, rightClickStyle = 'openra' } = {}) {
   const stats = [];
   const funds = state ? (state.funds ?? (state.cash ?? 0) + (state.resources ?? 0)) : Infinity;
   stats.push({ kind: 'cost', label: 'cost', text: `$${actor.cost}`, bad: funds < actor.cost });
@@ -192,8 +242,12 @@ export function productionTip(actor, item, state, { hotkey = null, ticksPerSecon
     else if (actor.buildLimit > 0) requires = `Only ${actor.buildLimit} at a time`;
     else requires = 'Unavailable';
   }
+  const right = rightClickStyle === 'webra' ? 'Right click: remove the last queued, then hold and cancel the one being built' : 'Right click: hold, then cancel';
   const hint = isStructureQueue(actor.queue)
-    ? `Left click: build, then place. Shift: queue ${SHIFT_COUNT}. Right click: hold, then cancel. Middle click: cancel.`
-    : `Left click: build. Shift: build ${SHIFT_COUNT}. Right click: hold, then cancel. Middle click: cancel.`;
-  return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes: [{ text: hint, tone: 'hint' }] };
+    ? `Left click: build, then place. ${right}. Shift: ${SHIFT_COUNT} at a time. Middle click: cancel.`
+    : `Left click: build. ${right}. Shift: ${SHIFT_COUNT} at a time. Middle click: cancel.`;
+  const notes = [];
+  if (short > 0) notes.push({ text: `Not enough credits yet for ${short === 1 ? '1 queued item' : `${short} queued items`}: production waits until the money comes in.`, tone: 'warn' });
+  notes.push({ text: hint, tone: 'hint' });
+  return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes };
 }

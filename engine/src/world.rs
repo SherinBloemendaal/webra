@@ -675,6 +675,11 @@ impl PlayerSetup {
     }
 }
 
+/// `CancelProduction` without a count (replays and orders of older clients).
+fn one_item() -> i32 {
+    1
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "o", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Order {
@@ -705,9 +710,13 @@ pub enum Order {
         ty: u16,
         count: i32,
     },
+    /// Cancel the last `count` queued items of `ty` (OpenRA CancelProduction
+    /// with its ExtraData count; orders without one cancel a single item).
     CancelProduction {
         player: u8,
         ty: u16,
+        #[serde(default = "one_item")]
+        count: i32,
     },
     /// Put the first queued item of `ty` on hold or resume it (OpenRA PauseProduction).
     PauseProduction {
@@ -988,7 +997,7 @@ impl Order {
                 let area = ((*x1 as i64 - *x0 as i64).abs() + 1) * ((*y1 as i64 - *y0 as i64).abs() + 1);
                 ids.len() <= MAX_IDS && area <= crate::abilities::MAX_MINEFIELD_CELLS as i64
             }
-            Order::StartProduction { count, .. } => (1..=50).contains(count),
+            Order::StartProduction { count, .. } | Order::CancelProduction { count, .. } => (1..=50).contains(count),
             Order::SupportPower { key, .. } => key.len() <= 64,
             _ => true,
         }
@@ -2274,7 +2283,7 @@ impl World {
                     }
                 }
                 Order::StartProduction { player, ty, count } => self.start_production(player, ty, count),
-                Order::CancelProduction { player, ty } => self.cancel_production(player, ty),
+                Order::CancelProduction { player, ty, count } => self.cancel_production(player, ty, count),
                 Order::PauseProduction { player, ty, paused } => self.pause_production(player, ty, paused),
                 Order::Place { player, ty, cx, cy } => {
                     self.place_building(player, ty, cx, cy);

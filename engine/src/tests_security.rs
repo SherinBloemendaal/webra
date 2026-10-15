@@ -77,7 +77,7 @@ fn random_order(w: &World, r: &mut Rng) -> Order {
         2 => Order::Attack { player, ids: ids(r), target: id(r) },
         3 => Order::Stop { player, ids: ids(r) },
         4 => Order::StartProduction { player, ty: ty(r), count: nasty_int(r) },
-        5 => Order::CancelProduction { player, ty: ty(r) },
+        5 => Order::CancelProduction { player, ty: ty(r), count: nasty_int(r) },
         6 => Order::Place { player, ty: ty(r), cx: nasty_int(r), cy: nasty_int(r) },
         7 => Order::Rally { player, building: id(r), x: nasty_int(r), y: nasty_int(r) },
         8 => Order::Sell { player, building: id(r) },

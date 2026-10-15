@@ -54,6 +54,8 @@ export const KEYS = Object.freeze({
   mouseCaptureNotice: ['game', 'mouseCaptureNotice'],
   // Single player: whether a hidden page opens the menu (and so pauses); off, the game plays on.
   pauseWhenHidden: ['game', 'pauseWhenHidden'],
+  // Right click on a sidebar cameo (js/production.js rightClickAction): 'openra' or 'webra'.
+  buildRightClick: ['game', 'buildRightClick'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],
   // The repair mode box chooser's last choice (js/input.js): 'all', 'buildings', 'combat', 'harvesters' or 'other'.
   repairBoxChoice: ['extra', 'repairBoxChoice'],
