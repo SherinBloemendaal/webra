@@ -201,6 +201,9 @@ const ACTION_LABELS = { retry: { offline: 'Try again', error: 'Try again', forbi
  * 'signin': the caller opens the sign-in dialog), or another problem
  * (the dialog shows that one). "Account page" goes there. It never blocks
  * a running game: closing it leaves everything as it was (resolves null).
+ * By design it only opens where game files load (js/main.js playAccess: a
+ * start, the lobby, saves and replays, online play's module), never in the
+ * middle of a lockstep game, whose files are all in memory already.
  * @param {import('./session.js').AccountSession | null} session
  * @param {'forbidden' | 'offline' | 'error'} state
  * @param {{ probe?: () => Promise<string>, navigate?: (url: string) => void }} [o]
