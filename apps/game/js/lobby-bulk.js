@@ -329,6 +329,20 @@ export function planBulk(slots, id, opts) {
 }
 
 /**
+ * Which of the team actions `ids` the slots' teams already are: the first
+ * whose plan changes nothing (the lobby's team presets show it chosen), or
+ * null. Fewer than two playing slots match none.
+ */
+export function matchingTeamAction(slots, ids, opts) {
+  if (slots.filter(playing).length < 2) return null;
+  for (const id of ids) {
+    const plan = planBulk(slots, id, opts);
+    if (!plan.error && plan.changes.length === 0) return id;
+  }
+  return null;
+}
+
+/**
  * Apply planned changes to a skirmish lobby state (lobby-state.js shape):
  * all or nothing. `addRow(bot)` adds an AI row (lobby-state addSlot) and
  * returns its index or -1. Returns null, or why it was refused (the state

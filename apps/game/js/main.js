@@ -96,6 +96,7 @@ import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observe
 import { ICON_CSS as OBSERVER_ICON_CSS } from './observer-icons.js';
 import { EndGameDialog, EndGameFlow } from './endgame.js';
 import { StatsScreen } from './stats.js';
+import { netStatsData } from './netstats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
 import { CampaignMenu } from './campaign/menu.js';
 import { LensArt } from './maplens/source.js';
@@ -110,6 +111,7 @@ import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
 import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
+import { LoadingBoard, boundKeyText, colorCss, describeStart } from './loadingboard.js';
 import { GameSession, GameStart } from './gamesession.js';
 
 const PLAYER = 0;
@@ -149,6 +151,8 @@ let contentNotice = null;
 let account = null;
 /** Replays kept in the account (js/account/replays.js): the upload queue, while accounts work. */
 let replayUploads = null;
+/** The game on screen hears what happened to its replay upload here (js/endgame.js replay line), or null. */
+let replayNotice = null;
 /**
  * Loads of game files after the start (lazy modules, the simulation worker):
  * when the server stops serving them mid-session (js/account/gate.js), the
@@ -165,6 +169,8 @@ let previews = null;
 let builtInRules = null;
 /** The loading screen (js/loadingscreen.js): from Start to the game's first frame. */
 let loader = null;
+/** The skirmish lobby (js/lobby.js): starts that come from elsewhere (a replay from the statistics) show their errors there. */
+let mainLobby = null;
 /**
  * The game on screen and how Restart and the next mission replace it in
  * this page (js/gamesession.js); the js/restart.js record is the fallback.
@@ -192,7 +198,15 @@ async function boot() {
   // UI scale first, so every screen and dialog opens at its size.
   uiScale = new UiScale({ settings, win: window, root: document.documentElement });
   // The loading screen follows the spans of each game's start (js/perfcapture.js).
-  loader = new LoadingScreen($('loading'), { reducedMotion: motionIsReduced });
+  loader = new LoadingScreen($('loading'), {
+    reducedMotion: motionIsReduced,
+    // The board around the steps (js/loadingboard.js): the tips go on where the last start left them (guide.lastTip).
+    board: new LoadingBoard({
+      tips: { get: () => defaultRegistry().get('guide', 'lastTip'), set: (i) => defaultRegistry().set('guide', 'lastTip', i) },
+      // A tip's key is the one the player bound (js/hotkeys.js).
+      keyText: (name) => boundKeyText(hotkeys, name),
+    }),
+  });
   perfTrace.onSpan = (name) => loader.span(name);
   setupAudio();
   setupAccount();
@@ -201,7 +215,7 @@ async function boot() {
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   // Generated maps for the lobby previews, made in a worker (js/mappreview.js).
   previews = wasm ? new GeneratedPreviews({ backend: previewBackend({ Game, module: wasmModule }) }) : null;
-  const lobby = new Lobby($('skirmish'), {
+  const lobby = (mainLobby = new Lobby($('skirmish'), {
     colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
     colorNames: COLOR_NAMES,
     mapPreview: (seed, size) => Game.map_preview(seed, size),
@@ -229,7 +243,7 @@ async function boot() {
     reducedMotion: motionIsReduced,
     onStart: (options) => startSkirmish(options, lobby),
     onStress: ({ seed, units }) => startStress(seed, units, lobby),
-  });
+  }));
   // The start screen's main menu (js/startmenu.js): Play, saved games, account and More.
   mountStartMenu($('start-nav'), {
     onSkirmish: () => {
@@ -242,6 +256,9 @@ async function boot() {
     onSound: audioPanel ? (entry) => audioPanel.open(entry) : undefined,
     onReleaseNotes: () => releaseNotes.open(),
     onStress: () => lobby.openStress(),
+    // Players online (protocol 8, /api/online through js/net.js api.online): hidden until the server has it.
+    onlineCount: async () => (await import('./net.js')).api.online?.(),
+    visible: () => !$('menu').hidden && document.visibilityState !== 'hidden',
   });
   if (!gpuError) {
     try {
@@ -434,6 +451,8 @@ function setupAccount() {
       onEvent: (e) => {
         const text = uploadEventText(e);
         if (text) showToast(text);
+        // The end of game dialog of the game on screen says it too (js/endgame.js).
+        replayNotice?.(e);
       },
     });
     const followUploads = () => {
@@ -710,6 +729,7 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
+        // `net` (js/online.js gameNet: { quality, source, roster, you, players() }) feeds the statistics' Network tab.
         onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null, net = null }) => {
           entry.hidden = true;
           // A friends screen open over the lobby goes; the lobby it covered stays hidden behind the game.
@@ -754,6 +774,7 @@ function setupOnline(lobby, gpuError) {
  */
 async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
   perfLaunch();
+  loader.describe(describeStart(spec, { colorOf: (c) => colorCss(TEAM_PALETTE[c]) }));
   const host = await perfTrace.spanAsync('sim.host', () => newSimHost(), (h) => ({ mode: h?.mode ?? null }));
   let info;
   try {
@@ -1148,6 +1169,7 @@ function perfContext() {
  */
 async function launch(spec, lobby, failText) {
   perfLaunch();
+  loader.describe(describeStart(spec, { colorOf: (c) => colorCss(TEAM_PALETTE[c]) }));
   let host = null;
   try {
     // Installed graphics are read before the first frame, so a game never starts with WebRA art for a moment.
@@ -1383,8 +1405,30 @@ async function watchMissionReplay(replay, lobby) {
   });
 }
 
-/** Open the replay viewer. */
-async function watchReplay(replay, lobby) {
+/**
+ * The finished online game on screen goes, and its replay opens at `tick`
+ * (the statistics' Network tab: a stall). The replay is the recorder's,
+ * encoded now; `leaveSession` leaves the online session, then the game is
+ * taken down in place like a restart.
+ */
+async function openReplayAt(recorder, tick, leaveSession) {
+  let parsed;
+  try {
+    const { text } = await recorder.encode('replay');
+    const r = await records.openRecordText(text, version());
+    if (!r.ok) throw new Error(r.error);
+    parsed = r.replay;
+  } catch (err) {
+    showToast(`Could not open the replay: ${err?.message ?? err}`);
+    return;
+  }
+  // The online session is left first (the game is over; a rematch is no longer offered).
+  leaveSession?.();
+  await session.replace({ plan: loadingPlan('replay', { mapFile: !!parsed.map }), relaunch: () => watchReplay(parsed, mainLobby, { at: tick }) });
+}
+
+/** Open the replay viewer (at tick `at`: it seeks there once it runs). */
+async function watchReplay(replay, lobby, { at = null } = {}) {
   if (!renderer || !records) return;
   const mismatch = records.engineMismatch(replay, version());
   if (mismatch) return lobby.showError(mismatch);
@@ -1399,17 +1443,19 @@ async function watchReplay(replay, lobby) {
   const run = await launch({ kind: 'replay', replay, tickMs }, lobby, 'Could not open the replay');
   if (!run) return;
   applyColors(replay.options.players);
+  const handle = new ReplayHandle(run.host, run.info.replayLength);
   start(run.host, {
     stress: false,
     tickMs,
     player: 0,
-    replay: new ReplayHandle(run.host, run.info.replayLength),
+    replay: handle,
     replayFile: replay,
     viewer: viewerPlayers(replay.options.players),
     about: gameAbout({ map: replay.map ?? null, options: replay.options }),
     replayChat: replay.chat ?? null,
     replayTeams: replay.options.players.map((p) => p.team ?? 0),
   });
+  if (Number.isInteger(at) && at > 0) handle.seek(at);
 }
 
 async function startStress(seed, units, lobby) {
@@ -2078,6 +2124,12 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         localPlayer: viewer ? null : player,
         live: true,
         actions: [],
+        // Online games: the Network tab (js/netstats.js), its stalls open this game's replay at their moment.
+        network: online?.net?.quality ? () => netStatsData(online.net) : undefined,
+        tickMs,
+        openReplayAt: online && recorder && records ? (tick) => openReplayAt(recorder, tick, () => online.onQuit()) : undefined,
+        canOpenReplay: () => flow.over,
+        stallNote: () => (recorder ? 'The replay opens here once the game is over.' : 'This game has no replay.'),
       }));
   const openStats = () => statsScreen?.open();
   const mountObserver = () => {
@@ -2563,9 +2615,34 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       restartLabel: restartLabel(),
       canDownload: !!download,
       mission: mission && !replay && !online ? { next: nextEntry?.title ?? null } : null,
+      // The replay kept in the account, and who accepted the rematch (js/online.js).
+      replay: replayState,
+      rematch: rematch?.status?.() ?? null,
     }),
     blocked: () => !!statsScreen?.isOpen || menu.isOpen,
+    // The results per team (the engine's statistics, js/stats.js).
+    report: stress
+      ? null
+      : async () => {
+          const text = await askOf(game).observer_report();
+          return text ? JSON.parse(text) : null;
+        },
+    players,
+    localPlayer: viewer ? null : player,
+    reducedMotion: motionIsReduced,
   }));
+  // This game's replay in the account (js/account/replays.js upload events): said in the dialog too.
+  let replayState = null;
+  let replayWatched = false;
+  replayNotice = (e) => {
+    const state = { uploaded: e.duplicate ? null : 'saved', failed: 'failed', too_large: 'failed', unavailable: null }[e.type];
+    if (state === undefined || !replayWatched) return;
+    replayState = state;
+    endDialog.render();
+  };
+  scope.add(() => {
+    replayNotice = null;
+  });
   // ---- Campaign progress (js/campaign/progress.js) ----------------------------------------
   /** The mission to offer after this one was won, or null. */
   let nextEntry = null;
@@ -2844,7 +2921,19 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
         // The whole game ended (or this player won): its replay goes to the account, in the background.
-        if (accountReplay && (flow.over || flow.phase === 'won')) accountReplay.ended(replayOutcome());
+        if (accountReplay && (flow.over || flow.phase === 'won')) {
+          const queued = accountReplay.ended(replayOutcome());
+          // Once: the dialog says it is being saved until the upload says how it went.
+          if (!replayWatched) {
+            replayWatched = true;
+            queued.then((ok) => {
+              if (ok && replayState === null) {
+                replayState = 'saving';
+                endDialog.render();
+              }
+            });
+          }
+        }
       }
       // OpenRA IngameChatLogic: a defeated player's team chat goes to the
       // spectators (the server routes it, js/chatpanel.js labels it); nobody

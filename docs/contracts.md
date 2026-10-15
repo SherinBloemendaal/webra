@@ -3832,6 +3832,55 @@ events; its clock is `Date.now()`, the same as `waiting.at`.
 - Settings: `net.signalBars`, `net.warnSelf`, `net.warnOthers` (the `net`
   group of js/registry.js) switch the three off at once.
 
+### Start, loading, end of game and statistics screens (0.17)
+
+The boards Skirmish, Loading, LoadingTips, GameOver, Defeat, Statistics and
+NetStats in code.
+
+- **Start menu** (`js/startmenu.js`, `css/startmenu.css`): the menu bar
+  pattern; `#start-online` says how many players are online from
+  `onlineCount()` (main.js calls `net.js api.online?.()`, which the protocol
+  8 round adds for `/api/online`; without it the line stays hidden), asked
+  when the menu mounts and every `ONLINE_REFRESH_MS` (60 s) while the start
+  screen shows.
+- **Skirmish** (`js/lobby.js`): select plates everywhere (also the game mode
+  list, `js/modepicker.js`, and the bulk action list, `js/lobby-bulkbar.js`,
+  shared with the online lobby; screens call `destroy()` on rebuilt rows'
+  plates), starting cash a stepper, game speed a segmented row, team
+  presets (`TEAM_PRESETS`: the bulk actions `teams:ffa`, `teams:split:2`,
+  `teams:humans-vs-ai` for every slot; `lobby-bulk.js matchingTeamAction`
+  shows the one the teams already are), Save setup (the mode list's Save
+  as: a saved game mode in `lobby.presets`, no second store).
+- **Loading screen** (`js/loadingscreen.js`, `js/loadingboard.js`,
+  `js/tips.js`, `css/loading.css`): `LoadingScreen.describe(describeStart(spec))`
+  (main.js `launch` and `createOnlineGame`) shows the kind of game, the map's
+  name and the sides. Tips go on in turn from `guide.lastTip` + 1 every
+  `TIP_MS` (5 s, keys as the player bound them); the last one shown is
+  stored when the screen goes. The screen shows at least `LOADING_MIN_MS`
+  (1600 ms, the bar's reveal animation, `--loading-min`): at the first frame
+  `done()` sets `--loading-hold` to what is left of it, and the stylesheet
+  makes that the delay of the fade (`LOADING_FADE_MS`, 300 ms,
+  `--loading-fade`, opacity 1 to 0) on `#loading.is-closing`. The close is
+  the start gate's: it adds `.is-closing` and waits for that transition, its
+  duration plus its delay, before the screen hides and the game begins; so
+  the screen waits out the hold, then fades. Without the start gate the
+  screen hides at the first frame. Reduce motion: no hold, no fade.
+- **End of game** (`js/endgame.js`): `EndGameDialog` takes `report()` (the
+  parsed `observer_report`), `players`, `localPlayer` and `reducedMotion`;
+  its `context()` adds `replay` (`saving`, `saved`, `failed` or null: main.js
+  from the account's upload events) and `rematch` (the online rematch
+  handle's `status()`: `{ by, voters: [{ name, accepted }] }`).
+- **Statistics** (`js/stats.js`, `js/netstats.js`): the Network tab shows
+  for online games when `onStartGame` gives main.js the game's `net`
+  (js/online.js gameNet: `{ quality, source, roster, you, players() }`);
+  `netStatsData(net)` reads `quality` (the NetQuality: `report()`,
+  `requestStalls()`, `self`) with `roster` as the seats, quality is
+  the protocol's `netQuality`. A stall's entry opens the game's replay at its
+  tick (`openReplayAt`: the session is left and the replay viewer seeks
+  there) once the game is over. Keys: an open select list gets every key,
+  the tab list (vertical) its arrows, Home and End; Esc otherwise closes
+  the screen.
+
 ### Design system: tokens, fonts, controls and patterns (`apps/game/css`, `js/ui/controls.js`)
 
 The design system boards (Foundations, Controls, Patterns, Tooltips, Logo)

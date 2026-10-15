@@ -5,6 +5,7 @@
 // options, and the online lobby's messages. Synthetic maps only.
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { chooseValue, plateLabels } from './plate-fixtures.mjs';
 import { FakeEvent, installDom, uninstallDom } from './dom-fixtures.mjs';
 import { SpawnMarkers, localSlots, pickedBy, spawnAction, spawnTip } from '../js/spawnpick.js';
 import {
@@ -239,18 +240,17 @@ test('skirmish lobby: a click on a marker picks the spawn, the start list follow
   let markers = [...root.querySelectorAll('.lobby-markers button.spawn-marker')];
   assert.deepEqual(markers.map((b) => b.textContent), ['A', 'B']);
   const list = () => lobby.slotRows[0].spawn;
-  assert.deepEqual([...list().querySelectorAll('option')].map((o) => o.textContent), ['Automatic (A)', 'Position A', 'Position B']);
+  assert.deepEqual(plateLabels(list()), ['Automatic (A)', 'Position A', 'Position B']);
   // You click B: you start there, the AI moves to A.
   markers[1].click();
   assert.equal(lobby.state.players[0].spawn, 1);
   lobby.drawPreview();
   markers = [...root.querySelectorAll('.lobby-markers button.spawn-marker')];
   assert.ok(markers[1].classList.contains('spawn-marker-picked'));
-  assert.equal(list().value, '1');
-  assert.deepEqual([...lobby.slotRows[1].spawn.querySelectorAll('option')].map((o) => o.textContent), ['Automatic (A)', 'Position A'], 'B is yours: not offered to the AI');
-  // The host places its AI through its list (keyboard path).
-  lobby.slotRows[1].spawn.value = '0';
-  lobby.slotRows[1].spawn.dispatchEvent(new FakeEvent('change'));
+  assert.equal(list().get(), '1');
+  assert.deepEqual(plateLabels(lobby.slotRows[1].spawn), ['Automatic (A)', 'Position A'], 'B is yours: not offered to the AI');
+  // The host places its AI through its list.
+  chooseValue(lobby.slotRows[1].spawn, '0');
   assert.equal(lobby.state.players[1].spawn, 0);
   lobby.start();
   assert.deepEqual(started.at(-1).players.map((p) => p.spawn), [1, 0]);

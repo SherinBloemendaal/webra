@@ -76,7 +76,8 @@ test('brand: the website and the game use the generated files, published under /
   const game = read('apps/game/index.html');
   assert.ok(game.includes('<link rel="icon" href="brand/favicon.svg" type="image/svg+xml" />'));
   assert.ok(game.includes('<link rel="apple-touch-icon" href="brand/apple-touch-icon.png" />'));
-  assert.match(game, /<h1 class="start-logo ui-brand"><img class="ui-brand-emblem" src="brand\/favicon\.svg" alt="" width="32" height="32" \/>WEB<span>RA<\/span><\/h1>/);
+  // The start menu's brand: the simplified emblem (under 40 px) and the word on a plate over the hazard stripe.
+  assert.match(game, /<h1 class="start-logo"><span class="start-logo-plate ui-brand"><img class="ui-brand-emblem" src="brand\/favicon\.svg" alt="" width="32" height="32" \/><span class="ui-brand-word">WEB<span>RA<\/span><\/span><\/span><\/h1>/);
   assert.match(read('apps/game/editor/index.html'), /href="brand\/favicon\.svg"/);
 });
 

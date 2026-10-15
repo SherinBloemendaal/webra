@@ -8,6 +8,7 @@
 
 import { CUSTOM, PRESET_NAME_MAX, currentMode, deletePreset, isSavedId, modeList, savePreset, savedId } from './modes.js';
 import { infoTip } from './infotip.js';
+import { selectPlate } from './ui/controls.js';
 
 let uid = 0;
 
@@ -25,7 +26,7 @@ export class ModePicker {
    *   registry: ReturnType<import('./registry.js').createRegistry>,
    *   onApply: (mode: { id: string, name: string, options: object }) => void,
    *   onCustom?: () => void,
-   *   selectClass: string,
+   *   selectClass?: string,  (unused: the list is a select plate, js/ui/controls.js)
    *   buttonClass: string,
    *   inputClass: string,
    *   preferred?: string | null,
@@ -43,10 +44,9 @@ export class ModePicker {
     const head = el('div', 'mode-head');
     const label = el('label', 'mode-label', 'Game mode');
     label.htmlFor = id;
-    this.select = el('select', `${o.selectClass} mode-select`);
-    this.select.id = id;
-    this.select.addEventListener('change', () => this.pick(this.select.value));
-    this.help = infoTip(o.context === 'online' ? 'modeOnline' : 'mode', { label: 'Game mode', describes: this.select });
+    // The list of modes: a select plate (js/ui/controls.js), `id` is its button.
+    this.select = selectPlate({ id, label: 'Game mode', options: [], block: true, className: 'mode-select', onChange: (v) => this.pick(v) });
+    this.help = infoTip(o.context === 'online' ? 'modeOnline' : 'mode', { label: 'Game mode', describes: this.select.button });
     head.append(label, this.help.root);
 
     this.desc = el('p', 'mode-desc');
@@ -96,7 +96,7 @@ export class ModePicker {
     this.status = el('p', 'mode-status');
     this.status.setAttribute('role', 'status');
 
-    this.root.append(head, this.select, this.desc, this.tools, this.form, this.status);
+    this.root.append(head, this.select.root, this.desc, this.tools, this.form, this.status);
 
     // Saved modes can change in another tab or from the account: redraw, and
     // stop listening once this picker has left the page.
@@ -134,23 +134,13 @@ export class ModePicker {
     const id = currentMode(options, modes, this.preferred);
     if (this.confirming !== id) this.confirming = null;
 
-    this.select.textContent = '';
-    const builtin = el('optgroup');
-    builtin.label = 'Modes';
-    const own = el('optgroup');
-    own.label = 'Your modes';
-    for (const m of modes) {
-      const opt = el('option', null, m.name);
-      opt.value = m.id;
-      (m.saved ? own : builtin).append(opt);
-    }
-    const custom = el('option', null, 'Custom');
-    custom.value = CUSTOM;
-    this.select.append(builtin);
-    if (own.childNodes.length) this.select.append(own);
-    this.select.append(custom);
-    this.select.value = id;
-    this.select.disabled = !editable;
+    const builtin = modes.filter((m) => !m.saved).map((m) => ({ value: m.id, label: m.name }));
+    const own = modes.filter((m) => m.saved).map((m) => ({ value: m.id, label: m.name }));
+    this.select.setOptions(
+      [{ label: 'Modes', options: builtin }, ...(own.length ? [{ label: 'Your modes', options: own }] : []), { value: CUSTOM, label: 'Custom' }],
+      id,
+    );
+    this.select.setDisabled(!editable);
 
     const mode = modes.find((m) => m.id === id);
     this.desc.textContent = mode ? mode.description : 'Options set by hand.';
@@ -229,6 +219,6 @@ export class ModePicker {
     this.o.registry.set('lobby', 'presets', deletePreset(this.saved, mode.name));
     this.render(this.options, { editable: this.editable });
     this.status.textContent = `Mode "${mode.name}" deleted.`;
-    this.select.focus();
+    this.select.button.focus();
   }
 }

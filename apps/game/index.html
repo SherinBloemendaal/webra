@@ -49,7 +49,7 @@
     <!-- The start screen: the main menu (js/startmenu.js) over the skirmish lobby (js/lobby.js) -->
     <section id="menu" aria-label="Start screen">
       <nav id="start-nav" class="start-nav" aria-label="Main menu">
-        <h1 class="start-logo ui-brand"><img class="ui-brand-emblem" src="brand/favicon.svg" alt="" width="32" height="32" />WEB<span>RA</span></h1>
+        <h1 class="start-logo"><span class="start-logo-plate ui-brand"><img class="ui-brand-emblem" src="brand/favicon.svg" alt="" width="32" height="32" /><span class="ui-brand-word">WEB<span>RA</span></span></span></h1>
         <!-- Play: the skirmish below, online play (js/online.js, loaded on demand) and the campaign -->
         <div class="start-group start-play" role="group" aria-label="Play">
           <button id="start-skirmish" class="start-item" type="button" aria-current="page" title="Set up a game against the AI (this screen)">Skirmish</button>
@@ -59,6 +59,8 @@
         <!-- Saved games and replays (js/records.js) -->
         <div id="records-entry" class="start-group start-records" role="group" aria-label="Saved games" hidden></div>
         <div class="start-end">
+          <!-- Players online (js/startmenu.js, the server's /api/online) -->
+          <p id="start-online" class="start-online" role="status" hidden><span class="ui-led ui-led-ok" aria-hidden="true"></span><span class="start-online-text"></span></p>
           <!-- The account: sign in, who is signed in, message of the day (js/account/ui.js) -->
           <!-- Friends (js/friends-ui.js): signed-in players -->
           <button id="start-friends" class="start-item" type="button" title="Your friends: who is online, join their games, invite them" hidden>Friends</button>

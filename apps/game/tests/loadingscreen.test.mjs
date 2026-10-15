@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CLOSE_GRACE_MS, closeDuration, FirstFrameGuard, LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
+import { CLOSE_GRACE_MS, closeDuration, FirstFrameGuard, LOADING_FADE_MS, LOADING_MIN_MS, LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
 import { Events } from '../js/sim/host.js';
 import { FakeEvent } from './dom-fixtures.mjs';
 import { PerfTrace } from '../js/perfcapture.js';
@@ -31,10 +31,12 @@ function setup({ reduced = false, closeMs = undefined, timers = undefined } = {}
   // The Start button had the focus.
   doc.activeElement = start;
   const focus = (el) => () => (doc.activeElement = el);
-  const screen = new LoadingScreen(root, { reducedMotion: () => reduced, doc, ...(closeMs === undefined ? {} : { closeMs: () => closeMs }), ...(timers ? { timers } : {}) });
+  // A clock of the test's own: the least showing time counts from begin.
+  const clock = { now: 0 };
+  const screen = new LoadingScreen(root, { reducedMotion: () => reduced, doc, now: () => clock.now, ...(closeMs === undefined ? {} : { closeMs: () => closeMs }), ...(timers ? { timers } : {}) });
   start.focus = focus(start);
   screen.card.focus = focus(screen.card);
-  return { doc, root, screen, start };
+  return { doc, root, screen, start, clock };
 }
 
 const steps = (root) => [...root.querySelectorAll('.loading-step')].map((li) => [li.dataset.step, li.dataset.state]);
@@ -123,8 +125,10 @@ test('the start trace spans move the steps forward (never back), then the first 
   assert.equal(bar.getAttribute('aria-valuenow'), '80');
   assert.equal(root.querySelector('.loading-bar-fill').style.getPropertyValue('--fill'), '0.8');
   assert.deepEqual(Object.keys(SPAN_STEPS).sort(), ['content.load', 'rules.parse', 'sim.host', 'sim.start']);
-  // The first frame.
+  // The first frame: the bar fills and the screen goes.
+  const fill = root.querySelector('.loading-bar-fill');
   screen.done();
+  assert.equal(fill.style.getPropertyValue('--fill'), '1');
   assert.equal(root.hidden, true);
   assert.equal(screen.active, false);
   assert.equal(root.getAttribute('aria-busy'), 'false');
@@ -169,21 +173,56 @@ test('a failed start: an alert with the reason, Back closes and gives the focus 
   uninstallDom();
 });
 
-test('"Reduce motion" stills the spinner and the bar (the setting, and the browser\'s in the stylesheet)', () => {
+test('"Reduce motion" stills the spinner, the bar and the entrance (the setting, and the browser\'s in the stylesheet)', () => {
   const { root, screen } = setup({ reduced: true });
   screen.begin(loadingPlan('replay'));
   assert.ok(root.classList.contains('is-still'));
+  // No least time: no hold before the close.
+  assert.equal(screen.holdMs(), 0);
+  screen.done();
+  assert.equal(root.style.getPropertyValue('--loading-hold'), '0ms');
   uninstallDom();
   const css = readFileSync(new URL('../css/loading.css', import.meta.url), 'utf8');
-  assert.match(css, /#loading\.is-still \.loading-spinner/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^}]*\.loading-spinner/s);
+  assert.match(css, /#loading\.is-still \*,[^{]*\{\s*animation: none !important;\s*transition: none !important;/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^@]*#loading \*,[^{]*\{\s*animation: none !important;/s);
+  assert.match(css, /@media \(forced-colors: active\)/);
   // The spinner turns with a transform (the compositor keeps it turning while the main thread works).
   assert.match(css, /@keyframes loading-spin \{\s*to \{\s*transform: rotate\(360deg\)/);
-  // A menu screen card: the window less the screen gap, over the grid.
-  assert.match(css, /#loading \{[^}]*padding: var\(--ui-screen-pad\);[^}]*background: var\(--ui-screen-bg\);/s);
+  // The times in the stylesheet are the script's.
+  assert.match(css, new RegExp(`--loading-min: ${LOADING_MIN_MS}ms;`));
+  assert.match(css, new RegExp(`--loading-fade: ${LOADING_FADE_MS}ms;`));
+  assert.match(css, /#loading\.is-closing \{[^}]*transition: opacity var\(--loading-fade\) ease-in var\(--loading-hold, 0ms\);/s);
+  // Reduce motion: no fade.
+  assert.match(css, /#loading\.is-still\.is-closing \{\s*transition: none;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^@]*#loading\.is-closing \{\s*transition: none;/s);
+  assert.match(css, /\.loading-bar \{[^}]*animation: loading-reveal var\(--loading-min\)/s);
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(html, /<link rel="stylesheet" href="css\/loading\.css" \/>/);
   assert.match(html, /<section id="loading" aria-busy="false" hidden><\/section>/);
+});
+
+test('the least showing time (LOADING_MIN_MS, the bar\'s animation) is the delay of the stylesheet\'s close', () => {
+  const { root, screen, clock } = setup();
+  clock.now = 1000;
+  screen.begin(loadingPlan('skirmish'));
+  // A quick start: the first frame after 400 ms; the rest of the least time is the close's delay.
+  clock.now = 1400;
+  assert.equal(screen.holdMs(), LOADING_MIN_MS - 400);
+  screen.done();
+  assert.equal(root.style.getPropertyValue('--loading-hold'), `${LOADING_MIN_MS - 400}ms`);
+  // A slow start: no hold.
+  screen.begin(loadingPlan('skirmish'));
+  clock.now += LOADING_MIN_MS + 5000;
+  screen.done();
+  assert.equal(root.style.getPropertyValue('--loading-hold'), '0ms');
+  // The hold is the fade's delay on #loading.is-closing: a close that waits for the stylesheet's
+  // transition (its duration plus its delay, the start gate's) waits for the least time too.
+  const css = readFileSync(new URL('../css/loading.css', import.meta.url), 'utf8');
+  const closing = /#loading\.is-closing \{([^}]*)\}/.exec(css)[1];
+  assert.match(closing, /opacity: 0;/, 'a property that changes, so transitionend fires');
+  assert.match(closing, /transition: opacity var\(--loading-fade\) ease-in var\(--loading-hold, 0ms\);/);
+  assert.ok(LOADING_FADE_MS > 0);
+  uninstallDom();
 });
 
 test('a span listener that throws does not break the span it follows', () => {

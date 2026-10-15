@@ -71,10 +71,10 @@ import { ModePicker } from './modepicker.js';
 import { presetOptions } from './modes.js';
 import { renderReport } from './oramap/report.js';
 import { isOramapFile, ORAMAP_MAX_BYTES } from './oramap/index.js';
-import { switchInput } from './ui/controls.js';
+import { badge, segmented, selectPlate, stepper, switchInput } from './ui/controls.js';
 import { mapLibrary } from './maplibrary.js';
 import { attachTooltip } from './ui/tooltip.js';
-import { applyBulk, planBulk } from './lobby-bulk.js';
+import { applyBulk, matchingTeamAction, planBulk } from './lobby-bulk.js';
 import { BulkBar } from './lobby-bulkbar.js';
 import { StalePreview, previewKey } from './mappreview.js';
 
@@ -106,6 +106,16 @@ export const HELP_KEYS = [
   'bulk',
 ];
 
+/**
+ * The team presets over the player list: [bulk action (js/lobby-bulk.js),
+ * label, what it does]. "2 teams" splits the slots in their order.
+ */
+export const TEAM_PRESETS = Object.freeze([
+  ['teams:ffa', 'FFA', 'Free for all: nobody on a team.'],
+  ['teams:split:2', '2 teams', 'Team 1 against Team 2, split in slot order.'],
+  ['teams:humans-vs-ai', 'Humans v AI', 'The humans on Team 1, the AI players on Team 2.'],
+]);
+
 let uid = 0;
 
 /** Create an element with an optional class and text. */
@@ -125,38 +135,52 @@ function rgbCss(c) {
   return `rgb(${b(c[0])}, ${b(c[1])}, ${b(c[2])})`;
 }
 
-/** Build a <select>; choices are {value,label} or groups {label, items}. */
 /**
- * Keep a select's tooltip on its chosen option, so a select too narrow for
- * its text (player slots on small screens) still tells it in full. Call it
- * after the select's own change listener, which may put the value back.
+ * Lobby choices ({ value, label } or groups { label, items }) as the
+ * options of a select plate (js/ui/controls.js selectPlate).
  */
-function titleFollowsChoice(select) {
-  const sync = () => {
-    select.title = [...select.querySelectorAll('option')].find((o) => o.value === select.value)?.textContent ?? '';
-  };
-  sync();
-  select.addEventListener('change', sync);
+export function plateOptions(choices) {
+  return choices.map((c) =>
+    c.items
+      ? { label: c.label, options: c.items.map((i) => ({ value: i.value, label: i.label, disabled: i.disabled, title: i.title })) }
+      : { value: c.value, label: c.label, disabled: c.disabled, title: c.title },
+  );
 }
 
-function buildSelect(choices, className) {
-  const select = el('select', className);
-  const add = (parent, c) => {
-    const o = el('option', null, c.label);
-    o.value = String(c.value);
-    parent.append(o);
-  };
-  for (const c of choices) {
-    if (c.items) {
-      const g = el('optgroup');
-      g.label = c.label;
-      for (const item of c.items) add(g, item);
-      select.append(g);
-    } else {
-      add(select, c);
-    }
-  }
-  return select;
+/**
+ * A select plate of the lobby. Its tooltip names the chosen option, so a
+ * plate too narrow for its text (player slots on small screens) still
+ * tells it in full; a lock (`lockTitle`) says why it cannot change instead.
+ * `onChange(value)` runs on the player's choices only.
+ */
+function lobbyPlate(choices, { label, value, className = '', small = false, onChange }) {
+  const plate = selectPlate({
+    label,
+    options: plateOptions(choices),
+    value,
+    small,
+    className: `lobby-plate ${className}`.trim(),
+    onChange: (v) => {
+      onChange?.(v);
+      plateTitle(plate);
+    },
+  });
+  plateTitle(plate);
+  return plate;
+}
+
+/** A plate's tooltip: why it is locked, or its choice in full. */
+function plateTitle(plate, lockTitle = null) {
+  const text = lockTitle ?? plate.option()?.label ?? '';
+  plate.button.title = text;
+  // A disabled button gets no pointer events in some browsers: the plate around it says it too.
+  plate.root.title = lockTitle ?? '';
+}
+
+/** Lock or unlock a plate (a map file's lock, a closed slot): disabled, with the reason in its tooltip. */
+function lockPlate(plate, on, why = 'Locked by the map') {
+  plate.setDisabled(on);
+  plateTitle(plate, on ? why : null);
 }
 
 // ---- Storage ---------------------------------------------------------------
@@ -682,14 +706,17 @@ export class Lobby {
     this.root.append(lobby);
   }
 
+  /** A panel (a metal card): its head holds the title and what the panel adds there (`head`). */
   panel(title, className) {
     const section = el('section', `lobby-panel ${className}`);
+    const head = el('div', 'lobby-panel-head');
     const h2 = el('h2', 'lobby-panel-title', title);
     h2.id = `lobby-h-${++uid}`;
+    head.append(h2);
     section.setAttribute('aria-labelledby', h2.id);
     const content = el('div', 'lobby-panel-body');
-    section.append(h2, content);
-    return { section, content };
+    section.append(head, content);
+    return { section, content, head, title: h2 };
   }
 
   /**
@@ -700,9 +727,15 @@ export class Lobby {
   field(labelText, control, helpKey, target = control) {
     const row = el('div', 'lobby-field');
     const head = el('span', 'lobby-field-head');
-    const label = el('label', 'lobby-field-label', labelText);
     if (!target.id) target.id = `lobby-ctl-${++uid}`;
-    label.htmlFor = target.id;
+    // A <label> for form controls and plates; a stepper or a group of radios is named by a span.
+    const labelable = ['input', 'select', 'button', 'textarea'].includes(String(target.localName ?? target.tagName ?? '').toLowerCase());
+    const label = el(labelable ? 'label' : 'span', 'lobby-field-label', labelText);
+    if (labelable) label.htmlFor = target.id;
+    else {
+      label.id = `${target.id}-label`;
+      target.setAttribute('aria-labelledby', label.id);
+    }
     head.append(label);
     if (helpKey) head.append(infoTip(helpKey, { label: labelText, describes: target }).root);
     row.append(head, control);
@@ -748,41 +781,56 @@ export class Lobby {
     this.spawnLayer = new SpawnMarkers(this.markers, { lens: this.lens, onPick: (a) => this.pickSpawn(a) });
     this.caption = el('p', 'lobby-preview-caption');
 
-    this.mapSizeSelect = el('select', 'lobby-select');
-    this.mapSizeSelect.addEventListener('change', () => {
-      this.state.mapSize = Number(this.mapSizeSelect.value);
-      this.renderCaption();
-      this.schedulePreview();
+    this.mapSizeSelect = lobbyPlate([], {
+      label: 'Map size',
+      value: this.state.mapSize,
+      onChange: (v) => {
+        this.state.mapSize = Number(v);
+        this.renderCaption();
+        this.schedulePreview();
+      },
     });
 
     // Layout and biome of the generated map (map files bring their own biome).
-    this.styleSelect = buildSelect(MAP_STYLES, 'lobby-select');
-    this.styleSelect.addEventListener('change', () => {
-      this.state.mapStyle = this.styleSelect.value;
-      this.optionEdited();
-      this.renderCaption();
-      this.schedulePreview();
+    this.styleSelect = lobbyPlate(MAP_STYLES, {
+      label: 'Map style',
+      value: this.state.mapStyle,
+      onChange: (v) => {
+        this.state.mapStyle = v;
+        this.optionEdited();
+        this.renderCaption();
+        this.schedulePreview();
+      },
     });
-    this.biomeSelect = buildSelect(BIOMES, 'lobby-select');
-    this.biomeSelect.addEventListener('change', () => {
-      this.state.biome = this.biomeSelect.value;
-      this.optionEdited();
-      this.renderCaption();
-      this.schedulePreview();
+    this.biomeSelect = lobbyPlate(BIOMES, {
+      label: 'Biome',
+      value: this.state.biome,
+      onChange: (v) => {
+        this.state.biome = v;
+        this.optionEdited();
+        this.renderCaption();
+        this.schedulePreview();
+      },
     });
     // Tech buildings of a generated map (map files bring their own buildings).
-    this.techSelect = buildSelect(TECH_BUILDINGS, 'lobby-select');
-    this.techSelect.addEventListener('change', () => {
-      this.state.techBuildings = this.techSelect.value;
-      this.optionEdited();
-      // The lens shows the tech buildings the map gets.
-      this.schedulePreview();
+    this.techSelect = lobbyPlate(TECH_BUILDINGS, {
+      label: 'Tech buildings',
+      value: this.state.techBuildings,
+      onChange: (v) => {
+        this.state.techBuildings = v;
+        this.optionEdited();
+        // The lens shows the tech buildings the map gets.
+        this.schedulePreview();
+      },
     });
     // Weather applies to map files too (they bring their biome, not the weather).
-    this.weatherSelect = buildSelect(WEATHER_MODES, 'lobby-select');
-    this.weatherSelect.addEventListener('change', () => {
-      this.state.weather = this.weatherSelect.value;
-      this.optionEdited();
+    this.weatherSelect = lobbyPlate(WEATHER_MODES, {
+      label: 'Weather',
+      value: this.state.weather,
+      onChange: (v) => {
+        this.state.weather = v;
+        this.optionEdited();
+      },
     });
 
     this.seedInput = el('input', 'lobby-input lobby-seed');
@@ -886,11 +934,11 @@ export class Lobby {
     fileRow.append(this.loadBtn, this.unloadBtn, this.fileInput);
 
     const fields = el('div', 'lobby-fields');
-    this.sizeField = this.field('Map size', this.mapSizeSelect, 'mapSize');
+    this.sizeField = this.field('Map size', this.mapSizeSelect.root, 'mapSize', this.mapSizeSelect.button);
     this.fileField = this.field('Map file', fileRow, 'mapFile', this.loadBtn);
-    this.styleField = this.field('Map style', this.styleSelect, 'mapStyle');
-    this.biomeField = this.field('Biome', this.biomeSelect, 'biome');
-    this.techField = this.field('Tech buildings', this.techSelect, 'techBuildings');
+    this.styleField = this.field('Map style', this.styleSelect.root, 'mapStyle', this.styleSelect.button);
+    this.biomeField = this.field('Biome', this.biomeSelect.root, 'biome', this.biomeSelect.button);
+    this.techField = this.field('Tech buildings', this.techSelect.root, 'techBuildings', this.techSelect.button);
 
     // The climate of the battlefield: layout, biome and weather together.
     const world = el('fieldset', 'lobby-world');
@@ -899,7 +947,7 @@ export class Lobby {
       this.styleField,
       this.biomeField,
       this.techField,
-      this.field('Weather', this.weatherSelect, 'weather'),
+      this.field('Weather', this.weatherSelect.root, 'weather', this.weatherSelect.button),
     );
     // The seed makes the generated map, so it hides with the other generator
     // fields while a map file is in use; a game on a map file gets a new
@@ -918,7 +966,23 @@ export class Lobby {
   }
 
   buildPlayersPanel() {
-    const { section, content } = this.panel('Players', 'lobby-players');
+    const { section, content, head, title } = this.panel('Players', 'lobby-players');
+    // How many play, next to the title ("4 / 8").
+    this.playerCount = el('span', 'lobby-panel-count');
+    title.append(' ', this.playerCount);
+    // Team presets: the bulk actions FFA, two teams and humans against the AI, for every slot.
+    this.teamPreset = segmented({
+      label: 'Teams',
+      options: TEAM_PRESETS.map(([value, label, desc]) => ({ value, label, title: desc })),
+      value: null,
+      onChange: (id) => {
+        const out = this.applyBulk(id, []);
+        if (out?.error) this.renderProblem(out.error);
+        this.renderTeamPreset();
+      },
+    });
+    this.teamPreset.root.classList.add('lobby-team-preset');
+    head.append(this.teamPreset.root);
     // Bulk edit (js/lobby-bulkbar.js): select rows, apply one action to them.
     this.bulk = new BulkBar({
       context: 'skirmish',
@@ -951,13 +1015,13 @@ export class Lobby {
       this.slotHead.append(c);
     }
 
-    this.addBtn = el('button', 'lobby-btn lobby-add', 'Add player');
+    this.addBtn = el('button', 'lobby-btn lobby-add', 'Add AI');
     this.addBtn.type = 'button';
     this.addBtn.addEventListener('click', () => {
       const slot = addSlot(this.state, this.colors.length, this.spawnLimit());
       if (slot < 0) return;
       this.afterPlayerCountChange();
-      this.slotRows[slot]?.type?.focus();
+      this.slotRows[slot]?.type?.button.focus();
     });
     this.slotHint = el('span', 'lobby-muted lobby-slot-hint');
     const foot = el('div', 'lobby-slots-foot');
@@ -988,9 +1052,21 @@ export class Lobby {
     return plan;
   }
 
+  /** The team preset the slots' teams are (none chosen when they are another split); off when the map locks every team. */
+  renderTeamPreset() {
+    const slots = this.bulkSlots();
+    const ids = TEAM_PRESETS.map(([id]) => id);
+    this.teamPreset.set(matchingTeamAction(slots, ids, { context: 'skirmish', colorCount: this.colors.length, teamMax: TEAM_COUNT }));
+    const free = slots.some((p) => (p.type === 'human' || p.type === 'ai') && !p.locked.includes('team'));
+    for (const id of ids) this.teamPreset.setDisabled(id, !free);
+    this.teamPreset.root.title = free ? '' : 'Locked by the map';
+  }
+
   /** (Re)build every slot row; slots come and go, so rows are not kept. */
   renderSlots() {
     this.closePickers(null);
+    // The rows' select plates go with their rows (an open list closes, its listeners go).
+    for (const rec of this.slotRows) for (const k of ['type', 'bot', 'faction', 'team', 'handicap', 'spawn']) rec?.[k]?.destroy();
     this.slotTable.textContent = '';
     this.pickers = [];
     this.slotRows = [];
@@ -1006,6 +1082,8 @@ export class Lobby {
       this.state.mapSource === 'file' && this.mapFile
         ? `${n} of ${limit} start positions used`
         : `${n} of ${MAX_SLOTS} players`;
+    this.playerCount.textContent = `${n} / ${limit}`;
+    this.renderTeamPreset();
     this.renderProblem();
   }
 
@@ -1047,36 +1125,44 @@ export class Lobby {
       });
       rec.name = name;
       who.append(name);
+      // YOU: which row is yours, besides the name field (the online lobby's mark).
+      who.append(badge('accent', 'You'));
     } else {
-      const type = buildSelect(SLOT_TYPES, 'lobby-select lobby-type');
-      type.value = slotTypeValue(player);
-      type.setAttribute('aria-label', `Player ${slot + 1} type`);
-      describedBy(type, this.columnTips.player);
-      type.addEventListener('change', () => {
-        if (setSlotType(this.state, slot, type.value, this.spawnLimit())) {
-          this.afterPlayerCountChange();
-          this.slotRows[slot]?.name?.focus();
-          this.slotRows[slot]?.type?.focus();
-        } else {
-          type.value = slotTypeValue(this.state.players[slot]);
-          this.renderProblem(this.typeRefusal(slot, type.value));
-        }
+      const type = lobbyPlate(SLOT_TYPES, {
+        label: `Player ${slot + 1} type`,
+        value: slotTypeValue(player),
+        small: true,
+        className: 'lobby-type',
+        onChange: (v) => {
+          if (setSlotType(this.state, slot, v, this.spawnLimit())) {
+            this.afterPlayerCountChange();
+            this.slotRows[slot]?.name?.focus();
+            this.slotRows[slot]?.type?.button.focus();
+          } else {
+            // Refused: the choice goes back (its tooltip with it).
+            type.set(slotTypeValue(this.state.players[slot]));
+            plateTitle(type);
+            this.renderProblem(this.typeRefusal(slot, v));
+          }
+        },
       });
-      titleFollowsChoice(type);
+      describedBy(type.button, this.columnTips.player);
       rec.type = type;
-      who.append(type);
+      who.append(type.root);
       // The OpenRA bot the AI plays (Rush, Normal, Turtle, Naval).
       if (player.type === 'ai') {
-        const bot = buildSelect(BOT_TYPES, 'lobby-select lobby-bot');
-        bot.value = player.bot ?? 'normal';
-        bot.setAttribute('aria-label', `Player ${slot + 1} bot`);
-        describedBy(bot, this.columnTips.player);
-        bot.addEventListener('change', () => {
-          this.state.players[slot].bot = bot.value;
+        const bot = lobbyPlate(BOT_TYPES, {
+          label: `Player ${slot + 1} bot`,
+          value: player.bot ?? 'normal',
+          small: true,
+          className: 'lobby-bot',
+          onChange: (v) => {
+            this.state.players[slot].bot = v;
+          },
         });
-        titleFollowsChoice(bot);
+        describedBy(bot.button, this.columnTips.player);
         rec.bot = bot;
-        who.append(bot);
+        who.append(bot.root);
       }
     }
 
@@ -1092,55 +1178,64 @@ export class Lobby {
     const factionCell = cell('lobby-cell-faction', 'Faction');
     const flag = el('span', 'lobby-flag');
     flag.setAttribute('aria-hidden', 'true');
-    const faction = buildSelect(FACTION_GROUPS, 'lobby-select');
-    faction.value = player.faction;
-    faction.disabled = closed;
-    faction.setAttribute('aria-label', `Player ${slot + 1} faction`);
-    describedBy(faction, this.columnTips.faction);
-    faction.addEventListener('change', () => {
-      this.state.players[slot].faction = faction.value;
-      this.renderSlot(slot);
+    const faction = lobbyPlate(FACTION_GROUPS, {
+      label: `Player ${slot + 1} faction`,
+      value: player.faction,
+      small: true,
+      onChange: (v) => {
+        this.state.players[slot].faction = v;
+        this.renderSlot(slot);
+      },
     });
-    titleFollowsChoice(faction);
+    faction.setDisabled(closed);
+    describedBy(faction.button, this.columnTips.faction);
     const factionRow = el('div', 'lobby-faction-row');
-    factionRow.append(flag, faction);
+    factionRow.append(flag, faction.root);
     const desc = el('p', 'lobby-faction-desc');
     factionCell.append(factionRow, desc);
     Object.assign(rec, { flag, faction, desc });
 
     // Team.
     const teamCell = cell('lobby-cell-team', 'Team');
-    const team = buildSelect(TEAMS, 'lobby-select');
-    team.value = String(player.team);
-    team.disabled = closed;
-    team.setAttribute('aria-label', `Player ${slot + 1} team`);
-    describedBy(team, this.columnTips.team);
-    team.addEventListener('change', () => {
-      this.state.players[slot].team = Number(team.value);
-      this.renderProblem();
-      // Separate team spawns move team mates together on the preview.
-      this.schedulePreview();
+    const team = lobbyPlate(TEAMS, {
+      label: `Player ${slot + 1} team`,
+      value: player.team,
+      small: true,
+      onChange: (v) => {
+        this.state.players[slot].team = Number(v);
+        this.renderProblem();
+        this.renderTeamPreset();
+        // Separate team spawns move team mates together on the preview.
+        this.schedulePreview();
+      },
     });
-    titleFollowsChoice(team);
+    team.setDisabled(closed);
+    describedBy(team.button, this.columnTips.team);
     // Handicap (OpenRA): less firepower and armour, slower production.
-    const handicap = buildSelect(HANDICAPS, 'lobby-select lobby-handicap');
-    handicap.value = String(player.handicap ?? 0);
-    handicap.disabled = closed;
-    handicap.setAttribute('aria-label', `Player ${slot + 1} handicap`);
-    describedBy(handicap, this.columnTips.handicap);
-    handicap.addEventListener('change', () => {
-      this.state.players[slot].handicap = Number(handicap.value);
+    const handicap = lobbyPlate(HANDICAPS, {
+      label: `Player ${slot + 1} handicap`,
+      value: player.handicap ?? 0,
+      small: true,
+      className: 'lobby-handicap',
+      onChange: (v) => {
+        this.state.players[slot].handicap = Number(v);
+      },
     });
-    titleFollowsChoice(handicap);
-    // Start position (OpenRA's spawn dropdown): automatic, or a spawn of the map (renderSpawnChoices fills it).
-    const spawn = el('select', 'lobby-select lobby-spawn');
-    spawn.disabled = closed;
-    spawn.setAttribute('aria-label', `Player ${slot + 1} start position`);
-    describedBy(spawn, this.columnTips.spawn);
-    spawn.addEventListener('change', () => {
-      this.pickSpawn({ slot, spawn: spawn.value === 'auto' ? null : Number(spawn.value) });
+    handicap.setDisabled(closed);
+    describedBy(handicap.button, this.columnTips.handicap);
+    // Start position (OpenRA's spawn dropdown): automatic, or a spawn of the map (renderSpawnChoice fills it).
+    const spawn = lobbyPlate([{ value: 'auto', label: 'Automatic' }], {
+      label: `Player ${slot + 1} start position`,
+      value: 'auto',
+      small: true,
+      className: 'lobby-spawn',
+      onChange: (v) => {
+        this.pickSpawn({ slot, spawn: v === 'auto' ? null : Number(v) });
+      },
     });
-    teamCell.append(team, handicap, spawn);
+    spawn.setDisabled(closed);
+    describedBy(spawn.button, this.columnTips.spawn);
+    teamCell.append(team.root, handicap.root, spawn.root);
     Object.assign(rec, { team, handicap, spawn });
 
     // Remove.
@@ -1159,7 +1254,7 @@ export class Lobby {
       if (!removeSlot(this.state, slot)) return;
       this.afterPlayerCountChange();
       const next = this.slotRows[Math.min(slot, this.slotRows.length - 1)];
-      (next?.type ?? next?.name ?? this.addBtn).focus();
+      (next?.type?.button ?? next?.name ?? this.addBtn).focus();
     });
     removeCell.append(remove);
 
@@ -1193,16 +1288,19 @@ export class Lobby {
     });
 
     const selects = el('div', 'lobby-fields lobby-option-grid');
+    /** key -> { root, target, control, get(), set(value), lock(on) }: the option's control (renderAll sets and locks it). */
     this.optionSelects = {};
     for (const opt of SELECT_OPTIONS) {
-      const select = buildSelect(opt.choices, 'lobby-select');
-      select.addEventListener('change', () => {
-        const numeric = typeof opt.choices[0].value === 'number';
-        this.state[opt.key] = numeric ? Number(select.value) : select.value;
+      const numeric = typeof opt.choices[0].value === 'number';
+      const commit = (v) => {
+        this.state[opt.key] = numeric ? Number(v) : v;
         this.optionEdited();
-      });
-      this.optionSelects[opt.key] = select;
-      selects.append(this.field(opt.label, select, opt.key));
+      };
+      const control = this.optionControl(opt, commit);
+      this.optionSelects[opt.key] = control;
+      const row = this.field(opt.label, control.root, opt.key, control.target);
+      if (control.wide) row.classList.add('lobby-field-wide');
+      selects.append(row);
     }
 
     const toggles = el('div', 'lobby-toggles');
@@ -1228,6 +1326,67 @@ export class Lobby {
 
     content.append(this.modePicker.root, selects, toggles, this.cheatsWarning);
     return section;
+  }
+
+  /**
+   * The control of a select option: starting cash a stepper (its fixed
+   * amounts), game speed a row of buttons, the others a select plate.
+   * `commit(value)` stores a choice the player made.
+   */
+  optionControl(opt, commit) {
+    const value = this.state[opt.key];
+    if (opt.key === 'startingCash') {
+      const step = stepper({
+        label: opt.label,
+        values: opt.choices.map((c) => c.value),
+        value,
+        format: (v) => opt.choices.find((c) => c.value === v)?.label ?? String(v),
+        block: true,
+        decLabel: 'Less cash',
+        incLabel: 'More cash',
+        onChange: commit,
+      });
+      return {
+        root: step.root,
+        target: step.field,
+        control: step,
+        wide: true,
+        get: () => step.get(),
+        set: (v) => step.set(v),
+        lock: (on) => {
+          step.setDisabled(on);
+          step.root.title = on ? 'Locked by the map' : '';
+        },
+      };
+    }
+    if (opt.key === 'gameSpeed') {
+      const seg = segmented({ label: opt.label, options: opt.choices.map((c) => ({ value: c.value, label: c.label })), value, block: true, onChange: commit });
+      seg.root.classList.add('lobby-speed');
+      return {
+        root: seg.root,
+        target: seg.root,
+        control: seg,
+        wide: true,
+        get: () => seg.get(),
+        set: (v) => seg.set(v),
+        lock: (on) => {
+          for (const c of opt.choices) seg.setDisabled(c.value, on);
+          seg.root.title = on ? 'Locked by the map' : '';
+        },
+      };
+    }
+    const plate = lobbyPlate(opt.choices, { label: opt.label, value, onChange: commit });
+    return {
+      root: plate.root,
+      target: plate.button,
+      control: plate,
+      get: () => plate.get(),
+      set: (v) => {
+        plate.set(v);
+        if (!plate.button.disabled) plateTitle(plate);
+      },
+      lock: (on) => lockPlate(plate, on),
+    };
   }
 
   /** An option was changed by hand: the mode list follows (a matching mode, or Custom). */
@@ -1288,17 +1447,34 @@ export class Lobby {
     stressClose.addEventListener('click', () => this.closeStress());
     stress.append(label, unitsField, this.stressBtn, stressClose);
 
+    // Which start is yours and how to change it (renderMarkers).
+    this.spawnHint = el('p', 'lobby-spawn-hint');
+
     const go = el('div', 'lobby-go');
     this.problemText = el('p', 'lobby-problem');
     this.problemText.setAttribute('role', 'status');
+    // Save setup: the options as a game mode of your own (js/modes.js, the mode list's Save as).
+    this.saveSetupBtn = el('button', 'lobby-btn lobby-save-setup', 'Save setup');
+    this.saveSetupBtn.type = 'button';
+    attachTooltip(this.saveSetupBtn, () => ({ title: 'Save setup', desc: 'Keep these game options as a game mode of your own, in the Game mode list. Your modes follow your account.' }));
+    this.saveSetupBtn.addEventListener('click', () => this.saveSetup());
     this.startBtn = el('button', 'lobby-btn lobby-btn-primary', 'Start game');
     this.startBtn.type = 'button';
     this.startBtn.title = 'Start the skirmish (Enter)';
     this.startBtn.addEventListener('click', () => this.start());
-    go.append(this.problemText, this.startBtn);
+    go.append(this.problemText, this.saveSetupBtn, this.startBtn);
 
-    bar.append(stress, go);
+    bar.append(this.spawnHint, stress, go);
     return bar;
+  }
+
+  /**
+   * Save setup: the game mode list's Save as (js/modepicker.js), so the
+   * options become a mode of your own; no second store.
+   */
+  saveSetup() {
+    this.modePicker.openSave();
+    this.modePicker.form.scrollIntoView?.({ block: 'nearest' });
   }
 
   // ---- Rendering ---------------------------------------------------------------
@@ -1309,21 +1485,20 @@ export class Lobby {
     this.renderUnits();
     // Options the map file locks (map format version 2) cannot be changed here.
     const setup = this.mapFile?.info.setup ?? null;
-    const lock = (control, key) => {
-      const on = optionLockedBy(s, setup, key);
-      control.disabled = on;
-      control.title = on ? 'Locked by the map' : '';
-    };
+    const locked = (key) => optionLockedBy(s, setup, key);
     for (const opt of SELECT_OPTIONS) {
-      this.optionSelects[opt.key].value = String(s[opt.key]);
-      lock(this.optionSelects[opt.key], opt.key);
+      const control = this.optionSelects[opt.key];
+      control.set(s[opt.key]);
+      control.lock(locked(opt.key));
     }
     for (const opt of TOGGLE_OPTIONS) {
-      this.optionToggles[opt.key].checked = s[opt.key];
-      lock(this.optionToggles[opt.key], opt.key);
+      const box = this.optionToggles[opt.key];
+      box.checked = s[opt.key];
+      box.disabled = locked(opt.key);
+      box.title = box.disabled ? 'Locked by the map' : '';
     }
-    this.weatherSelect.value = s.weather;
-    lock(this.weatherSelect, 'weather');
+    this.weatherSelect.set(s.weather);
+    lockPlate(this.weatherSelect, locked('weather'));
     this.renderCheats();
     this.renderMode();
     this.renderMapSizes();
@@ -1347,15 +1522,17 @@ export class Lobby {
     const n = activeCount(this.state);
     const min = minMapSize(n);
     const suggested = suggestedMapSize(n);
-    this.mapSizeSelect.textContent = '';
-    for (const m of MAP_SIZES) {
-      const o = el('option', null, `${m.label} (${m.value} x ${m.value})${m.value === suggested ? ', recommended' : ''}`);
-      o.value = String(m.value);
-      o.disabled = m.value < min;
-      if (o.disabled) o.textContent += ', too small';
-      this.mapSizeSelect.append(o);
-    }
-    this.mapSizeSelect.value = String(this.state.mapSize);
+    const sizes = MAP_SIZES.map((m) => {
+      const small = m.value < min;
+      return {
+        value: m.value,
+        label: `${m.label} (${m.value} x ${m.value})${m.value === suggested ? ', recommended' : ''}${small ? ', too small' : ''}`,
+        disabled: small,
+        title: small ? `Too small for ${n} players` : undefined,
+      };
+    });
+    this.mapSizeSelect.setOptions(plateOptions(sizes), this.state.mapSize);
+    plateTitle(this.mapSizeSelect);
   }
 
   renderMapSource() {
@@ -1368,9 +1545,14 @@ export class Lobby {
     this.biomeField.hidden = file;
     this.techField.hidden = file;
     this.seedField.hidden = file;
-    this.styleSelect.value = this.state.mapStyle;
-    this.biomeSelect.value = this.state.biome;
-    this.techSelect.value = this.state.techBuildings;
+    for (const [plate, value] of [
+      [this.styleSelect, this.state.mapStyle],
+      [this.biomeSelect, this.state.biome],
+      [this.techSelect, this.state.techBuildings],
+    ]) {
+      plate.set(value);
+      plateTitle(plate);
+    }
     this.fileField.hidden = !file && !this.pendingMap;
     this.unloadBtn.hidden = !this.mapFile;
     this.loadBtn.textContent = this.mapFile ? 'Load another map' : 'Load map file';
@@ -1446,11 +1628,7 @@ export class Lobby {
     const setup = this.mapFile?.info.setup ?? null;
     const locked = (part) => slotLockedBy(this.state, setup, slot, part);
     const lockControl = (control, part) => {
-      if (!control) return;
-      if (locked(part)) {
-        control.disabled = true;
-        control.title = 'Locked by the map';
-      }
+      if (control && locked(part)) lockPlate(control, true);
     };
     lockControl(rec.faction, 'faction');
     lockControl(rec.team, 'team');
@@ -1473,22 +1651,21 @@ export class Lobby {
     const p = this.state.players[slot];
     const select = this.slotRows[slot]?.spawn;
     if (!select) return;
-    select.textContent = '';
-    const option = (value, label) => {
-      const o = document.createElement('option');
-      o.value = value;
-      o.textContent = label;
-      select.append(o);
-    };
     const auto = this.markerList.find((m) => m.slot === slot && !m.picked);
-    option('auto', auto ? `Automatic (${auto.letter})` : 'Automatic');
+    const choices = [{ value: 'auto', label: auto ? `Automatic (${auto.letter})` : 'Automatic' }];
     for (const m of this.markerList) {
       const other = this.state.players.some((q, i) => i !== slot && q.type !== 'closed' && q.spawn === m.index);
-      if (!other) option(String(m.index), `Position ${m.letter}`);
+      if (!other) choices.push({ value: String(m.index), label: `Position ${m.letter}` });
     }
-    select.value = Number.isInteger(p.spawn) && this.markerList.some((m) => m.index === p.spawn) ? String(p.spawn) : 'auto';
-    select.disabled = p.type === 'closed' || this.markerList.length === 0;
-    select.title = [...select.querySelectorAll('option')].find((o) => o.value === select.value)?.textContent ?? '';
+    const value = Number.isInteger(p.spawn) && this.markerList.some((m) => m.index === p.spawn) ? String(p.spawn) : 'auto';
+    // Rebuilt only when the choices changed: an open list stays open while the preview redraws.
+    const key = JSON.stringify(choices);
+    if (select.choicesKey !== key) {
+      select.choicesKey = key;
+      select.setOptions(plateOptions(choices), value);
+    } else select.set(value);
+    select.setDisabled(p.type === 'closed' || this.markerList.length === 0);
+    plateTitle(select);
   }
 
   /** The number of spawns of the battlefield the lobby shows. */
@@ -1696,6 +1873,8 @@ export class Lobby {
       enabled: list.length > 0,
     });
     this.state.players.forEach((_, slot) => this.renderSpawnChoice(slot));
+    const mine = list.find((m) => m.slot === you);
+    this.spawnHint.textContent = mine ? `Start ${mine.letter} is yours. Click a lettered marker on the map to start somewhere else.` : '';
     return list;
   }
 

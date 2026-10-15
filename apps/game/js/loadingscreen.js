@@ -18,11 +18,25 @@
 // returns (also `closed`) resolves when the screen is hidden. js/main.js
 // holds the game at tick 0 until then (js/gamesession.js GameStart).
 //
-// One screen card like the menu screens (css/loading.css): the grid shows
-// around it. The spinner and the bar stand still with "Reduce motion" (the
-// setting or the browser's). While loading the section is aria-busy, the
-// step is a polite status line and the bar a progressbar; an error is an
-// alert and takes the focus.
+// The look is the canvas board "Laadscherm (geanimeerd)" (css/loading.css):
+// js/loadingboard.js adds the emblem, the kind of game, the map's name, the
+// players by side and the tips around the steps. The screen always shows,
+// also for a quick start, for at least LOADING_MIN_MS: the bar's animation
+// (its stripes reveal it in that time, never ahead of the real steps).
+// done() sets how much of that time is left as --loading-hold on the
+// section: css/loading.css makes it the delay of the fade (LOADING_FADE_MS)
+// on `#loading.is-closing`, and the close waits for the transition's
+// duration plus its delay, so the screen waits out the rest of the least
+// time and then fades. With "Reduce motion" (the setting or the browser's)
+// the spinner, the bar and the entrance stand still and there is no hold
+// and no fade. While loading the section is aria-busy, the step is a polite
+// status line and the bar a progressbar; an error is an alert and takes the
+// focus.
+
+/** The least time the screen shows (the bar's fill animation, css/loading.css --loading-min). */
+export const LOADING_MIN_MS = 1600;
+/** The fade out after the first frame (css/loading.css --loading-fade). */
+export const LOADING_FADE_MS = 300;
 
 /** How much longer than its stylesheet's close the screen waits for the transition's end event (a hidden tab runs none). */
 export const CLOSE_GRACE_MS = 100;
@@ -140,10 +154,15 @@ export class LoadingScreen {
    *   `closeMs`: how long the close transition takes (default: the stylesheet's, closeDuration);
    *   `timers`: for the close's fallback timer (tests pass their own)
    */
-  constructor(root, { reducedMotion = () => false, doc = globalThis.document, closeMs = closeDuration, timers = null } = {}) {
+  constructor(root, { reducedMotion = () => false, doc = globalThis.document, board = null, now = () => globalThis.performance?.now() ?? Date.now(), closeMs = closeDuration, timers = null } = {}) {
     this.root = root;
     this.doc = doc;
     this.reducedMotion = reducedMotion;
+    /** The board around the steps (js/loadingboard.js), or null. */
+    this.board = board;
+    this.now = now;
+    /** When the current start's screen came up (the least showing time counts from here). */
+    this.shownAt = 0;
     this.closeMs = closeMs;
     this.timers = timers ?? { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (id) => clearTimeout(id) };
     /** The close of the current start: `{ promise, resolve }` (begin makes it, done resolves it once the screen is gone). */
@@ -220,6 +239,7 @@ export class LoadingScreen {
     let resolve;
     const promise = new Promise((r) => (resolve = r));
     this.closing = { promise, resolve };
+    this.shownAt = this.now();
     this.state = 'loading';
     this.steps = plan.steps.slice();
     this.index = -1;
@@ -250,6 +270,7 @@ export class LoadingScreen {
       return li;
     });
     this.card.replaceChildren(this.title, head, this.bar, this.list);
+    this.board?.begin(this.card, plan);
     this.root.classList.toggle('is-still', !!this.reducedMotion());
     this.root.classList.remove('is-failed', 'is-closing');
     this.root.setAttribute('aria-busy', 'true');
@@ -283,10 +304,22 @@ export class LoadingScreen {
     if (Object.hasOwn(SPAN_STEPS, name)) this.step(SPAN_STEPS[name]);
   }
 
+  /** The start's players and map are known (js/loadingboard.js describeStart): the board shows them. */
+  describe(info) {
+    if (this.state === 'loading') this.board?.describe(info);
+  }
+
+  /** How much longer the screen must show (LOADING_MIN_MS from begin; 0 with "Reduce motion"). */
+  holdMs() {
+    if (this.reducedMotion()) return 0;
+    return Math.max(0, Math.round(LOADING_MIN_MS - (this.now() - this.shownAt)));
+  }
+
   /**
-   * The game drew its first frame: the screen goes, with the stylesheet's
-   * close transition on `.is-closing` (at once with "Reduce motion" or
-   * without one). It stays modal until it is hidden. Returns `closed`.
+   * The game drew its first frame: the bar fills, and the screen goes after
+   * the rest of its least showing time, with the stylesheet's close
+   * transition on `.is-closing` (at once with "Reduce motion" or without
+   * one). It stays modal until it is hidden. Returns `closed`.
    */
   done() {
     // Closing already, or no start loading: the current start's close (resolved
@@ -294,6 +327,13 @@ export class LoadingScreen {
     if (this.state !== 'loading') return this.closed;
     // The game has the screen now: the focus stays where the game puts it.
     this.before = null;
+    this.fill.style.setProperty('--fill', '1');
+    this.bar.setAttribute('aria-valuenow', '100');
+    this.bar.setAttribute('aria-valuetext', 'Ready');
+    this.status.textContent = 'Ready. Starting the game';
+    // The least showing time left: the delay of the fade on #loading.is-closing (css/loading.css),
+    // which the close below waits for. Set before .is-closing goes on and before closeMs reads it.
+    this.root.style.setProperty('--loading-hold', `${this.holdMs()}ms`);
     this.state = 'closing';
     this.root.setAttribute('aria-busy', 'false');
     const closing = this.closing;
@@ -336,6 +376,7 @@ export class LoadingScreen {
     this.finishClose?.(false);
     // A failed start never starts its game: its `closed` stays pending, also after Back.
     this.closing = { promise: new Promise(() => {}), resolve() {} };
+    this.board?.end();
     this.state = 'failed';
     this.root.setAttribute('aria-busy', 'false');
     this.root.classList.remove('is-closing');
@@ -359,6 +400,7 @@ export class LoadingScreen {
   /** Hide the screen (a start that was given up before it began, or Back after an error). */
   close() {
     this.finishClose?.(false);
+    this.board?.end();
     this.state = 'idle';
     this.root.hidden = true;
     this.root.setAttribute('aria-busy', 'false');

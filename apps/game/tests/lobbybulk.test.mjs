@@ -5,6 +5,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { FakeEvent, installDom, uninstallDom } from './dom-fixtures.mjs';
+import { chooseValue } from './plate-fixtures.mjs';
 import { RowSelection, applyBulk, bulkActionIds, planBulk } from '../js/lobby-bulk.js';
 import { addSlot, sanitizeState } from '../js/lobby-state.js';
 import { createMap, mapFileText } from '../editor/js/mapformat.js';
@@ -203,24 +204,25 @@ test('skirmish lobby: Bulk edit shows checkboxes; Shift-click selects a range, C
   assert.deepEqual(lobby.bulk.selection.list(), [1, 3]);
   assert.ok(rows[1].classList.contains('bulk-selected'));
   // A click on a control in the row does not change the selection.
-  click(rows[3].querySelector('select'), { shiftKey: true });
+  click(rows[3].querySelector('.lobby-cell-faction .ui-sp-button'), { shiftKey: true });
   assert.deepEqual(lobby.bulk.selection.list(), [1, 3]);
-  const select = root.querySelector('.bulk-action');
-  select.value = 'team:2';
-  select.dispatchEvent(new FakeEvent('change'));
+  const select = lobby.bulk.select;
+  assert.ok(root.querySelector('.bulk-action'), 'the action list is a select plate');
+  assert.equal(root.querySelector('.bulk-apply').disabled, true, 'nothing to apply before an action is chosen');
+  chooseValue(select, 'team:2');
   root.querySelector('.bulk-apply').click();
   assert.deepEqual(lobby.state.players.map((p) => p.team), [0, 2, 0, 2]);
   assert.equal(root.querySelector('.bulk-status').textContent, '2 slots put on Team 2.');
   // Nothing selected: the preset applies to every slot.
   root.querySelector('.bulk-bar button').click();
   assert.equal(lobby.bulk.selection.size, 0);
-  select.value = 'teams:humans-vs-ai';
+  chooseValue(select, 'teams:humans-vs-ai');
   root.querySelector('.bulk-apply').click();
   assert.deepEqual(lobby.state.players.map((p) => p.team), [1, 2, 2, 2]);
-  // Enter in the action list applies and does not start the game.
-  select.value = 'teams:ffa';
+  // Enter on the chosen action applies it and does not start the game.
+  chooseValue(select, 'teams:ffa');
   const enter = new FakeEvent('keydown', { key: 'Enter', cancelable: true });
-  select.dispatchEvent(enter);
+  select.button.dispatchEvent(enter);
   assert.equal(enter.defaultPrevented, true);
   assert.deepEqual(lobby.state.players.map((p) => p.team), [0, 0, 0, 0]);
   // The All box selects every row; turning bulk edit off forgets the selection.
@@ -235,9 +237,7 @@ test('skirmish lobby: a refused action says why and changes nothing', async () =
   const { root, lobby } = await skirmish();
   root.querySelector('.bulk-toggle').click();
   const before = structuredClone(lobby.state.players);
-  const select = root.querySelector('.bulk-action');
-  select.value = 'clear-ai';
-  select.dispatchEvent(new FakeEvent('change'));
+  chooseValue(lobby.bulk.select, 'clear-ai');
   root.querySelector('.bulk-apply').click();
   assert.equal(root.querySelector('.bulk-status').textContent, 'A game needs at least two players.');
   assert.ok(root.querySelector('.bulk-status').classList.contains('bulk-error'));
@@ -372,9 +372,8 @@ test('online lobby: the host applies a bulk action with one slots message; anoth
   click(boxes[3]);
   click(boxes[0], { shiftKey: true });
   assert.deepEqual(ui.bulk.selection.list(), [0, 1, 2, 3], 'Shift from the bottom up');
-  const select = ui.root.querySelector('.bulk-action');
-  select.value = 'teams:humans-vs-ai';
-  select.dispatchEvent(new FakeEvent('change'));
+  const select = ui.bulk.select;
+  chooseValue(select, 'teams:humans-vs-ai');
   ui.root.querySelector('.bulk-apply').click();
   assert.deepEqual(sent.at(-1), { t: 'slots', changes: [{ slot: 0, team: 1 }, { slot: 1, team: 1 }, { slot: 2, team: 2 }] });
   // The bar waits for the server: an update without the changes (another member's) keeps it waiting.
@@ -389,13 +388,13 @@ test('online lobby: the host applies a bulk action with one slots message; anoth
   ui.onLobby({ slots: done, options: ui.state.options, map: null, hostId: 1, spectators: [], maxSpectators: 2 });
   assert.equal(status().textContent, 'Teams set: 3 slots changed.');
   // A refusal shows in the bar instead.
-  select.value = 'team:3';
+  chooseValue(select, 'team:3');
   ui.root.querySelector('.bulk-apply').click();
   ui.onServerError({ code: 'forbidden', message: 'This map locks slot 2 to team 2.' });
   assert.equal(status().textContent, 'Refused: This map locks slot 2 to team 2.');
   assert.ok(status().classList.contains('bulk-error'));
   assert.match(ui.root.querySelector('.bulk-note').textContent, /own slot and the AI slots/);
-  select.value = 'fill:turtle';
+  chooseValue(select, 'fill:turtle');
   ui.root.querySelector('.bulk-apply').click();
   assert.deepEqual(sent.at(-1), { t: 'slots', changes: [{ slot: 3, type: 'ai', bot: 'turtle', difficulty: 'normal' }] });
   // The selection survives a lobby update.
