@@ -31,7 +31,7 @@ test('tips: one sentence each, at most two lines, every hotkey a real one; shown
   assert.ok(TIPS.length <= LOADING_TIP_INDEX_MAX + 1, 'guide.lastTip can name every tip');
   for (const t of TIPS) {
     assert.ok(t.text.length <= 110, `too long for two lines: ${t.text}`);
-    assert.doesNotMatch(t.text, /[–—]/, 'no en or em dashes');
+    assert.doesNotMatch(t.text, /[\u2013\u2014]/, 'no en or em dashes');
     if (t.hotkey) assert.ok(OPENRA_HOTKEYS[t.hotkey]?.key, `${t.hotkey} is an OpenRA hotkey with a key`);
   }
   assert.equal(TIP_MS, 5000);
