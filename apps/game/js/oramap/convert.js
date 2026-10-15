@@ -18,10 +18,11 @@
 // Everything else (Lua, other rules, custom art and sounds, unknown actors) is
 // listed in the report and never applied.
 
-import { BRIDGES, TILESETS } from './tables.js';
+import { BRIDGES, INHERITS, TILESETS } from './tables.js';
 import { child, childValue, parseIntPair, parseIntQuad, parseInteger, parseList, parseWDist } from './miniyaml.js';
 import { BIOMES as MAP_BIOMES, encodeBase64, formatFor, holdsResource, isBuildable, MAP_FORMAT_VERSION, TERRAIN } from '../../editor/js/mapformat.js';
-import { ACTOR_CARGO_MAX, GAME_VERSION, PREVIEW_TEAM } from '../protocol.js';
+import { ticksToTime } from '../maprules.js';
+import { ACTOR_CARGO_MAX, GAME_VERSION, MAP_OPTION_KEYS, MAP_OPTION_VALUES, PREVIEW_TEAM } from '../protocol.js';
 
 export class OramapError extends Error {
   constructor(message, report = null) {
@@ -495,7 +496,9 @@ export function convertOramap(input, opts) {
   }
 
   // ---- Rules ----------------------------------------------------------------------------------
-  const rules = translateRules(yaml, yamlFile, base, report);
+  const lobby = { options: {}, locked: new Set() };
+  const rules = translateRules(yaml, yamlFile, base, report, lobby);
+  const { options, lockedOptions } = lobbySetup(lobby, report);
   const luaInRules = report.luaInRules === true;
   delete report.luaInRules;
   if (luaFiles.length || luaInRules) {
@@ -565,8 +568,8 @@ export function convertOramap(input, opts) {
     // Optional field: left out for temperate maps (their identity stays as before biomes).
     ...(biome !== 'temperate' ? { biome } : {}),
     players: slots,
-    options: {},
-    lockedOptions: [],
+    options,
+    lockedOptions,
     tags: [],
   };
   report.modded = rules !== null;
@@ -797,6 +800,36 @@ const ACTOR_FIELDS = {
   'Buildable.Prerequisites': { path: ['prerequisites'], parse: (v) => parseList(v) },
 };
 
+/** OpenRA bool fields (FieldLoader: "true" or "false", any case), or null. */
+function parseBool(value) {
+  const s = String(value ?? '').trim().toLowerCase();
+  return s === 'true' ? true : s === 'false' ? false : null;
+}
+
+/** OpenRA PlayerRelationship flags ("Ally, Enemy", "None") as WebRA's `display_timer`, or null. */
+function parseRelationships(value) {
+  const out = [];
+  for (const r of parseList(value).map((x) => x.toLowerCase())) {
+    if (r === 'none') continue;
+    if (!['ally', 'neutral', 'enemy'].includes(r)) return null;
+    if (!out.includes(r)) out.push(r);
+  }
+  return out;
+}
+
+/**
+ * SupportPowerInfo fields (any support power trait, matched by its full key
+ * such as `NukePower` or `AirstrikePower@spyplane`) onto the power's entry in
+ * `abilities.support_powers`. Times are ticks in both games.
+ */
+const SUPPORT_POWER_FIELDS = {
+  ChargeInterval: { field: 'charge', parse: parseInteger, min: 0 },
+  OneShot: { field: 'one_shot', parse: parseBool },
+  StartFullyCharged: { field: 'start_fully_charged', parse: parseBool },
+  Prerequisites: { field: 'prerequisites', parse: (v) => parseList(v) },
+  DisplayTimerRelationships: { field: 'display_timer', parse: parseRelationships },
+};
+
 const WEAPON_FIELDS = {
   Range: { path: ['range'], parse: parseWDist, min: 0 },
   MinRange: { path: ['min_range'], parse: parseWDist, min: 0 },
@@ -804,6 +837,54 @@ const WEAPON_FIELDS = {
   Burst: { path: ['burst'], parse: parseInteger, min: 1 },
   'Projectile.Speed': { path: ['speed'], parse: (v) => parseWDist(parseList(v)[0]), min: 0 },
   'Projectile.Inaccuracy': { path: ['inaccuracy'], parse: parseWDist, min: 0 },
+};
+
+/**
+ * Lobby options OpenRA maps set in the rules of the World and Player actors
+ * (MapOptions, PlayerResources, DeveloperMode, ... with their dropdown and
+ * checkbox defaults and locks) onto the map's `options` and `lockedOptions`.
+ * `value` parses the field into a WebRA option value (checked against
+ * MAP_OPTION_VALUES); `lock` fields lock the option. `openra` is OpenRA's
+ * default, which a locked option the map does not set keeps.
+ */
+const OPENRA_GAME_SPEEDS = { slowest: 'slowest', slower: 'slower', default: 'normal', fast: 'fast', faster: 'faster', fastest: 'fastest' };
+const LOBBY_OPTIONS = [
+  { actor: 'world', trait: 'MapOptions', value: 'TechLevel', lock: 'TechLevelDropdownLocked', option: 'techLevel', openra: 'unrestricted', parse: (v) => String(v).trim().toLowerCase() },
+  { actor: 'world', trait: 'MapOptions', value: 'GameSpeed', lock: 'GameSpeedDropdownLocked', option: 'gameSpeed', openra: 'normal', parse: (v) => OPENRA_GAME_SPEEDS[String(v).trim().toLowerCase()] },
+  { actor: 'world', trait: 'MapOptions', value: 'ShortGameCheckboxEnabled', lock: 'ShortGameCheckboxLocked', option: 'shortGame', openra: true, parse: parseBool },
+  { actor: 'world', trait: 'CrateSpawner', value: 'CheckboxEnabled', lock: 'CheckboxLocked', option: 'crates', openra: true, parse: parseBool },
+  { actor: 'world', trait: 'MapBuildRadius', value: 'BuildRadiusCheckboxEnabled', lock: 'BuildRadiusCheckboxLocked', option: 'buildRadius', openra: true, parse: parseBool },
+  { actor: 'world', trait: 'MapBuildRadius', value: 'AllyBuildRadiusCheckboxEnabled', lock: 'AllyBuildRadiusCheckboxLocked', option: 'allyBuildRadius', openra: true, parse: parseBool },
+  { actor: 'world', trait: 'MapStartingLocations', value: 'SeparateTeamSpawnsCheckboxEnabled', lock: 'SeparateTeamSpawnsCheckboxLocked', option: 'separateTeamSpawns', openra: true, parse: parseBool },
+  { actor: 'world', trait: 'SpawnStartingUnits', value: 'StartingUnitsClass', lock: 'DropdownLocked', option: 'startingUnits', openra: 'mcv', parse: (v) => ({ none: 'mcv', light: 'light', heavy: 'heavy' })[String(v).trim().toLowerCase()] },
+  { actor: 'world', trait: 'TimeLimitManager', value: 'TimeLimitDefault', lock: 'TimeLimitLocked', option: 'timeLimit', openra: 0, parse: parseInteger },
+  { actor: 'player', trait: 'PlayerResources', value: 'DefaultCash', lock: 'DefaultCashDropdownLocked', option: 'startingCash', openra: 5000, parse: parseInteger },
+  { actor: 'player', trait: 'DeveloperMode', value: 'CheckboxEnabled', lock: 'CheckboxLocked', option: 'cheats', openra: false, parse: parseBool },
+  { actor: 'player', trait: 'Shroud', value: 'FogCheckboxEnabled', lock: 'FogCheckboxLocked', option: 'fog', openra: true, parse: parseBool },
+  { actor: 'player', trait: 'Shroud', value: 'ExploredMapCheckboxEnabled', lock: 'ExploredMapCheckboxLocked', option: 'explored', openra: false, parse: parseBool },
+  { actor: 'player', trait: 'LobbyPrerequisiteCheckbox@GLOBALBOUNTY', value: 'Enabled', lock: 'Locked', option: 'bounty', openra: false, parse: parseBool },
+  { actor: 'player', trait: 'LobbyPrerequisiteCheckbox@GLOBALFACTUNDEPLOY', value: 'Enabled', lock: 'Locked', option: 'redeployableMcv', openra: true, parse: parseBool },
+  { actor: 'player', trait: 'LobbyPrerequisiteCheckbox@REUSABLEENGINEERS', value: 'Enabled', lock: 'Locked', option: 'reusableEngineers', openra: false, parse: parseBool },
+];
+
+/** Lobby names of the options above, for the report. */
+const LOBBY_OPTION_LABELS = {
+  techLevel: 'tech level',
+  gameSpeed: 'game speed',
+  shortGame: 'short game',
+  crates: 'crates',
+  buildRadius: 'build radius',
+  allyBuildRadius: 'build off allies',
+  separateTeamSpawns: 'separate team spawns',
+  startingUnits: 'starting units',
+  timeLimit: 'time limit',
+  startingCash: 'starting cash',
+  cheats: 'debug menu',
+  fog: 'fog of war',
+  explored: 'explored map',
+  bounty: 'kill bounties',
+  redeployableMcv: 'redeployable MCVs',
+  reusableEngineers: 'reusable engineers',
 };
 
 const INT32 = 2 ** 31 - 1;
@@ -829,6 +910,7 @@ function setIn(obj, path, value) {
 function parseField(spec, raw) {
   const v = spec.parse(raw);
   if (v === null || v === undefined) return undefined;
+  if (typeof v === 'boolean') return v;
   if (Array.isArray(v)) return v.every((s) => /^[A-Za-z0-9_.~!-]{1,40}$/.test(s)) && v.length <= 32 ? v : undefined;
   if (!Number.isSafeInteger(v) || Math.abs(v) > INT32) return undefined;
   if (spec.min !== undefined && v < spec.min) return undefined;
@@ -836,59 +918,172 @@ function parseField(spec, raw) {
 }
 
 /**
- * Translate the map's Rules and Weapons into WebRA rules overrides. Values
- * with a WebRA rules field (and a built-in value of the same type) are kept;
+ * The World and Player actors' lobby option fields (LOBBY_OPTIONS) into
+ * `lobby` ({ options, locked }); other fields are noted as unsupported.
+ */
+function lobbyOptionFields(actor, top, lobby, note) {
+  for (const trait of top.nodes) {
+    if (!trait.nodes.length) {
+      note(`${top.key}.${cleanText(trait.key, 40)}`);
+      continue;
+    }
+    for (const field of trait.nodes) {
+      const what = `${top.key}.${cleanText(trait.key, 60)}.${cleanText(field.key, 60)}`;
+      const spec = LOBBY_OPTIONS.find((o) => o.actor === actor && o.trait === trait.key && (o.value === field.key || o.lock === field.key));
+      if (!spec || field.nodes.length) {
+        note(what);
+        continue;
+      }
+      if (spec.lock === field.key) {
+        const on = parseBool(field.value);
+        if (on === null) note(what);
+        else if (on) lobby.locked.add(spec.option);
+        else lobby.locked.delete(spec.option);
+        continue;
+      }
+      const value = spec.parse(field.value);
+      if (value === undefined || value === null || !MAP_OPTION_VALUES[spec.option].includes(value)) {
+        note(`${what} (${cleanText(field.value, 20)} is not a lobby choice)`);
+        continue;
+      }
+      lobby.options[spec.option] = value;
+    }
+  }
+}
+
+/**
+ * The map's setting of every key ("Trait.Field") per actor id, with those
+ * an actor inherits from its parent actor (tables.js INHERITS): OpenRA
+ * resolves `Inherits` after merging the map's rules, so changing AFLD
+ * changes AFLD.Ukraine too, except the keys AFLD.Ukraine sets itself.
+ */
+function withInherited(own, actorsById) {
+  const inherits = new Map(Object.entries(INHERITS).map(([id, v]) => [id.toLowerCase(), v]));
+  const resolved = new Map();
+  const resolve = (id, depth = 0) => {
+    const key = id.toLowerCase();
+    if (resolved.has(key)) return resolved.get(key);
+    const out = new Map();
+    const link = inherits.get(key);
+    if (link && depth < 8) {
+      const [parent, ownKeys] = link;
+      const parentEntry = actorsById.get(parent.toLowerCase());
+      for (const [k, v] of resolve(parent, depth + 1)) {
+        const trait = k.slice(0, k.indexOf('.'));
+        if (ownKeys.includes(k) || ownKeys.includes(`-${trait}`)) continue;
+        out.set(k, { ...v, from: v.from ?? parentEntry?.id ?? parent });
+      }
+    }
+    for (const [k, v] of own.get(key) ?? []) out.set(k, v);
+    resolved.set(key, out);
+    return out;
+  };
+  // The map's actors in its order, then those that only inherit a change.
+  const result = new Map();
+  for (const key of [...own.keys(), ...actorsById.keys()]) {
+    const entry = actorsById.get(key);
+    const s = resolve(key);
+    if (s.size && !result.has(entry.id)) result.set(entry.id, s);
+  }
+  return result;
+}
+
+/**
+ * Translate the map's Rules and Weapons into WebRA rules overrides, and the
+ * lobby options its World and Player rules set into `lobby`. Values with a
+ * WebRA rules field (and a built-in value of the same type) are kept;
  * everything else is listed as unsupported.
  */
-function translateRules(yaml, yamlFile, base, report) {
+function translateRules(yaml, yamlFile, base, report, lobby) {
   const out = { actors: {}, weapons: {} };
   const unsupported = new Map();
   const note = (what) => bump(unsupported, what);
   const actorsById = new Map(base.actors.map((a) => [String(a.id).toLowerCase(), a]));
   const weaponsByName = new Map(base.weapons.map((w) => [String(w.name).toLowerCase(), w]));
 
+  // The map's "Trait.Field" values per actor; a later duplicate wins, as
+  // OpenRA's MiniYaml merges duplicate keys of one file.
+  const own = new Map();
   for (const top of collectNodes(yaml, 'Rules', yamlFile, report)) {
     const id = top.key;
     if (top.nodes.some((t) => /^LuaScript(@|$)/.test(t.key))) report.luaInRules = true;
+    if (/^(world|player)$/i.test(id)) {
+      lobbyOptionFields(id.toLowerCase(), top, lobby, note);
+      continue;
+    }
     const entry = actorsById.get(id.toLowerCase());
     if (!entry || id.startsWith('^') || id.startsWith('-')) {
       note(`${cleanText(id, 40)} (${entry ? 'removal or template' : 'not a WebRA actor'})`);
       continue;
     }
-    // Build duration follows cost in OpenRA unless BuildDuration is set.
-    let cost;
-    let buildDuration;
-    let durationModifier;
+    const settings = own.get(entry.id.toLowerCase()) ?? new Map();
+    own.set(entry.id.toLowerCase(), settings);
     for (const trait of top.nodes) {
-      const traitName = trait.key.split('@')[0];
       if (trait.key.startsWith('-') || trait.key.startsWith('Inherits')) {
         note(`${entry.id}.${cleanText(trait.key, 40)}`);
         continue;
       }
+      if (!trait.nodes.length) note(`${entry.id}.${cleanText(trait.key, 40)}`);
       for (const field of trait.nodes) {
-        const key = `${trait.key.includes('@') && traitName !== 'Buildable' ? trait.key : traitName}.${field.key}`;
-        if (traitName === 'Buildable' && field.key === 'BuildDuration') {
-          buildDuration = parseInteger(field.value);
-          continue;
-        }
-        if (traitName === 'Buildable' && field.key === 'BuildDurationModifier') {
-          durationModifier = parseInteger(field.value);
-          continue;
-        }
-        const spec = ACTOR_FIELDS[key];
-        const builtIn = spec ? getIn(entry, spec.path) : undefined;
-        const value = spec ? parseField(spec, field.value) : undefined;
-        if (!spec || builtIn === undefined || builtIn === null || value === undefined || Array.isArray(builtIn) !== Array.isArray(value)) {
-          note(`${entry.id}.${cleanText(key, 60)}`);
-          continue;
-        }
-        const patch = (out.actors[entry.id] ??= {});
-        setIn(patch, spec.path, value);
-        if (key === 'Valued.Cost') cost = value;
-        report.rules.applied.push({ section: 'actors', id: entry.id, field: spec.path[0], text: `${entry.id} ${key}: ${Array.isArray(value) ? value.join(', ') : value}` });
+        const key = `${trait.key}.${field.key}`;
+        settings.delete(key);
+        settings.set(key, { raw: field.value });
       }
-      if (!trait.nodes.length && !trait.key.startsWith('-')) note(`${entry.id}.${cleanText(trait.key, 40)}`);
     }
+  }
+
+  for (const [id, settings] of withInherited(own, actorsById)) {
+    const entry = actorsById.get(id.toLowerCase());
+    // Build duration follows cost in OpenRA unless BuildDuration is set.
+    let cost;
+    let buildDuration;
+    let durationModifier;
+    let powers = null;
+    for (const [rawKey, { raw, from }] of settings) {
+      const dot = rawKey.indexOf('.');
+      const traitKey = rawKey.slice(0, dot);
+      const fieldKey = rawKey.slice(dot + 1);
+      const traitName = traitKey.split('@')[0];
+      const via = from ? ` (inherited from ${from})` : '';
+      if (traitName === 'Buildable' && fieldKey === 'BuildDuration') {
+        buildDuration = parseInteger(raw);
+        continue;
+      }
+      if (traitName === 'Buildable' && fieldKey === 'BuildDurationModifier') {
+        durationModifier = parseInteger(raw);
+        continue;
+      }
+      const builtInPowers = entry.abilities?.support_powers;
+      const index = Array.isArray(builtInPowers) ? builtInPowers.findIndex((p) => p?.key === traitKey) : -1;
+      if (index >= 0) {
+        const spec = SUPPORT_POWER_FIELDS[fieldKey];
+        const value = spec ? parseField(spec, raw) : undefined;
+        if (!spec || value === undefined) {
+          note(`${entry.id}.${cleanText(rawKey, 60)}`);
+          continue;
+        }
+        powers ??= structuredClone(builtInPowers);
+        powers[index][spec.field] = value;
+        const name = builtInPowers[index].name || traitKey;
+        const shown = Array.isArray(value) ? value.join(', ') || 'none' : value;
+        const time = spec.field === 'charge' ? ` ticks (${name} charges in ${ticksToTime(value)} at normal speed)` : ` (${name})`;
+        report.rules.applied.push({ section: 'actors', id: entry.id, field: 'abilities', text: `${entry.id} ${rawKey}: ${shown}${time}${via}` });
+        continue;
+      }
+      const key = `${traitKey.includes('@') && traitName !== 'Buildable' ? traitKey : traitName}.${fieldKey}`;
+      const spec = ACTOR_FIELDS[key];
+      const builtIn = spec ? getIn(entry, spec.path) : undefined;
+      const value = spec ? parseField(spec, raw) : undefined;
+      if (!spec || builtIn === undefined || builtIn === null || value === undefined || Array.isArray(builtIn) !== Array.isArray(value)) {
+        note(`${entry.id}.${cleanText(key, 60)}`);
+        continue;
+      }
+      const patch = (out.actors[entry.id] ??= {});
+      setIn(patch, spec.path, value);
+      if (key === 'Valued.Cost') cost = value;
+      report.rules.applied.push({ section: 'actors', id: entry.id, field: spec.path[0], text: `${entry.id} ${key}: ${Array.isArray(value) ? value.join(', ') : value}${via}` });
+    }
+    if (powers) setIn((out.actors[entry.id] ??= {}), ['abilities', 'support_powers'], powers);
     if ((cost !== undefined || buildDuration != null || durationModifier != null) && typeof entry.build_ticks === 'number') {
       const baseCost = typeof entry.cost === 'number' ? entry.cost : 0;
       const modifier = durationModifier ?? (baseCost > 0 ? Math.round((entry.build_ticks * 100) / baseCost) : 60);
@@ -943,6 +1138,31 @@ function translateRules(yaml, yamlFile, base, report) {
   if (!Object.keys(out.weapons).length) delete out.weapons;
   if (!Object.keys(out.actors).length) delete out.actors;
   return Object.keys(out).length ? out : null;
+}
+
+/**
+ * The map's lobby options from its rules (`lobby` of translateRules): a
+ * locked option the map does not set keeps OpenRA's default, as OpenRA's
+ * lobby does. Returns `{ options, lockedOptions }` in the lobby's order.
+ */
+function lobbySetup(lobby, report) {
+  const options = {};
+  const lockedOptions = [];
+  for (const key of MAP_OPTION_KEYS) {
+    const spec = LOBBY_OPTIONS.find((o) => o.option === key);
+    if (!spec) continue;
+    const locked = lobby.locked.has(key);
+    if (Object.hasOwn(lobby.options, key)) options[key] = lobby.options[key];
+    else if (locked) options[key] = spec.openra;
+    else continue;
+    if (locked) lockedOptions.push(key);
+  }
+  const shown = Object.entries(options).map(([k, v]) => {
+    const value = typeof v === 'boolean' ? (v ? 'on' : 'off') : k === 'timeLimit' ? (v ? `${v} minutes` : 'none') : String(v);
+    return `${LOBBY_OPTION_LABELS[k]} ${value}${lockedOptions.includes(k) ? ' (locked)' : ''}`;
+  });
+  if (shown.length) report.converted.push(`Lobby options from the map's rules: ${shown.join(', ')}.`);
+  return { options, lockedOptions };
 }
 
 /**

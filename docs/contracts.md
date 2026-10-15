@@ -594,12 +594,39 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   (build time follows the cost as in OpenRA, or `Buildable.BuildDuration` /
   `BuildDurationModifier`), `Health.HP`, `Mobile.Speed`,
   `Mobile.TurnSpeed`, `RevealsShroud.Range`, `Power.Amount`,
-  `Buildable.Prerequisites`; weapons `Range`, `MinRange`, `ReloadDelay`,
-  `Burst`, `Projectile.Speed`, `Projectile.Inaccuracy`, and `Damage` of a
-  single warhead. Each kept field is checked by the engine alone; refused
-  fields are dropped and reported. Everything else (removals, inheritance,
-  other traits, `Player`, `World`) is listed as unsupported and never
-  applied. Lua scripts are never run. Custom sequences, voices, music,
+  `Buildable.Prerequisites` (tech level tokens such as `~techlevel.low`
+  included); support powers, matched by the trait's full key (`NukePower`,
+  `AirstrikePower@spyplane`, `GrantExternalConditionPower@IRONCURTAIN`, ...):
+  `ChargeInterval` (ticks in both games: WebRA's tick is OpenRA's, 40 ms at
+  normal speed and 20 ms at fastest), `OneShot`, `StartFullyCharged`,
+  `Prerequisites` and `DisplayTimerRelationships`, written as the actor's
+  whole `abilities.support_powers` list with the built-in entries and the
+  changed fields (the list is replaced whole, see `rules` above); weapons
+  `Range`, `MinRange`, `ReloadDelay`, `Burst`, `Projectile.Speed`,
+  `Projectile.Inaccuracy`, and `Damage` of a single warhead. A later
+  duplicate of an actor merges into the earlier one (OpenRA MiniYaml), the
+  last value winning. A change to an actor also reaches the actors that
+  inherit it in OpenRA (`INHERITS` in `tables.js`, generated from
+  `data/source/rules`: AFLD.Ukraine from AFLD, SPY.England from SPY, E1R1
+  from E1, ...) except for the keys those set themselves, as OpenRA
+  resolves `Inherits` after merging a map's rules. Each kept field is
+  checked by the engine alone; refused fields are dropped and reported.
+- Lobby options in the `World` and `Player` rules become the map's
+  `options` and `lockedOptions` (not rules: the map is not modded for
+  them): `MapOptions` `TechLevel`, `GameSpeed` (`default` is `normal`),
+  `ShortGameCheckboxEnabled`; `CrateSpawner`, `MapBuildRadius` (build
+  radius, ally build radius), `MapStartingLocations` (separate team
+  spawns), `SpawnStartingUnits` `StartingUnitsClass` (`none` is `mcv`),
+  `TimeLimitManager` `TimeLimitDefault`, `PlayerResources` `DefaultCash`,
+  `DeveloperMode` (the debug menu), `Shroud` (fog, explored map) and the
+  `LobbyPrerequisiteCheckbox` options bounty, redeployable MCVs and
+  reusable engineers, each with its `...Locked` field. A locked option the
+  map does not set keeps OpenRA's default, as OpenRA's lobby does; a value
+  the lobby has no choice for (a starting cash of 3000) is reported.
+- Everything else (removals, `Inherits`, templates, other traits and
+  fields such as `AllowMultiple` or the `...Visible` lobby flags, other
+  `World` and `Player` traits) is listed as unsupported and never applied.
+  Lua scripts are never run. Custom sequences, voices, music,
   notifications and other files are ignored and reported.
 - Import report (shown before the map is used): converted, rules applied,
   warnings, skipped, not supported, and the validation errors when the
