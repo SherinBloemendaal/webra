@@ -323,7 +323,7 @@ test('the campaign screen lists campaigns and missions, keeps chapters locked an
     });
     await menu.open();
     assert.equal(menu.isOpen, true);
-    const tabs = root.querySelectorAll('.campaign-tab');
+    const tabs = [...root.querySelectorAll('.campaign-tab')];
     assert.equal(tabs.length, INDEX.campaigns.length);
     assert.equal(tabs[0].getAttribute('role'), 'tab');
     assert.equal(tabs[0].getAttribute('title'), `0 of ${INDEX.campaigns[0].missions.length} missions won`);
@@ -354,19 +354,19 @@ test('the campaign screen lists campaigns and missions, keeps chapters locked an
     const difficulty = root.querySelector('.campaign-segmented');
     assert.equal(difficulty.getAttribute('role'), 'radiogroup');
     assert.equal(root.querySelectorAll('select').length, 0, 'no native selects');
-    const hard = difficulty.querySelectorAll('input').find((i) => i.getAttribute('value') === 'hard');
+    const hard = [...difficulty.querySelectorAll('input')].find((i) => i.getAttribute('value') === 'hard');
     hard.checked = true;
     hard.dispatchEvent(new FakeEvent('change'));
     const speed = root.querySelector('.campaign-plate');
     assert.ok(GAME_SPEED_COUNT > SEGMENTED_MAX);
     click(speed.querySelector('.ui-sp-button'));
-    click(speed.querySelectorAll('[role="option"]').find((o) => o.textContent.includes('Fast') && !o.textContent.includes('Faster')));
+    click([...speed.querySelectorAll('[role="option"]')].find((o) => o.textContent.includes('Fast') && !o.textContent.includes('Faster')));
     play().click();
     assert.deepEqual(played, [['allies-02', { difficulty: 'hard' }, 'fast']]);
     // The choices stay for the page: a redraw keeps them.
     progress.won('allies-02', 'hard');
     missions()[1].click();
-    assert.equal(root.querySelector('.campaign-segmented').querySelectorAll('input').find((i) => i.checked).getAttribute('value'), 'hard');
+    assert.equal([...root.querySelector('.campaign-segmented').querySelectorAll('input')].find((i) => i.checked).getAttribute('value'), 'hard');
     assert.match(root.querySelector('.campaign-plate .ui-sp-value').textContent, /^Fast$/);
     assert.ok(root.querySelector('.info-btn'), 'help buttons');
     menu.close();

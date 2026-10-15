@@ -11,7 +11,7 @@ import { createRegistry } from '../js/registry.js';
 import { createSettings } from '../js/settings.js';
 import { HotkeyRegistry } from '../js/hotkeys.js';
 import { GameMenu } from '../js/gamemenu.js';
-import { CONQUEST_OBJECTIVE, infoTabs, missionObjectives, optionRows, renderGameInfo, skirmishStats, winState } from '../js/gameinfo.js';
+import { CONQUEST_OBJECTIVE, aiTag, infoTabs, missionObjectives, optionRows, renderGameInfo, skirmishStats, winState } from '../js/gameinfo.js';
 
 let doc;
 beforeEach(() => {
@@ -48,9 +48,20 @@ test('skirmish scores: sorted by experience, grouped by team, teams by their sum
     m.groups.map((g) => [g.label, g.score, g.players.map((p) => p.name)]),
     [
       ['Team 1', 350, ['Cy', 'Ann']],
-      ['Team 2', 300, ['Bob', 'Di (Lost)']],
+      ['Team 2', 300, ['Bob', 'Di']],
     ],
   );
+  // The win state is a word of its own (the design's PLAYING and DEFEATED), not a suffix of the name.
+  const di = m.groups[1].players.find((p) => p.name === 'Di');
+  assert.equal(di.state, 'lost');
+  assert.equal(di.stateText, 'Defeated');
+  assert.deepEqual(m.groups[0].players.find((p) => p.name === 'Ann').tags, ['You']);
+  // AI players: an AI tag, with the difficulty when the lobby's setup is known.
+  const ai = skirmishStats({ stats: [row(0), row(1, { isAi: true }), row(2, { isAi: true })], names: NAMES, localPlayer: 0, bots: [null, { bot: 'normal', difficulty: 'hard' }] });
+  const tags = (p) => ai.groups[0].players.find((x) => x.player === p).tags;
+  assert.deepEqual(tags(1), ['AI · Hard']);
+  assert.deepEqual(tags(2), ['AI']);
+  assert.equal(aiTag({ difficulty: 'easy' }), 'AI · Easy');
   // Free for all: one group, no header; equal scores keep the player order.
   const ffa = skirmishStats({ stats: [row(0), row(1, { experience: 5 }), row(2)], names: NAMES, localPlayer: 1 });
   assert.equal(ffa.groups.length, 1);
@@ -95,10 +106,10 @@ test('a player still in the game sees only its own and its allies countries; spe
   assert.equal(faction(skirmishStats({ stats, names: NAMES, localPlayer: null, lobbyFactions: null }), 1), 'Russia');
   // Only score, country, team and win state: no economy or army figures leave the engine's row.
   const keys = new Set(live.groups.flatMap((g) => g.players.flatMap((p) => Object.keys(p))));
-  assert.deepEqual([...keys].sort(), ['faction', 'name', 'player', 'score', 'state', 'team']);
+  assert.deepEqual([...keys].sort(), ['faction', 'name', 'player', 'score', 'state', 'stateText', 'tags', 'team']);
   const won = skirmishStats({ stats: stats.map((r) => ({ ...r, won: r.team === 1, defeated: r.team === 2 })), names: NAMES, localPlayer: 2, allied });
   assert.equal(won.objective.status, 'Accomplished');
-  assert.ok(won.groups[0].players.every((p) => p.name.endsWith(' (Won)')));
+  assert.ok(won.groups[0].players.every((p) => p.stateText === 'Won'));
 });
 
 test('mission objectives: primary first, the status, the script error', () => {
@@ -169,8 +180,8 @@ test('the panel draws its tabs and switches between them', () => {
     });
   };
   draw();
-  assert.equal(root.querySelector('h1').textContent, 'Coastal Clash');
-  assert.deepEqual(root.querySelectorAll('[role="tab"]').map((b) => b.textContent), ['Objectives', 'Briefing', 'Options']);
+  assert.equal(root.querySelector('h2').textContent, 'Coastal Clash');
+  assert.deepEqual([...root.querySelectorAll('[role="tab"]')].map((b) => b.textContent), ['Objectives', 'Briefing', 'Options']);
   const text = textOf(root);
   assert.match(text, /Mission: In progress/);
   assert.match(text, /Destroy all opposition!/);
@@ -208,8 +219,8 @@ function menuWith(opts = {}) {
   return { menu, root };
 }
 
-const buttons = (root) => root.querySelectorAll('button').map((b) => b.textContent);
-const byText = (root, text) => root.querySelectorAll('button').find((b) => b.textContent === text);
+const buttons = (root) => [...root.querySelectorAll('button')].map((b) => b.textContent);
+const byText = (root, text) => [...root.querySelectorAll('button')].find((b) => b.textContent === text);
 
 test('Surrender: shown for a player of a game with more people, asks first, then gives the order once', () => {
   let people = 2;
@@ -227,7 +238,7 @@ test('Surrender: shown for a player of a game with more people, asks first, then
   assert.equal(orders, 0);
   assert.ok(byText(root, 'Resume'));
   click(byText(root, 'Surrender'));
-  click(root.querySelectorAll('button.primary').find((x) => x.textContent === 'Surrender'));
+  click([...root.querySelectorAll('button.ui-btn-primary')].find((x) => x.textContent === 'Surrender'));
   assert.equal(orders, 1);
   assert.equal(menu.isOpen, false, 'the menu closes like OpenRA CloseMenu');
   // Decided: disabled (OpenRA IsDisabled while WinState is not Undefined).
@@ -246,28 +257,32 @@ test('Surrender: shown for a player of a game with more people, asks first, then
   none.menu.close();
 });
 
-test('Game info: a button after Resume opens the tabs and Back returns', () => {
+test('Game info: beside the actions on the main page, drawn again with the newest scores', () => {
   let score = 10;
   const { menu, root } = menuWith({
+    weather: () => 'Temperate · Thunderstorm',
     gameInfo: () => ({
       title: 'Generated map',
       briefing: null,
       options: { selects: [], toggles: [] },
       objectives: skirmishStats({ stats: [row(0, { experience: score })], names: NAMES, localPlayer: 0 }),
+      weather: 'Temperate · Thunderstorm',
     }),
   });
   menu.open();
-  assert.deepEqual(buttons(root).slice(0, 2), ['Resume', 'Game info']);
-  click(byText(root, 'Game info'));
-  assert.match(root.querySelector('h1').textContent, /Generated map/);
-  assert.match(textOf(root), /10/);
-  // Drawn again with the newest scores (the page's refresh).
+  assert.equal(buttons(root)[0], 'Resume');
+  const info = root.querySelector('.gm-info');
+  assert.ok(info, 'the game info section');
+  assert.match(info.querySelector('h2').textContent, /Generated map/);
+  assert.match(textOf(info), /10/);
+  assert.match(textOf(info), /Playing/);
+  assert.match(textOf(info), /Weather: Temperate · Thunderstorm/);
+  // Drawn again with the newest scores (the section's refresh).
   score = 25;
-  menu.render();
-  assert.match(textOf(root), /25/);
-  click(byText(root, 'Options'));
-  assert.match(textOf(root), /no lobby options/);
-  click(byText(root, 'Back'));
-  assert.ok(byText(root, 'Resume'));
+  menu.renderInfo(info);
+  assert.match(textOf(info), /25/);
+  click(root.querySelector('#game-info-tab-options'));
+  assert.match(textOf(root.querySelector('.gm-info')), /no lobby options/);
+  assert.ok(byText(root, 'Resume'), 'still the main page');
   menu.close();
 });

@@ -97,7 +97,7 @@ test('without music: what is missing, why the quick install has none, and how to
   assert.match(MUSIC_SOURCE_HINT, /Steam or Origin release, or C&C Remastered/);
   assert.match(MUSIC_SOURCE_HINT, /scores\.mix \(or main\.mix or redalert\.mix, which contain it\)/);
   assert.match(MUSIC_SOURCE_HINT, /dropping it on this page or in the Original content dialog/);
-  const buttons = root.querySelectorAll('button');
+  const buttons = [...root.querySelectorAll('button')];
   click(buttons.find((b) => b.textContent === 'Original content...'));
   assert.equal(opened, 1);
   assert.equal(buttons.find((b) => b.textContent === 'Use installed original sounds').hidden, true);
@@ -114,13 +114,13 @@ test('installed music while "Use installed original sounds" is off: the player s
   const player = mountMusicPlayer(root, audio);
   await settle();
   assert.match(textOf(root), /One music track is installed, but "Use installed original sounds" is off\./);
-  const use = root.querySelectorAll('button').find((b) => b.textContent === 'Use installed original sounds');
+  const use = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Use installed original sounds');
   assert.equal(use.hidden, false);
   click(use);
   assert.equal(audio.prefs.get().original, true);
   await settle();
   assert.equal(root.querySelector('.music-main').hidden, false, 'the installed track is listed now');
-  assert.deepEqual(root.querySelectorAll('.music-track-title').map((t) => t.textContent), ['Hell March']);
+  assert.deepEqual([...root.querySelectorAll('.music-track-title')].map((t) => t.textContent), ['Hell March']);
   assert.equal(root.querySelector('.music-track-length').textContent, '0:00', 'its length from the AUD header (a tenth of a second)');
   player.dispose();
 });
@@ -132,9 +132,9 @@ test('the player lists the tracks with lengths, plays a picked one outside a gam
   doc.body.append(root);
   const player = mountMusicPlayer(root, audio, { idPrefix: 'mp' });
   await settle();
-  const tracks = root.querySelectorAll('.music-track');
-  assert.deepEqual(root.querySelectorAll('.music-track-title').map((t) => t.textContent), MUSIC.slice(0, 3).map((m) => m.title));
-  assert.deepEqual(root.querySelectorAll('.music-track-length').map((t) => t.textContent), ['1:05', '2:05', '3:05']);
+  const tracks = [...root.querySelectorAll('.music-track')];
+  assert.deepEqual([...root.querySelectorAll('.music-track-title')].map((t) => t.textContent), MUSIC.slice(0, 3).map((m) => m.title));
+  assert.deepEqual([...root.querySelectorAll('.music-track-length')].map((t) => t.textContent), ['1:05', '2:05', '3:05']);
   assert.match(textOf(root.querySelector('.music-status')), /Stopped/);
   assert.equal(root.querySelector('.music-time').textContent, '');
 
@@ -155,7 +155,7 @@ test('the player lists the tracks with lengths, plays a picked one outside a gam
   assert.equal(root.querySelector('.music-time').textContent, '0:42 / 2:05');
 
   // Play / pause / resume, keeping the place.
-  const button = (label) => root.querySelector('.music-transport').querySelectorAll('button').find((b) => b.textContent === label);
+  const button = (label) => [...root.querySelector('.music-transport').querySelectorAll('button')].find((b) => b.textContent === label);
   click(button('Pause'));
   assert.equal(audio.jukebox.handle, null);
   assert.equal(root.querySelector('.music-status').textContent, `Paused: ${MUSIC[1].title}`);
@@ -251,7 +251,7 @@ test('the Music dialog opens from the Sound dialog, closes with Escape and stops
   click(button);
   assert.equal(soundPanel.hidden, false);
   const listeners = audio.listeners.size;
-  click(soundPanel.querySelectorAll('button').find((b) => b.textContent === 'Music player...'));
+  click([...soundPanel.querySelectorAll('button')].find((b) => b.textContent === 'Music player...'));
   assert.equal(soundPanel.hidden, true, 'the Sound dialog closes');
   assert.equal(musicPanel.hidden, false);
   assert.ok(music.isOpen());
@@ -285,7 +285,7 @@ test('the game menu has a Music page with the player, also linked from the Audio
   });
   menu.open();
   const listeners = audio.listeners.size;
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Music'));
+  click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Music'));
   assert.equal(menu.view, 'music');
   assert.equal(root.querySelector('h1').textContent, 'Music');
   await settle();
@@ -294,12 +294,12 @@ test('the game menu has a Music page with the player, also linked from the Audio
   click(root.querySelectorAll('.music-track')[0]);
   await settle();
   assert.equal(audio.jukebox.playing, MUSIC[0].title);
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Back'));
+  click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Back'));
   assert.equal(menu.view, 'main');
   assert.equal(audio.listeners.size, listeners, 'the page stops following the audio system');
   // Settings, Audio: "Music player..." opens the same page.
   menu.show('settings');
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Music player...'));
+  click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Music player...'));
   assert.equal(menu.view, 'music');
   menu.close();
   assert.equal(audio.listeners.size, listeners);

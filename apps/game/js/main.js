@@ -52,6 +52,8 @@ import { CURSORS, setCursorArt, tickCursors } from './cursors.js';
 import { hotkeys, formatCombo } from './hotkeys.js';
 import { settings } from './settings.js';
 import { GameMenu } from './gamemenu.js';
+import { GuideProgress, GuideTracker, guideFollows, tourRuns, withGuide } from './guide.js';
+import { TourCard } from './tour.js';
 import { missionObjectives, optionRows, skirmishStats } from './gameinfo.js';
 import { fullscreenAvailable, isFullscreen, onFullscreenChange, toggleFullscreen } from './fullscreen.js';
 import { DETACHED_ESC_TEXT, MouseCapture, pointerLockAvailable } from './mouselock.js';
@@ -592,6 +594,8 @@ async function dropContent(files) {
 
 /** Where the map editor's test play starts the camera (world pixels), or null. */
 let testCamera = null;
+/** This page plays the map editor's test map (`?editorTest=1`): no guide and no tour in its games. */
+let editorTestPlay = false;
 
 /** The test play camera, once: a restarted game starts at the player's base. */
 function takeTestCamera() {
@@ -614,6 +618,7 @@ async function offerLinkedMap(lobby) {
     // Test play from the editor: its slots and bots, and where the camera starts.
     const setup = loadTestSetup(params);
     testCamera = setup?.camera ?? null;
+    editorTestPlay = params.get('editorTest') === '1';
     if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link', setup);
   } catch (err) {
     lobby.reportMapProblem(loadErrorText(err));
@@ -685,6 +690,7 @@ function setupOnline(lobby, gpuError) {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
+            // net: the game menu's Network tab ({ source: NetQuality, players() }, js/gamemenu.js), when js/online.js has one.
             online: { driver, onQuit, spectator, rematch, save, chat, net },
             recorder,
             viewer: spectator ? roster : null,
@@ -923,6 +929,8 @@ function viewerPlayers(players) {
   return players.map((p, i) => ({
     name: p.type === 'human' ? p.name || `Player ${i + 1}` : p.name || aiName(p),
     color: TEAM_COLORS[i] ?? [1, 1, 1],
+    // The game menu's AI tag (js/gameinfo.js aiTag).
+    bot: p.type === 'ai' ? { bot: p.bot ?? 'normal', difficulty: p.difficulty ?? 'normal' } : null,
   }));
 }
 
@@ -1545,7 +1553,18 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   const watching = () => !!viewer || spectating;
   // OpenRA's target lines (js/targetlines.js): ordered and newly selected units show theirs for a moment.
   const targetLines = new TargetLines({ mode: () => settings.get('targetLines') });
-  const ui = withTargetLines(viewer ? viewOnly(watched) : viewOnly(watched, () => spectating), (ids) => targetLines.ordered(ids));
+  // The guide (js/guide.js): steps tick off as the local player plays; the tour in the first skirmish games (js/tour.js).
+  // The map editor's test play is not a game of the player's own: kind 'editor' (js/guide.js leaves it out).
+  const guideGame = {
+    kind: mission ? 'mission' : replay ? 'replay' : online ? 'online' : stress ? 'stress' : editorTestPlay ? 'editor' : 'skirmish',
+    watching: !!viewer || !!online?.spectator,
+  };
+  const guide = new GuideProgress(settings.registry);
+  let tour = null;
+  const guideTracker = guideFollows(guideGame) ? new GuideTracker({ progress: guide, actors: rules.actors, player, onDone: (ids) => tour?.stepsDone(ids) }) : null;
+  if (guideTracker) scope.add(() => guideTracker.dispose());
+  const ordersUi = withTargetLines(viewer ? viewOnly(watched) : viewOnly(watched, () => spectating), (ids) => targetLines.ordered(ids));
+  const ui = guideTracker ? withGuide(ordersUi, (method, args) => guideTracker.onOrder(method, args)) : ordersUi;
   const players = viewer ?? roster ?? [];
   // Whose eyes the screen uses: the player, or for viewers the whole map or one player.
   const view = { player: viewer ? OBSERVER_VIEW : player };
@@ -1833,7 +1852,13 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   const chat = scope.own(new ChatPanel($('field'), {
     log: chatLog,
     hotkeys,
-    send: onlineChat?.send ?? null,
+    // A team line sent ticks off the guide's team chat step.
+    send: onlineChat?.send
+      ? (text, team) => {
+          if (team) guideTracker?.signal('teamChat');
+          return onlineChat.send(text, team);
+        }
+      : null,
     teamChat: !!onlineChat?.teamChat,
     spectator: !!onlineChat?.spectator,
     names: onlineChat?.names ?? [],
@@ -2001,6 +2026,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       return true;
     },
     perf: { recorder: perf, toggle: perfToggle, download: perfDownload, settings },
+    hotkeys,
   }));
   // Observer panel and replay controls (js/observer.js, js/records.js).
   let observer = null;
@@ -2227,7 +2253,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
                   allied: (a, b) => allies(a, b),
                   lobbyFactions: about.lobbyFactions,
                   spectators: about.spectators(),
+                  bots: players.map((p) => p.bot ?? null),
                 }),
+            weather: sky ? weatherInfo(sky).label : '',
           };
         };
   // OpenRA IngameMenuLogic.CreateSurrenderButton: a player of an online game
@@ -2282,9 +2310,17 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     statsAvailable: () => watching() || flow.over,
     gameInfo,
     surrender,
+    guide: stress ? undefined : guide,
+    content: content ?? undefined,
+    syncStatus: account ? () => ({ signedIn: !!account.user, status: account.syncStatus?.status ?? 'idle' }) : undefined,
+    // Online games: the session's connection quality (js/netquality.js) and its players, from js/online.js.
+    net: online?.net ?? undefined,
     onLeave: leave,
     onExit: exit,
   }));
+  // The tour card, in the player's own skirmish games until its steps are done or skipped.
+  if (guideTracker && tourRuns(guideGame, guide)) tour = scope.own(new TourCard($('field'), { progress: guide, hotkeys, onGuide: () => menu.openAt('guide') }));
+  if (guideGame.kind === 'online') guideTracker?.signal('onlineGame');
   $('menu-button').hidden = false;
   // A click on Menu opens the menu, which lets go of the mouse: it does not capture it first.
   $('menu-button').dataset.noCapture = '';
@@ -2651,6 +2687,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // and radar pings. Fast-forwarding (loading, rejoining, seeking) stays
     // silent: the simulation drops the events.
     const events = game.take_audio_events();
+    guideTracker?.onEvents(events);
     pings.onEvents(events, simNow, now);
     battle.onEvents(events, BattleFx.ticksAt(simSeconds), (x, y) => {
       // In sight now: the frame's fog (255 visible) of the cell.
@@ -2746,6 +2783,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         );
         commandBar.update();
         audio?.playerState(state);
+        guideTracker?.onState(state, { weather: sky?.weather ?? null });
+        tour?.refresh();
         sidebar.setSelection(selectionInfo(game, input.selection, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
         sidebar.setDeployState(input.deployState());
       }

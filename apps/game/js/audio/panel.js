@@ -132,9 +132,9 @@ export function mountAudioSettings(root, audio, opts = {}) {
   const cashTicks = check('cashTicks', 'Cash ticks');
   const clickSounds = check('clickSounds', 'Interface clicks');
 
-  const testFx = el('button', { type: 'button', text: 'Test effects' });
+  const testFx = el('button', { type: 'button', class: 'ui-btn ui-btn-sm', text: 'Test effects' });
   testFx.addEventListener('click', () => audio.test('effects'));
-  const testVoice = el('button', { type: 'button', text: 'Test announcer' });
+  const testVoice = el('button', { type: 'button', class: 'ui-btn ui-btn-sm', text: 'Test announcer' });
   testVoice.addEventListener('click', () => audio.test('voices'));
 
   // ---- Music --------------------------------------------------------------------
@@ -151,12 +151,12 @@ export function mountAudioSettings(root, audio, opts = {}) {
   });
   const repeatRow = el('div', { class: 'ui-row ui-row-choice audio-row' }, el('span', { class: 'ui-label', text: 'Repeat' }), repeat.root);
   const nowPlaying = el('p', { class: 'audio-note audio-now', role: 'status', 'aria-live': 'polite' });
-  const nextTrack = el('button', { type: 'button', text: 'Next track' });
+  const nextTrack = el('button', { type: 'button', class: 'ui-btn ui-btn-sm', text: 'Next track' });
   nextTrack.addEventListener('click', () => audio.nextTrack());
-  const musicPlayer = el('button', { type: 'button', text: 'Music player...' });
+  const musicPlayer = el('button', { type: 'button', class: 'ui-btn ui-btn-sm', text: 'Music player...' });
   musicPlayer.hidden = !opts.onMusicPlayer;
   musicPlayer.addEventListener('click', () => opts.onMusicPlayer?.());
-  const musicContent = el('button', { type: 'button', text: 'Original content...' });
+  const musicContent = el('button', { type: 'button', class: 'ui-btn ui-btn-sm', text: 'Original content...' });
   musicContent.addEventListener('click', () => opts.onContent?.());
   const musicControls = el('div', { class: 'audio-music-controls' }, musicOn.row, menuMusic.row, shuffle.row, repeatRow);
   const syncMusic = () => {
@@ -172,7 +172,7 @@ export function mountAudioSettings(root, audio, opts = {}) {
 
   // ---- Original content -------------------------------------------------------
   const status = el('p', { class: 'audio-status', role: 'status', 'aria-live': 'polite' });
-  const openContent = el('button', { type: 'button', class: 'primary', text: 'Original content...' });
+  const openContent = el('button', { type: 'button', class: 'ui-btn ui-btn-sm ui-btn-primary primary', text: 'Original content...' });
   openContent.hidden = !opts.onContent;
   openContent.addEventListener('click', () => opts.onContent?.());
 
@@ -252,10 +252,10 @@ export function mountAudioSettings(root, audio, opts = {}) {
  */
 export function mountAudioPanel(button, panel, audio, opts = {}) {
   const body = el('div', { class: 'audio-body' });
-  const close = el('button', { type: 'button', class: 'audio-close', 'aria-label': 'Close sound settings', text: 'Close' });
+  const close = el('button', { type: 'button', class: 'ui-btn ui-btn-sm ui-btn-ghost audio-close', 'aria-label': 'Close sound settings', text: 'Close' });
   const card = el(
     'div',
-    { class: 'menu-card audio-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'audio-title' },
+    { class: 'ui-dialog audio-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'audio-title' },
     el('div', { class: 'audio-head' }, el('h1', { id: 'audio-title', text: 'Sound' }), close),
     body,
   );

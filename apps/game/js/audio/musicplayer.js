@@ -13,7 +13,7 @@
 import { installedSummary } from './install.js';
 import { MUSIC_SOURCE_HINT } from './catalog.js';
 import { GROUPS } from '../registry.js';
-import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
+import { led, segmented, setLed, slider, syncSliderFill, toggle } from '../ui/controls.js';
 
 /** Milliseconds between two updates of the elapsed time. */
 export const TIME_UPDATE_MS = 250;
@@ -86,7 +86,7 @@ export function mountMusicPlayer(root, audio, opts = {}) {
 
   // ---- Transport ------------------------------------------------------------------
   const button = (text, label, onClick) => {
-    const b = el('button', { type: 'button', text, 'aria-label': label, title: label });
+    const b = el('button', { type: 'button', class: 'ui-btn ui-btn-sm music-btn', text, 'aria-label': label, title: label });
     b.addEventListener('click', onClick);
     return b;
   };
@@ -105,11 +105,12 @@ export function mountMusicPlayer(root, audio, opts = {}) {
     rows = j.tracks.map((track, i) => {
       const title = el('span', { class: 'music-track-title', text: track.title });
       const length = el('span', { class: 'music-track-length' });
-      const b = el('button', { type: 'button', class: 'music-track', 'aria-describedby': id('time') }, title, length);
+      const lamp = led('off');
+      const b = el('button', { type: 'button', class: 'music-track', 'aria-describedby': id('time') }, lamp, title, length);
       // The Counterstrike and Aftermath tracks say which expansion they come from.
       if (track.group && track.group !== 'Red Alert') b.title = `${track.title} (${track.group})`;
       b.addEventListener('click', () => audio.playTrack(i));
-      return { item: el('li', {}, b), button: b, length, track };
+      return { item: el('li', {}, b), button: b, length, track, lamp };
     });
     list.replaceChildren(...rows.map((r) => r.item));
   };
@@ -138,9 +139,9 @@ export function mountMusicPlayer(root, audio, opts = {}) {
 
   // ---- No music ----------------------------------------------------------------------------
   const emptyText = el('p', { class: 'audio-note music-empty-text' });
-  const useOriginals = el('button', { type: 'button', text: 'Use installed original sounds' });
+  const useOriginals = el('button', { type: 'button', class: 'ui-btn ui-btn-sm', text: 'Use installed original sounds' });
   useOriginals.addEventListener('click', () => prefs.set({ original: true }));
-  const openContent = el('button', { type: 'button', class: 'primary', text: 'Original content...' });
+  const openContent = el('button', { type: 'button', class: 'ui-btn ui-btn-sm ui-btn-primary primary', text: 'Original content...' });
   openContent.addEventListener('click', () => opts.onContent?.());
   openContent.hidden = !opts.onContent;
   const empty = el(
@@ -177,6 +178,7 @@ export function mountMusicPlayer(root, audio, opts = {}) {
     rows.forEach((r, i) => {
       const on = i === current;
       r.button.classList.toggle('current', on);
+      setLed(r.lamp, on ? 'on' : 'off');
       if (on) r.button.setAttribute('aria-current', 'true');
       else r.button.removeAttribute('aria-current');
       r.button.setAttribute('aria-label', `${on && j.playing ? 'Playing' : 'Play'} ${r.track.title}`);
@@ -198,6 +200,7 @@ export function mountMusicPlayer(root, audio, opts = {}) {
     }
     status.textContent = playerStatus(audio);
     play.textContent = j.playing ? 'Pause' : j.paused ? 'Resume' : 'Play';
+    play.classList.toggle('ui-btn-primary', !!j.playing);
     play.setAttribute('aria-label', play.textContent);
     play.setAttribute('title', play.textContent);
     stop.disabled = !(j.playing || j.paused || audio.pendingTrack !== null);
@@ -272,10 +275,10 @@ export function mountMusicPlayer(root, audio, opts = {}) {
  */
 export function mountMusicPanel(panel, audio, opts = {}) {
   const body = el('div', { class: 'music-body' });
-  const close = el('button', { type: 'button', class: 'audio-close', 'aria-label': 'Close the music player', text: 'Close' });
+  const close = el('button', { type: 'button', class: 'ui-btn ui-btn-sm ui-btn-ghost audio-close', 'aria-label': 'Close the music player', text: 'Close' });
   const card = el(
     'div',
-    { class: 'menu-card audio-card music-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'music-title' },
+    { class: 'ui-dialog audio-card music-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'music-title' },
     el('div', { class: 'audio-head' }, el('h1', { id: 'music-title', text: 'Music' }), close),
     body,
   );

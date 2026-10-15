@@ -233,7 +233,7 @@ test("the dialog: What's new names the version under the kicker, groups are tagg
     assert.equal(textOf(panel.querySelector('.rn-kicker')), "What's new");
     assert.equal(textOf(panel.querySelector('.rn-title')), 'Version 0.17.0');
     assert.equal(panel.querySelector('[role="dialog"]').getAttribute('aria-labelledby'), 'release-notes-kicker release-notes-title');
-    const groups = panel.querySelectorAll('.rn-group');
+    const groups = [...panel.querySelectorAll('.rn-group')];
     assert.deepEqual(groups.map((g) => textOf(g.querySelector('h3'))), ['NewGame', 'NewMap editor', 'FixedGame']);
     assert.ok(groups[0].querySelector('.ui-badge-ok'), 'NEW in green with the word');
     assert.equal(groups[2].dataset.kind, 'neutral');

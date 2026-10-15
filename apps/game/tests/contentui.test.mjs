@@ -108,10 +108,10 @@ function mount(content = fakeContent(), audio = fakeAudio(), opts = {}) {
 test('dialog: three steps with the mirrors (new tab, no referrer), the file and its size; legal notice', async () => {
   const { root } = mount();
   await settle();
-  const steps = root.querySelectorAll('.content-steps > li');
+  const steps = [...root.querySelectorAll('.content-steps > li')];
   assert.equal(steps.length, 3);
   assert.match(textOf(steps[0]), /Download ra-quickinstall\.zip \(12\.9 MB, the same file on every mirror\)/);
-  const links = root.querySelectorAll('.content-mirrors a');
+  const links = [...root.querySelectorAll('.content-mirrors a')];
   assert.equal(links.length, QUICKINSTALL_MIRRORS.length);
   for (const a of links) {
     assert.equal(a.getAttribute('target'), '_blank');
@@ -141,7 +141,7 @@ test('dialog: without the one-click install only the manual way shows; with it, 
   assert.match(textOf(button), /^Install everything \(74\.1 MB\)$/);
   assert.equal(oneClick.hidden, false, 'the one-click tab comes first');
   assert.equal(manual.hidden, true, 'the manual steps wait behind their tab');
-  const [first, second] = tabs.querySelectorAll('[role="tab"]');
+  const [first, second] = [...tabs.querySelectorAll('[role="tab"]')];
   assert.equal(first.getAttribute('aria-selected'), 'true');
   assert.equal(first.getAttribute('aria-controls'), 'content-panel-oneclick');
   assert.equal(oneClick.getAttribute('aria-labelledby'), first.id);
@@ -169,7 +169,7 @@ test('installed state: none, partly with what is missing, and complete with coun
   await settle();
   const box = root.querySelector('.content-state');
   const button = root.querySelector('.content-install-all');
-  const named = (re) => root.querySelectorAll('button').find((b) => re.test(b.textContent));
+  const named = (re) => [...root.querySelectorAll('button')].find((b) => re.test(b.textContent));
   assert.equal(box.dataset.level, 'none');
   assert.match(textOf(box), /Not installed.*Nothing installed yet/);
   assert.equal(named(/^Reinstall/).hidden, true);
@@ -370,7 +370,7 @@ test('dialog: a refused one-click install says why per part and points to the ma
   await settle();
   const out = await view.download();
   assert.deepEqual(out.failed, ['package', 'music']);
-  const parts = root.querySelectorAll('.content-part');
+  const parts = [...root.querySelectorAll('.content-part')];
   assert.equal(parts.length, 2);
   for (const p of parts) {
     assert.equal(p.dataset.phase, 'failed');
@@ -390,7 +390,7 @@ test('dialog: on phones the drop zone is a file picker and the folder picker is 
   const files = root.querySelector('input[type="file"]');
   click(zone);
   assert.equal(files.clicks, 1, 'the zone opens the file picker');
-  const folderButton = root.querySelectorAll('button').find((b) => /Choose folder/.test(b.textContent));
+  const folderButton = [...root.querySelectorAll('button')].find((b) => /Choose folder/.test(b.textContent));
   assert.equal(folderButton.hidden, true);
 });
 
@@ -429,7 +429,7 @@ test('notice: steps, file picker, more options; dismissal is remembered in the s
   input.files = [zipFile()];
   input.dispatchEvent(new FakeEvent('change'));
   assert.deepEqual(got, [['ra-quickinstall.zip']]);
-  click(card.querySelectorAll('button').find((b) => /More options/.test(b.textContent)));
+  click([...card.querySelectorAll('button')].find((b) => /More options/.test(b.textContent)));
   assert.equal(opened, 1);
   click(card.querySelector('.content-notice-close'));
   assert.equal(n.open, false);
@@ -487,7 +487,7 @@ test('dialog: Graphics and Sounds are segmented controls (2D minimal | 3D minima
   const gfx = root.querySelector('[role="radiogroup"][aria-label="Graphics"]');
   const snd = root.querySelector('[role="radiogroup"][aria-label="Sounds"]');
   assert.ok(gfx.classList.contains('ui-segmented') && snd.classList.contains('ui-segmented'));
-  assert.deepEqual(gfx.querySelectorAll('label').map((l) => l.textContent), ['2D minimal', '3D minimal', 'Red Alert original']);
+  assert.deepEqual([...gfx.querySelectorAll('label')].map((l) => l.textContent), ['2D minimal', '3D minimal', 'Red Alert original']);
   assert.equal(root.querySelectorAll('input[type="radio"]').length, 5);
 
   // Nothing installed: Original is off for both, with the reason in a note the group points to.
@@ -585,7 +585,7 @@ test('dialog: pack rows have an on/off switch, a priority line, order buttons an
   content.removePack = async () => {};
   const { root } = mount(content);
   await settle();
-  const rows = root.querySelectorAll('.content-pack');
+  const rows = [...root.querySelectorAll('.content-pack')];
   assert.equal(rows.length, 2);
   const sw = rows[0].querySelector('input[role="switch"]');
   assert.equal(sw.checked, true);
@@ -594,7 +594,7 @@ test('dialog: pack rows have an on/off switch, a priority line, order buttons an
   assert.match(textOf(rows[1]), /Priority 2 of 2/);
   check(rows[1].querySelector('input[role="switch"]'), true);
   assert.deepEqual(enabled, [['b', true]]);
-  const [up0, down0] = rows[0].querySelectorAll('button');
+  const [up0, down0] = [...rows[0].querySelectorAll('button')];
   assert.equal(up0.disabled, true, 'the first pack cannot move up');
   click(down0);
   assert.deepEqual(moved, [['a', 1]]);
@@ -613,7 +613,7 @@ test('install everything: one progress over the package and the music, a line pe
   const { root, view } = mount(content, fakeAudio(), { autoInstall: true, fetchImpl });
   await settle();
   const button = root.querySelector('.content-install-all');
-  const cancel = root.querySelectorAll('button').find((b) => b.textContent === 'Cancel' && b.closest('.content-actions'));
+  const cancel = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Cancel' && b.closest('.content-actions'));
   assert.equal(cancel.hidden, true);
   click(button);
   await settle(30);
@@ -623,7 +623,7 @@ test('install everything: one progress over the package and the music, a line pe
   const progress = root.querySelector('.content-progress');
   assert.equal(progress.querySelector('[aria-live="polite"]') !== null, true);
   assert.match(textOf(progress), /Installing the original content: 12\.9 MB of 74\.1 MB \(17%\)/);
-  const [pkg, music] = root.querySelectorAll('.content-part');
+  const [pkg, music] = [...root.querySelectorAll('.content-part')];
   assert.equal(pkg.dataset.phase, 'done');
   assert.match(textOf(pkg), /Graphics, sounds, voices and announcer.*done: 120 files/);
   assert.equal(music.dataset.phase, 'running');
@@ -661,7 +661,7 @@ test('install everything: a used up budget (429) says when to try again and is n
   const out = await view.download();
   assert.deepEqual(calls, ['/api/content/ra-quickinstall', '/api/content/ra-scores'], 'one request per part, no retry');
   assert.deepEqual(out.failed, ['package', 'music']);
-  const [pkg] = root.querySelectorAll('.content-part');
+  const [pkg] = [...root.querySelectorAll('.content-part')];
   assert.match(textOf(pkg), /This account has used its one-click downloads for today: try again in 90 minutes \(at .+\), or install the files yourself/);
   assert.equal(pkg.querySelector('button').disabled, true, 'its retry waits for the budget');
   const button = root.querySelector('.content-install-all');
@@ -694,7 +694,7 @@ test('install everything: a kept ZIP installs without a download', async () => {
 test('dialog: everyone gets the freeware CD images as plain links, and an .iso is content', async () => {
   const { root } = mount();
   await settle();
-  const links = root.querySelectorAll('.content-cds a');
+  const links = [...root.querySelectorAll('.content-cds a')];
   assert.equal(links.length, 2);
   for (const a of links) {
     assert.match(a.getAttribute('href'), /^https:\/\/archive\.org\/download\/command-conquer-red-alert_202309\/.+\.ISO$/);
@@ -767,7 +767,7 @@ test('read log: the last lines an install read, the newest being read, the rest 
   const { root, view } = mount(content);
   const done = view.install([zipFile()]);
   await settle();
-  const items = root.querySelectorAll('.content-log li');
+  const items = [...root.querySelectorAll('.content-log li')];
   assert.deepEqual(items.map((li) => [textOf(li), li.dataset.state]), [
     ['Reading main.mix', 'done'],
     ['Reading conquer.mix', 'reading'],

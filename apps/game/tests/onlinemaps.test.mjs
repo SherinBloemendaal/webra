@@ -171,7 +171,7 @@ test('online lobby: a player without the map is asked; Decline reports it, Insta
     assert.equal(textOf(root.querySelector('.online-map-question')), 'Custom map: Fjord by Mapper. Install?');
     assert.match(textOf(root.querySelector('.online-map-details')), /By Mapper, 48 x 48 cells/);
     assert.equal(ui.readyBtn.disabled, true, 'not ready without the map');
-    const buttons = () => root.querySelectorAll('.online-map-offer button');
+    const buttons = () => [...root.querySelectorAll('.online-map-offer button')];
     assert.deepEqual(buttons().map((b) => b.textContent), ['Install', 'Decline']);
     // Decline: the server is told, the player stays unready, Install is still offered.
     click(buttons()[1]);
@@ -235,9 +235,9 @@ test('online lobby: the host shares a map from its library and sees who lacks it
     responses.push({ status: 200, body: '[]' });
     await ui.loadServerMaps();
     const picker = root.querySelector('.online-map select');
-    const group = picker.querySelectorAll('optgroup').find((g) => g.label === 'My maps');
+    const group = [...picker.querySelectorAll('optgroup')].find((g) => g.label === 'My maps');
     assert.ok(group, 'the host sees its own maps');
-    assert.deepEqual(group.querySelectorAll('option').map((o) => o.value), [`mine:${mine.hash}`]);
+    assert.deepEqual([...group.querySelectorAll('option')].map((o) => o.value), [`mine:${mine.hash}`]);
     responses.push({ status: 201, body: JSON.stringify({ id: '0123456789abcdef', hash: mine.hash }) });
     picker.value = `mine:${mine.hash}`;
     picker.dispatchEvent(new FakeEvent('change'));
@@ -254,13 +254,13 @@ test('online lobby: the host shares a map from its library and sees who lacks it
     lobby(ref(mine), { guest: 'declined', eye: 'missing' });
     await settle();
     assert.equal(root.querySelector('.online-map-offer'), null, 'the host is not asked');
-    const states = root.querySelectorAll('[data-map-state]').map((b) => b.dataset.mapState);
+    const states = [...root.querySelectorAll('[data-map-state]')].map((b) => b.dataset.mapState);
     assert.deepEqual(states.sort(), ['declined', 'installed', 'missing'].sort());
-    assert.ok(root.querySelectorAll('.online-map-declined').some((b) => textOf(b) === 'Declined map'));
+    assert.ok([...root.querySelectorAll('.online-map-declined')].some((b) => textOf(b) === 'Declined map'));
     assert.equal(ui.startBtn.disabled, true);
     assert.match(ui.barStatus.textContent, /Waiting for Guest, Eye to install the map/);
     // The host can remove the spectator who holds things up.
-    click(root.querySelectorAll('.online-spectator button').find((b) => b.textContent === 'Remove'));
+    click([...root.querySelectorAll('.online-spectator button')].find((b) => b.textContent === 'Remove'));
     assert.deepEqual(sent.at(-1), { t: 'kick', client: 3 });
   } finally {
     uninstallDom();
@@ -356,7 +356,7 @@ test('rematch: the host proposes, a player accepts or declines from the overlay,
     assert.equal(handle.label(), 'Accept rematch');
     assert.match(logText(ui), /Host proposes a rematch with the same settings/);
     assert.match(textOf(ui.rematchBar), /Host proposes a rematch/);
-    const [accept, decline] = ui.rematchBar.querySelectorAll('button');
+    const [accept, decline] = [...ui.rematchBar.querySelectorAll('button')];
     assert.deepEqual([accept.textContent, decline.textContent], ['Accept', 'Decline']);
     click(accept);
     assert.deepEqual(sent.at(-1), { t: 'rematch', accept: true });
@@ -387,7 +387,7 @@ test('rematch: the host proposes and may withdraw; a decline is reported', async
     ui.onRematch({ t: 'rematch', state: 'open', by: 1, accepted: [1], waiting: [2], msLeft: 60000 });
     assert.equal(handle.action(), 'waiting');
     assert.match(textOf(ui.rematchBar), /You proposed a rematch.*Waiting for Guest/);
-    click(ui.rematchBar.querySelectorAll('button').find((b) => b.textContent === 'Withdraw'));
+    click([...ui.rematchBar.querySelectorAll('button')].find((b) => b.textContent === 'Withdraw'));
     assert.deepEqual(sent.at(-1), { t: 'rematch', accept: false });
     ui.onRematch({ t: 'rematch', state: 'cancelled', by: null, accepted: [], waiting: [], reason: 'declined' });
     assert.match(logText(ui), /No rematch: a player declined/);
@@ -534,7 +534,7 @@ test('saving online: a player accepts in the overlay; the saved file is kept in 
     await ui.onSave({ t: 'save', state: 'open', by: 1, accepted: [1], waiting: [2], msLeft: 50000 });
     assert.equal(handle.action(), 'accept');
     assert.match(textOf(ui.saveBar), /Host wants to save the game/);
-    click(ui.saveBar.querySelectorAll('button').find((b) => b.textContent === 'Accept'));
+    click([...ui.saveBar.querySelectorAll('button')].find((b) => b.textContent === 'Accept'));
     assert.deepEqual(sent.at(-1), { t: 'save', accept: true });
     await ui.onSave({ t: 'save', state: 'agreed', tick: 25 });
     assert.equal(handle.action(), 'saving');
@@ -573,8 +573,8 @@ test('a lobby that resumes a save shows it and keeps the saved settings', async 
     assert.match(textOf(ui.resumeBox), /Waiting for its players: Guest/);
     assert.equal(root.querySelectorAll('i').length, 0);
     assert.equal(ui.resumeBox.hidden, false);
-    for (const c of root.querySelectorAll('.online-options select')) assert.equal(c.disabled, true, 'options stay as saved');
-    assert.equal(root.querySelectorAll('.online-slots button').some((b) => b.textContent === 'Take'), false);
+    for (const c of [...root.querySelectorAll('.online-options select')]) assert.equal(c.disabled, true, 'options stay as saved');
+    assert.equal([...root.querySelectorAll('.online-slots button')].some((b) => b.textContent === 'Take'), false);
     assert.equal(root.querySelector('.online-map select'), null, 'no map picker');
   } finally {
     uninstallDom();
@@ -605,8 +605,8 @@ test('online lobby: the host picks a co-op mission; places are the mission playe
       maxSpectators: 2,
     });
     const picker = root.querySelector('.online-map select');
-    const group = picker.querySelectorAll('optgroup').find((g) => g.label === 'Co-op missions');
-    assert.deepEqual(group.querySelectorAll('option').map((o) => o.value), COOP_MISSIONS.map((m) => `mission:${m.id}`));
+    const group = [...picker.querySelectorAll('optgroup')].find((g) => g.label === 'Co-op missions');
+    assert.deepEqual([...group.querySelectorAll('option')].map((o) => o.value), COOP_MISSIONS.map((m) => `mission:${m.id}`));
     picker.value = 'mission:evacuation';
     picker.dispatchEvent(new FakeEvent('change'));
     await settle();
@@ -628,12 +628,12 @@ test('online lobby: the host picks a co-op mission; places are the mission playe
     });
     await settle();
     await settle();
-    const badges = root.querySelectorAll('.online-slot .online-badge').map((b) => b.textContent);
+    const badges = [...root.querySelectorAll('.online-slot .online-badge')].map((b) => b.textContent);
     assert.ok(badges.includes('Allies1') && badges.includes('Allies2'), badges.join(','));
     assert.match(textOf(root.querySelector('.online-map')), /Evacuation \(2 players\)/);
     assert.match(textOf(root.querySelector('.online-map')), /Get them out\./);
     // No computer players, no skirmish options but the game speed.
-    const typeChoices = root.querySelectorAll('.online-slot select').flatMap((s) => s.querySelectorAll('option').map((o) => o.value));
+    const typeChoices = [...root.querySelectorAll('.online-slot select')].flatMap((s) => [...s.querySelectorAll('option')].map((o) => o.value));
     assert.ok(!typeChoices.includes('ai'), typeChoices.join(','));
     assert.equal(ui.optionWorld.hidden, true);
     assert.equal(ui.optionRows.gameSpeed.hidden, false);

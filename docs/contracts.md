@@ -3685,8 +3685,10 @@ the rules below.
 - **Line length**: running text in a screen card (briefings, notes,
   warnings, errors) keeps to `--ui-measure` (75ch); the card is not capped
   for it.
-- **Compact dialogs**: the game menu (with its Settings, Controls and
-  Hotkeys pages, over the running game), victory and defeat, the modded map
+- **Compact dialogs**: the game menu (over the running game; up to 980 px
+  for its main page, 1080 px for Settings and the Guide, 560 px for its
+  confirm steps and the Music page; see "The game menu, the guide and the
+  tour" below), victory and defeat, the modded map
   question, the online host, password and resume dialogs, sign in and the
   settings conflict, Sound and music, the music player, Original content,
   release notes, the bulk repair and sell chooser, help tips and tooltips,
@@ -3914,6 +3916,86 @@ and every mark under 40 px), `wordmark.svg`, `favicon-16.png`,
 `favicon-32.png`, `apple-touch-icon.png` (180 px, opaque). Presentation
 attributes only; `node tools/gen-brand.mjs --check` and
 `tools/gen-brand.test.mjs` keep them in step with the script.
+
+### The game menu, the guide and the tour (`apps/game/js/gamemenu.js`, `guide.js`, `guideview.js`, `tour.js`, `netmenu.js`)
+
+The design boards GameMenu, Options, Controls, Guide, GuideTour, Sound,
+Debug and NetMenu.
+
+- **Game menu** (Esc, the HUD's Menu button): the actions on the left
+  (Resume; Guide with its progress; Statistics; the record actions;
+  Settings; Network in online games; Sound; Music; Original content;
+  Controls and hotkeys; Fullscreen; Release notes; Restart; Surrender,
+  Leave, Exit at the bottom) and the game info on the right (Objectives,
+  Briefing, Options as `tabs()`; every player with a lamp and its state in
+  words, Playing, Defeated or Won, and the tags You and AI with the
+  difficulty; the weather), stacked below 760 px of card width (container
+  `gm`). Single player pauses, online games do not.
+- **Keys**: the menu listens on `window` in the capture phase. A key whose
+  target is a control of the menu reaches it and stops at the card, so the
+  game never sees it: an open select list and text fields get every key;
+  tab bars, steppers and radio groups their arrows, Home, End and Page
+  keys; buttons the rest, after the menu's own hotkeys (fullscreen, mute).
+  Every other key is stopped in the capture phase.
+  Esc in an open select list only closes the list; otherwise Esc goes back
+  a page or closes the menu. While a hotkey waits for its new key, every
+  key goes to the rebinding.
+- **Settings**: one page with vertical tabs Game (scrolling, health bars,
+  chat lines, pausing, the three `net.*` switches), Graphics (the texture
+  pack cards over `game.graphics`, `webra2d | webra3d | original`, with
+  their install state; UI scale, game scale, battlefield zoom
+  `zoomFactor`, resolution, low quality, reduce motion, fullscreen),
+  Controls (right click in the build menu, mouse capture, the fixed mouse
+  and touch controls), Hotkeys (search by command, group or key; groups;
+  Change, Clear, Reset, Reset group; Reset all), Sound (the Sound dialog's
+  settings beside the music player), Privacy, Advanced (recording the start
+  of every game). Every tab's panel is in the DOM (hidden but one); "Reset
+  this section" puts back that tab's settings (`SECTION_SETTINGS`; Privacy
+  has none). The header says whether the settings sync with the account
+  (`syncStatus()`).
+- **Network tab** (online games, `opts.net = { source, players() }`):
+  `source` is the session's `NetQuality` (protocol 8, `js/netquality.js`:
+  events `players`, `self`, `waiting`, `stalls`, `requestStalls()`),
+  `players()` the game's players `{ client, name, color }`. `NetHistory`
+  keeps the last minute of pings and the stalls from the game's start.
+  The tab shows tiles (your ping, jitter, late pings, the slowest player),
+  the chart with the stalls marked, the table per player (quality in
+  words), the waiting time (the server's stall log once it answers) and the
+  three switches. The HUD's signal bars open it with
+  `window.dispatchEvent(new CustomEvent('webra:open-network'))`
+  (`OPEN_NETWORK_EVENT`); without a source the event does nothing.
+  `js/main.js` hands `onStartGame`'s `net` to the menu; the online screen's
+  work (work/onlineui) provides it as its canonical net object `{ quality,
+  source, roster, you, players() }`, of which the menu reads `source` and
+  `players()`. Until that is merged online games have no Network tab.
+- **Guide** (texts: `GUIDE` in `js/help.js`): seven chapters of steps. A
+  step ticks off by itself (`js/guide.js` `GuideTracker`) from the local
+  player's engine events (MCV deployed, structure placed, unit produced,
+  building powered down, support power ready, lightning), the player state
+  every 100 ms (ore delivered: the stored ore goes up; low power; the sky's
+  thunderstorm), the orders given through the UI's game (`withGuide`, a
+  wrapper like `withTargetLines`) and signals (a team chat line, an online
+  game); explaining steps tick off when their chapter is shown. Skip this
+  step ticks one off by hand. The tracker follows skirmish games, missions
+  and online games of the local player, never replays or spectators.
+  Progress is the declared setting `guide.done` (`{ stepId: true }`); ids
+  the game does not know are kept.
+- **Tour** (`js/tour.js`): a card above the command bar in the player's own
+  skirmish games (a skirmish save too; never missions, online games,
+  replays or spectators) while `guide.tourInGames` is on and a step of the
+  first chapter is open. It lights the sidebar's cameo of the step
+  (`.sb-card.tour-target`), says "Step done" in a polite live region, has
+  Skip step, Full guide (the menu's Guide page) and a close button that
+  skips the tour (`tourInGames` off). Done, the tour switches
+  `tourInGames` off; turning "Tour in my games" on again in the Guide
+  clears the tour's steps (the rest of the guide keeps its ticks), so it
+  shows in the next skirmish. It never takes the focus.
+- **Sound and Music dialogs**: `.ui-dialog` cards with `.ui-btn` buttons;
+  the music player's tracks carry a lamp.
+- **Debug menu** (`js/debug.js`): the panel on the right with a hazard
+  stripe, the hotkey, cheats and views as switch rows, the capture length
+  as a `selectPlate`; the Performance stats and Frame graph views are a box
+  over the top left of the battlefield, shown with the panel closed too.
 
 ## 6. Deployment
 

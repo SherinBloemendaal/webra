@@ -117,7 +117,7 @@ const newDoc = () => new MapDoc(createMap({ width: 40, height: 40, name: 'Setup'
 const choose = (plate, label) => {
   if (!plate.isConnected) doc.body.append(plate.closest('.slots-view, .options-table, .actor-state') ?? plate);
   click(plate.querySelector('.ui-sp-button'));
-  const option = plate.querySelectorAll('[role="option"]').find((o) => textOf(o.querySelector('.ui-sp-label')) === label);
+  const option = [...plate.querySelectorAll('[role="option"]')].find((o) => textOf(o.querySelector('.ui-sp-label')) === label);
   assert.ok(option, `option ${label}`);
   click(option);
 };
@@ -126,7 +126,7 @@ const plates = (root) => root.querySelectorAll('.ui-select-plate');
 test('Setup tab: slot rows per spawn, changes are undoable map edits, trailing default slots are dropped', () => {
   const m = newDoc();
   const view = slotsView(m, () => 'rgb(1,2,3)');
-  const rows = view.querySelectorAll('.slot-row');
+  const rows = [...view.querySelectorAll('.slot-row')];
   assert.equal(rows.length, 2, 'one per spawn');
   // Named by their label and the slot, for the phone sheet and screen readers.
   assert.equal(rows[1].querySelector(`#${rows[1].querySelector('.ui-sp-button').getAttribute('aria-labelledby').split(' ')[0]}`).textContent, 'Player');
@@ -187,7 +187,7 @@ test('actor properties: health, stance, veterancy and passengers of the selectio
   ctl.selection.add(m.actors[0]);
   let box = actorStateView([...ctl.selection], catalog, ctl);
   assert.equal(box.querySelectorAll('input[type="range"]').length, 2, 'health and veterancy');
-  const [health, vet] = box.querySelectorAll('input[type="range"]');
+  const [health, vet] = [...box.querySelectorAll('input[type="range"]')];
   health.value = '40';
   health.dispatchEvent(new FakeEvent('input'));
   health.value = '35';

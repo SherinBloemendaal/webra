@@ -127,7 +127,7 @@ test('settings forms: every setting gets a labelled control; values round-trip; 
   assert.equal(parseValue(specOf('releaseNotes', 'lastSeenVersion'), '').value, null);
 
   const form = buildSettingsForm({ audio: { master: 0.3 }, extra: { futureThing: 1 } });
-  const labels = form.node.querySelectorAll('label');
+  const labels = [...form.node.querySelectorAll('label')];
   const count = Object.values(GROUPS).reduce((n, g) => n + Object.keys(g.settings).length, 0);
   assert.equal(labels.length, count);
   for (const l of labels) assert.ok(form.node.querySelector(`#${l.getAttribute('for')}`), 'each label points at its control');
@@ -209,7 +209,7 @@ async function dashboard(server, hash = '') {
   return { root, view, location };
 }
 
-const byText = (root, tag, re) => root.querySelectorAll(tag).find((b) => re.test(b.textContent));
+const byText = (root, tag, re) => [...root.querySelectorAll(tag)].find((b) => re.test(b.textContent));
 
 test('dashboard: signed out and plain users get no dashboard', async () => {
   const server = new MockAccountServer();
@@ -227,8 +227,8 @@ test('dashboard: moderators see overview and users only; approve, ban users, no 
   const { mod, users } = seed(server);
   server.signIn(mod);
   const { root } = await dashboard(server, '#users');
-  assert.deepEqual(root.querySelectorAll('[role="tab"]').map((t) => t.textContent), ['Overview', 'Users']);
-  const rows = root.querySelectorAll('tbody tr');
+  assert.deepEqual([...root.querySelectorAll('[role="tab"]')].map((t) => t.textContent), ['Overview', 'Users']);
+  const rows = [...root.querySelectorAll('tbody tr')];
   assert.equal(rows.length, 25);
   click(byText(root, 'button', /^Player29$/) ?? byText(root, 'button', /Player/));
   await settle(20);
@@ -282,7 +282,7 @@ test('dashboard: the drawer edits role and flags, bans with a reason, and the se
   assert.match(textOf(drawer), new RegExp(target.username));
   assert.deepEqual(strayValues(drawer), [], 'no left-out block shows as text');
   // Edit: the one-click flag.
-  const flag = drawer.querySelectorAll('input[type="checkbox"]').find((c) => /One-click/.test(drawer.querySelector(`label[for="${c.id}"]`)?.textContent ?? ''));
+  const flag = [...drawer.querySelectorAll('input[type="checkbox"]')].find((c) => /One-click/.test(drawer.querySelector(`label[for="${c.id}"]`)?.textContent ?? ''));
   check(flag, true);
   submit(byText(drawer, 'button', /Save changes/).closest('form'));
   await settle(20);
@@ -290,7 +290,7 @@ test('dashboard: the drawer edits role and flags, bans with a reason, and the se
   // Ban: a reason is needed; a preset fills the end.
   click(byText(root.querySelector('.drawer'), 'button', /^Ban$/));
   await settle(5);
-  const dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
+  const dialog = [...doc.body.querySelectorAll('[role="dialog"]')].at(-1);
   submit(dialog.querySelector('form'));
   await settle(5);
   assert.match(textOf(dialog), /Give a reason/);
@@ -305,7 +305,7 @@ test('dashboard: the drawer edits role and flags, bans with a reason, and the se
   block.open = true;
   block.dispatchEvent(new FakeEvent('toggle'));
   await settle(20);
-  const master = block.querySelectorAll('input').find((i) => block.querySelector(`label[for="${i.id}"]`)?.textContent === 'Master volume');
+  const master = [...block.querySelectorAll('input')].find((i) => block.querySelector(`label[for="${i.id}"]`)?.textContent === 'Master volume');
   assert.equal(master.value, '0.5');
   typeInto(master, '7');
   click(byText(block, 'button', /Save settings/));
@@ -322,7 +322,7 @@ test('dashboard: the drawer edits role and flags, bans with a reason, and the se
   server.settingsDocs.set(target.id, { version: 3, updatedAt: 2, settings: { schema: 1 } });
   click(byText(block, 'button', /Save settings/));
   await settle(20);
-  const conflict = doc.body.querySelectorAll('[role="dialog"]').at(-1);
+  const conflict = [...doc.body.querySelectorAll('[role="dialog"]')].at(-1);
   assert.match(textOf(conflict), /changed \(now version 3\)/);
   click(byText(conflict, 'button', /Save mine over them/));
   await settle(20);
@@ -360,7 +360,7 @@ test('dashboard: the drawer shows the relay budgets and resets them after a conf
   assert.match(textOf(block), /Network 203\.0\.113\.7:.*Package requests: 5 of 30 requests/);
   click(byText(block, 'button', /Reset relay budgets/));
   await settle(5);
-  const dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
+  const dialog = [...doc.body.querySelectorAll('[role="dialog"]')].at(-1);
   assert.match(textOf(dialog), /others on those networks too/);
   click(byText(dialog, 'button', /^Reset$/));
   await settle(30);
@@ -389,7 +389,7 @@ test('dashboard: the drawer shows the email verification state, sends a new link
   assert.match(textOf(drawer()), /A verification email went to p5@example\.com/, 'the result stays on the reloaded drawer');
   click(byText(drawer(), 'button', /Mark email verified/));
   await settle(5);
-  const dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
+  const dialog = [...doc.body.querySelectorAll('[role="dialog"]')].at(-1);
   assert.match(textOf(dialog), /Only do this when you know the address is theirs/);
   click(byText(dialog, 'button', /Mark email verified/));
   await settle(30);
@@ -442,8 +442,8 @@ test('dashboard: IP bans, site settings with unavailable services, and the audit
   const { root, view } = await dashboard(server, '#ip-bans');
   click(byText(root, 'button', /Ban an address or range/));
   await settle(5);
-  let dialog = doc.body.querySelectorAll('[role="dialog"]').at(-1);
-  const [range, reason] = dialog.querySelectorAll('input');
+  let dialog = [...doc.body.querySelectorAll('[role="dialog"]')].at(-1);
+  const [range, reason] = [...dialog.querySelectorAll('input')];
   range.value = '203.0.113.0/4';
   reason.value = 'Spam';
   submit(dialog.querySelector('form'));
@@ -459,9 +459,9 @@ test('dashboard: IP bans, site settings with unavailable services, and the audit
   await settle(20);
   assert.match(textOf(root), /Unavailable until the email plan is upgraded/);
   assert.match(textOf(root), /Unavailable: Discord is not configured/);
-  const approval = root.querySelectorAll('input[type="checkbox"]').find((c) => /Approval required/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
+  const approval = [...root.querySelectorAll('input[type="checkbox"]')].find((c) => /Approval required/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
   check(approval, false);
-  const gameGate = root.querySelectorAll('input[type="checkbox"]').find((c) => /The game needs an account/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
+  const gameGate = [...root.querySelectorAll('input[type="checkbox"]')].find((c) => /The game needs an account/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
   assert.equal(gameGate.checked, true, 'on by default');
   check(gameGate, false);
   root.querySelector('textarea').value = 'Open beta!';

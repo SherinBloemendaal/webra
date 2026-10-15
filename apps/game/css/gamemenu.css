@@ -1,0 +1,757 @@
+/* The game menu (js/gamemenu.js): the design boards GameMenu, Options,
+   Controls and NetMenu. The card is the design system's dialog (.ui-dialog,
+   css/patterns.css: hazard stripe, rivets); the buttons, tabs, switches and
+   lamps are the shared ones (css/controls.css). Tokens only (css/theme.css).
+   Sizes follow the UI scale (#game-menu sets --ui-px, theme.css). The card's
+   parts are laid out by its own width (container gm), so a phone stacks
+   the actions over the game info and the settings tabs over their panel. */
+
+#game-menu .game-menu-card {
+  container: gm / inline-size;
+  box-sizing: border-box;
+  width: min(calc(980 * var(--ui-px)), 100%);
+  max-width: 100%;
+  max-height: calc(100vh - calc(32 * var(--ui-px)));
+  max-height: calc(100dvh - calc(32 * var(--ui-px)));
+  padding: 0;
+  overflow: hidden;
+  font: 400 var(--ui-fs-body) / var(--ui-lh-body) var(--ui-font);
+}
+
+#game-menu .game-menu-card.gm-view-settings,
+#game-menu .game-menu-card.gm-view-guide {
+  width: min(calc(1080 * var(--ui-px)), 100%);
+}
+
+#game-menu .game-menu-card.gm-view-leave,
+#game-menu .game-menu-card.gm-view-exit,
+#game-menu .game-menu-card.gm-view-restart,
+#game-menu .game-menu-card.gm-view-surrender,
+#game-menu .game-menu-card.gm-view-music {
+  width: min(calc(560 * var(--ui-px)), 100%);
+}
+
+/* ---- Heading row ------------------------------------------------------------ */
+
+.gm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2) var(--ui-space-4);
+  padding: var(--ui-space-4) var(--ui-space-5) var(--ui-space-3);
+  border-bottom: 1px solid var(--ui-edge);
+}
+
+.gm-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  min-width: 0;
+}
+
+.gm-title {
+  margin: 0;
+  font: 700 var(--ui-fs-title) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: var(--ui-text);
+}
+
+/* The Back arrow: a drawn chevron (no icon font). */
+.gm-back::before {
+  content: '';
+  width: 0.55em;
+  height: 0.55em;
+  border-left: calc(2 * var(--ui-px)) solid currentColor;
+  border-bottom: calc(2 * var(--ui-px)) solid currentColor;
+  transform: translateX(0.12em) rotate(45deg);
+}
+
+.gm-status {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-m);
+}
+
+.gm-status .ui-led {
+  flex: none;
+}
+
+.gm-section-title {
+  margin: var(--ui-space-4) 0 var(--ui-space-2);
+  font: 700 var(--ui-fs-label) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.gm-panel > .gm-section-title:first-child,
+.gm-sound section > .gm-section-title:first-child {
+  margin-top: 0;
+}
+
+.gm-note,
+.gm-text {
+  max-width: var(--ui-measure);
+  margin: var(--ui-space-1) 0 var(--ui-space-2);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-m);
+}
+
+.gm-text {
+  font-size: var(--ui-fs-body);
+}
+
+.gm-message {
+  margin: 0;
+  padding: var(--ui-space-2) var(--ui-space-5);
+  color: var(--ui-accent-hi);
+  font-size: var(--ui-fs-m);
+}
+
+.gm-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3) var(--ui-space-5);
+  border-top: 1px solid var(--ui-edge);
+  background: var(--ui-metal-0);
+}
+
+.gm-foot > .ui-btn-primary:only-child,
+.gm-foot > .ui-btn[hidden] + .ui-btn-primary {
+  margin-left: auto;
+}
+
+.game-menu-card .game-menu-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: auto;
+  padding: var(--ui-space-4) var(--ui-space-5);
+}
+
+/* ---- Main page: actions | game info --------------------------------------------- */
+
+.gm-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ui-space-5);
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ui-space-4) var(--ui-space-5) var(--ui-space-5);
+}
+
+@container gm (min-width: 760px) {
+  .gm-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+}
+
+.gm-actions,
+.gm-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--ui-px));
+}
+
+.gm-resume {
+  min-height: max(var(--ctl-row), calc(46 * var(--ui-px)));
+  font-size: calc(17 * var(--ui-px));
+}
+
+.gm-item {
+  justify-content: space-between;
+  min-height: max(var(--ctl-row), calc(38 * var(--ui-px)));
+  padding: 0 var(--ui-space-3);
+  text-align: left;
+}
+
+.gm-item-hint {
+  font: 500 var(--ui-fs-s) / 1.2 var(--ui-font);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ui-muted);
+}
+
+/* The Guide while steps are open: the accent, with "New" or the count as the words. */
+.gm-item-accent {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+}
+
+.gm-item-accent .gm-item-hint {
+  color: var(--ui-text-2);
+}
+
+.gm-exits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(110 * var(--ui-px)), 1fr));
+  gap: calc(6 * var(--ui-px));
+  margin-top: calc(6 * var(--ui-px));
+}
+
+.gm-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3);
+  min-width: 0;
+  padding: var(--ui-space-3);
+  background: var(--ui-well);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+}
+
+.gm-info[hidden] {
+  display: none;
+}
+
+.game-info-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin: 0;
+  font: 700 var(--ui-fs-section) / 1.15 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.gm-info .game-info-panel {
+  padding-top: 0;
+}
+
+.game-info-name .ui-badge {
+  margin-left: var(--ui-space-2);
+  vertical-align: middle;
+}
+
+.game-info-state {
+  white-space: nowrap;
+  font: 700 var(--ui-fs-s) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.game-info-state .ui-led {
+  margin-right: var(--ui-space-1);
+  vertical-align: middle;
+}
+
+.game-info-state-lost {
+  color: var(--ui-muted);
+}
+
+.game-info-foot {
+  margin: auto 0 0;
+  color: var(--ui-muted);
+  font: 400 var(--ui-fs-s) / 1.3 var(--ui-font-mono);
+}
+
+/* ---- Confirm steps ---------------------------------------------------------------- */
+
+.gm-confirm {
+  padding: var(--ui-space-4) var(--ui-space-5) var(--ui-space-5);
+}
+
+/* ---- Settings: tabs | panel ----------------------------------------------------------- */
+
+.gm-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.gm-settings > .ui-tabs.ui-vertical {
+  flex-direction: row;
+  overflow-x: auto;
+  border-right: 0;
+  border-bottom: 1px solid var(--ui-line);
+  padding: var(--ui-space-2) var(--ui-space-3) 0;
+  background: var(--ui-metal-0);
+}
+
+.gm-settings > .ui-tabs.ui-vertical > .ui-tab {
+  margin: 0 0 -1px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+}
+
+@container gm (min-width: 720px) {
+  .gm-settings {
+    grid-template-columns: minmax(calc(180 * var(--ui-px)), 0.28fr) minmax(0, 1fr);
+  }
+
+  .gm-settings > .ui-tabs.ui-vertical {
+    flex-direction: column;
+    gap: calc(2 * var(--ui-px));
+    overflow-x: visible;
+    padding: var(--ui-space-3);
+    border-bottom: 0;
+    border-right: 1px solid var(--ui-edge);
+  }
+
+  .gm-settings > .ui-tabs.ui-vertical > .ui-tab {
+    margin: 0;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius);
+  }
+
+  /* The open section: red like the board's menu bar, the lamp on. */
+  .gm-settings > .ui-tabs.ui-vertical > .ui-tab[aria-selected='true'] {
+    background: var(--ui-accent-lo);
+    border-color: var(--ui-accent);
+    color: var(--ui-accent-hi);
+  }
+}
+
+.gm-panel[hidden] {
+  display: none;
+}
+
+.gm-panel {
+  max-height: min(calc(640 * var(--ui-px)), calc(100dvh - calc(220 * var(--ui-px))));
+}
+
+.gm-panel .game-menu-row {
+  margin: var(--ui-space-2) 0;
+}
+
+.gm-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+/* ---- Texture pack cards (radio group) -------------------------------------------------- */
+
+.gm-packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(170 * var(--ui-px)), 1fr));
+  gap: var(--ui-space-3);
+}
+
+.gm-pack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  margin: 0;
+  padding: var(--ui-space-2);
+  background: var(--ui-well);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gm-pack:hover:not([aria-disabled='true']) {
+  border-color: var(--ui-metal-4);
+}
+
+.gm-pack[aria-checked='true'] {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+}
+
+.gm-pack[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+.gm-pack[aria-disabled='true'] .gm-pack-swatch {
+  opacity: 0.45;
+}
+
+.gm-pack:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+/* Drawn previews of each pack's look (theme tokens, no pictures). */
+.gm-pack-swatch {
+  display: block;
+  height: calc(86 * var(--ui-px));
+  border: 1px solid var(--ui-edge);
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.25) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.25) 0 1px, transparent 1px 12px),
+    linear-gradient(135deg, var(--ui-neutral) 0 50%, var(--ui-terrain) 50%);
+}
+
+.gm-pack-webra3d .gm-pack-swatch {
+  background: linear-gradient(135deg, var(--ui-neutral) 0 30%, var(--ui-metal-4) 30% 45%, var(--ui-ok) 45% 70%, var(--ui-terrain) 70%);
+}
+
+.gm-pack-original .gm-pack-swatch {
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.35) 1px, transparent 1.5px) 0 0 / 4px 4px,
+    linear-gradient(135deg, var(--ui-metal-4) 0 40%, var(--ui-terrain) 40%);
+}
+
+.gm-pack-name {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  font: 700 calc(15 * var(--ui-px)) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
+}
+
+.gm-pack-note,
+.gm-pack-status {
+  font-size: var(--ui-fs-s);
+  color: var(--ui-muted);
+}
+
+.gm-pack-status.gm-pack-warn {
+  color: var(--ui-warn);
+}
+
+.gm-content {
+  margin-top: var(--ui-space-3);
+}
+
+/* ---- Hotkeys: search, groups | rows ---------------------------------------------------------- */
+
+.gm-keys-top {
+  margin-bottom: var(--ui-space-3);
+}
+
+.gm-keys-search {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.gm-keys {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ui-space-3);
+}
+
+.gm-keys-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(2 * var(--ui-px));
+}
+
+@container gm (min-width: 860px) {
+  .gm-keys {
+    grid-template-columns: minmax(calc(170 * var(--ui-px)), 0.32fr) minmax(0, 1fr);
+  }
+
+  .gm-keys-groups {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+}
+
+.gm-keys-groups[hidden] {
+  display: none;
+}
+
+.gm-keys-group {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-height: max(var(--ctl-row), calc(36 * var(--ui-px)));
+  margin: 0;
+  padding: 0 var(--ui-space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  color: var(--ui-text-2);
+  font: 700 var(--ui-fs-m) / 1.15 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.gm-keys-group:hover {
+  color: var(--ui-text);
+}
+
+.gm-keys-group[aria-current='true'] {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+}
+
+.gm-keys-group:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.gm-keys-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+.gm-keys-head .gm-section-title {
+  margin: var(--ui-space-2) 0;
+}
+
+.gm-listening {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  margin: 0 0 var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-3);
+  background: var(--ui-accent-lo);
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+  font-size: var(--ui-fs-m);
+}
+
+.game-menu-card .game-menu-key-row {
+  min-height: var(--ctl-row);
+  padding: calc(2 * var(--ui-px)) var(--ui-space-2);
+  border-bottom: 1px solid var(--ui-line-soft);
+}
+
+.game-menu-card .game-menu-key-row.gm-key-listening {
+  background: var(--ui-accent-lo);
+}
+
+.game-menu-card .gm-key-listening .game-menu-keycap {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+}
+
+.gm-key-where {
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+/* ---- Sound: settings | music player -------------------------------------------------------- */
+
+.gm-sound {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ui-space-5);
+}
+
+@container gm (min-width: 900px) {
+  .gm-sound {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ---- Network tab (js/netmenu.js) ------------------------------------------------------------ */
+
+.net-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(150 * var(--ui-px)), 1fr));
+  gap: var(--ui-space-2);
+}
+
+.net-tile {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--ui-px));
+  padding: var(--ui-space-2) var(--ui-space-3);
+  background: var(--ui-well);
+  border: 1px solid var(--ui-edge);
+  border-left: 3px solid var(--ui-metal-4);
+  border-radius: var(--ui-radius);
+}
+
+.net-tile.net-good {
+  border-left-color: var(--ui-ok);
+}
+
+.net-tile.net-fair {
+  border-left-color: var(--ui-warn);
+}
+
+.net-tile.net-poor {
+  border-left-color: var(--ui-bad);
+}
+
+.net-tile-label {
+  font: 600 var(--ui-fs-s) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.net-tile-value {
+  font: 600 calc(20 * var(--ui-px)) / 1.2 var(--ui-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.net-tile-hint {
+  font-size: var(--ui-fs-s);
+  color: var(--ui-text-2);
+}
+
+.net-grid-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ui-space-4);
+  margin-top: var(--ui-space-3);
+}
+
+@container gm (min-width: 860px) {
+  .net-grid-layout {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+}
+
+.net-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+.net-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-1) var(--ui-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ui-fs-s);
+  color: var(--ui-text-2);
+}
+
+.net-legend-item,
+.net-name {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+
+.net-swatch {
+  flex: none;
+  width: calc(10 * var(--ui-px));
+  height: calc(10 * var(--ui-px));
+  background: var(--swatch, var(--ui-neutral));
+  border: 1px solid var(--ui-edge);
+}
+
+.net-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+}
+
+.net-band-poor {
+  fill: color-mix(in srgb, var(--ui-bad) 10%, transparent);
+}
+
+.net-band-fair {
+  fill: color-mix(in srgb, var(--ui-warn) 7%, transparent);
+}
+
+.net-grid path {
+  stroke: var(--ui-line);
+}
+
+.net-axis text {
+  fill: var(--ui-muted);
+  font-family: var(--ui-font-mono);
+}
+
+.net-stall circle {
+  fill: var(--ui-bad);
+}
+
+.net-stall text {
+  fill: var(--ui-bad);
+  font-family: var(--ui-font-display);
+  font-weight: 700;
+}
+
+.net-table {
+  width: 100%;
+}
+
+.net-table .num {
+  text-align: right;
+  font-family: var(--ui-font-mono);
+}
+
+.net-row-poor {
+  background: color-mix(in srgb, var(--ui-bad) 12%, transparent);
+}
+
+.net-quality {
+  font: 700 var(--ui-fs-s) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.net-quality.net-good {
+  color: var(--ui-ok);
+}
+
+.net-quality.net-fair {
+  color: var(--ui-warn);
+}
+
+.net-quality.net-poor {
+  color: var(--ui-bad);
+}
+
+.net-switches {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--ui-space-3);
+}
+
+.net-switches .ui-row {
+  border-bottom: 1px solid var(--ui-line-soft);
+}
+
+/* ---- Phones -------------------------------------------------------------------------------- */
+
+@media (max-width: 600px) {
+  .gm-head,
+  .gm-foot,
+  .gm-main,
+  .game-menu-card .game-menu-scroll,
+  .gm-confirm {
+    padding-left: var(--ui-space-4);
+    padding-right: var(--ui-space-4);
+  }
+
+  .gm-panel {
+    max-height: none;
+  }
+}
+
+/* ---- Forced colours: the chosen states keep a visible frame ----------------------------------- */
+
+@media (forced-colors: active) {
+  .gm-pack[aria-checked='true'],
+  .gm-keys-group[aria-current='true'],
+  .gm-item-accent,
+  .gm-listening {
+    border: calc(2 * var(--ui-px)) solid Highlight;
+  }
+
+  .net-swatch,
+  .net-chart-svg .net-line {
+    forced-color-adjust: none;
+  }
+}

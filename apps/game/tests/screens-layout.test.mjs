@@ -150,7 +150,7 @@ test('screens: the start screen stacks the menu bar over the skirmish card, whic
 
 test('container queries: every one names a container that a card or panel declares', () => {
   const declared = new Set(ALL.map((r) => /^([a-z-]+) \/ inline-size$/.exec(r.decls.container ?? '')?.[1]).filter(Boolean));
-  assert.deepEqual([...declared].sort(), ['campaign', 'lobby', 'lobby-panel', 'online', 'records']);
+  assert.deepEqual([...declared].sort(), ['campaign', 'gm', 'lobby', 'lobby-panel', 'online', 'records']);
   const used = ALL.flatMap((r) => r.at.filter((a) => a.startsWith('@container')));
   assert.ok(used.length > 0);
   for (const at of used) {

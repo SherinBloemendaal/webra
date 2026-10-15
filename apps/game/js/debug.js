@@ -27,7 +27,8 @@
 import { instanceLines } from './crowd.js';
 import { defaultRegistry } from './registry.js';
 import { VIEWS } from './debug-views.js';
-import { segmented, switchInput } from './ui/controls.js';
+import { selectPlate, switchInput } from './ui/controls.js';
+import { boundKey } from './hotkeys.js';
 import { infoTip } from './infotip.js';
 import { CAPTURE_SECONDS } from './perfcapture.js';
 
@@ -217,11 +218,16 @@ export class DebugMenu {
    *   game: any, input: any, player: number, rules: any, colors: number[][],
    *   online: boolean, tickMs: number, memoryBytes?: () => number, sim?: () => object,
    *   step?: () => boolean, isPaused?: () => boolean, setPaused?: (on: boolean) => void,
-   *   instances?: () => object, perf?: object,
+   *   instances?: () => object, perf?: object, hotkeys?: import('./hotkeys.js').HotkeyRegistry,
    * }} ctx `step` runs one simulation tick while paused (local games only);
    *   `instances` describes the instance path for the stats (js/crowd.js instanceLines);
    *   `perf` the performance capture: `{ recorder (js/perfcapture.js PerfRecorder),
-   *   toggle(), download(), settings (js/settings.js) }`
+   *   toggle(), download(), settings (js/settings.js) }`; `hotkeys` names the keys in the panel
+   *
+   * The panel (design board Debug) sits on the right of the battlefield with
+   * a hazard stripe; cheats and views are switch rows. The performance stats
+   * and the frame graph are views: a box over the top left of the
+   * battlefield, shown while their view is on, with the panel open or not.
    */
   constructor(field, ctx) {
     this.ctx = ctx;
@@ -247,12 +253,19 @@ export class DebugMenu {
     this.button.addEventListener('click', () => this.toggle());
     this.panel = this.buildPanel();
     this.panel.hidden = true;
-    field.append(this.overlay, this.button, this.panel);
+    this.hud = el('div', 'debug-hud');
+    this.hud.setAttribute('role', 'region');
+    this.hud.setAttribute('aria-label', 'Performance stats');
+    this.hud.append(this.statsBox, this.graph);
+    this.hud.hidden = !(this.prefs.stats || this.prefs.graph);
+    field.append(this.overlay, this.hud, this.button, this.panel);
   }
 
   /** The game is going (a restart in place): the overlay, the button and the panel leave the battlefield. */
   dispose() {
+    this.captureLength?.destroy();
     this.overlay.remove();
+    this.hud.remove();
     this.button.remove();
     this.panel.remove();
   }
@@ -269,8 +282,10 @@ export class DebugMenu {
     // Clicks in the panel must not reach the map.
     for (const type of ['mousedown', 'pointerdown', 'contextmenu', 'wheel']) panel.addEventListener(type, (e) => e.stopPropagation());
     const head = el('div', 'debug-head');
-    head.append(el('h2', 'debug-title', 'Debug menu'));
-    const close = el('button', 'debug-close', 'Close');
+    head.append(el('h2', 'debug-title', 'Debug'));
+    const key = this.ctx.hotkeys ? boundKey(this.ctx.hotkeys, 'debugMenu') : null;
+    if (key) head.append(el('span', 'debug-key', `key ${key}`));
+    const close = el('button', 'ui-btn ui-btn-sm ui-btn-ghost debug-close', 'Close');
     close.type = 'button';
     close.addEventListener('click', () => this.toggle(false));
     head.append(close);
@@ -281,7 +296,7 @@ export class DebugMenu {
     cheats.append(el('h3', 'debug-heading', 'Cheats'));
     this.cheatBoxes = new Map();
     if (this.cheats) {
-      cheats.append(el('p', 'debug-note debug-note-cheats', 'Cheats are enabled in this game, for every player.'));
+      cheats.append(el('p', 'debug-note debug-note-cheats', 'Cheats are on: this game was started with the lobby option "Debug menu". Every player sees what they change.'));
       const grid = el('div', 'debug-grid');
       for (const c of CHEATS) {
         const row = el('label', 'debug-check');
@@ -292,7 +307,7 @@ export class DebugMenu {
           this.game.dev_flag(this.player, c.flag, box.checked);
         });
         this.cheatBoxes.set(c.flag, box);
-        row.append(box, el('span', null, c.label));
+        row.append(el('span', null, c.label), box);
         grid.append(row);
       }
       const actions = el('div', 'debug-actions');
@@ -315,7 +330,9 @@ export class DebugMenu {
 
     // Views (local only).
     const views = el('div', 'debug-section');
-    views.append(el('h3', 'debug-heading', 'Views'));
+    const viewsHead = el('h3', 'debug-heading', 'Views');
+    viewsHead.append(el('span', 'debug-heading-note', ' local, never change the game'));
+    views.append(viewsHead);
     const vgrid = el('div', 'debug-grid');
     for (const v of VIEWS) {
       const row = el('label', 'debug-check');
@@ -327,7 +344,7 @@ export class DebugMenu {
         writePrefs(this.prefs);
         this.refreshPanel();
       });
-      row.append(box, el('span', null, v.label));
+      row.append(el('span', null, v.label), box);
       vgrid.append(row);
     }
     views.append(vgrid);
@@ -345,7 +362,7 @@ export class DebugMenu {
       writePrefs(this.prefs);
       this.refreshPanel();
     });
-    row.append(box, el('span', null, 'CPU instance path'));
+    row.append(el('span', null, 'CPU instance path'), box);
     rendering.append(row);
     panel.append(rendering);
 
@@ -377,8 +394,7 @@ export class DebugMenu {
     this.graph.width = HISTORY;
     this.graph.height = 60;
     this.graph.setAttribute('role', 'img');
-    this.graph.setAttribute('aria-label', 'Frame time graph');
-    panel.append(this.statsBox, this.graph);
+    this.graph.setAttribute('aria-label', 'Frame time graph: frame, render and simulation time of the last frames');
     return panel;
   }
 
@@ -389,15 +405,20 @@ export class DebugMenu {
     head.append(el('h3', 'debug-heading', 'Performance capture'), infoTip(DEBUG_HELP_KEYS[0], { label: 'Performance capture' }).root);
     box.append(head, el('p', 'debug-note', 'Records how long frames, the simulation and loading took, as a JSON file to send with a report of a slow game.'));
     const s = perf.settings;
-    const length = segmented({
-      name: 'debug-perf-seconds',
-      label: 'Capture length',
-      value: String(s.get('perfCaptureSeconds')),
+    const lengthLabel = el('span', 'debug-capture-label', 'Length');
+    lengthLabel.id = 'debug-perf-seconds-label';
+    const length = selectPlate({
+      id: 'debug-perf-seconds',
+      labelledBy: lengthLabel.id,
+      small: true,
       options: CAPTURE_SECONDS.map((n) => ({ value: String(n), label: `${n} s` })),
+      value: String(s.get('perfCaptureSeconds')),
       onChange: (v) => length.set(String(s.set('perfCaptureSeconds', Number(v)))),
     });
+    // Its list leaves with the menu (dispose).
+    this.captureLength = length;
     const lengthRow = el('div', 'debug-capture-row');
-    lengthRow.append(el('span', null, 'Length'), length.root);
+    lengthRow.append(lengthLabel, length.root);
     this.captureButton = this.action('Record performance', 'Record for the chosen length (Alt+P); press again to stop early. The file downloads when it ends.', () => {
       perf.toggle();
       this.refreshCapture();
@@ -407,13 +428,15 @@ export class DebugMenu {
     actions.append(this.captureButton, this.captureDownload);
     this.captureStatus = el('p', 'debug-note debug-capture-status');
     this.captureStatus.setAttribute('role', 'status');
+    const recKey = this.ctx.hotkeys ? boundKey(this.ctx.hotkeys, 'recordPerformance') : null;
+    if (recKey) box.append(el('p', 'debug-note', `Saves a JSON file to send with a report of a slow game. Also ${recKey}.`));
     const startRow = el('label', 'debug-check');
     startRow.title = 'Record the first 60 seconds of every game from now on; download the file here afterwards.';
     const startBox = switchInput({ small: true, checked: !!s.get('perfCaptureStart') });
     startBox.addEventListener('change', () => {
       startBox.checked = s.set('perfCaptureStart', startBox.checked);
     });
-    startRow.append(startBox, el('span', null, 'Record the start of every game (60 s)'));
+    startRow.append(el('span', null, 'Record the start of every game (60 s)'), startBox);
     box.append(lengthRow, actions, this.captureStatus, startRow);
     this.refreshCapture();
     return box;
@@ -431,7 +454,7 @@ export class DebugMenu {
   }
 
   action(label, title, onClick) {
-    const b = el('button', 'debug-action', label);
+    const b = el('button', 'ui-btn ui-btn-sm debug-action', label);
     b.type = 'button';
     b.title = title;
     b.addEventListener('click', onClick);
@@ -440,7 +463,11 @@ export class DebugMenu {
 
   /** Sync the panel with the engine (called with `player_json()` every 100 ms). */
   update(state) {
-    if (this.panel.hidden) return;
+    if (this.panel.hidden) {
+      // The stats box is a view of its own: it follows the game with the panel closed too.
+      if (this.prefs.stats || this.prefs.graph) this.refreshStats();
+      return;
+    }
     const now = performance.now();
     const dev = state?.dev ?? {};
     for (const [flag, box] of this.cheatBoxes) {
@@ -456,9 +483,15 @@ export class DebugMenu {
     const isPaused = this.ctx.isPaused?.() ?? false;
     if (this.stepBtn) this.stepBtn.disabled = !isPaused;
     if (this.pauseBtn) this.pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+    this.refreshStats();
+  }
+
+  /** The stats box over the battlefield (the Performance stats and Frame graph views). */
+  refreshStats() {
     const stats = this.prefs.stats;
     this.statsBox.hidden = !stats;
     this.graph.hidden = !this.prefs.graph;
+    this.hud.hidden = !(stats || this.prefs.graph);
     if (stats) {
       try {
         this.stats = JSON.parse(this.game.debug_stats());
@@ -484,7 +517,7 @@ export class DebugMenu {
     this.perf.push(t.frameMs, t.renderMs, t.simFrameMs);
     this.fps = t.fps;
     this.simMs = t.simMs;
-    if (!this.panel.hidden && this.prefs.graph) this.drawGraph();
+    if (this.prefs.graph) this.drawGraph();
     this.drawOverlay();
   }
 

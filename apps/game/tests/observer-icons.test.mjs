@@ -308,9 +308,9 @@ test('statistics rows: team headers, flags, and updates that only change text', 
       [2, 1, 'france'],
     ]);
     p.update(stats, 100);
-    const teams = p.table.querySelectorAll('.observer-team').map((t) => t.textContent);
+    const teams = [...p.table.querySelectorAll('.observer-team')].map((t) => t.textContent);
     assert.deepEqual(teams, ['Team 1', 'Team 2']);
-    const rows = p.table.querySelectorAll('.observer-row').filter((r) => !r.classList.contains('observer-row-head') && !r.classList.contains('observer-team'));
+    const rows = [...p.table.querySelectorAll('.observer-row')].filter((r) => !r.classList.contains('observer-row-head') && !r.classList.contains('observer-team'));
     assert.deepEqual(
       rows.map((r) => r.querySelector('.observer-player').textContent),
       ['Ann', 'Cy', 'Bob'],
@@ -319,14 +319,14 @@ test('statistics rows: team headers, flags, and updates that only change text', 
       rows.map((r) => r.querySelector('.observer-flag').dataset.faction),
       ['england', 'france', 'russia'],
     );
-    const cells = rows[0].querySelectorAll('.observer-cell');
+    const cells = [...rows[0].querySelectorAll('.observer-cell')];
     assert.equal(cells.at(-1).textContent, '12%', 'Vision');
     // The next update keeps the same elements and writes the new number.
     stats[0].vision = 30;
     p.update(stats, 125);
     const again = p.table.querySelectorAll('.observer-row')[2];
     assert.equal(again, rows[0], 'row reused');
-    assert.equal(again.querySelectorAll('.observer-cell').at(-1).textContent, '30%');
+    assert.equal([...again.querySelectorAll('.observer-cell')].at(-1).textContent, '30%');
     // Defeat only toggles a class.
     stats[0].defeated = true;
     p.update(stats, 150);
@@ -354,12 +354,12 @@ test('production panel: a strip of icons per player, painted once and reused', (
     assert.equal(p.table.querySelectorAll('.observer-team').length, 0, 'no teams, no headers');
     // The head lines up with the icon rows: the same column template class.
     const head = p.table.querySelector('.observer-row-head');
-    const rows = p.table.querySelectorAll('.observer-row').filter((r) => r !== head);
+    const rows = [...p.table.querySelectorAll('.observer-row')].filter((r) => r !== head);
     assert.equal(rows.length, 2);
     for (const r of [head, ...rows]) assert.ok(r.classList.contains('observer-row-icons'), r.className);
     assert.equal(head.querySelectorAll('.observer-cell').length, 2, 'Player and the panel heading');
     const strip = p.table.querySelectorAll('.observer-icons')[0];
-    const icons = strip.querySelectorAll('.observer-icon');
+    const icons = [...strip.querySelectorAll('.observer-icon')];
     assert.equal(icons.length, 2);
     assert.deepEqual(
       icons.map((i) => i.querySelector('.observer-icon-text').textContent),
@@ -375,7 +375,7 @@ test('production panel: a strip of icons per player, painted once and reused', (
       queues: [item({ queue: 2, id: 'DOG', remainingTicks: 25 }), item({ queue: 3, id: '1TNK', done: true, progress: 1 })],
     };
     p.update(stats, 35, extra);
-    const now = strip.querySelectorAll('.observer-icon');
+    const now = [...strip.querySelectorAll('.observer-icon')];
     assert.equal(now.length, 2);
     assert.equal(now[1], icons[1], 'the tank keeps its element');
     assert.equal(now[1].querySelector('.observer-icon-text').textContent, 'Ready');
@@ -394,7 +394,7 @@ test('a column panel head and rows do not use the icon template', () => {
   const { p } = panel({ panel: 'combat' });
   try {
     p.update(statsOf([[0, 0, 'england']]), 10);
-    const rows = p.table.querySelectorAll('.observer-row');
+    const rows = [...p.table.querySelectorAll('.observer-row')];
     assert.equal(rows.length, 2);
     for (const r of rows) assert.ok(!r.classList.contains('observer-row-icons'), r.className);
   } finally {
@@ -429,7 +429,7 @@ test('support power and army panels', () => {
     p.showPanel('army');
     assert.equal(p.needs(), 'army');
     p.update(stats, 20, () => ({ army: [0, 5, 2, 1] }));
-    const army = p.table.querySelectorAll('.observer-icons-army .observer-icon');
+    const army = [...p.table.querySelectorAll('.observer-icons-army .observer-icon')];
     assert.deepEqual(
       army.map((i) => i.querySelector('.observer-icon-count').textContent),
       ['5', '1'],

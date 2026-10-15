@@ -99,10 +99,18 @@ function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = 
 
 const $ = (root, sel) => root.querySelector(sel);
 
-test('settings page: display, scrolling, chat, mouse capture and audio sections, with the scale help', () => {
+test('settings page: tabs for every section (Game, Graphics, Controls, Hotkeys, Sound, Privacy, Advanced), with the scale help', () => {
   const { root } = setup();
-  const titles = root.querySelectorAll('h2').map((h) => h.textContent);
-  assert.deepEqual(titles.slice(0, 5), ['Display', 'Scrolling and units', 'Chat and notifications', 'Mouse capture', 'Audio']);
+  const tabs = [...root.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
+  assert.deepEqual(tabs, ['Game', 'Graphics', 'Controls', 'Hotkeys', 'Sound', 'Privacy', 'Advanced']);
+  const titles = [...root.querySelectorAll('h2')].map((h) => h.textContent);
+  for (const t of ['Scrolling and units', 'Chat and notifications', 'Online games', 'Texture pack', 'Display', 'Build menu', 'Mouse capture', 'Audio', 'Music player', 'Privacy', 'Performance']) assert.ok(titles.includes(t), t);
+  // One panel shows at a time; the tab bar switches them.
+  const panels = [...root.querySelectorAll('[role="tabpanel"]')];
+  assert.equal(panels.filter((p) => !p.hidden).length, 1);
+  click(root.querySelector('#game-menu-tab-graphics'));
+  assert.equal(root.querySelector('#game-menu-tab-graphics-panel').hidden, false);
+  assert.equal(root.querySelector('#game-menu-tab-game-panel').hidden, true);
   // OpenRA's HideReplayChat and TextNotificationPoolFilters.
   for (const id of ['#game-menu-hideReplayChat', '#game-menu-uiFeedbackNotifications', '#game-menu-gameEventNotifications']) assert.ok($(root, id), id);
   assert.ok(textOf(root).includes(DISPLAY_HELP), 'the three ways the picture changes are explained');
@@ -115,10 +123,10 @@ test('settings page: UI scale shows Auto with its value, previews live while dra
   const slider = $(root, '#game-menu-uiScale');
   const row = slider.closest('.game-menu-scale');
   const out = row.querySelector('output');
-  const [auto] = row.querySelectorAll('input[type="checkbox"]');
+  const [auto] = [...row.querySelectorAll('input[type="checkbox"]')];
   assert.equal(auto.getAttribute('role'), 'switch', 'Auto is a themed switch');
   assert.ok(slider.classList.contains('ui-slider'), 'a themed slider');
-  const reset = row.querySelectorAll('button').find((b) => b.textContent === 'Reset');
+  const reset = [...row.querySelectorAll('button')].find((b) => b.textContent === 'Reset');
   assert.equal(out.textContent, 'Auto (85%)');
   assert.equal(slider.value, '0.85');
   assert.equal(auto.checked, true);
@@ -181,7 +189,7 @@ test('settings page: game scale snaps to sharp steps for the render ratio and is
   const out = row.querySelector('output');
   assert.equal(out.textContent, `Auto (${Math.round(autoGameScale({ ...screenOf(win), ratio: 2 }) * 100)}%)`);
   // The sharp steps are marked on the slider.
-  const ticks = row.querySelectorAll('datalist option').map((o) => Number(o.value));
+  const ticks = [...row.querySelectorAll('datalist option')].map((o) => Number(o.value));
   assert.deepEqual(ticks, crispGameScales(2));
   assert.equal(slider.getAttribute('list'), row.querySelector('datalist').id);
   typeInto(slider, '1.31');
@@ -189,27 +197,43 @@ test('settings page: game scale snaps to sharp steps for the render ratio and is
   assert.equal(out.textContent, '133%');
   typeInto(slider, '1.17');
   assert.equal(settings.get('gameScale'), 1.15);
-  click(row.querySelectorAll('button').find((b) => b.textContent === 'Reset'));
+  click([...row.querySelectorAll('button')].find((b) => b.textContent === 'Reset'));
   assert.equal(settings.get('gameScale'), 'auto');
   // Auto follows the window while the page is open.
   win.resize(3840, 2160);
   assert.equal(out.textContent, scaleLabel('auto', autoGameScale({ ...screenOf(win), ratio: 2 })));
 });
 
-test('settings page: Defaults puts back every setting of the page, the audio ones too', () => {
-  const { root, settings, audio } = setup();
+test('settings page: Reset this section puts back the settings of the open tab, the audio ones on Sound', () => {
+  const { root, settings, audio, registry } = setup();
   settings.set('uiScale', 1.5);
   settings.set('gameScale', 2);
   settings.set('edgeScrollSpeed', 3);
-  // The remembered zoom has no row: Defaults clears it like Reset zoom.
   settings.set('zoomFactor', 2);
   settings.set('mouseCaptureRaw', true);
+  registry.set('net', 'warnSelf', false);
   audio.prefs.set({ music: 0.1, musicRepeat: 'one', enabled: false });
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Defaults'));
-  for (const key of MENU_SETTINGS) assert.deepEqual(settings.get(key), createSettings(null).get(key), key);
+  const reset = () => click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Reset this section'));
+  const tab = (id) => click(root.querySelector(`#game-menu-tab-${id}`));
+  tab('graphics');
+  reset();
+  assert.equal(settings.get('uiScale'), 'auto');
   assert.equal(settings.get('zoomFactor'), 1);
+  assert.equal(settings.get('edgeScrollSpeed'), 3, 'another tab keeps its settings');
+  tab('game');
+  reset();
+  assert.equal(settings.get('edgeScrollSpeed'), 1);
+  assert.equal(registry.get('net', 'warnSelf'), true, 'the Online games switches too');
+  tab('controls');
+  reset();
   assert.equal(settings.get('mouseCaptureRaw'), false);
+  tab('sound');
+  reset();
   assert.deepEqual(audio.prefs.get(), DEFAULT_PREFS);
+  for (const key of MENU_SETTINGS) assert.deepEqual(settings.get(key), createSettings(null).get(key), key);
+  // Privacy has no reset: switching error reports back on is the player's call.
+  tab('privacy');
+  assert.equal([...root.querySelectorAll('button')].find((b) => b.textContent === 'Reset this section').hidden, true);
 });
 
 test('settings page: without sound the Audio section says so', () => {
@@ -234,7 +258,7 @@ test('audio section: every sound control, bound to the settings; the Sound dialo
   for (const key of ['master', 'effects', 'voices', 'music']) assert.ok(box.querySelector(`#menu-audio-${key}`).classList.contains('ui-slider'), key);
   const repeatGroup = box.querySelector('#menu-audio-musicRepeat');
   assert.equal(repeatGroup.getAttribute('role'), 'radiogroup');
-  assert.deepEqual(repeatGroup.querySelectorAll('input').map((r) => r.getAttribute('value')), ['all', 'one', 'off']);
+  assert.deepEqual([...repeatGroup.querySelectorAll('input')].map((r) => r.getAttribute('value')), ['all', 'one', 'off']);
   assert.ok(box.querySelectorAll('h3').length >= 2, 'section titles under the page\'s Audio heading');
   // The Sound dialog: the same component, its own ids.
   const button = doc.createElement('button');
@@ -277,7 +301,7 @@ test('audio section: every sound control, bound to the settings; the Sound dialo
   assert.equal(panel.querySelector('#audio-musicShuffle').checked, false);
   // No music installed: clear text and the way to install it.
   assert.match(textOf(box), /No music installed\. Music comes from your own copy of Red Alert/);
-  const install = box.querySelectorAll('button').find((b) => b.textContent === 'Original content...' && !b.hidden && b.parentNode.parentNode.classList.contains('audio-music'));
+  const install = [...box.querySelectorAll('button')].find((b) => b.textContent === 'Original content...' && !b.hidden && b.parentNode.parentNode.classList.contains('audio-music'));
   assert.ok(install, 'Original content button beside the music');
   click(install);
   assert.equal(opened, 1);
@@ -307,7 +331,7 @@ test('audio section: now playing, next track, music on and off with installed mu
   const now = box.querySelector('.audio-now');
   assert.match(now.textContent, /^Now playing: /);
   assert.equal(box.querySelector('.audio-music-controls').hidden, false);
-  const next = box.querySelectorAll('button').find((b) => b.textContent === 'Next track');
+  const next = [...box.querySelectorAll('button')].find((b) => b.textContent === 'Next track');
   assert.equal(next.disabled, false);
   const first = audio.jukebox.playing;
   click(next);
@@ -424,7 +448,7 @@ test('settings page: every setting with help has a "?" wired to its control; Esc
   globalThis.Element = globalThis.HTMLElement;
   try {
     const { root, menu } = setup();
-    const buttons = root.querySelectorAll('.info-btn');
+    const buttons = [...root.querySelectorAll('.info-btn')];
     const keys = new Set(buttons.map((b) => b.dataset.help));
     for (const k of MENU_HELP_KEYS) assert.ok(keys.has(`settings.${k}`), `no "?" for ${k}`);
     for (const k of AUDIO_HELP_KEYS) assert.ok(keys.has(`audio.${k}`), `no "?" for audio ${k}`);
@@ -433,14 +457,14 @@ test('settings page: every setting with help has a "?" wired to its control; Esc
     for (const b of buttons) {
       const tip = root.querySelector(`#${b.getAttribute('aria-describedby')}`);
       assert.equal(tip.textContent, HELP[b.dataset.help]);
-      const described = root.querySelectorAll('[aria-describedby]').filter((e) => e !== b && e.getAttribute('aria-describedby').split(' ').includes(tip.id));
+      const described = [...root.querySelectorAll('[aria-describedby]')].filter((e) => e !== b && e.getAttribute('aria-describedby').split(' ').includes(tip.id));
       assert.equal(described.length, 1, `${b.dataset.help} describes one control`);
     }
     for (const id of ['#game-menu-uiScale', '#game-menu-gameScale', '#game-menu-uiScale-auto', '#game-menu-pixelRatioCap', '#game-menu-lowQuality']) {
       assert.ok(root.querySelector(id).getAttribute('aria-describedby'), id);
     }
     // The labels still name their controls.
-    for (const label of root.querySelectorAll('.ui-label-help > label')) assert.ok(root.querySelector(`#${label.getAttribute('for')}`), textOf(label));
+    for (const label of [...root.querySelectorAll('.ui-label-help > label')]) assert.ok(root.querySelector(`#${label.getAttribute('for')}`), textOf(label));
     const onKey = listeners.find(([t]) => t === 'keydown')[1];
     const esc = () => onKey(Object.assign(new FakeEvent('keydown', { key: 'Escape' }), { stopImmediatePropagation() {}, target: doc.body }));
     click(buttons[0]);
@@ -470,7 +494,7 @@ test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists,
   // The game registers the release hotkey (js/gamekeys.js): the section names its key.
   menu.opts.hotkeys.registerAction('toggleMouseCapture', ['Alt+E'], () => {});
   menu.render();
-  const texts = root.querySelectorAll('h2').map((h) => h.textContent);
+  const texts = [...root.querySelectorAll('h2')].map((h) => h.textContent);
   assert.ok(texts.includes('Mouse capture'));
   const always = root.querySelector('#game-menu-mouseCapture-always');
   assert.ok(root.querySelector('#game-menu-mouseCapture-fullscreen').checked, 'in fullscreen by default');
@@ -493,7 +517,7 @@ test('settings page: Mouse capture (mode, speed, Esc) where Pointer Lock exists,
   uninstallDom();
   doc = installDom();
   const none = setup({ pointerLock: false });
-  assert.ok(!none.root.querySelectorAll('h2').some((h) => h.textContent === 'Mouse capture'), 'phones and iOS Safari: no section');
+  assert.ok(![...none.root.querySelectorAll('h2')].some((h) => h.textContent === 'Mouse capture'), 'phones and iOS Safari: no section');
   assert.equal(none.root.querySelector('#game-menu-mouseCapture-always'), null);
   assert.equal(none.root.querySelector('#game-menu-mouseCaptureNotice-always'), null, 'no notice setting without capture');
   assert.ok(none.root.querySelector('#game-menu-pauseWhenHidden'), 'pausing a hidden game is for every device');
@@ -516,7 +540,7 @@ test('settings page: Raw mouse input, off by default, with help, after the speed
   const raw = root.querySelector('#game-menu-mouseCaptureRaw');
   assert.ok(raw, 'the switch');
   assert.equal(raw.checked, false, 'the system movement by default');
-  const ids = root.querySelectorAll('input').map((i) => i.id);
+  const ids = [...root.querySelectorAll('input')].map((i) => i.id);
   assert.ok(ids.indexOf('game-menu-mouseCaptureSpeed') < ids.indexOf('game-menu-mouseCaptureRaw'));
   assert.ok(ids.indexOf('game-menu-mouseCaptureRaw') < ids.indexOf('game-menu-mouseCaptureEscMenu'));
   assert.match(textOf(root), /Raw mouse input/);
@@ -550,7 +574,7 @@ test('privacy: the error report switch, with a note while this build reports not
 test('controls page: Right click in the build menu, OpenRA by default, with help; reset hotkeys leaves it', () => {
   const { settings, root, menu } = setup();
   menu.show('controls');
-  assert.ok(root.querySelectorAll('h2').map((h) => h.textContent).includes('Build menu'));
+  assert.ok([...root.querySelectorAll('h2')].map((h) => h.textContent).includes('Build menu'));
   const openra = root.querySelector('#game-menu-buildRightClick-openra');
   const webra = root.querySelector('#game-menu-buildRightClick-webra');
   assert.ok(openra && webra);

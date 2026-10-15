@@ -25,7 +25,8 @@
 // The models are pure (Node tests); renderGameInfo draws one into the menu.
 
 import { objectiveLabel } from './campaign/view.js';
-import { BIOMES, FACTIONS, LOBBY_SELECT_OPTIONS, LOBBY_TOGGLE_OPTIONS, MAP_SIZES, MAP_STYLES, TECH_BUILDINGS, WEATHER_MODES } from './lobby-state.js';
+import { badge, led, tabs as tabBar } from './ui/controls.js';
+import { DIFFICULTIES, BIOMES, FACTIONS, LOBBY_SELECT_OPTIONS, LOBBY_TOGGLE_OPTIONS, MAP_SIZES, MAP_STYLES, TECH_BUILDINGS, WEATHER_MODES } from './lobby-state.js';
 
 /** ConquestVictoryConditionsInfo.Objective (checkbox-stats-objective). */
 export const CONQUEST_OBJECTIVE = 'Destroy all opposition!';
@@ -33,8 +34,16 @@ export const CONQUEST_OBJECTIVE = 'Destroy all opposition!';
 /** OpenRA label-mission-in-progress / -accomplished / -failed. */
 export const MISSION_STATUS = Object.freeze({ playing: 'In progress', won: 'Accomplished', lost: 'Failed' });
 
-/** WidgetUtils.WithSuffix: a player's name with its win state. */
-const NAME_SUFFIX = { won: ' (Won)', lost: ' (Lost)', playing: '' };
+/** A player's win state in words (the design's PLAYING and DEFEATED), next to its lamp. */
+export const STATE_TEXT = Object.freeze({ playing: 'Playing', lost: 'Defeated', won: 'Won' });
+/** The lamp of a win state. */
+const STATE_LED = { playing: 'ok', lost: 'bad', won: 'info' };
+
+/** An AI player's tag: "AI", with the difficulty when it is known ("AI · Hard"). */
+export function aiTag(bot) {
+  const diff = DIFFICULTIES.find((d) => d.value === bot?.difficulty);
+  return diff ? `AI · ${diff.label}` : 'AI';
+}
 
 /** A player's WinState from its statistics row (engine observer_stats). */
 export function winState(row) {
@@ -64,9 +73,13 @@ export function infoTabs({ briefing } = {}) {
  * `lobbyFactions`: what the lobby showed per player (the choice before a
  * random country was drawn), or null when that is unknown (a rejoin that saw
  * no lobby, a loaded save): then opponents show "Unknown" until the local
- * player's game is decided, never the drawn country; `spectators`: names.
+ * player's game is decided, never the drawn country; `spectators`: names;
+ * `bots`: per engine index the lobby's AI setup (`{ bot, difficulty }`) or
+ * null, for the AI tag's difficulty (the rows' `isAi` says who is an AI).
+ * Each player has its `state` with `stateText` and `tags` ("You", "AI ·
+ * Hard"); the name is the player's name alone.
  */
-export function skirmishStats({ stats = [], names = [], localPlayer = null, allied = (a, b) => a === b, lobbyFactions = null, spectators = [] }) {
+export function skirmishStats({ stats = [], names = [], localPlayer = null, allied = (a, b) => a === b, lobbyFactions = null, spectators = [], bots = [] }) {
   const rows = (stats ?? []).filter((r) => Number.isInteger(r?.player));
   const local = localPlayer === null ? null : rows.find((r) => r.player === localPlayer);
   const localState = local ? winState(local) : null;
@@ -80,10 +93,16 @@ export function skirmishStats({ stats = [], names = [], localPlayer = null, alli
     if (revealAll || allied(localPlayer, r.player)) faction = chosen == null || shown === real ? real : `${shown} (${real})`;
     else faction = shown;
     const state = winState(r);
+    const bot = bots?.[r.player] ?? null;
+    const tags = [];
+    if (localPlayer !== null && r.player === localPlayer) tags.push('You');
+    if (r.isAi || bot) tags.push(aiTag(bot));
     return {
       player: r.player,
-      name: `${names[r.player] ?? `Player ${r.player + 1}`}${NAME_SUFFIX[state]}`,
+      name: names[r.player] ?? `Player ${r.player + 1}`,
       state,
+      stateText: STATE_TEXT[state],
+      tags,
       faction,
       score: Number(r.experience) || 0,
       team: Number(r.team) || 0,
@@ -200,7 +219,7 @@ function renderSkirmish(panel, m) {
   const t = el('table', 'stats-table game-info-players');
   t.append(el('caption', null, 'Players'));
   const head = el('tr');
-  for (const [text, cls] of [['Player', null], ['Faction', null], ['Score', 'num']]) {
+  for (const [text, cls] of [['Player', null], ['Faction', null], ['Score', 'num'], ['State', 'game-info-state-col']]) {
     const th = el('th', cls, text);
     th.setAttribute('scope', 'col');
     head.append(th);
@@ -215,16 +234,20 @@ function renderSkirmish(panel, m) {
       const th = el('th', null, g.label);
       th.setAttribute('scope', 'rowgroup');
       th.colSpan = 2;
-      tr.append(th, el('td', 'num', String(g.score)));
+      tr.append(th, el('td', 'num', String(g.score)), el('td'));
       tbody.append(tr);
     }
     for (const p of g.players) {
       const tr = el('tr');
       tr.dataset.state = p.state;
       tr.dataset.player = String(p.player);
-      const th = el('th', 'game-info-name', p.name);
+      const th = el('th', 'game-info-name');
       th.setAttribute('scope', 'row');
-      tr.append(th, el('td', null, p.faction), el('td', 'num', String(p.score)));
+      th.append(el('span', 'game-info-player', p.name));
+      for (const tag of p.tags ?? []) th.append(badge(tag === 'You' ? 'accent' : 'neutral', tag));
+      const state = el('td', `game-info-state game-info-state-${p.state}`);
+      state.append(led(STATE_LED[p.state]), el('span', null, p.stateText));
+      tr.append(th, el('td', null, p.faction), el('td', 'num', String(p.score)), state);
       tbody.append(tr);
     }
     t.append(tbody);
@@ -234,14 +257,14 @@ function renderSkirmish(panel, m) {
     const tr = el('tr', 'game-info-team');
     const th = el('th', null, 'Spectators');
     th.setAttribute('scope', 'rowgroup');
-    th.colSpan = 3;
+    th.colSpan = 4;
     tr.append(th);
     tbody.append(tr);
     for (const name of m.spectators) {
       const row = el('tr');
       const cell = el('th', 'game-info-name', name);
       cell.setAttribute('scope', 'row');
-      cell.colSpan = 3;
+      cell.colSpan = 4;
       row.append(cell);
       tbody.append(row);
     }
@@ -303,42 +326,32 @@ function renderOptions(panel, o) {
 }
 
 /**
- * Draw the panel for `view` (`{ title, briefing, options, objectives }`) into
- * `c`, `tab` open; `onTab(id)` switches. Returns the tab shown.
+ * Draw the panel for `view` (`{ title, briefing, options, objectives,
+ * weather? }`) into `c`, `tab` open; `onTab(id, focus)` switches. The tabs
+ * are the design system's (js/ui/controls.js tabs: arrows, Home and End).
+ * Returns the tab shown.
  */
 export function renderGameInfo(c, view, tab, onTab) {
-  const tabs = infoTabs(view);
-  const shown = tabs.some(([id]) => id === tab) ? tab : tabs[0][0];
-  c.append(el('h1', null, view.title));
-  const bar = el('div', 'stats-tabs');
-  bar.setAttribute('role', 'tablist');
-  bar.setAttribute('aria-label', 'Game info');
-  for (const [id, label] of tabs) {
-    const b = el('button', 'stats-tab', label);
-    b.type = 'button';
-    b.id = `game-info-tab-${id}`;
-    b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', String(id === shown));
-    b.setAttribute('aria-controls', 'game-info-panel');
-    b.tabIndex = id === shown ? 0 : -1;
-    b.addEventListener('click', () => onTab(id));
-    b.addEventListener('keydown', (e) => {
-      const i = tabs.findIndex(([t]) => t === id);
-      const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
-      if (next === undefined) return;
-      e.preventDefault();
-      onTab(tabs[(next + tabs.length) % tabs.length][0], true);
-    });
-    bar.append(b);
-  }
-  const panel = el('div', 'game-menu-scroll game-info-panel');
+  const list = infoTabs(view);
+  const shown = list.some(([id]) => id === tab) ? tab : list[0][0];
+  const panel = el('div', 'game-info-panel');
   panel.id = 'game-info-panel';
-  panel.setAttribute('role', 'tabpanel');
-  panel.setAttribute('aria-labelledby', `game-info-tab-${shown}`);
+  const bar = tabBar({
+    id: 'game-info-tab',
+    label: 'Game info',
+    value: shown,
+    tabs: list.map(([id, label]) => ({ id, label, panel: id === shown ? panel : undefined })),
+    onChange: (id) => onTab(id, true),
+  });
+  // The other tabs' panels are drawn when chosen: they all name the one panel.
+  for (const b of bar.buttons.values()) b.setAttribute('aria-controls', panel.id);
+  bar.root.classList.add('game-info-tabs');
+  c.append(el('h2', 'game-info-title', view.title), bar.root);
   if (shown === 'briefing') renderBriefing(panel, view.briefing);
   else if (shown === 'options') renderOptions(panel, view.options);
   else if (view.objectives?.kind === 'mission') renderMission(panel, view.objectives);
   else if (view.objectives) renderSkirmish(panel, view.objectives);
-  c.append(bar, panel);
+  c.append(panel);
+  if (view.weather) c.append(el('p', 'game-info-foot ui-num', `Weather: ${view.weather}`));
   return shown;
 }

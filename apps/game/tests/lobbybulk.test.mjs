@@ -186,11 +186,11 @@ test('skirmish lobby: Bulk edit shows checkboxes; Shift-click selects a range, C
   const toggle = root.querySelector('.bulk-toggle');
   const bar = root.querySelector('.bulk-bar');
   assert.equal(bar.hidden, true);
-  assert.ok(root.querySelectorAll('input.bulk-pick').filter((b) => b.closest('.lobby-slot')).every((b) => b.hidden), 'no checkboxes until bulk edit is on');
+  assert.ok([...root.querySelectorAll('input.bulk-pick')].filter((b) => b.closest('.lobby-slot')).every((b) => b.hidden), 'no checkboxes until bulk edit is on');
   toggle.click();
   assert.equal(toggle.getAttribute('aria-pressed'), 'true');
   assert.equal(bar.hidden, false);
-  const boxes = () => root.querySelectorAll('.lobby-slot input.bulk-pick');
+  const boxes = () => [...root.querySelectorAll('.lobby-slot input.bulk-pick')];
   assert.equal(boxes().length, 4);
   click(boxes()[1]);
   click(boxes()[3], { shiftKey: true });
@@ -198,7 +198,7 @@ test('skirmish lobby: Bulk edit shows checkboxes; Shift-click selects a range, C
   assert.deepEqual(boxes().map((b) => b.checked), [false, true, true, true]);
   assert.equal(root.querySelector('.bulk-count').textContent, '3 of 4 selected');
   // A click on the row (not on a control) with Ctrl takes one row out.
-  const rows = root.querySelectorAll('.lobby-slot').filter((r) => !r.classList.contains('lobby-slot-head'));
+  const rows = [...root.querySelectorAll('.lobby-slot')].filter((r) => !r.classList.contains('lobby-slot-head'));
   click(rows[2].querySelector('.lobby-badge'), { ctrlKey: true });
   assert.deepEqual(lobby.bulk.selection.list(), [1, 3]);
   assert.ok(rows[1].classList.contains('bulk-selected'));
@@ -349,7 +349,7 @@ async function onlineLobby({ you = 1, slots }) {
   return { ui, sent };
 }
 
-const labelled = (root, label) => root.querySelectorAll('select').find((x) => x.getAttribute('aria-label') === label);
+const labelled = (root, label) => [...root.querySelectorAll('select')].find((x) => x.getAttribute('aria-label') === label);
 
 const SLOTS = () => [
   { type: 'human', client: 1, name: 'Host', faction: 'random', color: 0, team: 0, ready: false },
@@ -363,7 +363,7 @@ test('online lobby: the host applies a bulk action with one slots message; anoth
   const toggle = ui.root.querySelector('.bulk-toggle-box');
   assert.equal(toggle.hidden, false);
   ui.root.querySelector('.bulk-toggle').click();
-  const boxes = ui.root.querySelectorAll('.online-slot input.bulk-pick');
+  const boxes = [...ui.root.querySelectorAll('.online-slot input.bulk-pick')];
   assert.equal(boxes.length, 4);
   click(boxes[3]);
   click(boxes[0], { shiftKey: true });
@@ -408,19 +408,19 @@ test('online lobby: the host applies a bulk action with one slots message; anoth
   uninstallDom();
   const guest = await onlineLobby({ you: 2, slots: SLOTS() });
   assert.equal(guest.ui.root.querySelector('.bulk-toggle-box').hidden, true, 'only the host');
-  assert.equal(guest.ui.root.querySelectorAll('.online-slot input.bulk-pick').every((b) => b.hidden), true);
+  assert.equal([...guest.ui.root.querySelectorAll('.online-slot input.bulk-pick')].every((b) => b.hidden), true);
   assert.equal(labelled(guest.ui.root.querySelectorAll('.online-slot')[1], 'Player 1 team').disabled, true);
 });
 
 test('online lobby: the host unloads a shared map or leaves a mission; the seed shows only for a generated map', async () => {
   const { ui, sent } = await onlineLobby({ slots: SLOTS() });
-  const buttons = () => ui.mapBox.querySelectorAll('button').map((b) => b.textContent);
+  const buttons = () => [...ui.mapBox.querySelectorAll('button')].map((b) => b.textContent);
   assert.ok(buttons().includes('New seed'));
   assert.ok(!buttons().includes('Unload map'));
   ui.state.map = { id: '0123456789abcdef', hash: 'c'.repeat(64), name: 'Four', modded: false, players: 4, author: 'Tester', width: 64, height: 64, bytes: 900, shared: true };
   ui.renderMap();
   assert.ok(!buttons().includes('New seed'), 'no seed for a map file');
-  const unload = ui.mapBox.querySelectorAll('button').find((b) => b.textContent === 'Unload map');
+  const unload = [...ui.mapBox.querySelectorAll('button')].find((b) => b.textContent === 'Unload map');
   unload.click();
   assert.deepEqual(sent.at(-1), { t: 'map', map: null });
   ui.state.map = null;

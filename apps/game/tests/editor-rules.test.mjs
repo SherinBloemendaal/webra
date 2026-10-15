@@ -43,7 +43,7 @@ function open(map = JSON.parse(Game.generated_map(9, 64, 2))) {
     panel.selected.actors = id;
     panel.renderForm();
   };
-  const row = (text) => panel.form.querySelectorAll('label').find((l) => textOf(l).includes(text));
+  const row = (text) => [...panel.form.querySelectorAll('label')].find((l) => textOf(l).includes(text));
   return { doc, panel, select, row };
 }
 

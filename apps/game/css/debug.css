@@ -1,5 +1,7 @@
-/* Debug menu (js/debug.js): a panel on the right of the battlefield, a
-   button next to Pause, and a canvas for the world overlays. */
+/* Debug menu (js/debug.js, design board Debug): a panel on the right of the
+   battlefield with a hazard stripe, a button next to Pause, a canvas for the
+   world overlays and the stats box (the Performance stats and Frame graph
+   views) over the top left of the battlefield. */
 
 .debug-overlay {
   position: absolute;
@@ -37,36 +39,60 @@
     var(--ui-scan),
     linear-gradient(180deg, rgba(34, 40, 48, 0.96), rgba(20, 24, 29, 0.96));
   border: 1px solid var(--ui-edge);
-  border-top: 2px solid var(--ui-accent);
   border-radius: var(--ui-radius);
   box-shadow:
     var(--ui-bevel),
     0 8px 24px rgba(0, 0, 0, 0.5);
   color: var(--ui-text);
-  font: calc(12 * var(--ui-px))/1.4 var(--ui-font);
+  font: calc(13 * var(--ui-px))/1.4 var(--ui-font);
   user-select: none;
+}
+
+/* The board's yellow and black danger stripe across the top. */
+.debug-panel::before {
+  content: '';
+  display: block;
+  height: calc(6 * var(--ui-px));
+  margin: calc(-8 * var(--ui-px)) calc(-10 * var(--ui-px)) calc(8 * var(--ui-px));
+  background: var(--ui-hazard);
 }
 
 .debug-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--ui-space-2);
 }
 
 .debug-title {
-  margin: 0;
-  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
-  letter-spacing: 0.1em;
+  margin: 0 auto 0 0;
+  font: 700 var(--ui-fs-section) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
   text-transform: uppercase;
 }
 
+/* The hotkey, as on the board ("key `"). */
+.debug-key {
+  padding: 1px var(--ui-space-2);
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  color: var(--ui-tip-key);
+  font: 400 var(--ui-fs-s) / 1.4 var(--ui-font-mono);
+}
+
 .debug-heading {
-  margin: calc(10 * var(--ui-px)) 0 calc(4 * var(--ui-px));
-  font-size: calc(11 * var(--ui-px));
-  font-weight: 600;
-  letter-spacing: 1px;
+  margin: calc(12 * var(--ui-px)) 0 calc(4 * var(--ui-px));
+  font: 700 var(--ui-fs-label) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
   text-transform: uppercase;
-  color: var(--ui-accent-hi);
+  color: var(--ui-muted);
+}
+
+.debug-heading-note {
+  font: 400 var(--ui-fs-s) / 1.2 var(--ui-font);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ui-muted);
 }
 
 .debug-note {
@@ -75,20 +101,25 @@
 }
 
 .debug-note-cheats {
-  color: #ffb4a2;
+  padding: var(--ui-space-1) var(--ui-space-2);
+  border-left: 3px solid var(--ui-warn);
+  background: var(--ui-metal-0);
+  color: var(--ui-warn);
 }
 
 .debug-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: calc(2 * var(--ui-px)) calc(10 * var(--ui-px));
+  display: flex;
+  flex-direction: column;
 }
 
+/* A switch row: the words on the left, the switch on the right (board Debug). */
 .debug-check {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: calc(8 * var(--ui-px));
-  min-height: calc(26 * var(--ui-px));
+  min-height: max(var(--ctl-row), calc(30 * var(--ui-px)));
+  border-bottom: 1px solid var(--ui-line-soft);
   cursor: pointer;
 }
 
@@ -104,37 +135,23 @@
   margin-top: calc(6 * var(--ui-px));
 }
 
-.debug-action,
-.debug-close {
-  padding: calc(3 * var(--ui-px)) calc(9 * var(--ui-px));
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
-  color: var(--ui-text);
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
-  font: 600 calc(12 * var(--ui-px)) var(--ui-font);
-  cursor: pointer;
+.debug-hud {
+  position: absolute;
+  left: calc(8 * var(--ui-px));
+  top: calc(36 * var(--ui-px));
+  z-index: 6;
+  width: min(calc(240 * var(--ui-px)), calc(100% - calc(16 * var(--ui-px))));
+  pointer-events: none;
 }
 
-.debug-action:hover:not(:disabled),
-.debug-close:hover {
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
-}
-
-.debug-action:active:not(:disabled),
-.debug-close:active {
-  box-shadow: var(--ui-bevel-in);
-}
-
-.debug-action:disabled {
-  opacity: 0.45;
-  cursor: default;
+.debug-hud[hidden] {
+  display: none;
 }
 
 .debug-stats {
-  margin: calc(10 * var(--ui-px)) 0 0;
+  margin: 0;
   padding: calc(6 * var(--ui-px));
-  background: var(--ui-metal-0);
+  background: color-mix(in srgb, var(--ui-metal-0) 88%, transparent);
   border: 1px solid var(--ui-edge);
   box-shadow: var(--ui-bevel-in);
   font: calc(11 * var(--ui-px))/1.45 var(--ui-font-mono);
@@ -167,4 +184,14 @@
 
 .debug-capture-status {
   margin-top: calc(6 * var(--ui-px));
+}
+
+.debug-capture-label {
+  color: var(--ui-text-2);
+}
+
+@media (forced-colors: active) {
+  .debug-panel::before {
+    background: CanvasText;
+  }
 }

@@ -194,14 +194,14 @@ test('Load game: tabs, rows with pictures, the chosen save\'s details, Load and 
       store,
       missionTitle: async (id) => (id === 'allies-01' ? '01: In the Thick of It' : null),
     });
-    click(root.querySelectorAll('button').find((b) => b.textContent === 'Load game'));
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Load game'));
     await settle(20);
     const dialog = doc.body.querySelector('dialog');
-    const tabs = dialog.querySelectorAll('[role="tab"]');
+    const tabs = [...dialog.querySelectorAll('[role="tab"]')];
     assert.deepEqual(tabs.map((t) => textOf(t)), ['In this browser', 'Online saves', 'From file']);
-    const panels = dialog.querySelectorAll('[role="tabpanel"]');
+    const panels = [...dialog.querySelectorAll('[role="tabpanel"]')];
     assert.deepEqual(panels.map((p) => p.hidden), [false, true, true]);
-    const list = panels[0].querySelectorAll('.records-row');
+    const list = [...panels[0].querySelectorAll('.records-row')];
     assert.deepEqual(list.map((r) => r.querySelector('strong').textContent), ['Save 4', 'Save 2', 'Save 1'], 'newest first; online saves in their own tab');
     assert.equal(list[2].querySelector('img').getAttribute('src'), 'data:image/png;base64,AAAA');
     assert.ok(list[0].querySelector('.records-thumb-none'), 'an older save has no picture');
@@ -218,7 +218,7 @@ test('Load game: tabs, rows with pictures, the chosen save\'s details, Load and 
     // Delete asks first; Keep keeps it.
     click(detail().querySelector('.records-delete-ask'));
     assert.match(textOf(detail()), /Delete this save\?/);
-    click(detail().querySelectorAll('button').find((b) => b.textContent === 'Keep'));
+    click([...detail().querySelectorAll('button')].find((b) => b.textContent === 'Keep'));
     assert.deepEqual(removed, []);
     click(detail().querySelector('.records-delete-ask'));
     click(detail().querySelector('.records-delete-confirm'));
@@ -231,7 +231,7 @@ test('Load game: tabs, rows with pictures, the chosen save\'s details, Load and 
     assert.equal(panels[1].querySelectorAll('.records-row').length, 1);
     assert.equal(panels[1].querySelector('.records-main-action'), null, 'no Load for an online save');
     click(tabs[0]);
-    click(panels[0].querySelectorAll('.records-row').find((r) => r.textContent.includes('Save 1')));
+    click([...panels[0].querySelectorAll('.records-row')].find((r) => r.textContent.includes('Save 1')));
     click(detail().querySelector('.records-main-action'));
     await settle(20);
     assert.deepEqual(loaded, [1]);
@@ -260,7 +260,7 @@ test('Load game: a delete runs once, a failed one says why, focus goes to the ne
     };
     const root = doc.createElement('div');
     mountRecordEntries(root, { version: 'test', canPlay: () => true, showError: () => {}, onLoadSave() {}, onWatchReplay() {}, store });
-    click(root.querySelectorAll('button').find((b) => b.textContent === 'Load game'));
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Load game'));
     await settle(20);
     const dialog = doc.body.querySelector('dialog');
     const list = () => dialog.querySelectorAll('[role="tabpanel"]')[0].querySelectorAll('.records-row');
@@ -298,7 +298,7 @@ test('Replays: the account\'s storage as a bar, and an empty list says how repla
     const api = { replays: async () => ({ replays: [], usage: { count: 95, bytes: 1024 }, limits: { count: 100, bytes: 100 * 1024 * 1024, retentionMs: 30 * 86400000 } }) };
     const root = doc.createElement('div');
     mountRecordEntries(root, { version: 'test', canPlay: () => true, showError: () => {}, onLoadSave() {}, onWatchReplay() {}, store: { list: async () => [] }, accountReplays: { available: () => true, api } });
-    click(root.querySelectorAll('button').find((b) => b.textContent === 'Replays'));
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Replays'));
     await settle(20);
     const dialog = doc.body.querySelector('dialog');
     const bar = dialog.querySelector('.records-usage-bar');
@@ -309,7 +309,7 @@ test('Replays: the account\'s storage as a bar, and an empty list says how repla
     assert.match(textOf(dialog), /kept for 30 days/);
     assert.match(textOf(dialog), /No replays in your account yet/);
     assert.equal(dialog.querySelector('.records-detail').hidden, true);
-    assert.deepEqual(dialog.querySelectorAll('[role="tab"]').map((t) => textOf(t)), ['Your account', 'From file']);
+    assert.deepEqual([...dialog.querySelectorAll('[role="tab"]')].map((t) => textOf(t)), ['Your account', 'From file']);
   } finally {
     uninstallDom();
   }

@@ -42,6 +42,44 @@
   user-select: text;
 }
 
+/* The Sound and Music dialogs (design board Sound): the design system's
+   dialog (css/patterns.css .ui-dialog: hazard stripe, rivets). The Original
+   content dialog shares .audio-card but keeps its own card (css/content.css). */
+.ui-dialog.audio-card {
+  max-width: 100%;
+  max-height: calc(100dvh - calc(32 * var(--ui-px)));
+  overflow: auto;
+  font: 400 var(--ui-fs-body) / var(--ui-lh-body) var(--ui-font);
+}
+
+.ui-dialog.audio-card > .audio-head {
+  padding: var(--ui-space-4) var(--ui-space-5) var(--ui-space-2);
+}
+
+.ui-dialog.audio-card > .audio-body,
+.ui-dialog.audio-card > .music-body {
+  padding: 0 var(--ui-space-5) var(--ui-space-5);
+}
+
+.ui-dialog.audio-card .audio-head h1 {
+  margin: 0;
+  font: 700 var(--ui-fs-title) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
+  text-transform: uppercase;
+}
+
+.audio-music h2,
+.audio-music h3,
+.audio-content h2,
+.audio-content h3,
+.music-list h2,
+.music-list h3 {
+  font: 700 var(--ui-fs-label) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
 .audio-head {
   display: flex;
   align-items: center;
@@ -61,11 +99,12 @@
   gap: calc(8 * var(--ui-px));
 }
 
-.audio-buttons button,
-.audio-close {
+/* Inside the dialogs' cards the design system's buttons win over the old card buttons. */
+.audio-settings .ui-btn,
+.music-player .ui-btn,
+.audio-head .ui-btn {
   width: auto;
   margin: 0;
-  padding: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
 }
 
 .audio-note,
@@ -207,11 +246,11 @@ button.danger {
   gap: calc(6 * var(--ui-px));
 }
 
-.music-transport button {
+.music-player .music-transport .ui-btn {
   width: auto;
   margin: 0;
   min-height: var(--ctl-row);
-  padding: calc(6 * var(--ui-px)) calc(8 * var(--ui-px));
+  padding: 0 calc(8 * var(--ui-px));
 }
 
 .music-list h2,
@@ -231,8 +270,9 @@ button.danger {
 }
 
 .music-track {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: calc(10 * var(--ui-px));
   width: 100%;
   margin: 0;
@@ -259,7 +299,7 @@ button.danger {
 }
 
 .music-track.current {
-  background: color-mix(in srgb, var(--ui-accent) 26%, transparent);
+  background: var(--ui-accent-lo);
   color: var(--ui-accent-hi);
   font-weight: 700;
 }
