@@ -622,12 +622,29 @@ function setupOnline(lobby, gpuError) {
   // button; loaded once a player is signed in (it also sends the presence heartbeat).
   let friends = null;
   const loadFriends = () =>
-    (friends ??= playAccess.load(() => import('./friends-ui.js')).then(({ mountFriends }) =>
-      mountFriends({ entry: $('start-friends'), root: $('friends-root'), cover: [$('menu'), root], account, registry: defaultRegistry(), version: version(), signIn: (reason) => openSignIn(account, { reason }), lobby: () => ui?.currentLobby() ?? null, onJoin: async (session, o) => {
-          await open();
-          ui?.joinElsewhere(session, o);
-        } }),
-    ));
+    (friends ??= playAccess
+      .load(() => import('./friends-ui.js'))
+      .then(({ mountFriends }) =>
+        mountFriends({
+          entry: $('start-friends'),
+          root: $('friends-root'),
+          cover: [$('menu'), root],
+          account,
+          registry: defaultRegistry(),
+          version: version(),
+          signIn: (reason) => openSignIn(account, { reason }),
+          lobby: () => ui?.currentLobby() ?? null,
+          onJoin: async (session, o) => {
+            await open();
+            ui?.joinElsewhere(session, o);
+          },
+        }),
+      )
+      .catch((err) => {
+        // A failed load is tried again on the next account change or click.
+        friends = null;
+        throw err;
+      }));
   const followFriends = () => account?.user && loadFriends().catch((err) => console.warn('Friends unavailable:', err?.message ?? err));
   account?.onChange(followFriends);
   followFriends();
