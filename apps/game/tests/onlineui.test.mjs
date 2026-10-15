@@ -367,3 +367,34 @@ test('online lobby: the Connection column, the warning bar with Test again and K
     uninstallDom();
   }
 });
+
+test("the game's net handle: one NetQuality as quality and source, the roster, you, players with colours", async () => {
+  const { gameNet } = await import('../js/online.js');
+  const nq = { players: new Map() };
+  const net = gameNet(nq, {
+    players: [
+      { client: 1, player: 0, name: 'Kara' },
+      { client: null, player: 1, name: 'Normal AI' },
+      { client: 3, player: 2, name: 'Ivan' },
+    ],
+    options: { players: [{ color: 2 }, { color: 0 }, { color: 1 }] },
+    colors: [
+      [1, 0, 0],
+      [0, 0, 1],
+      [0, 1, 0],
+    ],
+    you: 3,
+  });
+  assert.deepEqual(Object.keys(net).sort(), ['players', 'quality', 'roster', 'source', 'you']);
+  assert.equal(net.quality, nq);
+  assert.equal(net.source, nq);
+  assert.equal(net.you, 3);
+  assert.deepEqual(net.roster, [
+    { client: 1, player: 0, name: 'Kara' },
+    { client: 3, player: 2, name: 'Ivan' },
+  ]);
+  assert.deepEqual(net.players(), [
+    { client: 1, name: 'Kara', color: 'rgb(0, 255, 0)' },
+    { client: 3, name: 'Ivan', color: 'rgb(0, 0, 255)' },
+  ]);
+});

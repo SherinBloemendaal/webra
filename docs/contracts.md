@@ -1365,8 +1365,15 @@ with fixtures in `tests/onlineui.test.mjs` and `tests/friends-ui.test.mjs`).
   a switch and the status line names who is not ready. Invite players shows
   the code (`lobby.invite`), Copy code, Copy link, the time left, New code
   (host), the long session link and friends to invite. The NetQuality object
-  of the lobby goes on into the game (`onStartGame({ net })`, started with
-  `beginGame()`), for the HUD, the game menu and the statistics.
+  of the lobby goes on into the game, started with `beginGame()`, as
+  `onStartGame({ net })` (`online.js gameNet`, null outside online games):
+  `{ quality, source, roster, you, players() }` with `quality` and `source`
+  the same NetQuality (the HUD's js/netwarn.js reads `quality`, the game
+  menu's js/netmenu.js `source`), `roster` the people of the start message
+  `[{ client, player, name }]` (AI left out), `you` this member's client id
+  (also for spectators, who are not in the roster) and `players()` the roster
+  as `[{ client, name, color }]` with each player's colour as CSS (null when
+  unknown).
 - **Friends screen** (`#friends-root`, signed-in players; the main menu's
   Friends entry and a Friends button on the online screens): the list by
   status (in a game, online with lobby and away, offline) with Join

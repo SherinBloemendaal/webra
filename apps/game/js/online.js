@@ -424,6 +424,23 @@ export function chatIntroLine({ spectator = false, list = '', teamChat = false, 
   return spectator ? `Watching: ${list}. Press Enter to chat.` : `Online game: ${list}. Press Enter to chat${teamChat ? ' with your team, Shift+Enter with everyone' : ''}.`;
 }
 
+/**
+ * What onStartGame's `net` is (docs/contracts.md, "Online screens and
+ * friends in the game"): the session's NetQuality as `quality` (js/netwarn.js)
+ * and as `source` (js/netmenu.js, the same object), the people of the game
+ * from the start message as `roster` ([{ client, player, name }], AI left
+ * out), this member's client id as `you`, and `players()`: the roster with
+ * each player's colour as CSS ([{ client, name, color }]).
+ */
+export function gameNet(nq, { players, options, colors, you }) {
+  const roster = (players ?? []).filter((p) => p.client !== null && p.client !== undefined).map((p) => ({ client: p.client, player: p.player, name: p.name }));
+  const colorOf = (player) => {
+    const c = colors?.[options?.players?.[player]?.color];
+    return c ? rgbCss(c) : null;
+  };
+  return { quality: nq, source: nq, roster, you, players: () => roster.map((p) => ({ client: p.client, name: p.name, color: colorOf(p.player) })) };
+}
+
 // ---- Online UI -------------------------------------------------------------------
 
 export class OnlineUI {
@@ -2755,7 +2772,7 @@ export class OnlineUI {
       chat: this.chatHandle,
       // Connection quality of this game (js/netquality.js): the HUD's signal bars and warnings, the
       // game menu's and the statistics' Network tabs.
-      net: this.netq ?? null,
+      net: this.netq ? gameNet(this.netq, { players: m.players, options: m.options, colors: this.ctx.colors, you: st.you }) : null,
     });
     if (m.resume) this.gameLine(`Resuming the saved game after ${formatTicks(m.resume.ticks)}: catching up...`, true);
   }
