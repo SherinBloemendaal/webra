@@ -80,6 +80,10 @@ test('loading board: the sides by team with the local player and the AIs named, 
   const d = describeStart({ kind: 'skirmish', options: { players: PLAYERS }, map: '{"name":"Ore Lord"}', player: 0 });
   assert.equal(d.kicker, 'Skirmish · 2 vs 2');
   assert.equal(d.title, 'Ore Lord');
+  // A save: its recording player is You.
+  const save = describeStart({ kind: 'save', replay: { options: { players: PLAYERS }, map: null, player: 1 } });
+  assert.deepEqual(save.sides.flatMap((s) => s.players).filter((p) => p.you).map((p) => p.name), ['Kara']);
+  assert.equal(save.kicker, 'Saved game · 2 vs 2');
   // A replay watches: nobody is "You"; a generated map keeps the screen's title.
   const r = describeStart({ kind: 'replay', replay: { options: { players: PLAYERS }, map: null } });
   assert.equal(r.title, null);
@@ -393,6 +397,16 @@ test('statistics: an open select list gets its keys, the tab list its arrows (wi
   let hotkeys = 0;
   window.addEventListener('keydown', () => hotkeys++);
   const plate = screen.graphPick;
+  // A closed plate: ArrowDown and typing reach it and open it.
+  plate.button.dispatchEvent(new FakeEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+  assert.equal(plate.isOpen(), true, 'ArrowDown on the closed plate opens it');
+  plate.listbox.dispatchEvent(new FakeEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(plate.isOpen(), false);
+  plate.button.dispatchEvent(new FakeEvent('keydown', { key: 'k', bubbles: true, cancelable: true }));
+  assert.equal(plate.isOpen(), true, 'typing on the closed plate opens it at the match (Kills)');
+  assert.match(plate.listbox.getAttribute('aria-activedescendant') ?? '', /-o\d+$/);
+  plate.close(false);
+  assert.equal(screen.isOpen, true);
   click(plate.button);
   assert.equal(plate.isOpen(), true);
   const down = new FakeEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
@@ -495,5 +509,48 @@ test('statistics: the Network tab reads the game\'s net object (js/online.js gam
     assert.equal((await netStatsData({ quality: failing, roster, you: 11 })).stalls.stalls.length, 1);
   } finally {
     console.warn = warn;
+  }
+});
+
+test('loading tips show the key the player bound: saved rebinding, unbound, the live binding, else the default', async () => {
+  installDom();
+  const { HotkeyRegistry } = await import('../js/hotkeys.js');
+  const { boundKeyText } = await import('../js/loadingboard.js');
+  const { TIP_ACTIONS } = await import('../js/tips.js');
+  const { readFileSync } = await import('node:fs');
+  // Every hotkey a tip names has its game action, and that action is the one the game registers for it.
+  const sources = ['input.js', 'commandbar.js', 'gamekeys.js'].map((f) => readFileSync(new URL(`../js/${f}`, import.meta.url), 'utf8')).join('\n');
+  for (const t of TIPS.filter((x) => x.hotkey)) assert.ok(TIP_ACTIONS[t.hotkey], `${t.hotkey} has an action`);
+  for (const [ora, action] of Object.entries(TIP_ACTIONS)) {
+    if (ora.startsWith('Production')) continue;
+    assert.ok(sources.includes(`'${action}', '${ora}'`) || sources.includes(`name: '${action}', openra: '${ora}'`), `${ora} is the game's ${action}`);
+  }
+  const values = new Map();
+  const settings = { get: (k) => values.get(k), set: (k, v) => (values.set(k, v), v), subscribe: () => () => {} };
+  const registry = new HotkeyRegistry(settings);
+  assert.equal(boundKeyText(registry, 'AttackMove'), 'A', 'the default before any rebinding');
+  values.set('hotkeys', { attackMove: ['G'], scatter: [] });
+  assert.equal(boundKeyText(registry, 'AttackMove'), 'G', 'a saved rebinding, before the game registered the action');
+  assert.equal(boundKeyText(registry, 'Scatter'), null, 'unbound: the tip reads without a key');
+  registry.registerAction('attackMove', undefined, () => {}, { openra: 'AttackMove' });
+  values.set('hotkeys', { attackMove: ['K'] });
+  registry.changed();
+  assert.equal(boundKeyText(registry, 'AttackMove'), 'K', 'the live binding once registered');
+  assert.equal(boundKeyText(null, 'Guard'), 'D');
+});
+
+test('end of game and loading effects: endless animations move layers (transform, opacity), never repaint the screen', async () => {
+  const { readFileSync } = await import('node:fs');
+  for (const file of ['endgame.css', 'loading.css']) {
+    const css = readFileSync(new URL(`../css/${file}`, import.meta.url), 'utf8');
+    const keyframes = new Map([...css.matchAll(/@keyframes ([a-z-]+) \{([\s\S]*?)\n\}/g)].map((m) => [m[1], m[2]]));
+    for (const [, name] of css.matchAll(/([a-z-]+) [\d.]+m?s[^;,]*infinite/g)) {
+      const body = keyframes.get(name);
+      assert.ok(body, `${file}: ${name} is defined`);
+      const props = [...body.matchAll(/^\s+([a-z-]+):/gm)].map((m) => m[1]);
+      assert.ok(props.every((p) => ['transform', 'opacity', 'clip-path', 'background-position'].includes(p)), `${file}: ${name} animates ${props.join(', ')}`);
+      if (file === 'endgame.css') assert.ok(!props.includes('background-position'), `${file}: ${name} moves a layer instead of repainting it`);
+      assert.ok(!props.includes('text-shadow'), `${file}: ${name} is a finite glow`);
+    }
   }
 });

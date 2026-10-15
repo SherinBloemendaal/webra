@@ -16,15 +16,18 @@
 // js/loadingboard.js adds the emblem, the kind of game, the map's name, the
 // players by side and the tips around the steps. The screen always shows,
 // also for a quick start, for at least LOADING_MIN_MS: the bar's animation
-// (its stripes fill it in that time, never ahead of the real steps). The
-// close after the first frame is the stylesheet's (css/loading.css: the
-// fade of LOADING_FADE_MS on `#loading.is-closing`, after the delay
-// --loading-hold, which done() sets to what is left of the least time), so
-// a close that waits for the stylesheet's transition (the start gate) waits
-// for both. The spinner, the bar and the entrance stand still with "Reduce
-// motion" (the setting or the browser's); there is no hold then. While loading the section is aria-busy, the step is a
-// polite status line and the bar a progressbar; an error is an alert and
-// takes the focus.
+// (its stripes reveal it in that time, never ahead of the real steps).
+// done() only says how much of that time is left, as --loading-hold on the
+// section: css/loading.css makes it the delay of the fade (LOADING_FADE_MS)
+// on `#loading.is-closing`. The close itself is the start gate's
+// (work/startgate: done() adds .is-closing and waits for the stylesheet's
+// transition, its duration plus its delay, before the screen hides and the
+// game begins), so with it the screen waits out the rest of the least time
+// and then fades. Until then done() hides the screen at once. With "Reduce
+// motion" (the setting or the browser's) the spinner, the bar and the
+// entrance stand still and there is no hold and no fade. While loading the
+// section is aria-busy, the step is a polite status line and the bar a
+// progressbar; an error is an alert and takes the focus.
 
 /** The least time the screen shows (the bar's fill animation, css/loading.css --loading-min). */
 export const LOADING_MIN_MS = 1600;
@@ -263,7 +266,8 @@ export class LoadingScreen {
     this.bar.setAttribute('aria-valuenow', '100');
     this.bar.setAttribute('aria-valuetext', 'Ready');
     this.status.textContent = 'Ready. Starting the game';
-    // The least showing time left: the delay of the stylesheet's close (css/loading.css #loading.is-closing).
+    // The least showing time left: the delay of the fade on #loading.is-closing (css/loading.css),
+    // which the start gate's close waits for. Set before .is-closing goes on.
     this.root.style.setProperty('--loading-hold', `${this.holdMs()}ms`);
     this.close();
   }

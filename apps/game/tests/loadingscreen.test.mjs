@@ -210,12 +210,17 @@ test('the least showing time (LOADING_MIN_MS, the bar\'s animation) is the delay
   assert.equal(screen.holdMs(), LOADING_MIN_MS - 400);
   screen.done();
   assert.equal(root.style.getPropertyValue('--loading-hold'), `${LOADING_MIN_MS - 400}ms`);
-  assert.equal(root.querySelector('.loading-status'), null, 'the card is emptied once it is gone');
   // A slow start: no hold.
   screen.begin(loadingPlan('skirmish'));
   clock.now += LOADING_MIN_MS + 5000;
   screen.done();
   assert.equal(root.style.getPropertyValue('--loading-hold'), '0ms');
+  // The hold is the fade's delay on #loading.is-closing: a close that waits for the stylesheet's
+  // transition (its duration plus its delay, the start gate's) waits for the least time too.
+  const css = readFileSync(new URL('../css/loading.css', import.meta.url), 'utf8');
+  const closing = /#loading\.is-closing \{([^}]*)\}/.exec(css)[1];
+  assert.match(closing, /opacity: 0;/, 'a property that changes, so transitionend fires');
+  assert.match(closing, /transition: opacity var\(--loading-fade\) ease-in var\(--loading-hold, 0ms\);/);
   assert.ok(LOADING_FADE_MS > 0);
   uninstallDom();
 });

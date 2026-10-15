@@ -2,11 +2,31 @@
 // screens/LoadingTips): one action per tip, at most two lines, only what the
 // game really does. A tip may start with a hotkey (`hotkey`: its OpenRA name,
 // js/openra-hotkeys.js), shown in the tooltip yellow as the player's own
-// binding (js/hotkeys.js boundKey), or with a fixed key name (`key`).
+// binding (js/loadingboard.js boundKeyText), or with a fixed key name (`key`).
 //
 // The screen shows them in turn: the one after the last shown, which the
 // settings keep (`guide.lastTip`, js/registry.js), and moves on every
 // TIP_MS. Pure: no DOM here (js/loadingboard.js draws them).
+
+/**
+ * The game's hotkey action (js/hotkeys.js registry names: js/input.js,
+ * js/commandbar.js, js/gamekeys.js) of each OpenRA hotkey a tip names, so the
+ * tip shows the key the player bound.
+ */
+export const TIP_ACTIONS = Object.freeze({
+  Production01: 'production01',
+  PowerDown: 'powerDown',
+  AttackMove: 'attackMove',
+  Guard: 'guard',
+  Stop: 'stop',
+  Scatter: 'scatter',
+  Deploy: 'deploy',
+  CycleBase: 'base',
+  ToLastEvent: 'toLastEvent',
+  ToSelection: 'toSelection',
+  SelectAllUnits: 'selectAll',
+  SelectUnitsByType: 'selectByType',
+});
 
 /** A tip stays this long before the next one. */
 export const TIP_MS = 5000;

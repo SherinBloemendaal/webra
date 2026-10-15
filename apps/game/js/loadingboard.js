@@ -15,8 +15,8 @@
 // are CSS (css/loading.css); "Reduce motion" (.is-still or the browser's)
 // leaves them out. DOM through createElement and textContent only.
 
-import { formatCombo, openraDefaults } from './hotkeys.js';
-import { TIPS, TIP_MS, nextTipIndex, stepTip, tipParts } from './tips.js';
+import { boundKey, formatCombo, normalizeCombo, openraDefaults } from './hotkeys.js';
+import { TIPS, TIP_ACTIONS, TIP_MS, nextTipIndex, stepTip, tipParts } from './tips.js';
 
 /** The countries' names (protocol PLAYABLE_FACTIONS) and their side. */
 const COUNTRIES = Object.freeze({
@@ -101,7 +101,10 @@ export function versusText(sides) {
 export function describeStart(spec, { title = null, colorOf = () => null } = {}) {
   const options = spec.options ?? spec.replay?.options ?? null;
   const viewer = spec.kind === 'replay';
-  const you = viewer ? null : Number.isInteger(spec.player) ? spec.player : null;
+  // The local player: the start's own (a skirmish, an online game), a save's recording player
+  // (replay files keep it); a replay watches. Missions list no players, so they show no sides.
+  const own = Number.isInteger(spec.player) ? spec.player : Number.isInteger(spec.replay?.player) ? spec.replay.player : null;
+  const you = viewer ? null : own;
   const sides = options?.players ? startSides(options.players, { you, colorOf }) : [];
   const kind = KINDS[spec.kind] ?? null;
   const versus = versusText(sides);
@@ -128,6 +131,24 @@ export function defaultKeyText(name) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The key the player bound to the action of OpenRA hotkey `name` (tips.js
+ * TIP_ACTIONS) in `registry` (js/hotkeys.js HotkeyRegistry): the live
+ * binding once the game registered the action (boundKey), before that the
+ * saved rebinding (an empty one: unbound, null), else the default.
+ */
+export function boundKeyText(registry, name) {
+  const action = TIP_ACTIONS[name];
+  if (!action || !registry) return defaultKeyText(name);
+  if (registry.actions?.has(action)) return boundKey(registry, action);
+  const saved = registry.overrides?.()[action];
+  if (Array.isArray(saved)) {
+    const combo = saved.map(normalizeCombo).find(Boolean);
+    return combo ? formatCombo(combo) : null;
+  }
+  return defaultKeyText(name);
 }
 
 export class LoadingBoard {

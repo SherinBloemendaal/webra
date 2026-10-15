@@ -106,7 +106,7 @@ import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
 import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
-import { LoadingBoard, colorCss, describeStart } from './loadingboard.js';
+import { LoadingBoard, boundKeyText, colorCss, describeStart } from './loadingboard.js';
 import { GameSession } from './gamesession.js';
 
 const PLAYER = 0;
@@ -194,7 +194,11 @@ async function boot() {
   loader = new LoadingScreen($('loading'), {
     reducedMotion: motionIsReduced,
     // The board around the steps (js/loadingboard.js): the tips go on where the last start left them (guide.lastTip).
-    board: new LoadingBoard({ tips: { get: () => defaultRegistry().get('guide', 'lastTip'), set: (i) => defaultRegistry().set('guide', 'lastTip', i) } }),
+    board: new LoadingBoard({
+      tips: { get: () => defaultRegistry().get('guide', 'lastTip'), set: (i) => defaultRegistry().set('guide', 'lastTip', i) },
+      // A tip's key is the one the player bound (js/hotkeys.js).
+      keyText: (name) => boundKeyText(hotkeys, name),
+    }),
   });
   perfTrace.onSpan = (name) => loader.span(name);
   setupAudio();
@@ -2003,7 +2007,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         network: online?.net?.quality ? () => netStatsData(online.net) : undefined,
         tickMs,
         openReplayAt: online && recorder && records ? (tick) => openReplayAt(recorder, tick, () => online.onQuit()) : undefined,
-        canOpenReplay: () => over,
+        canOpenReplay: () => flow.over,
         stallNote: () => (recorder ? 'The replay opens here once the game is over.' : 'This game has no replay.'),
       }));
   const openStats = () => statsScreen?.open();

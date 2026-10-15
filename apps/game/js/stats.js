@@ -20,7 +20,8 @@
 // window capture listener stops them, and the screen stops what bubbles out
 // of it). An open select list gets every key (it stops Esc itself, so Esc
 // closes only the list); the tab list and a stepper get their arrow, Home,
-// End and Page keys; Esc anywhere else closes the screen.
+// End and Page keys, a closed select plate those and typed letters (they
+// open it); Esc anywhere else closes the screen.
 
 import { formatMoney } from './observer.js';
 import { selectPlate } from './ui/controls.js';
@@ -35,15 +36,22 @@ const LIST = '[role="listbox"], .ui-sp-panel';
 const MOVERS = '[role="tablist"], [role="spinbutton"]';
 const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
 
+/** A closed select plate: the arrows, Home and End and typing open it (typeahead). */
+const PLATE_BUTTON = '.ui-sp-button';
+
 /**
  * Whether a key belongs to the control it was pressed in (the screen's key
  * handler then lets it through untouched): every key in an open select
- * list, the moving keys in a tab list or a stepper. Esc there is the screen's.
+ * list, the moving keys in a tab list or a stepper, the moving keys and
+ * typed letters on a closed select plate. Esc there is the screen's.
  */
 export function keyForControl(e) {
   const t = e.target;
   if (t?.closest?.(LIST)) return true;
-  return MOVE_KEYS.has(e.key) && !!t?.closest?.(MOVERS);
+  if (MOVE_KEYS.has(e.key) && t?.closest?.(MOVERS)) return true;
+  if (!t?.closest?.(PLATE_BUTTON)) return false;
+  const typed = typeof e.key === 'string' && e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey;
+  return MOVE_KEYS.has(e.key) || typed;
 }
 
 export const STATS_TABS = Object.freeze([

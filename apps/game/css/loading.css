@@ -7,10 +7,13 @@
    steps as lamps and the tip.
 
    Timing (js/loadingscreen.js keeps the same numbers): the screen shows at
-   least --loading-min, the bar's fill animation; after the first frame
-   #loading.is-closing waits out the rest (--loading-hold, set from script)
-   and fades out in --loading-fade. The entrance plays once, within the least time. "Reduce
-   motion" (.is-still, or the browser's) leaves every animation out. */
+   least --loading-min, the bar's reveal animation. At the first frame the
+   script sets --loading-hold to what is left of it; the start gate's close
+   puts .is-closing on #loading and waits for its transition, duration and
+   delay, so the screen waits out the hold and then fades out in
+   --loading-fade. The entrance plays once, within the least time. "Reduce
+   motion" (.is-still, or the browser's) leaves every animation out, the
+   hold and the fade too. */
 
 #loading {
   --loading-min: 1600ms;
@@ -51,9 +54,10 @@
   animation: loading-sweep 3.2s linear infinite;
 }
 
-/* The close after the first frame (js/loadingscreen.js adds .is-closing and
-   waits for this transition): after the rest of the least time
-   (--loading-hold), the whole screen fades out. */
+/* The close after the first frame (the start gate's: it adds .is-closing
+   and waits for this transition, its duration plus its delay, before the
+   screen hides): the rest of the least time (--loading-hold) is the delay,
+   then the whole screen fades out. Opacity changes, so transitionend fires. */
 #loading.is-closing {
   opacity: 0;
   transition: opacity var(--loading-fade) ease-in var(--loading-hold, 0ms);
@@ -250,7 +254,7 @@
   letter-spacing: 0.04em;
   animation:
     loading-punch 0.7s 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both,
-    loading-glow 2.4s 1.6s ease-in-out infinite;
+    loading-glow 2.4s 1.6s ease-in-out 3;
 }
 
 /* ---- Bottom: step, bar, steps, tip --------------------------------------------- */

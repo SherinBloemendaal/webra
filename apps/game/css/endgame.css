@@ -113,10 +113,17 @@
   display: block;
 }
 
+/* Scan lines: a layer one stripe taller than the screen moves down by one
+   stripe and starts over, a transform only (the compositor moves it; no
+   repaint of the screen per frame). */
 .endgame-scan {
   display: none;
-  inset: 0;
+  top: -6px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 2px, transparent 2px 6px);
+  will-change: transform;
   animation: endgame-scan 0.4s linear infinite;
 }
 
@@ -169,7 +176,7 @@
 .endgame-card h1.endgame-title {
   animation:
     endgame-slam 0.75s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both,
-    endgame-glow 2.6s 1.2s ease-in-out infinite;
+    endgame-glow 2.6s 1.2s ease-in-out 3;
 }
 
 /* The defeat's glitch: a blue copy over the title, shown in short cuts. */
@@ -441,11 +448,11 @@
 
 @keyframes endgame-scan {
   from {
-    background-position: 0 0;
+    transform: translateY(0);
   }
 
   to {
-    background-position: 0 6px;
+    transform: translateY(6px);
   }
 }
 

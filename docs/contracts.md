@@ -3499,9 +3499,10 @@ NetStats in code.
 
 - **Start menu** (`js/startmenu.js`, `css/startmenu.css`): the menu bar
   pattern; `#start-online` says how many players are online from
-  `onlineCount()` (main.js: `net.js api.online()`, `/api/online`, protocol
-  8), asked when the menu mounts and every `ONLINE_REFRESH_MS` (60 s) while
-  the start screen shows; hidden without a count.
+  `onlineCount()` (main.js calls `net.js api.online?.()`, which the protocol
+  8 round adds for `/api/online`; without it the line stays hidden), asked
+  when the menu mounts and every `ONLINE_REFRESH_MS` (60 s) while the start
+  screen shows.
 - **Skirmish** (`js/lobby.js`): select plates everywhere (also the game mode
   list, `js/modepicker.js`, and the bulk action list, `js/lobby-bulkbar.js`,
   shared with the online lobby; screens call `destroy()` on rebuilt rows'
@@ -3514,12 +3515,16 @@ NetStats in code.
   `js/tips.js`, `css/loading.css`): `LoadingScreen.describe(describeStart(spec))`
   (main.js `launch` and `createOnlineGame`) shows the kind of game, the map's
   name and the sides. Tips go on in turn from `guide.lastTip` + 1 every
-  `TIP_MS` (5 s); the last one shown is stored when the screen goes. The
-  screen shows at least `LOADING_MIN_MS` (1600 ms, the bar's reveal
-  animation, `--loading-min`): `done()` sets `--loading-hold` to what is left
-  of it, the delay of the fade (`LOADING_FADE_MS`, 300 ms,
-  `--loading-fade`) on `#loading.is-closing`, so a close that waits for the
-  stylesheet's transition waits for both. Reduce motion: no hold, no fade.
+  `TIP_MS` (5 s, keys as the player bound them); the last one shown is
+  stored when the screen goes. The screen shows at least `LOADING_MIN_MS`
+  (1600 ms, the bar's reveal animation, `--loading-min`): at the first frame
+  `done()` sets `--loading-hold` to what is left of it, and the stylesheet
+  makes that the delay of the fade (`LOADING_FADE_MS`, 300 ms,
+  `--loading-fade`, opacity 1 to 0) on `#loading.is-closing`. The close is
+  the start gate's: it adds `.is-closing` and waits for that transition, its
+  duration plus its delay, before the screen hides and the game begins; so
+  the screen waits out the hold, then fades. Without the start gate the
+  screen hides at the first frame. Reduce motion: no hold, no fade.
 - **End of game** (`js/endgame.js`): `EndGameDialog` takes `report()` (the
   parsed `observer_report`), `players`, `localPlayer` and `reducedMotion`;
   its `context()` adds `replay` (`saving`, `saved`, `failed` or null: main.js
