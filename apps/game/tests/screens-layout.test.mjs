@@ -199,17 +199,11 @@ test('online lobby: the options get their own column only on wide cards, spannin
   assert.equal(opts['grid-column'], '2');
 });
 
-test('campaign: the preview goes beside the briefing once the mission column is 760 px wide', () => {
-  const wide = atWidth('campaign.css', /^@container campaign \(min-width/);
-  const cols = base('.campaign-body')['grid-template-columns'];
-  const [, pct, cap] = /min\((\d+)%, (\d+)px\)/.exec(cols).map(Number);
-  const list = Math.min((wide * pct) / 100, cap);
-  assert.ok(wide - list - px(base('.campaign-body').gap) >= 760, `mission column at ${wide}`);
-  const rules = inAt('campaign.css', /^@container campaign/);
-  const rows = rules.find((r) => r.sel === '.campaign-details').decls['grid-template-rows'];
-  // canvas, title, side, briefing, options, note, Play: six beside the preview.
-  assert.equal(rows, 'repeat(6, auto) 1fr');
-  assert.equal(rules.find((r) => r.sel === '.campaign-details > .campaign-preview').decls['grid-row'], '1 / -1');
+test('campaign: missions beside the briefing, one column on a narrow card; the briefing wraps its map under the text', () => {
+  assert.match(base('.campaign-body')['grid-template-columns'], /^minmax\(0, min\(40%, 420px\)\) minmax\(0, 1fr\)$/);
+  const one = inAt('campaign.css', /^@container campaign \(max-width: 760px\)/).find((r) => r.sel === '.campaign-body');
+  assert.equal(one.decls['grid-template-columns'], 'minmax(0, 1fr)');
+  assert.equal(base('.campaign-brief')['flex-wrap'], 'wrap', 'the map goes under the text when the column is narrow');
 });
 
 test('measure: running text in the wide cards keeps a readable line length', () => {

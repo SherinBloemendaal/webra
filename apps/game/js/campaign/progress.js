@@ -63,6 +63,29 @@ export function nextMission(index, id, progress) {
   return null;
 }
 
+/**
+ * The mission the campaign screen marks NEXT in `campaign`: the one
+ * nextMission() offers after the furthest won mission of the list, else
+ * (nothing won yet, or nothing open after it) the first open mission not won
+ * yet; null when every open mission is won.
+ */
+export function campaignNext(campaign, progress) {
+  const states = campaignStates(campaign, progress);
+  const lastWon = states.findLastIndex((s) => s.won !== null);
+  if (lastWon >= 0) {
+    const after = nextMission({ campaigns: [campaign] }, states[lastWon].mission.id, progress);
+    if (after && typeof progress[after.id] !== 'string') return after;
+  }
+  return states.find((s) => s.open && s.won === null)?.mission ?? null;
+}
+
+/** "won", "next", "open" or "locked": how the campaign screen shows a mission of campaignStates(). */
+export function missionStatus(state, next) {
+  if (state.won !== null) return 'won';
+  if (!state.open) return 'locked';
+  return next && state.mission.id === next.id ? 'next' : 'open';
+}
+
 /** The campaign entry of mission `id` in `index`, with its campaign: `{ campaign, mission }` or null. */
 export function findMission(index, id) {
   for (const campaign of index.campaigns) {

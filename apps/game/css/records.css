@@ -7,24 +7,37 @@
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
   padding: 18px 20px;
-  background: #1b1f19;
-  color: var(--text);
-  border: 1px solid #000;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
   border-top: 3px solid var(--ui-accent);
-  border-radius: 2px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    var(--ui-bevel),
+    var(--ui-shadow);
+  font: 400 var(--ui-fs-body) / var(--ui-lh-body) var(--ui-font);
 }
 
 .records-dialog::backdrop {
   background: rgba(0, 0, 0, 0.6);
 }
 
+/* The title, and on the list screens the tabs on the same row. */
+.records-dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
 .records-dialog-title {
-  margin: 0 0 12px;
-  font-size: 14px;
-  letter-spacing: 1.5px;
+  margin: 0;
+  color: var(--ui-text);
+  font: 700 var(--ui-fs-title) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
   text-transform: uppercase;
-  color: var(--ui-accent-hi);
 }
 
 .records-dialog-body {
@@ -32,70 +45,41 @@
   gap: 12px;
 }
 
-.records-dialog button {
+/* The compact dialogs' buttons (the modded map warning). */
+.records-dialog button:not(.ui-btn):not(.ui-tab):not(.records-row) {
+  min-height: var(--ctl-row, 2.25rem);
   padding: 6px 12px;
-  background: #2a3123;
-  color: var(--text);
-  border: 1px solid #4a5540;
-  border-radius: 2px;
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  font: 700 1em / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
   cursor: pointer;
 }
 
-.records-dialog button.records-primary {
+.records-dialog button.records-danger {
   background: var(--ui-primary-fill);
-  border-color: var(--ui-edge);
   color: #fff;
 }
 
-.records-dialog button.records-primary:hover:not(:disabled) {
-  background: var(--ui-primary-fill-hover);
-}
-
-.records-dialog button.records-primary:active:not(:disabled) {
-  background: var(--ui-primary-fill-active);
-}
-
-.records-dialog button.records-danger {
-  background: #7a2a20;
-  border-color: #a63a2c;
-}
-
-.records-list {
-  display: grid;
-  gap: 6px;
-  max-height: 50vh;
-  overflow: auto;
-}
-
-.records-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 8px;
-  background: #0f120d;
-  border: 1px solid #343b2f;
-}
-
-.records-info {
-  display: grid;
-  min-width: 0;
-}
-
-.records-info strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.records-dialog button:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 .records-muted {
-  color: var(--muted);
-  font-size: 12px;
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
 }
 
 .records-warning {
-  color: #e8a23a;
-  font-size: 12px;
+  margin: 0;
+  color: var(--ui-warn);
+  font-size: 13px;
 }
 
 /* What a modded map's rules change (js/maprules.js). */
@@ -115,10 +99,10 @@
   flex-wrap: wrap;
 }
 
-/* ---- Load game: a screen card (js/records.js dialog `screen`) --------------------
+/* ---- Load game and Replays: screen cards (js/records.js dialog `screen`) ----------
    The window less --ui-screen-gap (theme.css) on every side, over the grid
-   of the menu screens; the list takes the height and scrolls. The backdrop
-   falls back to the plain background where it cannot read the tokens. */
+   of the menu screens; the open tab takes the height and scrolls. The
+   backdrop falls back to the plain background where it cannot read the tokens. */
 
 .records-dialog.records-screen {
   position: fixed;
@@ -143,15 +127,16 @@
   background: var(--ui-screen-bg, var(--ui-bg, #0a0c0f));
 }
 
+.records-screen .records-dialog-title {
+  font-size: clamp(26px, 4cqi, 40px);
+  letter-spacing: 0.08em;
+}
+
 .records-screen .records-dialog-body {
   flex: 1;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto auto;
-}
-
-.records-screen .records-list {
-  max-height: none;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
 }
 
 .records-screen .records-muted,
@@ -159,17 +144,342 @@
   max-width: var(--ui-measure);
 }
 
-/* Wide: the name and the details of a save on one line. */
-@container records (min-width: 720px) {
-  .records-screen .records-info {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 2px 16px;
+/* The tabs: plates in a well, the open one red with its lamp lit. */
+.records-tabs.ui-tabs {
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 2px;
+  overflow: visible;
+  background: var(--ui-well);
+  border: 1px solid var(--ui-edge);
+}
+
+.records-tabs > .ui-tab {
+  min-height: max(var(--ctl-row), 36px);
+  margin: 0;
+  padding: 0 14px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: 0;
+  color: var(--ui-muted);
+  font: 700 15px / 1.1 var(--ui-font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.records-tabs > .ui-tab[aria-selected='true'] {
+  background: var(--ui-primary-fill);
+  color: #fff;
+}
+
+.records-panel,
+.records-file {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.records-panel[hidden],
+.records-file[hidden] {
+  display: none;
+}
+
+.records-file {
+  align-items: flex-start;
+}
+
+.records-status:empty {
+  display: none;
+}
+
+/* The account's storage: the numbers, a bar, how long replays are kept. */
+.records-usage {
+  display: grid;
+  gap: 6px;
+  max-width: 560px;
+}
+
+.records-usage[hidden] {
+  display: none;
+}
+
+.records-usage-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--ui-muted);
+  font-size: 14px;
+}
+
+.records-usage-text {
+  color: var(--ui-text);
+  font-size: 13px;
+}
+
+.records-usage-bar.ui-progress {
+  height: 10px;
+}
+
+.records-usage-bar.records-usage-full::before {
+  background: repeating-linear-gradient(-45deg, var(--ui-warn) 0 5px, #b07a1c 5px 10px);
+}
+
+/* ---- The list and the chosen record ------------------------------------------------ */
+
+.records-browser {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.records-main {
+  flex: 3 1 480px;
+  min-width: 0;
+}
+
+.records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.records-list[hidden],
+.records-empty[hidden],
+.records-detail[hidden] {
+  display: none;
+}
+
+.records-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: max(var(--ctl-row), 52px);
+  padding: 8px 14px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.records-pictures .records-row {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  padding-left: 8px;
+}
+
+.records-row:hover {
+  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+}
+
+.records-row:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+/* The chosen record: red, and a bar on its left edge as the second signal. */
+.records-row[aria-current='true'] {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  box-shadow: inset 4px 0 0 var(--ui-accent-hi);
+}
+
+.records-thumb {
+  display: block;
+  width: 72px;
+  height: 54px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #000;
+  border: 1px solid var(--ui-edge);
+}
+
+/* No picture (older saves): a plain hatched plate. */
+.records-thumb-none {
+  background: repeating-linear-gradient(-45deg, var(--ui-metal-1) 0 6px, var(--ui-metal-0) 6px 12px);
+}
+
+.records-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.records-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.records-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-muted);
+  font: 600 13px / 1.2 var(--ui-font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.records-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.records-when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.records-time {
+  font-size: 14px;
+}
+
+.records-date {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.records-empty {
+  padding: 16px 0;
+}
+
+.records-detail {
+  position: sticky;
+  top: 0;
+  flex: 1 1 320px;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+}
+
+.records-detail-title {
+  margin: 0;
+  font: 700 24px / 1.1 var(--ui-font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.records-detail-thumb {
+  display: block;
+  width: 100%;
+  height: 170px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #000;
+  border: 1px solid var(--ui-edge);
+}
+
+.records-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.records-facts dt {
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+.records-facts dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.records-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.records-main-action {
+  flex: 1;
+}
+
+.records-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.records-delete-question {
+  color: var(--ui-warn);
+  font-size: 14px;
+}
+
+/* A narrow card: the details under the list, not sticky. */
+@container records (max-width: 760px) {
+  .records-detail {
+    position: static;
+  }
+}
+
+/* Phones: the date under the name instead of a column of its own. */
+@container records (max-width: 480px) {
+  .records-row,
+  .records-pictures .records-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .records-screen .records-info strong {
-    flex: 0 1 min(40%, 360px);
+  .records-pictures .records-row {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .records-when {
+    grid-column: -2 / -1;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+  }
+}
+
+@media (forced-colors: active) {
+  .records-row,
+  .records-detail,
+  .records-tabs > .ui-tab {
+    border: 1px solid ButtonText;
+  }
+
+  .records-row[aria-current='true'],
+  .records-tabs > .ui-tab[aria-selected='true'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
   }
 }
 
@@ -379,69 +689,197 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* ---- Replay bar ------------------------------------------------------------------- */
+/* ---- Replay bar (the Replay board's transport) ------------------------------------
+   Docked at the bottom of the battlefield: play, the speeds, the seek bar
+   with its marks and the time, Download and Exit. It wraps to more rows on
+   phones; the chat above it follows its height (--replay-bar-height, js/main.js). */
 
 .replay-bar {
   position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 6;
-  width: min(760px, calc(100% - 16px));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-  color: #dfe6d4;
-  font: 12px system-ui, sans-serif;
+  gap: 10px 14px;
+  padding: 8px max(14px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  background: var(--ui-panel);
+  border-top: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-text);
+  font: 400 var(--ui-fs-m) var(--ui-font);
 }
 
-.replay-bar button {
-  padding: 3px 9px;
-  background: #2a3123;
-  color: inherit;
-  border: 1px solid #4a5540;
-  border-radius: 2px;
+/* Play, pause and restart: drawn shapes in the button's text colour. */
+.replay-play.ui-btn {
+  width: max(var(--ctl-row), 44px);
+  min-height: max(var(--ctl-row), 44px);
+  padding: 0;
+}
+
+.replay-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+}
+
+.replay-icon[data-icon='play'] {
+  clip-path: polygon(15% 5%, 95% 50%, 15% 95%);
+}
+
+.replay-icon[data-icon='pause'] {
+  clip-path: polygon(10% 5%, 40% 5%, 40% 95%, 10% 95%, 10% 5%, 60% 5%, 90% 5%, 90% 95%, 60% 95%, 60% 5%);
+}
+
+/* Restart: a bar and a triangle pointing back. */
+.replay-icon[data-icon='restart'] {
+  clip-path: polygon(5% 5%, 25% 5%, 25% 45%, 95% 5%, 95% 95%, 25% 55%, 25% 95%, 5% 95%);
+}
+
+/* The speeds: a row of plates in a well, the chosen one red with its lamp lit. */
+.replay-speeds {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--ui-well);
+  border: 1px solid var(--ui-edge);
+}
+
+.replay-speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: max(var(--ctl-row), 34px);
+  padding: 0 10px;
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  border: 1px solid var(--ui-edge);
+  color: var(--ui-muted);
+  font: 600 13px / 1 var(--ui-font-mono);
   cursor: pointer;
 }
 
-.replay-bar button[aria-pressed='true'] {
-  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
-  border-color: var(--ui-accent-hi);
+.replay-speed:hover {
+  color: var(--ui-text);
+}
+
+.replay-speed[aria-pressed='true'] {
+  background: var(--ui-primary-fill);
   color: #fff;
 }
 
-.replay-speeds {
+.replay-speed:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.replay-speed > .ui-led {
+  width: 6px;
+  height: 6px;
+}
+
+.replay-seekbox {
+  flex: 1 1 320px;
+  min-width: 0;
   display: flex;
-  gap: 3px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-track {
+  position: relative;
 }
 
 .replay-seek {
-  flex: 1;
-  min-width: 120px;
+  display: block;
+  width: 100%;
+  margin: 0;
 }
 
-.replay-time {
+/* Marks above the track: what happened where (js/replaymarks.js). */
+.replay-marks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2px;
+  height: 6px;
+  pointer-events: none;
+}
+
+.replay-mark {
+  position: absolute;
+  top: 0;
+  left: var(--at, 0%);
+  width: 2px;
+  height: 6px;
+  margin-left: -1px;
+  background: var(--ui-muted);
+}
+
+.replay-mark-building {
+  background: var(--ui-bad);
+}
+
+/* A defeat: taller, so it reads without its colour too. */
+.replay-mark-defeat {
+  top: -3px;
+  height: 9px;
+  width: 3px;
+  background: var(--ui-money);
+}
+
+.replay-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.replay-time,
+.replay-length {
   font-variant-numeric: tabular-nums;
 }
 
 .replay-status {
-  min-width: 7em;
-  color: #ffd27a;
+  color: var(--ui-money);
   font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.replay-end {
+  display: flex;
+  gap: 8px;
 }
 
 .replay-note {
   flex-basis: 100%;
-  color: #e8a23a;
+  color: var(--ui-warn);
 }
 
 .replay-note:empty {
   display: none;
+}
+
+@media (forced-colors: active) {
+  .replay-bar {
+    border-top: 1px solid CanvasText;
+  }
+
+  .replay-icon,
+  .replay-mark {
+    forced-color-adjust: none;
+    background: ButtonText;
+  }
+
+  .replay-speed[aria-pressed='true'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
 }
 
 /* ---- Progress while fast-forwarding ------------------------------------------------- */

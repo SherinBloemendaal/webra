@@ -13,13 +13,16 @@ import { MissionFeed } from '../js/sim/proxy.js';
 import { newGame, ReplayController } from '../js/replay.js';
 import { parseReplay } from '../js/protocol.js';
 import { campaignRecord, missionRecord, saveRestart, takeRestart } from '../js/restart.js';
-import { campaignStates, chapterOf, CampaignProgress, findMission, nextMission } from '../js/campaign/progress.js';
+import { campaignNext, campaignStates, chapterOf, CampaignProgress, findMission, missionStatus, nextMission } from '../js/campaign/progress.js';
 import { MissionView, movieTitle, objectiveLabel } from '../js/campaign/view.js';
-import { CampaignMenu, optionLabel, stateText } from '../js/campaign/menu.js';
+import { CampaignMenu, campaignCount, missionKicker, missionLabel, optionLabel, SEGMENTED_MAX, stateText } from '../js/campaign/menu.js';
 import { dialogContent, DIALOGS, EndGameFlow } from '../js/endgame.js';
 import { spriteList } from '../js/sprites.js';
 import { createRegistry } from '../js/registry.js';
-import { FakeEvent, installDom, memoryStorage, uninstallDom } from './dom-fixtures.mjs';
+import { click, FakeEvent, installDom, memoryStorage, uninstallDom } from './dom-fixtures.mjs';
+import { GAME_SPEEDS } from '../protocol/constants.js';
+
+const GAME_SPEED_COUNT = GAME_SPEEDS.length;
 
 const wasm = initSync({ module: readFileSync(WASM_PATH) });
 const MISSIONS = new URL('../missions/', import.meta.url);
@@ -56,6 +59,38 @@ test('the next mission is the first open one of a later chapter', () => {
   assert.equal(findMission(INDEX, 'nope'), null);
 });
 
+test('the campaign screen marks the mission after the furthest won one as NEXT', () => {
+  const allies = INDEX.campaigns.find((c) => c.name === 'Allied Campaign');
+  assert.equal(campaignNext(allies, {}).id, 'allies-01', 'nothing won: the first open mission');
+  assert.equal(campaignNext(allies, { 'allies-01': '' }).id, 'allies-02');
+  // Both variants of chapter 3 are open; NEXT is the first of them.
+  assert.equal(campaignNext(allies, { 'allies-01': '', 'allies-02': 'easy' }).id, 'allies-03a');
+  // A variant won: the next chapter, not the other variant.
+  assert.equal(campaignNext(allies, { 'allies-01': '', 'allies-02': 'easy', 'allies-03b': 'easy' }).id, 'allies-04');
+  // The operations are open from the start: after the furthest won one, even with earlier ones left.
+  const cs = INDEX.campaigns.find((c) => c.name === 'Counterstrike Allied Missions');
+  const [first, second, third] = cs.missions;
+  assert.equal(campaignNext(cs, { [second.id]: '' }).id, third.id);
+  assert.equal(campaignNext(cs, Object.fromEntries(cs.missions.slice(1).map((m) => [m.id, '']))).id, first.id, 'the last one won: the first left');
+  assert.equal(campaignNext(cs, Object.fromEntries(cs.missions.map((m) => [m.id, '']))), null, 'all won');
+  const states = campaignStates(allies, { 'allies-01': '' });
+  const next = campaignNext(allies, { 'allies-01': '' });
+  assert.deepEqual(
+    states.slice(0, 4).map((s) => missionStatus(s, next)),
+    ['won', 'next', 'locked', 'locked'],
+  );
+  assert.equal(missionStatus(campaignStates(cs, {})[1], campaignNext(cs, {})), 'open');
+  assert.deepEqual(campaignCount(allies, { 'allies-01': '', 'allies-02': 'hard' }), { won: 2, total: allies.missions.length, text: `2 / ${allies.missions.length} won`, share: 2 / allies.missions.length });
+});
+
+test('mission labels: the number and name of numbered titles, the place in the list for others', () => {
+  assert.deepEqual(missionLabel('03a: Dead End', 2), { number: '03a', name: 'Dead End' });
+  assert.deepEqual(missionLabel('Sarin Gas 1: Crackdown', 0), { number: '01', name: 'Sarin Gas 1: Crackdown' });
+  assert.deepEqual(missionLabel('Fall of Greece 2', 11), { number: '12', name: 'Fall of Greece 2' });
+  assert.equal(missionKicker({ title: '05a: Tanya\'s Tale', faction: 'allies' }), 'Allied mission, chapter 5');
+  assert.equal(missionKicker({ title: 'Crackdown', faction: 'soviet' }), 'Soviet mission');
+});
+
 test('progress lives in the settings registry', () => {
   const registry = createRegistry({ storage: memoryStorage() });
   const p = new CampaignProgress(registry);
@@ -70,7 +105,9 @@ test('progress lives in the settings registry', () => {
   assert.deepEqual(seen, p.get());
   assert.equal(stateText({ mission: allMissions()[1], won: 'hard', open: true }), 'Won on Hard');
   assert.equal(stateText({ mission: allMissions()[0], won: '', open: true }), 'Won');
-  assert.equal(stateText({ mission: allMissions()[2], won: null, open: false }), 'Closed');
+  assert.equal(stateText({ mission: allMissions()[2], won: null, open: false }), 'Locked');
+  assert.equal(stateText({ mission: allMissions()[2], won: null, open: true }, allMissions()[2]), 'Next');
+  assert.equal(stateText({ mission: allMissions()[2], won: null, open: true }, null), '');
   assert.equal(optionLabel(allMissions()[1], 'difficulty', 'tough'), 'Real tough guy');
 });
 
@@ -267,7 +304,7 @@ test('the mission view shows objectives, messages, the mission text, movie cards
   }
 });
 
-test('the campaign screen lists campaigns and missions, keeps chapters closed and plays the chosen mission', async () => {
+test('the campaign screen lists campaigns and missions, keeps chapters locked and plays the chosen mission', async () => {
   const doc = installDom();
   try {
     const root = doc.createElement('section');
@@ -288,25 +325,49 @@ test('the campaign screen lists campaigns and missions, keeps chapters closed an
     assert.equal(menu.isOpen, true);
     const tabs = root.querySelectorAll('.campaign-tab');
     assert.equal(tabs.length, INDEX.campaigns.length);
+    assert.equal(tabs[0].getAttribute('role'), 'tab');
+    assert.equal(tabs[0].getAttribute('title'), `0 of ${INDEX.campaigns[0].missions.length} missions won`);
+    assert.equal(root.querySelector('.campaign-panel').getAttribute('role'), 'tabpanel', 'the missions are the open tab\'s panel');
+    const total = INDEX.campaigns[0].missions.length;
+    assert.equal(root.querySelector('.campaign-count').textContent, `Allied Campaign0 / ${total} won`);
+    assert.equal(root.querySelector('.campaign-progress').getAttribute('aria-valuetext'), `0 of ${total} won`);
     const missions = () => root.querySelectorAll('.campaign-mission');
-    assert.equal(missions()[0].getAttribute('aria-current'), 'true', 'the first open mission is chosen');
-    assert.equal(missions()[1].dataset.state, 'closed');
-    // A closed mission cannot be played.
+    assert.equal(missions()[0].getAttribute('aria-current'), 'true', 'the next mission is chosen');
+    assert.equal(missions()[0].dataset.state, 'next');
+    assert.match(missions()[0].textContent, /^01In the Thick of ItNext$/);
+    assert.equal(missions()[1].dataset.state, 'locked');
+    assert.match(missions()[1].textContent, /Locked$/);
+    // A locked mission shows its briefing but cannot be played, and says why.
     missions()[1].click();
-    const play = () => [...root.querySelectorAll('.campaign-btn-primary')].pop();
+    const play = () => root.querySelector('.campaign-play');
     assert.equal(play().disabled, true);
+    assert.equal(play().getAttribute('aria-describedby'), 'campaign-locked-note');
+    assert.match(root.querySelector('.campaign-kicker').textContent, /Allied mission, chapter 2/);
+    assert.equal(root.querySelector('.campaign-objectives'), null, 'no objectives in the menu');
     // Winning allies-01 opens chapter 2: progress changes redraw the screen.
     progress.won('allies-01', null);
     assert.equal(missions()[0].dataset.state, 'won');
+    assert.equal(missions()[1].dataset.state, 'next');
+    assert.equal(root.querySelector('.campaign-progress').getAttribute('aria-valuenow'), '1');
     missions()[1].click();
-    const selects = root.querySelectorAll('.campaign-select');
-    assert.equal(selects.length, 2, 'difficulty and game speed');
-    selects[0].value = 'hard';
-    selects[0].dispatchEvent(new FakeEvent('change'));
-    selects[1].value = 'fast';
-    selects[1].dispatchEvent(new FakeEvent('change'));
+    // Difficulty (three values): a row of buttons; game speed (six): a select.
+    const difficulty = root.querySelector('.campaign-segmented');
+    assert.equal(difficulty.getAttribute('role'), 'radiogroup');
+    assert.equal(root.querySelectorAll('select').length, 0, 'no native selects');
+    const hard = difficulty.querySelectorAll('input').find((i) => i.getAttribute('value') === 'hard');
+    hard.checked = true;
+    hard.dispatchEvent(new FakeEvent('change'));
+    const speed = root.querySelector('.campaign-plate');
+    assert.ok(GAME_SPEED_COUNT > SEGMENTED_MAX);
+    click(speed.querySelector('.ui-sp-button'));
+    click(speed.querySelectorAll('[role="option"]').find((o) => o.textContent.includes('Fast') && !o.textContent.includes('Faster')));
     play().click();
     assert.deepEqual(played, [['allies-02', { difficulty: 'hard' }, 'fast']]);
+    // The choices stay for the page: a redraw keeps them.
+    progress.won('allies-02', 'hard');
+    missions()[1].click();
+    assert.equal(root.querySelector('.campaign-segmented').querySelectorAll('input').find((i) => i.checked).getAttribute('value'), 'hard');
+    assert.match(root.querySelector('.campaign-plate .ui-sp-value').textContent, /^Fast$/);
     assert.ok(root.querySelector('.info-btn'), 'help buttons');
     menu.close();
     assert.equal(menu.isOpen, false);
@@ -314,6 +375,58 @@ test('the campaign screen lists campaigns and missions, keeps chapters closed an
     // Opening at a mission picks its campaign.
     await menu.open('soviet-01');
     assert.match(root.querySelector('.campaign-tab[aria-selected="true"]').textContent, /Soviet/);
+    // The tabs switch campaigns and pick that campaign's next mission.
+    root.querySelectorAll('.campaign-tab')[0].click();
+    assert.equal(root.querySelector('.campaign-mission[aria-current="true"]').textContent.includes('Tanya'), false);
+    assert.equal(root.querySelector('.campaign-mission[aria-current="true"]').dataset.state, 'next');
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('the campaign screen: the briefing movie plays when installed, else it says how to install it', async () => {
+  const doc = installDom();
+  try {
+    const root = doc.createElement('section');
+    doc.body.append(root);
+    const progress = new CampaignProgress(createRegistry({ storage: memoryStorage() }));
+    const installed = new Set();
+    const played = [];
+    let installs = 0;
+    let changed = null;
+    const menu = new CampaignMenu(root, {
+      index: async () => INDEX,
+      missionText: async (entry) => missionText(entry.id),
+      preview: () => null,
+      progress,
+      onPlay() {},
+      movies: {
+        has: (file) => installed.has(file),
+        play: async (file) => {
+          played.push(file);
+          return 'ended';
+        },
+        subscribe: (fn) => (changed = fn),
+      },
+      onInstallContent: () => installs++,
+    });
+    await menu.open('allies-01');
+    const note = () => root.querySelector('.campaign-movie');
+    assert.equal(note().dataset.state, 'missing');
+    assert.match(note().textContent, /Original movie not installed/);
+    click(note().querySelector('.campaign-install'));
+    assert.equal(installs, 1);
+    // Installed from the content dialog: the screen follows.
+    installed.add('ally1.vqa');
+    changed();
+    assert.equal(note().dataset.state, 'installed');
+    click(note().querySelector('.campaign-watch'));
+    assert.deepEqual(played, ['ally1.vqa']);
+    // Without a content system the screen says nothing about movies.
+    const plain = doc.createElement('section');
+    doc.body.append(plain);
+    await new CampaignMenu(plain, { index: async () => INDEX, missionText: async (e) => missionText(e.id), preview: () => null, progress, onPlay() {} }).open('allies-01');
+    assert.equal(plain.querySelector('.campaign-movie'), null);
   } finally {
     uninstallDom();
   }

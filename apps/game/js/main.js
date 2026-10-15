@@ -101,6 +101,7 @@ import { connectRegistry, setTags } from './telemetry/index.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
+import { saveThumbnail } from './savethumb.js';
 import { TargetLines, withTargetLines } from './targetlines.js';
 import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
@@ -337,6 +338,8 @@ async function setupRecords(lobby, gpuError) {
     onWatchReplay: (replay) => watchReplay(replay, lobby),
     // Replays kept in the signed-in account (js/account/replays.js).
     accountReplays: account ? { available: () => !!account.user && account.site?.services?.replays !== false, api: account.api } : undefined,
+    // Saved missions show their titles (js/campaign: the mission index).
+    missionTitle: async (id) => (wasm ? (findMission(await missionIndex(), id)?.mission.title ?? null) : null),
   });
   openReplayLink(lobby, gpuError);
 }
@@ -769,6 +772,11 @@ async function missionFile(id, hash) {
   return text;
 }
 
+/** Where a movie's sound plays: at the voices volume, silent until audio is unlocked (js/content/movies.js). */
+function movieAudio() {
+  return audio?.mixer.ready && audio.prefs.get().enabled ? { context: audio.mixer.ctx, destination: audio.mixer.buses.voices } : null;
+}
+
 function setupCampaign(lobby, gpuError) {
   const root = $('campaign-root');
   if (!root || !wasm) return;
@@ -776,6 +784,7 @@ function setupCampaign(lobby, gpuError) {
   const entry = $('campaign-button');
   entry.hidden = false;
   entry.addEventListener('click', () => campaign?.open());
+  const briefings = content ? createMoviePlayer({ content, audio: movieAudio }) : null;
   campaign = new CampaignMenu(root, {
     index: missionIndex,
     lens: newMapLens,
@@ -785,6 +794,9 @@ function setupCampaign(lobby, gpuError) {
       return { rgba: Game.mission_preview(text), width: map.width, height: map.height };
     },
     progress,
+    // The briefing movie when the player installed it (js/content/movies.js), else the way to install it.
+    movies: briefings ? { has: (file) => briefings.has(file), play: (file, parent) => briefings.play(file, parent), subscribe: (fn) => content.onChange(fn) } : null,
+    onInstallContent: contentPanel ? () => contentPanel.open() : undefined,
     onPlay: (entry, options, gameSpeed) => {
       campaign.close();
       if (gpuError || !renderer) return lobby.showError(gpuError ?? 'WebGPU is not available.');
@@ -1309,6 +1321,7 @@ async function watchMissionReplay(replay, lobby) {
     tickMs,
     player: 0,
     replay: new ReplayHandle(run.host, run.info.replayLength),
+    replayFile: replay,
     viewer: replay.mode === 'online' ? coopRoster(players, replay.options.players) : missionRoster(players),
     replayChat: replay.chat ?? null,
     replayTeams: (replay.options.players ?? []).map((p) => p.team ?? 0),
@@ -1343,6 +1356,7 @@ async function watchReplay(replay, lobby) {
     tickMs,
     player: 0,
     replay: new ReplayHandle(run.host, run.info.replayLength),
+    replayFile: replay,
     viewer: viewerPlayers(replay.options.players),
     about: gameAbout({ map: replay.map ?? null, options: replay.options }),
     replayChat: replay.chat ?? null,
@@ -1429,7 +1443,8 @@ function recorderOf({ host, info }) {
 // ReplayController, all where the game runs (a worker when possible).
 // `player` and `online` are set for online games (see setupOnline): the
 // lockstep driver then decides when the simulation ticks and there is no pause.
-// `replay` (ReplayHandle) controls a replay; `recorder` (RecorderHandle) saves
+// `replay` (ReplayHandle) controls a replay (`replayFile`: the replay as it
+// was opened, for the replay bar's Download); `recorder` (RecorderHandle) saves
 // and downloads; `viewer` (the players' names and colours) turns the screen
 // into a spectator view: no sidebar, no orders, the observer panel with the
 // view switcher and stats. `roster` names and colours the players of any
@@ -1460,7 +1475,7 @@ function start(host, opts) {
   }
 }
 
-function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay = null, recorder = null, viewer = null, roster = null, restart = null, again = null, nextMission: startNextMission = null, fromSave = false, mission = null, about = null, replayChat = null, replayTeams = [] }, scope) {
+function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay = null, replayFile = null, recorder = null, viewer = null, roster = null, restart = null, again = null, nextMission: startNextMission = null, fromSave = false, mission = null, about = null, replayChat = null, replayTeams = [] }, scope) {
   const setupStart = performance.now();
   // Taken down last: the simulation, the GPU resources, the sound and what the page shows of the game.
   scope.add(() => {
@@ -1900,11 +1915,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         missionLine: (prefix, text, color) => chatLog.mission(prefix, text, color),
         // The original movies, when the player installed them (js/content/movies.js); else a card.
         movies: content
-          ? createMoviePlayer({
-              content,
-              // The movie's sound plays at the voices volume, silent until audio is unlocked.
-              audio: () => (audio?.mixer.ready && audio.prefs.get().enabled ? { context: audio.mixer.ctx, destination: audio.mixer.buses.voices } : null),
-            })
+          ? createMoviePlayer({ content, audio: movieAudio })
           : null,
         onRestart: () => restartGame?.(),
         onLeave: () => leave(),
@@ -2007,7 +2018,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // The observer panel is mounted now or after a defeat (enterSpectator).
   scope.add(() => observer?.remove());
   if (viewer) mountObserver();
-  if (replay && records) replayBar = scope.own(new records.ReplayBar($('field'), replay));
+  if (replay && records) {
+    // Download and Exit on the bar (the Replay board): the file as opened, and leaving as the game menu does.
+    const barActions = { onDownload: replayFile ? () => showToast(records.downloadReplayFile(replayFile)) : null, onExit: () => leave() };
+    replayBar = scope.own(new records.ReplayBar($('field'), replay, barActions));
+  }
   // The replay bar wraps to more rows on phones: the chat above it follows its height (css/chat.css).
   if (replayBar && typeof ResizeObserver === 'function') {
     const bar = replayBar.root;
@@ -2125,7 +2140,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         },
       ]
     : [];
-  const recordActions = [...onlineSaveAction, ...(records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress, onSaved: () => audio?.gameSaved() }) : [])];
+  const recordActions = [...onlineSaveAction, ...(records && recorder ? records.recordActions({ recorder, ready: () => !status.loading, stress, onSaved: () => audio?.gameSaved(), thumbnail: () => (minimap ? saveThumbnail({ terrain: minimap.terrain, width: minimap.mapW, height: minimap.mapH, biome: minimap.biome }) : null) }) : [])];
   const fullscreen = {
     available: () => fullscreenAvailable(),
     active: () => isFullscreen(),
@@ -2703,8 +2718,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         sidebar.setSelection(selectionInfo(game, input.selection, allied));
         sidebar.setDeployState(input.deployState());
       }
-      const stats = watching() ? game.observer_stats() : null;
-      if (stats && observer) observer.update(JSON.parse(stats), game.tick_count(), observerExtra(observer.needs()));
+      const statsText = watching() ? game.observer_stats() : null;
+      const stats = statsText ? JSON.parse(statsText) : null;
+      if (stats && observer) observer.update(stats, game.tick_count(), observerExtra(observer.needs()));
+      // The replay's seek bar marks what happened (js/replaymarks.js).
+      if (stats) replayBar?.observe(stats, game.tick_count());
       replayBar?.update();
       if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator || spectating ? 'Spectating' : null);
       // The sky of the newest frame: badge text (thunder and flashes follow in weather.update).

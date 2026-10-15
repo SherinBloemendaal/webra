@@ -337,9 +337,15 @@ test('the game\'s Replays button lists the account\'s replays: Watch loads and c
     assert.match(textOf(dialog), /2 of 100 replays/);
     const rows = dialog.querySelectorAll('.records-row');
     assert.deepEqual(rows.map((r) => r.querySelector('strong').textContent), ['This version', 'Older version']);
-    assert.equal(textOf(rows[0]).includes('Made with WebRA'), false);
-    assert.match(textOf(rows[1]), /Made with WebRA 0\.13\.0/);
-    click(rows[1].querySelectorAll('button').find((b) => b.textContent === 'Watch'));
+    assert.equal(textOf(rows[0]).includes('WebRA'), false);
+    assert.match(textOf(rows[1]), /WebRA 0\.13\.0/, 'a badge names the other version');
+    // The first replay is chosen; its details hold the actions.
+    assert.equal(rows[0].getAttribute('aria-current'), 'true');
+    const detail = () => dialog.querySelector('.records-detail');
+    assert.equal(textOf(detail()).includes('Made with WebRA'), false);
+    click(rows[1]);
+    assert.match(textOf(detail()), /Made with WebRA 0\.13\.0/);
+    click(detail().querySelectorAll('button').find((b) => b.textContent === 'Watch'));
     await settle(20);
     // Another version: only the header, so the viewer explains the version (js/replay.js engineMismatch).
     assert.equal(watched[0].engine, '0.13.0');
@@ -347,7 +353,7 @@ test('the game\'s Replays button lists the account\'s replays: Watch loads and c
     click(root.querySelectorAll('button').find((b) => b.textContent === 'Replays'));
     await settle(20);
     const again = doc.body.querySelector('dialog');
-    click(again.querySelectorAll('.records-row')[0].querySelectorAll('button').find((b) => b.textContent === 'Watch'));
+    click(again.querySelector('.records-detail').querySelectorAll('button').find((b) => b.textContent === 'Watch'));
     await settle(20);
     assert.equal(watched[1].engine, '0.14.0');
     assert.deepEqual(watched[1].frames, [], 'checked in full');

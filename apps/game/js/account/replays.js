@@ -439,3 +439,35 @@ export function replayLine(r, now = Date.now()) {
     `${RESULT_LABELS[r.result] ?? r.result}, ${formatBytes(r.size)}, ${daysLeftText(r.expiresAt, now)}`,
   ].join('. ');
 }
+
+/** "Online · Tiny · Tanya and 1 AI": the row line of a replay in the game's Replays screen. */
+export function replayMeta(r) {
+  const who = playersText(r.players ?? []);
+  return [MODE_LABELS[r.mode] ?? r.mode, r.mapName, who].filter(Boolean).join(' · ');
+}
+
+/**
+ * The facts the Replays screen lists for the chosen replay, as `[label, value]`
+ * pairs: when, how long, mode, map, players, result, size, how long it is kept
+ * and the version that recorded it.
+ */
+export function replayFacts(r, now = Date.now()) {
+  const who = playersText(r.players ?? []);
+  return [
+    ['Played', new Date(r.playedAt).toLocaleString()],
+    ['Length', durationText(r.ticks)],
+    ['Mode', MODE_LABELS[r.mode] ?? r.mode],
+    ['Map', r.mapName],
+    ...(who ? [['Players', who]] : []),
+    ['Result', RESULT_LABELS[r.result] ?? r.result],
+    ['Size', formatBytes(r.size)],
+    ['Kept', daysLeftText(r.expiresAt, now)],
+    ['Version', r.engine],
+  ];
+}
+
+/** The share of the account's replay storage in use (0..1, the larger of count and bytes). */
+export function usageShare(usage, limits) {
+  const of = (n, max) => (max > 0 ? Math.min(1, Math.max(0, n / max)) : 0);
+  return Math.max(of(usage.count, limits.count), of(usage.bytes, limits.bytes));
+}

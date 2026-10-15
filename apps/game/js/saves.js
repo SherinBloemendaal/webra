@@ -3,7 +3,26 @@
 // (js/replay.js, docs/contracts.md section 7); a save is checked with the
 // protocol's parseReplay every time it is loaded, from a file or the browser.
 
-import { parseReplay, REPLAY_MAX_BYTES, SAVE_SLOTS_MAX } from './protocol.js';
+import { parseReplay, REPLAY_MAX_BYTES, replaySummary, SAVE_SLOTS_MAX } from './protocol.js';
+
+/** A save's thumbnail is a small image data URL (js/savethumb.js) of at most this many characters. */
+export const THUMB_MAX_CHARS = 8192;
+
+/** A thumbnail worth keeping: an image data URL within THUMB_MAX_CHARS, else null. */
+export function validThumb(thumb) {
+  return typeof thumb === 'string' && thumb.length <= THUMB_MAX_CHARS && /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/.test(thumb) ? thumb : null;
+}
+
+/**
+ * What the Load game screen shows about a save beyond its header: the map's
+ * name ("Generated map", a mission's id), the players `{ name, type,
+ * faction, team }` and, for a mission, its id and difficulty.
+ */
+export function saveSummary(replay) {
+  const { mapName, players } = replaySummary(replay);
+  const mission = replay.mission ? { id: replay.mission.id, difficulty: replay.mission.options?.difficulty ?? replay.options?.options?.difficulty ?? null } : null;
+  return { mapName, players, mission };
+}
 
 const DB_NAME = 'webra';
 const DB_VERSION = 1;
@@ -77,9 +96,11 @@ export class IdbBackend {
 }
 
 /**
- * Saved games. Rows: { id, title, createdAt, ticks, engine, mode, online, data }
- * where `data` is the save file's text, `mode` skirmish or online and
- * `online` the server's record id of an online save (older rows: skirmish).
+ * Saved games. Rows: { id, title, createdAt, ticks, engine, mode, online,
+ * summary, thumb, data } where `data` is the save file's text, `mode`
+ * skirmish, mission or online, `online` the server's record id of an online
+ * save, `summary` saveSummary() and `thumb` a small picture of the map
+ * (validThumb). Rows of older versions have no summary and no thumb.
  */
 export class SaveStore {
   constructor(backend) {
@@ -92,16 +113,16 @@ export class SaveStore {
     return new SaveStore(idb ? new IdbBackend(idb) : new MemoryBackend());
   }
 
-  /** Saves without their data, newest first. */
+  /** Saves without their data, newest first; a stored picture only when it is still a valid one (validThumb). */
   async list() {
     const rows = await this.backend.all();
     return rows
-      .map(({ data, ...meta }) => ({ ...meta, bytes: typeof data === 'string' ? data.length : 0 }))
+      .map(({ data, ...meta }) => ({ ...meta, thumb: validThumb(meta.thumb), bytes: typeof data === 'string' ? data.length : 0 }))
       .sort((a, b) => b.createdAt - a.createdAt || b.id - a.id);
   }
 
-  /** Store a save's text (validated first). Returns the new id. */
-  async add(text) {
+  /** Store a save's text (validated first), with a picture of its map (`thumbnail`, validThumb). Returns the new id. */
+  async add(text, { thumbnail = null } = {}) {
     const r = await parseReplay(text);
     if (!r.ok) throw new Error(`Cannot save: ${r.error}.`);
     if (r.replay.kind !== 'save') throw new Error('Only saves can be stored here.');
@@ -109,7 +130,7 @@ export class SaveStore {
     if (rows.length >= SAVE_SLOTS_MAX) throw new Error(`There are already ${SAVE_SLOTS_MAX} saves. Delete one first.`);
     const { title, createdAt, ticks, engine, mode } = r.replay;
     // Online saves are resumed online (Play online, Resume a saved game), never loaded alone.
-    return this.backend.add({ title, createdAt, ticks, engine, mode, online: r.replay.online?.id ?? null, data: text });
+    return this.backend.add({ title, createdAt, ticks, engine, mode, online: r.replay.online?.id ?? null, summary: saveSummary(r.replay), thumb: validThumb(thumbnail), data: text });
   }
 
   /**

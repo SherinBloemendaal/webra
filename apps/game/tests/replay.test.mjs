@@ -207,10 +207,21 @@ test('saves in the browser store: validated, listed newest first, capped', async
   const a = playSkirmish(260, { saveAt: 250 });
   await assert.rejects(store.add('{"nope":1}'), /Cannot save/);
   await assert.rejects(store.add(a.recorder.encode('replay', 260)), /Only saves/);
-  const id = await store.add(a.save);
+  const thumb = `data:image/png;base64,${'A'.repeat(64)}`;
+  const id = await store.add(a.save, { thumbnail: thumb });
   const list = await store.list();
   assert.deepEqual(list.map((s) => [s.id, s.title, s.ticks]), [[id, 'Test skirmish', 250]]);
   assert.equal('data' in list[0], false);
+  // What Load game shows: the map, the players and the picture of the map.
+  assert.equal(list[0].thumb, thumb);
+  assert.equal(list[0].summary.mapName, 'Generated map');
+  assert.equal(list[0].summary.mission, null);
+  assert.ok(list[0].summary.players.length >= 2);
+  assert.ok(list[0].summary.players.every((p) => ['human', 'ai'].includes(p.type)));
+  // A picture that is not a small image data URL is not kept.
+  const other = await store.add(a.save, { thumbnail: 'javascript:alert(1)' });
+  assert.equal((await store.list()).find((s) => s.id === other).thumb, null);
+  await store.remove(other);
   const loaded = await store.load(id);
   assert.ok(loaded.ok);
   await store.remove(id);
