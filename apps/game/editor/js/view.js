@@ -345,14 +345,20 @@ export function isTyping(e) {
   return !!t?.closest?.('.ui-select-plate, .ui-sp-panel, [role="listbox"], [role="spinbutton"]');
 }
 
+/** The keys tabs and steppers use themselves (js/ui/controls.js). */
+const CONTROL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+
 /**
- * True when the key goes to one of the game's composite controls (a select's
- * list, a stepper, tabs): capture-phase handlers (dialogs, key rebinding)
- * must let such an event through untouched, so the control gets its arrows
- * and Esc closes the list rather than the dialog.
+ * True when the key belongs to one of the game's composite controls:
+ * capture-phase handlers (dialogs, key rebinding) must let it through
+ * untouched. An open select list owns every key (it stops Esc itself);
+ * tabs and steppers own only their arrows, Home, End and Page keys, so Esc
+ * from them still closes the dialog.
  */
 export function controlOwnsKeys(e) {
-  return !!e.target?.closest?.('[role="listbox"], [role="spinbutton"], [role="tablist"], .ui-sp-panel');
+  const t = e.target;
+  if (t?.closest?.('[role="listbox"], .ui-sp-panel')) return true;
+  return CONTROL_KEYS.has(e.key) && !!t?.closest?.('[role="spinbutton"], [role="tablist"]');
 }
 
 export { CELL, NEUTRAL_TEAM };

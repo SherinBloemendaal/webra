@@ -158,12 +158,17 @@ test('keys: a select list, a stepper and tabs keep their keys from the editor sh
   const tablist = tabs({ label: 'Panels', tabs: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] });
   const plain = document.createElement('button');
   document.body.append(plate.root, step.root, tablist.root, plain);
-  const key = (target) => ({ target, key: 'Escape' });
-  assert.equal(controlOwnsKeys(key(plate.listbox)), true, 'the open list');
-  assert.equal(controlOwnsKeys(key(plate.listbox.querySelector('[role="option"]'))), true, 'an option in it');
-  assert.equal(controlOwnsKeys(key(step.field)), true, 'the stepper');
-  assert.equal(controlOwnsKeys(key(tablist.buttons[0] ?? tablist.root.querySelector('[role="tab"]'))), true, 'a tab');
-  assert.equal(controlOwnsKeys(key(plain)), false, 'a plain button does not');
+  const key = (target, k = 'Escape') => ({ target, key: k });
+  const tab = tablist.buttons[0] ?? tablist.root.querySelector('[role="tab"]');
+  assert.equal(controlOwnsKeys(key(plate.listbox)), true, 'the open list owns Esc too (it closes only the list)');
+  assert.equal(controlOwnsKeys(key(plate.listbox.querySelector('[role="option"]'), 'a')), true, 'an option in it');
+  assert.equal(controlOwnsKeys(key(step.field, 'ArrowUp')), true, 'the stepper steps');
+  assert.equal(controlOwnsKeys(key(tab, 'ArrowRight')), true, 'the tabs move');
+  assert.equal(controlOwnsKeys(key(tab, 'End')), true);
+  assert.equal(controlOwnsKeys(key(step.field)), false, 'Esc from a stepper still closes the dialog');
+  assert.equal(controlOwnsKeys(key(tab)), false, 'Esc from a tab still closes the dialog');
+  assert.equal(controlOwnsKeys(key(tab, 'x')), false, 'other keys from a tab reach the dialog');
+  assert.equal(controlOwnsKeys(key(plain, 'ArrowUp')), false, 'a plain button does not');
   // The plate's button takes letters (typeahead) and arrows like a native select: shortcuts wait.
   const saved = ['HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement'].map((n) => [n, globalThis[n]]);
   for (const [n] of saved) globalThis[n] ??= class {};
