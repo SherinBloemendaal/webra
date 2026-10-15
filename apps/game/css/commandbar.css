@@ -17,17 +17,19 @@
   pointer-events: none;
 }
 
+/* Two groups (orders, fire stances) of the InGame board: dark metal with
+   Red Alert red along the top. */
 #commandbar .cb-group {
   display: flex;
-  gap: calc(2 * var(--ui-px));
-  padding: calc(2 * var(--ui-px));
+  gap: calc(3 * var(--ui-px));
+  padding: calc(3 * var(--ui-px));
   background:
     var(--ui-scan),
-    linear-gradient(180deg, rgba(34, 40, 48, 0.94), rgba(20, 24, 29, 0.94));
+    linear-gradient(180deg, rgba(24, 29, 35, 0.96), rgba(18, 22, 27, 0.96));
   border: 1px solid var(--ui-edge);
   border-top: 2px solid var(--ui-accent);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
+  border-radius: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   pointer-events: auto;
 }
 
@@ -40,36 +42,65 @@
   padding: 0;
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.1),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.6);
   color: var(--ui-text);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 #commandbar .cb-button svg {
-  width: calc(22 * var(--ui-px));
-  height: calc(22 * var(--ui-px));
+  width: calc(20 * var(--ui-px));
+  height: calc(20 * var(--ui-px));
 }
 
 #commandbar .cb-button:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+  background: var(--ui-raised-hover);
+  border-color: var(--ui-tip-rim);
 }
 
+#commandbar .cb-button:active:not(:disabled) {
+  background: var(--ui-metal-1);
+  box-shadow: var(--ui-bevel-in);
+}
+
+/* Nothing selected can do it: dark metal and a dim mark (no fading, so the bar stays solid). */
 #commandbar .cb-button:disabled {
+  background: linear-gradient(180deg, #1d2229, #161a1f);
+  color: var(--ui-dim);
   cursor: default;
-  opacity: 0.35;
 }
 
 #commandbar .cb-button:disabled svg {
   filter: grayscale(1);
+  opacity: 0.7;
 }
 
-/* Armed mode or the selection's stance. */
+/* Armed mode or the selection's stance: deep red, pressed in. */
 #commandbar .cb-button.active {
-  background: linear-gradient(180deg, var(--ui-accent-lo), var(--ui-metal-1));
-  border-color: var(--ui-accent-hi);
+  background: color-mix(in srgb, var(--ui-accent-lo) 70%, #000);
+  border-color: #7a2a20;
   box-shadow: var(--ui-bevel-in), 0 0 6px var(--ui-accent-glow);
+  color: var(--ui-accent-hi);
+}
+
+/* The stance lamp in the corner: lit for the selection's stance. */
+#commandbar .cb-stances .cb-button::before {
+  content: '';
+  position: absolute;
+  top: calc(3 * var(--ui-px));
+  right: calc(3 * var(--ui-px));
+  width: calc(4 * var(--ui-px));
+  height: calc(4 * var(--ui-px));
+  border-radius: 50%;
+  background: var(--ui-metal-3);
+}
+
+#commandbar .cb-stances .cb-button.active::before {
+  background: var(--ui-led-on);
+  box-shadow: var(--ui-led-on-glow);
 }
 
 /* A stance only part of the selection uses: a dashed edge and a corner mark. */
@@ -90,8 +121,23 @@
 }
 
 #commandbar .cb-button:focus-visible {
-  outline: 2px solid var(--ui-focus);
+  outline: var(--ui-focus-ring);
   outline-offset: 1px;
+}
+
+@media (forced-colors: active) {
+  #commandbar .cb-button.active {
+    border: 2px solid Highlight;
+  }
+
+  #commandbar .cb-stances .cb-button.active::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  #commandbar .cb-button:disabled {
+    color: GrayText;
+  }
 }
 
 /* Touch screens: the touch action bar already has attack move, force attack,

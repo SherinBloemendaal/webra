@@ -40,6 +40,8 @@ export const ICON_PATHS = {
   deploy:
     'M1 1h5L4.3 2.7L6.6 5L5 6.6L2.7 4.3L1 6ZM15 1v5l-1.7-1.7L11 6.6L9.4 5l2.3-2.3L10 1ZM1 15v-5l1.7 1.7L5 9.4L6.6 11l-2.3 2.3L6 15ZM15 15h-5l1.7-1.7L9.4 11L11 9.4l2.3 2.3L15 10Z',
   options: cogPath(),
+  // Fullscreen (js/fullscreen.js): four corners.
+  fullscreen: 'M1 1h5v2H3v3H1ZM10 1h5v5h-2V3h-3ZM1 10h2v3h3v2H1ZM13 10h2v5h-5v-2h3Z',
   power: 'M9.5 1L3 9h4l-1.5 6L13 6.5H8.8Z',
   // Production tooltip: build time (OpenRA production-tooltip-time).
   time: 'M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1Zm0 1.8a5.2 5.2 0 1 0 0 10.4A5.2 5.2 0 0 0 8 2.8ZM7.2 4h1.6v3.7l2.6 1.5l-.8 1.4L7.2 8.6Z',

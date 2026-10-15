@@ -4,9 +4,15 @@
    Every selector is scoped under #sidebar. */
 
 #sidebar {
-  --sb-cameo-gap: calc(2 * var(--ui-px));
+  --sb-cameo-gap: calc(3 * var(--ui-px));
   --sb-tab-size: calc(30 * var(--ui-px));
   --sb-power-width: calc(12 * var(--ui-px));
+  /* The raised metal of the buttons (InGame board) and the dark one of a button that is off. */
+  --sb-raised: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  --sb-raised-hover: var(--ui-raised-hover);
+  --sb-off: linear-gradient(180deg, #1d2229, #161a1f);
+  /* The money and clock strip: Red Alert red, deep. */
+  --sb-strip: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 78%, #000), color-mix(in srgb, var(--ui-accent-lo) 46%, #000));
 
   box-sizing: border-box;
   width: calc(264 * var(--ui-px));
@@ -15,15 +21,16 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: calc(5 * var(--ui-px));
+  gap: calc(6 * var(--ui-px));
   padding: calc(6 * var(--ui-px));
   overflow: hidden;
   background:
+    var(--ui-rivet) left 2px top 2px / 8px 8px no-repeat,
+    var(--ui-rivet) right 2px top 2px / 8px 8px no-repeat,
     var(--ui-rivet) left 2px bottom 2px / 8px 8px no-repeat,
     var(--ui-rivet) right 2px bottom 2px / 8px 8px no-repeat,
     var(--ui-scan),
-    var(--ui-brushed),
-    linear-gradient(90deg, var(--ui-metal-1), var(--ui-metal-2) 50%, var(--ui-metal-1));
+    var(--ui-panel);
   border-left: 1px solid var(--ui-edge);
   box-shadow:
     inset 1px 0 0 var(--ui-bevel-hi),
@@ -52,18 +59,24 @@
   display: grid;
   place-items: center;
   padding: 0;
-  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  background: var(--sb-raised);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
-  color: var(--ui-muted);
+  color: var(--ui-text);
   cursor: pointer;
+}
+
+#sidebar .sb-tool .ui-icon,
+#sidebar .sb-tab .ui-icon {
+  width: calc(15 * var(--ui-px));
+  height: calc(15 * var(--ui-px));
 }
 
 #sidebar .sb-tool:hover:not(:disabled),
 #sidebar .sb-tab:hover {
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
-  color: var(--ui-text);
+  background: var(--sb-raised-hover);
+  border-color: var(--ui-tip-rim);
 }
 
 #sidebar .sb-tool:active:not(:disabled),
@@ -74,8 +87,9 @@
 
 #sidebar .sb-tool:focus-visible,
 #sidebar .sb-tab:focus-visible,
-#sidebar .sb-card:focus-visible {
-  outline: 2px solid var(--ui-focus);
+#sidebar .sb-card:focus-visible,
+#sidebar .net-bars:focus-visible {
+  outline: var(--ui-focus-ring);
   outline-offset: -2px;
   z-index: 1;
 }
@@ -86,19 +100,22 @@
   flex: none;
   display: flex;
   gap: calc(3 * var(--ui-px));
+  padding: 0 calc(4 * var(--ui-px));
 }
 
 #sidebar .sb-tool {
   width: calc(30 * var(--ui-px));
-  height: calc(28 * var(--ui-px));
+  height: calc(27 * var(--ui-px));
 }
 
 #sidebar .sb-tool-end {
   margin-left: auto;
 }
 
-#sidebar .sb-tool.active {
-  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
+/* An armed mode (and fullscreen while it is on): the red of the open tab, pressed in. */
+#sidebar .sb-tool.active,
+#sidebar .sb-tool.active:hover:not(:disabled) {
+  background: var(--ui-primary-fill);
   color: #fff;
   box-shadow:
     var(--ui-bevel-in),
@@ -106,18 +123,21 @@
 }
 
 #sidebar .sb-tool.blocked {
-  color: var(--ui-bad);
+  color: var(--ui-accent-hi);
 }
 
+/* Off (Deploy without a deployable selection, Fullscreen where the page cannot): dark metal, a dim mark. */
 #sidebar .sb-tool:disabled {
-  color: var(--ui-dim);
-  opacity: 0.55;
+  background: var(--sb-off);
+  color: var(--ui-metal-4);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.05);
   cursor: not-allowed;
 }
 
 /* ---- Radar slot ------------------------------------------------------------
-   The minimap (another module) draws inside #radar. While it is empty the
-   slot shows a dark radar screen with "Radar offline". */
+   The minimap (another module) draws inside #radar: a well with RADAR in its
+   corner. While it is empty the slot shows a dark radar screen with "Radar
+   offline". */
 
 #sidebar .sb-radar {
   position: relative;
@@ -126,12 +146,10 @@
   width: min(100%, 36vh);
   aspect-ratio: 1;
   overflow: hidden;
-  background: #040608;
+  background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow:
-    var(--ui-bevel-in),
-    0 0 0 1px var(--ui-metal-4);
+  border-radius: 0;
+  box-shadow: var(--ui-bevel-in);
 }
 
 /* The minimap (js/minimap.js, css/minimap.css) fills the slot. */
@@ -146,6 +164,19 @@
 #sidebar .sb-radar .mm-label {
   color: var(--ui-muted);
   font-family: var(--ui-font-mono);
+}
+
+/* The board's corner mark; decoration over the picture, never in the way of clicks. */
+#sidebar .sb-radar:not(:empty)::after {
+  content: 'RADAR';
+  position: absolute;
+  right: calc(6 * var(--ui-px));
+  bottom: calc(4 * var(--ui-px));
+  color: rgba(226, 230, 234, 0.6);
+  font: 400 calc(9 * var(--ui-px)) / 1 var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
 }
 
 #sidebar .sb-radar:empty::before {
@@ -170,34 +201,40 @@
   padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(0, 0, 0, 0.7);
   border: 1px solid var(--ui-line);
-  color: var(--ui-dim);
+  color: var(--ui-muted);
   font: 700 var(--ui-fs-xs) / 1.4 var(--ui-font-mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-/* ---- Money and clock --------------------------------------------------------- */
+/* ---- Money and clock --------------------------------------------------------
+   One red strip: the credits on the left, the signal bars of an online game
+   (js/netwarn.js) and the clock on the right. */
 
 #sidebar .sb-status {
   flex: none;
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: calc(8 * var(--ui-px));
-  padding: calc(3 * var(--ui-px)) calc(8 * var(--ui-px)) calc(2 * var(--ui-px));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 75%, #000), #06080b);
+  min-height: calc(29 * var(--ui-px));
+  padding: 0 calc(8 * var(--ui-px));
+  background: var(--sb-strip);
   border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel-in);
-  font: 700 calc(18 * var(--ui-px)) / 1.15 var(--ui-font-mono);
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 18px -6px rgba(224, 48, 31, 0.6);
+  font: 600 calc(17 * var(--ui-px)) / 1.15 var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
-  color: #f4f6f8;
+  color: var(--ui-text);
   text-shadow: 1px 1px 0 #000;
 }
 
 #sidebar .sb-money {
   display: flex;
+  align-items: baseline;
   gap: calc(6 * var(--ui-px));
   min-width: 0;
 }
@@ -214,8 +251,25 @@
   color: var(--ui-money);
 }
 
+#sidebar .sb-status-right {
+  display: flex;
+  align-items: center;
+  gap: calc(7 * var(--ui-px));
+  min-width: 0;
+}
+
+#sidebar .sb-net {
+  display: flex;
+  align-items: center;
+}
+
+#sidebar .sb-net:empty {
+  display: none;
+}
+
 #sidebar .sb-clock-text {
   color: var(--ui-text);
+  font-size: calc(14 * var(--ui-px));
 }
 
 /* Ore silos: how full the storage is. */
@@ -223,8 +277,8 @@
   flex: none;
   position: relative;
   height: calc(4 * var(--ui-px));
-  margin-top: calc(-3 * var(--ui-px));
-  background: var(--ui-metal-0);
+  margin-top: calc(-5 * var(--ui-px));
+  background: #06080a;
   border: 1px solid var(--ui-edge);
   border-top: 0;
 }
@@ -257,7 +311,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(3 * var(--ui-px));
+  gap: calc(4 * var(--ui-px));
 }
 
 #sidebar .sb-power-meter {
@@ -265,8 +319,7 @@
   flex: 1;
   width: 100%;
   min-height: calc(40 * var(--ui-px));
-  overflow: hidden;
-  background: var(--ui-metal-0);
+  background: #06080a;
   border: 1px solid var(--ui-edge);
   box-shadow: var(--ui-bevel-in);
 }
@@ -276,33 +329,33 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.55) 3px 4px);
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.45) 3px 4px);
   pointer-events: none;
 }
 
 #sidebar .sb-power-fill {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: calc(var(--fill, 0) * 100%);
-  background: linear-gradient(90deg, #237a35, var(--ui-ok), #237a35);
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: calc(var(--fill, 0) * (100% - 2 * var(--ui-px)));
+  background: linear-gradient(0deg, #2a7a3a, var(--ui-ok));
   transition: height 0.3s ease;
 }
 
 #sidebar .sb-power.tight .sb-power-fill {
-  background: linear-gradient(90deg, #8a6d10, var(--ui-warn), #8a6d10);
+  background: linear-gradient(0deg, #8a6d10, var(--ui-warn));
 }
 
 #sidebar .sb-power.low .sb-power-fill {
-  background: linear-gradient(90deg, #7d1c12, var(--ui-bad), #7d1c12);
+  background: linear-gradient(0deg, #7d1c12, var(--ui-bad));
 }
 
-/* Marker for the produced capacity. */
+/* Marker for the produced capacity: a white line wider than the bar (InGame board). */
 #sidebar .sb-power-cap {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: calc(-3 * var(--ui-px));
+  right: calc(-3 * var(--ui-px));
   bottom: calc(var(--cap, 0) * 100% - 1px);
   height: calc(2 * var(--ui-px));
   background: #fff;
@@ -340,6 +393,8 @@
 #sidebar .sb-tab {
   width: var(--sb-tab-size);
   height: var(--sb-tab-size);
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
+  color: var(--ui-muted);
 }
 
 #sidebar .sb-tab.available {
@@ -352,30 +407,66 @@
 
 #sidebar .sb-tab.no-producer {
   color: var(--ui-dim);
-  background: var(--ui-metal-1);
+  background: var(--sb-off);
 }
 
+/* Something is ready: a gold edge and the gold lamp. */
+#sidebar .sb-tab.ready {
+  border-color: var(--ui-money);
+}
+
+/* The open tab: the red of the main buttons, a white mark and a white lamp. */
 #sidebar .sb-tab.active {
-  background: linear-gradient(180deg, var(--ui-accent), var(--ui-accent-lo));
+  background: var(--ui-primary-fill);
   color: #fff;
   box-shadow:
     var(--ui-bevel-in),
     0 0 6px var(--ui-accent-glow);
 }
 
+#sidebar .sb-tab.active.ready {
+  border-color: var(--ui-money);
+}
+
+/* The lamp in the corner (js/ui/controls.js led): the open tab white, ready gold, else unlit and hidden. */
+#sidebar .sb-tab-led {
+  position: absolute;
+  top: calc(3 * var(--ui-px));
+  right: calc(3 * var(--ui-px));
+  width: calc(5 * var(--ui-px));
+  height: calc(5 * var(--ui-px));
+  border: 0;
+}
+
+#sidebar .sb-tab-led.ui-led-off {
+  visibility: hidden;
+}
+
+#sidebar .sb-tab-led.ui-led-on {
+  background: #fff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.7);
+}
+
+#sidebar .sb-tab-led.ui-led-warn {
+  background: var(--ui-money);
+  box-shadow: 0 0 6px rgba(240, 207, 99, 0.9);
+}
+
+/* How many are in production (or "!" when ready), on a small plate at the bottom corner. */
 #sidebar .sb-tab-badge {
   position: absolute;
-  top: calc(-4 * var(--ui-px));
+  bottom: calc(-4 * var(--ui-px));
   right: calc(-4 * var(--ui-px));
   min-width: calc(14 * var(--ui-px));
-  height: calc(14 * var(--ui-px));
+  height: calc(13 * var(--ui-px));
   padding: 0 calc(3 * var(--ui-px));
   border: 1px solid var(--ui-edge);
-  border-radius: 7px;
+  border-radius: var(--ui-radius);
   background: var(--ui-money);
   color: #15120a;
-  font: 700 calc(9 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
+  font: 700 calc(9 * var(--ui-px)) / calc(11 * var(--ui-px)) var(--ui-font-mono);
   text-align: center;
+  text-shadow: none;
 }
 
 #sidebar .sb-tab-badge.ready {
@@ -398,7 +489,7 @@
   gap: var(--sb-cameo-gap);
   align-content: start;
   padding: var(--sb-cameo-gap);
-  background: #050709;
+  background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   box-shadow: var(--ui-bevel-in);
   scrollbar-width: thin;
@@ -408,25 +499,29 @@
 #sidebar .sb-empty {
   grid-column: 1 / -1;
   padding: calc(16 * var(--ui-px)) calc(4 * var(--ui-px));
-  color: var(--ui-dim);
+  color: var(--ui-muted);
   text-align: center;
   font-style: italic;
 }
 
-/* ---- Cameos -------------------------------------------------------------------- */
+/* ---- Cameos --------------------------------------------------------------------
+   Red Alert's 64x48 pictures (js/sidebar.js CAMEO_WIDTH, CAMEO_HEIGHT) with
+   the board's overlays: the slot key on a dark plate at the top left, the
+   name over a dark fade at the bottom (Barlow Condensed in capitals), the
+   build clock, READY and ON HOLD, the count of queued items (xN) at the top
+   right and the red frame with "$" when the credits do not cover them. */
 
 #sidebar .sb-card {
   position: relative;
   display: block;
   width: 100%;
-  /* Red Alert's 64x48 cameos (js/sidebar.js CAMEO_WIDTH, CAMEO_HEIGHT). */
   aspect-ratio: 4 / 3;
   padding: 0;
   overflow: hidden;
-  background: var(--ui-metal-0);
-  border: 1px solid #000;
+  background: linear-gradient(180deg, #2b333d, #1a2027 55%, #0f1317);
+  border: 1px solid var(--ui-edge);
   border-radius: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1);
   color: var(--ui-text);
   font: inherit;
   text-align: left;
@@ -434,6 +529,7 @@
 }
 
 #sidebar .sb-card:hover {
+  border-color: var(--ui-tip-rim);
   box-shadow: inset 0 0 0 1px var(--ui-accent-hi);
 }
 
@@ -458,13 +554,15 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  padding: 1px calc(2 * var(--ui-px));
+  padding: calc(4 * var(--ui-px)) calc(2 * var(--ui-px)) 1px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.72);
-  color: #eef1f4;
-  font: 700 calc(8 * var(--ui-px)) / 1.15 var(--ui-font);
+  background: linear-gradient(0deg, rgba(6, 7, 8, 0.9), rgba(6, 7, 8, 0.55) 70%, rgba(6, 7, 8, 0));
+  color: var(--ui-text-2);
+  font: 700 calc(9 * var(--ui-px)) / 1.1 var(--ui-font-display);
+  letter-spacing: 0.08em;
   text-align: center;
   text-transform: uppercase;
+  text-shadow: 1px 1px 0 #000;
   overflow-wrap: anywhere;
   pointer-events: none;
 }
@@ -502,23 +600,24 @@
   inset: 0;
   display: none;
   pointer-events: none;
-  background: conic-gradient(transparent 0turn calc(var(--p, 0) * 1turn), rgba(0, 0, 0, 0.66) calc(var(--p, 0) * 1turn) 1turn);
+  background: conic-gradient(transparent 0turn calc(var(--p, 0) * 1turn), rgba(0, 0, 0, 0.62) calc(var(--p, 0) * 1turn) 1turn);
 }
 
 #sidebar .sb-card.building .sb-clock {
   display: block;
 }
 
-/* Time left, over the picture like OpenRA's "00:15". */
+/* Time left, over the picture like OpenRA's "00:15", in the gold of times. */
 #sidebar .sb-eta {
   position: absolute;
   left: 0;
   right: 0;
-  top: 32%;
+  top: 34%;
   transform: translateY(-50%);
-  color: #fff;
-  font: 700 calc(11 * var(--ui-px)) / 1 var(--ui-font-mono);
+  color: var(--ui-money);
+  font: 700 calc(12 * var(--ui-px)) / 1 var(--ui-font-display);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
   text-align: center;
   text-shadow:
     1px 1px 0 #000,
@@ -532,13 +631,14 @@
   display: none;
 }
 
+/* Queued items (xN): a small plate at the top right. */
 #sidebar .sb-count {
   position: absolute;
   top: calc(2 * var(--ui-px));
   right: calc(2 * var(--ui-px));
   min-width: calc(14 * var(--ui-px));
   padding: 0 calc(3 * var(--ui-px));
-  background: rgba(0, 0, 0, 0.78);
+  background: rgba(6, 7, 8, 0.82);
   border: 1px solid var(--ui-money);
   color: var(--ui-money);
   font: 700 calc(10 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
@@ -546,23 +646,30 @@
   pointer-events: none;
 }
 
-#sidebar .sb-ready {
+#sidebar .sb-ready,
+#sidebar .sb-hold {
   position: absolute;
   left: 50%;
   top: 40%;
   transform: translate(-50%, -50%);
   display: none;
-  padding: 1px calc(5 * var(--ui-px));
-  background: rgba(0, 0, 0, 0.75);
-  color: var(--ui-ok);
-  font: 700 calc(11 * var(--ui-px)) / 1.2 var(--ui-font-mono);
+  padding: 0 calc(5 * var(--ui-px));
+  background: rgba(6, 7, 8, 0.78);
+  font: 700 calc(11 * var(--ui-px)) / 1.25 var(--ui-font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-shadow: 1px 1px 0 #000;
+  white-space: nowrap;
   pointer-events: none;
 }
 
+#sidebar .sb-ready {
+  color: var(--ui-ok);
+}
+
+/* Ready: the green edge of the board, glowing. */
 #sidebar .sb-card.ready {
+  border-color: var(--ui-ok);
   animation: sb-ready-glow 0.9s ease-in-out infinite alternate;
 }
 
@@ -573,20 +680,7 @@
 
 /* OpenRA's ON HOLD over a paused item (production.rs pause). */
 #sidebar .sb-hold {
-  position: absolute;
-  left: 50%;
-  top: 40%;
-  transform: translate(-50%, -50%);
-  display: none;
-  padding: 1px calc(5 * var(--ui-px));
-  background: rgba(0, 0, 0, 0.75);
   color: var(--ui-warn);
-  font: 700 calc(10 * var(--ui-px)) / 1.2 var(--ui-font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-shadow: 1px 1px 0 #000;
-  white-space: nowrap;
-  pointer-events: none;
 }
 
 #sidebar .sb-card.paused .sb-hold {
@@ -602,7 +696,7 @@
   display: none;
   min-width: calc(12 * var(--ui-px));
   padding: 0 calc(2 * var(--ui-px));
-  background: rgba(0, 0, 0, 0.78);
+  background: rgba(6, 7, 8, 0.82);
   border: 1px solid var(--ui-bad);
   color: var(--ui-bad);
   font: 700 calc(10 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
@@ -611,6 +705,7 @@
 }
 
 #sidebar .sb-card.short {
+  border-color: var(--ui-bad);
   box-shadow: inset 0 0 0 2px var(--ui-bad);
 }
 
@@ -619,6 +714,7 @@
 }
 
 #sidebar .sb-card.placing {
+  border-color: var(--ui-money);
   box-shadow: inset 0 0 0 2px var(--ui-money);
   animation: none;
 }
@@ -637,7 +733,7 @@
 }
 
 #sidebar .sb-card.disabled .sb-name {
-  color: #7a838d;
+  color: var(--ui-muted);
 }
 
 /* Items of the other side or another country: never available to this faction. */
@@ -648,48 +744,85 @@
 /* Production slot hotkey of the cameo (OpenRA F1..F12, js/sidebar.js slotKey). */
 #sidebar .sb-slot {
   position: absolute;
-  top: calc(2 * var(--ui-px));
-  left: calc(2 * var(--ui-px));
+  top: 0;
+  left: 0;
   min-width: calc(12 * var(--ui-px));
-  padding: 0 calc(2 * var(--ui-px));
-  background: rgba(0, 0, 0, 0.6);
-  color: #b6bfc8;
-  font: 700 calc(9 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
+  padding: 0 calc(3 * var(--ui-px));
+  background: rgba(6, 7, 8, 0.8);
+  color: var(--ui-text);
+  font: 700 calc(10 * var(--ui-px)) / calc(13 * var(--ui-px)) var(--ui-font-display);
   text-align: center;
   pointer-events: none;
 }
 
-/* ---- Selection panel ------------------------------------------------------------ */
+/* ---- Selection panel ------------------------------------------------------------
+   A well with the cameo of the selected type, its name (or "2 × Mobile
+   Flak", or the count with a line per type), health and the details, and
+   the control group number on the right. */
 
 #sidebar .sb-sel {
   flex: none;
-  min-height: calc(52 * var(--ui-px));
-  padding: calc(5 * var(--ui-px)) calc(8 * var(--ui-px));
-  background: linear-gradient(180deg, var(--ui-metal-0), #0a0d10);
+  display: flex;
+  align-items: center;
+  gap: calc(7 * var(--ui-px));
+  min-height: calc(42 * var(--ui-px));
+  padding: calc(4 * var(--ui-px)) calc(7 * var(--ui-px));
+  background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
+  border-radius: 0;
   box-shadow: var(--ui-bevel-in);
 }
 
+#sidebar .sb-sel-cameo {
+  flex: none;
+  width: calc(44 * var(--ui-px));
+  height: calc(33 * var(--ui-px));
+  border: 1px solid var(--ui-edge);
+  image-rendering: pixelated;
+}
+
+#sidebar .sb-sel-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--ui-px));
+}
+
 #sidebar .sb-sel.empty .sb-sel-name {
-  color: var(--ui-dim);
-  font-weight: 400;
-  font-style: italic;
+  color: var(--ui-muted);
+  font: italic 400 var(--ui-fs-m) / 1.3 var(--ui-font);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 #sidebar .sb-sel-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font: 700 var(--ui-fs-m) / 1.3 var(--ui-font);
+  font: 700 calc(13 * var(--ui-px)) / 1.2 var(--ui-font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#sidebar .sb-sel-types {
+  color: var(--ui-text-2);
+  font: 500 var(--ui-fs-s) / 1.3 var(--ui-font);
+}
+
+#sidebar .sb-sel-group {
+  flex: none;
+  align-self: flex-start;
+  color: var(--ui-muted);
+  font: 400 var(--ui-fs-s) / 1.4 var(--ui-font-mono);
 }
 
 /* Health: green, yellow, red in segments, like the bars over units. */
 #sidebar .sb-hp {
   position: relative;
-  height: calc(6 * var(--ui-px));
-  margin: calc(4 * var(--ui-px)) 0 calc(3 * var(--ui-px));
-  background: #000;
+  height: calc(5 * var(--ui-px));
+  margin: calc(1 * var(--ui-px)) 0;
+  background: #06080a;
   border: 1px solid var(--ui-edge);
   overflow: hidden;
 }
@@ -719,6 +852,10 @@
 #sidebar .sb-sel-detail {
   font: var(--ui-fs-s) var(--ui-font-mono);
   color: var(--ui-muted);
+}
+
+#sidebar .sb-sel-detail:empty {
+  display: none;
 }
 
 /* ---- Animations ------------------------------------------------------------------ */
@@ -753,6 +890,48 @@
   #sidebar .sb-tab-badge.ready,
   #sidebar .sb-power.low .sb-power-icon {
     animation: none;
+  }
+}
+
+/* Windows high contrast: the states keep a mark of their own (the lamp, the frame, the words). */
+@media (forced-colors: active) {
+  #sidebar .sb-tool.active,
+  #sidebar .sb-tab.active {
+    border: 2px solid Highlight;
+    color: HighlightText;
+    background: Highlight;
+  }
+
+  #sidebar .sb-tab.ready,
+  #sidebar .sb-card.ready,
+  #sidebar .sb-card.placing {
+    border: 2px solid Highlight;
+  }
+
+  #sidebar .sb-card.short {
+    border: 2px dashed CanvasText;
+  }
+
+  #sidebar .sb-tab-led.ui-led-on,
+  #sidebar .sb-tab-led.ui-led-warn {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  #sidebar .sb-tool:disabled {
+    color: GrayText;
+  }
+
+  #sidebar .sb-power-fill,
+  #sidebar .sb-silo-fill,
+  #sidebar .sb-hp-fill {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  #sidebar .sb-power-cap {
+    forced-color-adjust: none;
+    background: Highlight;
   }
 }
 

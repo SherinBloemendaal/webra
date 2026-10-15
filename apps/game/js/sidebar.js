@@ -17,6 +17,8 @@ import { attachTooltip } from './ui/tooltip.js';
 import { menuKeys } from './hudtips.js';
 import { CashCounter } from './cashcounter.js';
 import { blinkOn, clockText } from './gametimer.js';
+import { UNAVAILABLE as FULLSCREEN_UNAVAILABLE } from './fullscreen.js';
+import { led, setLed } from './ui/controls.js';
 import {
   BuildEta,
   cancelEndsPlacement,
@@ -83,10 +85,12 @@ export class Sidebar {
    * @param {number} playerId local player id
    * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onMode?: (mode: string) => void,
    *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean,
+   *   fullscreen?: { available: () => boolean, active: () => boolean, toggle: () => void },
    *   rightClickStyle?: () => string,
    *   onProductionClick?: (id: string, outcome: string | null) => void}} callbacks
    *   rightClickStyle: the "Right click in the build menu" setting, 'openra' or 'webra' (production.js rightClickAction);
    *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed;
+   *   fullscreen: the Fullscreen button (js/fullscreen.js), left out when there is none;
    *   onProductionClick: a cameo click did something, with the queue's speech for it
    *   ('queued', 'blocked', 'limited', 'resumed', 'onHold', 'cancelled', or null)
    * @param {{ticksPerSecond?: number, hotkeys?: import('./hotkeys.js').HotkeyRegistry, now?: () => number}} [options]
@@ -231,6 +235,20 @@ export class Sidebar {
       'Deploy the selected MCV, pack up the selected Construction Yard, or unload the selected transport.',
       () => this.callbacks.onDeploy?.(),
     );
+    // The Fullscreen button (js/fullscreen.js, the same as Alt+Enter); dark with the reason where the page cannot go fullscreen.
+    const fs = this.callbacks.fullscreen;
+    if (fs) {
+      const spec = () => ({
+        title: 'Fullscreen',
+        hotkey: this.keyOf('fullscreen'),
+        desc: fs.active() ? 'Leave fullscreen.' : 'Fill the whole screen with the game.',
+        notes: this.fullscreenBtn.disabled ? [{ text: FULLSCREEN_UNAVAILABLE, tone: 'hint' }] : [],
+      });
+      this.fullscreenBtn = this.toolButton('fullscreen', 'Fullscreen', spec, () => fs.toggle());
+      this.fullscreenBtn.setAttribute('aria-pressed', 'false');
+      tools.append(this.fullscreenBtn);
+      this.updateFullscreen();
+    }
     if (this.callbacks.onMenu) {
       this.menuBtn = tool('options', 'Options', null, 'Game menu: settings, controls, leave the game.', () => this.callbacks.onMenu(), () => menuKeys(this.hotkeys));
       this.menuBtn.classList.add('sb-tool-end');
@@ -257,7 +275,11 @@ export class Sidebar {
     this.moneyEl = money;
     this.clockEl = el('time', 'sb-clock-text', formatClock(0));
     this.tip(this.clockEl, () => ({ title: 'Game time', desc: 'Time played in this game.' }));
-    status.append(money, this.clockEl);
+    // The connection's signal bars go next to the clock in online games (js/netwarn.js).
+    const right = el('div', 'sb-status-right');
+    this.netSlot = el('span', 'sb-net');
+    right.append(this.netSlot, this.clockEl);
+    status.append(money, right);
     const silo = el('div', 'sb-silo');
     this.siloFill = el('div', 'sb-silo-fill');
     silo.append(this.siloFill);
@@ -299,12 +321,15 @@ export class Sidebar {
       btn.setAttribute('aria-label', name);
       const badge = el('span', 'sb-tab-badge');
       badge.hidden = true;
-      btn.append(icon(QUEUE_ICONS[q]), badge);
+      // The lamp in the corner (InGame board): white on the open tab, gold when something is ready.
+      const lamp = led('off');
+      lamp.classList.add('sb-tab-led');
+      btn.append(icon(QUEUE_ICONS[q]), lamp, badge);
       btn.addEventListener('click', () => {
         this.openTab(q);
       });
       tabs.append(btn);
-      const tab = { btn, badge, name, state: '', activity: 0, ready: false };
+      const tab = { btn, badge, lamp, lampState: 'off', name, state: '', activity: 0, ready: false };
       this.tip(btn, () => tabTip(tab, this.keyOf(QUEUE_ACTIONS[q])));
       return tab;
     });
@@ -319,8 +344,16 @@ export class Sidebar {
     const main = el('div', 'sb-main');
     main.append(power, tabs, this.gridEl);
 
-    // Selection panel.
+    // Selection panel: the cameo of the (main) type, the name, health or
+    // the types of a group, and the control group number.
     const sel = el('div', 'sb-sel');
+    this.selCameo = el('canvas', 'sb-sel-cameo');
+    this.selCameo.width = this.cameoPx.width;
+    this.selCameo.height = this.cameoPx.height;
+    this.selCameo.setAttribute('aria-hidden', 'true');
+    this.selCameo.hidden = true;
+    this.selCameoKey = '';
+    const selText = el('div', 'sb-sel-text');
     this.selNameEl = el('div', 'sb-sel-name', 'No selection');
     this.selDetailEl = el('div', 'sb-sel-detail');
     const hpBar = el('div', 'sb-hp');
@@ -328,7 +361,12 @@ export class Sidebar {
     hpBar.append(this.selHpFill);
     this.selHpBar = hpBar;
     hpBar.hidden = true;
-    sel.append(this.selNameEl, hpBar, this.selDetailEl);
+    this.selTypesEl = el('div', 'sb-sel-types');
+    this.selTypesEl.hidden = true;
+    selText.append(this.selNameEl, hpBar, this.selTypesEl, this.selDetailEl);
+    this.selGroupEl = el('span', 'sb-sel-group');
+    this.selGroupEl.hidden = true;
+    sel.append(this.selCameo, selText, this.selGroupEl);
     this.selEl = sel;
     sel.classList.add('empty');
 
@@ -614,6 +652,11 @@ export class Sidebar {
       const on = i === q;
       t.btn.classList.toggle('active', on);
       t.btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      const lampState = t.ready ? 'warn' : on ? 'on' : 'off';
+      if (t.lampState !== lampState) {
+        t.lampState = lampState;
+        setLed(t.lamp, lampState);
+      }
     });
     this.gridEl.setAttribute('aria-labelledby', this.tabs[q].btn.id);
     this.gridKey = '';
@@ -674,6 +717,7 @@ export class Sidebar {
     this.updateCredits(state);
     this.updatePower(state);
     this.updateClock();
+    this.updateFullscreen();
 
     // Summarise queues: per id, the number queued and the head item.
     const { perId, activity: tabActivity, ready: tabReady } = summarizeQueues(state.queues);
@@ -702,6 +746,12 @@ export class Sidebar {
       t.badge.hidden = n === 0;
       if (n) setText(t.badge, ready ? '!' : String(n));
       t.badge.classList.toggle('ready', ready);
+      const lampState = ready ? 'warn' : q === this.activeTab ? 'on' : 'off';
+      if (t.lampState !== lampState) {
+        t.lampState = lampState;
+        setLed(t.lamp, lampState);
+      }
+      t.btn.classList.toggle('ready', ready);
       t.activity = n;
       t.ready = ready;
       let label = t.name;
@@ -883,6 +933,19 @@ export class Sidebar {
     }
   }
 
+  /** The Fullscreen button follows whether the page can go fullscreen and whether it is. */
+  updateFullscreen() {
+    const fs = this.callbacks.fullscreen;
+    const b = this.fullscreenBtn;
+    if (!fs || !b) return;
+    const available = !!fs.available();
+    const active = available && !!fs.active();
+    if (b.disabled === available) b.disabled = !available;
+    b.classList.toggle('active', active);
+    const pressed = active ? 'true' : 'false';
+    if (b.getAttribute('aria-pressed') !== pressed) b.setAttribute('aria-pressed', pressed);
+  }
+
   /** Enable the Deploy button when the selection can deploy (0 no, 1 yes, 2 blocked). */
   setDeployState(state) {
     this.deployBtn.disabled = state === 0;
@@ -962,25 +1025,37 @@ export class Sidebar {
    *   summary for a multi-selection, or null.
    */
   setSelection(info) {
+    this.setSelGroup(info?.group ?? null);
     if (!info) {
       this.selEl.classList.add('empty');
       setText(this.selNameEl, 'No selection');
       setText(this.selDetailEl, '');
       this.selHpBar.hidden = true;
+      this.selTypesEl.hidden = true;
+      this.paintSelCameo(null);
       return;
     }
     this.selEl.classList.remove('empty');
     if (info.count !== undefined && info.hp === undefined) {
+      // Several: "2 × Mobile Flak" for one type, else the count and a line per type (selectionTypes).
       const n = info.count;
-      setText(this.selNameEl, n === 1 && info.name ? info.name : `${n} units selected`);
-      setText(this.selDetailEl, n > 1 && info.name ? info.name : '');
+      const types = info.types ?? [];
+      const one = types.length === 1 ? types[0] : null;
+      setText(this.selNameEl, one ? `${one.count} × ${one.name}` : n === 1 && info.name ? info.name : `${n} units selected`);
+      const list = one ? '' : types.slice(0, SEL_TYPES_SHOWN).map((t) => `${t.count} × ${t.name}`).join(', ') + (types.length > SEL_TYPES_SHOWN ? `, +${types.length - SEL_TYPES_SHOWN} more` : '');
+      setText(this.selTypesEl, list);
+      this.selTypesEl.hidden = !list;
+      setText(this.selDetailEl, '');
       this.selHpBar.hidden = true;
+      this.paintSelCameo(types[0] ? { type: types[0].type, owner: types[0].owner } : null);
       return;
     }
+    this.selTypesEl.hidden = true;
     // A spy's disguise (engine actor_json().disguise, infantry.rs): to others it
     // is the soldier it pretends to be (OpenRA DisguiseTooltip).
     const disguise = info.disguise && info.owner !== this.playerId ? info.disguise : null;
     const shownOwner = disguise ? disguise.owner : info.owner;
+    this.paintSelCameo({ type: disguise ? disguise.type : info.type, owner: shownOwner });
     setText(this.selNameEl, (disguise ? this.actors.get(disguise.type)?.name : null) ?? info.name ?? 'Unknown');
     const max = Math.max(1, info.maxHp || 1);
     const hp = Math.max(0, Math.min(max, info.hp ?? max));
@@ -1015,6 +1090,34 @@ export class Sidebar {
     setText(this.selDetailEl, detail);
   }
 
+  /** The control group number of the selection ("Group 2"), or none. */
+  setSelGroup(group) {
+    const text = group === null || group === undefined ? '' : `Group ${group}`;
+    setText(this.selGroupEl, text);
+    this.selGroupEl.hidden = !text;
+  }
+
+  /** The cameo of the selected (main) type in the owner's colour, or none (`{ type, owner }` or null). */
+  paintSelCameo(what) {
+    const actor = what?.type ? this.actors.get(what.type) : null;
+    const key = actor ? `${actor.id}:${what.owner ?? this.playerId}:${this.cameoPx.width}` : '';
+    if (key === this.selCameoKey) return;
+    this.selCameoKey = key;
+    this.selCameo.hidden = !actor;
+    if (!actor) return;
+    if (this.selCameo.width !== this.cameoPx.width) this.selCameo.width = this.cameoPx.width;
+    if (this.selCameo.height !== this.cameoPx.height) this.selCameo.height = this.cameoPx.height;
+    const rgb = TEAM_COLORS[(what.owner ?? this.playerId) % TEAM_COLORS.length] ?? this.teamRgb;
+    try {
+      cameoPainter.paint(this.selCameo, actor, rgb);
+    } catch (err) {
+      if (!this.iconFailures.has(actor.id)) {
+        this.iconFailures.add(actor.id);
+        console.warn(`sidebar: no icon for ${actor.id}`, err);
+      }
+    }
+  }
+
   /** Highlight the building currently being placed (or clear with null). */
   setPlacing(id) {
     if (this.placingId === id) return;
@@ -1022,6 +1125,50 @@ export class Sidebar {
     this.placingId = id;
     if (id && this.actors.has(id)) this.card(id).btn.classList.add('placing');
   }
+}
+
+/** Types listed by name in the selection panel; more are counted. */
+const SEL_TYPES_SHOWN = 3;
+
+/**
+ * The types of a selection for the selection panel: `[{ type, owner, name,
+ * count }]`, the most numerous first (ties in the order they were selected).
+ * `infoOf(id)` is js/sim/methods.js `actorInfo` (type and owner, from the
+ * actor table), `nameOf(type)` the type's name.
+ * @param {number[]} ids
+ * @param {(id: number) => ({ type: string|null, owner: number } | null)} infoOf
+ * @param {(type: string) => string} nameOf
+ */
+export function selectionTypes(ids, infoOf, nameOf) {
+  const byType = new Map();
+  for (const id of ids) {
+    const info = infoOf(id);
+    if (!info?.type) continue;
+    const t = byType.get(info.type);
+    if (t) t.count++;
+    else byType.set(info.type, { type: info.type, owner: info.owner, name: nameOf(info.type) ?? info.type, count: 1 });
+  }
+  return [...byType.values()].sort((a, b) => b.count - a.count);
+}
+
+/**
+ * The control group the selection is (js/controlgroups.js `groups`, key ->
+ * ids): the group's number when every selected actor is in that one group,
+ * else null. OpenRA shows the number on the units; the panel names it too.
+ * @param {number[]} ids
+ * @param {Map<string, number[]>} groups
+ */
+export function selectionGroup(ids, groups) {
+  if (!ids.length || !groups?.size) return null;
+  let found = null;
+  for (const [key, members] of groups) {
+    if (!members.includes(ids[0])) continue;
+    found = key;
+    break;
+  }
+  if (found === null) return null;
+  const members = new Set(groups.get(found));
+  return ids.every((id) => members.has(id)) ? Number(found) : null;
 }
 
 const RANK_NAMES = ['Rookie', 'Veteran', 'Veteran II', 'Veteran III'];
