@@ -554,7 +554,10 @@ game files for the rest of the pass lifetime, the same bound. Online play, map u
 still check D1 on each request, so the bound only concerns static game
 files. A game already running in a browser keeps running (it is in memory);
 when a later load is refused, the game offers to sign in again
-(`apps/game/js/account/gate.js`).
+(`apps/game/js/account/gate.js`). A refusal for another reason (waiting for
+approval, banned) and a gate that does not answer (offline, a server error)
+get a dialog that says why (`apps/game/js/account/ui.js` `openAccessProblem`),
+with "Try again" asking the gate once more; it never stops the running game.
 
 **Path spellings.** `run_worker_first` matches the raw request path, so
 `/play` and `/play/*` catch the canonical spelling only. Workers Static

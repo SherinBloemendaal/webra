@@ -77,7 +77,7 @@ import { mountContentPanel, mountContentNotice } from './content/panel.js';
 import { shouldShowNotice, canAutoInstall } from './content/download.js';
 import { AccountSession } from './account/session.js';
 import { browserQueue, forgetReplayLink, GameReplay, REPLAY_LINK_RE, replayLink, ReplayUploads, replayResult, uploadEventText, uploadsWanted } from './account/replays.js';
-import { askConflict, mountAccountEntry, openSignIn } from './account/ui.js';
+import { askConflict, mountAccountEntry, openAccessProblem, openSignIn } from './account/ui.js';
 import { PlayAccess, PlayAccessLost } from './account/gate.js';
 import { defaultRegistry } from './registry.js';
 import { cameoBacking, cameoPainter, powerIconArt, setCameoArt } from './cameo.js';
@@ -149,7 +149,7 @@ let replayUploads = null;
  * when the server stops serving them mid-session (js/account/gate.js), the
  * player gets a sign-in prompt; the running game is not touched.
  */
-const playAccess = new PlayAccess({ onLost: playAccessLost });
+const playAccess = new PlayAccess({ onLost: playAccessLost, onUnreachable: playAccessLost });
 /** The page's UI scale (js/scale.js): follows the setting and the screen, previewed by the game menu. */
 let uiScale = null;
 /** The map lens's art (js/maplens): the game's art for the magnifiers over map previews, or null without the engine. */
@@ -295,16 +295,18 @@ function tagGame(mode) {
   setTags({ mode, original_content: content?.originalActive ? 'on' : 'off' });
 }
 
-/** The game files were refused (js/account/gate.js): sign in again, or see why on the account page. */
+/** The game files were refused or not reached (js/account/gate.js): sign in again, or a dialog that says why (js/account/ui.js). */
 async function playAccessLost(state) {
-  if (state === 'signin' && account) {
+  // Refused, no answer or a server error: a dialog says why; its Try again may find the sign-in ended.
+  if (state !== 'signin' && (await openAccessProblem(account, state)) !== 'signin') return;
+  if (account) {
     await openSignIn(account, {
       reason: 'Your sign-in has ended, so the game cannot load the rest of its files. Sign in again to go on; the game that is running keeps running.',
       returnTo: location.pathname + location.search,
     });
     return;
   }
-  showToast(state === 'signin' ? 'Your sign-in has ended. Sign in on the account page to go on playing.' : 'Your account cannot load the game right now. The account page says why.');
+  showToast('Your sign-in has ended. Sign in on the account page to go on playing.');
 }
 
 /** The message for a load that failed: the sign-in prompt already explains a refusal. */
