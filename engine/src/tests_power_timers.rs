@@ -210,3 +210,54 @@ fn the_wasm_query_lists_the_viewers_timers() {
     let all: serde_json::Value = serde_json::from_str(&g.power_timers_json(-1)).unwrap();
     assert_eq!(all, v);
 }
+
+/// The built-in support power list of `id` as JSON, for map rules that replace it.
+fn powers_json(w: &World, id: &str) -> serde_json::Value {
+    let rules: serde_json::Value = serde_json::from_str(include_str!("../rules.json")).unwrap();
+    let a = rules["actors"].as_array().unwrap().iter().find(|a| a["id"] == id).unwrap().clone();
+    assert!(w.rules.actor_index(id).is_some());
+    a["abilities"]["support_powers"].clone()
+}
+
+#[test]
+fn map_rules_set_charge_times_and_start_fully_charged_like_openra() {
+    let mut w = world();
+    // A map (an .oramap's MSLO NukePower ChargeInterval: 50000 and an Iron
+    // Curtain with StartFullyCharged): the list is replaced whole.
+    let mut nuke = powers_json(&w, "MSLO");
+    nuke[0]["charge"] = 50_000.into();
+    let mut iron = powers_json(&w, "IRON");
+    iron[0]["start_fully_charged"] = true.into();
+    w.rules = crate::rules::Rules::load_with(Some(&serde_json::json!({ "actors": {
+        "MSLO": { "abilities": { "support_powers": nuke } },
+        "IRON": { "abilities": { "support_powers": iron } },
+    } })))
+    .expect("overrides load");
+    build(&mut w, "MSLO", 0, 0);
+    build(&mut w, "IRON", 0, 4);
+    run(&mut w, 10);
+    let inst = |w: &World, key: &str| w.power_instances(0).iter().find(|p| p.key == key).cloned().unwrap();
+    let n = inst(&w, "NukePower");
+    assert_eq!(n.total, 50_000);
+    assert_eq!(n.remaining, 50_000 - 10);
+    // The countdown every player sees counts from the map's charge time.
+    assert_eq!(w.power_timers(Some(2)).iter().find(|t| t.key == "NukePower").unwrap().remaining, 50_000 - 10);
+    let c = inst(&w, "GrantExternalConditionPower@IRONCURTAIN");
+    assert!(c.ready(), "StartFullyCharged: ready at once");
+    assert_eq!(c.total, w.rules.actors[ty(&w, "IRON") as usize].abilities.support_powers.as_ref().unwrap()[0].charge);
+    // After a launch it charges the whole time like any power.
+    let (sx, sy) = w.players[2].start;
+    assert!(w.activate_support_power(0, "GrantExternalConditionPower@IRONCURTAIN", sx * 1024, sy * 1024, None));
+    assert_eq!(inst(&w, "GrantExternalConditionPower@IRONCURTAIN").remaining, c.total);
+}
+
+#[test]
+fn map_rules_cannot_give_a_power_bad_timer_relationships() {
+    let w = world();
+    for bad in [serde_json::json!(["ally", "foe"]), serde_json::json!(["ally", "ally", "enemy", "neutral"])] {
+        let mut nuke = powers_json(&w, "MSLO");
+        nuke[0]["display_timer"] = bad.clone();
+        let r = crate::rules::Rules::load_with(Some(&serde_json::json!({ "actors": { "MSLO": { "abilities": { "support_powers": nuke } } } })));
+        assert!(r.is_err(), "{bad}");
+    }
+}

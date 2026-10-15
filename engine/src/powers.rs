@@ -14,7 +14,8 @@
 //! and meets the power's `prerequisites` (player tokens). It charges one tick
 //! per simulation tick while at least one of those providers is powered
 //! ([`World::is_powered_down`]); losing every provider removes the instance and
-//! its charge, like OpenRA. Charging starts empty and takes `charge` ticks
+//! its charge, like OpenRA. Charging starts empty (full with
+//! `start_fully_charged`, StartFullyCharged) and takes `charge` ticks
 //! (`ChargeInterval`).
 //!
 //! # API
@@ -252,12 +253,14 @@ impl World {
             list.retain(|inst| mine.iter().any(|o| o.1 == inst.key));
             for o in &mine {
                 if !list.iter().any(|inst| inst.key == o.1) {
-                    let total = self.rules.actors[o.2 as usize].abilities.support_powers.as_ref().unwrap()[o.3].charge.max(1);
+                    let info = &self.rules.actors[o.2 as usize].abilities.support_powers.as_ref().unwrap()[o.3];
+                    let total = info.charge.max(1);
                     list.push(PowerInstance {
                         key: o.1.clone(),
                         provider_ty: o.2,
                         index: o.3,
-                        remaining: total,
+                        // OpenRA SupportPowerInstance: StartFullyCharged starts ready.
+                        remaining: if info.start_fully_charged { 0 } else { total },
                         total,
                         charging: false,
                         notified_charging: false,
