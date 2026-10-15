@@ -13,8 +13,16 @@ const BIOME_LABELS = { temperate: 'Temperate', snow: 'Snow', desert: 'Desert' };
 /** Particles per weather at full intensity on a 1920 x 1080 view. */
 const PARTICLES = { rain: 900, thunderstorm: 1300, snowfall: 700, sandstorm: 900 };
 export const MAX_PARTICLES = 1600;
-/** Seconds the weather takes to build up and die down. */
-const RAMP = 4;
+/**
+ * Seconds the weather takes to build up and die down (engine/src/weather.rs
+ * RAMP_SECONDS). The engine throws no lightning in a thunderstorm's last
+ * STORM_CALM_SECONDS, which covers this die-down and the longest thunder
+ * delay below, so no flash and no thunder comes while the rain is stopping.
+ */
+export const RAMP = 4;
+/** Thunder comes this long after the flash, plus up to THUNDER_TRAVEL seconds with distance. */
+export const THUNDER_DELAY = 0.3;
+export const THUNDER_TRAVEL = 2.5;
 const TICKS_PER_SECOND = 25;
 /** The badge detail when the weather changes nothing. */
 export const NO_EFFECT = 'No effect on the battle.';
@@ -84,7 +92,7 @@ export class WeatherFx {
         this.flashAt = now;
         const d = camera ? Math.hypot(flash[1] - camera.x, flash[2] - camera.y) : 0;
         // Sound travels: farther strikes rumble later.
-        this.thunderAt = now + 0.3 + Math.min(2.5, d / 1200);
+        this.thunderAt = now + THUNDER_DELAY + Math.min(THUNDER_TRAVEL, d / 1200);
         this.strike = { x: flash[1], y: flash[2], kind: flash[3] ?? 0 };
       }
     }

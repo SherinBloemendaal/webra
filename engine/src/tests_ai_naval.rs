@@ -480,7 +480,11 @@ fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
 ///   when work/visualfixes (make animations, delayed sales) and this branch
 ///   met on main: 5 on the rivers (no fleet ever waited with an enemy to
 ///   attack, 1265 contested ticks) and 6 on the islands (longest wait 71
-///   ticks, 3190 contested ticks).
+///   ticks, 3190 contested ticks). Recalibrated when thunderstorms stopped
+///   striking in their last 8 s (weather.rs `STORM_CALM_SECONDS`, which
+///   changes these games' course): 7 on the rivers (longest wait 57 ticks,
+///   1988 contested ticks); the islands peak at 5 (longest wait 70 ticks,
+///   3924 contested ticks).
 ///
 /// To recalibrate after a change to the bots or the map generator (or a
 /// merge with another branch that changes them), run this test with
@@ -493,7 +497,7 @@ fn generated_naval_maps_keep_no_idle_fleets() {
     use crate::world::{GameOptions, PlayerSetup};
     use std::collections::BTreeMap;
     // Style, seed, bot and the most ships idle at once (measured).
-    let scenarios = [(MapStyle::Rivers, 3u64, BotType::Naval, 5), (MapStyle::Islands, 3, BotType::Turtle, 6)];
+    let scenarios = [(MapStyle::Rivers, 3u64, BotType::Naval, 7), (MapStyle::Islands, 3, BotType::Turtle, 6)];
     for (style, seed, bot, idle_bound) in scenarios {
         let factions = if (seed / 2).is_multiple_of(2) { ["allies", "soviet"] } else { ["soviet", "allies"] };
         let players: Vec<PlayerSetup> =

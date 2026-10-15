@@ -16,7 +16,7 @@
 //! | What | Effect |
 //! |------|--------|
 //! | Rain | sight of every actor 90 % |
-//! | Thunderstorm | sight 85 %; lightning strikes (lightning.rs): a quarter of the strikes hit a power plant, which loses half its health and blacks out its owner's power plants for 15 s; a strike on other units or structures halves their health; Lightning Rods ground every strike within their range |
+//! | Thunderstorm | sight 85 %; lightning strikes (lightning.rs, none in the storm's last [`STORM_CALM_SECONDS`] s while it dies down): a quarter of the strikes hit a power plant, which loses half its health and blacks out its owner's power plants for 15 s; a strike on other units or structures halves their health; Lightning Rods ground every strike within their range |
 //! | Snowfall (snow) | sight 85 % |
 //! | Sandstorm (desert) | sight 75 % |
 //! | Snow biome, infantry | speed 90 % |
@@ -134,6 +134,17 @@ impl Weather {
 
 const SECOND: u32 = TICKS_PER_SECOND;
 
+/// Seconds the client takes to build the weather up and to die it down
+/// (js/weather-fx.js `RAMP`: rain and clouds fade over the spell's last
+/// seconds).
+pub const RAMP_SECONDS: u32 = 4;
+/// No lightning in a thunderstorm's last seconds: the die-down
+/// ([`RAMP_SECONDS`]) plus the longest thunder delay (js/weather-fx.js,
+/// under 3 s), so neither a flash nor its thunder comes while the rain is
+/// already stopping. The draws of a strike still happen (and are dropped),
+/// so the weather cycle and every later strike stay the same.
+pub const STORM_CALM_SECONDS: u32 = 8;
+
 // Snow momentum (vehicles), percent of top speed per tick and of the turn rate.
 pub const SNOW_ACCEL_PCT: i32 = 10;
 pub const ICE_ACCEL_PCT: i32 = 6;
@@ -224,6 +235,12 @@ impl Environment {
         self.effects() && self.weather == Weather::HeatWave
     }
 
+    /// Whether the sky can throw lightning at `tick`: a thunderstorm outside
+    /// its last [`STORM_CALM_SECONDS`].
+    pub fn lightning_possible(&self, tick: u32) -> bool {
+        self.weather == Weather::Thunderstorm && self.until.saturating_sub(tick) > STORM_CALM_SECONDS * SECOND
+    }
+
     /// Advance the cycle by one tick (World::step). Returns this tick's
     /// lightning strike, if any, for the world to resolve (lightning.rs).
     pub fn tick(&mut self, tick: u32, width: i32, height: i32) -> Option<Strike> {
@@ -243,8 +260,11 @@ impl Environment {
             // From the strikes' own stream, the same numbers in every mode.
             let roll = self.strike_rng.range(0, 100);
             let pick = self.strike_rng.range(0, i32::MAX);
-            self.flash = Some((tick, x, y, StrikeKind::Ground));
             self.next_flash = tick + (4 + self.rng.range(0, 9) as u32) * SECOND;
+            if !self.lightning_possible(tick) {
+                return None;
+            }
+            self.flash = Some((tick, x, y, StrikeKind::Ground));
             return Some(Strike { x, y, roll, pick });
         }
         None
@@ -397,6 +417,76 @@ mod tests {
             assert!(seen.len() >= 6, "{biome:?}: {seen:?}");
             assert!(seen.iter().all(|w| allowed.contains(w)), "{biome:?}: {seen:?}");
         }
+    }
+
+    /// The cycle as it ran before the storm's calm: every strike that came
+    /// due, last seconds included.
+    fn tick_without_calm(e: &mut Environment, tick: u32) -> Option<Strike> {
+        if tick >= e.until {
+            let (next, secs) = next_weather(e.biome, e.weather, &mut e.rng);
+            e.weather = next;
+            e.since = tick;
+            e.until = tick + secs * SECOND;
+            e.next_flash = tick + 3 * SECOND;
+        }
+        if e.weather == Weather::Thunderstorm && tick >= e.next_flash {
+            let x = e.rng.range(0, 64) * crate::math::CELL + crate::math::HALF_CELL;
+            let y = e.rng.range(0, 64) * crate::math::CELL + crate::math::HALF_CELL;
+            let roll = e.strike_rng.range(0, 100);
+            let pick = e.strike_rng.range(0, i32::MAX);
+            e.next_flash = tick + (4 + e.rng.range(0, 9) as u32) * SECOND;
+            return Some(Strike { x, y, roll, pick });
+        }
+        None
+    }
+
+    #[test]
+    fn no_lightning_while_a_thunderstorm_dies_down_and_the_cycle_stays_the_same() {
+        let calm = STORM_CALM_SECONDS * SECOND;
+        assert!(calm >= RAMP_SECONDS * SECOND + 3 * SECOND, "the die-down and the longest thunder delay");
+        let (mut storms, mut strikes, mut dropped) = (0, 0, 0);
+        for seed in 0..60u64 {
+            for mode in [WeatherMode::Full, WeatherMode::Cosmetic] {
+                let mut e = Environment::new(Biome::Temperate, mode, seed);
+                let mut old = Environment::new(Biome::Temperate, mode, seed);
+                let mut last_flash = None;
+                for t in 0..25 * 60 * 30 {
+                    let s = e.tick(t, 64, 64);
+                    let o = tick_without_calm(&mut old, t);
+                    // The same sky, tick for tick: no draw of the cycle moved.
+                    assert_eq!(
+                        (e.weather, e.since, e.until, e.next_flash),
+                        (old.weather, old.since, old.until, old.next_flash),
+                        "seed {seed} tick {t}"
+                    );
+                    if e.weather == Weather::Thunderstorm && e.since == t {
+                        storms += 1;
+                    }
+                    let left = e.until - t;
+                    match (s, o) {
+                        (Some(s), Some(o)) => {
+                            assert_eq!(s, o, "seed {seed} tick {t}: the strike is the one that came due");
+                            assert!(left > calm, "seed {seed} tick {t}: a strike {left} ticks before the storm ends");
+                            assert_eq!(e.flash.map(|f| f.0), Some(t), "the flash shows the strike");
+                            strikes += 1;
+                        }
+                        (None, Some(_)) => {
+                            assert!(left <= calm, "seed {seed} tick {t}: a strike dropped {left} ticks before the end");
+                            dropped += 1;
+                        }
+                        (None, None) => {}
+                        (Some(_), None) => panic!("seed {seed} tick {t}: a strike that never came due"),
+                    }
+                    // No flash at all (bolt, sky flash, thunder) after the cut-off.
+                    if e.flash != last_flash {
+                        assert!(e.flash.is_some_and(|f| f.0 == t) && left > calm, "seed {seed} tick {t}: a flash in the calm");
+                        last_flash = e.flash;
+                    }
+                }
+            }
+        }
+        assert!(storms > 100 && strikes > 1000, "{storms} storms, {strikes} strikes");
+        assert!(dropped > 20, "the calm was reached: {dropped} strikes dropped");
     }
 
     #[test]

@@ -2,7 +2,9 @@
 // thunder hook, particle budgets and prefers-reduced-motion.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_PARTICLES, NO_EFFECT, WeatherFx, heatText, weatherInfo } from '../js/weather-fx.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { MAX_PARTICLES, NO_EFFECT, RAMP, THUNDER_DELAY, THUNDER_TRAVEL, WeatherFx, heatText, weatherInfo } from '../js/weather-fx.js';
 
 const sky = (o = {}) => ({ biome: 'temperate', mode: 'full', weather: 'clear', since: 0, until: 5000, tick: 100, sightPct: 100, flash: null, ...o });
 
@@ -78,4 +80,26 @@ test('lightning flashes once per strike and thunder follows from where it struck
   let peak = 0;
   for (let t = 1; t < 2; t += 0.01) peak = Math.max(peak, calm.flash(t));
   assert.ok(peak > 0 && peak <= 0.2, `soft flash ${peak}`);
+});
+
+test('no lightning or thunder while a thunderstorm dies down (engine STORM_CALM_SECONDS)', () => {
+  const weather = readFileSync(fileURLToPath(new URL('../../../engine/src/weather.rs', import.meta.url)), 'utf8');
+  const constant = (name) => Number(new RegExp(`pub const ${name}: u32 = (\\d+);`).exec(weather)[1]);
+  assert.equal(constant('RAMP_SECONDS'), RAMP, 'the client ramps as the engine says');
+  const calm = constant('STORM_CALM_SECONDS');
+  assert.ok(calm >= RAMP + THUNDER_DELAY + THUNDER_TRAVEL, `calm ${calm} s covers the die-down and the thunder`);
+  // The last possible strike, as far away as thunder gets: flash and thunder both come in full rain.
+  const until = 9000;
+  const last = until - calm * 25 - 1;
+  const heard = [];
+  const fx = new WeatherFx({ onThunder: (strike) => heard.push(strike) });
+  const storm = (tick, flash) => sky({ weather: 'thunderstorm', since: 0, until, tick, flash });
+  fx.update(storm(last - 200, [last - 300, 0, 0, 0]), -10); // an earlier strike, seen when joining
+  fx.update(storm(last, [last, 1e6, 1e6, 0]), 0, { x: 0, y: 0 });
+  assert.equal(fx.intensity(), 1);
+  assert.ok(fx.flash(0.01) > 0.7);
+  const delay = THUNDER_DELAY + THUNDER_TRAVEL;
+  fx.update(storm(last + Math.ceil(delay * 25), [last, 1e6, 1e6, 0]), delay);
+  assert.equal(heard.length, 1, 'the thunder came');
+  assert.equal(fx.intensity(), 1, 'before the rain started to stop');
 });
