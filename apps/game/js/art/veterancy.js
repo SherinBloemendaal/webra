@@ -2,9 +2,11 @@
 // bottom right of a ranked unit, like OpenRA's WithDecoration@RANK-* (`rank`
 // image: one, two and three chevrons, then the elite star), and the prone pose
 // of the infantry (TakeCover), which sprites.js puts in the infantry's turret slot.
-// Helpers and palette come from ./kit.js.
+// Helpers and palette come from ./kit.js; the prone soldier from ./infantry.js.
 
-import { C, rect, circle, poly } from './kit.js';
+import { rect, circle, poly } from './kit.js';
+import { U } from './unitkit.js';
+import { hands, lying } from './infantry.js';
 
 const GOLD = '#f2c94c';
 const OUTLINE = '#1a1408';
@@ -53,22 +55,15 @@ export const VETERANCY_SPECIALS = [
  */
 export const PRONE_DRAW = {
   E1: [8, 14, (ctx, P) => {
-    circle(ctx, P.c(C.shadow), 4.5, 8, 3.4);
-    rect(ctx, P.c(C.steelDark), 3.6, 0, 0.9, 4); // rifle
-    rect(ctx, P.team(0.4), 2.2, 9, 1.5, 4.6); // legs
-    rect(ctx, P.team(0.4), 4.3, 9, 1.5, 4.6);
-    poly(ctx, P.team(0.7), [1.5, 5, 6.5, 5, 6, 10, 2, 10]); // back
-    circle(ctx, P.team(0.55), 4, 4.4, 1.9);
-    circle(ctx, P.c('#5d6b3a'), 4, 4.1, 1.5); // helmet
+    lying(ctx, P, U.helmet);
+    rect(ctx, P.c(U.steelDark), 3.6, 0, 0.9, 4); // rifle
+    hands(ctx, P, [4.1, 2.8]);
   }],
   E3: [8, 14, (ctx, P) => {
-    circle(ctx, P.c(C.shadow), 4.5, 8, 3.4);
-    rect(ctx, P.team(0.4), 2.2, 9, 1.5, 4.6); // legs
-    rect(ctx, P.team(0.4), 4.3, 9, 1.5, 4.6);
-    poly(ctx, P.team(0.7), [1.5, 5, 6.5, 5, 6, 10, 2, 10]); // back
-    rect(ctx, P.c(C.steelDark), 5, 0.5, 1.8, 9); // launcher along the right side
-    rect(ctx, P.c(C.steelLight), 5.3, 0.5, 1.2, 1.2);
-    circle(ctx, P.team(0.55), 3.6, 4.4, 1.9);
-    circle(ctx, P.c('#5d6b3a'), 3.6, 4.1, 1.5); // helmet
+    lying(ctx, P, U.helmet);
+    rect(ctx, P.c(U.steelDark), 5, 0.5, 1.8, 9); // launcher along the right side
+    rect(ctx, P.c(U.steel), 5.4, 1.5, 0.7, 7.5);
+    rect(ctx, P.c(U.steelLight), 5.3, 0.5, 1.2, 1.2);
+    hands(ctx, P, [5, 3]);
   }],
 };
