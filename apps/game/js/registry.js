@@ -470,7 +470,10 @@ export function checkValue(spec, value) {
     case 'boolean':
       return typeof value === 'boolean' ? null : 'must be true or false';
     case 'choice':
-      return spec.options.includes(value) ? null : `must be one of ${spec.options.map((o) => JSON.stringify(o)).join(', ')}`;
+      // A renamed option's old value (spec.aliases) is still valid: normalizeValue maps it to the new one.
+      return spec.options.includes(value) || (typeof value === 'string' && Object.hasOwn(spec.aliases ?? {}, value))
+        ? null
+        : `must be one of ${spec.options.map((o) => JSON.stringify(o)).join(', ')}`;
     case 'string': {
       if (value === null) return spec.nullable ? null : 'must be text';
       if (typeof value !== 'string') return 'must be text';
@@ -541,9 +544,11 @@ export function checkValue(spec, value) {
 /** A valid value for `spec` from anything: clamps numbers, trims text, drops bad entries, else the default. */
 export function normalizeValue(spec, value) {
   switch (spec.type) {
-    case 'choice':
+    case 'choice': {
       // A renamed option (spec.aliases: old value -> new) keeps what the player chose.
-      return checkValue(spec, spec.aliases?.[value] ?? value) ? defaultOf(spec) : (spec.aliases?.[value] ?? value);
+      const v = typeof value === 'string' && Object.hasOwn(spec.aliases ?? {}, value) ? spec.aliases[value] : value;
+      return spec.options.includes(v) ? v : defaultOf(spec);
+    }
     case 'number':
     case 'integer': {
       if (typeof value !== 'number' || !Number.isFinite(value)) return defaultOf(spec);

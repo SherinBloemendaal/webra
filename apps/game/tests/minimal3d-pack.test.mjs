@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { BUILTIN_LIMITS, PACK_LIMITS, readPack, pngSize, SPECIAL_ACTORS } from '../js/content/packs.js';
 import { BUILTIN_PACKS, ContentSystem, GRAPHICS } from '../js/content/index.js';
 import { MemoryStore } from '../js/content/store.js';
-import { createRegistry, normalizeValues } from '../js/registry.js';
+import { checkDocument, createRegistry, normalizeValues } from '../js/registry.js';
+import { ORIGINAL_INFO } from '../js/content/atlas.js';
 import { createSettings } from '../js/settings.js';
 import { validateSettingsDocument } from '../../../packages/protocol/src/accounts.js';
 import { buildPng, decodeTestPng } from './content-fixtures.mjs';
@@ -202,6 +203,33 @@ test('terrain: each biome has clear and water rows, ore and gems', async () => {
   }
 });
 
+test('the pack is drawn in the classic camera with the ground shear, and says so: the game shears turret and rotor offsets alike', async () => {
+  const [main] = await builtin();
+  assert.equal(main.manifest.perspective, 'classic');
+  const core = readFileSync(fileURLToPath(new URL('../../../tools/gen_minimal3d/core.py', import.meta.url)), 'utf8');
+  const shear = Number(core.match(/^GSHEAR = (-?[\d.]+)$/m)[1]);
+  assert.equal(main.manifest.groundShear, shear, 'the manifest carries the generator\'s GSHEAR');
+});
+
+test('3D minimal in a game: turrets, rotors and muzzles of its units get the classic placement and the shear (CA, TRAN, FTRK)', async () => {
+  const [main] = await builtin();
+  const { content, settings } = system(async (name) => read(`../packs/${name}`));
+  settings.set('graphics', 'webra3d');
+  await content.reload();
+  const ids = ['1TNK', 'FTRK', 'CA', 'TRAN', 'E1'];
+  const actors = ids.map((id) => rules.actors.find((a) => a.id === id));
+  const art = content.art(actors);
+  const slots = new Set(art.original.slots);
+  for (const [t, id] of ids.entries()) assert.ok(slots.has(2 * t), `${id} body is pre-rendered`);
+  for (const id of ['1TNK', 'FTRK', 'CA', 'TRAN']) assert.ok(slots.has(2 * ids.indexOf(id) + 1), `${id} turret or rotor is pre-rendered`);
+  const shears = new Map();
+  for (let k = 0; k < art.original.info.length; k += 4) {
+    if (art.original.info[k] === ORIGINAL_INFO.SHEAR) shears.set(ids[art.original.info[k + 1]], art.original.info[k + 2]);
+  }
+  assert.deepEqual([...shears.keys()].sort(), [...ids].sort(), 'every actor of the pack is sheared');
+  for (const q of shears.values()) assert.equal(q, Math.round(main.manifest.groundShear * 1024));
+});
+
 test('the generated art keeps the pack rules: no dashes, WebRA authorship, licence', async () => {
   const [main] = await builtin();
   assert.equal(main.manifest.author, 'WebRA');
@@ -216,6 +244,16 @@ test('the old graphics value "webra" becomes "webra2d"; the three choices are ke
   for (const v of ['webra2d', 'webra3d', 'original']) assert.equal(normalizeValues({ game: { graphics: v } }).values.game.graphics, v);
   assert.equal(normalizeValues({ game: { graphics: 'nonsense' } }).values.game.graphics, 'webra2d');
   assert.equal(normalizeValues({}).values.game.graphics, 'webra2d', 'the default is 2D minimal');
+});
+
+test('a settings document with the old value is still valid (admin editor, account upload) and reads as 2D minimal', () => {
+  assert.equal(checkDocument({ game: { graphics: 'webra' } }).ok, true);
+  assert.equal(checkDocument({ game: { graphics: 'webra' } }).values.game.graphics, 'webra2d');
+  assert.equal(checkDocument({ game: { graphics: 'cartoon' } }).ok, false);
+  const registry = createRegistry({ storage: null });
+  registry.set('game', 'graphics', 'webra3d');
+  registry.set('game', 'graphics', 'webra');
+  assert.equal(registry.get('game', 'graphics'), 'webra2d', 'a value set by an older tab or device is mapped');
 });
 
 test('accounts accept the three choices and still the stored old value', () => {
