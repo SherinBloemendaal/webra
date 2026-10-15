@@ -30,20 +30,17 @@
     <header class="site-header">
       <div class="wrap header-inner">
         <a class="brand" href="/" aria-label="WebRA home">
-          <img class="brand-mark" src="/lib/brand/favicon.svg" alt="" width="32" height="32" />
-          <span>Web<b>RA</b></span>
+          <img class="brand-mark" src="/lib/brand/emblem.svg" alt="" width="40" height="40" />
+          <span class="brand-word">Web<b>RA</b></span>
         </a>
         <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
         <nav class="site-nav" id="site-nav" aria-label="Main">
           <ul>
-            <li><a href="/#features">Features</a></li>
-            <li><a href="/#factions">Factions</a></li>
-            <li><a href="/maps.html">Maps</a></li>
             <li><a href="/multiplayer.html">Multiplayer</a></li>
+            <li><a href="/maps.html">Maps</a></li>
             <li><a href="/changelog">Changelog</a></li>
-            <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
             <li><a href="/account/">Account</a></li>
-            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play now</a></li>
+            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play</a></li>
           </ul>
         </nav>
       </div>
@@ -51,76 +48,131 @@
 
     <main id="main">
       <section class="hero" aria-labelledby="hero-title">
-        <div class="hero-scene-bg" aria-hidden="true"></div>
-        <canvas class="hero-scene" aria-hidden="true"></canvas>
-        <div class="hero-shade" aria-hidden="true"></div>
         <div class="wrap hero-inner">
           <div class="hero-copy">
-            <p class="eyebrow">Free and open source</p>
-            <h1 id="hero-title">WebRA</h1>
-            <p class="tagline">Red Alert in your browser.</p>
+            <p class="beta-badge" data-beta hidden><span class="lamp" aria-hidden="true"></span><span data-beta-text></span></p>
+            <h1 id="hero-title">Red Alert<br /><span class="hero-accent">in your browser.</span></h1>
             <p class="lede">
-              Build a base, harvest ore and send your armour across the map, all in a browser tab. No install, no
-              plugin: a deterministic Rust simulation compiled to WebAssembly and drawn with WebGPU.
+              A deterministic Rust simulation, compiled to WebAssembly and drawn with WebGPU. Skirmish, the campaigns and
+              online play in a tab. No install, no plugin.
             </p>
-            <ul class="tech-tags" aria-label="Built with">
-              <li>Rust</li>
-              <li>WebAssembly</li>
-              <li>WebGPU</li>
-              <li>Lockstep multiplayer</li>
-            </ul>
             <div class="hero-actions">
               <a class="btn btn-primary btn-big" href="/play/">
                 <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor" /></svg>
                 Play now
               </a>
-              <a class="btn" href="/multiplayer.html">Find a game</a>
+              <a class="btn btn-big" href="/account/#signup" data-signup>Create account</a>
             </div>
             <p class="hero-note">Runs in Chrome or Edge 113+, Safari 26+ and Firefox 141+ on Windows (WebGPU).</p>
           </div>
+          <figure class="hero-figure">
+            <div class="hero-frame">
+              <svg class="hero-art" viewBox="0 0 520 340" role="img" aria-labelledby="hero-art-title">
+                <title id="hero-art-title">A battle in WebRA's 2D style: Allied tanks cross a bridge toward a Soviet Tesla Coil while a harvester gathers ore</title>
+                <defs>
+                  <pattern id="hero-grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="rgba(0,0,0,0.14)" stroke-width="1" /></pattern>
+                  <linearGradient id="hero-fog" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#000" stop-opacity="0" /><stop offset="1" stop-color="#000" stop-opacity="0.6" /></linearGradient>
+                  <g id="hero-tank"><rect x="-9" y="-8" width="18" height="4" fill="#2b2b28" /><rect x="-9" y="4" width="18" height="4" fill="#2b2b28" /><rect class="ally ally-edge" x="-8" y="-5" width="16" height="10" stroke-width="1" /><rect class="ally-gun" x="0" y="-1.2" width="12" height="2.4" /><circle class="ally-hi" r="4" /></g>
+                </defs>
+                <rect class="ground" width="520" height="340" />
+                <rect width="520" height="340" fill="url(#hero-grid)" />
+                <g fill="#c99a2e"><circle cx="190" cy="285" r="9" /><circle cx="206" cy="296" r="7" /><circle cx="176" cy="300" r="6" /><circle cx="200" cy="274" r="5" /><circle cx="214" cy="281" r="4" /></g>
+                <g fill="#e6c25a"><circle cx="188" cy="283" r="3" /><circle cx="205" cy="294" r="2.5" /></g>
+                <path class="river" d="M250 0 C 285 100, 225 200, 292 340" fill="none" stroke-width="38" />
+                <path class="river-deep" d="M250 0 C 285 100, 225 200, 292 340" fill="none" stroke-width="28" />
+                <rect x="236" y="141" width="56" height="18" fill="#7a6a52" />
+                <path d="M236 143H292M236 157H292" stroke="#4e4434" stroke-width="2" />
+                <rect x="30" y="40" width="70" height="60" fill="#b8b5a7" /><rect class="ally" x="30" y="40" width="70" height="5" /><rect x="30" y="100" width="70" height="8" fill="#8a877a" /><rect x="52" y="100" width="26" height="8" fill="#d9b23a" /><path d="M44 80 L94 62" stroke="#d9b23a" stroke-width="4" />
+                <rect x="30" y="128" width="46" height="40" fill="#b8b5a7" /><rect class="ally" x="30" y="128" width="46" height="4" /><circle cx="42" cy="146" r="8" fill="#98a0a8" /><circle cx="42" cy="146" r="5" fill="#55585c" /><circle cx="64" cy="146" r="8" fill="#98a0a8" /><circle cx="64" cy="146" r="5" fill="#55585c" />
+                <rect x="84" y="200" width="52" height="46" fill="#b8b5a7" /><rect class="ally" x="84" y="200" width="52" height="4" /><circle cx="148" cy="210" r="10" fill="#98a0a8" /><circle cx="148" cy="210" r="6" fill="#c99a2e" />
+                <rect x="116" y="108" width="58" height="46" fill="#70747a" /><rect class="ally" x="116" y="108" width="58" height="4" /><rect x="132" y="150" width="26" height="6" fill="#d9b23a" />
+                <rect x="452" y="112" width="44" height="38" fill="#b8b5a7" /><rect x="452" y="112" width="44" height="4" fill="#e64033" /><circle cx="466" cy="130" r="7" fill="#98a0a8" /><circle cx="484" cy="130" r="7" fill="#98a0a8" />
+                <rect x="428" y="58" width="26" height="26" fill="#8d8b80" /><circle cx="441" cy="71" r="10" fill="#55585c" /><circle cx="441" cy="71" r="7" fill="none" stroke="#b0703a" stroke-width="2.5" />
+                <circle cx="441" cy="71" r="4" fill="#ffd98a"><animate attributeName="r" values="3.5;5.5;3.5" dur="1.1s" repeatCount="indefinite" /></circle>
+                <rect x="390" y="110" width="22" height="22" fill="#8d8b80" />
+                <g transform="translate(401 121)"><g><animateTransform attributeName="transform" type="rotate" values="200;150;200" dur="4s" repeatCount="indefinite" /><rect x="0" y="-1.6" width="14" height="3.2" fill="#2b2b28" /><circle r="7" fill="#e64033" stroke="#7a1a12" stroke-width="1" /></g></g>
+                <g><animateMotion path="M122 240 C 150 252, 170 272, 188 286 C 172 302, 136 272, 122 240" dur="14s" repeatCount="indefinite" rotate="auto" /><rect class="ally ally-edge" x="-10" y="-7" width="20" height="14" stroke-width="1" /><rect x="-8" y="-5" width="10" height="10" fill="#c99a2e" /><rect class="ally-mid" x="3" y="-5" width="6" height="10" /></g>
+                <g><animateMotion path="M110 182 L 236 166 L 300 150 L 360 140" dur="9s" repeatCount="indefinite" rotate="auto" /><use href="#hero-tank" /><circle cx="14" cy="0" r="3" fill="#ffd98a" opacity="0"><animate attributeName="opacity" values="0;0;1;0" dur="1.3s" repeatCount="indefinite" /></circle></g>
+                <g><animateMotion path="M110 182 L 236 166 L 300 150 L 360 140" dur="9s" begin="-1.6s" repeatCount="indefinite" rotate="auto" /><use href="#hero-tank" /><path d="M-12 -11h6M-12 -11v6M12 11h-6M12 11v-6" stroke="#4fd067" stroke-width="1.6" /></g>
+                <g><animateMotion path="M110 182 L 236 166 L 300 150 L 360 140" dur="9s" begin="-3.2s" repeatCount="indefinite" rotate="auto" /><use href="#hero-tank" /><circle cx="14" cy="0" r="3" fill="#ffd98a" opacity="0"><animate attributeName="opacity" values="0;1;0;0" dur="1.1s" repeatCount="indefinite" /></circle></g>
+                <polyline class="tesla" points="441,66 426,92 434,100 410,118 418,126 378,146" fill="none" stroke-width="5" opacity="0"><animate attributeName="opacity" values="0;0;0;0.45;0" dur="2.2s" repeatCount="indefinite" /></polyline>
+                <polyline points="441,66 426,92 434,100 410,118 418,126 378,146" fill="none" stroke="#e0f8ff" stroke-width="1.8" opacity="0"><animate attributeName="opacity" values="0;0;0;1;0" dur="2.2s" repeatCount="indefinite" /></polyline>
+                <circle cx="372" cy="146" r="2" fill="#ffb02a" opacity="0"><animate attributeName="r" values="2;16" dur="2.2s" repeatCount="indefinite" /><animate attributeName="opacity" values="0;0;0;0.9;0" dur="2.2s" repeatCount="indefinite" /></circle>
+                <rect x="360" y="0" width="160" height="340" fill="url(#hero-fog)" />
+                <g><animateMotion path="M-40 300 C 150 250, 320 320, 580 190" dur="16s" repeatCount="indefinite" rotate="auto" /><ellipse cx="4" cy="22" rx="11" ry="4" fill="#000" opacity="0.3" /><rect class="ally-mid" x="-24" y="-1.5" width="14" height="3" /><ellipse class="ally ally-edge" rx="11" ry="4.5" stroke-width="1" /><ellipse class="glass" cx="6" rx="3" ry="2.5" /><g><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="0.3s" repeatCount="indefinite" /><rect x="-16" y="-1" width="32" height="2" fill="#1a1c1f" opacity="0.75" /><rect x="-1" y="-16" width="2" height="32" fill="#1a1c1f" opacity="0.75" /></g></g>
+              </svg>
+              <div class="hero-hud" aria-hidden="true"><span class="hud-money">$ 4,250</span><span class="hud-power">PWR 140/180</span></div>
+              <button class="hero-pause" type="button" aria-pressed="false" data-hero-pause hidden>Pause</button>
+            </div>
+            <figcaption>Drawn in WebRA's own 2D minimal style. The game draws every unit and building itself; the original 1996 graphics are an install away.</figcaption>
+          </figure>
         </div>
       </section>
 
       <section class="section" id="features" aria-labelledby="features-title">
         <div class="wrap">
           <div class="section-head">
-            <span class="kicker">Briefing</span>
-            <h2 id="features-title">The classic, rebuilt for the web</h2>
-            <p>
-              The gameplay of 1996, with the numbers from OpenRA, on an engine built for today: thousands of units,
-              exact replays of every order and games with friends from a single link.
-            </p>
+            <h2 id="features-title">Everything Red Alert, in a tab</h2>
           </div>
           <ul class="features">
             <li class="feature panel">
-              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="7" width="34" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="3" /><path d="M14 36h12M20 31v5" stroke="currentColor" stroke-width="3" /><path d="M16 14v10l9-5z" fill="#e2321f" /></svg>
-              <h3>Plays in a browser tab</h3>
-              <p>Open the page and play. The game is a few hundred kilobytes of WebAssembly and JavaScript, rendered on the GPU with WebGPU.</p>
+              <h3><span class="lamp" aria-hidden="true"></span>Skirmish</h3>
+              <p>2 to 8 players against OpenRA's Rush, Normal, Turtle and Naval bots, free for all or in teams.</p>
+              <span class="feature-fact">2-8 players</span>
             </li>
             <li class="feature panel">
-              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20a12 12 0 0 1 21-8M32 20a12 12 0 0 1-21 8" fill="none" stroke="currentColor" stroke-width="3" /><path d="M29 4v8h-8M11 36v-8h8" fill="none" stroke="currentColor" stroke-width="3" /><rect x="17" y="17" width="6" height="6" fill="#e2321f" /></svg>
-              <h3>Deterministic simulation</h3>
-              <p>A Rust engine with integer math only, 25 ticks per second. The same orders always produce the same battle, on every machine.</p>
+              <h3><span class="lamp" aria-hidden="true"></span>Campaign</h3>
+              <p>The Allied and Soviet campaigns, Counterstrike, Aftermath and the ant missions, with their scripts.</p>
+              <span class="feature-fact">60 missions</span>
             </li>
             <li class="feature panel">
-              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><circle cx="10" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="3" /><circle cx="30" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="3" /><path d="M2 32c1-6 4-9 8-9s7 3 8 9M22 32c1-6 4-9 8-9s7 3 8 9" fill="none" stroke="currentColor" stroke-width="3" /><path d="M16 12h8" stroke="#e2321f" stroke-width="3" stroke-dasharray="3 2" /></svg>
-              <h3>Online multiplayer</h3>
-              <p>Lockstep multiplayer for up to eight players: only orders travel over the network, and state hashes catch any desync.</p>
+              <h3><span class="lamp" aria-hidden="true"></span>Online</h3>
+              <p>Host public or private games. Deterministic lockstep, reconnects, spectators and rematches.</p>
+              <span class="feature-fact">lockstep · WebSockets</span>
             </li>
             <li class="feature panel">
-              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><path d="M4 8l10-4 12 4 10-4v28l-10 4-12-4-10 4z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" /><path d="M14 4v28M26 8v28" stroke="currentColor" stroke-width="2" /><circle cx="20" cy="19" r="3" fill="#e2321f" /></svg>
-              <h3>Map editor</h3>
-              <p>Paint terrain, ore and spawns, test-play your map on the spot and share it with the community. Modded rules are clearly marked.</p>
+              <h3><span class="lamp" aria-hidden="true"></span>Map editor</h3>
+              <p>Paint terrain, place actors, set up slots and test play, with fairness checks measured by the engine.</p>
+              <span class="feature-fact">up to 256 x 256</span>
             </li>
             <li class="feature panel">
-              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="6" y="4" width="28" height="32" rx="2" fill="none" stroke="currentColor" stroke-width="3" /><path d="M12 13h16M12 20h16M12 27h9" stroke="currentColor" stroke-width="3" /><circle cx="28" cy="28" r="3" fill="#e2321f" /></svg>
-              <h3>Faithful rules</h3>
-              <p>Costs, build times, armour, weapons and the full tech tree for seven factions come straight from OpenRA's Red Alert rules.</p>
+              <h3><span class="lamp" aria-hidden="true"></span>Replays</h3>
+              <p>Every game is recorded. Watch at 1x to 8x, seek, and switch the player view. Signed in, they wait in your account.</p>
+              <span class="feature-fact">kept 30 days</span>
             </li>
             <li class="feature panel">
-              <svg class="feature-icon" viewBox="0 0 40 40" aria-hidden="true"><path d="M4 20h8M28 20h8M20 4v8M20 28v8" stroke="currentColor" stroke-width="3" /><path d="M8 8l6 6M32 8l-6 6M8 32l6-6M32 32l-6-6" stroke="currentColor" stroke-width="2" /><circle cx="20" cy="20" r="4" fill="#e2321f" /></svg>
-              <h3>Huge battles</h3>
-              <p>Shared flow fields and a spatial hash keep tens of thousands of units moving: 20,000 units simulate in about 7 ms per tick natively.</p>
+              <h3><span class="lamp" aria-hidden="true"></span>No install</h3>
+              <p>Rust compiled to WebAssembly, drawn with WebGPU. Tens of thousands of units in a tab.</p>
+              <span class="feature-fact">wasm · WebGPU</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="packs" id="looks" aria-labelledby="packs-title">
+        <div class="wrap packs-inner">
+          <div class="packs-copy">
+            <h2 id="packs-title">Pick your look</h2>
+            <p>
+              Texture packs over the same battlefield: flat 2D for readability, or the original 1996 graphics from your
+              own copy of the freeware release. You choose in the game's settings; the rules stay the same.
+            </p>
+          </div>
+          <ul class="pack-list" aria-label="Texture packs">
+            <li class="pack pack-on">
+              <span class="pack-swatch pack-2d" aria-hidden="true"></span>
+              <span class="pack-name"><span class="lamp" aria-hidden="true"></span>2D minimal</span>
+              <span class="pack-note">Built in, the default</span>
+            </li>
+            <li class="pack">
+              <span class="pack-swatch pack-3d" aria-hidden="true"></span>
+              <span class="pack-name"><span class="lamp" aria-hidden="true"></span>3D minimal</span>
+              <span class="pack-note">Being built</span>
+            </li>
+            <li class="pack">
+              <span class="pack-swatch pack-ra" aria-hidden="true"></span>
+              <span class="pack-name"><span class="lamp" aria-hidden="true"></span>Red Alert original</span>
+              <span class="pack-note">From your own copy</span>
             </li>
           </ul>
         </div>
@@ -129,7 +181,6 @@
       <section class="section section-alt" id="gallery" aria-labelledby="gallery-title" data-gallery>
         <div class="wrap">
           <div class="section-head">
-            <span class="kicker">Field manual</span>
             <h2 id="gallery-title">Flat, readable, 1996</h2>
             <p>
               Every unit and building below is drawn live in your browser by the game's own sprite code: plain shapes
@@ -163,7 +214,6 @@
       <section class="section" id="factions" aria-labelledby="factions-title">
         <div class="wrap">
           <div class="section-head">
-            <span class="kicker">Choose your side</span>
             <h2 id="factions-title">Two sides, five countries</h2>
             <p>
               Pick a side for its army, then a country for its special weapon. The tech tree follows OpenRA: what you
@@ -248,7 +298,6 @@
       <section class="section section-alt" id="how-it-works" aria-labelledby="how-title">
         <div class="wrap">
           <div class="section-head">
-            <span class="kicker">Under the hood</span>
             <h2 id="how-title">How it works</h2>
             <p>
               One deterministic simulation, shared by every player. The browser draws it, the server only relays
@@ -300,18 +349,15 @@
         </div>
       </section>
 
-      <section class="section" id="releases" aria-labelledby="releases-title">
-        <div class="wrap">
-          <div class="cta-band panel">
-            <div>
-              <h2 id="releases-title">Open source, GPLv3</h2>
-              <p>Follow development, read the changelog or grab a release. Every change goes through CI before it ships here.</p>
-            </div>
-            <div class="link-row">
-              <a class="btn btn-accent" href="https://github.com/SherinBloemendaal/webra/releases">Releases</a>
-              <a class="btn" href="https://github.com/SherinBloemendaal/webra/blob/main/CHANGELOG.md">Changelog</a>
-              <a class="btn" href="https://github.com/SherinBloemendaal/webra">Source code</a>
-            </div>
+      <section class="section" id="join" aria-labelledby="join-title">
+        <div class="wrap cta-band">
+          <div>
+            <h2 id="join-title">Ready, commander?</h2>
+            <p data-signup-note>Sign up with a password, a passkey or Discord. WebRA is free and open source (GPLv3).</p>
+          </div>
+          <div class="link-row">
+            <a class="btn btn-primary btn-big" href="/account/#signup" data-signup>Create account</a>
+            <a class="btn btn-big" href="https://github.com/SherinBloemendaal/webra">Source code</a>
           </div>
         </div>
       </section>
@@ -319,7 +365,6 @@
       <section class="section section-alt" id="credits" aria-labelledby="credits-title">
         <div class="wrap">
           <div class="section-head">
-            <span class="kicker">Credits</span>
             <h2 id="credits-title">Standing on the shoulders of giants</h2>
           </div>
           <div class="credits">
@@ -364,7 +409,7 @@
 
     <footer class="site-footer">
       <div class="wrap footer-inner">
-        <p>WebRA, a free fan project. Licensed under the GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
+        <p>WebRA is a fan project, not affiliated with Electronic Arts. GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
         <ul class="footer-links">
           <li><a href="/play/">Play</a></li>
           <li><a href="/maps.html">Maps</a></li>

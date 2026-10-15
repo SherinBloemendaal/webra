@@ -11,6 +11,8 @@
 // may play get that module; the others see a note instead of the art.
 
 import { initPlayLinks } from './play-links.js';
+import { betaBadge, releaseTag } from './site-data.js';
+import { INVITE_MESSAGES, formatInviteCode, inviteSummary, invitePath, lookupInvite, normalizeInviteCode, typedInviteCode } from './invite.js';
 
 const SPRITES_URL = '/play/js/sprites.js';
 
@@ -287,167 +289,70 @@ function spritesUnavailable(container, access) {
   );
 }
 
-// ---- Home: hero battlefield -------------------------------------------------
+// ---- Home: hero battlefield and the beta badge -------------------------------
 
-// A small skirmish drawn with the real sprites, in cells on a 22 x 13 grid that
-// is anchored to the right edge of the hero. Angles in degrees (0 = facing up).
-const HERO_SCENE = {
-  cols: 22,
-  rows: 13,
-  ore: [[13, 1.4], [14, 1.1], [15, 1.7], [13.6, 2.3], [14.8, 2.6], [16, 2.4], [12.6, 2], [15.6, 3.2], [14.2, 3.4], [16.6, 1.4]],
-  trees: [[20.5, 1.2, 0.55], [21.3, 1.9, 0.45], [19.8, 2.1, 0.4], [0.8, 11.6, 0.5], [1.6, 12.3, 0.42], [10.5, 0.6, 0.4]],
-  rocks: [[18.2, 4.4], [6.4, 11.6]],
-  buildings: [
-    ['FACT', 2, 1, 0],
-    ['POWR', 5.2, 1, 0],
-    ['PROC', 2, 5.2, 0],
-    ['WEAP', 5.2, 5.6, 0],
-    ['GUN', 8.6, 4, 0],
-    ['BARR', 19.4, 8.6, 1],
-    ['TSLA', 17.6, 8.2, 1],
-    ['POWR', 19.6, 5.2, 1],
-  ],
-  units: [
-    ['HARV', 10, 2.4, 70, 0],
-    ['2TNK', 9.6, 7.2, 105, 0],
-    ['2TNK', 10.4, 8.8, 95, 0],
-    ['1TNK', 8.8, 9.9, 80, 0],
-    ['ARTY', 7.2, 10.6, 75, 0],
-    ['E1', 11.3, 10.2, 90, 0],
-    ['E1', 11.8, 10.8, 90, 0],
-    ['E1', 11.2, 11.3, 90, 0],
-    ['3TNK', 14.6, 7, 265, 1],
-    ['3TNK', 15.4, 8.8, 280, 1],
-    ['4TNK', 16.8, 6.4, 255, 1],
-    ['V2RL', 17.2, 10.8, 290, 1],
-    ['E1', 13.7, 10.6, 270, 1],
-    ['E1', 14.2, 11.2, 270, 1],
-  ],
-  shots: [[10.9, 7.4, 13.9, 7.2], [15.0, 8.6, 11.2, 8.9]],
-  bursts: [[13.9, 7.2, 0.7], [11.3, 8.9, 0.45]],
-};
-
-function drawHeroScene(sprites, canvas) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const W = canvas.clientWidth;
-  const H = canvas.clientHeight;
-  if (!W || !H) return;
-  canvas.width = Math.round(W * dpr);
-  canvas.height = Math.round(H * dpr);
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-
-  const S = Math.max(26, Math.min(46, H / HERO_SCENE.rows));
-  const ox = W - HERO_SCENE.cols * S;
-  const oy = (H - HERO_SCENE.rows * S) / 2;
-  const at = (cx, cy) => [ox + cx * S, oy + cy * S];
-
-  // Ore
-  for (const [cx, cy] of HERO_SCENE.ore) {
-    const [x, y] = at(cx, cy);
-    ctx.fillStyle = '#d9a521';
-    ctx.beginPath();
-    ctx.arc(x, y, S * 0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#f2cf5b';
-    ctx.beginPath();
-    ctx.arc(x - S * 0.05, y - S * 0.05, S * 0.07, 0, Math.PI * 2);
-    ctx.fill();
+/**
+ * The hero's battlefield is an inline SVG animated with SMIL, so it plays
+ * without script and without the game's sprites. Visitors who ask for less
+ * motion get the still picture; everyone gets a Pause button (moving
+ * pictures longer than five seconds must be stoppable), and the animation
+ * rests while the hero is off screen.
+ */
+function initHeroArt() {
+  const svg = document.querySelector('.hero-art');
+  if (!svg || typeof svg.pauseAnimations !== 'function') return;
+  const button = document.querySelector('[data-hero-pause]');
+  const reduce = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+  let paused = !!reduce?.matches;
+  let visible = true;
+  const apply = () => {
+    if (paused || !visible) svg.pauseAnimations();
+    else svg.unpauseAnimations();
+    if (button) {
+      button.setAttribute('aria-pressed', String(paused));
+      button.textContent = paused ? 'Play' : 'Pause';
+      button.setAttribute('aria-label', paused ? 'Play the battle animation' : 'Pause the battle animation');
+    }
+  };
+  if (button) {
+    button.hidden = false;
+    button.addEventListener('click', () => {
+      paused = !paused;
+      apply();
+    });
   }
-  // Rocks and trees
-  ctx.fillStyle = '#6b6457';
-  for (const [cx, cy] of HERO_SCENE.rocks) {
-    const [x, y] = at(cx, cy);
-    ctx.beginPath();
-    ctx.moveTo(x - S * 0.6, y);
-    ctx.lineTo(x - S * 0.2, y - S * 0.45);
-    ctx.lineTo(x + S * 0.5, y - S * 0.3);
-    ctx.lineTo(x + S * 0.6, y + S * 0.25);
-    ctx.lineTo(x, y + S * 0.4);
-    ctx.closePath();
-    ctx.fill();
+  reduce?.addEventListener?.('change', () => {
+    paused = reduce.matches;
+    apply();
+  });
+  if (typeof IntersectionObserver === 'function') {
+    new IntersectionObserver((entries) => {
+      visible = entries.some((e) => e.isIntersecting);
+      apply();
+    }).observe(svg);
   }
-  for (const [cx, cy, r] of HERO_SCENE.trees) {
-    const [x, y] = at(cx, cy);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath();
-    ctx.arc(x + S * 0.12, y + S * 0.12, r * S, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#244a1c';
-    ctx.beginPath();
-    ctx.arc(x, y, r * S, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  const team = [TEAM_COLORS[0], TEAM_COLORS[1]];
-  const scratch = document.createElement('canvas');
-
-  for (const [id, cx, cy, owner] of HERO_SCENE.buildings) {
-    const a = ACTORS.get(id);
-    const w = a.width * S;
-    const h = a.height * S;
-    scratch.width = Math.round(w * dpr);
-    scratch.height = Math.round(h * dpr);
-    if (!paintIcon(sprites, scratch, a, team[owner])) continue;
-    const [x, y] = at(cx, cy);
-    ctx.drawImage(scratch, x, y, w, h);
-  }
-
-  // Tracers under the units, bursts on top.
-  ctx.lineCap = 'round';
-  for (const [x0, y0, x1, y1] of HERO_SCENE.shots) {
-    const [ax, ay] = at(x0, y0);
-    const [bx, by] = at(x1, y1);
-    ctx.strokeStyle = 'rgba(255, 230, 150, 0.85)';
-    ctx.lineWidth = Math.max(1.5, S * 0.06);
-    ctx.setLineDash([S * 0.35, S * 0.25]);
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  for (const [id, cx, cy, deg, owner] of HERO_SCENE.units) {
-    const a = ACTORS.get(id);
-    const size = (a.kind === 'infantry' ? 0.75 : 1.5) * S;
-    scratch.width = scratch.height = Math.round(size * dpr);
-    if (!paintIcon(sprites, scratch, a, team[owner])) continue;
-    const [x, y] = at(cx, cy);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate((deg * Math.PI) / 180);
-    ctx.drawImage(scratch, -size / 2, -size / 2, size, size);
-    ctx.restore();
-  }
-
-  for (const [cx, cy, r] of HERO_SCENE.bursts) {
-    const [x, y] = at(cx, cy);
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r * S);
-    g.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
-    g.addColorStop(0.35, 'rgba(255, 190, 70, 0.9)');
-    g.addColorStop(0.7, 'rgba(226, 80, 40, 0.55)');
-    g.addColorStop(1, 'rgba(226, 80, 40, 0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(x, y, r * S, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  apply();
 }
 
-async function initHeroScene() {
-  const canvas = document.querySelector('.hero-scene');
-  if (!canvas) return;
-  const sprites = await loadSprites();
-  if (!sprites) return; // the CSS ground stays as a plain backdrop
-  let frame = 0;
-  const redraw = () => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(() => drawHeroScene(sprites, canvas));
-  };
-  redraw();
-  new ResizeObserver(redraw).observe(canvas);
+async function initBeta() {
+  const badge = document.querySelector('[data-beta]');
+  const [site, info] = await Promise.all([getJson('/api/site', { timeoutMs: 5000 }).catch(() => null), siteVersion()]);
+  const b = betaBadge(site, info);
+  if (badge && b.text) {
+    badge.querySelector('[data-beta-text]').textContent = b.text;
+    badge.dataset.kind = b.kind;
+    badge.hidden = false;
+  }
+  for (const a of document.querySelectorAll('[data-signup]')) {
+    if (b.signup) a.textContent = b.signup;
+    // Signing up is closed: the account page still signs people in.
+    else {
+      a.textContent = 'Sign in';
+      a.setAttribute('href', '/account/');
+    }
+  }
+  const note = document.querySelector('[data-signup-note]');
+  if (note && b.note) note.textContent = b.note;
 }
 
 // ---- Home: gallery ----------------------------------------------------------
@@ -594,8 +499,9 @@ async function initMaps() {
   const list = document.querySelector('[data-maps]');
   const status = document.querySelector('[data-status]');
   const search = document.querySelector('#map-search');
-  const sort = document.querySelector('#map-sort');
+  const sortSlot = document.querySelector('[data-sort]');
   let maps = null;
+  let sortKey = 'newest';
 
   const render = () => {
     if (!maps) return;
@@ -607,7 +513,7 @@ async function initMaps() {
         String(m.author ?? '').toLowerCase().includes(q) ||
         (Array.isArray(m.tags) && m.tags.some((t) => String(t).includes(q))),
     );
-    const key = sort.value;
+    const key = sortKey;
     shown.sort((a, b) => {
       if (key === 'downloads') return (Number(b.downloads) || 0) - (Number(a.downloads) || 0);
       if (key === 'name') return a.name.localeCompare(b.name);
@@ -654,7 +560,29 @@ async function initMaps() {
   };
 
   search.addEventListener('input', render);
-  sort.addEventListener('change', render);
+  // The design system's select (the shared controls, /lib/js/ui/controls.js).
+  try {
+    const { selectPlate } = await import('/lib/js/ui/controls.js');
+    const sort = selectPlate({
+      id: 'map-sort',
+      labelledBy: 'map-sort-label',
+      options: [
+        { value: 'newest', label: 'Newest' },
+        { value: 'downloads', label: 'Most played' },
+        { value: 'name', label: 'Name' },
+      ],
+      value: sortKey,
+      block: true,
+      onChange: (v) => {
+        sortKey = v;
+        render();
+      },
+    });
+    sortSlot?.replaceChildren(sort.root);
+  } catch (err) {
+    console.warn('webra: the sort control could not load', err);
+    sortSlot?.closest('.field')?.setAttribute('hidden', '');
+  }
   await load();
 }
 
@@ -720,6 +648,8 @@ async function initLobbies() {
     if (document.visibilityState === 'visible') timer = setTimeout(() => load(false), LOBBY_REFRESH_MS);
   };
 
+  initJoinCode();
+
   const load = async (showSkeleton) => {
     if (loading) return;
     loading = true;
@@ -763,6 +693,75 @@ async function initLobbies() {
     else clearTimeout(timer);
   });
   await load(true);
+}
+
+/**
+ * "Join with a code" (the board "Invite codes"): the six characters a friend
+ * gave, or a pasted link. The dash fills in by itself; a whole code is
+ * looked up at once and the lobby shown; Join opens /join/<code>, which the
+ * Worker sends into the game (through the sign-in when needed).
+ */
+function initJoinCode() {
+  const form = document.querySelector('[data-join-code]');
+  if (!form) return;
+  const input = form.querySelector('input');
+  const result = form.querySelector('[data-join-result]');
+  const submit = form.querySelector('button[type="submit"]');
+  let looked = null; // { code, r }
+  let timer = 0;
+  let seq = 0;
+  const show = (r) => {
+    result.replaceChildren();
+    result.dataset.state = r ? (r.ok ? (r.full ? 'warn' : 'ok') : 'bad') : '';
+    if (!r) return;
+    const lamp = el('span', { class: 'lamp', 'aria-hidden': 'true' });
+    if (r.ok) {
+      noteUserText(r.invite);
+      const name = typeof r.invite.name === 'string' && r.invite.name ? r.invite.name : 'Unnamed game';
+      result.append(lamp, el('span', { class: 'join-code-text' }, el('strong', { text: name }), el('span', { text: inviteSummary(r.invite) }), r.message ? el('span', { text: r.message }) : null));
+    } else {
+      const word = { invalid: 'Not a code', unknown: 'Unknown', expired: 'Expired', rate_limited: 'Too many tries', offline: 'No connection' }[r.reason] ?? 'Error';
+      result.append(lamp, el('span', { class: 'join-code-text' }, el('strong', { text: word }), el('span', { text: r.message })));
+    }
+  };
+  const check = async (code) => {
+    const mine = ++seq;
+    result.dataset.state = 'busy';
+    result.replaceChildren(el('span', { class: 'join-code-text', text: 'Looking up the code...' }));
+    const r = await lookupInvite(code);
+    if (mine !== seq) return;
+    looked = { code, r };
+    show(r);
+  };
+  input.addEventListener('input', () => {
+    const shown = typedInviteCode(input.value);
+    if (shown !== input.value) input.value = shown;
+    const code = normalizeInviteCode(shown);
+    clearTimeout(timer);
+    looked = null;
+    seq++;
+    if (!code) {
+      show(null);
+      return;
+    }
+    timer = setTimeout(() => check(code), 250);
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = normalizeInviteCode(input.value);
+    if (!code) {
+      show({ ok: false, reason: 'invalid', message: INVITE_MESSAGES.invalid });
+      input.focus();
+      return;
+    }
+    clearTimeout(timer);
+    if (looked?.code !== code) {
+      submit.disabled = true;
+      await check(code);
+      submit.disabled = false;
+    }
+    if (looked?.r.ok) location.assign(invitePath(formatInviteCode(code)));
+  });
 }
 
 function lobbyCard(s, ourVersion) {
@@ -858,23 +857,34 @@ function changelogLink(href, text, label) {
   return el('a', { href, text, 'aria-label': label, rel: 'noopener' });
 }
 
+/**
+ * One release as on the Release notes board: "Version 0.16.0" with its
+ * date, then per kind of change (New, Fixed, ...) and part of the game a
+ * tagged heading and its entries.
+ */
 function releaseArticle(r, scopes, liveVersion) {
   const id = `v${r.version}`;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(r.date ?? '') ? new Date(`${r.date}T00:00:00Z`) : null;
+  const live = r.version === liveVersion;
   const head = el(
     'header',
     { class: 'release-head' },
-    el('h2', { class: 'release-version' }, el('a', { href: `#${id}`, text: `v${r.version}` })),
-    r.version === liveVersion ? el('span', { class: 'badge badge-open', title: 'The version webra.sherin.dev runs now', text: 'Live' }) : null,
+    el(
+      'div',
+      { class: 'release-title' },
+      el('span', { class: 'release-kicker', text: live ? 'Live now' : 'Release' }),
+      el('h2', { class: 'release-version', id: `${id}-title` }, el('a', { href: `#${id}`, text: `Version ${r.version}` })),
+    ),
+    live ? el('span', { class: 'badge badge-open badge-live', title: 'The version webra.sherin.dev runs now', text: 'Live' }) : null,
     date && !Number.isNaN(date.getTime()) ? el('time', { class: 'release-date', datetime: r.date, text: releaseDateFormat.format(date) }) : null,
   );
   const article = el('article', { class: 'panel release', id, 'aria-labelledby': `${id}-title` }, head);
-  head.querySelector('h2').id = `${id}-title`;
   const sections = Array.isArray(r.sections) ? r.sections.filter((s) => s && isText(s.title) && Array.isArray(s.entries)) : [];
   if (!sections.length) article.append(el('p', { class: 'release-empty', text: 'Maintenance release without player-facing changes.' }));
+  const body = el('div', { class: 'release-body' });
   for (const section of sections) {
     const type = /^[a-z0-9-]+$/.test(section.type ?? '') ? section.type : 'other';
-    const block = el('section', { class: `release-section release-${type}` }, el('h3', { text: section.title }));
+    const tag = releaseTag(type, section.title);
     const entries = section.entries.filter((e) => e && isText(e.text));
     for (const [name, list] of groupEntries(scopes, entries)) {
       const ul = el('ul', { class: 'release-entries' });
@@ -892,10 +902,17 @@ function releaseArticle(r, scopes, liveVersion) {
           ),
         );
       }
-      block.append(el('div', { class: 'release-group' }, el('h4', { text: name }), ul));
+      body.append(
+        el(
+          'section',
+          { class: `release-group release-${type}` },
+          el('h3', {}, el('span', { class: `release-tag release-tag-${tag.kind}`, text: tag.text }), el('span', { text: name })),
+          ul,
+        ),
+      );
     }
-    article.append(block);
   }
+  if (body.childNodes.length) article.append(body);
   if (isHttps(r.compareUrl)) {
     article.append(el('p', { class: 'release-compare' }, changelogLink(r.compareUrl, 'All changes in this release on GitHub')));
   }
@@ -984,7 +1001,7 @@ async function initPrivacy() {
 // ---- Boot -------------------------------------------------------------------
 
 const PAGES = {
-  home: () => Promise.all([initHeroScene(), initGallery(), initFactions()]),
+  home: () => Promise.all([initHeroArt(), initBeta(), initGallery(), initFactions()]),
   maps: initMaps,
   multiplayer: initLobbies,
   changelog: initChangelog,

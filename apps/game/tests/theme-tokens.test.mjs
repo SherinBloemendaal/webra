@@ -248,6 +248,7 @@ const ALLOWED_BLUES = [
   { file: 'apps/game/css/account.css', near: /account-discord/, why: 'Discord brand button' },
   { file: 'apps/website/assets/account.css', near: /btn-discord/, why: 'Discord brand button' },
   { file: 'apps/website/index.html', near: /side-allies|Allies/, why: 'the Allied side emblem' },
+  { file: 'apps/website/assets/site.css', near: /\.hero-art /, why: 'the home page battlefield art: the Allied team, water and the Tesla bolt' },
 ];
 
 /** Hard-coded accent blues in `text` (a stylesheet or a page), outside the :root token block of the token files. */

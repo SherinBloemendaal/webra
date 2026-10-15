@@ -30,20 +30,17 @@
     <header class="site-header">
       <div class="wrap header-inner">
         <a class="brand" href="/" aria-label="WebRA home">
-          <img class="brand-mark" src="/lib/brand/favicon.svg" alt="" width="32" height="32" />
-          <span>Web<b>RA</b></span>
+          <img class="brand-mark" src="/lib/brand/emblem.svg" alt="" width="40" height="40" />
+          <span class="brand-word">Web<b>RA</b></span>
         </a>
         <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
         <nav class="site-nav" id="site-nav" aria-label="Main">
           <ul>
-            <li><a href="/#features">Features</a></li>
-            <li><a href="/#factions">Factions</a></li>
-            <li><a href="/maps.html">Maps</a></li>
             <li><a href="/multiplayer.html" aria-current="page">Multiplayer</a></li>
+            <li><a href="/maps.html">Maps</a></li>
             <li><a href="/changelog">Changelog</a></li>
-            <li><a href="https://github.com/SherinBloemendaal/webra">GitHub</a></li>
             <li><a href="/account/">Account</a></li>
-            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play now</a></li>
+            <li class="nav-play"><a class="btn btn-primary btn-small" href="/play/">Play</a></li>
           </ul>
         </nav>
       </div>
@@ -55,12 +52,24 @@
           <span class="kicker">Online</span>
           <h1 id="page-title">Multiplayer</h1>
           <p>
-            Open games waiting for players. Join one, or host your own from the game lobby and share the link. Up to
-            eight players, with AI opponents and teams.
+            Open games waiting for players. Join one, use the invite code a friend gave you, or host your own from the
+            game and share its code. Up to eight players, with AI opponents and teams.
           </p>
         </div>
       </section>
       <div class="wrap page-body">
+        <form class="join-code panel" data-join-code novalidate aria-labelledby="join-code-title">
+          <h2 class="join-code-title" id="join-code-title">Join with a code</h2>
+          <p class="join-code-help" id="join-code-help">
+            Type the six characters a friend gave you. The dash fills in by itself, and a pasted link works too.
+          </p>
+          <div class="join-code-row">
+            <label class="visually-hidden" for="invite-code">Invite code</label>
+            <input id="invite-code" class="code-input" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="512" placeholder="K7Q-2MX" aria-describedby="join-code-help join-code-result" />
+            <button class="btn btn-primary" type="submit">Join lobby</button>
+          </div>
+          <div class="join-code-result" id="join-code-result" role="status" aria-live="polite" data-join-result></div>
+        </form>
         <div class="controls">
           <button class="btn" type="button" data-refresh>
             <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="2" /></svg>
@@ -80,7 +89,7 @@
 
     <footer class="site-footer">
       <div class="wrap footer-inner">
-        <p>WebRA, a free fan project. Licensed under the GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
+        <p>WebRA is a fan project, not affiliated with Electronic Arts. GPL-3.0-or-later. <span class="build-info" data-build-info></span></p>
         <ul class="footer-links">
           <li><a href="/play/">Play</a></li>
           <li><a href="/maps.html">Maps</a></li>
