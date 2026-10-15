@@ -396,6 +396,11 @@ export class ReplayBar {
     this.update();
   }
 
+  /** The viewer is going: the controls leave the battlefield. */
+  dispose() {
+    this.root.remove();
+  }
+
   /** The replay speed hotkeys (js/gamekeys.js): a speed of REPLAY_SPEEDS, or 'max' for the highest. */
   setSpeed(speed) {
     this.c.setSpeed(speed === 'max' ? REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1] : speed);
@@ -429,6 +434,11 @@ export class ProgressOverlay {
     this.root.setAttribute('role', 'status');
     this.root.hidden = true;
     parent.append(this.root);
+  }
+
+  /** The game is going (a restart in place). */
+  dispose() {
+    this.root.remove();
   }
 
   show(text) {

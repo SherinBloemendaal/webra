@@ -99,6 +99,8 @@ export class TouchControls {
     this.dragKind = null; // 'box' | 'power' | 'aim' | 'footprint'
     this.footprint = null; // { fx, fy, sx, sy } footprint drag start
     this.placingShown = false;
+    /** What dispose() takes down: listeners on the canvas, the window and the sidebar (they outlive the game). */
+    this.offs = [];
     this.recognizer = new GestureRecognizer({
       tap: (p) => this.onTap(p),
       doubleTap: (p) => this.onDoubleTap(p),
@@ -115,18 +117,36 @@ export class TouchControls {
 
   // ---- Pointer events ------------------------------------------------------------
 
+  /** `target.addEventListener`, removed again by dispose(). */
+  listen(target, type, fn, options) {
+    target.addEventListener(type, fn, options);
+    this.offs.push(() => target.removeEventListener(type, fn, options));
+  }
+
   bind() {
     const c = this.canvas;
     const handler = (kind) => (e) => this.onPointer(e, kind);
-    c.addEventListener('pointerdown', handler('down'));
-    c.addEventListener('pointermove', handler('move'));
-    c.addEventListener('pointerup', handler('up'));
-    c.addEventListener('pointercancel', handler('cancel'));
+    this.listen(c, 'pointerdown', handler('down'));
+    this.listen(c, 'pointermove', handler('move'));
+    this.listen(c, 'pointerup', handler('up'));
+    this.listen(c, 'pointercancel', handler('cancel'));
     // A real mouse moving again takes the pointer back from a finger (hybrid devices).
-    window.addEventListener('pointermove', (e) => {
+    this.listen(window, 'pointermove', (e) => {
       if (e.pointerType === 'mouse' && this.input.mouse.touch) this.input.mouse.touch = false;
     });
     if (touchUi()) this.markTouchUi();
+  }
+
+  /**
+   * The game is going (a restart in place): gestures and long presses stop,
+   * every listener goes and the action bars leave the battlefield. The page
+   * keeps its touch UI (body.touch) for the next game.
+   */
+  dispose() {
+    this.recognizer.reset();
+    for (const off of this.offs.splice(0)) off();
+    this.bar.remove();
+    this.placeBar.remove();
   }
 
   /** Show the touch UI (action bar, larger targets) from the first touch on. */
@@ -503,7 +523,8 @@ export class TouchControls {
       if (press) clearTimeout(press.timer);
       press = null;
     };
-    root.addEventListener('pointerdown', (e) => {
+    this.offs.push(clear);
+    this.listen(root, 'pointerdown', (e) => {
       if (e.pointerType === 'mouse') return;
       const card = e.target.closest?.('.sb-card');
       clear();
@@ -519,24 +540,24 @@ export class TouchControls {
         onCancel(id);
       }, CARD_LONG_PRESS_MS);
     });
-    root.addEventListener('pointermove', (e) => {
+    this.listen(root, 'pointermove', (e) => {
       if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > CARD_SLOP) clear();
     });
-    root.addEventListener('pointerup', clear);
-    root.addEventListener('pointercancel', clear);
+    this.listen(root, 'pointerup', clear);
+    this.listen(root, 'pointercancel', clear);
     const swallow = (e) => {
       if (performance.now() < suppress || press) {
         e.preventDefault();
         e.stopPropagation();
       }
     };
-    root.addEventListener('click', (e) => {
+    this.listen(root, 'click', (e) => {
       if (performance.now() < suppress) {
         suppress = 0;
         e.preventDefault();
         e.stopPropagation();
       }
     }, true);
-    root.addEventListener('contextmenu', swallow, true);
+    this.listen(root, 'contextmenu', swallow, true);
   }
 }

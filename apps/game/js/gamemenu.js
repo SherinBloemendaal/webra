@@ -288,9 +288,28 @@ export class GameMenu {
     this.card.setAttribute('aria-label', 'Game menu');
     root.replaceChildren(this.card);
     root.hidden = true;
-    window.addEventListener('keydown', (e) => this.onKey(e), true);
+    this.keyWin = window;
+    this.onWindowKey = (e) => this.onKey(e);
+    this.keyWin.addEventListener('keydown', this.onWindowKey, true);
     // Rebuild the open page when bindings or settings change elsewhere.
-    opts.hotkeys.onChange(() => this.isOpen && this.view === 'controls' && this.render());
+    this.offHotkeys = opts.hotkeys.onChange(() => this.isOpen && this.view === 'controls' && this.render());
+  }
+
+  /**
+   * The game is going (a restart in place): an open menu closes without
+   * telling the game (it is going too), what its page follows stops, the
+   * listeners go and the section is emptied for the next game's menu.
+   */
+  dispose() {
+    this.capture = null;
+    this.state.isOpen = false;
+    this.unmountPage();
+    this.keyWin.removeEventListener('keydown', this.onWindowKey, true);
+    this.offHotkeys?.();
+    this.offHotkeys = null;
+    if (this.root.contains(document.activeElement)) document.activeElement.blur();
+    this.root.hidden = true;
+    this.root.replaceChildren();
   }
 
   get isOpen() {

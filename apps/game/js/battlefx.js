@@ -187,6 +187,13 @@ export class BattleFx {
     this.nodes = new Map();
   }
 
+  /** The game is going (a restart in place): the effects and the time limit clock leave the battlefield. */
+  dispose() {
+    this.nodes.clear();
+    this.root.remove();
+    this.clock.remove();
+  }
+
   /**
    * Engine events of a frame (flat, STRIDE per event), at render tick `tick`;
    * `visible(x, y)` tells whether the viewer sees a world-pixel spot.

@@ -558,8 +558,23 @@ export class StatsScreen {
       // Game hotkeys stay quiet behind the screen; Tab and arrows still work in it.
       e.stopImmediatePropagation();
     };
+    this.onResize = () => this.isOpen && this.tab === 'graphs' && this.graphView?.draw();
     window.addEventListener('keydown', this.onKey, true);
-    window.addEventListener('resize', () => this.isOpen && this.tab === 'graphs' && this.graphView?.draw());
+    window.addEventListener('resize', this.onResize);
+  }
+
+  /**
+   * The game is going (a restart in place): the screen closes without
+   * telling anyone, the window listeners go and the section is emptied for
+   * the next game's screen.
+   */
+  dispose() {
+    clearInterval(this.timer);
+    this.timer = null;
+    window.removeEventListener('keydown', this.onKey, true);
+    window.removeEventListener('resize', this.onResize);
+    this.root.hidden = true;
+    this.root.replaceChildren();
   }
 
   get isOpen() {

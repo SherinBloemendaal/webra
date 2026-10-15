@@ -132,8 +132,19 @@ export class Sidebar {
     // The clock of animation frames (requestAnimationFrame times); tests pass their own.
     this.now = options.now ?? (() => performance.now());
     this.creditsRest = 0;
+    /** What dispose() takes down: listeners on the root (it outlives the game), subscriptions, watchers. */
+    this.offs = [];
 
     this.build();
+  }
+
+  /** The game is going (a restart in place): listeners, watchers, tooltips and the credits animation stop; the root is emptied. */
+  dispose() {
+    for (const off of this.offs.splice(0)) off();
+    for (const t of this.tips.splice(0)) t.detach();
+    if (this.creditsFrame) cancelAnimationFrame(this.creditsFrame);
+    this.creditsFrame = 0;
+    this.root.textContent = '';
   }
 
   // ---- DOM construction (once) -----------------------------------------
@@ -172,7 +183,9 @@ export class Sidebar {
     root.textContent = '';
     root.classList.add('sb');
     root.setAttribute('aria-label', 'Command sidebar');
-    root.addEventListener('contextmenu', (e) => e.preventDefault());
+    const noMenu = (e) => e.preventDefault();
+    root.addEventListener('contextmenu', noMenu);
+    this.offs.push(() => root.removeEventListener('contextmenu', noMenu));
 
     // Command buttons, OpenRA's Red Alert top row: Beacon, Sell, Power down
     // and Repair modes (js/input.js), then WebRA's Deploy and the Options menu.
@@ -223,10 +236,11 @@ export class Sidebar {
       this.menuBtn.classList.add('sb-tool-end');
     }
     // Tooltips and cameo keys follow rebinding in the game menu.
-    this.hotkeys?.onChange(() => {
+    const offKeys = this.hotkeys?.onChange(() => {
       this.slotKeys = null;
       this.refreshTips();
     });
+    if (offKeys) this.offs.push(offKeys);
 
     // Radar slot: the minimap draws in here. Empty, it shows "radar offline".
     this.radarEl = el('div', 'sb-radar');
@@ -472,6 +486,7 @@ export class Sidebar {
       observer?.disconnect();
       unwatch();
     };
+    this.offs.push(stop);
   }
 
   paintIcon(canvas, actor, btn) {

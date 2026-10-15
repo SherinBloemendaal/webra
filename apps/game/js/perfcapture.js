@@ -123,6 +123,8 @@ export class PerfTrace {
     this.startupAt = 0;
     this.inStartup = false;
     this.startupDropped = 0;
+    /** Called with the name of every span that begins during a game's start (the loading screen follows them: js/loadingscreen.js). */
+    this.onSpan = null;
   }
 
   /** Whether a span would be kept now (callers skip building details otherwise). */
@@ -152,6 +154,7 @@ export class PerfTrace {
    */
   span(name, fn, detail) {
     if (!this.wanted) return fn();
+    this.began(name);
     const t0 = this.now();
     let out;
     try {
@@ -165,6 +168,7 @@ export class PerfTrace {
   /** `span` for work that returns a promise: the time until it settles. */
   async spanAsync(name, fn, detail) {
     if (!this.wanted) return fn();
+    this.began(name);
     const t0 = this.now();
     let out;
     try {
@@ -172,6 +176,16 @@ export class PerfTrace {
       return out;
     } finally {
       this.record(name, t0, this.now() - t0, typeof detail === 'function' ? detail(out) : detail);
+    }
+  }
+
+  /** A span begins: the start's listener hears of it (a listener that throws is not the span's problem). */
+  began(name) {
+    if (!this.inStartup || !this.onSpan) return;
+    try {
+      this.onSpan(name);
+    } catch (err) {
+      console.warn('start span listener failed:', err);
     }
   }
 

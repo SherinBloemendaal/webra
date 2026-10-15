@@ -3597,11 +3597,21 @@ mission of `COOP_MISSIONS` with this version's file, every player a person.
   The viewer plays, pauses, runs at 1x to 8x, seeks by re-simulating
   (backwards from in-memory snapshots, `Game.snapshot`), and switches between
   the whole map and each player's view with the observer stats.
-- Restart (`js/restart.js`): single player games and loaded saves restart
-  from tick 0 with the same options and map through a page reload (the
-  settings wait in sessionStorage `webra.restart.v1`, taken once); the replay
-  viewer restarts playback in place. Online games have a rematch instead
-  (section 4).
+- Restart (`js/gamesession.js`): single player games, loaded saves and the
+  map editor's test play restart from tick 0 with the same options and map
+  in the page. The loading screen shows at once; the game is left (its
+  replay is queued for the account with the result `left`, a performance
+  capture ends) and taken down (`js/disposer.js`: the frame loop, the
+  simulation worker or the main thread game (`Game.free`), the GPU
+  textures, the game's sounds, input, hotkeys, listeners, timers and its
+  parts of the screen), then the same start runs again (a skirmish keeps
+  its seed, so the generated map is the same; a mission picks a new seed as
+  every start of it does). When taking the game down fails part way, the
+  page reloads with a `js/restart.js` record instead (sessionStorage
+  `webra.restart.v1`, taken once), which starts the same game after the
+  reload. The replay viewer restarts playback in place. Online games have a
+  rematch instead (section 4), which goes back to the session's lobby
+  through a page reload and rejoin.
 - A save is a replay of kind `save` whose `hashes` end with the hash of its
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
@@ -4351,9 +4361,12 @@ Differences from OpenRA, all deterministic:
 A mission save or replay stores the mission file's id and hash, the start
 options and the order frames (section 7) and re-simulates on load: the Lua
 state is never serialized, so a save cannot disagree with its scripts.
-Restart, the next mission and the way back to the campaign screen go
-through a page reload with a `webra.restart.v1` record (`js/restart.js`:
-`mission { id, options, gameSpeed }`, `campaign { id }`).
+Restart and the next mission run in the page (section 7, Restart): the
+mission is taken down and the next start runs behind the loading screen.
+The way back to the campaign screen goes through a page reload with a
+`webra.restart.v1` record (`js/restart.js`: `campaign { id }`); a
+`mission { id, options, gameSpeed }` record is the fallback when a mission
+could not be taken down in place.
 
 ### Campaign screen and progress (`js/campaign`)
 
@@ -4552,7 +4565,13 @@ File name: `webra-perf-<version>-<YYYYMMDD-HHMMSS>.json` (local time).
   more between samples: `freedMB`).
 - The start of every game is traced (spans from the launch to the first drawn
   frame, at most 64), whether or not a capture runs, and goes into every
-  capture of that game.
+  capture of that game. The loading screen (`js/loadingscreen.js`) follows
+  the same trace (`PerfTrace.onSpan`, called when a span of the start
+  begins): `content.load`, `sim.host`, `sim.start` and `rules.parse` begin
+  its steps, and the first drawn frame closes it. Before `start()` builds the
+  battlefield in one go the page lets one frame paint, so that step shows;
+  that frame (about 16 ms, none in a hidden tab) is all the screen adds to a
+  start.
 - Bounds: one capture at a time, at most 120 s, 30000 frames (a fuller capture
   ends with `endReason: "full"`) and 4000 events (`droppedEvents` counts the
   rest); the frame columns are preallocated.

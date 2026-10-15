@@ -405,6 +405,27 @@ export class AudioSystem {
   }
 
   /**
+   * The game goes without the page (a restart in place, the next mission):
+   * its sounds, voices and announcer lines stop, nothing it asked for plays
+   * later, and its game over music ends. The music of the playlist plays on
+   * into the next game, which attaches with attachGame.
+   */
+  detachGame() {
+    this.director = null;
+    this.game = null;
+    this.deferred = [];
+    this.announcer.clear();
+    this.speech.cancel();
+    for (const handles of this.notifications.values()) for (const h of handles) h.stop();
+    this.notifications.clear();
+    this.mixer.stopBus('effects');
+    this.mixer.stopBus('voices');
+    this.gameOverTrack = null;
+    this.setPaused(false);
+    this.syncMusic();
+  }
+
+  /**
    * Wrap a game so local unit orders made through it get their replies.
    * Everything else passes through. (Production clicks speak through
    * `productionClick`: the sidebar knows what the click did.)

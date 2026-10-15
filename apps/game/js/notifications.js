@@ -122,6 +122,15 @@ export class NotificationView {
     this.frame = 0;
   }
 
+  /** The game is going (a restart in place): the fade stops and the lines leave the battlefield. */
+  dispose() {
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    this.nodes.clear();
+    this.root.remove();
+    this.live.remove();
+  }
+
   /** Show a line of text of `pool`: 'transients' (game events) or 'feedback' (UI feedback). */
   push(text, pool = 'transients') {
     if (!text || !this.enabled(pool)) return;

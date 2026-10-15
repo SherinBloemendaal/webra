@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="css/spawns.css" />
     <link rel="stylesheet" href="css/startmenu.css" />
     <link rel="stylesheet" href="css/boxchooser.css" />
+    <link rel="stylesheet" href="css/loading.css" />
   </head>
   <body>
     <!-- The start screen: the main menu (js/startmenu.js) over the skirmish lobby (js/lobby.js) -->
@@ -96,6 +97,9 @@
 
     <!-- In-game menu (Esc), built by js/gamemenu.js -->
     <section id="game-menu" class="overlay" hidden></section>
+
+    <!-- The loading screen from Start to the game's first frame, built by js/loadingscreen.js -->
+    <section id="loading" aria-busy="false" hidden></section>
 
     <div id="version" title="WebRA version"></div>
 

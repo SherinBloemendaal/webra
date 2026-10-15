@@ -1,14 +1,15 @@
-// Restart: play the current single player game again from tick 0 with
-// exactly the same settings (options, generated map seed and parameters or
-// the map file, players, AIs, factions, colours, teams).
+// Restart records: what starts the current single player game again from
+// tick 0 with exactly the same settings (options, generated map seed and
+// parameters or the map file, players, AIs, factions, colours, teams), kept
+// in sessionStorage (this tab only) for the next boot of the page.
 //
-// A game sets up audio, notifications, the minimap, the sidebar, input and
-// the simulation worker once per page, so a restart reloads the page: the
-// settings go to sessionStorage (this tab only) first, and the next boot
-// takes them (once) and starts the game again, so every part of the screen
-// starts fresh. The replay viewer restarts in place (playback from 0).
-// Online games have a rematch instead: every player must agree, so the host
-// proposes it and the session goes back to its lobby (js/online.js).
+// Restart and the next mission normally run in place: the game is taken
+// down and started again without a reload (js/gamesession.js). The record is
+// the fallback when taking a game down fails part way: the page then
+// reloads, and the next boot takes the record (once) and starts the game
+// again. The replay viewer restarts in place (playback from 0). Online games
+// have a rematch instead: every player must agree, so the host proposes it
+// and the session goes back to its lobby (js/online.js).
 //
 // Campaign missions go the same way: a mission record restarts a mission (or
 // starts the next one) with its options, and a campaign record brings the

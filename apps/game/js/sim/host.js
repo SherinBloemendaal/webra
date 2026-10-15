@@ -32,8 +32,8 @@ const clock = () => (typeof performance !== 'undefined' ? performance.now() : Da
 const NO_F32 = new Float32Array(0);
 const NO_U8 = new Uint8Array(0);
 
-/** Tiny event emitter shared by both hosts. */
-class Events {
+/** Tiny event emitter shared by both hosts (exported for tests of what listens to it). */
+export class Events {
   constructor() {
     this.handlers = new Map();
   }
@@ -172,8 +172,9 @@ export class DirectHost extends Events {
   }
 
   dispose() {
-    // A hidden game's background timer runs on this thread: it ends with the game.
-    this.core.setBackground(false);
+    // A hidden game's background timer runs on this thread: it ends with the
+    // game, and so does the engine's memory for it (a restart in place keeps the page).
+    this.core.release();
   }
 }
 

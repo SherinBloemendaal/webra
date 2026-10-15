@@ -1,0 +1,159 @@
+/* The loading screen (js/loadingscreen.js): from Start, Restart, a mission,
+   a save, a replay or an online game's start to the game's first frame. A
+   menu screen like the start screen (css/style.css #menu): one card as wide
+   and as tall as the window less --ui-screen-gap (theme.css), over the grid.
+   The card's title and button are the dialog card's (css/style.css
+   .menu-card); the steps sit in the middle at --ui-measure at most. */
+
+#loading {
+  position: fixed;
+  inset: 0;
+  /* Over the menu screens, the game and its dialogs; under the toast and the tooltips. */
+  z-index: 82;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: auto;
+  padding: var(--ui-screen-pad);
+  background: var(--ui-screen-bg);
+  color: var(--ui-text);
+  font: var(--ui-fs-m) var(--ui-font);
+}
+
+#loading[hidden] {
+  display: none;
+}
+
+#loading .loading-card {
+  width: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  outline: none;
+}
+
+#loading .loading-card > * {
+  width: min(100%, 520px, var(--ui-measure));
+}
+
+#loading .loading-card h1 {
+  text-align: center;
+}
+
+.loading-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* Turns on the compositor (a transform), so it keeps turning while the main
+   thread builds the battlefield. */
+.loading-spinner {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--ui-accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: loading-spin 0.9s linear infinite;
+}
+
+.loading-status {
+  margin: 0;
+  font: 700 var(--ui-fs-l) / 1.3 var(--ui-font);
+  letter-spacing: 0.06em;
+  color: var(--ui-text);
+}
+
+/* The bar: the share of steps done, in the accent. */
+.loading-bar {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel-in);
+}
+
+.loading-bar-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(var(--fill, 0));
+  background: var(--ui-hazard);
+  transition: transform 0.25s ease-out;
+}
+
+.loading-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.loading-step {
+  position: relative;
+  padding-left: 22px;
+  color: var(--ui-dim);
+}
+
+.loading-step::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.45em;
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.loading-step[data-state='active'] {
+  color: var(--ui-text);
+}
+
+.loading-step[data-state='active']::before {
+  background: var(--ui-accent);
+  border-color: var(--ui-accent);
+}
+
+.loading-step[data-state='done'] {
+  color: var(--ui-muted);
+}
+
+.loading-step[data-state='done']::before {
+  background: var(--ui-ok);
+  border-color: var(--ui-ok);
+}
+
+.loading-error {
+  margin: 0;
+  color: var(--ui-bad);
+  overflow-wrap: break-word;
+}
+
+/* "Reduce motion" (the setting: .is-still; or the browser's): the spinner and the bar stand still. */
+#loading.is-still .loading-spinner,
+#loading.is-still .loading-bar-fill {
+  animation: none;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner,
+  .loading-bar-fill {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
