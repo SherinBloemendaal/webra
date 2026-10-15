@@ -463,6 +463,9 @@ export const BUILDING_DRAW = {
     shadowDisc(ctx, P, 65, 8, 3, 1.5);
     circle(ctx, P.c(STEEL_L), 65, 8, 3);
     circle(ctx, P.c(GUNMETAL), 65, 8, 1.8);
+    // a wisp of steam over the stack, flat and opaque (it crosses the team strip)
+    circle(ctx, P.c('#dfe4e7'), 63.6, 6, 2.8);
+    circle(ctx, P.c('#f2f6f8'), 62.9, 5.3, 1.6);
     hazard(ctx, P, 10, 47, 15, 6, 2.5);
     transformer(ctx, P, 5, 58, 13, 10, [[11.5, 63, 2]]);
     transformer(ctx, P, 54, 58, 13, 10, [[60.5, 63, 2]]);
@@ -604,8 +607,8 @@ export const BUILDING_DRAW = {
     }
   },
 
-  // Radar dome 2x3: a big dome in a team ring with screens in the front wall;
-  // the radar sweep and the antenna turn (art/animated.js).
+  // Radar dome 2x3: a big dome in a team ring with screens in the front wall
+  // and an antenna; the radar sweep turns over the dome (art/animated.js).
   DOME: (ctx, P) => {
     texRect(ctx, P, 'concrete', 0, 60, 48, 12);
     hall(ctx, P, 3, 4, 40, 48, 7, { top: 2, bottom: 2 });
@@ -625,11 +628,19 @@ export const BUILDING_DRAW = {
     ctx.beginPath();
     ctx.ellipse(16.5, 24, 5, 3.5, 0, 0, TAU);
     ctx.fill();
-    rect(ctx, P.c(GUNMETAL), 38, 6, 3, 3);
+    // the antenna on its post (the sweep over the dome turns: art/animated.js)
+    rect(ctx, P.c(GUNMETAL), 37.5, 6, 3, 3);
+    const th = -0.44;
+    poly(ctx, P.c(STEEL_L), turned(39, 7.5, 17, 4.5, th));
+    for (const u of [-6.5, -3.5, -0.5, 2.5, 5.5]) {
+      const [c, sn] = [Math.cos(th), Math.sin(th)];
+      bar(ctx, P.c(STEEL_D), 0.5, 39 + u * c + 2.1 * sn, 7.5 + u * sn - 2.1 * c, 39 + u * c - 2.1 * sn, 7.5 + u * sn + 2.1 * c);
+    }
+    teamDot(ctx, P, 39, 7.5, 1);
   },
 
   // Helipad 2x3: a team rimmed pad with a light ring and the H, a hut with a
-  // beacon, a fuel tank and a windsock (the lights chase: art/animated.js).
+  // beacon, a fuel tank and a windsock (the landing lights chase: art/animated.js).
   HPAD: (ctx, P) => {
     texRect(ctx, P, 'concrete', 0, 0, 48, 72);
     hall(ctx, P, 4, 2, 19, 13, 3, { top: 2 });
@@ -648,7 +659,8 @@ export const BUILDING_DRAW = {
   },
 
   // Airfield 3x2: a runway with edge, end and approach lights, the hangar and
-  // a glass control tower with a beacon (lights chase: art/animated.js).
+  // a glass control tower with its beacon lit (the edge lights chase:
+  // art/animated.js).
   AFLD: (ctx, P) => {
     texRect(ctx, P, 'asphalt', 0, 0, 72, 48);
     frame(ctx, P.c(BLACK), 0.5, 0.5, 71, 47, 1);
@@ -672,7 +684,8 @@ export const BUILDING_DRAW = {
     rect(ctx, P.c(GLASS), 55, 2, 13, 13);
     bar(ctx, P.c(GLASS_HI), 0.75, 55.8, 6, 59, 2.8);
     rect(ctx, P.team(TEAM), 57, 4, 9, 9);
-    circle(ctx, P.c(GUNMETAL), 61.5, 8.5, 1.5);
+    circle(ctx, P.c('#c9a050'), 61.5, 8.5, 1.9);
+    circle(ctx, P.c(GLOW), 61.5, 8.5, 1.3);
   },
 
   // Allied tech center 2x3: a lab under a glass roof, a satellite dish and an
@@ -951,7 +964,7 @@ export const BUILDING_DRAW = {
 };
 
 /** The helipad's landing lights, clockwise from the top (the animated layer chases them). */
-export const HPAD_LIGHTS = [[24, 24], [39.5, 30.5], [46, 46], [39.5, 61.5], [24, 68], [8.5, 61.5], [2, 46], [8.5, 30.5]];
+export const HPAD_LIGHTS = [[24, 24], [39.5, 30.5], [45.5, 46], [39.5, 61.5], [24, 68], [8.5, 61.5], [2.5, 46], [8.5, 30.5]];
 /** The airfield's runway edge lights (x) along both rows (y). */
 export const AFLD_LIGHTS = [12, 21, 30, 39, 48, 57];
 export const AFLD_LIGHT_ROWS = [21.5, 46.5];

@@ -31,7 +31,8 @@ function keyOf(id) {
 }
 
 /** A recording Canvas2D stub that validates every number it is given. */
-function fakeContext(log, bounds) {
+/** `strokes`: record the bounds of strokes too (half their width past the path). */
+function fakeContext(log, bounds, strokes = false) {
   let depth = 0; // save() nesting
   let transforms = 0; // active translate/scale/rotate
   let clips = 0; // active clip regions (shapes inside are cut to the box)
@@ -41,8 +42,8 @@ function fakeContext(log, bounds) {
     for (const v of vals) assert.ok(Number.isFinite(v), `${name} got a non-finite number: ${vals.join(',')}`);
     log.push(`${name}(${vals.map((v) => v.toFixed(3)).join(',')})`);
   };
-  const addBox = (x0, y0, x1, y1) => {
-    if (transforms === 0 && clips === 0 && bounds) bounds.push({ x0, y0, x1, y1, style: ctx.fillStyle });
+  const addBox = (x0, y0, x1, y1, style = ctx.fillStyle) => {
+    if (transforms === 0 && clips === 0 && bounds) bounds.push({ x0, y0, x1, y1, style });
   };
   const gradient = (kind, args) => {
     for (const v of args) assert.ok(Number.isFinite(v), `${kind} gradient got a non-finite number: ${args.join(',')}`);
@@ -96,7 +97,12 @@ function fakeContext(log, bounds) {
       log.push(`fill:${ctx.fillStyle}`);
       if (path.length) addBox(Math.min(...path.map((p) => p[0])), Math.min(...path.map((p) => p[1])), Math.max(...path.map((p) => p[0])), Math.max(...path.map((p) => p[1])));
     },
-    stroke() { log.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}`); },
+    stroke() {
+      log.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}`);
+      // A stroke reaches half its width past its path (round caps included).
+      const r = ctx.lineWidth / 2;
+      if (strokes && path.length) addBox(Math.min(...path.map((p) => p[0])) - r, Math.min(...path.map((p) => p[1])) - r, Math.max(...path.map((p) => p[0])) + r, Math.max(...path.map((p) => p[1])) + r, ctx.strokeStyle);
+    },
     clip() { clips++; log.push('clip'); },
     getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4) }; },
     putImageData() {},
@@ -188,7 +194,8 @@ for (const a of buildings) {
           const log = [];
           const bounds = [];
           const counter = { team: 0 };
-          const ctx = fakeContext(log, bounds);
+          // The neutral world (art/world.js) is checked by its fills only.
+          const ctx = fakeContext(log, bounds, !world);
           draw(ctx, passes(counter, biome)[pass]);
           assert.equal(ctx.depth, 0, `${a.id} leaves save/restore unbalanced`);
           for (const b of bounds) {
@@ -460,6 +467,7 @@ test('animated layers: radar, steam, smoke, lights, reactor rings, the crane tro
   }
 });
 
+const EPS = 1e-6;
 for (const [key, anim] of Object.entries(BUILDING_ANIM)) {
   test(`animated layer ${key}: every frame finite, inside its box, deterministic, frames differ`, () => {
     const [bx, by, bw, bh] = anim.box;
@@ -469,12 +477,13 @@ for (const [key, anim] of Object.entries(BUILDING_ANIM)) {
       for (let run = 0; run < 2; run++) {
         const log = [];
         const bounds = [];
-        const ctx = fakeContext(log, bounds);
+        const ctx = fakeContext(log, bounds, true);
         anim.draw(ctx, passes({ team: 0 }).colour, f);
         assert.equal(ctx.depth, 0, `${key} frame ${f} leaves save/restore unbalanced`);
         for (const b of bounds) {
           assert.ok(
-            b.x0 >= bx - 1.5 && b.y0 >= by - 1.5 && b.x1 <= bx + bw + 1.5 && b.y1 <= by + bh + 1.5,
+            // The atlas cuts each frame to its box: nothing may reach past it, halos included.
+            b.x0 >= bx - EPS && b.y0 >= by - EPS && b.x1 <= bx + bw + EPS && b.y1 <= by + bh + EPS,
             `${key} frame ${f} draws outside its box ${anim.box}: ${JSON.stringify(b)}`,
           );
         }
@@ -538,6 +547,25 @@ test('the atlas holds every animation once: head slots point at their frames, fo
   } finally {
     delete globalThis.document;
   }
+});
+
+test('the minimal pack atlas stays 2048 wide: animated layers cover only what moves', () => {
+  const sizes = [];
+  globalThis.document = stubDocument(sizes);
+  try {
+    buildAtlas(actors);
+  } finally {
+    delete globalThis.document;
+  }
+  // The colour and the mask atlas: phones keep both in GPU memory.
+  assert.equal(sizes.length, 2);
+  for (const [w, h] of sizes) {
+    assert.equal(w, 2048, `atlas ${w}x${h}`);
+    assert.ok(h <= 2048 * 1.5, `atlas ${w}x${h} is no taller than its sprites need`);
+  }
+  // Every layer frame is small: the whole set of layers costs less than a tenth of the atlas.
+  const px = Object.values(BUILDING_ANIM).reduce((n, a) => n + (a.box[2] * 2 + 4) * (a.box[3] * 2 + 4) * a.frames, 0);
+  assert.ok(px < 0.1 * sizes[0][0] * sizes[0][1], `animated layers take ${px} atlas pixels`);
 });
 
 test('the silo hatch is a working layer the engine plays once for a launch, at rest otherwise', () => {

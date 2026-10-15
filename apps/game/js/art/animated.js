@@ -14,7 +14,7 @@
 // so the simulation never sees any of this.
 
 import { C, circle, poly, polyline, rect, ring } from './kit.js';
-import { siloHatch, dashRing, turned, HPAD_LIGHTS, AFLD_LIGHTS, AFLD_LIGHT_ROWS } from './buildings.js';
+import { siloHatch, dashRing, HPAD_LIGHTS, AFLD_LIGHTS, AFLD_LIGHT_ROWS } from './buildings.js';
 
 const TAU = Math.PI * 2;
 const GLOW = '#ffd98a';
@@ -41,10 +41,10 @@ function plume(ctx, P, x, y, t, o) {
   }
 }
 
-/** A small lamp: lit (halo and bright dot) or dark. */
-function lamp(ctx, P, x, y, r, on, lit = GLOW, halo = 'rgba(255,217,138,0.45)', dark = '#6b5a3a') {
+/** A small lamp: lit (halo of radius `halo` and a bright dot) or dark. */
+function lamp(ctx, P, x, y, r, on, lit = GLOW, haloFill = 'rgba(255,217,138,0.45)', dark = '#6b5a3a', halo = r * 1.9) {
   if (on) {
-    circle(ctx, P.c(halo), x, y, r * 1.9);
+    circle(ctx, P.c(haloFill), x, y, halo);
     circle(ctx, P.c(lit), x, y, r);
   } else {
     circle(ctx, P.c(dark), x, y, r);
@@ -75,9 +75,10 @@ const FIELD = [24, 5, 42.5, 15, 42.5, 36, 24, 46, 5.5, 36, 5.5, 15];
 
 /** Animated layers by sprite key (sprites.js resolves aliases such as fakes). */
 export const BUILDING_ANIM = {
-  // Radar dome: the green sweep goes round the dome, the antenna turns.
+  // Radar dome: the green sweep goes round the dome (the antenna is part of
+  // the structure, so the layer stays the size of the dome).
   DOME: {
-    box: [6, -2, 42, 49],
+    box: [7, 16, 30, 30],
     frames: 8,
     fps: 6,
     draw: (ctx, P, f) => {
@@ -88,31 +89,24 @@ export const BUILDING_ANIM = {
       ctx.arc(22, 31, 15, a, a + 0.8);
       ctx.closePath();
       ctx.fill();
-      const th = (f / 8) * TAU - 0.44;
-      poly(ctx, P.c('#98a0a8'), turned(39.5, 7.5, 17, 4.5, th));
-      const c = Math.cos(th);
-      const s = Math.sin(th);
-      for (const u of [-6.5, -3.5, -0.5, 2.5, 5.5]) {
-        polyline(ctx, P.c('#3f4247'), 0.5, [39.5 + u * c + 2.1 * s, 7.5 + u * s - 2.1 * c, 39.5 + u * c - 2.1 * s, 7.5 + u * s + 2.1 * c]);
-      }
-      circle(ctx, P.team(0.9), 39.5, 7.5, 1);
     },
   },
   // Power plant: steam billows from both cooling towers.
   POWR: {
     box: [1, -8, 44, 32],
-    frames: 6,
-    fps: 6,
+    frames: 4,
+    fps: 4,
     draw: (ctx, P, f) => {
       for (const x of [13, 31]) {
-        plume(ctx, P, x + 2.5, 11.5, f / 6, { r0: 3.5, grow: 3, rise: 12, drift: -5, a: 0.6 });
+        plume(ctx, P, x + 2.5, 11.5, f / 4, { r0: 3.5, grow: 3, rise: 12, drift: -5, a: 0.6 });
         puff(ctx, P, x - 1.5, 15, 6, 0.75);
       }
     },
   },
-  // Advanced power plant: the reactor rings glow brighter and dimmer, the stack steams.
+  // Advanced power plant: the reactor rings glow brighter and dimmer (the
+  // stack's wisp of steam is part of the structure).
   APWR: {
-    box: [4, -8, 67, 46],
+    box: [3, 5, 66, 34],
     frames: 4,
     fps: 5,
     draw: (ctx, P, f) => {
@@ -122,7 +116,6 @@ export const BUILDING_ANIM = {
         ring(ctx, P.c(`rgba(255,217,138,${halo})`), x, 22, 14.5, 3.5);
         ring(ctx, P.c(core), x, 22, 14.5, 1.5);
       }
-      plume(ctx, P, 64, 6.5, f / 4, { r0: 3.5, grow: 2, rise: 8, drift: -3, a: 0.7 });
     },
   },
   // Refinery: the furnace flickers and smokes.
@@ -143,44 +136,48 @@ export const BUILDING_ANIM = {
     fps: 5,
     draw: (ctx, P, f) => plume(ctx, P, 14, 14, f / 6, { n: 3, r0: 1.5, grow: 2.5, rise: 12, drift: 4, a: 0.5, rgb: '214,214,208' }),
   },
-  // Helipad: the landing lights chase round the pad, the hut beacon blinks.
+  // Helipad: two lights chase round the pad on opposite sides, each with a
+  // dimmer one behind it (the hut beacon is part of the structure).
   HPAD: {
-    box: [0, 5, 48, 67],
-    frames: 8,
-    fps: 8,
+    box: [0, 21, 48, 50],
+    frames: 4,
+    fps: 6,
     draw: (ctx, P, f) => {
-      const [tx, ty] = HPAD_LIGHTS[(f + 7) % 8];
-      circle(ctx, P.c('#d9b870'), tx, ty, 1.25);
-      const [x, y] = HPAD_LIGHTS[f];
-      lamp(ctx, P, x, y, 1.3, true, GLOW, 'rgba(255,217,138,0.4)');
-      lamp(ctx, P, 13.5, 8, 1.5, f % 4 < 2, '#e84a3a', 'rgba(232,74,58,0.35)', '#5a1d16');
+      for (const k of [f, f + 4]) {
+        const [tx, ty] = HPAD_LIGHTS[(k + 7) % 8];
+        circle(ctx, P.c('#d9b870'), tx, ty, 1.25);
+        const [x, y] = HPAD_LIGHTS[k];
+        lamp(ctx, P, x, y, 1.3, true, GLOW, 'rgba(255,217,138,0.4)', undefined, 2.4);
+      }
     },
   },
-  // Airfield: the edge lights chase down the runway, the tower beacon blinks.
+  // Airfield: two lights chase down each runway edge (the tower beacon is
+  // part of the structure).
   AFLD: {
-    box: [0, 4, 72, 44],
-    frames: 6,
+    box: [9, 19, 51, 29],
+    frames: 3,
     fps: 6,
     draw: (ctx, P, f) => {
       for (const y of AFLD_LIGHT_ROWS) {
-        circle(ctx, P.c(GLOW), AFLD_LIGHTS[(f + 5) % 6], y, 0.75);
-        lamp(ctx, P, AFLD_LIGHTS[f], y, 0.95, true, '#fff3b8', 'rgba(255,217,138,0.45)');
+        for (const k of [f, f + 3]) {
+          circle(ctx, P.c(GLOW), AFLD_LIGHTS[(k + 5) % 6], y, 0.75);
+          lamp(ctx, P, AFLD_LIGHTS[k], y, 0.95, true, '#fff3b8', 'rgba(255,217,138,0.45)', undefined, 1.4);
+        }
       }
-      if (f < 3) lamp(ctx, P, 61.5, 8.5, 1.5, true);
     },
   },
   // Allied tech center: the dish's feed turns round, the mast lamp blinks.
   ATEK: {
     box: [5, 3, 28, 17],
-    frames: 8,
-    fps: 4,
+    frames: 4,
+    fps: 2,
     draw: (ctx, P, f) => {
-      const a = (f / 8) * TAU - (3 * Math.PI) / 4;
+      const a = (f / 4) * TAU - (3 * Math.PI) / 4;
       const fx = 24 + Math.cos(a) * 5.6;
       const fy = 11.5 + Math.sin(a) * 5.6;
       polyline(ctx, P.c('#3f4247'), 0.75, [24, 11.5, fx, fy]);
       circle(ctx, P.c('#3f4247'), fx, fy, 1.25);
-      beacon(ctx, P, 9, 7, 1.5, f % 4 < 2);
+      beacon(ctx, P, 9, 7, 1.5, f < 2);
     },
   },
   // Soviet tech center: the red antenna light blinks.
@@ -260,7 +257,9 @@ export const BUILDING_ANIM = {
           const j = i === 0 || i === arc.length - 2 || f === 0 ? 0 : Math.sin(i * 7.1 + f * 13.7) * 0.8;
           const dx = arc[i] - 12;
           const dy = arc[i + 1] - 12;
-          pts.push(12 + dx * c - dy * s + j, 12 + dx * s + dy * c - j);
+          // Turned arcs keep inside the coil's cell (with room for the glow).
+          const clamp = (v) => Math.max(1, Math.min(23, v));
+          pts.push(clamp(12 + dx * c - dy * s + j), clamp(12 + dx * s + dy * c - j));
         }
         polyline(ctx, P.c('rgba(127,224,255,0.45)'), 2, pts);
         polyline(ctx, P.c('#e0f8ff'), 0.8, pts);
