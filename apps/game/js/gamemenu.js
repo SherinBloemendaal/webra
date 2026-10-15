@@ -1,34 +1,40 @@
-// In-game menu (Esc): Resume, Game info (OpenRA's GAME_INFO_PANEL with its
-// Objectives, Briefing and Options tabs; js/gameinfo.js), Settings, Controls
-// (hotkeys, rebindable), Fullscreen, Release notes, Surrender (OpenRA
-// IngameMenuLogic: games with more than one person, after a confirm step),
-// Leave to lobby, Exit, plus the game's record actions (save the game,
-// download the replay; js/records.js), Restart (single player and replays,
-// after a confirm step) and Statistics (once the local player watches:
-// spectators, replays, after a defeat or at the end). Phones get the same
-// menu from the HUD's Menu button.
+// In-game menu (Esc), the design board GameMenu: the actions on the left
+// (Resume, Guide, Statistics, the game's record actions, Settings, Network
+// in online games, Sound, Music, Original content, Controls and hotkeys,
+// Fullscreen, Release notes, Restart, and at the bottom Surrender, Leave and
+// Exit) and the game info on the right (OpenRA's GAME_INFO_PANEL with its
+// Objectives, Briefing and Options tabs; js/gameinfo.js), one under the
+// other on phones. Surrender follows OpenRA IngameMenuLogic: games with more
+// than one person, after a confirm step. Restart asks first (single player
+// and replays); online it is the rematch. Statistics shows once the local
+// player watches (spectators, replays, after a defeat or at the end). Phones
+// get the same menu from the HUD's Menu button.
 //
-// The Music page is the music player (js/audio/musicplayer.js), like OpenRA's
-// in-game menu Music button.
-//
-// The Settings page has these parts: Display (UI scale, game scale, render
-// resolution, fullscreen; js/scale.js), Scrolling and health bars, Mouse
-// capture (js/mouselock.js, where the browser has Pointer Lock) and Audio
-// (the Sound dialog's controls, js/audio/panel.js).
+// Pages: Settings (board Options: tabs Game, Graphics with the texture pack
+// cards, Controls, Hotkeys with search and groups, Sound with the music
+// player beside it, Privacy, Advanced), Guide (js/guideview.js), Network in
+// online games (js/netmenu.js; the HUD's signal bars open it with the
+// OPEN_NETWORK_EVENT), Music (js/audio/musicplayer.js, like OpenRA's
+// in-game Music button) and the confirm steps.
 //
 // Single player and skirmish pause while the menu is open. Online lockstep
 // games cannot pause (docs/contracts.md: the server drops a player who holds
 // the game up), so the menu opens without pausing and says so.
 //
-// While the menu is open it takes every keydown in the capture phase, so no
-// game hotkey fires; default actions (Tab between buttons, arrow keys on a
-// slider) still work.
+// Keys: while the menu is open it keeps every key from the game. A key on a
+// control of the menu reaches that control and stops at the menu's card: an
+// open select list and the hotkey search get every key, tabs, steppers and
+// radio groups their arrows, Home, End and Page keys, buttons the rest (the
+// menu's own hotkeys, fullscreen and mute, still run). Any other key is
+// stopped in the capture phase. Esc goes back a page or closes the menu,
+// from a tab or a stepper too, except while a select list is open: then it
+// only closes the list.
 
-import { comboFromEvent, formatCombo, GROUP_ORDER, isMac, substituteFor } from './hotkeys.js';
+import { boundKey, comboFromEvent, formatCombo, GROUP_ORDER, isMac, substituteFor } from './hotkeys.js';
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
-import { segmented, slider as createSlider, switchInput, toggle as createToggle } from './ui/controls.js';
+import { led, segmented, slider as createSlider, switchInput, tabs as tabBar, toggle as createToggle } from './ui/controls.js';
 import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
 import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
@@ -37,19 +43,22 @@ import { closeOpenTip, infoTip, labelWithHelp, openTip } from './infotip.js';
 import { helpText } from './help.js';
 import { configured as reportsConfigured } from './telemetry/index.js';
 import { renderGameInfo } from './gameinfo.js';
+import { renderGuide } from './guideview.js';
+import { NetHistory, OPEN_NETWORK_EVENT, netSwitches, renderNetworkData } from './netmenu.js';
 
-/** How often the open Game info page shows the scores again (ms). */
+/** How often the open game info shows the scores again (ms). */
 export const GAME_INFO_REFRESH_MS = 1000;
 
 /**
  * Settings of the Settings page with a "?" (tests check each one has help
- * in js/help.js as `settings.<key>`); the Audio section's are AUDIO_HELP_KEYS
+ * in js/help.js as `settings.<key>`); the Sound tab's are AUDIO_HELP_KEYS
  * of js/audio/panel.js.
  */
 export const MENU_HELP_KEYS = Object.freeze([
   'uiScale',
   'gameScale',
   'scaleAuto',
+  'zoomFactor',
   'pixelRatioCap',
   'lowQuality',
   'reduceMotion',
@@ -73,14 +82,88 @@ export const MENU_HELP_KEYS = Object.freeze([
   'cloudReplays',
 ]);
 
-/** The "?" beside the titles of the Game info and Surrender pages (js/help.js). */
+/** The "?" beside the titles of the game info and the Surrender page (js/help.js). */
 export const MENU_PAGE_HELP_KEYS = Object.freeze(['menu.gameInfo', 'menu.surrender']);
 
-/** The notes under the Controls page's list (js/help.js `controls.<key>`). */
+/** The notes under the Hotkeys tab (js/help.js `controls.<key>`). */
 export const CONTROLS_HELP_KEYS = Object.freeze(['keys', 'focus', 'selection', 'production']);
 
-/** Settings on the Controls page, each with a "?" (js/help.js `settings.<key>`); "Reset all hotkeys" leaves them. */
+/** Settings on the Controls tab, each with a "?" (js/help.js `settings.<key>`); "Reset all hotkeys" leaves them. */
 export const CONTROLS_SETTINGS = Object.freeze(['buildRightClick']);
+
+/** The Settings tabs (board Options), in order. */
+export const SETTINGS_TABS = Object.freeze([
+  { id: 'game', label: 'Game' },
+  { id: 'graphics', label: 'Graphics' },
+  { id: 'controls', label: 'Controls' },
+  { id: 'hotkeys', label: 'Hotkeys' },
+  { id: 'sound', label: 'Sound' },
+  { id: 'privacy', label: 'Privacy' },
+  { id: 'advanced', label: 'Advanced' },
+]);
+
+/**
+ * What "Reset this section" puts back per tab (settings names; the Game
+ * tab's Online switches, the Hotkeys tab's keys and the Sound tab's audio
+ * settings too). Privacy has no reset: switching reports back on is the
+ * player's call. The graphics choice stays (it can need installed content).
+ */
+export const SECTION_SETTINGS = Object.freeze({
+  game: Object.freeze(['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'targetLines', 'healthBars', 'playerStanceColors', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications', 'pauseWhenHidden']),
+  graphics: Object.freeze(['uiScale', 'gameScale', 'zoomFactor', 'pixelRatioCap', 'lowQuality', 'reduceMotion']),
+  controls: Object.freeze(['buildRightClick', 'mouseCapture', 'mouseCaptureSpeed', 'mouseCaptureRaw', 'mouseCaptureEscMenu', 'mouseCaptureNotice']),
+  hotkeys: Object.freeze([]),
+  sound: Object.freeze([]),
+  privacy: null,
+  advanced: Object.freeze(['perfCaptureStart']),
+});
+
+/**
+ * The texture pack cards of the Graphics tab (game.graphics; docs
+ * redesign 0.3): 2D minimal (WebRA's flat art, stored as 'webra' before
+ * the 3D pack), 3D minimal (the built-in pack) and Red Alert original (the
+ * player's own files). A card shows when this build's setting has its value.
+ */
+export const PACK_CARDS = Object.freeze([
+  { value: 'webra2d', legacy: 'webra', name: '2D minimal', note: 'Flat shapes, easiest to read' },
+  { value: 'webra3d', name: '3D minimal', note: 'Blocky and bright' },
+  { value: 'original', name: 'Red Alert original', note: 'From your own copy of Red Alert' },
+]);
+
+/**
+ * The cards for the setting's `options` and value `current`, with their
+ * install state: `{ value, name, note, status, checked, disabled }`.
+ */
+export function packCards(options, current, { originalInstalled = false, problem = null } = {}) {
+  const out = [];
+  for (const card of PACK_CARDS) {
+    const value = options.includes(card.value) ? card.value : card.legacy && options.includes(card.legacy) ? card.legacy : null;
+    if (value === null) continue;
+    let status = 'Built in';
+    let disabled = false;
+    if (card.value === 'original') {
+      status = originalInstalled ? 'Installed' : 'Not installed: add it from your own copy under Original content';
+      disabled = !originalInstalled;
+    } else if (card.value === 'webra3d' && problem) status = `Not drawn yet: ${problem}`;
+    out.push({ value, name: card.name, note: card.note, status, checked: value === current, disabled, warn: disabled || (card.value === 'webra3d' && !!problem) });
+  }
+  return out;
+}
+
+/** The sync line of the Settings page (account/ui.js SYNC_TEXT while signed in). */
+export function syncLine(state) {
+  if (!state?.signedIn) return { text: 'Saved in this browser. Sign in to keep them in your account.', led: 'off' };
+  switch (state.status) {
+    case 'syncing':
+      return { text: 'Syncing to your account...', led: 'warn' };
+    case 'offline':
+      return { text: 'Offline: settings will sync later', led: 'warn' };
+    case 'error':
+      return { text: 'Settings not synced', led: 'bad' };
+    default:
+      return { text: 'Synced to your account', led: 'ok' };
+  }
+}
 
 /** The "?" of setting `key` beside the row's label, describing `control`. */
 const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, control);
@@ -141,6 +224,27 @@ export function fixedControls(mac = isMac()) {
 }
 
 /**
+ * The hotkeys of the Hotkeys tab that match `query` (any case: one
+ * character is a key, longer text a part of the label, the group or a key
+ * as shown), grouped in OpenRA's order:
+ * `[{ group, actions }]`. An empty query keeps everything.
+ */
+export function filterHotkeys(actions, query = '') {
+  const q = query.trim().toLowerCase();
+  const groups = new Map();
+  for (const a of actions) {
+    const keys = a.keys.map((k) => formatCombo(k).toLowerCase());
+    // One letter is a key ("D" finds what D does); longer text a part of the command, the group or a key.
+    const hit = !q || (q.length === 1 ? keys.some((k) => k === q) : a.label.toLowerCase().includes(q) || keys.some((k) => k.includes(q)) || a.group.toLowerCase().includes(q));
+    if (!hit) continue;
+    if (!groups.has(a.group)) groups.set(a.group, []);
+    groups.get(a.group).push(a);
+  }
+  const order = (g) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
+  return [...groups].sort((x, y) => order(x[0]) - order(y[0])).map(([group, list]) => ({ group, actions: list }));
+}
+
+/**
  * Open / close state and what it means for the game. `onChange(open, paused)`
  * runs on every change; online games never pause.
  */
@@ -179,6 +283,11 @@ export function speedLabel(v) {
   return v === 0 ? 'Off' : `${Number(v.toFixed(2))}x`;
 }
 
+/** Text for the battlefield zoom: "1.0x". */
+export function zoomLabel(v) {
+  return `${Number(v).toFixed(1)}x`;
+}
+
 /** Text for a scale setting: "Auto (85%)" or "110%". */
 export function scaleLabel(setting, resolved) {
   return setting === 'auto' ? `Auto (${percent(resolved)})` : percent(resolved);
@@ -190,9 +299,9 @@ export const DISPLAY_HELP =
   'Max resolution and low quality set how many pixels the battlefield is drawn with: sharpness and speed, not size.';
 
 /**
- * Game menu settings that the Defaults button puts back (the Audio section's
- * are added). The remembered zoom (zoomFactor) has no row of its own: Defaults
- * clears it like Reset zoom does, and the battlefield follows.
+ * Display, game and mouse settings of the Settings page (MENU_SETTINGS
+ * stayed the list of what the old Defaults button put back: every tab's
+ * reset but Controls' build menu choice and Advanced).
  */
 export const MENU_SETTINGS = Object.freeze([
   'uiScale',
@@ -222,6 +331,12 @@ export const MENU_SETTINGS = Object.freeze([
 export const MOUSE_CAPTURE_HELP =
   'Keeps the pointer inside the game, so it cannot slip onto another screen. The game draws its own cursor while the mouse is captured.';
 
+/** Controls of the menu that take every key: an open select list and text fields. */
+const ALL_KEYS = '[role="listbox"], .ui-sp-panel, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea';
+/** Controls that own their arrow, Home, End and Page keys only (tabs, steppers, radio groups, sliders). */
+const NAV_KEYS = '[role="tablist"], [role="spinbutton"], [role="radiogroup"], input[type="range"]';
+const NAV = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+
 function el(tag, className, text) {
   const e = document.createElement(tag);
   if (className) e.className = className;
@@ -236,6 +351,28 @@ function button(text, className, onClick) {
   return b;
 }
 
+/** A menu list button: its label and a quieter hint on the right. */
+function item(label, hint, onClick, { accent = false } = {}) {
+  const b = button(label, `ui-btn gm-item${accent ? ' gm-item-accent' : ''}`, onClick);
+  if (hint) b.append(el('span', 'gm-item-hint', hint));
+  return b;
+}
+
+/** A page's heading row: a Back arrow (to the menu) and the title. */
+function pageHead(title, onBack, extra = null) {
+  const head = el('div', 'gm-head');
+  const row = el('div', 'gm-title-row');
+  if (onBack) {
+    const back = button('', 'ui-btn ui-btn-icon gm-back', onBack);
+    back.setAttribute('aria-label', 'Back to the game menu');
+    row.append(back);
+  }
+  row.append(el('h1', 'gm-title', title));
+  head.append(row);
+  if (extra) head.append(extra);
+  return head;
+}
+
 // Actions that still run while the menu is open (they close it or are
 // harmless; OpenRA's menu context has ToggleMute and TakeScreenshot).
 const MENU_ACTIONS = new Set(['menu', 'pause', 'fullscreen', 'toggleMute', 'takeScreenshot']);
@@ -248,27 +385,33 @@ export class GameMenu {
    *   replay?: boolean,  the replay viewer (keeps playing while the menu is open)
    *   actions?: { id: string, label: string, run(): string | Promise<string> }[],  record actions; run() returns a message
    *   hotkeys: import('./hotkeys.js').HotkeyRegistry,
-   *   settings: { get(k: string): any, set(k: string, v: any): any, reset(k: string): any, subscribe(k: string, fn: Function): Function },
+   *   settings: { get(k: string): any, set(k: string, v: any): any, reset(k: string): any, subscribe(k: string, fn: Function): Function, registry?: object },
    *   fullscreen: { available(): boolean, active(): boolean, toggle(): Promise<{ ok: boolean, message?: string }> },
    *   mouseCapture?: { available(): boolean },  mouse capture (js/mouselock.js); its section shows where available
    *   onChange(open: boolean, paused: boolean): void,
    *   uiScale?: import('./scale.js').UiScale,  the page's UI scale (live preview while its slider moves)
    *   renderRatio?(): number,  the battlefield's render pixel ratio (game scale: Auto and sharp steps)
-   *   win?: Window,  the window the scales are picked for (tests)
-   *   audio?: import('./audio/index.js').AudioSystem,  the Audio section of Settings and the Music page
+   *   win?: Window,  the window the scales are picked for, and where OPEN_NETWORK_EVENT comes (tests)
+   *   audio?: import('./audio/index.js').AudioSystem,  the Sound tab and the Music page
    *   onSound?(): void,
    *   onContent?(): void,  the Original content dialog (graphics, original sounds, texture packs)
    *   contentLabel?(): string,  its button's label (with the installed state)
+   *   content?: { hasOriginalGraphics: boolean, builtinError?: string|null, onChange?(fn): Function },
+   *     the content system (js/content): the texture pack cards' install state
    *   onReleaseNotes?(): void,
    *   restart?: { replay?: boolean, online?: boolean, available?(): boolean, label?(): string, text?(): string, run(): void },
    *     Restart (asks first); online the rematch (js/online.js): shown while `available()`, with its own label and text
    *   onStats?(): void,  the statistics screen (js/stats.js)
    *   statsAvailable?(): boolean,  whether Statistics shows now (not for a player still in the game)
-   *   gameInfo?(): { title: string, objectives: object | null, briefing: object | null, options: object },
-   *     what the Game info page shows now (js/gameinfo.js models)
+   *   gameInfo?(): { title: string, objectives: object | null, briefing: object | null, options: object, weather?: string },
+   *     what the game info shows now (js/gameinfo.js models)
    *   surrender?: { shown(): boolean, enabled(): boolean, run(): void },
    *     OpenRA's Surrender: shown in games with more than one person for a player of the game,
    *     enabled while its game is undecided; run() gives the order
+   *   guide?: import('./guide.js').GuideProgress,  the Guide page and its button
+   *   net?: { source: object, players(): { client: number, name: string, color: string }[] },
+   *     online games: the session's connection quality (js/netquality.js NetQuality) and the players
+   *   syncStatus?(): { signedIn: boolean, status: string },  the account's settings sync (Settings' header)
    *   onLeave(): void,
    *   onExit(): void,
    * }} opts
@@ -281,8 +424,12 @@ export class GameMenu {
     this.capture = null; // action name waiting for a new key
     this.pageOffs = []; // what the open page follows, stopped when it goes (unmountPage)
     this.pinnedScale = undefined; // the menu's own UI scale while the UI scale slider moves
-    this.infoTab = 'objectives'; // the Game info page's open tab
-    this.card = el('div', 'menu-card game-menu-card');
+    this.infoTab = 'objectives'; // the game info's open tab
+    this.settingsTab = 'game';
+    this.guideChapter = null;
+    this.keyGroup = null; // the Hotkeys tab's group (null: the first)
+    this.keyQuery = '';
+    this.card = el('div', 'ui-dialog game-menu-card');
     this.card.setAttribute('role', 'dialog');
     this.card.setAttribute('aria-modal', 'true');
     this.card.setAttribute('aria-label', 'Game menu');
@@ -291,8 +438,18 @@ export class GameMenu {
     this.keyWin = window;
     this.onWindowKey = (e) => this.onKey(e);
     this.keyWin.addEventListener('keydown', this.onWindowKey, true);
-    // Rebuild the open page when bindings or settings change elsewhere.
-    this.offHotkeys = opts.hotkeys.onChange(() => this.isOpen && this.view === 'controls' && this.render());
+    // Keys that reached a control of the menu stop at the card: the game never sees them.
+    this.onCardKey = (e) => {
+      if (this.isOpen) e.stopPropagation();
+    };
+    this.card.addEventListener('keydown', this.onCardKey);
+    // Rebuild the open page when bindings change elsewhere.
+    this.offHotkeys = opts.hotkeys.onChange(() => this.isOpen && this.view === 'settings' && !this.batch && this.render());
+    // The last minute of the connection, from the game's start (online games).
+    this.net = opts.net?.source ? new NetHistory(opts.net.source) : null;
+    this.netWin = opts.win ?? globalThis.window;
+    this.onOpenNetwork = () => this.openAt('network');
+    if (this.net) this.netWin?.addEventListener?.(OPEN_NETWORK_EVENT, this.onOpenNetwork);
   }
 
   /**
@@ -305,8 +462,11 @@ export class GameMenu {
     this.state.isOpen = false;
     this.unmountPage();
     this.keyWin.removeEventListener('keydown', this.onWindowKey, true);
+    this.card.removeEventListener('keydown', this.onCardKey);
     this.offHotkeys?.();
     this.offHotkeys = null;
+    this.net?.dispose();
+    this.netWin?.removeEventListener?.(OPEN_NETWORK_EVENT, this.onOpenNetwork);
     if (this.root.contains(document.activeElement)) document.activeElement.blur();
     this.root.hidden = true;
     this.root.replaceChildren();
@@ -322,6 +482,18 @@ export class GameMenu {
     this.rendered = null;
     this.message = '';
     this.state.open();
+  }
+
+  /** Open the menu on a page ('network', 'guide', 'settings'), or show that page when it is open. */
+  openAt(view, tab) {
+    if (view === 'network' && !this.net) return;
+    if (!this.isOpen) {
+      this.view = view;
+      if (tab) this.settingsTab = tab;
+      this.rendered = null;
+      this.message = '';
+      this.state.open();
+    } else this.show(view, tab);
   }
 
   close() {
@@ -344,15 +516,22 @@ export class GameMenu {
     this.opts.onChange(open, paused);
   }
 
-  /** Stop what the open page follows (the Audio section, the UI scale). */
+  /** Stop what the open page follows (the Sound tab, the UI scale, the game info's timer). */
   unmountPage() {
     for (const off of this.pageOffs ?? []) off();
     this.pageOffs = [];
     this.endScalePreview();
   }
 
-  show(view) {
+  /** Show a page; 'controls' is the Settings page on its Hotkeys tab, `tab` a Settings tab. */
+  show(view, tab) {
+    if (view === 'controls') {
+      view = 'settings';
+      tab = 'hotkeys';
+    }
+    if (view === 'network' && !this.net) view = 'main';
     this.view = view;
+    if (tab) this.settingsTab = tab;
     this.capture = null;
     this.message = '';
     this.render();
@@ -362,7 +541,8 @@ export class GameMenu {
     if (!this.isOpen) return;
     // A dialog opened from the menu (Sound, Original content, Release notes) handles its own keys: Esc closes it, not the menu.
     const t = e.target;
-    if (t instanceof Element && !this.root.contains(t) && t.closest('[role="dialog"]')) return;
+    const inside = t instanceof Element && this.root.contains(t);
+    if (t instanceof Element && !inside && t.closest('[role="dialog"]')) return;
     if (this.capture) {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -384,7 +564,12 @@ export class GameMenu {
       this.render();
       return;
     }
+    // A control that works with keys gets them (it stops them itself or at the card): a list or
+    // text field every key, tabs, steppers and radio groups their navigation keys only.
+    const own = inside && (t.closest(ALL_KEYS) || (NAV.has(e.key) && t.closest(NAV_KEYS)));
     if (e.key === 'Escape') {
+      // An open select list closes, and only the list (js/ui/controls.js selectPlate).
+      if (inside && t.closest('[role="listbox"], .ui-sp-panel')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       // An open help tip closes first.
@@ -393,6 +578,7 @@ export class GameMenu {
       else this.show('main');
       return;
     }
+    if (own) return;
     const combo = comboFromEvent(e);
     const action = combo && this.opts.hotkeys.actionFor(combo);
     if (action && MENU_ACTIONS.has(action)) {
@@ -400,6 +586,8 @@ export class GameMenu {
       this.opts.hotkeys.handle(e);
       return;
     }
+    // Buttons of the menu get their keys (Enter, Space, Tab), which then stop at the card.
+    if (inside) return;
     // Keep game hotkeys and chat from firing behind the menu.
     e.stopImmediatePropagation();
   }
@@ -412,30 +600,38 @@ export class GameMenu {
     const c = this.card;
     // Re-rendering the same page (after a rebind) keeps its scroll position and focus.
     const same = this.rendered === this.view;
-    const scroll = same ? (c.querySelector('.game-menu-scroll')?.scrollTop ?? 0) : 0;
-    // A page drawn again (the Game info scores) keeps the focused control.
+    const scroll = same ? (c.querySelector('.game-menu-scroll:not([hidden])')?.scrollTop ?? 0) : 0;
     const focusId = same && c.contains(document.activeElement) ? document.activeElement.id : '';
     this.rendered = this.view;
     this.unmountPage();
     c.replaceChildren();
+    c.className = `ui-dialog game-menu-card gm-view-${this.view}`;
     if (this.view === 'settings') this.renderSettings(c);
-    else if (this.view === 'controls') this.renderControls(c);
     else if (this.view === 'music') this.renderMusic(c);
+    else if (this.view === 'guide' && this.opts.guide) this.renderGuidePage(c);
+    else if (this.view === 'network' && this.net) this.renderNetwork(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
     else if (this.view === 'surrender') this.renderSurrender(c);
-    else if (this.view === 'info') this.renderInfo(c);
-    else this.renderMain(c);
-    if (this.message) {
-      const m = el('p', 'hint game-menu-message', this.message);
-      m.setAttribute('role', 'status');
-      c.append(m);
+    else {
+      this.view = 'main';
+      c.className = 'ui-dialog game-menu-card gm-view-main';
+      this.renderMain(c);
     }
-    const list = c.querySelector('.game-menu-scroll');
+    if (this.message) {
+      const m = el('p', 'gm-message', this.message);
+      m.setAttribute('role', 'status');
+      const foot = c.querySelector('.gm-foot');
+      if (foot) foot.before(m);
+      else c.append(m);
+    }
+    const list = c.querySelector('.game-menu-scroll:not([hidden])');
     if (list) list.scrollTop = scroll;
     if (focusId) c.querySelector(`#${focusId}`)?.focus({ preventScroll: true });
-    if (!same || !c.contains(document.activeElement)) (c.querySelector('button.primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
+    if (!same || !c.contains(document.activeElement)) (c.querySelector('.ui-btn-primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
   }
+
+  // ---- Main page -------------------------------------------------------------------
 
   renderMain(c) {
     const online = this.opts.online;
@@ -444,27 +640,69 @@ export class GameMenu {
       : online
         ? 'Online game: it keeps running while this menu is open. Online games cannot be paused.'
         : 'The game is paused. Esc resumes.';
-    c.append(el('h1', null, online ? 'Menu' : 'Paused'), el('p', 'tagline', tagline));
+    const status = el('p', 'gm-status');
+    status.append(led(online ? 'warn' : 'info'), el('span', null, tagline));
+    c.append(pageHead(online ? 'Game menu' : 'Paused', null, status));
+    const body = el('div', 'gm-main');
+    const actions = el('div', 'gm-actions');
     const fs = this.opts.fullscreen;
-    const actions = (this.opts.actions ?? []).map((a) => button(a.label, null, () => this.runAction(a)));
     const stats = this.opts.onStats && (this.opts.statsAvailable?.() ?? true);
-    c.append(
-      button('Resume', 'primary', () => this.close()),
-      ...(this.opts.gameInfo ? [button('Game info', null, () => this.show('info'))] : []),
-      ...(stats ? [button('Statistics', null, () => this.opts.onStats())] : []),
-      ...actions,
-      button('Settings', null, () => this.show('settings')),
-      ...(this.opts.onSound ? [button('Sound', null, () => this.opts.onSound())] : []),
-      ...(this.opts.audio ? [button('Music', null, () => this.show('music'))] : []),
-      ...(this.opts.onContent ? [button(this.opts.contentLabel?.() ?? 'Original content', null, () => this.opts.onContent())] : []),
-      button('Controls and hotkeys', null, () => this.show('controls')),
-      button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', null, () => this.toggleFullscreen()),
-      ...(this.opts.onReleaseNotes ? [button('Release notes', null, () => this.opts.onReleaseNotes())] : []),
-      ...this.surrenderButton(),
-      ...(this.restartShown() ? [button(this.restartLabel(), null, () => this.show('restart'))] : []),
-      button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', null, () => this.show('leave')),
-      button('Exit', null, () => this.show('exit')),
+    const guide = this.opts.guide;
+    const list = el('div', 'gm-list');
+    list.append(
+      ...(guide ? [item('Guide', guideHint(guide), () => this.show('guide'), { accent: guide.count() < guide.total })] : []),
+      ...(stats ? [item('Statistics', '', () => this.opts.onStats())] : []),
+      ...(this.opts.actions ?? []).map((a) => item(a.label, '', () => this.runAction(a))),
+      item('Settings', '', () => this.show('settings')),
+      ...(this.net ? [item('Network', netHint(this.opts.net.source), () => this.show('network'))] : []),
+      ...(this.opts.onSound ? [item('Sound', '', () => this.opts.onSound())] : []),
+      ...(this.opts.audio ? [item('Music', '', () => this.show('music'))] : []),
+      ...(this.opts.onContent ? [item(this.opts.contentLabel?.() ?? 'Original content', '', () => this.opts.onContent())] : []),
+      item('Controls and hotkeys', 'Keys and mouse', () => this.show('settings', 'hotkeys')),
+      item(fs.active() ? 'Leave fullscreen' : 'Fullscreen', formatCombo('Alt+Enter'), () => this.toggleFullscreen()),
+      ...(this.opts.onReleaseNotes ? [item('Release notes', '', () => this.opts.onReleaseNotes())] : []),
+      ...(this.restartShown() ? [item(this.restartLabel(), '', () => this.show('restart'))] : []),
     );
+    const exits = el('div', 'gm-exits');
+    exits.append(
+      ...this.surrenderButton(),
+      button(online && !this.opts.replay ? 'Leave game' : 'Leave to lobby', 'ui-btn ui-btn-ghost', () => this.show('leave')),
+      button('Exit', 'ui-btn ui-btn-ghost', () => this.show('exit')),
+    );
+    actions.append(button('Resume', 'ui-btn ui-btn-primary gm-resume', () => this.close()), list, exits);
+    body.append(actions);
+    if (this.opts.gameInfo) {
+      const info = el('section', 'gm-info');
+      info.setAttribute('aria-label', 'Game info');
+      body.append(info);
+      this.renderInfo(info);
+      const timer = setInterval(() => {
+        // Not while its help tip is open: drawing again would close it.
+        if (this.isOpen && this.view === 'main' && !openTip()) this.renderInfo(info);
+      }, GAME_INFO_REFRESH_MS);
+      timer.unref?.();
+      this.pageOffs.push(() => clearInterval(timer));
+    }
+    c.append(body);
+  }
+
+  /** The game info section (OpenRA GAME_INFO_PANEL), drawn again every second (scores). */
+  renderInfo(box) {
+    const view = this.opts.gameInfo?.();
+    if (!view) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const focusId = box.contains(document.activeElement) ? document.activeElement.id : '';
+    box.replaceChildren();
+    this.infoTab = renderGameInfo(box, view, this.infoTab, (id, focus) => {
+      this.infoTab = id;
+      this.renderInfo(box);
+      if (focus) box.querySelector(`#game-info-tab-${id}`)?.focus({ preventScroll: true });
+    });
+    box.querySelector('h2')?.append(infoTip('menu.gameInfo', { label: 'Game info' }).root);
+    if (focusId) box.querySelector(`#${focusId}`)?.focus({ preventScroll: true });
   }
 
   /** Run a record action and show its message. */
@@ -485,6 +723,19 @@ export class GameMenu {
     if (this.isOpen) this.render();
   }
 
+  /** A confirm step: title, text, the main action and Back. */
+  confirm(c, title, text, action, actionLabel, backLabel = 'Back') {
+    c.append(pageHead(title, null));
+    const body = el('div', 'gm-confirm');
+    body.append(el('p', 'gm-text', text));
+    const row = el('div', 'ui-dialog-actions');
+    const main = button(actionLabel, 'ui-btn ui-btn-primary', action);
+    row.append(button(backLabel, 'ui-btn ui-btn-ghost', () => this.show('main')), main);
+    body.append(row);
+    c.append(body);
+    return c;
+  }
+
   renderConfirm(c, kind) {
     const online = this.opts.online && !this.opts.replay;
     const what = kind === 'exit' ? 'Exit to the WebRA website?' : online ? 'Leave this online game?' : 'Leave to the lobby?';
@@ -496,60 +747,34 @@ export class GameMenu {
         : saves
           ? 'This game ends. Save it first to continue it later.'
           : 'This game ends and cannot be resumed.';
-    c.append(
-      el('h1', null, kind === 'exit' ? 'Exit' : 'Leave'),
-      el('p', 'tagline', `${what} ${note}`),
-      button(kind === 'exit' ? 'Exit' : 'Leave', 'primary', () => (kind === 'exit' ? this.opts.onExit() : this.opts.onLeave())),
-      button('Back', null, () => this.show('main')),
-    );
+    this.confirm(c, kind === 'exit' ? 'Exit' : 'Leave', `${what} ${note}`, () => (kind === 'exit' ? this.opts.onExit() : this.opts.onLeave()), kind === 'exit' ? 'Exit' : 'Leave');
   }
 
   /** OpenRA IngameMenuLogic.CreateSurrenderButton: shown for a player of a game with more than one person, disabled once its game is decided. */
   surrenderButton() {
     const s = this.opts.surrender;
     if (!s?.shown()) return [];
-    const b = button('Surrender', null, () => this.show('surrender'));
+    const b = button('', 'ui-btn ui-btn-hazard', () => this.show('surrender'));
+    b.append(el('span', null, 'Surrender'));
     b.disabled = !s.enabled();
     return [b];
   }
 
   /** The surrender dialog (dialog-surrender): the player loses at once and may stay to watch. */
   renderSurrender(c) {
-    const title = el('h1', null, 'Surrender');
-    title.append(infoTip('menu.surrender', { label: 'Surrender' }).root);
-    c.append(
-      title,
-      el('p', 'tagline', 'Are you sure you want to surrender? You lose at once; you can stay and watch the rest of the game.'),
-      button('Surrender', 'primary', () => {
+    this.confirm(
+      c,
+      'Surrender',
+      'Are you sure you want to surrender? You lose at once; you can stay and watch the rest of the game.',
+      () => {
         const s = this.opts.surrender;
         this.close();
         if (s?.enabled()) s.run();
-      }),
-      button('Stay', null, () => this.show('main')),
+      },
+      'Surrender',
+      'Stay',
     );
-  }
-
-  /** Game info (OpenRA GAME_INFO_PANEL): the tabs, drawn again every second while open (scores). */
-  renderInfo(c) {
-    const view = this.opts.gameInfo?.();
-    if (!view) {
-      this.view = 'main';
-      this.renderMain(c);
-      return;
-    }
-    this.infoTab = renderGameInfo(c, view, this.infoTab, (id, focus) => {
-      this.infoTab = id;
-      this.render();
-      if (focus) c.querySelector(`#game-info-tab-${id}`)?.focus({ preventScroll: true });
-    });
-    c.querySelector('h1')?.append(infoTip('menu.gameInfo', { label: 'Game info' }).root);
-    c.append(button('Back', 'primary', () => this.show('main')));
-    const timer = setInterval(() => {
-      // Not while its help tip is open: drawing again would close it.
-      if (this.isOpen && this.view === 'info' && !openTip()) this.render();
-    }, GAME_INFO_REFRESH_MS);
-    timer.unref?.();
-    this.pageOffs.push(() => clearInterval(timer));
+    c.querySelector('h1')?.append(infoTip('menu.surrender', { label: 'Surrender' }).root);
   }
 
   /** Whether the menu offers Restart (or the rematch) now. */
@@ -565,157 +790,458 @@ export class GameMenu {
 
   /** Restart: progress is lost, so it asks first. Online: the rematch, explained. */
   renderRestart(c) {
+    const run = () => {
+      this.close();
+      this.opts.restart.run();
+    };
     if (this.opts.restart?.online) {
-      const label = this.restartLabel();
-      c.append(
-        el('h1', null, 'Rematch'),
-        el('p', 'tagline', this.opts.restart.text?.() ?? ''),
-        button(label, 'primary', () => {
-          this.close();
-          this.opts.restart.run();
-        }),
-        button('Back', null, () => this.show('main')),
-      );
+      this.confirm(c, 'Rematch', this.opts.restart.text?.() ?? '', run, this.restartLabel());
       return;
     }
     const replay = !!this.opts.restart?.replay;
-    c.append(
-      el('h1', null, 'Restart'),
-      el(
-        'p',
-        'tagline',
-        replay
-          ? 'Play this replay again from the start?'
-          : 'Restart this game from the beginning with exactly the same settings? Everything played so far is lost (save it first to keep it).',
-      ),
-      button(replay ? 'Restart replay' : 'Restart', 'primary', () => {
-        this.close();
-        this.opts.restart.run();
-      }),
-      button('Back', null, () => this.show('main')),
+    this.confirm(
+      c,
+      'Restart',
+      replay ? 'Play this replay again from the start?' : 'Restart this game from the beginning with exactly the same settings? Everything played so far is lost (save it first to keep it).',
+      run,
+      replay ? 'Restart replay' : 'Restart',
     );
   }
 
   /** The music player (OpenRA's in-game Music panel). */
   renderMusic(c) {
-    c.append(el('h1', null, 'Music'));
+    c.append(pageHead('Music', () => this.show('main')));
     const list = el('div', 'game-menu-scroll game-menu-music');
     const player = mountMusicPlayer(list, this.opts.audio, { idPrefix: 'menu-music', heading: 2, onContent: this.opts.onContent });
     this.pageOffs.push(() => player.dispose());
-    c.append(list, button('Back', 'primary', () => this.show('main')));
+    const foot = el('div', 'gm-foot');
+    foot.append(button('Back', 'ui-btn ui-btn-primary', () => this.show('main')));
+    c.append(list, foot);
   }
 
+  // ---- Guide and Network --------------------------------------------------------------
+
+  renderGuidePage(c) {
+    const progress = this.opts.guide;
+    this.guideChapter = renderGuide(c, {
+      progress,
+      hotkeys: this.opts.hotkeys,
+      chapter: this.guideChapter,
+      onChapter: (id) => {
+        this.guideChapter = id;
+        this.render();
+        this.card.querySelector(`#guide-chapter-${id}`)?.focus({ preventScroll: true });
+      },
+      onBack: () => this.show('main'),
+    });
+    // Steps ticked off meanwhile (the game, Skip, another tab, the account) show at once.
+    let queued = false;
+    this.pageOffs.push(
+      progress.subscribe(() => {
+        if (queued) return;
+        queued = true;
+        queueMicrotask(() => {
+          queued = false;
+          if (this.isOpen && this.view === 'guide') this.render();
+        });
+      }),
+    );
+  }
+
+  renderNetwork(c) {
+    const status = el('p', 'gm-status');
+    status.append(led('warn'), el('span', null, 'Online: the game goes on while this menu is open.'));
+    c.append(pageHead('Network', () => this.show('main'), status));
+    const scroll = el('div', 'game-menu-scroll gm-network');
+    const data = el('div', 'net-data');
+    const draw = () => renderNetworkData(data, this.net.model(this.opts.net.players?.() ?? []));
+    const registry = this.opts.settings.registry;
+    scroll.append(data);
+    if (registry) scroll.append(netSwitches(registry, this.pageOffs));
+    c.append(scroll);
+    const foot = el('div', 'gm-foot');
+    foot.append(button('Back', 'ui-btn ui-btn-primary', () => this.show('main')));
+    c.append(foot);
+    draw();
+    this.pageOffs.push(this.net.onChange(draw));
+    // The server's stall log has this game's waiting time.
+    this.net.refresh();
+  }
+
+  // ---- Settings ------------------------------------------------------------------------
+
   renderSettings(c) {
+    const sync = this.opts.syncStatus ? syncLine(this.opts.syncStatus()) : null;
+    let syncEl = null;
+    if (sync) {
+      syncEl = el('p', 'gm-status gm-sync');
+      syncEl.setAttribute('role', 'status');
+      syncEl.append(led(sync.led), el('span', null, sync.text));
+    }
+    c.append(pageHead('Settings', () => this.show('main'), syncEl));
+    const panels = new Map();
+    const build = {
+      game: (p) => this.settingsGame(p),
+      graphics: (p) => this.settingsGraphics(p),
+      controls: (p) => this.settingsControls(p),
+      hotkeys: (p) => this.settingsHotkeys(p),
+      sound: (p) => this.settingsSound(p),
+      privacy: (p) => this.settingsPrivacy(p),
+      advanced: (p) => this.settingsAdvanced(p),
+    };
+    for (const t of SETTINGS_TABS) {
+      const panel = el('div', `game-menu-scroll gm-panel gm-panel-${t.id}`);
+      build[t.id](panel);
+      panels.set(t.id, panel);
+    }
+    const reset = button('Reset this section', 'ui-btn ui-btn-ghost', () => this.resetSection(this.settingsTab));
+    const syncReset = () => {
+      reset.hidden = SECTION_SETTINGS[this.settingsTab] === null;
+      reset.textContent = this.settingsTab === 'hotkeys' ? 'Reset all hotkeys' : 'Reset this section';
+    };
+    const bar = tabBar({
+      id: 'game-menu-tab',
+      label: 'Settings sections',
+      vertical: true,
+      value: this.settingsTab,
+      tabs: SETTINGS_TABS.map((t) => ({ id: t.id, label: t.label, panel: panels.get(t.id) })),
+      onChange: (id) => {
+        this.settingsTab = id;
+        syncReset();
+      },
+    });
+    const body = el('div', 'gm-settings');
+    body.append(bar.root, ...panels.values());
+    c.append(body);
+    syncReset();
+    const foot = el('div', 'gm-foot');
+    foot.append(reset, button('Done', 'ui-btn ui-btn-primary', () => this.show('main')));
+    c.append(foot);
+  }
+
+  /** Put back the settings of one tab. */
+  resetSection(tab) {
     const s = this.opts.settings;
-    c.append(el('h1', null, 'Settings'));
-    const list = el('div', 'game-menu-scroll');
-    const slider = (key, text) => {
+    if (tab === 'hotkeys') {
+      this.opts.hotkeys.reset();
+      return;
+    }
+    for (const key of SECTION_SETTINGS[tab] ?? []) s.reset(key);
+    if (tab === 'game') for (const key of ['warnSelf', 'warnOthers', 'signalBars']) s.registry?.reset('net', key);
+    if (tab === 'sound') this.opts.audio?.prefs.set(DEFAULT_PREFS);
+    this.render();
+  }
+
+  /** Row builders for the Settings tabs. */
+  rows() {
+    const s = this.opts.settings;
+    const slider = (key, text, { step = 0.25, format = speedLabel } = {}) => {
       const spec = SCHEMA[key];
       const control = createSlider({
         id: `game-menu-${key}`,
         label: text,
         min: spec.min,
         max: spec.max,
-        step: 0.25,
+        step,
         value: s.get(key),
-        format: speedLabel,
+        format,
         rowClass: 'game-menu-row',
         onInput: (v) => {
-          control.output.textContent = speedLabel(s.set(key, v));
+          control.output.textContent = format(s.set(key, v));
         },
       });
+      // Follow the setting when it changes elsewhere (the mouse wheel's zoom, another tab).
+      this.pageOffs.push(s.subscribe(key, (v) => Number(control.input.value) !== v && control.set(v)));
       return withHelp(control.row, key, control.input);
     };
     const check = (key, text) => {
       const t = createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) });
       return withHelp(t.row, key, t.input);
     };
-    const choice = (key, text, labels, hint) => choiceRow(s, key, text, labels, hint);
+    const choice = (key, text, labels, hint) => {
+      const row = choiceRow(s, key, text, labels, hint);
+      return withHelp(row, key, row.querySelector('[role="radiogroup"]'));
+    };
+    return { s, slider, check, choice };
+  }
 
-    // ---- Display ----
-    list.append(el('h2', null, 'Display'), el('p', 'hint game-menu-explain', DISPLAY_HELP));
-    list.append(this.uiScaleRow(), this.gameScaleRow());
-    list.append(slider('pixelRatioCap', 'Max resolution (pixel ratio)'), check('lowQuality', 'Low quality (faster on phones)'));
-    // Camera shake and the nuke's flash (js/battlefx.js).
-    const motion = choice('reduceMotion', 'Reduce motion', SCHEMA.reduceMotion.labels);
-    list.append(withHelp(motion, 'reduceMotion', motion.querySelector('[role="radiogroup"]')));
-    const fs = this.opts.fullscreen;
-    const fsRow = el('div', 'game-menu-row');
-    const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'game-menu-mini', () => this.toggleFullscreen());
-    fsButton.disabled = !fs.available();
-    fsRow.append(el('span', 'ui-label', `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
-    withHelp(fsRow, 'fullscreen', fsButton);
-    list.append(fsRow);
-    if (!fs.available()) list.append(el('p', 'hint', 'Fullscreen is not available in this browser or page.'));
-    // Single player in another tab or a minimised window (js/main.js): plays on unless this is on.
-    list.append(check('pauseWhenHidden', 'Pause when the game is hidden'));
-
-    // ---- Scrolling and units ----
-    const targetLines = choice('targetLines', 'Target lines', SCHEMA.targetLines.labels);
-    list.append(
-      el('h2', null, 'Scrolling and units'),
+  settingsGame(p) {
+    const { slider, check, choice } = this.rows();
+    p.append(
+      el('h2', 'gm-section-title', 'Scrolling and units'),
       slider('edgeScrollSpeed', 'Edge scroll speed'),
       slider('keyScrollSpeed', 'Keyboard scroll speed'),
       check('showUnitPaths', 'Show unit paths'),
-      withHelp(targetLines, 'targetLines', targetLines.querySelector('[role="radiogroup"]')),
-      choice('healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
+      choice('targetLines', 'Target lines', SCHEMA.targetLines.labels),
+      choiceRow(this.opts.settings, 'healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       check('playerStanceColors', 'Relationship colours'),
-    );
-
-    // ---- Chat and notifications (OpenRA's Display settings: js/chatlog.js, js/notifications.js) ----
-    list.append(
-      el('h2', null, 'Chat and notifications'),
+      // OpenRA's Display settings: js/chatlog.js, js/notifications.js.
+      el('h2', 'gm-section-title', 'Chat and notifications'),
       check('hideReplayChat', 'Hide chat in replays'),
       check('uiFeedbackNotifications', 'Show UI feedback notifications'),
       check('gameEventNotifications', 'Show game event notifications'),
+      el('h2', 'gm-section-title', 'Pausing'),
+      // Single player in another tab or a minimised window (js/main.js): plays on unless this is on.
+      check('pauseWhenHidden', 'Pause when the game is hidden'),
     );
+    // Online games (registry net.*): the same switches as the Network page.
+    const registry = this.opts.settings.registry;
+    if (registry) p.append(el('h2', 'gm-section-title', 'Online games'), netSwitches(registry, this.pageOffs));
+  }
 
+  settingsGraphics(p) {
+    const { slider, check, choice } = this.rows();
+    p.append(el('h2', 'gm-section-title', 'Texture pack'), this.packCards());
+    if (this.opts.onContent) p.append(button('Original content and texture packs...', 'ui-btn ui-btn-sm gm-content', () => this.opts.onContent()));
+    p.append(el('h2', 'gm-section-title', 'Display'), el('p', 'gm-note', DISPLAY_HELP));
+    p.append(this.uiScaleRow(), this.gameScaleRow());
+    p.append(slider('zoomFactor', 'Battlefield zoom', { step: 0.1, format: zoomLabel }));
+    p.append(slider('pixelRatioCap', 'Max resolution (pixel ratio)'), check('lowQuality', 'Low quality (faster on phones)'));
+    // Camera shake and the nuke's flash (js/battlefx.js).
+    p.append(choice('reduceMotion', 'Reduce motion', SCHEMA.reduceMotion.labels));
+    const fs = this.opts.fullscreen;
+    const fsRow = el('div', 'ui-row game-menu-row gm-button-row');
+    const fsButton = button(fs.active() ? 'Leave fullscreen' : 'Fullscreen', 'ui-btn ui-btn-sm', () => this.toggleFullscreen());
+    fsButton.disabled = !fs.available();
+    fsRow.append(el('span', 'ui-label', `Fullscreen (${formatCombo('Alt+Enter')})`), fsButton);
+    withHelp(fsRow, 'fullscreen', fsButton);
+    p.append(fsRow);
+    if (!fs.available()) p.append(el('p', 'gm-note', 'Fullscreen is not available in this browser or page.'));
+  }
+
+  /** The texture pack cards: a radio group of buttons (arrows move, like radios). */
+  packCards() {
+    const s = this.opts.settings;
+    const group = el('div', 'gm-packs');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'Texture pack');
+    const draw = () => {
+      const content = this.opts.content;
+      const cards = packCards(SCHEMA.graphics?.options ?? [], s.get('graphics'), { originalInstalled: !!content?.hasOriginalGraphics, problem: content?.builtinError ?? null });
+      const focused = group.contains(document.activeElement) ? document.activeElement.dataset.value : null;
+      group.replaceChildren(
+        ...cards.map((card) => {
+          const b = button('', `gm-pack gm-pack-${card.value}`, () => !card.disabled && s.set('graphics', card.value));
+          b.dataset.value = card.value;
+          b.setAttribute('role', 'radio');
+          b.setAttribute('aria-checked', String(card.checked));
+          b.setAttribute('aria-disabled', String(card.disabled));
+          b.tabIndex = card.checked ? 0 : -1;
+          const swatch = el('span', 'gm-pack-swatch');
+          swatch.setAttribute('aria-hidden', 'true');
+          const name = el('span', 'gm-pack-name');
+          name.append(led(card.checked ? 'on' : 'off'), el('span', null, card.name));
+          b.append(swatch, name, el('span', 'gm-pack-note', card.note), el('span', `gm-pack-status${card.warn ? ' gm-pack-warn' : ''}`, card.status));
+          return b;
+        }),
+      );
+      if (!group.querySelector('[tabindex="0"]')) group.querySelector('button')?.setAttribute('tabindex', '0');
+      if (focused) group.querySelector(`[data-value="${focused}"]`)?.focus({ preventScroll: true });
+    };
+    group.addEventListener('keydown', (e) => {
+      const next = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!next) return;
+      e.preventDefault();
+      const all = group.querySelectorAll('button').filter((b) => b.getAttribute('aria-disabled') !== 'true');
+      const at = all.indexOf(document.activeElement);
+      const to = all[(Math.max(0, at) + next + all.length) % all.length];
+      if (!to) return;
+      s.set('graphics', to.dataset.value);
+      group.querySelector(`[data-value="${to.dataset.value}"]`)?.focus({ preventScroll: true });
+    });
+    draw();
+    this.pageOffs.push(s.subscribe('graphics', draw));
+    const off = this.opts.content?.onChange?.(draw);
+    if (off) this.pageOffs.push(off);
+    return group;
+  }
+
+  settingsControls(p) {
+    const s = this.opts.settings;
+    const { slider, check, choice } = this.rows();
+    // ---- Build menu (js/production.js rightClickAction); synced with the account like the other settings ----
+    const right = choiceRow(s, 'buildRightClick', 'Right click in the build menu', SCHEMA.buildRightClick.labels);
+    p.append(el('h2', 'gm-section-title', 'Build menu'), withHelp(right, 'buildRightClick', right.querySelector('[role="radiogroup"]')));
     // ---- Mouse capture (js/mouselock.js; not without Pointer Lock or a mouse) ----
     if (this.opts.mouseCapture?.available()) {
       const keys = this.opts.hotkeys.bindingsFor('toggleMouseCapture');
       const release = keys.length ? `${formatCombo(keys[0])} releases it and the game plays on; Esc releases it too.` : 'Esc releases it.';
-      const mode = choice('mouseCapture', 'Capture the mouse', { off: 'Off', fullscreen: 'In fullscreen', always: 'Always' }, `${release} A click into the game captures it again.`);
-      const notice = choice('mouseCaptureNotice', 'Mouse captured notice', SCHEMA.mouseCaptureNotice.labels);
-      list.append(
-        el('h2', null, 'Mouse capture'),
-        el('p', 'hint game-menu-explain', MOUSE_CAPTURE_HELP),
-        withHelp(mode, 'mouseCapture', mode.querySelector('[role="radiogroup"]')),
+      p.append(
+        el('h2', 'gm-section-title', 'Mouse capture'),
+        el('p', 'gm-note', MOUSE_CAPTURE_HELP),
+        choice('mouseCapture', 'Capture the mouse', { off: 'Off', fullscreen: 'In fullscreen', always: 'Always' }, `${release} A click into the game captures it again.`),
         slider('mouseCaptureSpeed', 'Captured mouse speed'),
         check('mouseCaptureRaw', 'Raw mouse input'),
         check('mouseCaptureEscMenu', 'Esc also opens the menu'),
-        withHelp(notice, 'mouseCaptureNotice', notice.querySelector('[role="radiogroup"]')),
+        choice('mouseCaptureNotice', 'Mouse captured notice', SCHEMA.mouseCaptureNotice.labels),
       );
     }
+    p.append(el('h2', 'gm-section-title', 'Mouse'), keyTable(fixedControls()), el('h2', 'gm-section-title', 'Touch'), keyTable(touchControls()));
+  }
 
-    // ---- Audio (the Sound dialog's controls) ----
-    const audio = this.opts.audio;
-    if (audio) {
-      const box = el('div', 'game-menu-audio');
-      list.append(el('h2', null, 'Audio'), box);
-      const mount = mountAudioSettings(box, audio, { onContent: this.opts.onContent, onMusicPlayer: () => this.show('music'), idPrefix: 'menu-audio', heading: 3, help: true });
-      this.pageOffs.push(() => mount.dispose());
-    } else {
-      list.append(el('h2', null, 'Audio'), el('p', 'hint', 'Sound is unavailable in this browser.'));
+  settingsHotkeys(p) {
+    const reg = this.opts.hotkeys;
+    const top = el('div', 'gm-keys-top');
+    const search = el('input', 'ui-input gm-keys-search');
+    search.type = 'search';
+    search.id = 'game-menu-keys-search';
+    search.placeholder = 'Find a command or key';
+    search.setAttribute('aria-label', 'Find a command or key');
+    search.setAttribute('autocomplete', 'off');
+    search.value = this.keyQuery;
+    top.append(search);
+    const body = el('div', 'gm-keys');
+    const nav = el('nav', 'gm-keys-groups');
+    nav.setAttribute('aria-label', 'Hotkey groups');
+    const main = el('div', 'gm-keys-main');
+    main.setAttribute('aria-live', 'off');
+    body.append(nav, main);
+    const groups = filterHotkeys(reg.list());
+    if (!groups.some((g) => g.group === this.keyGroup)) this.keyGroup = groups[0]?.group ?? null;
+    for (const g of groups) {
+      const b = button('', 'gm-keys-group', () => {
+        this.keyGroup = g.group;
+        this.keyQuery = '';
+        search.value = '';
+        drawRows();
+        for (const x of nav.querySelectorAll('button')) x.removeAttribute('aria-current');
+        b.setAttribute('aria-current', 'true');
+      });
+      b.append(led(g.group === this.keyGroup ? 'on' : 'off'), el('span', null, g.group));
+      if (g.group === this.keyGroup) b.setAttribute('aria-current', 'true');
+      nav.append(b);
     }
+    const drawRows = () => {
+      const q = this.keyQuery.trim();
+      const shown = q ? filterHotkeys(reg.list(), q) : filterHotkeys(reg.list()).filter((g) => g.group === this.keyGroup);
+      nav.hidden = !!q;
+      for (const b of nav.querySelectorAll('button')) {
+        const on = b.getAttribute('aria-current') === 'true';
+        b.querySelector('.ui-led')?.classList.toggle('ui-led-on', on);
+        b.querySelector('.ui-led')?.classList.toggle('ui-led-off', !on);
+      }
+      main.replaceChildren();
+      if (this.capture) {
+        const line = el('p', 'gm-listening');
+        line.setAttribute('role', 'status');
+        line.append(led('on'), el('span', null, `Press the new key for "${this.label(this.capture)}". A key that another command uses moves here, and this page says which one. Esc cancels.`));
+        main.append(line);
+      }
+      if (!shown.length) main.append(el('p', 'gm-note', `No command or key matches "${q}".`));
+      for (const g of shown) {
+        const head = el('div', 'gm-keys-head');
+        head.append(el('h2', 'gm-section-title', g.group));
+        const changed = g.actions.some((a) => !a.readonly && JSON.stringify(a.keys) !== JSON.stringify(a.defaults));
+        const resetGroup = button('Reset group', 'ui-btn ui-btn-sm ui-btn-ghost', () => this.resetGroup(g.actions));
+        resetGroup.disabled = !changed;
+        head.append(resetGroup);
+        main.append(head, this.keyRows(g.actions));
+      }
+    };
+    search.addEventListener('input', () => {
+      this.keyQuery = search.value;
+      drawRows();
+    });
+    drawRows();
+    p.append(top, body);
+    for (const key of CONTROLS_HELP_KEYS) p.append(el('p', 'gm-note', helpText(`controls.${key}`)));
+    const sync = this.opts.syncStatus?.();
+    p.append(el('p', 'gm-note', `Esc always cancels and opens this menu. ${sync?.signedIn ? 'Your keys follow your account.' : 'Your keys are saved in this browser.'} The map editor keeps its own shortcuts.`));
+  }
 
-    // ---- Performance capture (js/perfcapture.js; recording now and downloads are in the debug menu) ----
-    list.append(el('h2', null, 'Performance'), check('perfCaptureStart', 'Record the start of every game'));
+  /** Put back the keys of one group (one redraw). */
+  resetGroup(actions) {
+    this.batch = true;
+    try {
+      for (const a of actions) if (!a.readonly) this.opts.hotkeys.reset(a.name);
+    } finally {
+      this.batch = false;
+    }
+    this.render();
+  }
 
-    // ---- Privacy (js/telemetry: error reports). Not reset by Defaults: switching reports back on is the player's call. ----
+  /** The rows of a hotkey group: the command, its keys as caps, Change (Cancel while listening), Clear and Reset. */
+  keyRows(actions) {
+    const reg = this.opts.hotkeys;
+    const table = el('div', 'game-menu-keys');
+    for (const a of actions) {
+      const row = el('div', 'game-menu-key-row');
+      const waiting = this.capture === a.name;
+      if (waiting) row.classList.add('gm-key-listening');
+      const keys = el('span', 'game-menu-keycap', waiting ? 'Press a key...' : a.keys.length ? a.keys.map((k) => formatCombo(k)).join(' / ') : 'Unbound');
+      const changed = JSON.stringify(a.keys) !== JSON.stringify(a.defaults);
+      const label = el('span', 'game-menu-key-label', a.label);
+      // Where WebRA's default differs from OpenRA's: the browser keeps OpenRA's key, or WebRA uses it.
+      const sub = a.openra && substituteFor(a.openra);
+      if (sub && OPENRA_HOTKEYS[a.openra]?.key) label.title = `OpenRA: ${formatCombo(OPENRA_HOTKEYS[a.openra].key)} (${sub.why}).`;
+      if (a.context === 'chat-input') label.append(el('span', 'gm-key-where', ' (in the chat line)'));
+      row.append(label, keys);
+      if (a.readonly) {
+        row.classList.add('game-menu-fixed');
+      } else {
+        row.append(
+          button(waiting ? 'Cancel' : 'Change', 'ui-btn ui-btn-sm game-menu-mini', () => {
+            this.capture = waiting ? null : a.name;
+            this.message = '';
+            this.render();
+          }),
+          button('Clear', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.unbind(a.name)),
+        );
+        const resetBtn = button('Reset', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.reset(a.name));
+        resetBtn.disabled = !changed;
+        row.append(resetBtn);
+      }
+      table.append(row);
+    }
+    return table;
+  }
+
+  settingsSound(p) {
+    const audio = this.opts.audio;
+    if (!audio) {
+      p.append(el('h2', 'gm-section-title', 'Audio'), el('p', 'gm-note', 'Sound is unavailable in this browser.'));
+      return;
+    }
+    // The Sound dialog's controls and the music player side by side (board Sound).
+    const grid = el('div', 'gm-sound');
+    const box = el('section', 'game-menu-audio gm-sound-settings');
+    box.setAttribute('aria-labelledby', 'menu-audio-title');
+    const title = el('h2', 'gm-section-title', 'Audio');
+    title.id = 'menu-audio-title';
+    const settings = el('div');
+    box.append(title, settings);
+    const mount = mountAudioSettings(settings, audio, { onContent: this.opts.onContent, onMusicPlayer: () => this.show('music'), idPrefix: 'menu-audio', heading: 3, help: true });
+    this.pageOffs.push(() => mount.dispose());
+    const music = el('section', 'gm-sound-music');
+    music.setAttribute('aria-labelledby', 'menu-player-title');
+    const mt = el('h2', 'gm-section-title', 'Music player');
+    mt.id = 'menu-player-title';
+    const player = el('div');
+    music.append(mt, player);
+    const mp = mountMusicPlayer(player, audio, { idPrefix: 'menu-player', heading: 3, onContent: this.opts.onContent });
+    this.pageOffs.push(() => mp.dispose());
+    grid.append(box, music);
+    p.append(grid);
+  }
+
+  settingsPrivacy(p) {
+    const { check } = this.rows();
+    // Error reports (js/telemetry). Not reset: switching reports back on is the player's call.
     // The switch is kept even when this build reports nothing (it is synced and applies once reports are turned on).
-    list.append(el('h2', null, 'Privacy'), check('errorReports', 'Send error reports'));
-    if (!reportsConfigured()) list.append(el('p', 'hint', 'Error reporting is off on this site: nothing is sent, whatever this switch says.'));
+    p.append(el('h2', 'gm-section-title', 'Privacy'), check('errorReports', 'Send error reports'));
+    if (!reportsConfigured()) p.append(el('p', 'gm-note', 'Error reporting is off on this site: nothing is sent, whatever this switch says.'));
     // Replays in the account (js/account/replays.js): uploaded only while signed in; the switch syncs with the account.
-    list.append(check('cloudReplays', 'Save replays to my account'));
+    p.append(check('cloudReplays', 'Save replays to my account'));
+  }
 
-    c.append(
-      list,
-      button('Defaults', null, () => {
-        for (const key of MENU_SETTINGS) s.reset(key);
-        audio?.prefs.set(DEFAULT_PREFS);
-        this.render();
-      }),
-      button('Back', 'primary', () => this.show('main')),
+  settingsAdvanced(p) {
+    const { check } = this.rows();
+    // Performance capture (js/perfcapture.js; recording now and downloads are in the debug menu).
+    const key = boundKey(this.opts.hotkeys, 'debugMenu');
+    p.append(
+      el('h2', 'gm-section-title', 'Performance'),
+      check('perfCaptureStart', 'Record the start of every game'),
+      el('p', 'gm-note', `Recording now, its length and the downloads are in the debug menu${key ? ` (${key})` : ''}.`),
     );
   }
 
@@ -850,75 +1376,30 @@ export class GameMenu {
     this.pageOffs.push(() => win?.removeEventListener?.('resize', onResize));
     return row.node;
   }
+}
 
-  renderControls(c) {
-    const reg = this.opts.hotkeys;
-    c.append(el('h1', null, 'Controls'));
-    c.append(el('p', 'hint', 'Change a hotkey, then press the new key (Esc cancels). Settings are saved in this browser.'));
-    const list = el('div', 'game-menu-scroll');
-    // ---- Build menu (js/production.js rightClickAction); synced with the account like the other settings ----
-    const s = this.opts.settings;
-    if (s) {
-      const right = choiceRow(s, 'buildRightClick', 'Right click in the build menu', SCHEMA.buildRightClick.labels);
-      list.append(el('h2', null, 'Build menu'), withHelp(right, 'buildRightClick', right.querySelector('[role="radiogroup"]')));
-    }
-    const groups = new Map();
-    for (const a of reg.list()) {
-      if (!groups.has(a.group)) groups.set(a.group, []);
-      groups.get(a.group).push(a);
-    }
-    // Sections in the order of OpenRA's hotkey settings, then any others.
-    const order = (g) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
-    for (const [group, actions] of [...groups].sort((x, y) => order(x[0]) - order(y[0]))) {
-      list.append(el('h2', null, group));
-      const table = el('div', 'game-menu-keys');
-      for (const a of actions) {
-        const row = el('div', 'game-menu-key-row');
-        const waiting = this.capture === a.name;
-        const keys = el('span', 'game-menu-keycap', waiting ? 'Press a key...' : a.keys.length ? a.keys.map((k) => formatCombo(k)).join(' / ') : 'Unbound');
-        const changed = JSON.stringify(a.keys) !== JSON.stringify(a.defaults);
-        const label = el('span', 'game-menu-key-label', a.label);
-        // Where WebRA's default differs from OpenRA's: the browser keeps OpenRA's key, or WebRA uses it.
-        const sub = a.openra && substituteFor(a.openra);
-        if (sub && OPENRA_HOTKEYS[a.openra]?.key) label.title = `OpenRA: ${formatCombo(OPENRA_HOTKEYS[a.openra].key)} (${sub.why}).`;
-        if (a.context === 'chat-input') label.append(el('span', 'hint', ' (in the chat line)'));
-        row.append(label, keys);
-        if (a.readonly) {
-          row.classList.add('game-menu-fixed');
-        } else {
-          row.append(
-            button('Change', 'game-menu-mini', () => {
-              this.capture = a.name;
-              this.message = '';
-              this.render();
-            }),
-            button('Clear', 'game-menu-mini', () => reg.unbind(a.name)),
-          );
-          const resetBtn = button('Reset', 'game-menu-mini', () => reg.reset(a.name));
-          resetBtn.disabled = !changed;
-          row.append(resetBtn);
-        }
-        table.append(row);
-      }
-      list.append(table);
-    }
-    list.append(el('h2', null, 'Fixed controls'));
-    const fixed = el('div', 'game-menu-keys');
-    for (const [keys, what] of fixedControls()) {
-      const row = el('div', 'game-menu-key-row game-menu-fixed');
-      row.append(el('span', 'game-menu-key-label', what), el('span', 'game-menu-keycap', keys));
-      fixed.append(row);
-    }
-    list.append(fixed);
-    list.append(el('h2', null, 'Touch'));
-    const touch = el('div', 'game-menu-keys');
-    for (const [gesture, what] of touchControls()) {
-      const row = el('div', 'game-menu-key-row game-menu-fixed');
-      row.append(el('span', 'game-menu-key-label', what), el('span', 'game-menu-keycap', gesture));
-      touch.append(row);
-    }
-    list.append(touch);
-    for (const key of CONTROLS_HELP_KEYS) list.append(el('p', 'hint', helpText(`controls.${key}`)));
-    c.append(list, button('Reset all hotkeys', null, () => reg.reset()), button('Back', 'primary', () => this.show('main')));
+/** A list of fixed keys or gestures and what they do. */
+function keyTable(rows) {
+  const table = el('div', 'game-menu-keys');
+  for (const [keys, what] of rows) {
+    const row = el('div', 'game-menu-key-row game-menu-fixed');
+    row.append(el('span', 'game-menu-key-label', what), el('span', 'game-menu-keycap', keys));
+    table.append(row);
   }
+  return table;
+}
+
+/** The Guide button's hint: new, or how far the player got. */
+function guideHint(progress) {
+  const n = progress.count();
+  if (n === 0) return 'New: how to play';
+  return n >= progress.total ? 'All steps done' : `${n} of ${progress.total} steps done`;
+}
+
+/** The Network button's hint: the own ping, with its quality in words. */
+function netHint(source) {
+  const self = source?.self;
+  if (!self || self.rtt === null || self.rtt === undefined) return 'Measuring';
+  const word = { good: 'good', fair: 'fair', poor: 'poor' }[self.quality] ?? '';
+  return `${Math.round(self.rtt)} ms${word ? `, ${word}` : ''}`;
 }

@@ -166,7 +166,7 @@ test('ui scale: --ui-scale follows the setting, the window and its pixel ratio, 
 
 const CSS = (name) => readFileSync(fileURLToPath(new URL(`../css/${name}`, import.meta.url)), 'utf8');
 /** The stylesheets of the game screen, its menu and dialogs: their sizes follow the UI scale. */
-const SCALED_SHEETS = ['theme.css', 'style.css', 'sidebar.css', 'minimap.css', 'powers.css', 'audio.css', 'content.css', 'debug.css', 'releasenotes.css', 'touch.css', 'commandbar.css', 'tooltip.css', 'worldtooltip.css', 'boxchooser.css'];
+const SCALED_SHEETS = ['theme.css', 'style.css', 'sidebar.css', 'minimap.css', 'powers.css', 'audio.css', 'content.css', 'debug.css', 'releasenotes.css', 'touch.css', 'commandbar.css', 'tooltip.css', 'worldtooltip.css', 'boxchooser.css', 'gamemenu.css', 'guide.css'];
 /**
  * Properties that keep fixed pixels: hairlines, shadows, decorations, motion, and the
  * window's own margins around the menu screens (--ui-screen-gap and the corner clearance,

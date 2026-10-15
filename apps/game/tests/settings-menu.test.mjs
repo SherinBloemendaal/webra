@@ -99,10 +99,18 @@ function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = 
 
 const $ = (root, sel) => root.querySelector(sel);
 
-test('settings page: display, scrolling, chat, mouse capture and audio sections, with the scale help', () => {
+test('settings page: tabs for every section (Game, Graphics, Controls, Hotkeys, Sound, Privacy, Advanced), with the scale help', () => {
   const { root } = setup();
+  const tabs = root.querySelectorAll('[role="tab"]').map((t) => t.textContent);
+  assert.deepEqual(tabs, ['Game', 'Graphics', 'Controls', 'Hotkeys', 'Sound', 'Privacy', 'Advanced']);
   const titles = root.querySelectorAll('h2').map((h) => h.textContent);
-  assert.deepEqual(titles.slice(0, 5), ['Display', 'Scrolling and units', 'Chat and notifications', 'Mouse capture', 'Audio']);
+  for (const t of ['Scrolling and units', 'Chat and notifications', 'Online games', 'Texture pack', 'Display', 'Build menu', 'Mouse capture', 'Audio', 'Music player', 'Privacy', 'Performance']) assert.ok(titles.includes(t), t);
+  // One panel shows at a time; the tab bar switches them.
+  const panels = root.querySelectorAll('[role="tabpanel"]');
+  assert.equal(panels.filter((p) => !p.hidden).length, 1);
+  click(root.querySelector('#game-menu-tab-graphics'));
+  assert.equal(root.querySelector('#game-menu-tab-graphics-panel').hidden, false);
+  assert.equal(root.querySelector('#game-menu-tab-game-panel').hidden, true);
   // OpenRA's HideReplayChat and TextNotificationPoolFilters.
   for (const id of ['#game-menu-hideReplayChat', '#game-menu-uiFeedbackNotifications', '#game-menu-gameEventNotifications']) assert.ok($(root, id), id);
   assert.ok(textOf(root).includes(DISPLAY_HELP), 'the three ways the picture changes are explained');
@@ -196,20 +204,36 @@ test('settings page: game scale snaps to sharp steps for the render ratio and is
   assert.equal(out.textContent, scaleLabel('auto', autoGameScale({ ...screenOf(win), ratio: 2 })));
 });
 
-test('settings page: Defaults puts back every setting of the page, the audio ones too', () => {
-  const { root, settings, audio } = setup();
+test('settings page: Reset this section puts back the settings of the open tab, the audio ones on Sound', () => {
+  const { root, settings, audio, registry } = setup();
   settings.set('uiScale', 1.5);
   settings.set('gameScale', 2);
   settings.set('edgeScrollSpeed', 3);
-  // The remembered zoom has no row: Defaults clears it like Reset zoom.
   settings.set('zoomFactor', 2);
   settings.set('mouseCaptureRaw', true);
+  registry.set('net', 'warnSelf', false);
   audio.prefs.set({ music: 0.1, musicRepeat: 'one', enabled: false });
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Defaults'));
-  for (const key of MENU_SETTINGS) assert.deepEqual(settings.get(key), createSettings(null).get(key), key);
+  const reset = () => click(root.querySelectorAll('button').find((b) => b.textContent === 'Reset this section'));
+  const tab = (id) => click(root.querySelector(`#game-menu-tab-${id}`));
+  tab('graphics');
+  reset();
+  assert.equal(settings.get('uiScale'), 'auto');
   assert.equal(settings.get('zoomFactor'), 1);
+  assert.equal(settings.get('edgeScrollSpeed'), 3, 'another tab keeps its settings');
+  tab('game');
+  reset();
+  assert.equal(settings.get('edgeScrollSpeed'), 1);
+  assert.equal(registry.get('net', 'warnSelf'), true, 'the Online games switches too');
+  tab('controls');
+  reset();
   assert.equal(settings.get('mouseCaptureRaw'), false);
+  tab('sound');
+  reset();
   assert.deepEqual(audio.prefs.get(), DEFAULT_PREFS);
+  for (const key of MENU_SETTINGS) assert.deepEqual(settings.get(key), createSettings(null).get(key), key);
+  // Privacy has no reset: switching error reports back on is the player's call.
+  tab('privacy');
+  assert.equal(root.querySelectorAll('button').find((b) => b.textContent === 'Reset this section').hidden, true);
 });
 
 test('settings page: without sound the Audio section says so', () => {
