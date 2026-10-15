@@ -729,7 +729,6 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        // `net` (js/online.js gameNet: { quality, source, roster, you, players() }) feeds the statistics' Network tab.
         onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null, net = null }) => {
           entry.hidden = true;
           // A friends screen open over the lobby goes; the lobby it covered stays hidden behind the game.
@@ -743,7 +742,8 @@ function setupOnline(lobby, gpuError) {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            // net: connection quality for the HUD, the game menu and the statistics (online.js gameNet).
+            // net: connection quality for the HUD, the game menu and the statistics (online.js gameNet:
+            // { quality, source, roster, you, players() }).
             online: { driver, onQuit, spectator, rematch, save, chat, net },
             recorder,
             viewer: spectator ? roster : null,
@@ -1786,7 +1786,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     onSelectionChanged: (ids, info) => {
       targetLines.selected(ids);
       audio?.selection(ids, info);
-      sidebar?.setSelection(selectionInfo(game, ids, allied));
+      sidebar?.setSelection(selectionInfo(game, ids, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
       sidebar?.setDeployState(input.deployState());
       commandBar?.update();
     },

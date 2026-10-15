@@ -3863,8 +3863,8 @@ NetStats in code.
   `--loading-fade`, opacity 1 to 0) on `#loading.is-closing`. The close is
   the start gate's: it adds `.is-closing` and waits for that transition, its
   duration plus its delay, before the screen hides and the game begins; so
-  the screen waits out the hold, then fades. Without the start gate the
-  screen hides at the first frame. Reduce motion: no hold, no fade.
+  the screen waits out the hold, then fades. Reduce motion: no hold, no
+  fade.
 - **End of game** (`js/endgame.js`): `EndGameDialog` takes `report()` (the
   parsed `observer_report`), `players`, `localPlayer` and `reducedMotion`;
   its `context()` adds `replay` (`saving`, `saved`, `failed` or null: main.js
