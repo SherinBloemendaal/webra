@@ -872,7 +872,13 @@ simulation's stream): clear skies for the first 2 to 3 minutes, then the
 biome's weather alternates with clear spells of 90 to 180 s. Temperate:
 rain (60 %, 60 to 120 s) or thunderstorm (40 %, 45 to 90 s); snow:
 snowfall (60 to 150 s); desert: heat wave (60 %, 60 to 120 s) or sandstorm
-(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm.
+(40 %, 40 to 90 s). Lightning strikes every 4 to 12 s of a thunderstorm,
+but never in its last 8 s (`STORM_CALM_SECONDS`): the client dies the rain
+down over the spell's last 4 s (`RAMP_SECONDS`, js/weather-fx.js `RAMP`)
+and thunder comes up to 2.8 s after its flash, so neither a flash nor its
+thunder comes while the rain is stopping. A strike that comes due in that
+window still makes its draws from both streams and is dropped, so the
+weather cycle and every later strike are the same as without the calm.
 Effects with `weather: full`:
 
 | What | Effect |
@@ -898,7 +904,12 @@ flashes are the same in every mode and as before strikes had effects. With
    the strike goes for a power plant (a structure with positive power: the
    Power Plant and the Advanced Power Plant), `pick` modulo the number of
    candidates among every player's plants that no rod protects, in actor
-   order. Without a candidate it falls on the random cell.
+   order. Every plant is as likely as any other: humans', bots' of every
+   type, allies' and enemies' alike, in skirmish, online games and missions
+   (co-op included); nothing in the targeting looks at who controls a
+   player or at the local player. Only the owner of the map's neutral world
+   (OpenRA `OwnsWorld`) is left out. Without a candidate it falls on the
+   random cell.
 2. A strike point within a Lightning Rod's range (its centre to the point)
    is grounded on the nearest rod (lowest actor index on a tie): nothing is
    damaged, the rod included. Rods protect everyone's actors, whoever owns
@@ -923,7 +934,9 @@ flashes are the same in every mode and as before strikes had effects. With
    repaired.
 
 The flash (`weather_json().flash`, `[tick, x, y, kind]`) moves onto what the
-strike hit; kind 0 ground (or `cosmetic` weather), 1 grounded on a rod, 2 a
+strike hit; every flash is a strike (cosmetic weather included), there are
+no other flashes, so the calm above holds for the bolt, the sky flash and
+the thunder alike; kind 0 ground (or `cosmetic` weather), 1 grounded on a rod, 2 a
 unit or structure, 3 a power plant. `Game.build_lines` draws the bolt for 8
 ticks where the viewer has explored the ground (jitter from the flash
 itself, never the simulation's random streams); thunder follows it

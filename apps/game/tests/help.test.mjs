@@ -84,6 +84,9 @@ test('weather, biome and speed help match the engine numbers', () => {
   assert.match(text, /power goes out for 15 s/);
   assert.match(read('../../../data/webra/rules.yaml'), /LightningRod:\n\t\tRange: 6c0/);
   assert.match(text, /Lightning Rods ground strikes within 6 cells/);
+  assert.match(text, /prefers power plants, those of every player alike, bots and humans/);
+  const calm = Number(/pub const STORM_CALM_SECONDS: u32 = (\d+);/.exec(weather)[1]);
+  assert.match(text, new RegExp(`it stops ${calm} s before a thunderstorm ends`));
   // Game speeds as a share of Normal (SPEED_MS: milliseconds per tick).
   for (const speed of GAME_SPEEDS.filter((s) => s !== 'normal')) {
     const share = Math.round((SPEED_MS.normal / SPEED_MS[speed]) * 100);

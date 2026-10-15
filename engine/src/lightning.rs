@@ -1,7 +1,8 @@
 //! Lightning strikes and the Lightning Rod (WebRA additions, no OpenRA
 //! counterpart; docs/contracts.md "Biomes and weather").
 //!
-//! A thunderstorm (weather.rs) throws a strike every 4 to 12 s. The weather's
+//! A thunderstorm (weather.rs) throws a strike every 4 to 12 s, none in its
+//! last `STORM_CALM_SECONDS` while the rain dies down. The weather's
 //! own random stream picks a random cell and the strikes' own stream two
 //! numbers for each strike, in every weather mode; with `weather: full` the
 //! world resolves it here:
@@ -9,8 +10,10 @@
 //! 1. Power plants attract lightning: with a roll below
 //!    [`PLANT_STRIKE_PERCENT`] the strike goes for a power plant (a structure
 //!    that makes power: the Power Plant and the Advanced Power Plant), chosen
-//!    among every player's plants that no Lightning Rod protects. Without one
-//!    it falls on the random cell.
+//!    among every player's plants that no Lightning Rod protects, each as
+//!    likely as any other: humans' and bots' alike (nothing here looks at
+//!    `is_ai` or the local player; only the neutral world is left out).
+//!    Without one it falls on the random cell.
 //! 2. A strike whose point lies within a Lightning Rod's range is grounded on
 //!    the nearest such rod (the lowest actor index on a tie): nothing takes
 //!    damage, the rod included. A rod protects everything around it, its
