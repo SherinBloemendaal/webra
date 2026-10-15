@@ -8,7 +8,10 @@
 // edges, shadow cast to the lower right), water deepens away from the shore
 // with foam on its edges, and ground has texture and scattered decals
 // (stones, craters, shrubs, tracks). The light comes from the top left, like
-// the building art.
+// the building art. The style is the design canvas's flat 1996 look ("Terrein
+// per biome", "Materialen en kleuren"): solid colours from PALETTES and one
+// pattern layer per tile (specks, streaks, cracks, bands), patterns that
+// repeat every tile so neighbouring cells join without seams.
 //
 // Pure module: pixels are computed into a Uint8ClampedArray (RGBA), so it runs
 // and is tested under Node without a canvas.
@@ -134,23 +137,11 @@ function vnoise(x, y, scale, seed, wrap = 1 << 16) {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
-/** Fractal noise that tiles across one tile (so neighbouring cells join without seams). */
-function fbm(x, y, seed, octaves = 3) {
-  let v = 0;
-  let amp = 0.5;
-  let scale = TILE / 2;
-  for (let o = 0; o < octaves; o++) {
-    v += amp * vnoise(x, y, scale, seed + o * 101, TILE / scale);
-    amp *= 0.5;
-    scale /= 2;
-  }
-  return v / (1 - Math.pow(0.5, octaves));
-}
-
-const mix = (a, b, t) => a + (b - a) * t;
-const mixRgb = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+const mixRgb = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const scale = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const mod = (v, m) => ((v % m) + m) % m;
+const SHADOW_RGB = [0, 0, 0];
 
 // ---- Tile canvas ---------------------------------------------------------------------
 
@@ -169,9 +160,14 @@ class Tile {
     this.px[o + 3] = a;
   }
 
-  get(x, y) {
-    const o = (y * TILE + x) * 4;
-    return [this.px[o], this.px[o + 1], this.px[o + 2], this.px[o + 3]];
+  /** Fill the whole tile with one opaque colour. */
+  fill(rgb) {
+    for (let o = 0; o < this.px.length; o += 4) {
+      this.px[o] = rgb[0];
+      this.px[o + 1] = rgb[1];
+      this.px[o + 2] = rgb[2];
+      this.px[o + 3] = 1;
+    }
   }
 
   /** Alpha-blend a colour over the pixel. */
@@ -193,7 +189,10 @@ class Tile {
     for (let c = 0; c < 3; c++) this.px[o + c] *= k;
   }
 
-  /** Soft disk: `fn(dx, dy, d)` returns [rgb, alpha] or null per covered pixel. */
+  /**
+   * A flat disc with a one pixel soft edge: `fn(dx, dy, d)` returns [rgb, alpha]
+   * or null per covered pixel (dx, dy relative to the radius).
+   */
   disk(cx, cy, r, fn) {
     for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
       for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
@@ -206,49 +205,62 @@ class Tile {
       }
     }
   }
+
+  /** A flat disc of one colour. */
+  dot(cx, cy, r, rgb, a = 1) {
+    this.disk(cx, cy, r, () => [rgb, a]);
+  }
 }
+
+/**
+ * Scatter `n` specks of `rgb` (one pixel, or two side by side) at seeded
+ * spots, kept a pixel inside the tile so no speck is cut at a cell edge.
+ */
+function specks(t, n, seed, rgb, wide = 0.5) {
+  for (let k = 0; k < n; k++) {
+    const x = 1 + Math.floor(hash3(k, seed, 1) * (TILE - 3));
+    const y = 1 + Math.floor(hash3(k, seed, 2) * (TILE - 2));
+    t.set(x, y, rgb);
+    if (hash3(k, seed, 3) < wide) t.set(x + 1, y, rgb);
+  }
+}
+
+/** Value noise that repeats every tile (lattice `step` pixels, a divisor of TILE), 0..1. */
+const tnoise = (x, y, step, seed) => vnoise(x, y, step, seed, TILE / step);
 
 // ---- Ground ------------------------------------------------------------------------------
 
+/**
+ * Open ground in the flat 1996 style of the design canvas: one solid colour
+ * and one pattern layer. Clear ground has specks of the light ground colour
+ * (dark tufts on grass, blue hollows on snow, pebbles on sand); rough ground
+ * (heath, ice, dunes) has light streaks running steeply across, broken into
+ * dashes. Patterns repeat every tile, so neighbouring cells join without
+ * seams whatever their variant; the shader adds large-scale variation.
+ */
 function ground(p, kind, variant, biome) {
   const t = new Tile();
-  const [lo, hi] = kind === 'rough' ? p.rough : p.ground;
-  // Broad shading is the same in every variant (so neighbouring cells join
-  // without seams; the shader adds large-scale variation across the map);
-  // variants differ in fine detail only.
-  const base = kind === 'rough' ? 500 : 100;
-  const seed = base + variant * 17;
-  for (let y = 0; y < TILE; y++) {
-    for (let x = 0; x < TILE; x++) {
-      const n = 0.5 + (fbm(x, y, base) - 0.5) * 0.25 + (vnoise(x, y, 8, seed, TILE / 8) - 0.5) * 0.3 + (vnoise(x, y, 4, seed + 1, TILE / 4) - 0.5) * 0.2;
-      const grain = hash3(x, y, seed + 3);
-      let c = mixRgb(lo, hi, clamp01(n * 1.2 - 0.1));
-      c = scale(c, 0.94 + grain * 0.1);
-      if (kind === 'rough' && biome === 'desert') {
-        // Dune ripples running diagonally, lit on the upper left side.
-        const ripple = Math.sin((x * 0.55 + y * 0.9 + n * 6) * 1.1);
-        c = scale(c, 1 + ripple * 0.07);
-      } else if (kind === 'rough' && biome === 'snow') {
-        // Ice: smooth with a glossy sheen toward the top left and fine cracks.
-        c = mixRgb(c, [236, 248, 255], clamp01(0.35 - (x + y) / (TILE * 4)) * (0.6 + n * 0.4));
-        if (Math.abs(vnoise(x, y, 7, seed + 9) - 0.5) < 0.025) c = mixRgb(c, [240, 250, 255], 0.7);
-      } else if (kind === 'rough') {
-        // Heath: darker tussocks.
-        if (hash3(x >> 1, y >> 1, seed + 5) < 0.12) c = scale(c, 0.8);
-      } else if (biome === 'temperate') {
-        // Grass blades: short dark and light strokes.
-        if (grain > 0.93) c = scale(c, 1.18);
-        else if (grain < 0.06) c = scale(c, 0.8);
-      } else if (biome === 'snow') {
-        // Wind-blown snow: faint blue hollows that differ per variant.
-        c = mixRgb(c, [176, 196, 222], clamp01(0.45 - vnoise(x, y, 8, seed + 7, TILE / 8)) * 0.35);
-      } else {
-        // Sand: fine pebbles.
-        if (grain > 0.965) c = scale(p.stone, 0.9 + hash3(x, y, 77) * 0.3);
+  if (kind === 'rough') {
+    const [lo, hi] = p.rough;
+    const seed = 500 + variant * 17;
+    t.fill(lo);
+    for (let y = 0; y < TILE; y++) {
+      for (let x = 0; x < TILE; x++) {
+        const s = x + 3 * y;
+        if (mod(s, 16) >= 5) continue;
+        if (hash3(Math.floor(s / 16), x >> 3, seed) < 0.22) continue;
+        t.set(x, y, hi);
       }
-      t.set(x, y, c, 1);
     }
+    return t;
   }
+  const [lo, hi] = p.ground;
+  const seed = 100 + variant * 17;
+  t.fill(lo);
+  specks(t, 34, seed, hi);
+  if (biome === 'temperate') specks(t, 12, seed + 5, scale(lo, 0.8), 0.7);
+  else if (biome === 'snow') specks(t, 12, seed + 5, mixRgb(lo, [150, 176, 210], 0.4), 0.7);
+  else specks(t, 6, seed + 5, p.stone, 0.3);
   return t;
 }
 
@@ -257,13 +269,14 @@ function ground(p, kind, variant, biome) {
 /**
  * A road cell over open ground: a band of the road surface from the middle of
  * the cell toward each neighbour that is road or bridge too (`mask`: north 1,
- * east 2, south 4, west 8), with worn edges and wheel ruts; a road cell with
- * no road around is a patch.
+ * east 2, south 4, west 8), with a darker border; a road cell with no road
+ * around is a patch. The border's wobble repeats every tile, so roads join.
  */
 function road(p, mask, biome) {
   const t = ground(p, 'ground', mask % 4, biome);
   const half = TILE / 2;
-  const width = 11; // half the road's width in tile pixels
+  const width = 10; // half the road's width in tile pixels
+  const border = 2.5;
   const reach = (dx, dy) => {
     // Distance from the road's centre lines (to each connected side, or the middle).
     const ax = Math.abs(dx);
@@ -277,36 +290,26 @@ function road(p, mask, biome) {
   };
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      const dx = x + 0.5 - half;
-      const dy = y + 0.5 - half;
-      const wob = (vnoise(x, y, 4, 1300 + mask) - 0.5) * 3;
-      const d = reach(dx, dy) + wob;
+      const d = reach(x + 0.5 - half, y + 0.5 - half) + (tnoise(x, y, 4, 1300) - 0.5) * 2;
       if (d > width) continue;
-      const n = fbm(x, y, 1310);
-      let c = mixRgb(p.road[0], p.road[1], clamp01(n * 1.3 - 0.15));
-      c = scale(c, 0.92 + hash3(x, y, 1320) * 0.1);
-      // Ruts along the road, darker toward its edges.
-      if (Math.abs(d - 4) < 0.8) c = scale(c, 0.86);
-      const edge = clamp01((d - width + 3) / 3);
-      t.blend(x, y, c, 1 - edge * 0.7);
+      t.set(x, y, d > width - border ? p.road[0] : p.road[1]);
     }
   }
   return t;
 }
 
-/** Sand (beaches, OpenRA's Beach terrain): ground of the sand colours with ripples. */
+/** Sand (beaches, OpenRA's Beach terrain): the light sand colour with short ripple dashes. */
 function beach(p, variant, biome) {
   const t = new Tile();
   const seed = 1400 + variant * 13;
-  for (let y = 0; y < TILE; y++) {
-    for (let x = 0; x < TILE; x++) {
-      const n = 0.5 + (fbm(x, y, 1400) - 0.5) * 0.3 + (vnoise(x, y, 6, seed, TILE / 6) - 0.5) * 0.25;
-      let c = mixRgb(p.sand[0], p.sand[1], clamp01(n * 1.2 - 0.1));
-      c = scale(c, 0.95 + hash3(x, y, seed) * 0.08 + Math.sin((x * 0.4 + y * 0.8) * 1.2) * 0.03);
-      if (biome !== 'desert' && hash3(x, y, seed + 1) > 0.975) c = scale(p.stone, 1.1);
-      t.set(x, y, c, 1);
-    }
+  t.fill(p.sand[1]);
+  for (let k = 0; k < 16; k++) {
+    const x0 = 1 + Math.floor(hash3(k, seed, 1) * (TILE - 7));
+    const y = 1 + Math.floor(hash3(k, seed, 2) * (TILE - 2));
+    const len = 3 + Math.floor(hash3(k, seed, 3) * 3);
+    for (let x = x0; x < x0 + len; x++) t.set(x, y, p.sand[0]);
   }
+  if (biome !== 'desert') specks(t, 5, seed + 1, p.stone, 0.3);
   return t;
 }
 
@@ -315,53 +318,57 @@ function beach(p, variant, biome) {
 /**
  * A rock cell. `mask` bits say which neighbours are rock too (north 1, east 2,
  * south 4, west 8). Open edges get a lit rim (north, west) or a cliff face
- * (east: narrow, south: tall, with strata), so plateaus read as raised blocks
- * lit from the top left, and joined cells form one plateau.
+ * (east: narrow, south: tall), so plateaus read as raised blocks lit from the
+ * top left, and joined cells form one plateau. Flat bands as on the design
+ * canvas: rim, light top, a darker brow above the cliff, the face in two tones.
  */
 function rock(p, mask, biome) {
   const t = ground(p, 'ground', mask % 4, biome); // what shows below a cliff foot
   const open = { n: !(mask & 1), e: !(mask & 2), s: !(mask & 4), w: !(mask & 8) };
-  const faceH = open.s ? 11 : 0; // south cliff face height in pixels
+  const faceH = open.s ? 10 : 0; // south cliff face height in pixels
   const faceW = open.e ? 6 : 0; // east cliff face width
   const inset = (edge) => (open[edge] ? 2 : 0); // plateau top stops short of an open edge
   const top = { x0: inset('w'), y0: inset('n'), x1: TILE - faceW, y1: TILE - faceH };
+  const cracks = new Set();
+  for (let k = 0; k < 3; k++) {
+    // A crack of 3 to 5 pixels, a kink halfway, away from the cell's edges.
+    let x = 6 + Math.floor(hash3(mask, k, 941) * 16);
+    let y = 6 + Math.floor(hash3(mask, k, 942) * 12);
+    const len = 3 + Math.floor(hash3(mask, k, 943) * 3);
+    const dx = hash3(mask, k, 944) < 0.5 ? 1 : 0;
+    for (let s = 0; s < len; s++) {
+      cracks.add(y * TILE + x);
+      if (dx && s !== 1) x++;
+      else y++;
+    }
+  }
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      const n = fbm(x, y, 900 + mask * 7);
-      const grain = hash3(x, y, 911 + mask);
-      // Edges wobble a little so plateaus do not look like boxes.
-      const wob = (vnoise(x + y, mask, 5, 933) - 0.5) * 3;
-      const inTop = x >= top.x0 + (open.w ? wob : 0) && y >= top.y0 + (open.n ? wob : 0) && x < top.x1 + (open.e ? wob : 0) && y < top.y1 + (open.s ? wob : 0);
-      if (inTop) {
-        let c = mixRgb(p.rockTop[0], p.rockTop[1], clamp01(n * 1.3 - 0.15));
-        // Cracks and lit facets on the top face.
-        if (Math.abs(vnoise(x, y, 6, 940 + mask) - 0.5) < 0.03) c = scale(c, 0.7);
-        c = scale(c, 0.92 + grain * 0.12);
+      // Edges wobble a pixel or so, the same along a whole cliff, so plateaus do not look like boxes.
+      const wob = Math.round((tnoise(x, y, 4, 933) - 0.5) * 2.4);
+      const n0 = top.y0 + (open.n ? wob : 0);
+      const w0 = top.x0 + (open.w ? wob : 0);
+      const e1 = top.x1 + (open.e ? wob : 0);
+      const s1 = top.y1 + (open.s ? wob : 0);
+      if (x >= w0 && y >= n0 && x < e1 && y < s1) {
+        let c = p.rockTop[1];
+        // The brow: the top darkens just before it drops to a cliff.
+        if ((open.s && y >= s1 - 5) || (open.e && x >= e1 - 3)) c = p.rockTop[0];
+        // The pattern layer: a few short cracks, kept inside the cell.
+        if (cracks.has(y * TILE + x)) c = p.rockTop[0];
         // Lit rim along open north and west edges (snow caps in the snow biome).
-        const rimN = open.n ? clamp01(1 - (y - top.y0) / 3) : 0;
-        const rimW = open.w ? clamp01(1 - (x - top.x0) / 3) : 0;
-        c = mixRgb(c, p.rim, Math.max(rimN, rimW) * 0.7);
-        if (biome === 'snow' && n > 0.55) c = mixRgb(c, p.rim, 0.75);
-        // Gentle slope shading: brighter toward the top left.
-        c = scale(c, 1.06 - ((x + y) / (TILE * 2)) * 0.12);
+        if ((open.n && y < n0 + 3) || (open.w && x < w0 + 3)) c = p.rim;
         t.set(x, y, c, 1);
-      } else if (open.s && y >= top.y1 + wob && x < top.x1 + (open.e ? wob : 0) + 1) {
-        // South cliff face: tall, in shadow, with horizontal strata and a dark foot.
-        const depth = (y - top.y1) / faceH;
-        const strata = Math.sin((y + vnoise(x, y, 8, 950 + mask) * 4) * 1.5) * 0.08;
-        let c = mixRgb(p.rockFace[1], p.rockFace[0], clamp01(depth * 0.9));
-        c = scale(c, 0.95 + strata + grain * 0.08);
-        if (depth > 0.85) c = scale(c, 0.7);
-        t.set(x, y, c, 1);
-      } else if (open.e && x >= top.x1 + wob && y < top.y1 + (open.s ? wob : 0) + 1) {
+      } else if (open.s && y >= s1 && x < e1 + 1) {
+        // South cliff face: a lit upper band, a shaded lower band and a dark foot.
+        const depth = (y - s1) / faceH;
+        t.set(x, y, depth < 0.45 ? p.rockFace[1] : depth < 0.85 ? p.rockFace[0] : scale(p.rockFace[0], 0.72), 1);
+      } else if (open.e && x >= e1 && y < s1 + 1) {
         // East cliff face: narrower, darkest (faces away from the light).
-        const depth = (x - top.x1) / Math.max(faceW, 1);
-        let c = mixRgb(p.rockFace[0], scale(p.rockFace[0], 0.75), clamp01(depth));
-        c = scale(c, 0.92 + grain * 0.1);
-        t.set(x, y, c, 1);
+        t.set(x, y, scale(p.rockFace[0], 0.86), 1);
       } else if (open.e && open.s && x >= top.x1 && y >= top.y1) {
         // South-east corner: the darkest bit of both faces.
-        t.set(x, y, scale(p.rockFace[0], 0.65 + grain * 0.1), 1);
+        t.set(x, y, scale(p.rockFace[0], 0.68), 1);
       } else {
         // Ground at the foot of the cliff, darkened (the plateau's own shadow).
         t.shade(x, y, 0.72);
@@ -375,17 +382,20 @@ function rock(p, mask, biome) {
 
 /**
  * Water with a shoreline on every edge whose neighbour is land (mask bit
- * clear): a shallow band, a foam line and wet sand at the very edge. The
- * depth gradient further out comes from the cell layer (shader).
+ * clear), in flat bands as on the design canvas: wet sand at the very edge, a
+ * foam line, a shallow band, a step between, then deep water with thin light
+ * streaks. Fords are lighter, a sandy bed with specks. The depth gradient
+ * further out comes from the cell layer (shader).
  */
 function water(p, mask, ford, biome) {
   const t = new Tile();
   const land = { n: !(mask & 1), e: !(mask & 2), s: !(mask & 4), w: !(mask & 8) };
-  const [fordLo, fordHi] = p.ford;
+  const shallow = biome === 'snow' ? mixRgb(p.shallow, [210, 230, 245], 0.45) : p.shallow; // ice along snowy shores
+  const bed = mixRgb(p.ford[0], p.shallow, 0.25);
+  const bedSpeck = mixRgb(p.ford[1], p.shallow, 0.15);
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      const n = fbm(x, y, ford ? 1300 : 1200);
-      const wob = (vnoise(x, y, 6, 1250) - 0.5) * 4;
+      const wob = (tnoise(x, y, 4, 1250) - 0.5) * 2.4;
       // Distance (pixels) to the nearest edge that faces land.
       let edge = 99;
       if (land.n) edge = Math.min(edge, y + wob);
@@ -394,18 +404,19 @@ function water(p, mask, ford, biome) {
       if (land.e) edge = Math.min(edge, TILE - 1 - x + wob);
       let c;
       if (ford) {
-        // Shallow crossing: sandy bed showing through, ripples across.
-        c = mixRgb(fordLo, fordHi, clamp01(n * 1.3 - 0.15));
-        c = mixRgb(c, p.shallow, 0.35);
-        const ripple = Math.sin((x * 0.8 + y * 0.3 + n * 5) * 1.3);
-        if (ripple > 0.85) c = mixRgb(c, p.foam, 0.35);
+        c = hash3(x, y, 1330) < 0.08 ? bedSpeck : bed;
+      } else if (edge < 9) {
+        c = shallow;
+      } else if (edge < 14) {
+        c = mixRgb(shallow, p.deep, 0.5);
       } else {
-        c = mixRgb(p.deep, p.shallow, clamp01(1.1 - edge / 12) * 0.9 + n * 0.1);
-        if (biome === 'snow' && edge < 5) c = mixRgb(c, [210, 230, 245], 0.55); // ice rim
+        c = p.deep;
+        // Streaks a little off level, repeating every tile, broken into dashes.
+        const s = 6 * y - x;
+        if (mod(s, 32) < 3 && hash3(Math.floor(s / 32), x >> 3, 1280) > 0.4) c = mixRgb(c, [255, 255, 255], 0.1);
       }
-      // Foam along the shore, broken by noise; wet ground right at the edge.
-      if (edge < 2.2) c = mixRgb(c, scale(p.ground[0], 0.7), 0.65);
-      else if (edge < 4.5 && vnoise(x, y, 3, 1270) > 0.35) c = mixRgb(c, p.foam, 0.75);
+      if (edge < 1.5) c = p.sand[0];
+      else if (edge < 3.4) c = p.foam;
       t.set(x, y, c, 1);
     }
   }
@@ -414,20 +425,18 @@ function water(p, mask, ford, biome) {
 
 // ---- Trees ---------------------------------------------------------------------------------
 
+/** A flat tree on its ground cell: a crown (or cactus, palm, conifer) and a hard shadow to the lower right. */
 function tree(p, variant, biome) {
   const t = ground(p, 'ground', variant, biome);
   const r = (k) => hash3(variant, k, 1500);
   const cx = 14 + r(1) * 4;
   const cy = 14 + r(2) * 4;
+  const [dark, light] = p.tree;
   if (biome === 'desert' && variant % 2 === 0) {
-    // Saguaro cactus: shadow, trunk and two arms, lit on the left.
-    t.disk(cx + 5, cy + 7, 8, () => [[0, 0, 0], 0.28]);
+    // Saguaro cactus: shadow, trunk and two arms, a lit stripe on the left.
+    t.dot(cx + 4, cy + 6, 8, SHADOW_RGB, 0.3);
     const arm = (x0, y0, x1, y1, w) => {
-      for (let s = 0; s <= 1; s += 0.02) {
-        const x = mix(x0, x1, s);
-        const y = mix(y0, y1, s);
-        t.disk(x, y, w, (dx) => [scale(mixRgb(p.tree[0], p.tree[1], clamp01(0.6 - dx)), 1), 1]);
-      }
+      for (let s = 0; s <= 1; s += 0.02) t.disk(x0 + (x1 - x0) * s, y0 + (y1 - y0) * s, w, (dx) => [dx < -0.25 ? light : dark, 1]);
     };
     arm(cx, cy + 10, cx, cy - 10, 2.6);
     arm(cx - 6, cy, cx - 6, cy - 6, 1.8);
@@ -437,57 +446,52 @@ function tree(p, variant, biome) {
     return t;
   }
   if (biome === 'desert') {
-    // Palm: trunk and a star of fronds.
-    t.disk(cx + 6, cy + 6, 11, () => [[0, 0, 0], 0.25]);
-    for (let s = 0; s <= 1; s += 0.05) t.disk(cx + s * 3, cy + 10 - s * 12, 1.6, () => [p.trunk, 1]);
+    // Palm: trunk and a star of fronds, the ones toward the light lit.
+    t.dot(cx + 5, cy + 6, 11, SHADOW_RGB, 0.28);
+    for (let s = 0; s <= 1; s += 0.05) t.dot(cx + s * 3, cy + 10 - s * 12, 1.6, p.trunk);
     for (let k = 0; k < 7; k++) {
       const a = (k / 7) * Math.PI * 2 + r(3);
-      for (let s = 0; s <= 1; s += 0.06) {
-        t.disk(cx + 3 + Math.cos(a) * s * 10, cy - 2 + Math.sin(a) * s * 8, 1.7 * (1 - s * 0.6), () => [mixRgb(p.tree[1], p.tree[0], s), 1]);
-      }
+      const lit = Math.cos(a) + Math.sin(a) < 0;
+      for (let s = 0; s <= 1; s += 0.06) t.dot(cx + 3 + Math.cos(a) * s * 10, cy - 2 + Math.sin(a) * s * 8, 1.7 * (1 - s * 0.6), lit ? light : dark);
     }
     return t;
   }
   if (biome === 'snow') {
-    // Conifer: stacked tiers, snow on the lit upper-left of each tier.
-    t.disk(cx + 6, cy + 8, 11, () => [[30, 40, 60], 0.3]);
+    // Conifer: stacked tiers, the lit left half dusted with snow at the top of each tier.
+    t.dot(cx + 5, cy + 7, 11, [30, 40, 60], 0.3);
     for (let k = 0; k < 3; k++) {
       const w = 11 - k * 3;
       const ty = cy + 8 - k * 7;
       for (let y = 0; y < 9; y++) {
         const half = (w * (y + 1)) / 9;
-        for (let x = -half; x <= half; x++) {
-          const lit = x < 0 && y < 5;
-          const c = lit ? mixRgb(p.tree[1], [235, 242, 250], 0.75) : mixRgb(p.tree[0], p.tree[1], (half - x) / (2 * half + 1));
-          t.blend(Math.round(cx + x), Math.round(ty - 9 + y), c, 1);
-        }
+        for (let x = -half; x <= half; x++) t.set(Math.round(cx + x), Math.round(ty - 9 + y), x < 0 ? (y < 4 ? p.rim : light) : dark, 1);
       }
     }
     return t;
   }
-  // Temperate: a round crown of leaf clumps over a shadow, lit from the top left.
-  t.disk(cx + 5, cy + 6, 12, () => [[0, 0, 0], 0.32]);
-  for (let k = 0; k < 7; k++) {
-    const a = (k / 7) * Math.PI * 2;
-    const ox = Math.cos(a) * 6;
-    const oy = Math.sin(a) * 6;
-    t.disk(cx + ox, cy + oy, 6, (dx, dy) => [scale(mixRgb(p.tree[1], p.tree[0], clamp01(0.5 + (dx + dy) * 0.5)), 0.95 + r(k) * 0.1), 1]);
+  // Temperate: a round crown of a few lumps, its lit core toward the top left, a ring of shadow.
+  const lumps = [[0, 0, 9]];
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + r(4);
+    lumps.push([Math.cos(a) * 5.5, Math.sin(a) * 5.5, 5 + r(k + 5) * 1.2]);
   }
-  t.disk(cx, cy, 7, (dx, dy) => [mixRgb(p.tree[1], p.tree[0], clamp01(0.4 + (dx + dy) * 0.5)), 1]);
-  t.disk(cx - 3, cy - 3, 3, () => [scale(p.tree[1], 1.25), 0.6]);
+  for (const [dx, dy, rr] of lumps) t.dot(cx + dx + 2, cy + dy + 2.5, rr + 1, SHADOW_RGB, 0.3);
+  for (const [dx, dy, rr] of lumps) t.dot(cx + dx, cy + dy, rr, dark);
+  t.dot(cx - 1.5, cy - 2, 6, light);
+  t.dot(cx - 3, cy - 4, 2, scale(light, 1.2));
   return t;
 }
 
 // ---- Decals --------------------------------------------------------------------------
 
-/** Transparent overlays scattered over open ground: index 0..DECALS-1. */
+/** Transparent overlays scattered over open ground: index 0..DECALS-1. Flat colours with hard shadows. */
 function decal(p, k, biome) {
   const t = new Tile();
   const r = (j) => hash3(k, j, 1700);
   const stone = (cx, cy, rad) => {
-    t.disk(cx + rad * 0.5, cy + rad * 0.5, rad, () => [[0, 0, 0], 0.3]);
-    t.disk(cx, cy, rad, (dx, dy) => [scale(p.stone, 1.15 - (dx + dy) * 0.25), 1]);
-    if (biome === 'snow') t.disk(cx - rad * 0.3, cy - rad * 0.4, rad * 0.6, () => [p.rim, 0.85]);
+    t.dot(cx + rad * 0.5, cy + rad * 0.5, rad, SHADOW_RGB, 0.3);
+    t.dot(cx, cy, rad, p.stone);
+    if (rad > 1.2) t.dot(cx - rad * 0.3, cy - rad * 0.3, rad * 0.55, biome === 'snow' ? p.rim : scale(p.stone, 1.2));
   };
   switch (k) {
     case 0: // a few stones
@@ -496,15 +500,16 @@ function decal(p, k, biome) {
     case 1: // pebbles
       for (let j = 0; j < 14; j++) stone(3 + r(j) * 26, 3 + r(j + 30) * 26, 0.9);
       break;
-    case 2: // crater: dark scorched bowl, lit lower-right rim
-      t.disk(16, 16, 10, (dx, dy, d) => [d > 0.75 ? scale(p.stone, 1.1 + (dx + dy) * 0.3) : [30, 26, 22], d > 0.75 ? 0.75 : 0.55]);
+    case 2: // crater: a dark scorched bowl, its lower-right rim lit
+      t.disk(16, 16, 10, (dx, dy, d) => (d > 0.75 ? [scale(p.stone, dx + dy > 0 ? 1.2 : 0.85), 0.8] : [[30, 26, 22], 0.55]));
       break;
     case 3: // shrub or brush
       for (let j = 0; j < 5; j++) {
         const cx = 10 + r(j) * 12;
         const cy = 10 + r(j + 5) * 12;
-        t.disk(cx + 2, cy + 2, 4, () => [[0, 0, 0], 0.22]);
-        t.disk(cx, cy, 3.5, (dx, dy) => [mixRgb(p.shrub[1], p.shrub[0], clamp01(0.5 + (dx + dy) * 0.5)), 1]);
+        t.dot(cx + 1.5, cy + 1.5, 3.8, SHADOW_RGB, 0.22);
+        t.dot(cx, cy, 3.5, p.shrub[0]);
+        t.dot(cx - 1, cy - 1, 1.8, p.shrub[1]);
       }
       break;
     case 4: // vehicle tracks
@@ -519,14 +524,14 @@ function decal(p, k, biome) {
       for (let j = 0; j < 9; j++) {
         const cx = 4 + r(j) * 24;
         const cy = 4 + r(j + 40) * 24;
-        for (let s = 0; s < 4; s++) t.blend(Math.round(cx + s - 2), Math.round(cy - Math.abs(s - 1.5) * 1.5), biome === 'snow' ? [250, 252, 255] : scale(p.shrub[1], 1.1), 0.8);
+        for (let s = 0; s < 4; s++) t.blend(Math.round(cx + s - 2), Math.round(cy - Math.abs(s - 1.5) * 1.5), biome === 'snow' ? [250, 252, 255] : scale(p.shrub[1], 1.1), 0.85);
       }
       break;
     case 6: // flowers, ice cracks or bones
       if (biome === 'snow') {
         for (let x = 4; x < 28; x++) t.blend(x, Math.round(16 + Math.sin(x * 0.7) * 3 + (x > 16 ? x - 16 : 0) * 0.3), p.accent, 0.8);
       } else {
-        for (let j = 0; j < 8; j++) t.disk(5 + r(j) * 22, 5 + r(j + 50) * 22, biome === 'desert' ? 1.4 : 1, () => [p.accent, 1]);
+        for (let j = 0; j < 8; j++) t.dot(5 + r(j) * 22, 5 + r(j + 50) * 22, biome === 'desert' ? 1.4 : 1, p.accent);
       }
       break;
     default: // a boulder

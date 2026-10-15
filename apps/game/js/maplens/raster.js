@@ -245,23 +245,11 @@ export class TerrainRaster {
     r *= sh;
     g *= sh;
     b *= sh;
-    const ore = this.terrain[i + 1] / 255;
-    if (ore > 0) {
-      const speck = hash2(Math.floor(wx * 0.5) + 7, Math.floor(wy * 0.5) + 3);
-      if (speck < 0.15 + ore * 0.55) {
-        const glint = hash2(Math.floor(wx) + 11, Math.floor(wy) + 11);
-        r = mix(0.62, 0.92, glint);
-        g = mix(0.45, 0.74, glint);
-        b = mix(0.12, 0.3, glint);
-      } else {
-        r = mix(r, 0.36, ore * 0.5);
-        g = mix(g, 0.3, ore * 0.5);
-        b = mix(b, 0.14, ore * 0.5);
-      }
-    }
     out[0] = r;
     out[1] = g;
     out[2] = b;
+    const ore = this.terrain[i + 1] / 255;
+    if (ore > 0) oreColor(out, wx, wy, ore);
     const gems = this.terrain[i + 2] / 255;
     if (gems > 0) gemColor(out, cx, cy, lx, ly, gems);
     const smudge = this.terrain[i + 3];
@@ -358,11 +346,37 @@ export function resourceTile(base, levels, variants, density, cx, cy) {
   return base + variant * levels + level;
 }
 
+const ORE_STEP = 4;
+const ORE_LIGHT = [0.902, 0.761, 0.353];
+const ORE_BASE = [0.788, 0.604, 0.18];
+const ORE_GROUND = [0.478, 0.4, 0.188];
 const GEM_HUES = [
-  [0.85, 0.16, 0.22],
-  [0.26, 0.48, 0.95],
-  [0.68, 0.3, 0.9],
+  [0.29, 0.478, 0.769],
+  [0.784, 0.29, 0.604],
 ];
+const GEM_GLINT = [0.624, 0.847, 1];
+
+/** shaders/terrain.wgsl ore_color: WebRA's ore nuggets on a dark ochre ground. */
+export function oreColor(out, wx, wy, ore) {
+  const lx = Math.floor(wx / ORE_STEP);
+  const ly = Math.floor(wy / ORE_STEP);
+  const k = ore * 0.5;
+  const ground = [mix(out[0], ORE_GROUND[0], k), mix(out[1], ORE_GROUND[1], k), mix(out[2], ORE_GROUND[2], k)];
+  let c = ground;
+  if (hash2(lx + 7, ly + 3) < 0.15 + ore * 0.55) {
+    const mx = (lx + 0.5 + (hash2(lx + 1.7, ly + 9.2) - 0.5) * 0.4) * ORE_STEP;
+    const my = (ly + 0.5 + (hash2(lx + 5.1, ly + 2.6) - 0.5) * 0.4) * ORE_STEP;
+    const r = 1.3 + 0.5 * ore;
+    const dx = wx - mx;
+    const dy = wy - my;
+    if (Math.hypot(dx, dy) < r) c = Math.hypot(dx + r * 0.35, dy + r * 0.35) < r * 0.5 ? ORE_LIGHT : ORE_BASE;
+    else if (Math.hypot(dx - 0.6, dy - 0.6) < r) c = ground.map((v) => v * 0.6);
+  }
+  out[0] = c[0];
+  out[1] = c[1];
+  out[2] = c[2];
+  return out;
+}
 
 /** shaders/terrain.wgsl gem_color: WebRA's crystals over darker ground, at render time 0. */
 export function gemColor(out, cx, cy, lx, ly, gems) {
@@ -377,15 +391,15 @@ export function gemColor(out, cx, cy, lx, ly, gems) {
     const dx = (lx - (0.2 + 0.6 * h1)) / (0.11 + 0.05 * h3);
     const dy = (ly - (0.25 + 0.55 * h2)) / (0.17 + 0.07 * h3);
     if (Math.abs(dx) + Math.abs(dy) < 1) {
-      const hue = GEM_HUES[Math.min(2, Math.floor(h3 * 3))];
+      const hue = GEM_HUES[h3 >= 0.5 ? 1 : 0];
       const shade = dx < 0 && dy < 0 ? 1.25 : dx >= 0 && dy >= 0 ? 0.5 : dx < 0 ? 0.9 : 0.75;
       r = hue[0] * shade;
       g = hue[1] * shade;
       b = hue[2] * shade;
       if (Math.abs(dx) < 0.08) {
-        r = mix(r, 1, 0.35);
-        g = mix(g, 1, 0.35);
-        b = mix(b, 1, 0.35);
+        r = mix(r, GEM_GLINT[0], 0.5);
+        g = mix(g, GEM_GLINT[1], 0.5);
+        b = mix(b, GEM_GLINT[2], 0.5);
       }
       if (Math.sin(h2 * 40) > 0.96 && Math.hypot(dx + 0.3, dy + 0.4) < 0.35) r = g = b = 1;
     } else if (Math.abs(dx - 0.35) + Math.abs(dy - 0.35) < 1) {

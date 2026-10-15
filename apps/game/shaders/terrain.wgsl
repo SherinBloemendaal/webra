@@ -46,6 +46,15 @@ const NO_SMUDGE: u32 = 255u;
 const WATER_ALPHA: u32 = 248u;
 const WATER_COLORS: u32 = 7u;
 const WATER_STEPS_PER_SECOND: f32 = 6.25;
+// WebRA's ore and gems (design canvas "Materialen en kleuren": Erts, and
+// "Wereldobjecten": Edelsteenmijn).
+const ORE_STEP: f32 = 4.0;
+const ORE_LIGHT: vec3f = vec3f(0.902, 0.761, 0.353); // #e6c25a
+const ORE_BASE: vec3f = vec3f(0.788, 0.604, 0.180); // #c99a2e
+const ORE_GROUND: vec3f = vec3f(0.478, 0.400, 0.188); // #7a6630
+const GEM_BLUE: vec3f = vec3f(0.290, 0.478, 0.769); // #4a7ac4
+const GEM_MAGENTA: vec3f = vec3f(0.784, 0.290, 0.604); // #c84a9a
+const GEM_GLINT: vec3f = vec3f(0.624, 0.847, 1.0); // #9fd8ff
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> FullscreenOut {
@@ -213,6 +222,33 @@ fn soft_ground(col: vec3f, t: u32, c: vec2i, local: vec2f, w: vec2f) -> vec3f {
     return out;
 }
 
+/// WebRA's ore (design canvas "Erts"): nuggets on a lattice of ORE_STEP world
+/// pixels, a dark ochre ground between them. A lattice cell holds a nugget
+/// with the same chance the old specks had (0.15 + 0.55 per density), its
+/// radius grows with the density; each is lit at the top left (ORE_LIGHT) and
+/// drops a shadow to the lower right.
+fn ore_color(ground: vec3f, w: vec2f, ore: f32) -> vec3f {
+    let lc = floor(w / ORE_STEP);
+    if (hash2(lc + vec2f(7.0, 3.0)) >= 0.15 + ore * 0.55) {
+        return mix(ground, ORE_GROUND, ore * 0.5);
+    }
+    let jitter = vec2f(hash2(lc + vec2f(1.7, 9.2)), hash2(lc + vec2f(5.1, 2.6))) - 0.5;
+    let centre = (lc + 0.5 + jitter * 0.4) * ORE_STEP;
+    let r = 1.3 + 0.5 * ore;
+    let d = w - centre;
+    if (length(d) < r) {
+        if (length(d + vec2f(r * 0.35)) < r * 0.5) {
+            return ORE_LIGHT;
+        }
+        return ORE_BASE;
+    }
+    let base = mix(ground, ORE_GROUND, ore * 0.5);
+    if (length(d - vec2f(0.6)) < r) {
+        return base * 0.6;
+    }
+    return base;
+}
+
 fn gem_color(ground: vec3f, c: vec2i, local: vec2f, gems: f32) -> vec3f {
     let cf = vec2f(c);
     let count = u32(gems * 3.0 + 0.5) + 1u; // 2 to 4 crystals
@@ -229,12 +265,9 @@ fn gem_color(ground: vec3f, c: vec2i, local: vec2f, gems: f32) -> vec3f {
         let size = vec2f(0.11 + 0.05 * h3, 0.17 + 0.07 * h3);
         let d = (local - centre) / size;
         if (abs(d.x) + abs(d.y) < 1.0) {
-            var hue = vec3f(0.68, 0.30, 0.90);
-            let pick = u32(h3 * 3.0);
-            if (pick == 0u) {
-                hue = vec3f(0.85, 0.16, 0.22);
-            } else if (pick == 1u) {
-                hue = vec3f(0.26, 0.48, 0.95);
+            var hue = GEM_BLUE;
+            if (h3 >= 0.5) {
+                hue = GEM_MAGENTA;
             }
             // Facets: lit from the upper left, a bright vertical ridge.
             var shade = 0.75;
@@ -247,7 +280,7 @@ fn gem_color(ground: vec3f, c: vec2i, local: vec2f, gems: f32) -> vec3f {
             }
             var crystal = hue * shade;
             if (abs(d.x) < 0.08) {
-                crystal = mix(crystal, vec3f(1.0), 0.35);
+                crystal = mix(crystal, GEM_GLINT, 0.5);
             }
             let twinkle = sin(g.time * (1.3 + h1) + h2 * 40.0);
             if (twinkle > 0.96 && length(d + vec2f(0.3, 0.4)) < 0.35) {
@@ -316,17 +349,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
         s = s * (1.0 - 0.35 * max(0.0, 1.0 - length(local) / 0.4));
     }
     col = col * s;
-    // Ore: golden speckles, denser with more ore.
+    // Ore: round golden nuggets, more and bigger with more ore.
     let res = textureLoad(terrain_tex, c, 0);
-    let ore = res.g;
-    if (ore > 0.0) {
-        let speck = hash2(floor(w * 0.5) + vec2f(7.0, 3.0));
-        if (speck < 0.15 + ore * 0.55) {
-            let glint = hash2(floor(w) + 11.0);
-            col = mix(vec3f(0.62, 0.45, 0.12), vec3f(0.92, 0.74, 0.30), glint);
-        } else {
-            col = mix(col, vec3f(0.36, 0.30, 0.14), ore * 0.5);
-        }
+    if (res.g > 0.0) {
+        col = ore_color(col, w, res.g);
     }
     if (res.b > 0.0) {
         col = gem_color(col, c, local, res.b);
