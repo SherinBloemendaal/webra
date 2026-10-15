@@ -9,8 +9,42 @@
 // spectators and in replays (the observer panel's Statistics button), and
 // from the game menu once the local player is out. Every graph has an
 // accessible table behind it. The DOM is built from text only (strict CSP).
+//
+// The look is the Statistics and NetStats boards (css/endgame.css): the
+// panels as a vertical tab list on the left, the table or graph on the
+// right. The Basic table has a head row per team, a graph marks where an
+// AI player was defeated, and online games get a Network tab
+// (js/netstats.js).
+//
+// Keys: while the screen is open, game hotkeys stay quiet behind it (a
+// window capture listener stops them, and the screen stops what bubbles out
+// of it). An open select list gets every key (it stops Esc itself, so Esc
+// closes only the list); the tab list and a stepper get their arrow, Home,
+// End and Page keys; Esc anywhere else closes the screen.
 
 import { formatMoney } from './observer.js';
+import { selectPlate } from './ui/controls.js';
+import { renderNetwork, shapeNetwork } from './netstats.js';
+
+/** The Network tab (online games only, js/netstats.js). */
+export const NETWORK_TAB = Object.freeze(['network', 'Network']);
+
+/** An open select list (js/ui/controls.js selectPlate): it gets every key. */
+const LIST = '[role="listbox"], .ui-sp-panel';
+/** Tab lists and steppers: they get their moving keys only. */
+const MOVERS = '[role="tablist"], [role="spinbutton"]';
+const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+
+/**
+ * Whether a key belongs to the control it was pressed in (the screen's key
+ * handler then lets it through untouched): every key in an open select
+ * list, the moving keys in a tab list or a stepper. Esc there is the screen's.
+ */
+export function keyForControl(e) {
+  const t = e.target;
+  if (t?.closest?.(LIST)) return true;
+  return MOVE_KEYS.has(e.key) && !!t?.closest?.(MOVERS);
+}
 
 export const STATS_TABS = Object.freeze([
   ['basic', 'Basic'],
@@ -125,6 +159,14 @@ export function graphSeries(report, graphId) {
     player: p.player,
     values: g.rate ? rateSeries(h.ticks, p[g.rate] ?? [], tps) : (p[g.key] ?? []).slice(),
   }));
+}
+
+/** The moments a graph marks: every defeated player that did not win ("Normal AI defeated"). */
+export function graphMarkers(shaped) {
+  return shaped.rows
+    .filter((r) => r.s.defeated && !r.s.won && Number.isFinite(r.s.defeatedAt))
+    .map((r) => ({ tick: r.s.defeatedAt, label: `${r.name} defeated` }))
+    .sort((a, b) => a.tick - b.tick);
 }
 
 /**
@@ -300,6 +342,27 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
   return { tps, tick: report.tick, elapsed, duration: formatDuration(elapsed, tps), over, result, rows, byPlayer, ranking, tables, lists, history };
 }
 
+/**
+ * The players of a shaped report by team, as the Basic table, the graph's
+ * legend and the end of game results show them: `{ team, label, won, rows }`
+ * per team in team order, `label` null when nobody plays on a team (a free
+ * for all), "No team" for the players without one beside teams.
+ */
+export function teamSections(shaped) {
+  const groups = new Map();
+  for (const r of shaped.rows) {
+    const team = r.s.team ?? 0;
+    if (!groups.has(team)) groups.set(team, []);
+    groups.get(team).push(r);
+  }
+  const keys = [...groups.keys()].sort((a, b) => (a === 0) - (b === 0) || a - b);
+  const hasTeams = keys.some((k) => k > 0);
+  return keys.map((team) => {
+    const rows = groups.get(team);
+    return { team, label: hasTeams ? (team > 0 ? `Team ${team}` : 'No team') : null, won: rows.some((r) => r.s.won), rows };
+  });
+}
+
 // ---- DOM ---------------------------------------------------------------------------------
 
 function el(tag, className, text) {
@@ -325,6 +388,7 @@ function themeColor(name, fallback) {
     return fallback;
   }
 }
+
 
 /** Line graph on a canvas, with a legend, hover tooltips and its data table. */
 export class StatsGraph {
@@ -353,10 +417,12 @@ export class StatsGraph {
    * @param {number[]} ticks
    * @param {Map<number, { name: string, css: string }>} players
    * @param {number} tps
+   * @param {{ tick: number, label: string }[]} [markers] moments marked on the graph ("Normal AI defeated")
    */
-  set(graph, series, ticks, players, tps) {
-    this.data = { graph, series, ticks, players, tps };
-    this.canvas.setAttribute('aria-label', `${graph.label} over time, per player. The data table follows.`);
+  set(graph, series, ticks, players, tps, markers = []) {
+    this.data = { graph, series, ticks, players, tps, markers };
+    const marked = markers.length ? ` Marked: ${markers.map((m) => `${m.label} at ${formatDuration(m.tick, tps)}`).join('; ')}.` : '';
+    this.canvas.setAttribute('aria-label', `${graph.label} over time, per player.${marked} The data table follows.`);
     this.legend.replaceChildren(
       ...series.map((s) => {
         const p = players.get(s.player);
@@ -482,6 +548,24 @@ export class StatsGraph {
       const t = L.t0 + (span * k) / steps;
       ctx.fillText(formatDuration(t, tps), L.xOf(t), L.plot.y1 + 6);
     }
+    // Defeats: a dashed line with the name ("Normal AI defeated").
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = '600 12px "Barlow Condensed", sans-serif';
+    for (const m of this.data.markers ?? []) {
+      if (m.tick < L.t0 || m.tick > L.t1) continue;
+      const x = Math.round(L.xOf(m.tick)) + 0.5;
+      ctx.strokeStyle = muted;
+      ctx.setLineDash?.([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(x, L.plot.y0);
+      ctx.lineTo(x, L.plot.y1);
+      ctx.stroke();
+      ctx.setLineDash?.([]);
+      ctx.fillStyle = muted;
+      ctx.fillText(m.label, Math.min(x + 6, L.plot.x1 - 90), L.plot.y0 + 4);
+    }
+    ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
     // One line per player in its team colour.
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
@@ -531,6 +615,11 @@ export class StatsScreen {
    *   live?: boolean,
    *   actions?: { label: string, run(): void }[],
    *   onChange?(open: boolean): void,
+   *   network?: () => Promise<object | null>,  online games: js/netstats.js netStatsData (the Network tab)
+   *   tickMs?: number,  a tick at the game's speed (the Network tab places the stalls)
+   *   openReplayAt?: (tick: number) => void,  the Network tab's stalls open the replay there
+   *   canOpenReplay?: () => boolean,  whether they can now (the game is over)
+   *   stallNote?: () => string,  why the stalls cannot open the replay now
    * }} opts
    */
   constructor(root, opts) {
@@ -541,6 +630,9 @@ export class StatsScreen {
     this.report = null;
     this.shaped = null;
     this.timer = null;
+    /** The Network tab's data while the screen is open (asked once per opening: the server limits the stall log). */
+    this.net = null;
+    this.netLoading = null;
     this.card = el('div', 'menu-card stats-card');
     this.card.setAttribute('role', 'dialog');
     this.card.setAttribute('aria-modal', 'true');
@@ -549,6 +641,8 @@ export class StatsScreen {
     root.hidden = true;
     this.onKey = (e) => {
       if (!this.isOpen) return;
+      // An open select list, or the moving keys of the tab list or a stepper: theirs, untouched.
+      if (this.root.contains(e.target) && keyForControl(e)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -558,9 +652,14 @@ export class StatsScreen {
       // Game hotkeys stay quiet behind the screen; Tab and arrows still work in it.
       e.stopImmediatePropagation();
     };
+    // What the screen's controls got does not bubble on to the game's hotkeys either.
+    this.onInnerKey = (e) => {
+      if (this.isOpen) e.stopPropagation();
+    };
     this.onResize = () => this.isOpen && this.tab === 'graphs' && this.graphView?.draw();
     window.addEventListener('keydown', this.onKey, true);
     window.addEventListener('resize', this.onResize);
+    root.addEventListener('keydown', this.onInnerKey);
   }
 
   /**
@@ -571,8 +670,10 @@ export class StatsScreen {
   dispose() {
     clearInterval(this.timer);
     this.timer = null;
+    this.graphPick?.destroy();
     window.removeEventListener('keydown', this.onKey, true);
     window.removeEventListener('resize', this.onResize);
+    this.root.removeEventListener('keydown', this.onInnerKey);
     this.root.hidden = true;
     this.root.replaceChildren();
   }
@@ -581,12 +682,20 @@ export class StatsScreen {
     return !this.root.hidden;
   }
 
+  /** The tabs of this game: the Network tab only for online games. */
+  tabs() {
+    return this.opts.network ? [...STATS_TABS, NETWORK_TAB] : [...STATS_TABS];
+  }
+
   /** Open (on `tab`) and load the newest numbers. */
   async open(tab = null) {
     if (tab) this.tab = tab;
     const was = this.isOpen;
     this.root.hidden = false;
-    if (!was) this.opts.onChange?.(true);
+    if (!was) {
+      this.net = null;
+      this.opts.onChange?.(true);
+    }
     if (!this.shaped) this.renderLoading();
     await this.refresh();
     if (this.opts.live && !this.timer) this.timer = setInterval(() => this.refresh(), 2000);
@@ -594,6 +703,7 @@ export class StatsScreen {
 
   close() {
     if (!this.isOpen) return;
+    this.graphPick?.close(false);
     this.root.hidden = true;
     clearInterval(this.timer);
     this.timer = null;
@@ -620,6 +730,8 @@ export class StatsScreen {
   setReport(report) {
     this.report = report;
     this.shaped = shapeReport(report, { players: this.opts.players, rules: this.opts.rules, localPlayer: this.opts.localPlayer ?? null });
+    // An open select list stays open while the live numbers come in: the next render waits for it.
+    if (this.graphPick?.isOpen()) return;
     this.render();
   }
 
@@ -650,11 +762,16 @@ export class StatsScreen {
       ranking.append(li);
     }
     head.append(ranking);
+    // The panels: a vertical tab list on the left (arrow keys, Home and End move).
     const tabs = el('div', 'stats-tabs');
     tabs.setAttribute('role', 'tablist');
     tabs.setAttribute('aria-label', 'Statistics');
-    for (const [id, label] of STATS_TABS) {
-      const b = button(label, 'stats-tab', () => this.show(id));
+    tabs.setAttribute('aria-orientation', 'vertical');
+    for (const [id, label] of this.tabs()) {
+      const b = button('', 'stats-tab', () => this.show(id));
+      const lamp = el('span', `ui-led ui-led-${id === this.tab ? 'on' : 'off'}`);
+      lamp.setAttribute('aria-hidden', 'true');
+      b.append(lamp, label);
       b.setAttribute('role', 'tab');
       b.id = `stats-tab-${id}`;
       b.setAttribute('aria-selected', String(id === this.tab));
@@ -668,9 +785,14 @@ export class StatsScreen {
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', `stats-tab-${this.tab}`);
     this.graphView = null;
+    this.graphPick?.destroy();
+    this.graphPick = null;
     if (this.tab === 'graphs') this.renderGraphs(panel);
+    else if (this.tab === 'network') this.renderNetworkTab(panel);
     else this.renderTab(panel, this.tab);
-    this.card.replaceChildren(head, tabs, panel, this.actionRow());
+    const body = el('div', 'stats-body');
+    body.append(tabs, panel);
+    this.card.replaceChildren(head, body, this.actionRow());
     panel.scrollTop = scroll;
     // Sized by the layout now that it is on the page.
     this.graphView?.draw();
@@ -678,11 +800,11 @@ export class StatsScreen {
     else if (!this.card.contains(document.activeElement)) this.card.querySelector('.stats-tab[aria-selected="true"]')?.focus({ preventScroll: true });
   }
 
-  /** Arrow keys, Home and End move between tabs (WAI-ARIA tabs). */
+  /** Arrow keys (up and down, left and right), Home and End move between tabs (WAI-ARIA tabs). */
   tabKey(e, id) {
-    const ids = STATS_TABS.map(([t]) => t);
+    const ids = this.tabs().map(([t]) => t);
     const i = ids.indexOf(id);
-    const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: ids.length - 1 }[e.key];
+    const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: ids.length - 1 }[e.key];
     if (next === undefined) return;
     e.preventDefault();
     this.show(ids[(next + ids.length) % ids.length]);
@@ -720,11 +842,24 @@ export class StatsScreen {
     }
     thead.append(hr);
     const tbody = el('tbody');
-    for (const r of spec.rows) {
-      const row = d.byPlayer.get(r.player);
-      const tr = el('tr', row?.s.defeated && !row?.s.won ? 'stats-out' : null);
-      tr.append(this.playerCell(row), ...r.cells.map((c) => el('td', 'num', c)));
-      tbody.append(tr);
+    const rowOf = new Map(spec.rows.map((r) => [r.player, r]));
+    // The players by team, a head row per team ("Team 1 · Winner"); none in a free for all.
+    for (const section of teamSections(d)) {
+      if (section.label) {
+        const tr = el('tr', `stats-team${section.won ? ' is-won' : ''}`);
+        const th = el('th', null, section.won ? `${section.label} · Winner` : section.label);
+        th.setAttribute('scope', 'colgroup');
+        th.colSpan = spec.columns.length + 1;
+        tr.append(th);
+        tbody.append(tr);
+      }
+      for (const row of section.rows) {
+        const r = rowOf.get(row.player);
+        if (!r) continue;
+        const tr = el('tr', row.s.defeated && !row.s.won ? 'stats-out' : null);
+        tr.append(this.playerCell(row), ...r.cells.map((c) => el('td', 'num', c)));
+        tbody.append(tr);
+      }
     }
     t.append(thead, tbody);
     scroll.append(t);
@@ -755,19 +890,21 @@ export class StatsScreen {
 
   renderGraphs(panel) {
     const d = this.shaped;
-    const pick = el('label', 'stats-graph-pick');
-    const select = el('select');
-    for (const g of GRAPHS) {
-      const o = el('option', null, g.label);
-      o.value = g.id;
-      select.append(o);
-    }
-    select.value = this.graph;
-    select.addEventListener('change', () => {
-      this.graph = select.value;
-      this.render();
+    const pick = el('div', 'stats-graph-pick');
+    const label = el('span', 'stats-graph-label', 'Graph');
+    label.id = 'stats-graph-label';
+    this.graphPick = selectPlate({
+      labelledBy: label.id,
+      options: GRAPHS.map((g) => ({ value: g.id, label: g.label })),
+      value: this.graph,
+      className: 'stats-graph-select',
+      onChange: (v) => {
+        this.graph = v;
+        this.render();
+        this.card.querySelector('.stats-graph-select .ui-sp-button')?.focus({ preventScroll: true });
+      },
     });
-    pick.append(el('span', null, 'Graph'), select);
+    pick.append(label, this.graphPick.root);
     panel.append(pick);
     if (d.history.ticks.length < 2) {
       panel.append(el('p', 'hint', 'The graphs start after the first few seconds of the game.'));
@@ -775,6 +912,39 @@ export class StatsScreen {
     }
     const graph = GRAPHS.find((g) => g.id === this.graph) ?? GRAPHS[0];
     this.graphView = new StatsGraph(panel);
-    this.graphView.set(graph, graphSeries(this.report, graph.id), d.history.ticks, d.byPlayer, d.tps);
+    this.graphView.set(graph, graphSeries(this.report, graph.id), d.history.ticks, d.byPlayer, d.tps, graphMarkers(d));
+  }
+
+  /** The Network tab: loaded once per opening of the screen, then drawn from what came. */
+  renderNetworkTab(panel) {
+    if (!this.net) {
+      panel.append(el('p', 'hint', 'Loading the connection statistics...'));
+      this.loadNetwork();
+      return;
+    }
+    if (this.net.empty) {
+      panel.append(el('p', 'hint', 'No connection statistics for this game.'));
+      return;
+    }
+    const players = new Map(this.shaped.rows.map((r) => [r.player, { name: r.name, css: r.css }]));
+    const shaped = shapeNetwork(this.net.data, { players, tps: this.shaped.tps, tickMs: this.opts.tickMs ?? 40 });
+    const canOpen = !!this.opts.openReplayAt && (this.opts.canOpenReplay?.() ?? true);
+    renderNetwork(panel, shaped, { onStall: canOpen ? (tick) => this.opts.openReplayAt(tick) : null, stallNote: this.opts.stallNote?.() ?? '' });
+  }
+
+  async loadNetwork() {
+    if (this.netLoading) return;
+    this.netLoading = (async () => {
+      let data = null;
+      try {
+        data = await this.opts.network?.();
+      } catch (err) {
+        console.warn('The connection statistics are unavailable:', err);
+      }
+      this.net = data ? { data } : { empty: true };
+    })();
+    await this.netLoading;
+    this.netLoading = null;
+    if (this.isOpen && this.tab === 'network' && this.shaped) this.render();
   }
 }
