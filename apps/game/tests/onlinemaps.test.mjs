@@ -5,7 +5,7 @@
 // private sounds.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installDom, uninstallDom, click, settle, textOf, FakeEvent } from './dom-fixtures.mjs';
+import { installDom, uninstallDom, click, settle, textOf } from './dom-fixtures.mjs';
 import { LIBRARY_MAX_MAPS, MapLibrary, MemoryMapBackend } from '../js/maplibrary.js';
 import { DEFAULT_OPTIONS, MAP_FORMAT_VERSION, MAP_UPGRADED_NOTICE, MEMBER_HEADER, mapHash, parseMap } from '../protocol/index.js';
 import { testVersions, v1Map } from '../../../packages/protocol/test/fixtures/map-test-versions.mjs';
@@ -151,6 +151,14 @@ async function mountLobby({ host, maps = [], versions = undefined }) {
   return { root, ui, sent, lobby, requests, responses, library, known };
 }
 
+/** Choose `value` in a select plate (js/ui/controls.js) as a click on its option would. */
+function pick(plate, value) {
+  const label = plate.option(value)?.label;
+  assert.ok(label, `the select offers ${value}`);
+  const option = [...plate.listbox.querySelectorAll('[role="option"]')].find((o) => textOf(o.querySelector('.ui-sp-label')) === label);
+  click(option);
+}
+
 /** Wait (in real time, the hashing runs on a thread pool) until `cond()` holds. */
 async function until(cond, ms = 5000) {
   const end = Date.now() + ms;
@@ -170,7 +178,7 @@ test('online lobby: a player without the map is asked; Decline reports it, Insta
     await settle();
     assert.equal(textOf(root.querySelector('.online-map-question')), 'Custom map: Fjord by Mapper. Install?');
     assert.match(textOf(root.querySelector('.online-map-details')), /By Mapper, 48 x 48 cells/);
-    assert.equal(ui.readyBtn.disabled, true, 'not ready without the map');
+    assert.equal(ui.readyCtl.input.disabled, true, 'not ready without the map');
     const buttons = () => [...root.querySelectorAll('.online-map-offer button')];
     assert.deepEqual(buttons().map((b) => b.textContent), ['Install', 'Decline']);
     // Decline: the server is told, the player stays unready, Install is still offered.
@@ -189,7 +197,7 @@ test('online lobby: a player without the map is asked; Decline reports it, Insta
     assert.equal(ui.installed.get(shared.hash), shared.canonical);
     assert.equal((await library.get(shared.hash)).source, 'lobby', 'kept in the library');
     assert.equal(root.querySelector('.online-map-offer'), null);
-    assert.equal(ui.readyBtn.disabled, false);
+    assert.equal(ui.readyCtl.input.disabled, false);
     // Next time this map comes up, it is ready at once (from the library, checked again).
     ui.installed.clear();
     lobby(null);
@@ -234,13 +242,11 @@ test('online lobby: the host shares a map from its library and sees who lacks it
     lobby(null);
     responses.push({ status: 200, body: '[]' });
     await ui.loadServerMaps();
-    const picker = root.querySelector('.online-map select');
-    const group = [...picker.querySelectorAll('optgroup')].find((g) => g.label === 'My maps');
-    assert.ok(group, 'the host sees its own maps');
-    assert.deepEqual([...group.querySelectorAll('option')].map((o) => o.value), [`mine:${mine.hash}`]);
+    const picker = ui.mapPicker;
+    assert.ok(root.querySelector('.online-map').contains(picker.root), 'the picker is in the map panel');
+    assert.equal(picker.option(`mine:${mine.hash}`)?.group, 'My maps', 'the host sees its own maps');
     responses.push({ status: 201, body: JSON.stringify({ id: '0123456789abcdef', hash: mine.hash }) });
-    picker.value = `mine:${mine.hash}`;
-    picker.dispatchEvent(new FakeEvent('change'));
+    pick(picker, `mine:${mine.hash}`);
     await until(() => ui.installed.has(mine.hash));
     const post = requests.at(-1);
     assert.equal(post.url, `/api/sessions/${SID}/map`);
@@ -349,11 +355,14 @@ test('rematch: the host proposes, a player accepts or declines from the overlay,
     let returned = 0;
     handle.onLobby = () => returned++;
     assert.equal(handle.action(), null, 'a guest cannot propose');
+    assert.equal(handle.status(), null, 'no proposal, no status');
     handle.run();
     assert.equal(sent.length, 0);
     ui.onRematch({ t: 'rematch', state: 'open', by: 1, accepted: [1], waiting: [2], msLeft: 60000 });
     assert.equal(handle.action(), 'accept');
     assert.equal(handle.label(), 'Accept rematch');
+    // Who proposed and every player's answer (js/endgame.js).
+    assert.deepEqual(handle.status(), { by: 'Host', voters: [{ name: 'Host', accepted: true }, { name: 'Guest', accepted: false }] });
     assert.match(logText(ui), /Host proposes a rematch with the same settings/);
     assert.match(textOf(ui.rematchBar), /Host proposes a rematch/);
     const [accept, decline] = [...ui.rematchBar.querySelectorAll('button')];
@@ -573,9 +582,11 @@ test('a lobby that resumes a save shows it and keeps the saved settings', async 
     assert.match(textOf(ui.resumeBox), /Waiting for its players: Guest/);
     assert.equal(root.querySelectorAll('i').length, 0);
     assert.equal(ui.resumeBox.hidden, false);
-    for (const c of [...root.querySelectorAll('.online-options select')]) assert.equal(c.disabled, true, 'options stay as saved');
+    const plates = Object.values(ui.optionControls).filter((c) => c.button);
+    assert.ok(plates.length > 5);
+    for (const c of plates) assert.equal(c.button.disabled, true, 'options stay as saved');
     assert.equal([...root.querySelectorAll('.online-slots button')].some((b) => b.textContent === 'Take'), false);
-    assert.equal(root.querySelector('.online-map select'), null, 'no map picker');
+    assert.equal(root.querySelector('.online-map .ui-select-plate'), null, 'no map picker');
   } finally {
     uninstallDom();
   }
@@ -604,11 +615,9 @@ test('online lobby: the host picks a co-op mission; places are the mission playe
       spectators: [],
       maxSpectators: 2,
     });
-    const picker = root.querySelector('.online-map select');
-    const group = [...picker.querySelectorAll('optgroup')].find((g) => g.label === 'Co-op missions');
-    assert.deepEqual([...group.querySelectorAll('option')].map((o) => o.value), COOP_MISSIONS.map((m) => `mission:${m.id}`));
-    picker.value = 'mission:evacuation';
-    picker.dispatchEvent(new FakeEvent('change'));
+    const picker = ui.mapPicker;
+    for (const m of COOP_MISSIONS) assert.equal(picker.option(`mission:${m.id}`)?.group, 'Co-op missions');
+    pick(picker, 'mission:evacuation');
     await settle();
     const mission = { id: 'evacuation', hash: evac.hash, options: { difficulty: 'normal' } };
     assert.deepEqual(sent.at(-1), { t: 'mission', mission });
@@ -633,14 +642,15 @@ test('online lobby: the host picks a co-op mission; places are the mission playe
     assert.match(textOf(root.querySelector('.online-map')), /Evacuation \(2 players\)/);
     assert.match(textOf(root.querySelector('.online-map')), /Get them out\./);
     // No computer players, no skirmish options but the game speed.
-    const typeChoices = [...root.querySelectorAll('.online-slot select')].flatMap((s) => [...s.querySelectorAll('option')].map((o) => o.value));
-    assert.ok(!typeChoices.includes('ai'), typeChoices.join(','));
+    const types = ui.slotPlates.filter((p) => p.button.dataset.ctl.endsWith(':type'));
+    assert.ok(types.length > 0);
+    for (const t of types) assert.equal(t.option('ai'), null, 'no computer players');
     assert.equal(ui.optionWorld.hidden, true);
     assert.equal(ui.optionRows.gameSpeed.hidden, false);
     // The host picks the difficulty.
-    const difficulty = root.querySelectorAll('.online-mission select')[0];
-    difficulty.value = 'easy';
-    difficulty.dispatchEvent(new FakeEvent('change'));
+    const difficulty = ui.missionPlates[0];
+    assert.ok(root.querySelector('.online-mission').contains(difficulty.root));
+    pick(difficulty, 'easy');
     assert.deepEqual(sent.at(-1), { t: 'mission', mission: { ...mission, options: { difficulty: 'easy' } } });
   } finally {
     uninstallDom();

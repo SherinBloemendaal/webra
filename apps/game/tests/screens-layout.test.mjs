@@ -70,11 +70,12 @@ const ROOT = base(':root');
 const SCREENS = [
   ['style.css', '#menu'],
   ['online.css', '#online-root'],
+  ['friends.css', '#friends-root'],
   ['campaign.css', '#campaign-root'],
   ['endgame.css', '#stats-screen'],
 ];
 
-const CARDS = ['#menu .lobby', '.start-nav', '.online-page', '.campaign-page', '.menu-card.stats-card', '.records-dialog.records-screen'];
+const CARDS = ['#menu .lobby', '.start-nav', '.online-page', '.friends-page', '.campaign-page', '.menu-card.stats-card', '.records-dialog.records-screen'];
 
 test('screens: one gap token, 12 to 24 px by the window, 8 px on phones, never inside the safe area', () => {
   const gap = ROOT['--ui-screen-gap'];
@@ -241,10 +242,11 @@ test('corner parts: the online and campaign cards end above Sound and Original c
 });
 
 test('server browser: the session list takes the height of the card, its status under it', () => {
-  const list = base('.online-page > .online-sessions');
-  assert.equal(list.flex, '1 0 auto');
+  assert.equal(base('.online-browser-body').flex, '1 0 auto', 'the list and the detail panel take the height');
+  const list = base('.online-browser-body > .online-sessions');
+  assert.equal(base('.online-browser-body')['align-items'], 'stretch', 'the list well is as tall as the body');
   assert.equal(list['align-content'], 'start', 'rows stay at the top of the well');
-  assert.ok(ALL.some((r) => r.sel === '.online-page > .online-sessions + .online-muted'));
+  assert.ok(ALL.some((r) => r.sel === '.online-page > .online-browser-body + .online-muted'));
 });
 
 test('statistics graph: time labels at least 80 px apart, at most 12 however wide the screen', () => {

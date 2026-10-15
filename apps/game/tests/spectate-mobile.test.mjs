@@ -142,12 +142,15 @@ test('touch screens get a Chat button (no Enter key); the chat says how to open 
   assert.equal(chatTip({ bindingsFor: () => [] }, false).hotkey, null);
 });
 
-test('the session list on phones: Join and Watch get a row of their own, side by side', () => {
-  const action = RULES.find(([s, , q]) => s === '.online-row > .online-cell:last-child' && q === '(max-width: 760px)');
-  assert.equal(action?.[1]['grid-column'], '1 / -1');
-  assert.equal(action[1].display, 'flex');
-  const buttons = RULES.find(([s, , q]) => s === '.online-row > .online-cell:last-child > button' && q === '(max-width: 760px)');
+test('the session list on phones: the name on a line of its own; Join and Spectate side by side, easy to tap', () => {
+  const name = RULES.find(([s, , q]) => s === '.online-session > .online-cell-name' && q === '(max-width: 760px)');
+  assert.equal(name?.[1]['grid-column'], '1 / -1');
+  // The actions are in the detail panel (under the list on narrow cards), side by side.
+  const actions = RULES.find(([s, , q]) => s === '.online-detail-actions' && !q);
+  assert.equal(actions?.[1].display, 'flex');
+  const buttons = RULES.find(([s, , q]) => s === '.online-detail-actions > .online-btn' && !q);
   assert.equal(buttons?.[1].flex, '1');
+  assert.equal(buttons?.[1]['min-height'], '44px');
   const coarse = RULES.find(([s, , q]) => s === '.online-btn' && q === '(pointer: coarse)');
   assert.match(coarse?.[1]['min-height'] ?? '', /44px/, 'the buttons are touch targets');
 });

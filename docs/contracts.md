@@ -1364,6 +1364,66 @@ heartbeat in the last PRESENCE_ONLINE_MS (accounts API 5.11, whatever their
 members of sessions; `lobbies` and `games` count sessions (public or not)
 in each phase.
 
+### Online screens and friends in the game (`apps/game/js/online.js`, `online-view.js`, `online-dialog.js`, `friends-ui.js`)
+
+What the screens show is worked out in `online-view.js` (no DOM, tested
+with fixtures in `tests/onlineui.test.mjs` and `tests/friends-ui.test.mjs`).
+
+- **Server browser**: the online counter (`/api/online`) and this
+  browser's round trip to the Worker (`/api/version`, one per refresh) in the
+  header; search (name, host, map), the filter All, Open, Friends (sessions a
+  friend is in, from the friends list; signed-in players only) and In
+  progress, and Hide full (full lobbies; running games are their own
+  filter), all client side. The list is a grid (Up, Down, Home, End choose a
+  row, Enter joins it or watches a running or full one); the chosen session's
+  detail panel shows the players from `summary` with their team colour, the
+  open places, option chips and Join or Spectate. Rows of another game
+  version cannot be joined.
+- **Join with a code**: six cells over one text field (the dash by itself,
+  0/O and 1/I/L dropped), a pasted `/join/<code>` or `?invite=` link, or an
+  older long `?join=<session id>` link. A complete code is looked up
+  (`invites.js lookupInvite`) and shows the lobby, or Unknown, Expired, Full
+  (then "Join as spectator") or another version. A code never skips a
+  password. The page opened with `?invite=` opens it with the code.
+- **Host game**: name, Public or Private, a password switch, Players and
+  Spectator places steppers and the map (generated, the host's maps,
+  community maps, co-op missions). The spectator places and the map are the
+  first lobby messages after `welcome`; a private lobby gets an invite code
+  at once.
+- **Online lobby**: PUBLIC or PRIVATE and PASSWORD (`welcome.session.locked`)
+  under the name; the player's own connection top right; the Connection
+  column (four bars, the round trip and "jitter, loss" from `netstat`; AI and
+  empty slots none); a warning bar when someone is poor (the worst named,
+  Test again for everyone, Kick for the host, never for itself); Start game
+  asks "Start anyway?" when someone is poor and never refuses; "I'm ready" is
+  a switch and the status line names who is not ready. Invite players shows
+  the code (`lobby.invite`), Copy code, Copy link, the time left, New code
+  (host), the long session link and friends to invite. The NetQuality object
+  of the lobby goes on into the game, started with `beginGame()`, as
+  `onStartGame({ net })` (`online.js gameNet`, null outside online games):
+  `{ quality, source, roster, you, players() }` with `quality` and `source`
+  the same NetQuality (the HUD's js/netwarn.js reads `quality`, the game
+  menu's js/netmenu.js `source`), `roster` the people of the start message
+  `[{ client, player, name }]` (AI left out), `you` this member's client id
+  (also for spectators, who are not in the roster) and `players()` the roster
+  as `[{ client, name, color }]` with each player's colour as CSS (null when
+  unknown). main.js hands it to the game as `online.net`.
+- The online screens and the friends screen share one friends store per page
+  (`friends-ui.js sharedFriendsStore`); it polls while either shows
+  (`useFriendsStore`). The friends screen closes when a game starts and then
+  leaves the lobby hidden behind the game. Confirmations focus Cancel.
+- **Friends screen** (`#friends-root`, signed-in players; the main menu's
+  Friends entry and a Friends button on the online screens): the list by
+  status (in a game, online with lobby and away, offline) with Join
+  (`joinable`), Spectate (`spectatable`) and Invite (only while this player
+  is in a lobby; Sent once invited), More with Remove friend and Block (each
+  asked first), Add a friend, invites from friends with Join and Dismiss,
+  requests (Accept, Ignore, Withdraw), the privacy switches (`social.*`
+  settings) and the blocked players with Unblock. It polls the list while it
+  shows; the presence heartbeat runs while a player is signed in.
+- Every select of these screens is a select plate; the bulk edit bar and the
+  game mode picker keep their own (`lobby-bulkbar.js`, `modepicker.js`).
+
 ### Start positions
 
 OpenRA's lobby spawn selection (`LobbyUtils.SelectSpawnPoint`, the `spawn`
@@ -3639,7 +3699,8 @@ the rules below.
 - **Screens**: the start screen (main menu bar over the skirmish setup,
   `#menu`), online play (server browser and online lobby, `#online-root`),
   the campaign's mission browser (`#campaign-root`), the end-game
-  statistics (`#stats-screen`, over the dimmed battlefield) and Load game
+  statistics (`#stats-screen`, over the dimmed battlefield), the friends
+  screen (`#friends-root`, over the start or online screen) and Load game
   (`js/records.js` `dialog(..., { screen: true })`). Their cards have no
   width cap; the screen pads them by `--ui-screen-pad` (theme.css), and the
   card stretches to the rest of the window, its footer bar at the bottom

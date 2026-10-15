@@ -64,18 +64,34 @@
   min-width: 0;
 }
 
-/* The server browser: the session list is a well that takes the rest of the
-   card's height; its status line sits under it, at the bottom. */
-.online-page > .online-sessions {
+.online-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The server browser: the session list (a well) and the detail panel take
+   the rest of the card's height; the status line sits under them, at the
+   bottom. The panel goes under the list when the card is narrow. */
+.online-browser-body {
   flex: 1 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.online-browser-body > .online-sessions {
+  flex: 3 1 560px;
   align-content: start;
-  min-height: calc(6 * 36px);
-  padding: 2px;
+  min-width: 0;
+  min-height: calc(6 * 44px);
+  padding: 0;
   background: var(--o-field);
   border: 1px solid var(--o-edge);
 }
 
-.online-page > .online-sessions + .online-muted {
+.online-page > .online-browser-body + .online-muted {
   margin: 8px 0 0;
 }
 
@@ -301,7 +317,8 @@
 }
 
 .online-slot {
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 1.2fr);
+  /* Player, faction, colour, team (handicap, start), connection, ready and the host's slot choice. */
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(7.5em, 0.9fr) minmax(0, 1.2fr);
 }
 
 .online-row-head {
@@ -317,13 +334,18 @@
   overflow-wrap: anywhere;
 }
 
-.online-cell .online-select + .online-select {
-  /* The handicap under the team (OpenRA's lobby column). */
+.online-cell .ui-select-plate + .ui-select-plate {
+  /* The handicap and the start under the team (OpenRA's lobby column). */
   margin-top: 4px;
 }
 
-.online-cell .online-select {
+.online-cell .ui-select-plate {
   width: 100%;
+  min-width: 0;
+}
+
+.online-cell-player .ui-select-plate {
+  flex: 1 1 8em;
 }
 
 .online-cell-player {
@@ -512,9 +534,20 @@
   border-top: 1px solid var(--o-edge);
 }
 
-.online-bar .online-muted {
+.online-bar-line {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ui-text-2);
+  overflow-wrap: anywhere;
+}
+
+.online-bar .online-ready-row {
+  min-height: 0;
   margin: 0;
+  gap: 12px;
 }
 
 /* ---- Dialogs ------------------------------------------------------------ */
@@ -591,15 +624,14 @@
     display: none;
   }
 
-  /* The session list's Join and Watch: a row of their own, side by side, easy to tap. */
-  .online-row > .online-cell:last-child {
+  /* The connection of a slot gets a line of its own. */
+  .online-slot > .online-cell-net {
     grid-column: 1 / -1;
-    display: flex;
-    gap: 8px;
   }
 
-  .online-row > .online-cell:last-child > button {
-    flex: 1;
+  .online-self-net {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 
@@ -688,5 +720,625 @@
   .online-btn-small {
     min-height: 44px;
     padding: 0 12px;
+  }
+}
+
+/* ---- Server browser (the Multiplayer board) ------------------------------------ */
+
+.online-presence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 4px 0 0;
+  font: 400 var(--ui-fs-m) / 1.3 var(--ui-font-mono);
+  color: var(--ui-muted);
+}
+
+.online-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-ok);
+}
+
+.online-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  box-shadow: var(--ui-bevel);
+}
+
+.online-toolbar > .online-field {
+  flex: 0 1 200px;
+}
+
+.online-toolbar .online-search {
+  flex: 1 1 260px;
+  min-height: var(--ctl-row, 2.25rem);
+}
+
+.online-toolbar .online-hide-full {
+  min-height: 0;
+  margin: 0;
+  gap: 10px;
+}
+
+.online-session {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.7fr) 5em;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 16px;
+  background: transparent;
+  border-left: 0;
+  cursor: pointer;
+}
+
+.online-sessions > .online-row-head {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.7fr) 5em;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--ui-metal-1);
+}
+
+.online-session:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: -2px;
+}
+
+.online-cell-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.online-session-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.online-session-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.online-session-host {
+  font-size: var(--ui-fs-s);
+  color: var(--ui-muted);
+}
+
+.online-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.online-cell-mode {
+  font: 600 var(--ui-fs-m) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.online-cell-num {
+  font-family: var(--ui-font-mono);
+}
+
+.online-session-full,
+.online-session-ingame {
+  color: var(--ui-text-2);
+}
+
+/* The chosen session: a red panel with a hazard stripe on top. */
+.online-detail {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  align-self: start;
+  padding: 0 16px 16px;
+  background: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-accent);
+  box-shadow:
+    var(--ui-bevel),
+    0 0 18px -8px var(--ui-accent-glow);
+}
+
+.online-detail-stripe {
+  height: 6px;
+  margin: 0 -16px;
+  background: var(--ui-hazard);
+}
+
+.online-detail-title {
+  margin: 0;
+  font: 700 var(--ui-fs-title) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.online-detail-sub {
+  margin: 4px 0 0;
+  color: var(--ui-muted);
+}
+
+.online-detail-players {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.online-detail-player {
+  min-height: 36px;
+}
+
+.online-detail-player.is-open {
+  color: var(--ui-muted);
+  background: var(--ui-metal-0);
+}
+
+.online-detail-team {
+  justify-self: end;
+  color: var(--ui-muted);
+}
+
+.online-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.online-chip {
+  padding: 3px 8px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-metal-4);
+  color: var(--ui-muted);
+  font: 700 var(--ui-fs-s) / 1.3 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.online-detail-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.online-detail-actions > .online-btn {
+  flex: 1;
+  min-height: 44px;
+}
+
+.online-detail-actions > .online-btn-primary {
+  flex: 2;
+}
+
+/* ---- Host dialog (the HostGame board) ------------------------------------------ */
+
+.online-host-steppers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.online-hint {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.online-host-dialog .ui-row-switch {
+  margin: 0;
+}
+
+/* ---- Lobby: own connection, Connection column, warning bar (the NetLobby board) ---- */
+
+.online-lobby-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+}
+
+.online-self-net {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+}
+
+.online-self-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.online-self-title {
+  font: 700 var(--ui-fs-m) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.online-self-detail {
+  font: 400 var(--ui-fs-s) / 1.3 var(--ui-font-mono);
+  color: var(--ui-muted);
+}
+
+/* Four bars, the lit ones in the quality's colour; the word next to them is the second signal. */
+.online-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+  flex: none;
+}
+
+.online-bar {
+  width: 4px;
+  background: var(--ui-metal-4);
+}
+
+.online-bar:nth-child(1) {
+  height: 5px;
+}
+
+.online-bar:nth-child(2) {
+  height: 8px;
+}
+
+.online-bar:nth-child(3) {
+  height: 12px;
+}
+
+.online-bar:nth-child(4) {
+  height: 16px;
+}
+
+.online-q-good .online-bar.is-lit {
+  background: var(--ui-ok);
+}
+
+.online-q-fair .online-bar.is-lit {
+  background: var(--ui-warn);
+}
+
+.online-q-poor .online-bar.is-lit {
+  background: var(--ui-led-bad);
+}
+
+.online-q-good .online-self-title,
+.online-q-good .online-net-ms {
+  color: var(--ui-ok);
+}
+
+.online-q-fair .online-self-title,
+.online-q-fair .online-net-ms {
+  color: var(--ui-warn);
+}
+
+.online-q-poor .online-self-title,
+.online-q-poor .online-net-ms {
+  color: var(--ui-accent-hi);
+}
+
+.online-cell-net {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.online-cell-net.is-empty {
+  visibility: hidden;
+}
+
+.online-net-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.online-net-ms {
+  font: 600 var(--ui-fs-m) / 1.2 var(--ui-font-mono);
+}
+
+.online-net-detail {
+  font: 400 var(--ui-fs-xs) / 1.3 var(--ui-font-mono);
+  color: var(--ui-muted);
+}
+
+.online-slot:has(.online-q-poor) {
+  background: color-mix(in srgb, var(--ui-led-bad) 14%, var(--o-panel));
+}
+
+.online-players {
+  display: grid;
+  gap: 8px;
+}
+
+.online-net-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--ui-led-bad) 16%, var(--ui-metal-0));
+  border: 1px solid var(--ui-led-bad-edge);
+  border-left: 4px solid var(--ui-led-bad);
+}
+
+.online-net-warning[hidden] {
+  display: none;
+}
+
+.online-net-warning-text {
+  flex: 1 1 280px;
+  max-width: var(--ui-measure);
+  color: var(--ui-text);
+}
+
+.online-net-warning-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Invite players (the InviteCode board) -------------------------------------- */
+
+.online-invite-code {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.online-invite-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.online-invite-value {
+  padding: 4px 12px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  font: 600 22px / 1.2 var(--ui-font-mono);
+  letter-spacing: 0.12em;
+  color: var(--ui-text);
+  user-select: all;
+}
+
+.online-invite-line .online-btn-small,
+.online-invite-code > .online-btn-small {
+  margin-left: 0;
+}
+
+.online-invite-long {
+  margin: 10px 0 0;
+}
+
+.online-invite-status:empty {
+  display: none;
+}
+
+.online-invite-sub {
+  margin: 12px 0 6px;
+  font: 600 var(--ui-fs-label) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.online-invite-friends {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.online-invite-friend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 8px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+}
+
+.online-invite-who {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---- Join with a code (the InviteCode board) ------------------------------------ */
+
+.invite-code {
+  position: relative;
+}
+
+.invite-code-cells {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.invite-code-cell {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 52px;
+  background: #06080a;
+  border: 1px solid var(--ui-edge);
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.6);
+  font: 600 26px / 1 var(--ui-font-mono);
+  color: var(--ui-text);
+}
+
+.invite-code-dash {
+  align-self: center;
+  width: 14px;
+  text-align: center;
+  font: 600 22px / 1 var(--ui-font-mono);
+  color: var(--ui-dim);
+}
+
+/* The next cell to fill, while the field has the focus. */
+.invite-code.is-focused .invite-code-cell.is-next {
+  border-color: var(--ui-accent);
+}
+
+.invite-code.is-focused .invite-code-cell.is-next::after {
+  content: '_';
+  color: var(--ui-accent-hi);
+}
+
+.invite-code.is-focused {
+  outline: var(--ui-focus-ring);
+  outline-offset: 4px;
+}
+
+/* The real field lies over the cells: a tap opens the keyboard, a paste works. */
+.invite-code-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  font-size: 16px;
+  cursor: text;
+}
+
+/* A long session link: shown as text in the field instead of the cells. */
+.invite-code.is-session .invite-code-cells {
+  visibility: hidden;
+}
+
+.invite-code.is-session .invite-code-input {
+  opacity: 1;
+  padding: 0 10px;
+  background: #06080a;
+  border: 1px solid var(--ui-edge);
+  color: var(--ui-text);
+  font: 400 var(--ui-fs-s) / 1 var(--ui-font-mono);
+}
+
+.invite-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 3.2em;
+  padding: 10px 12px;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+}
+
+.invite-result-idle {
+  visibility: hidden;
+}
+
+.invite-result-lobby {
+  border-left: 4px solid var(--ui-ok);
+}
+
+.invite-result-full {
+  border-left: 4px solid var(--ui-warn);
+}
+
+.invite-result-error {
+  border-left: 4px solid var(--ui-led-bad);
+}
+
+.invite-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.invite-result-title {
+  font: 700 var(--ui-fs-section) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+}
+
+.invite-result-sub {
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+p.invite-result-error,
+p.invite-result-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--ui-text-2);
+}
+
+@media (forced-colors: active) {
+  .online-bar {
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+
+  .online-bar.is-lit {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .online-net-warning,
+  .online-detail,
+  .invite-code-cell,
+  .invite-result {
+    border: 1px solid CanvasText;
+  }
+
+  .invite-code.is-focused .invite-code-cell.is-next {
+    border: 2px solid Highlight;
+  }
+}
+
+@media (pointer: coarse) {
+  .online-session {
+    min-height: 56px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* A session: the name on a line of its own, then map, mode and players. */
+  .online-session {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding: 8px 12px;
+  }
+
+  .online-session > .online-cell-name {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 420px) {
+  .invite-code-cell {
+    width: 36px;
+    height: 46px;
+    font-size: 22px;
   }
 }
