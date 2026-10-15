@@ -71,7 +71,8 @@ body.touch .net-bars {
 .net-warning {
   position: absolute;
   left: 50%;
-  top: calc(34 * var(--ui-px));
+  /* Under the time limit clock (css/theme.css .battle-time-limit, top 8, one line) with room to spare. */
+  top: calc(48 * var(--ui-px));
   z-index: 27;
   display: flex;
   align-items: center;
@@ -148,10 +149,11 @@ body.touch .net-warning-close {
 
 /* ---- Waiting for a player ------------------------------------------------------ */
 
+/* Under the chat (css/chat.css, z 20) and the one-time tips (z 26), which stay usable while the game waits. */
 .net-waiting-dim {
   position: absolute;
   inset: 0;
-  z-index: 28;
+  z-index: 18;
   background: rgba(4, 5, 6, 0.55);
   pointer-events: none;
 }
@@ -160,7 +162,7 @@ body.touch .net-warning-close {
   position: absolute;
   left: 50%;
   top: 50%;
-  z-index: 29;
+  z-index: 19;
   display: flex;
   flex-direction: column;
   width: min(calc(460 * var(--ui-px)), calc(100% - 32 * var(--ui-px)));

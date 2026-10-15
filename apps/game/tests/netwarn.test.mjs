@@ -234,8 +234,10 @@ test('NetWarn: the bars follow the own measurement, their label says it in words
     // net.signalBars off: the bars go.
     registry.set('signalBars', false);
     assert.equal(bars.hidden, true);
+    assert.equal(status.hidden, true, 'the place next to the clock goes too (no gap)');
     registry.set('signalBars', true);
     assert.equal(bars.hidden, false);
+    assert.equal(status.hidden, false);
   } finally {
     net.dispose();
     uninstallDom();

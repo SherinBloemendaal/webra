@@ -134,6 +134,13 @@
   cursor: not-allowed;
 }
 
+/* Touch screens cannot read a dark button's tooltip (a long press on a
+   disabled button does nothing): where the page cannot go fullscreen the
+   button is left out there, and the game menu's Settings say why. */
+body.touch #sidebar .sb-tool-fullscreen:disabled {
+  display: none;
+}
+
 /* ---- Radar slot ------------------------------------------------------------
    The minimap (another module) draws inside #radar: a well with RADAR in its
    corner. While it is empty the slot shows a dark radar screen with "Radar

@@ -388,6 +388,8 @@ export class NetWarn {
     if (this.barsEl) {
       const s = signalState(this.self);
       this.barsEl.hidden = !this.settings.signalBars;
+      // The whole place next to the clock goes, so no gap is left before it.
+      if (this.slot.hidden === this.settings.signalBars) this.slot.hidden = !this.settings.signalBars;
       this.barsEl.dataset.level = s.level;
       this.barEls.forEach((b, i) => b.classList.toggle('lit', i < s.bars));
       if (this.barsEl.getAttribute('aria-label') !== s.label) this.barsEl.setAttribute('aria-label', s.label);
@@ -456,6 +458,7 @@ export class NetWarn {
     this.timers.clearInterval(this.timer);
     this.barsTip?.detach();
     this.barsEl?.remove();
+    if (this.slot) this.slot.hidden = false;
     this.warnEl.remove();
     this.panelEl.remove();
     this.dimEl.remove();

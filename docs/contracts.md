@@ -3517,11 +3517,34 @@ production (clicks, holds, cancels, queue counts, the red funds marker of
   bars.
 
 **Connection parts of an online game** (`NetWarn`, docs/redesign-uitwerking.md
-29). js/main.js makes one when `online.net` is given: js/online.js passes
-`net: { quality, roster, you }` to `onStartGame` (`quality`: the session's
-NetQuality, js/netquality.js, which lives on across the lobby and the game;
-`roster`: the start message's players `[{ client, player, name }]`; `you`:
-this member's client id). Single player, skirmish and replays have none.
+29). The wiring comes from three branches besides this one (work/hud):
+
+- work/netround provides the data: `js/netquality.js` (`NetQuality`, which
+  measures with `ping`/`pong` and reads `netstat` and the server's `waiting`
+  message, section 4 "Network quality").
+- work/onlineui hands the game one network object as `onStartGame`'s `net`
+  (js/online.js `gameNet`): `{ quality, source, roster, you, players() }`.
+  `quality` and `source` are the session's NetQuality (the same object; it
+  lives on from the lobby into the game), `roster` the start message's people
+  `[{ client, player, name }]` (AI players left out), `you` this member's
+  client id, `players()` the roster with colours for the game menu. js/main.js
+  makes a NetWarn when `online.net.quality` is there and passes it `quality`,
+  `roster` and `you`; single player, skirmish and replays have none.
+- work/escmenu listens on the window for `OPEN_NETWORK_EVENT` and opens the
+  game menu on its Network tab.
+
+The quality interface NetWarn relies on (js/netquality.js `NetQuality`, the
+only place it is defined; tests use a stand-in with the same shape):
+
+| Member | Shape |
+|---|---|
+| `on(type, fn)` | subscribes; returns the function that unsubscribes |
+| `'self'` event, `self` field | `{ rtt, jitter, late, quality, bars, poorSince, sent, latePings }`: rtt and jitter in ms or null, late in percent or null, quality `'good' \| 'fair' \| 'poor' \| null`, bars 4, 3, 1 or 0 (netBars) |
+| `'players'` event, `players` field | `Map<client, { client, rtt, jitter, late, silent, quality, bars, you }>` (silent: ms since the last ping when over 5 s, else null) |
+| `'waiting'` event, `waiting` field | `{ client, heldMs, dropInMs, at }` (at: `Date.now()` when it arrived) or null when the game runs again |
+
+NetWarn reads the three fields once when it is made and then follows the
+events; its clock is `Date.now()`, the same as `waiting.at`.
 
 - **Signal bars** (players only, in the sidebar): 4 bars lit by NetQuality's
   own `self.bars` (4 good, 3 fair, 1 poor, 0 measuring), the level as
