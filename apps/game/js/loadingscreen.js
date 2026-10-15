@@ -6,6 +6,12 @@
 // nothing beyond a few DOM writes. A start that fails shows its error with
 // a button back.
 //
+// While it shows it is a modal dialog: the rest of the page is inert (the
+// game behind it, its menu and end of game dialog), the focus stays in the
+// card, and keys stop at the screen, so neither Tab and Enter nor a game
+// hotkey (Esc and the menu) reach what it covers. FirstFrameGuard ends the
+// screen with an error when the game stops before its first frame.
+//
 // One screen card like the menu screens (css/loading.css): the grid shows
 // around it. The spinner and the bar stand still with "Reduce motion" (the
 // setting or the browser's). While loading the section is aria-busy, the
@@ -105,12 +111,45 @@ export class LoadingScreen {
     this.index = -1;
     /** The element that had the focus before the screen took it (given back when the screen closes without a game). */
     this.before = null;
+    /** The page's other parts made inert while the screen shows, with whether they were inert before. */
+    this.covered = [];
     root.hidden = true;
     root.classList.add('loading-screen');
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'loading-title');
     this.card = el(doc, 'div', 'menu-card loading-card');
     this.card.tabIndex = -1;
     root.replaceChildren(this.card);
+    // Keys stop here: Tab cycles within the card, nothing reaches the game's hotkeys behind it.
+    root.addEventListener('keydown', (e) => this.onKey(e));
+  }
+
+  onKey(e) {
+    if (this.root.hidden) return;
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const stops = [this.card, ...this.card.querySelectorAll('button')];
+      const i = stops.indexOf(this.doc.activeElement);
+      const next = stops[(i + (e.shiftKey ? stops.length - 1 : 1) + stops.length) % stops.length] ?? this.card;
+      next.focus?.({ preventScroll: true });
+    }
+    e.stopPropagation();
+  }
+
+  /** The screen came up: everything else on the page goes inert (as it was before, once the screen goes). */
+  cover() {
+    if (this.covered.length) return;
+    const parent = this.root.parentNode;
+    for (const node of parent?.children ?? []) {
+      if (node === this.root) continue;
+      this.covered.push([node, !!node.inert]);
+      node.inert = true;
+    }
+  }
+
+  uncover() {
+    for (const [node, was] of this.covered.splice(0)) node.inert = was;
   }
 
   /** Whether a start is on screen (loading, not failed). */
@@ -155,6 +194,7 @@ export class LoadingScreen {
     this.root.classList.remove('is-failed');
     this.root.setAttribute('aria-busy', 'true');
     this.root.hidden = false;
+    this.cover();
     this.card.focus?.({ preventScroll: true });
     this.step(this.steps[0]?.id);
   }
@@ -202,6 +242,7 @@ export class LoadingScreen {
     this.root.setAttribute('aria-busy', 'false');
     this.root.classList.add('is-failed');
     this.root.hidden = false;
+    this.cover();
     const title = el(doc, 'h1', 'loading-title', 'Could not start');
     title.id = 'loading-title';
     const text = el(doc, 'p', 'loading-error', message);
@@ -223,8 +264,56 @@ export class LoadingScreen {
     this.root.setAttribute('aria-busy', 'false');
     this.root.classList.remove('is-failed');
     this.card.replaceChildren();
+    this.uncover();
     const back = this.before;
     this.before = null;
     if (back?.isConnected) back.focus?.({ preventScroll: true });
+  }
+}
+
+/**
+ * The loading screen's end for one game (js/main.js runGame): the first
+ * drawn frame closes it (`drawn`), and a game that stops before that (the
+ * simulation failed, its frame threw) shows the error with the way back to
+ * the menu instead of a screen that loads forever.
+ */
+export class FirstFrameGuard {
+  /**
+   * @param {{ screen: LoadingScreen, stop: () => void, back: () => void }} o
+   *   `stop`: the game's loop stops; `back`: back to the menu (the page reloads)
+   */
+  constructor({ screen, stop, back }) {
+    this.screen = screen;
+    this.stop = stop;
+    this.back = back;
+    this.drawn = false;
+  }
+
+  /** The first frame was drawn: the screen goes. */
+  firstFrame() {
+    if (this.drawn) return;
+    this.drawn = true;
+    this.screen.done();
+  }
+
+  /** The game stopped with `message`. Before its first frame: the loop stops and the screen fails (true); after it, false. */
+  fail(message) {
+    if (this.drawn) return false;
+    this.drawn = true;
+    this.stop();
+    this.screen.fail(message, { label: 'Back to the menu', run: () => this.back() });
+    return true;
+  }
+
+  /** Run a frame: before the first one is drawn, an error in it ends the start; later ones throw as before. */
+  run(fn) {
+    if (this.drawn) return fn();
+    try {
+      return fn();
+    } catch (err) {
+      console.error('The game stopped before its first frame:', err);
+      if (!this.fail(`The game stopped while it started: ${err?.message ?? err}`)) throw err;
+      return undefined;
+    }
   }
 }

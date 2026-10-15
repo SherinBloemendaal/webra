@@ -104,7 +104,7 @@ import { TargetLines, withTargetLines } from './targetlines.js';
 import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
-import { LoadingScreen, loadingPlan } from './loadingscreen.js';
+import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
 import { GameSession } from './gamesession.js';
 
 const PLAYER = 0;
@@ -2340,9 +2340,24 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     if (online) host.command('hidden', [document.hidden]).catch(() => {});
   });
   // The worker stopped (an engine error): the game cannot go on.
+  // The frame loop (started at the end of the setup) and the loading screen
+  // until its first drawn frame (js/loadingscreen.js): a game that stops
+  // before that fails the screen instead of loading forever.
+  let stopped = false;
+  let rafId = 0;
+  const firstFrame = new FirstFrameGuard({
+    screen: loader,
+    stop: () => {
+      leaving = true;
+      stopped = true;
+      cancelAnimationFrame(rafId);
+    },
+    back: () => location.reload(),
+  });
+  // Before the first frame the loading screen says so (with the way back to the menu), else a toast.
   host.on('failed', (message) => {
     leaving = true;
-    showToast(`The game stopped: ${message}`);
+    if (!firstFrame.fail(`The game stopped while it started: ${message}`)) showToast(`The game stopped: ${message}`);
   });
   const download = recordActions.find((a) => a.id === 'replay');
   /** The statistics screen's buttons (the rematch button follows the proposal). */
@@ -2475,6 +2490,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
 
   function frame(now) {
     if (stopped) return;
+    // Until the first frame is drawn, an error here ends the start on the loading screen (FirstFrameGuard).
+    firstFrame.run(() => frameBody(now));
+  }
+
+  function frameBody(now) {
     const frameStart = performance.now();
     perfFirstFrame();
     const rawDt = now - last;
@@ -2615,10 +2635,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     const drawMs = performance.now() - drawStart;
     renderer.measure = null;
     // The game's start ends with its first drawn frame (js/perfcapture.js startup).
-    if (!firstDrawn) {
-      firstDrawn = true;
+    if (!firstFrame.drawn) {
       perfTrace.endStartup();
-      loader.done();
+      firstFrame.firstFrame();
     }
     battle.frame(fxTick, drawCamera);
     // Read the canvas in the same task as the draw, before it is presented.
@@ -2723,7 +2742,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   }
   // The setup above, until the game loop starts (the first frame ends the start's trace).
   perfTrace.mark('game.setup', performance.now() - setupStart);
-  let firstDrawn = false;
   // The facts of this game for the capture's file (js/perfcapture.js, docs/contracts.md section 10).
   perfGame = {
     host,
@@ -2766,8 +2784,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   session.attach(running);
   scope.add(() => session.detach(running));
   // The loop: stopped first when the game is taken down.
-  let stopped = false;
-  let rafId = 0;
   scope.add(() => {
     stopped = true;
     cancelAnimationFrame(rafId);

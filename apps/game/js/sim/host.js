@@ -32,8 +32,8 @@ const clock = () => (typeof performance !== 'undefined' ? performance.now() : Da
 const NO_F32 = new Float32Array(0);
 const NO_U8 = new Uint8Array(0);
 
-/** Tiny event emitter shared by both hosts. */
-class Events {
+/** Tiny event emitter shared by both hosts (exported for tests of what listens to it). */
+export class Events {
   constructor() {
     this.handlers = new Map();
   }

@@ -250,6 +250,10 @@ test('js/main.js: the game setup puts what outlives a game into its scope, and R
   const next = body.slice(nextAt, body.indexOf('};', nextAt));
   assert.match(next, /session\.replace\(/);
   assert.doesNotMatch(next, /location\.reload\(\)/);
+  // A game that stops before its first frame fails the loading screen instead of leaving it up (FirstFrameGuard).
+  assert.match(body, /host\.on\('failed', \(message\) => \{[^}]*firstFrame\.fail\(/);
+  assert.match(body, /function frame\(now\) \{\s*if \(stopped\) return;[^}]*firstFrame\.run\(\(\) => frameBody\(now\)\);/);
+  assert.match(body, /firstFrame\.firstFrame\(\);/);
   // The campaign's progress is not shadowed by the save loading overlay (a won mission records its progress).
   assert.doesNotMatch(body, /const progress = /);
 });

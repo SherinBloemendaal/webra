@@ -4,9 +4,11 @@
 //
 // The order matters:
 //   1. the loading screen shows at once (js/loadingscreen.js);
-//   2. the game is left: its replay goes to the account as a game the player
-//      left (js/account/replays.js GameReplay.leaving) while its simulation
-//      still runs, and a performance capture ends;
+//   2. the game is left: its loop stops (no more frames or ticks) and input
+//      is suspended, then its replay goes to the account as a game the player
+//      left (js/account/replays.js GameReplay.leaving), encoded by the
+//      simulation, which is still there but stands still, and a performance
+//      capture ends;
 //   3. it is taken down: simulation worker, GPU resources, sound, input,
 //      listeners, timers and its parts of the screen (js/disposer.js);
 //   4. the next game starts with the same settings.

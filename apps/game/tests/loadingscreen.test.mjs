@@ -4,7 +4,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
+import { FirstFrameGuard, LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
+import { Events } from '../js/sim/host.js';
+import { FakeEvent } from './dom-fixtures.mjs';
 import { PerfTrace } from '../js/perfcapture.js';
 import { click, installDom, textOf, uninstallDom } from './dom-fixtures.mjs';
 
@@ -207,4 +209,105 @@ test('a span listener that throws does not break the span it follows', () => {
   trace.endStartup();
   trace.span('atlas.sprites', () => {});
   assert.deepEqual(heard, []);
+});
+
+test('a modal dialog: the page behind is inert while it shows (and as it was after), keys stay on the screen, Tab cycles in the card', () => {
+  const { doc, root, screen, start } = setup();
+  const menu = doc.createElement('section');
+  const ended = doc.createElement('section');
+  ended.inert = true; // inert already: stays so afterwards
+  doc.body.append(menu, ended);
+  assert.equal(root.getAttribute('role'), 'dialog');
+  assert.equal(root.getAttribute('aria-modal'), 'true');
+  screen.begin(loadingPlan('skirmish', { restart: true }));
+  assert.equal(start.inert, true);
+  assert.equal(menu.inert, true);
+  assert.equal(root.inert, undefined, 'the screen itself is not inert');
+  // A key on the screen never reaches the game's hotkeys on the window (Esc would open the menu behind it).
+  let reached = 0;
+  doc.body.addEventListener('keydown', () => reached++);
+  const esc = new FakeEvent('keydown', { key: 'Escape' });
+  screen.card.dispatchEvent(esc);
+  assert.equal(reached, 0);
+  // A failed start: Tab and Shift+Tab stay between the card and its button; Enter on what is behind is impossible.
+  screen.fail('The game stopped while it started: worker failed', { label: 'Back to the menu', run: () => {} });
+  const back = root.querySelector('button');
+  back.focus = () => (doc.activeElement = back);
+  doc.activeElement = back;
+  const tab = new FakeEvent('keydown', { key: 'Tab' });
+  back.dispatchEvent(tab);
+  assert.equal(tab.defaultPrevented, true);
+  assert.equal(doc.activeElement, screen.card);
+  screen.card.dispatchEvent(new FakeEvent('keydown', { key: 'Tab' }));
+  assert.equal(doc.activeElement, back);
+  screen.card.dispatchEvent(new FakeEvent('keydown', { key: 'Tab', shiftKey: true }));
+  assert.equal(doc.activeElement, screen.card);
+  assert.equal(reached, 0);
+  screen.close();
+  assert.equal(start.inert, false);
+  assert.equal(menu.inert, false);
+  assert.equal(ended.inert, true, 'what was inert before stays inert');
+  // The first frame of a game also gives the page back.
+  screen.begin(loadingPlan('skirmish'));
+  assert.equal(menu.inert, true);
+  screen.done();
+  assert.equal(menu.inert, false);
+  uninstallDom();
+});
+
+test('a game that fails before its first frame ends the loading screen with the error and the way back to the menu', () => {
+  const { root, screen } = setup();
+  screen.begin(loadingPlan('skirmish'));
+  // The simulation worker stopped (js/main.js: host.on('failed')).
+  const host = new Events();
+  let stops = 0;
+  let back = 0;
+  const guard = new FirstFrameGuard({ screen, stop: () => stops++, back: () => back++ });
+  host.on('failed', (message) => guard.fail(`The game stopped while it started: ${message}`));
+  host.emit('failed', 'engine panic at tick 0');
+  assert.equal(stops, 1, 'the loop stops');
+  assert.equal(screen.state, 'failed');
+  assert.match(root.querySelector('[role="alert"]').textContent, /engine panic at tick 0/);
+  const button = root.querySelector('button');
+  assert.equal(button.textContent, 'Back to the menu');
+  click(button);
+  assert.equal(back, 1);
+  // A second failure changes nothing.
+  assert.equal(guard.fail('again'), false);
+  uninstallDom();
+});
+
+test('a frame that throws before the first one is drawn ends the start; once drawn, frames throw as before', () => {
+  const { root, screen } = setup();
+  const errors = console.error;
+  console.error = () => {};
+  try {
+    screen.begin(loadingPlan('mission', { missionFile: true }));
+    let stops = 0;
+    const guard = new FirstFrameGuard({ screen, stop: () => stops++, back() {} });
+    // Worker frames not there yet: nothing happens.
+    guard.run(() => {});
+    assert.equal(screen.active, true);
+    guard.run(() => {
+      throw new Error('renderer.draw: device lost');
+    });
+    assert.equal(stops, 1);
+    assert.equal(screen.state, 'failed');
+    assert.match(root.querySelector('[role="alert"]').textContent, /device lost/);
+
+    // A start that draws its first frame: the screen goes, later errors are the frame's own.
+    screen.begin(loadingPlan('skirmish'));
+    const ok = new FirstFrameGuard({ screen, stop: () => stops++, back() {} });
+    ok.run(() => ok.firstFrame());
+    assert.equal(root.hidden, true);
+    assert.throws(() => ok.run(() => {
+      throw new Error('later');
+    }), /later/);
+    assert.equal(ok.fail('the worker stopped later'), false, 'after the first frame the toast says it, not the screen');
+    assert.equal(root.hidden, true);
+    assert.equal(stops, 1);
+  } finally {
+    console.error = errors;
+    uninstallDom();
+  }
 });
