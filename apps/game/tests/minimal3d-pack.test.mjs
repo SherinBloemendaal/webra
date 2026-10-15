@@ -326,6 +326,46 @@ test('a built-in pack that cannot be read leaves the flat art and does not break
   }
   assert.equal(content.enabledPacks().length, 0);
   assert.equal(content.loadError, null);
+  assert.match(content.builtinError, /3D minimal could not be loaded \(minimal3d\.webrapack: offline/);
+});
+
+test('a built-in archive that failed (offline, a server error) is tried again on the next choice or panel open, only what is missing', async () => {
+  let down = new Set([BUILTIN_PACKS[0], BUILTIN_PACKS[2]]);
+  const asked = [];
+  const { content, settings } = system(async (name) => {
+    asked.push(name);
+    if (down.has(name)) throw new Error('503');
+    return name === BUILTIN_PACKS[0] ? tinyPack('3D minimal') : tinyPack(`3D minimal (${name})`, { sprites: undefined, cameos: undefined });
+  });
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    settings.set('graphics', 'webra3d');
+    await content.loaded;
+    await content.reload();
+    assert.equal(content.builtinLoaded, false);
+    assert.match(content.builtinError, /minimal3d\.webrapack: 503; minimal3d-desert\.webrapack: 503/);
+    assert.deepEqual(content.enabledPacks().map((p) => p.manifest.name), ['3D minimal (minimal3d-snow.webrapack)'], 'what did load is used');
+    // Still down: the panel opening tries again and keeps the reason.
+    asked.length = 0;
+    await content.retryBuiltin();
+    assert.deepEqual(asked, [BUILTIN_PACKS[0], BUILTIN_PACKS[2]], 'only the missing archives');
+    assert.ok(content.builtinError);
+    // Back online: choosing 3D minimal again reads the rest, in order.
+    down = new Set();
+    settings.set('graphics', 'webra2d');
+    assert.equal(content.retryBuiltin(), null, 'nothing to retry while 2D minimal is chosen');
+    settings.set('graphics', 'webra3d');
+    await content.loaded;
+    assert.equal(content.builtinLoaded, true);
+    assert.equal(content.builtinError, null);
+    assert.deepEqual(content.enabledPacks().map((p) => p.archive), BUILTIN_PACKS);
+    asked.length = 0;
+    assert.equal(content.retryBuiltin(), null, 'all in: nothing more is fetched');
+    assert.deepEqual(asked, []);
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test('a player pack comes before the built-in pack', async () => {

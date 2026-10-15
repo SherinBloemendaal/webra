@@ -120,7 +120,10 @@ export class ContentSystem {
     this.packs = [];
     /** The built-in 3D minimal pack (prepared packs like `packs`), read when the graphics choice first needs it. */
     this.builtinPacks = [];
+    /** True once every archive of BUILTIN_PACKS is read; until then each graphics change or `retryBuiltin` tries the missing ones. */
     this.builtinLoaded = false;
+    /** Why a built-in archive could not be read on the last try (offline, a server error), or null. */
+    this.builtinError = null;
     this.readBuiltin = builtin;
     this.listeners = new Set();
     this.loaded = null;
@@ -174,27 +177,43 @@ export class ContentSystem {
     }
   }
 
-  /** The graphics choice changed: the built-in pack is read the first time 3D minimal is chosen. */
+  /** The graphics choice changed: the built-in pack is read when 3D minimal is chosen and not all of it is in. */
   graphicsChanged() {
     if (this.graphics === GRAPHICS.MINIMAL_3D && !this.builtinLoaded) this.reload();
     else this.changed();
   }
 
-  /** Read and decode the built-in pack archives (once). A failure leaves WebRA's flat art and is logged. */
+  /**
+   * Try the built-in archives again when 3D minimal is chosen and a read failed (the content panel calls it when
+   * it opens). Returns the reload, or null when there is nothing to retry.
+   */
+  retryBuiltin() {
+    return this.graphics === GRAPHICS.MINIMAL_3D && !this.builtinLoaded ? this.reload() : null;
+  }
+
+  /**
+   * Read and decode the built-in pack archives that are not in yet, in BUILTIN_PACKS order. A failure keeps
+   * WebRA's flat art for what is missing, is kept in `builtinError` for the content panel, and is tried again
+   * on the next graphics change or panel open.
+   */
   async loadBuiltin() {
     if (this.builtinLoaded) return;
-    this.builtinLoaded = true;
-    const packs = [];
+    const have = new Map(this.builtinPacks.map((p) => [p.archive, p]));
+    const failed = [];
     for (const name of BUILTIN_PACKS) {
+      if (have.has(name)) continue;
       try {
         const pack = await readPack(await this.readBuiltin(name), this.known, BUILTIN_LIMITS);
         const images = await decodePackImages(pack.files, this.decodeImage);
-        packs.push({ record: { id: packId(pack.manifest), files: {} }, manifest: pack.manifest, images, enabled: true, problems: [], builtin: true });
+        have.set(name, { record: { id: packId(pack.manifest), files: {} }, manifest: pack.manifest, images, enabled: true, problems: [], builtin: true, archive: name });
       } catch (err) {
         console.warn(`The built-in pack ${name} could not be loaded:`, err.message ?? err);
+        failed.push(`${name}: ${err.message ?? err}`);
       }
     }
-    this.builtinPacks = packs;
+    this.builtinPacks = BUILTIN_PACKS.filter((n) => have.has(n)).map((n) => have.get(n));
+    this.builtinLoaded = failed.length === 0;
+    this.builtinError = failed.length ? `3D minimal could not be loaded (${failed.join('; ')}). It is tried again when you open this dialog or choose it again.` : null;
   }
 
   /** Load installed graphics and packs into memory (once; `reload` after changes). */

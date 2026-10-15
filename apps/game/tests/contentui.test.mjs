@@ -536,6 +536,28 @@ test('dialog: the segmented controls follow changes made elsewhere (Sound dialog
   assert.equal(root.querySelector('#content-graphics-webra2d').checked, false);
 });
 
+test('dialog: a built-in 3D minimal pack that failed to load says so under Graphics, and opening the dialog tries again', async () => {
+  const content = fakeContent();
+  let retries = 0;
+  content.builtinError = '3D minimal could not be loaded (minimal3d.webrapack: offline).';
+  content.retryBuiltin = () => {
+    retries++;
+    return null;
+  };
+  const { root, view } = mount(content);
+  await settle();
+  const problem = root.querySelector('#content-graphics-problem');
+  assert.equal(problem.hidden, true, 'not shown while 2D minimal is chosen');
+  content.settings.set('graphics', 'webra3d');
+  await view.refresh();
+  assert.equal(retries, 1, 'opening the dialog retries the built-in pack');
+  assert.equal(problem.hidden, false);
+  assert.match(textOf(problem), /Not drawn, 2D minimal is used meanwhile: 3D minimal could not be loaded \(minimal3d\.webrapack: offline\)/);
+  content.builtinError = null;
+  await view.refresh();
+  assert.equal(problem.hidden, true, 'gone once it loaded');
+});
+
 test('dialog: the use-all switch is a labelled switch and keeps both settings together', async () => {
   const { root, content, audio } = mount();
   await settle();
