@@ -3569,14 +3569,27 @@ changes only, never on `set()`.
   Home, End, Page Up, Page Down move (disabled options are skipped, no
   wrap), typing jumps (`TYPEAHEAD_MS` 500; one letter again cycles), Enter
   or Space chooses, Tab chooses and moves on, Esc closes without a change
-  (and does not reach the menu behind). Focus returns to the button. A
-  press outside closes without a change. The list is a `popover="manual"`
+  and stops there (`stopPropagation`; a handler on the window in the
+  capture phase still sees it first, see the key rule below). Focus returns
+  to the button. A press outside closes without a change. The list is a `popover="manual"`
   in the top layer (over modal dialogs, not clipped by scrolling cards),
   placed at the button through `--sp-left`, `--sp-top`/`--sp-bottom`,
   `--sp-width`, `--sp-max-h`; above the button when there is no room
   below. In the phone layouts (`selectSheetMode(w, h)`, js/layout.js) it is
   a sheet at the bottom (`.ui-sp-sheet`) with the label as title, a close
-  button and 44 px options; a tap on the dimmed area closes it.
+  button and 44 px options; a tap on the dimmed area closes it. A resize
+  across that breakpoint reopens the open list in the other mode.
+- **Unmounting**: an open list keeps listeners on the document and the
+  window. Screens call `destroy()` on a select they remove (or `close()`
+  before hiding it); a list whose control left the page also closes itself
+  at the next press, scroll or resize.
+- **Screens with global key handlers** (a keydown listener on the window or
+  the document, often in the capture phase, such as the game menu and the
+  statistics): let the key through, without `preventDefault` or
+  `stopPropagation`, when `event.target` is inside `[role=listbox]`,
+  `[role=spinbutton]` or `[role=tablist]` (`target.closest(...)`), so the
+  control gets its arrows, Home/End, typing and Esc. Esc in an open list
+  closes the list, not the menu.
 - **Stepper**: an ARIA spinbutton (`aria-valuenow` is the index,
   `aria-valuetext` the formatted value); Up/Right and Down/Left step,
   Page Up/Down step a tenth, Home/End go to the ends; the minus and plus
@@ -3602,7 +3615,10 @@ changes only, never on `set()`.
 `.ui-btn-icon`; `.ui-dialog` with `.ui-dialog-body`, `.ui-dialog-title`,
 `.ui-dialog-text`, `.ui-dialog-actions`; `.ui-menubar` with
 `.ui-menubar-brand` and `.ui-menubar-item[aria-current]` (a `.ui-led`
-inside); `.ui-brand` with `.ui-brand-emblem` and `.ui-brand-word`;
+inside); `.ui-brand` with `.ui-brand-emblem` and the word (in a `.ui-brand-word`,
+or as plain text in the `.ui-brand` itself as the start screen's
+`h1.start-logo` has it; `RA` in a `<span>` takes `--ui-brand-red` either
+way, unless the screen's sheet colours it);
 `.ui-slot-row` with `.ui-slot-strip` (`--slot-color` set from script);
 `.ui-table` (`.ui-table-head`, `[aria-selected=true]` rows); `.ui-toast`;
 `.ui-meter` with `.ui-meter-seg.ui-ok|.ui-warn|.ui-bad`; `.ui-progress`

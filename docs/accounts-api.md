@@ -864,7 +864,11 @@ Serialized size at most 32 KiB.
 - `packs`: at most 64 entries with distinct ids; an id is 1 to 160
   characters of text without control characters.
 - `guide.done`: a JSON object with the same rules as `extra` below, at most
-  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`).
+  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`). The game merges it step
+  by step when two devices changed it (`mergeSettings` in
+  `apps/game/js/account/sync.js`): a step stays when both have it or one side
+  added it, a step one side removed stays removed; only a result over 2 KiB
+  is a conflict.
 - `lastOptions` and `extra`: JSON objects at most 4 levels deep, keys
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at

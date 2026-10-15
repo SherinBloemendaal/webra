@@ -238,6 +238,16 @@ test('theme: text colours read on every panel and well (WCAG AA)', () => {
     assert.ok(contrast(game(`--ui-led-${k}`), game('--ui-metal-0')) >= 3, `--ui-led-${k} shows on a well`);
     assert.notEqual(game(`--ui-led-${k}`), game('--ui-led-off'));
   }
+  // Text on the raised plates (buttons, the select's face, segments) at rest and under the pointer:
+  // every colour stop of --ui-raised, --ui-raised-hover and the segment gradient.
+  const stops = (name) => [...expand(GAME, name).matchAll(/#[0-9a-f]{6}/gi)].map((m) => m[0]);
+  const raised = [...stops('--ui-raised'), ...stops('--ui-raised-hover'), game('--ui-metal-3'), game('--ui-metal-2')];
+  assert.ok(raised.length >= 4);
+  for (const fg of ['--ui-text', '--ui-text-2', '--ui-money']) for (const bg of raised) assert.ok(contrast(game(fg), bg) >= 4.5, `${fg} on raised ${bg}: ${contrast(game(fg), bg).toFixed(2)}:1`);
+  // The select's placeholder and every text rule of the select face use a colour that passes there.
+  const controls = stripComments(read('apps/game/css/controls.css'));
+  assert.match(controls, /\.ui-sp-empty \.ui-sp-value \{\s*color: var\(--ui-text-2\);/);
+  assert.doesNotMatch(controls.match(/\.ui-sp-button[^{]*\{[^}]*\}/g).join(''), /color: var\(--ui-(muted|dim)\)/);
   // Disabled parts are exempt from the contrast rules, but the label must still differ from its ground.
   assert.ok(contrast(game('--ui-primary-disabled-text'), game('--ui-primary-disabled')) > 1.5);
 });

@@ -469,6 +469,22 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   assert.equal(m.merged.social.allowSpectate, true);
   assert.equal(m.merged.net.warnSelf, false);
   assert.deepEqual(m.conflicts, []);
-  const both = mergeSettings({ base, local: normalizeValues({ guide: { done: { a: true } } }).values, remote: normalizeValues({ guide: { done: { b: true } } }).values });
-  assert.deepEqual(both.conflicts.map((c) => `${c.group}.${c.key}`), ['guide.done']);
+  // guide.done merges step by step: steps done on two devices add up, no conflict.
+  const done = (d) => normalizeValues({ guide: { done: d } }).values;
+  const both = mergeSettings({ base, local: done({ a: true }), remote: done({ b: true }) });
+  assert.deepEqual(both.conflicts, []);
+  assert.deepEqual(both.merged.guide.done, { a: true, b: true });
+  // Without a base (first sync of a device): the union.
+  assert.deepEqual(mergeSettings({ base: null, local: done({ a: true }), remote: done({ b: true }) }).merged.guide.done, { a: true, b: true });
+  // A reset on one side (steps removed from the base) stays a reset; new steps on the other side are kept.
+  const b2 = done({ a: true, b: true });
+  const reset = mergeSettings({ base: b2, local: done({}), remote: done({ a: true, b: true, c: true }) });
+  assert.deepEqual(reset.merged.guide.done, { c: true });
+  // One-sided changes win as for every setting.
+  assert.deepEqual(mergeSettings({ base: b2, local: b2, remote: done({ a: true }) }).merged.guide.done, { a: true });
+  // A union too big for the setting stays a conflict, with the account's value until the player chooses.
+  const many = (p) => Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`${p}.chapter.step${i}`, true]));
+  const big = mergeSettings({ base, local: done(many('x')), remote: done(many('y')) });
+  assert.deepEqual(big.conflicts.map((c) => `${c.group}.${c.key}`), ['guide.done']);
+  assert.deepEqual(big.merged.guide.done, many('y'));
 });
