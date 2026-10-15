@@ -15,7 +15,7 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)),
 // The key lists are exported by the UI modules; importing them needs a DOM-free load only.
 const { HELP_KEYS } = await import('../js/lobby.js');
 const { ONLINE_HELP_KEYS } = await import('../js/online.js');
-const { MENU_HELP_KEYS, CONTROLS_HELP_KEYS, MENU_PAGE_HELP_KEYS } = await import('../js/gamemenu.js');
+const { MENU_HELP_KEYS, CONTROLS_HELP_KEYS, CONTROLS_SETTINGS, MENU_PAGE_HELP_KEYS } = await import('../js/gamemenu.js');
 const { AUDIO_HELP_KEYS } = await import('../js/audio/panel.js');
 const { CAMPAIGN_HELP_KEYS } = await import('../js/campaign/menu.js');
 const { DEBUG_HELP_KEYS } = await import('../js/debug.js');
@@ -26,6 +26,7 @@ test('every lobby option, online option and menu setting has a help text', () =>
     ...ONLINE_HELP_KEYS,
     ...MENU_HELP_KEYS.map((k) => `settings.${k}`),
     ...CONTROLS_HELP_KEYS.map((k) => `controls.${k}`),
+    ...CONTROLS_SETTINGS.map((k) => `settings.${k}`),
     ...MENU_PAGE_HELP_KEYS,
     ...AUDIO_HELP_KEYS.map((k) => `audio.${k}`),
     ...CAMPAIGN_HELP_KEYS,
