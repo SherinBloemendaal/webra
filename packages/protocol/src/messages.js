@@ -55,6 +55,9 @@ import {
   TICK_MAX,
   VERSION_RE,
   HANDICAPS,
+  INVITE_CODE_RE,
+  NET_RTT_MAX,
+  STALL_LOG_MAX,
 } from './constants.js';
 import {
   bool,
@@ -303,6 +306,15 @@ export function validResumeInfo(v, what = 'resume') {
   };
 }
 
+/** A late-ping share in percent (0 to 100), rounded to one decimal. */
+function percent(v, what) {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100) fail(`${what} must be a percentage from 0 to 100`);
+  return Math.round(v * 10) / 10;
+}
+
+const rttValue = (v, what) => int(v, 0, NET_RTT_MAX, what);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 // ---- Client to server -------------------------------------------------------------------
 
 /** The fields of one slot change: the `slot` message, and each entry of `slots`. */
@@ -443,6 +455,28 @@ const CLIENT = {
     object(m, ['t', 'accept'], 'save');
     return { t: C2S.SAVE, accept: bool(m.accept, 'accept') };
   },
+  [C2S.PING](m) {
+    // `n` and `at` (the sender's own clock, whole milliseconds) come back in `pong`;
+    // rtt, jitter and late are the sender's last measurement (left out until it has one).
+    object(m, ['t', 'n', 'at', 'rtt', 'jitter', 'late'], 'ping');
+    const out = { t: C2S.PING, n: int(m.n, 0, 0x7fffffff, 'n'), at: int(m.at, 0, Number.MAX_SAFE_INTEGER, 'at') };
+    const parts = ['rtt', 'jitter', 'late'].filter((k) => has(m, k));
+    if (parts.length !== 0 && parts.length !== 3) fail('ping carries rtt, jitter and late together or none of them');
+    if (parts.length === 3) {
+      out.rtt = rttValue(m.rtt, 'rtt');
+      out.jitter = rttValue(m.jitter, 'jitter');
+      out.late = percent(m.late, 'late');
+    }
+    return out;
+  },
+  [C2S.STALLS](m) {
+    object(m, ['t'], 'stalls');
+    return { t: C2S.STALLS };
+  },
+  [C2S.LOADED](m) {
+    object(m, ['t'], 'loaded');
+    return { t: C2S.LOADED };
+  },
 };
 
 // ---- Server to client ---------------------------------------------------------------------
@@ -518,7 +552,7 @@ const SERVER = {
     return out;
   },
   [S2C.LOBBY](m) {
-    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators', 'resume', 'mission'], 'lobby');
+    object(m, ['t', 'slots', 'options', 'map', 'hostId', 'spectators', 'maxSpectators', 'resume', 'mission', 'invite'], 'lobby');
     if (!Array.isArray(m.slots) || m.slots.length < MIN_PLAYERS || m.slots.length > MAX_PLAYERS) {
       fail('lobby.slots must list 2 to 8 slots');
     }
@@ -555,6 +589,11 @@ const SERVER = {
     if (has(m, 'mission')) {
       out.mission = validCoopMission(m.mission, 'lobby.mission');
       if (map !== null) fail('a mission lobby has no map file');
+    }
+    // The lobby's invite code while one is valid (protocol 8): every member sees it.
+    if (has(m, 'invite')) {
+      object(m.invite, ['code', 'expiresAt'], 'lobby.invite');
+      out.invite = { code: matches(m.invite.code, INVITE_CODE_RE, 'lobby.invite.code'), expiresAt: int(m.invite.expiresAt, 0, REPLAY_TIME_MAX, 'lobby.invite.expiresAt') };
     }
     return out;
   },
@@ -737,6 +776,67 @@ const SERVER = {
     }
     return out;
   },
+  [S2C.PONG](m) {
+    object(m, ['t', 'n', 'at'], 'pong');
+    return { t: S2C.PONG, n: int(m.n, 0, 0x7fffffff, 'n'), at: int(m.at, 0, Number.MAX_SAFE_INTEGER, 'at') };
+  },
+  [S2C.NETSTAT](m) {
+    // Players only (spectators get the message but are not listed); null: no measurement yet.
+    object(m, ['t', 'players'], 'netstat');
+    if (!Array.isArray(m.players) || m.players.length > MAX_PLAYERS) fail(`netstat.players must list at most ${MAX_PLAYERS} players`);
+    const seen = new Set();
+    const players = m.players.map((p, i) => {
+      const w = `players[${i}]`;
+      object(p, ['client', 'rtt', 'jitter', 'late', 'silent'], w);
+      const out = {
+        client: validClientId(p.client, `${w}.client`),
+        rtt: p.rtt === null ? null : rttValue(p.rtt, `${w}.rtt`),
+        jitter: p.jitter === null ? null : rttValue(p.jitter, `${w}.jitter`),
+        late: p.late === null ? null : percent(p.late, `${w}.late`),
+      };
+      if ((out.rtt === null) !== (out.jitter === null) || (out.rtt === null) !== (out.late === null)) fail(`${w}: rtt, jitter and late are all known or all null`);
+      // Milliseconds since the server last heard a ping from this player (only when that is long).
+      if (has(p, 'silent')) out.silent = int(p.silent, 0, DAY_MS, `${w}.silent`);
+      if (seen.has(out.client)) fail('netstat lists a client twice');
+      seen.add(out.client);
+      return out;
+    });
+    return { t: S2C.NETSTAT, players };
+  },
+  [S2C.WAITING](m) {
+    // client: whom the game waits for (heldMs so far, dropInMs until it is dropped); null: running again.
+    object(m, ['t', 'client', 'heldMs', 'dropInMs'], 'waiting');
+    if (m.client === null) {
+      if (has(m, 'heldMs') || has(m, 'dropInMs')) fail('waiting without a client has no times');
+      return { t: S2C.WAITING, client: null };
+    }
+    return {
+      t: S2C.WAITING,
+      client: validClientId(m.client, 'client'),
+      heldMs: int(m.heldMs, 0, DAY_MS, 'heldMs'),
+      dropInMs: int(m.dropInMs, 0, DAY_MS, 'dropInMs'),
+    };
+  },
+  [S2C.STALLS](m) {
+    // stalls: the newest STALL_LOG_MAX waits longer than HOLD_GRACE_MS, oldest first;
+    // totals: per client, every such wait of this game (also those no longer listed).
+    object(m, ['t', 'stalls', 'totals'], 'stalls');
+    if (!Array.isArray(m.stalls) || m.stalls.length > STALL_LOG_MAX) fail(`stalls.stalls must list at most ${STALL_LOG_MAX} stalls`);
+    if (!Array.isArray(m.totals) || m.totals.length > MAX_PLAYERS * 4) fail('stalls.totals has too many entries');
+    const stalls = m.stalls.map((x, i) => {
+      object(x, ['tick', 'client', 'ms'], `stalls[${i}]`);
+      return { tick: validTick(x.tick, `stalls[${i}].tick`), client: validClientId(x.client, `stalls[${i}].client`), ms: int(x.ms, 0, DAY_MS, `stalls[${i}].ms`) };
+    });
+    const seen = new Set();
+    const totals = m.totals.map((x, i) => {
+      object(x, ['client', 'ms', 'count'], `totals[${i}]`);
+      const out = { client: validClientId(x.client, `totals[${i}].client`), ms: int(x.ms, 0, Number.MAX_SAFE_INTEGER, `totals[${i}].ms`), count: int(x.count, 0, 0x7fffffff, `totals[${i}].count`) };
+      if (seen.has(out.client)) fail('stalls.totals lists a client twice');
+      seen.add(out.client);
+      return out;
+    });
+    return { t: S2C.STALLS, stalls, totals };
+  },
   [S2C.ERROR](m) {
     object(m, ['t', 'code', 'message'], 'error');
     return {
@@ -829,5 +929,9 @@ export const client = {
   kick: (clientId) => ({ t: C2S.KICK, client: clientId }),
   rematch: (accept) => ({ t: C2S.REMATCH, accept }),
   save: (accept) => ({ t: C2S.SAVE, accept }),
+  /** `measurement`: { rtt, jitter, late } once the sender has one. */
+  ping: (n, at, measurement = null) => (measurement ? { t: C2S.PING, n, at, rtt: measurement.rtt, jitter: measurement.jitter, late: measurement.late } : { t: C2S.PING, n, at }),
+  stalls: () => ({ t: C2S.STALLS }),
+  loaded: () => ({ t: C2S.LOADED }),
 };
 

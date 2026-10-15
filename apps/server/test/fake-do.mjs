@@ -109,8 +109,13 @@ const db = {
   }),
 };
 
-/** A session Durable Object with its fake runtime. */
-export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0', DB = db } = {}) {
+/**
+ * A session Durable Object with its fake runtime. `autoLoaded`: after a
+ * `start`, every player's socket reports `loaded` at once (clients whose
+ * loading screen closes instantly), so tests about other things need not
+ * pass the start gate themselves.
+ */
+export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0', DB = db, isPublic = false, autoLoaded = true } = {}) {
   const sockets = [];
   const ctx = {
     storage: new FakeStorage(),
@@ -120,7 +125,17 @@ export async function makeSession({ maxPlayers = 3, password = null, version = '
   };
   const session = new Session(ctx, { DB });
   await new Promise((r) => setTimeout(r, 0));
-  const { hostKey } = await session.init({ id: 'a'.repeat(64), name: 'Test', password, isPublic: false, maxPlayers, version });
+  const { hostKey } = await session.init({ id: 'a'.repeat(64), name: 'Test', password, isPublic, maxPlayers, version });
+  const send = async (ws, msg) => {
+    const raw = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    await session.webSocketMessage(ws, raw);
+    if (autoLoaded && JSON.parse(raw).t === 'start' && session.lockstep?.starting) {
+      for (const other of ctx.getWebSockets()) {
+        const att = other.deserializeAttachment();
+        if (att?.client && !att.gone && session.room.seatOf(att.client) >= 0) await session.webSocketMessage(other, '{"t":"loaded"}');
+      }
+    }
+  };
   let ip = 1;
   const api = {
     session,
@@ -135,7 +150,7 @@ export async function makeSession({ maxPlayers = 3, password = null, version = '
       ws.serializeAttachment({ client: null, ip: addr, since: Date.now(), busy: false, account: auth.account, refuse: auth.refuse });
       return ws;
     },
-    send: (ws, msg) => session.webSocketMessage(ws, typeof msg === 'string' ? msg : JSON.stringify(msg)),
+    send,
     /** The client side closed the socket. */
     async drop(ws) {
       ws.close(1006, 'gone');

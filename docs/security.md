@@ -1107,6 +1107,119 @@ syncs with the account; the privacy notice (`apps/website/privacy.html`,
   when missing (docs/deploy.md); the deploy token needs Workers R2 Storage
   Edit for that.
 
+## Protocol 8: start gate, network quality, invite codes, friends (2026-10-15)
+
+Threat model for the server round of 0.17.0 (docs/contracts.md section 4,
+docs/accounts-api.md 5.11).
+
+### Start gate and network quality
+
+- **Start gate.** `loaded` only lets frames go out; it carries nothing. A
+  player who never sends it holds the game at its start for at most
+  LOAD_TIMEOUT_MS (60 s), then is dropped like a staller (and can rejoin).
+  The start wait never counts toward anyone's stall budget, so a slow
+  loader cannot get an honest player dropped, and the gate cannot be used to
+  hold a running game: it ends for good once every seat loaded or left.
+- **Pings.** A ping is answered only to its sender; `n` and `at` are echoed
+  as validated integers. The measurement a client reports (rtt, jitter,
+  late) is its own claim and is only shown, never acted on: no rule drops or
+  favours a player by it. A client can lie about its own numbers (look
+  worse or better in the lobby); it cannot change anyone else's. Pings have
+  their own budget (2 per second, bursts of 6) inside the connection's
+  message rate limit; refused pings get no answer and a flood closes the
+  connection. `netstat` goes out at most every 2 s whatever the ping rate,
+  so pings cannot amplify traffic to the room.
+- **Waiting and stall log.** `waiting` and `stalls` come from the server's
+  own lockstep bookkeeping (when frames went out and orders came in), never
+  from client reports; the stall log is bounded (500 entries) and asked for
+  at most every 5 s per connection. It reveals nothing a player of the game
+  could not see (who held the game up), and spectators of a public game
+  already watch it.
+- **Cost.** Pings keep a session object awake while members are connected
+  (also in the lobby); a session holds at most 24 sockets, so the cost per
+  lobby is bounded.
+
+### Invite codes
+
+- **Guessing.** A code is 6 characters of 31 (887,503,681 codes); only open
+  lobbies have one (at most 2 hours, replaced or ended at the start). Lookups
+  are limited per address (20 per minute) and failed ones per network (30
+  per hour, then every lookup waits out the hour), so finding a live code by
+  guessing is hopeless. Codes are drawn with `crypto.getRandomValues` and
+  rejection sampling (uniform), and the D1 primary key makes collisions
+  impossible (a clash draws again). An ended code answers 410 for a day so
+  players learn it was replaced; then the row goes.
+- **What a code gives.** Only a short name for the session: the lookup
+  answers what the join dialog shows (name, host, map, occupancy, mode,
+  whether a password is needed) and the session id, which the long link
+  already carried. A password lobby still needs its password (checked by the
+  session object with its per-address lockout); a code never skips it.
+- **Who can make one.** Only the host, proven by its member credential (the
+  rejoin key, checked in constant time and bound to its account, failures
+  counting toward the per-address lockout); 30 issued codes per network per
+  hour (a refused request, such as a member who is not the host, costs no
+  quota, so it cannot use up a shared network's codes).
+  Every member sees the code (`lobby.invite`): anyone in a lobby could share
+  the long link before anyway.
+- **Private lobbies.** A private session now has an unlisted directory row
+  (for codes and friends). The list (`public = 1`) never shows it.
+- **/join/<code>.** The Worker only redirects a well-formed code to
+  `/play/?invite=<code>` (the game itself stays behind the play gate);
+  anything else gets the 404 page. No user input reaches a header except the
+  validated code.
+
+### Friends and presence
+
+- **Enumeration.** Friends are addressed by username, which every lobby,
+  chat line and replay already shows; a request for a name that is not an
+  active account says so (the player needs to know about a typo). Account
+  ids, emails and roles never appear. Requests are limited to 20 per hour
+  per account and 50 open ones, so the endpoint is no faster a username
+  oracle than signup is.
+- **Blocking cannot be detected.** A request to a player who blocked the
+  sender is answered like any other and shows as waiting to the sender; it
+  is stored hidden from the receiver, and cannot be accepted by name while
+  the block stands. Ignoring a request works the same way.
+  A blocked player trying to join a session gets "You cannot join this
+  session." without being told who blocked it, and an invite code lookup
+  answers it like an unknown code (without counting as a failed lookup, so a
+  blocked player cannot lock its network out of invite codes).
+- **Blocking applies everywhere.** No requests or friend invites either way
+  (a block ends any friendship, request and invite between the two), no
+  joining a session (lobby or running game, also as a spectator) one of
+  whose present members blocked the player, no looking such a lobby's code
+  up. A failed block check at join lets the player in (logged): blocking is
+  a social tool; access control (passwords, bans) does not depend on it.
+- **Presence privacy.** What friends see is decided on the server from the
+  friend's stored settings (`social.showOnline`, `social.friendsJoin`,
+  `social.allowSpectate`), with defaults that show status but keep games
+  closed to watchers. With `showOnline` off a player is "offline" without a
+  last-seen time, and nothing about its sessions is shown; last-seen times
+  are rounded to the hour. A private session is named to a friend only when
+  that friend allows joining (lobby) or watching (game). Only friends (a
+  mutual, accepted relation) see any of it; strangers see nothing. The
+  online counter (`/api/online`) is a number only.
+- **Heartbeat cost.** The presence heartbeat is stored at most every 45 s
+  per account, and a change of `away` at most every 5 s after the last
+  write, so flipping the flag cannot turn it into many D1 writes. Both the
+  heartbeat and the friends list (read-only, polled every 30 s) have a
+  burst limit per address (20 a minute with the rate limit binding).
+- **Authorization.** Every friends route needs a signed-in, active account
+  and only acts on rows of the caller (the SQL always names the caller's
+  id); invites need friendship and the caller's own membership of the
+  session (D1 `game_presence`) and carry the lobby's real code. CSRF rules
+  as for every account route (header on reads, Origin and Fetch Metadata on
+  writes).
+- **Deletion and retention.** Deleting an account removes its friends rows
+  at once (others see it vanish); the daily job removes rows of accounts
+  deleted in other ways, requests after 30 days, ended invites and stale
+  heartbeats; the purge removes the rest (foreign keys). The data export
+  lists friends, requests, blocks, invites and the heartbeat.
+- **Migrations.** 0009 and 0010 only add tables and one nullable column
+  (`sessions.summary_json`); nothing existing is rewritten, so applying them
+  to the production database is safe and old Workers keep working with the
+  new schema.
+
 ## Inherent to lockstep
 
 - **Map hack:** every client holds the whole simulation; fog of war is a

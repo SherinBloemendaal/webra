@@ -382,8 +382,10 @@ test('protocol 3: rejoin, spectators and resume messages are strict', () => {
   // radius and time limit options and per slot handicaps, map sharing (map
   // details, map states) and rematches; version 7 stricter live lobby
   // messages (lobby options must carry factoryLoss, bulk slot edits) and
-  // the bulk orders repair_buildings, repair_units and sell_buildings.
-  assert.equal(PROTOCOL_VERSION, 7);
+  // the bulk orders repair_buildings, repair_units and sell_buildings;
+  // version 8 the start gate (loaded), network quality (ping, pong,
+  // netstat, waiting, stalls) and invite codes in the lobby.
+  assert.equal(PROTOCOL_VERSION, 8);
   assert.deepEqual(ok({ ...hello, spectate: true }), { ...hello, spectate: true });
   assert.deepEqual(ok({ ...hello, spectate: false }), hello, 'spectate: false is the default and dropped');
   bad({ ...hello, spectate: 'yes' }, /spectate/);
