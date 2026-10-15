@@ -1430,3 +1430,39 @@ test('WebRA ore: round nuggets, more of them and bigger with more ore, lit at th
   assert.ok(stages[3].light > 0 && stages[3].light < stages[3].n / 2, 'a small lit spot on each nugget');
   assert.deepEqual(oreColor([0.2, 0.3, 0.15], 10.5, 7.5, 0.5), oreColor([0.2, 0.3, 0.15], 10.5, 7.5, 0.5), 'deterministic');
 });
+
+test('WebRA ore and gems: the CPU copy uses the same constants and formulas as the terrain shader', () => {
+  const wgsl = readFileSync(fileURLToPath(new URL('../shaders/terrain.wgsl', import.meta.url)), 'utf8');
+  const js = readFileSync(fileURLToPath(new URL('../js/maplens/raster.js', import.meta.url)), 'utf8');
+  const nums = (text) => text.split(',').map(Number);
+  const shaderConst = (name) => {
+    const m = wgsl.match(new RegExp(`const ${name}: (?:f32|vec3f) = (?:vec3f\\(([^)]*)\\)|([\\d.]+));`));
+    assert.ok(m, `terrain.wgsl declares ${name}`);
+    return nums(m[1] ?? m[2]);
+  };
+  const jsConst = (name) => {
+    const m = js.match(new RegExp(`const ${name} = (?:\\[([^\\]]*)\\]|([\\d.]+));`));
+    assert.ok(m, `raster.js declares ${name}`);
+    return nums(m[1] ?? m[2]);
+  };
+  for (const name of ['ORE_STEP', 'ORE_LIGHT', 'ORE_BASE', 'ORE_GROUND', 'GEM_GLINT']) assert.deepEqual(jsConst(name), shaderConst(name), name);
+  const hues = js.match(/const GEM_HUES = \[\s*\[([^\]]*)\],\s*\[([^\]]*)\],?\s*\];/);
+  assert.ok(hues, 'raster.js declares GEM_HUES');
+  assert.deepEqual(nums(hues[1]), shaderConst('GEM_BLUE'), 'GEM_HUES[0] is GEM_BLUE');
+  assert.deepEqual(nums(hues[2]), shaderConst('GEM_MAGENTA'), 'GEM_HUES[1] is GEM_MAGENTA');
+  // The function bodies: nugget chance, radius, jitter, lit spot, shadow offset and darkening.
+  const body = (text, start) => {
+    const i = text.indexOf(start);
+    assert.ok(i >= 0, start);
+    return text.slice(i, text.indexOf('\n}', i));
+  };
+  const shaderOre = body(wgsl, 'fn ore_color(');
+  const jsOre = body(js, 'export function oreColor(');
+  const shared = ['0.15 + ore * 0.55', '1.3 + 0.5 * ore', 'ore * 0.5', '- 0.5) * 0.4', 'r * 0.35', '< r * 0.5', '0.6)', '* 0.6'];
+  for (const s of shared) {
+    assert.ok(shaderOre.replaceAll(' ', '').includes(s.replaceAll(' ', '')) || (s === '- 0.5) * 0.4' && shaderOre.includes('jitter * 0.4')), `terrain.wgsl ore_color has ${s}`);
+    assert.ok(jsOre.includes(s), `raster.js oreColor has ${s}`);
+  }
+  assert.ok(/h3 >= 0\.5/.test(body(wgsl, 'fn gem_color(')) && /h3 >= 0\.5/.test(body(js, 'export function gemColor(')), 'gem hue pick');
+  assert.ok(/GEM_GLINT, 0\.5/.test(wgsl) && /GEM_GLINT\[0\], 0\.5/.test(js), 'gem glint mix');
+});

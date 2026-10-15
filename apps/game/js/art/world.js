@@ -517,13 +517,13 @@ function rocks(ctx, P, a, seed) {
     const [cx, cy] = cellCentre(dx, dy);
     const stones = [];
     for (let k = 0; k < 3; k++) stones.push([cx - 5 + r() * 10, cy - 3 + r() * 7, 4 + r() * 4, r()]);
-    stones.sort((a, b) => a[1] - b[1]);
+    stones.sort((s, t) => s[1] - t[1]);
     for (const [x, y, rr, j] of stones) {
       const pts = [];
       for (let k = 0; k < 7; k++) {
-        const a = (k / 7) * Math.PI * 2 + j;
+        const ang = (k / 7) * Math.PI * 2 + j;
         const f = 0.82 + ((k * 37 + Math.floor(j * 97)) % 7) * 0.03;
-        pts.push(x + Math.cos(a) * rr * f, y + Math.sin(a) * rr * f * 0.8);
+        pts.push(x + Math.cos(ang) * rr * f, y + Math.sin(ang) * rr * f * 0.8);
       }
       poly(ctx, P.c('#484034'), pts.map((v, i) => v + (i % 2 ? 1 : 0.6)));
       poly(ctx, P.c('#76705e'), pts);

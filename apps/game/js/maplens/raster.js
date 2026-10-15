@@ -346,6 +346,7 @@ export function resourceTile(base, levels, variants, density, cx, cy) {
   return base + variant * levels + level;
 }
 
+// Formula parity with shaders/terrain.wgsl ore_color and gem_color, not bit parity: hash2 is chaotic under f32 versus f64, so nugget placement agrees only statistically.
 const ORE_STEP = 4;
 const ORE_LIGHT = [0.902, 0.761, 0.353];
 const ORE_BASE = [0.788, 0.604, 0.18];
