@@ -2844,7 +2844,13 @@ flies); drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
 charged and is `OneShot` (it disappears from `powers` after launch). A
 power charges for its `charge` ticks (OpenRA ChargeInterval) from empty, or
 starts ready when its `start_fully_charged` is set (OpenRA
-StartFullyCharged; no built-in power has it, map rules may set it). The
+StartFullyCharged; no built-in power has it, map rules may set it), which
+applies only when a provider creates the player's instance. As in OpenRA's
+SupportPowerManager, a power whose `prerequisites` go missing leaves the
+power bar and resets to a full charge but its instance stays (also after
+its last provider is lost), so rebuilding the prerequisite charges it from
+empty; an instance whose prerequisites are met goes with its last
+provider. The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
 
 Support power timers (OpenRA `SupportPowerTimerWidget`, the

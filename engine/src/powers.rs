@@ -10,11 +10,15 @@
 //! `AirstrikePower@spyplane`), however many structures provide it: two
 //! Airfields still give one spy plane timer.
 //!
-//! An instance exists while the player owns a structure that provides the key
-//! and meets the power's `prerequisites` (player tokens). It charges one tick
-//! per simulation tick while at least one of those providers is powered
-//! ([`World::is_powered_down`]); losing every provider removes the instance and
-//! its charge, like OpenRA. Charging starts empty (full with
+//! An instance exists while the player owns a structure that provides the key.
+//! It is in the power bar ([`World::power_instances`]) while the power's
+//! `prerequisites` (player tokens) are met, and charges one tick per
+//! simulation tick while at least one such provider is powered
+//! ([`World::is_powered_down`]). Like OpenRA's SupportPowerManager, losing
+//! the prerequisites resets it to a full charge and keeps it aside
+//! ([`PowersState::dormant`], OpenRA's Disabled instance, kept even after its
+//! last provider goes); losing every provider while the prerequisites are met
+//! removes the instance and its charge. Charging starts empty (full with
 //! `start_fully_charged`, StartFullyCharged) and takes `charge` ticks
 //! (`ChargeInterval`).
 //!
@@ -137,6 +141,10 @@ pub struct PowersState {
     pub bombs: Vec<FallingBomb>,
     /// One-shot powers already used, per player (OneShot, e.g. the GPS satellite).
     pub spent: Vec<(u8, String)>,
+    /// Instances whose prerequisites are missing, per player (OpenRA's
+    /// SupportPowerInstance while Disabled): kept at a full charge, out of
+    /// the power bar, and back in `players` once the prerequisites are met.
+    pub dormant: Vec<Vec<PowerInstance>>,
 }
 
 impl World {
@@ -208,9 +216,24 @@ impl World {
     pub(crate) fn tick_support_powers(&mut self) {
         let n = self.players.len();
         self.powers.players.resize_with(n, Vec::new);
-        // One pass over the structures: which keys each player has, and whether
-        // any provider of that key is powered. (player, key, provider_ty, index, powered)
-        let mut offered: Vec<(u8, String, u16, usize, bool)> = Vec::new();
+        // One pass over the structures: which keys each player has, whether
+        // any provider of that key is powered, and whether any meets the
+        // power's prerequisites. (player, key, provider_ty, index, powered, prereqs met)
+        let mut offered: Vec<(u8, String, u16, usize, bool, bool)> = Vec::new();
+        let mut offer = |o: (u8, String, u16, usize, bool, bool)| match offered.iter_mut().find(|x| x.0 == o.0 && x.1 == o.1) {
+            Some(x) => {
+                // The instance follows a provider whose prerequisites are met.
+                if o.5 && !x.5 {
+                    (x.2, x.3) = (o.2, o.3);
+                }
+                x.4 |= o.4 && o.5;
+                x.5 |= o.5;
+            }
+            None => {
+                let powered = o.4 && o.5;
+                offered.push((o.0, o.1, o.2, o.3, powered, o.5));
+            }
+        };
         for i in 0..self.actors.len() {
             let a = &self.actors[i];
             if !a.alive || a.kind != Kind::Building {
@@ -219,13 +242,7 @@ impl World {
             let Some(list) = self.rules.actors[a.ty as usize].abilities.support_powers.as_ref() else { continue };
             let powered = !self.is_powered_down(i);
             for (k, info) in list.iter().enumerate() {
-                if !self.power_prereqs_met(a.owner, info) {
-                    continue;
-                }
-                match offered.iter_mut().find(|o| o.0 == a.owner && o.1 == info.key) {
-                    Some(o) => o.4 |= powered,
-                    None => offered.push((a.owner, info.key.clone(), a.ty, k, powered)),
-                }
+                offer((a.owner, info.key.clone(), a.ty, k, powered, self.power_prereqs_met(a.owner, info)));
             }
         }
         // Proxies granted by infiltration (the Sonar Pulse; infantry.rs) are always powered.
@@ -233,39 +250,64 @@ impl World {
             for &ty in &self.players[p].proxies {
                 let Some(list) = self.rules.actors[ty as usize].abilities.support_powers.as_ref() else { continue };
                 for (k, info) in list.iter().enumerate() {
-                    if !self.power_prereqs_met(p as u8, info) {
-                        continue;
-                    }
-                    match offered.iter_mut().find(|o| o.0 as usize == p && o.1 == info.key) {
-                        Some(o) => o.4 = true,
-                        None => offered.push((p as u8, info.key.clone(), ty, k, true)),
-                    }
+                    offer((p as u8, info.key.clone(), ty, k, true, self.power_prereqs_met(p as u8, info)));
                 }
             }
         }
+        self.powers.dormant.resize_with(n, Vec::new);
         let mut notices: Vec<(SoundEventKind, u16, usize, u8)> = Vec::new();
         for p in 0..n {
             let defeated = self.players[p].defeated;
             let spent = &self.powers.spent;
-            let mine: Vec<&(u8, String, u16, usize, bool)> =
+            let mine: Vec<&(u8, String, u16, usize, bool, bool)> =
                 offered.iter().filter(|o| o.0 as usize == p && !spent.iter().any(|s| s.0 as usize == p && s.1 == o.1)).collect();
+            let rules = &self.rules;
             let list = &mut self.powers.players[p];
+            let dormant = &mut self.powers.dormant[p];
+            // OpenRA SupportPowerManager.ActorRemoved: an instance goes with its last
+            // provider unless it is Disabled (prerequisites missing), which stays.
             list.retain(|inst| mine.iter().any(|o| o.1 == inst.key));
+            dormant.retain(|inst| !spent.iter().any(|s| s.0 as usize == p && s.1 == inst.key));
             for o in &mine {
-                if !list.iter().any(|inst| inst.key == o.1) {
-                    let info = &self.rules.actors[o.2 as usize].abilities.support_powers.as_ref().unwrap()[o.3];
-                    let total = info.charge.max(1);
-                    list.push(PowerInstance {
-                        key: o.1.clone(),
-                        provider_ty: o.2,
-                        index: o.3,
-                        // OpenRA SupportPowerInstance: StartFullyCharged starts ready.
-                        remaining: if info.start_fully_charged { 0 } else { total },
-                        total,
-                        charging: false,
-                        notified_charging: false,
-                        notified_ready: false,
-                    });
+                let info = &rules.actors[o.2 as usize].abilities.support_powers.as_ref().unwrap()[o.3];
+                let active = list.iter().position(|inst| inst.key == o.1);
+                let asleep = dormant.iter().position(|inst| inst.key == o.1);
+                match (o.5, active, asleep) {
+                    // OpenRA PrerequisitesAvailable(false): back to a full charge, out of the bar.
+                    (false, Some(i), _) => {
+                        let mut inst = list.remove(i);
+                        inst.remaining = inst.total;
+                        inst.charging = false;
+                        inst.notified_charging = false;
+                        inst.notified_ready = false;
+                        dormant.push(inst);
+                    }
+                    (true, None, Some(i)) => {
+                        let mut inst = dormant.remove(i);
+                        (inst.provider_ty, inst.index) = (o.2, o.3);
+                        list.push(inst);
+                    }
+                    (met, None, None) => {
+                        // A new instance (OpenRA SupportPowerInstance: StartFullyCharged
+                        // starts it ready); without its prerequisites it is reset at once.
+                        let total = info.charge.max(1);
+                        let inst = PowerInstance {
+                            key: o.1.clone(),
+                            provider_ty: o.2,
+                            index: o.3,
+                            remaining: if met && info.start_fully_charged { 0 } else { total },
+                            total,
+                            charging: false,
+                            notified_charging: false,
+                            notified_ready: false,
+                        };
+                        if met {
+                            list.push(inst);
+                        } else {
+                            dormant.push(inst);
+                        }
+                    }
+                    _ => {}
                 }
             }
             // Debug menu "instant charge" (debug.rs).

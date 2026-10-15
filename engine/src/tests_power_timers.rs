@@ -262,3 +262,78 @@ fn map_rules_cannot_give_a_power_bad_timer_relationships() {
         assert!(r.is_err(), "{bad}");
     }
 }
+
+/// Map rules giving the Iron Curtain a Service Depot prerequisite, optionally StartFullyCharged.
+fn curtain_needs_fix(w: &mut World, start_full: bool) {
+    let mut iron = powers_json(w, "IRON");
+    iron[0]["prerequisites"] = serde_json::json!(["fix"]);
+    iron[0]["start_fully_charged"] = start_full.into();
+    w.rules =
+        crate::rules::Rules::load_with(Some(&serde_json::json!({ "actors": { "IRON": { "abilities": { "support_powers": iron } } } })))
+            .expect("overrides load");
+}
+
+const CURTAIN: &str = "GrantExternalConditionPower@IRONCURTAIN";
+
+fn curtain(w: &World) -> Option<crate::powers::PowerInstance> {
+    w.power_instances(0).iter().find(|p| p.key == CURTAIN).cloned()
+}
+
+fn lose(w: &mut World, i: usize) {
+    w.kill(i);
+    w.refresh_tokens();
+    run(w, 1);
+}
+
+#[test]
+fn losing_and_rebuilding_a_prerequisite_resets_the_charge_without_a_free_start_fully_charged_launch() {
+    let mut w = world();
+    curtain_needs_fix(&mut w, true);
+    let fix = build(&mut w, "FIX", 0, 0);
+    let iron = build(&mut w, "IRON", 0, 4);
+    run(&mut w, 1);
+    let total = curtain(&w).unwrap().total;
+    assert!(curtain(&w).unwrap().ready(), "StartFullyCharged when its provider creates it");
+    // OpenRA PrerequisitesAvailable(false): out of the bar, back to a full charge, and kept.
+    lose(&mut w, fix);
+    assert!(curtain(&w).is_none());
+    assert_eq!(w.powers.dormant[0].iter().find(|p| p.key == CURTAIN).unwrap().remaining, total);
+    build(&mut w, "FIX", 0, 0);
+    run(&mut w, 1);
+    let c = curtain(&w).unwrap();
+    assert!(!c.ready(), "no second free launch");
+    assert_eq!(c.remaining, total - 1);
+    // Losing the prerequisite and then the provider keeps the instance too (OpenRA
+    // keeps a Disabled one), so rebuilding both charges from empty.
+    let fix = w.actors.iter().position(|a| a.alive && a.owner == 0 && a.ty == ty(&w, "FIX")).unwrap();
+    lose(&mut w, fix);
+    lose(&mut w, iron);
+    build(&mut w, "FIX", 0, 0);
+    build(&mut w, "IRON", 0, 4);
+    run(&mut w, 1);
+    assert_eq!(curtain(&w).unwrap().remaining, total - 1);
+    // With its prerequisites met, losing the last provider removes it: a new one starts charged.
+    let iron = w.actors.iter().position(|a| a.alive && a.owner == 0 && a.ty == ty(&w, "IRON")).unwrap();
+    lose(&mut w, iron);
+    assert!(curtain(&w).is_none() && w.powers.dormant[0].is_empty());
+    build(&mut w, "IRON", 0, 4);
+    run(&mut w, 1);
+    assert!(curtain(&w).unwrap().ready());
+}
+
+#[test]
+fn losing_a_prerequisite_resets_a_partly_charged_power() {
+    let mut w = world();
+    curtain_needs_fix(&mut w, false);
+    let fix = build(&mut w, "FIX", 0, 0);
+    build(&mut w, "IRON", 0, 4);
+    run(&mut w, 100);
+    let total = curtain(&w).unwrap().total;
+    assert_eq!(curtain(&w).unwrap().remaining, total - 100);
+    lose(&mut w, fix);
+    run(&mut w, 50);
+    assert!(curtain(&w).is_none(), "not in the power bar without its prerequisites");
+    build(&mut w, "FIX", 0, 0);
+    run(&mut w, 1);
+    assert_eq!(curtain(&w).unwrap().remaining, total - 1, "charges again from empty");
+}
