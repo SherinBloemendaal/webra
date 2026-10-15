@@ -63,6 +63,8 @@ jobs:
       - run: node tools/gen-audio-catalog.mjs
       - run: python3 tools/gen_missions.py
       - run: python3 tools/gen_pixel_art.py
+      # The built-in 3D minimal pack: compares the committed archives with a fresh render (PNGs by their pixels).
+      - run: python3 tools/gen_minimal3d/generate.py --check
       - run: git diff --exit-code apps/game/js/art/pixel-data.js engine/rules.json apps/game/js/oramap/tables.js apps/game/js/content/tables.js apps/game/js/content/render-facts.js engine/render.json apps/game/js/openra-hotkeys.js apps/game/js/audio/catalog-data.js apps/game/missions packages/protocol/src/coop-missions.js
 
   shaders:

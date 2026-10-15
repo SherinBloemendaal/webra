@@ -759,6 +759,15 @@ The player's game settings, synchronized across devices.
 
 Version 0 with `settings: {}` means nothing is stored yet.
 
+Rolling upgrade of `game.graphics`: a client from before 0.17.0 knows only
+`"webra"` and `"original"`, so it reads `"webra2d"` and `"webra3d"` as
+`"webra"` and uploads that with its next change. A newer client
+(`js/account/sync.js` `keepGraphicsFromOldClients`) treats an incoming
+`"webra"` as "WebRA's own art": when it last synced `"webra2d"` or
+`"webra3d"` it keeps that choice and writes it back once; after `"original"`
+(a real choice on the old client) it takes `"webra2d"`. The old client
+itself still shows WebRA's art for `"webra3d"` until it is updated.
+
 `PUT /api/account/settings` with `If-Match: "v<version>"` and body
 `{ "settings": SettingsDocument }` replaces the whole document:
 
@@ -794,7 +803,7 @@ Serialized size at most 32 KiB.
     "hideReplayChat": false,       // OpenRA HideReplayChat: replay chat only in the chat history
     "uiFeedbackNotifications": true, // OpenRA TextNotificationPoolFilters Feedback
     "gameEventNotifications": true,  // OpenRA TextNotificationPoolFilters Transients
-    "graphics": "webra",           // "webra" | "original"
+    "graphics": "webra2d",         // "webra2d" | "webra3d" | "original"; "webra" (before 0.17.0) is still accepted, read as "webra2d"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
     "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)

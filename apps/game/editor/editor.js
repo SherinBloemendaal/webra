@@ -1027,8 +1027,9 @@ function graphicsControl() {
     name: 'editor-graphics',
     label: 'Graphics',
     options: [
-      { value: 'webra', label: 'WebRA' },
-      { value: 'original', label: 'Original' },
+      { value: 'webra2d', label: '2D minimal' },
+      { value: 'webra3d', label: '3D minimal' },
+      { value: 'original', label: 'Red Alert original' },
     ],
     value: art.graphics,
     block: true,
@@ -1054,7 +1055,9 @@ function syncGraphics() {
       ? "The original Red Alert graphics are not installed on this device: install them from the game's Original content dialog to edit with them."
       : art.originalActive
         ? 'The map is drawn with the original Red Alert graphics, as in a game with Graphics set to Original.'
-        : "The map is drawn with WebRA's own art. The choice is the game's Graphics setting.";
+        : art.graphics === 'webra3d'
+          ? "The map is drawn with WebRA's 3D minimal art. The choice is the game's Graphics setting."
+          : "The map is drawn with WebRA's 2D minimal art. The choice is the game's Graphics setting.";
   }
 }
 

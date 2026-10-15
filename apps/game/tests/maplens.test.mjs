@@ -1178,7 +1178,7 @@ test('LensArt draws with the original graphics when installed and chosen, WebRA 
   assert.equal(m.terrainPixelArt, true, 'pixel art, drawn without smoothing');
   assert.ok((m.terrain.flags & ART_TILES) !== 0, 'the tile terrain path of the shader');
   // The player switches Graphics to WebRA: the lenses hear it and draw WebRA's art.
-  settings.set('graphics', 'webra');
+  settings.set('graphics', 'webra2d');
   assert.ok(changes >= 1);
   const w = art.fromMap(mapJson());
   assert.equal(w.version, art.version);

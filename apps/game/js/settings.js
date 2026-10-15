@@ -37,8 +37,9 @@ export const KEYS = Object.freeze({
   gameScale: ['game', 'gameScale'],
   // The player's zoom as a factor of the game scale's base zoom (js/input.js): the next game starts there.
   zoomFactor: ['game', 'zoomFactor'],
-  // Graphics (js/content): 'webra' (WebRA's own art) or 'original' (the
-  // original Red Alert graphics the player installed from their own copy).
+  // Graphics (js/content): 'webra2d' (WebRA's flat art), 'webra3d' (the built-in
+  // 3D minimal texture pack) or 'original' (the original Red Alert graphics
+  // the player installed from their own copy).
   graphics: ['game', 'graphics'],
   // Hotkey overrides (js/hotkeys.js): { actionName: ['Ctrl+X', ...] }, [] = unbound.
   hotkeys: ['game', 'hotkeys'],

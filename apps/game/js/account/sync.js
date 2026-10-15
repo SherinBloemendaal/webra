@@ -92,6 +92,20 @@ export function mergeSettings({ base, local, remote }) {
   return { merged, conflicts, localChanges, remoteChanges };
 }
 
+/**
+ * A rolling upgrade: a client from before 0.17.0 knows Graphics only as 'webra' or 'original', so it turns
+ * 'webra2d' and 'webra3d' into 'webra' when it reads the account and uploads that with its next change. Such a
+ * 'webra' only says "WebRA's own art": when this device last synced 2D or 3D minimal (`base`), the account
+ * keeps that choice instead of falling back to 2D minimal. Any other value (and 'webra' after 'original', a real
+ * choice on the old client) is taken as it is.
+ * @returns {{ settings: object, kept: boolean }} the remote document to use, and whether a 'webra' was replaced
+ */
+export function keepGraphicsFromOldClients(settings, base) {
+  const was = base?.game?.graphics;
+  if (settings?.game?.graphics !== 'webra' || (was !== 'webra2d' && was !== 'webra3d')) return { settings, kept: false };
+  return { settings: { ...settings, game: { ...settings.game, graphics: was } }, kept: true };
+}
+
 /** Apply the player's choice for conflicts: 'local' keeps this device's values, 'remote' the account's. */
 export function resolveConflicts(merged, conflicts, choice) {
   const out = clone(merged);
@@ -243,7 +257,8 @@ export class SettingsSync {
    */
   async reconcile(remote, attempt = 0) {
     if (!this.state) return;
-    const remoteValues = normalizeValues(remote.settings ?? {}).values;
+    const { settings: remoteSettings, kept } = keepGraphicsFromOldClients(remote.settings ?? {}, this.state.base);
+    const remoteValues = normalizeValues(remoteSettings).values;
     if (!remote.version) {
       // Nothing stored for the account yet: this device's settings become its first version.
       this.state.version = 0;
@@ -253,9 +268,11 @@ export class SettingsSync {
     }
     const local = this.registry.values();
     if (!this.state.dirty) {
-      this.registry.applyDocument(remote.settings ?? {}, { origin: 'remote' });
-      this.state = { ...this.state, version: remote.version, base: this.registry.values(), dirty: false };
+      this.registry.applyDocument(remoteSettings, { origin: 'remote' });
+      // A Graphics choice an old client flattened to 'webra' is written back once (it uploads only its own changes).
+      this.state = { ...this.state, version: remote.version, base: this.registry.values(), dirty: kept };
       this.save();
+      if (kept) return this.push(attempt);
       this.setStatus('synced');
       return;
     }
@@ -272,7 +289,7 @@ export class SettingsSync {
     this.registry.applyDocument(patch, { origin: 'remote' });
     this.state.version = remote.version;
     this.state.base = remoteValues;
-    this.state.dirty = diffValues(remoteValues, this.registry.values()).length > 0;
+    this.state.dirty = kept || diffValues(remoteValues, this.registry.values()).length > 0;
     this.save();
     if (this.state.dirty) return this.push(attempt);
     this.setStatus('synced');

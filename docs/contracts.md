@@ -4085,7 +4085,9 @@ drawn.
 
 Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
 render setting; `js/content/atlas.js` `originalSlotInfo`, plus the slots of
-WebRA's own pixel art, `js/gameart.js` `applyGameArt`) are drawn the way
+WebRA's own pixel art, `js/gameart.js` `applyGameArt`, and the actor slots of
+texture packs with `"perspective": "classic"`, such as the built-in 3D
+minimal pack) are drawn the way
 OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
 slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
 10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
@@ -4105,7 +4107,13 @@ b side offset in world units, drawn from slot `2t + 1` with the idle
 pose), kind 1 a structure whose body shows the storage level (OpenRA
 WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
 capacity of its owner, mode 3), kind 2 the original damage smoke
-(milliseconds per frame, start frames, loop frames). Presentation only: the state hash is the
+(milliseconds per frame, start frames, loop frames), kind 5 the ground
+shear of an actor type's art (a: the pack's `groundShear` in 1024ths,
+clamped to plus or minus 1024): its turret, rotor and muzzle offsets move
+a / 1024 world pixels sideways per world pixel south, as its sheared hull
+does (`render.rs` `sheared_offset`), so every mount (the Cruiser has two
+turrets, the Chinook two rotors) carries its part in every facing.
+Presentation only: the state hash is the
 same either way.
 
 Sprite slots after the specials: the effects module (`fx_base`: 0 damage

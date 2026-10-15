@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AccountApi, AccountError, errorText, formatWait, needsCsrf, queryString, versionOfEtag } from '../js/account/api.js';
 import { toBase64url, fromBase64url, creationOptions, requestOptions, credentialJSON } from '../js/account/passkey.js';
-import { SettingsSync, mergeSettings, resolveConflicts, SYNC_KEY } from '../js/account/sync.js';
+import { SettingsSync, keepGraphicsFromOldClients, mergeSettings, resolveConflicts, SYNC_KEY } from '../js/account/sync.js';
 import { createRegistry, normalizeValues, checkDocument } from '../js/registry.js';
 import { MockAccountServer } from './account-mock.mjs';
 import { memoryStorage } from './dom-fixtures.mjs';
@@ -177,6 +177,36 @@ test('sync: a new account takes this device\'s settings; another device then get
   assert.deepEqual(b.registry.get('game', 'hotkeys'), { stop: ['Z'] });
   assert.deepEqual(seen, ['remote']);
   assert.equal(server.settingsDocs.get(user.id).version, 1, 'nothing uploaded');
+});
+
+test('sync: a client from before 0.17.0 flattens Graphics to "webra"; this device keeps its 2D or 3D minimal and writes it back', async () => {
+  assert.deepEqual(keepGraphicsFromOldClients({ game: { graphics: 'webra' } }, { game: { graphics: 'webra3d' } }), { settings: { game: { graphics: 'webra3d' } }, kept: true });
+  for (const [remote, was] of [['webra', 'original'], ['webra', undefined], ['original', 'webra3d'], ['webra2d', 'webra3d']]) {
+    assert.equal(keepGraphicsFromOldClients({ game: { graphics: remote } }, was ? { game: { graphics: was } } : null).kept, false, `${remote} after ${was}`);
+  }
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  asUser(server, user);
+  const a = device(server, user);
+  a.registry.set('game', 'graphics', 'webra3d');
+  await a.sync.start(user);
+  assert.equal(server.settingsDocs.get(user.id).settings.game.graphics, 'webra3d');
+  // The old client reads it as 'webra' and uploads it with a change of its own.
+  const old = (graphics) => {
+    const cur = server.settingsDocs.get(user.id);
+    server.settingsDocs.set(user.id, { version: cur.version + 1, updatedAt: 0, settings: { ...cur.settings, game: { ...cur.settings.game, graphics, lowQuality: !cur.settings.game.lowQuality } } });
+  };
+  old('webra');
+  await a.sync.pull();
+  assert.equal(a.registry.get('game', 'graphics'), 'webra3d', '3D minimal stays');
+  assert.equal(a.registry.get('game', 'lowQuality'), server.settingsDocs.get(user.id).settings.game.lowQuality, 'the old client\'s own change is taken');
+  assert.equal(server.settingsDocs.get(user.id).settings.game.graphics, 'webra3d', 'written back to the account');
+  // A real choice on the old client (Original to WebRA) is taken: WebRA there is 2D minimal here.
+  a.registry.set('game', 'graphics', 'original');
+  await a.timers.fire();
+  old('webra');
+  await a.sync.pull();
+  assert.equal(a.registry.get('game', 'graphics'), 'webra2d');
 });
 
 test('sync: changes upload after a pause, with the version; a newer version on the server is merged and retried', async () => {
