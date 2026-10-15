@@ -45,10 +45,12 @@ async function session(env, id, { name = 'Friday night 2v2', isPublic = false, s
 const inSession = (env, sessionId, userId, client = 1) =>
   env.DB.sqlite.prepare('INSERT INTO game_presence (session_id, client, user_id, updated_at) VALUES (?, ?, ?, ?)').run(sessionId, client, userId, Date.now());
 
-const setSocial = (env, userId, social) =>
-  env.DB.sqlite
-    .prepare('INSERT OR REPLACE INTO settings_docs (user_id, version, doc, updated_at) VALUES (?, 1, ?, 0)')
-    .run(userId, JSON.stringify({ schema: 1, social }));
+/** Store the player's privacy settings the way the game does: the settings document's PUT route. */
+async function setSocial(b, social) {
+  const current = await b.get('/api/account/settings');
+  const r = await b.put('/api/account/settings', { settings: { ...current.body.settings, schema: 1, social } }, { headers: { 'If-Match': `"v${current.body.version}"` } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+}
 
 async function befriend(a, b) {
   assert.equal((await a.post('/api/account/friends/requests', { username: b.user.username })).status, 201);
@@ -134,6 +136,10 @@ test('blocking: ends the friendship, refuses requests and invites both ways; the
   assert.equal(r.status, 201);
   assert.deepEqual((await pest.get('/api/account/friends')).body.outgoing.map((x) => x.username), ['Karaa']);
   assert.deepEqual((await kara.get('/api/account/friends')).body.incoming, []);
+  // The hidden request cannot be accepted by name while the block stands.
+  const sneaky = await kara.post('/api/account/friends/requests/Pester/accept');
+  assert.deepEqual([sneaky.status, sneaky.body.error.code], [409, 'blocked']);
+  assert.deepEqual((await kara.get('/api/account/friends')).body.friends, []);
   // Kara cannot ask Pest without unblocking first.
   assert.equal((await kara.post('/api/account/friends/requests', { username: 'Pester' })).body.error.code, 'blocked');
   // Pest's waiting request does not make friends when Kara asks after unblocking: it was ignored.
@@ -171,16 +177,16 @@ test('status: online, away, in a lobby or a game, offline; privacy settings deci
   assert.equal(list.Karaa.session, undefined, 'a private game is not named unless the friend allows spectators');
   assert.equal(list.Tomas.status, 'offline');
   // Kara allows spectators: her game is named, with its play time.
-  setSocial(env, kara.user.id, { allowSpectate: true });
+  await setSocial(kara, { allowSpectate: true });
   const k = (await me.get('/api/account/friends')).body.friends.find((f) => f.username === 'Karaa');
   assert.equal(k.session.spectatable, true);
   assert.equal(k.session.playingMs, 60_000);
   assert.equal(k.session.joinable, false);
   // Ivan does not let friends join: his private lobby is not named either.
-  setSocial(env, ivan.user.id, { friendsJoin: false });
+  await setSocial(ivan, { friendsJoin: false });
   assert.equal((await me.get('/api/account/friends')).body.friends.find((f) => f.username === 'Ivano').session, undefined);
   // Mo hides his status: offline, without a last-seen time.
-  setSocial(env, mo.user.id, { showOnline: false });
+  await setSocial(mo, { showOnline: false });
   const hidden = (await me.get('/api/account/friends')).body.friends.find((f) => f.username === 'Moira');
   assert.deepEqual([hidden.status, hidden.lastSeenAt], ['offline', null]);
   // The heartbeat goes stale: offline, last seen to the hour.
@@ -192,7 +198,7 @@ test('status: online, away, in a lobby or a game, offline; privacy settings deci
   assert.deepEqual((await kara.get('/api/account/friends')).body.privacy, { showOnline: true, friendsJoin: true, allowSpectate: true });
 });
 
-test('presence: written at most every 45 s unless away changes; validated', async () => {
+test('presence: one write per 45 s; a change of away at most every 5 s, however the flag flips; validated', async () => {
   const env = makeEnv({ email: false });
   const mo = await player(env, 'Moira');
   const seen = () => env.DB.rows('SELECT seen_at, away_since FROM user_presence')[0];
@@ -202,13 +208,21 @@ test('presence: written at most every 45 s unless away changes; validated', asyn
   await mo.post('/api/account/presence', { away: false });
   assert.equal(seen().seen_at, first, 'too soon: not written');
   await mo.post('/api/account/presence', { away: true });
-  assert.equal(seen().away_since, Date.now(), 'going away is written at once');
-  clock.advance(50_000);
-  await mo.post('/api/account/presence', { away: true });
-  assert.equal(seen().seen_at, Date.now());
-  assert.equal(seen().away_since, Date.now() - 50_000, 'away since stays');
+  assert.equal(seen().away_since, Date.now(), 'going away is written sooner than the heartbeat');
+  // Flipping the flag back and forth writes nothing more within 5 s of the last write.
+  const t = seen().seen_at;
+  for (let i = 0; i < 8; i++) {
+    clock.advance(500);
+    await mo.post('/api/account/presence', { away: i % 2 === 0 });
+    assert.equal(seen().seen_at, t, `flip ${i}`);
+  }
+  clock.advance(1000);
   await mo.post('/api/account/presence', { away: false });
+  assert.equal(seen().seen_at, Date.now(), 'a real change after 5 s is written');
   assert.equal(seen().away_since, null);
+  clock.advance(50_000);
+  await mo.post('/api/account/presence', { away: true, idleMs: 600_000 });
+  assert.equal(seen().away_since, Date.now() - 600_000, 'away counts from the last input');
   assert.equal((await mo.post('/api/account/presence', { away: 'yes' })).status, 400);
   assert.equal((await mo.post('/api/account/presence', { away: true, idleMs: -1 })).status, 400);
 });
@@ -279,6 +293,13 @@ test('invite codes over HTTP: lookup 404 / 410 / 200, guessing is limited, block
   await kara.post('/api/account/friends/blocks', { username: 'Pester' });
   assert.equal((await pest.get(`/api/invite/${code5}`)).status, 404);
   assert.equal((await kara.get(`/api/invite/${code5}`)).status, 200);
+  // The blocked player's lookups are no misses: its network is not locked out.
+  for (let i = 0; i < 35; i++) {
+    clock.advance(4000); // under the per-address burst limit (20 a minute)
+    await session(env, SID('5')); // the session's heartbeat keeps its row fresh
+    assert.equal((await pest.get(`/api/invite/${code5}`)).status, 404);
+  }
+  assert.equal((await new Browser(env, { ip: pest.ip }).get(`/api/invite/${code5}`)).status, 200, 'a neighbour on that network still looks codes up');
   // Failed lookups lock the address out for a while.
   const guesser = new Browser(env, { ip: '203.0.113.99' });
   let last;
@@ -303,7 +324,12 @@ test('POST /api/sessions/<id>/invite: CSRF, the member header and a quota; the s
   assert.deepEqual(calls[0].member, { client: 1, key: 'k'.repeat(43) });
   assert.equal(calls[0].account.username, 'Karaa');
   env.SESSION.get = (id) => ({ ...realGet(id), newInvite: async () => ({ ok: false, status: 403, code: 'not_host', message: 'Only the host can make an invite code.' }) });
-  assert.equal((await kara.post(path, {}, { headers: member })).body.error.code, 'not_host');
+  // Refused requests cost no quota: 40 of them, and the host can still make codes.
+  for (let i = 0; i < 40; i++) assert.equal((await kara.post(path, {}, { headers: member })).body.error.code, 'not_host');
+  env.SESSION.get = (id) => ({ ...realGet(id), newInvite: async () => ({ ok: true, code: 'K7Q2MX', expiresAt: 99 }) });
+  for (let i = 0; i < 29; i++) assert.equal((await kara.post(path, {}, { headers: member })).status, 201);
+  const over = await kara.post(path, {}, { headers: member });
+  assert.equal(over.status, 429, 'issued codes count: 30 per network and hour');
   assert.equal((await kara.get(path)).status, 405);
 });
 

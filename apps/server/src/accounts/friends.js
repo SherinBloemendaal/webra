@@ -16,7 +16,7 @@
 //   session joins are refused by the session object (session.js);
 // - requests, invites and blocks are rate limited per account.
 
-import { FRIEND_REQUEST_TTL_MS, FRIENDS_MAX, FRIEND_REQUESTS_IN_MAX, FRIEND_REQUESTS_OUT_MAX, BLOCKS_MAX, PRESENCE_ONLINE_MS, SOCIAL_DEFAULTS, usernameKey } from '@webra/protocol';
+import { FRIEND_REQUEST_TTL_MS, FRIENDS_MAX, FRIEND_REQUESTS_IN_MAX, FRIEND_REQUESTS_OUT_MAX, BLOCKS_MAX, PRESENCE_ONLINE_MS, SOCIAL_SETTING_DEFAULTS, usernameKey } from '@webra/protocol';
 import { HttpError, json } from '../http.js';
 import { invalid } from './context.js';
 import { HOUR } from './routes-auth.js';
@@ -27,8 +27,13 @@ const noContent = () => new Response(null, { status: 204, headers: { 'cache-cont
 
 /** Requests sent, blocks and invites per account and hour. */
 export const FRIEND_LIMITS = Object.freeze({ requests: 20, blocks: 30, invites: 30 });
-/** Presence heartbeats are stored at most this often (a change of away is stored at once). */
+/**
+ * Presence heartbeats are stored at most every PRESENCE_WRITE_MS; a change
+ * of away is stored sooner, but never within PRESENCE_CHANGE_MS of the last
+ * write, so flipping the flag cannot turn the heartbeat into many writes.
+ */
 export const PRESENCE_WRITE_MS = 45_000;
+export const PRESENCE_CHANGE_MS = 5_000;
 const DAY = 24 * HOUR;
 
 const notFound = () => new HttpError(404, 'not_found', 'No player with this name.');
@@ -141,9 +146,9 @@ export async function friendsDocument(db, userId, now = Date.now()) {
   }
   const friends = rows.map((r) => {
     const social = {
-      showOnline: flag(r.show_online, SOCIAL_DEFAULTS.showOnline),
-      friendsJoin: flag(r.friends_join, SOCIAL_DEFAULTS.friendsJoin),
-      allowSpectate: flag(r.allow_spectate, SOCIAL_DEFAULTS.allowSpectate),
+      showOnline: flag(r.show_online, SOCIAL_SETTING_DEFAULTS.showOnline),
+      friendsJoin: flag(r.friends_join, SOCIAL_SETTING_DEFAULTS.friendsJoin),
+      allowSpectate: flag(r.allow_spectate, SOCIAL_SETTING_DEFAULTS.allowSpectate),
     };
     const base = { username: r.username, displayName: r.display_name, avatarColor: r.avatar_color, since: r.since };
     if (!social.showOnline) return { ...base, status: 'offline', lastSeenAt: null };
@@ -213,9 +218,9 @@ export async function friendsDocument(db, userId, now = Date.now()) {
     invites,
     sentInvites,
     privacy: {
-      showOnline: flag(own?.show_online, SOCIAL_DEFAULTS.showOnline),
-      friendsJoin: flag(own?.friends_join, SOCIAL_DEFAULTS.friendsJoin),
-      allowSpectate: flag(own?.allow_spectate, SOCIAL_DEFAULTS.allowSpectate),
+      showOnline: flag(own?.show_online, SOCIAL_SETTING_DEFAULTS.showOnline),
+      friendsJoin: flag(own?.friends_join, SOCIAL_SETTING_DEFAULTS.friendsJoin),
+      allowSpectate: flag(own?.allow_spectate, SOCIAL_SETTING_DEFAULTS.allowSpectate),
     },
     limits: { friends: FRIENDS_MAX, outgoing: FRIEND_REQUESTS_OUT_MAX, blocked: BLOCKS_MAX },
   };
@@ -229,6 +234,8 @@ async function me(ctx) {
 
 async function getFriends(ctx) {
   const user = await me(ctx);
+  // The game polls every 30 s; a burst limit keeps a loop from costing many reads.
+  await ctx.burst('friends-list', [240, HOUR]);
   return json(await friendsDocument(ctx.db, user.id, ctx.now));
 }
 
@@ -292,6 +299,10 @@ async function incomingFrom(ctx, user, username) {
 async function acceptRequest(ctx, { username }) {
   const user = await me(ctx);
   const other = await incomingFrom(ctx, user, username);
+  // A request kept hidden because the receiver blocked the sender cannot be accepted by name.
+  if ((await blocks(ctx.db, user.id, other.id)) || (await blocks(ctx.db, other.id, user.id))) {
+    throw new HttpError(409, 'blocked', 'You blocked this player. Unblock them first.');
+  }
   await befriend(ctx, user, other);
   return json({ friend: await friendView(ctx, user.id, other.username) });
 }
@@ -395,8 +406,8 @@ async function dismissInvite(ctx, { username }) {
 
 /**
  * The presence heartbeat: the game is open (`away`: no input for a while,
- * `idleMs` how long). Stored at most every PRESENCE_WRITE_MS unless `away`
- * changed, so a client cannot turn it into many writes.
+ * `idleMs` how long). Stored at most every PRESENCE_WRITE_MS, a change of
+ * `away` at most every PRESENCE_CHANGE_MS; a burst limit per address on top.
  */
 async function presence(ctx) {
   const body = await ctx.body(['away', 'idleMs']);
@@ -407,15 +418,16 @@ async function presence(ctx) {
     idle = Math.min(body.idleMs, DAY);
   }
   const user = await me(ctx);
+  await ctx.burst('presence', [120, HOUR]);
   const away = body.away ? 1 : 0;
   await ctx.db
     .prepare(
       `INSERT INTO user_presence (user_id, seen_at, away_since) VALUES (?1, ?2, CASE WHEN ?3 = 1 THEN ?4 ELSE NULL END)
        ON CONFLICT(user_id) DO UPDATE SET seen_at = excluded.seen_at,
          away_since = CASE WHEN ?3 = 1 THEN COALESCE(user_presence.away_since, excluded.away_since) ELSE NULL END
-       WHERE user_presence.seen_at <= ?5 OR (user_presence.away_since IS NULL) = (?3 = 1)`,
+       WHERE user_presence.seen_at <= ?5 OR ((user_presence.away_since IS NULL) = (?3 = 1) AND user_presence.seen_at <= ?6)`,
     )
-    .bind(user.id, ctx.now, away, ctx.now - idle, ctx.now - PRESENCE_WRITE_MS)
+    .bind(user.id, ctx.now, away, ctx.now - idle, ctx.now - PRESENCE_WRITE_MS, ctx.now - PRESENCE_CHANGE_MS)
     .run();
   return noContent();
 }

@@ -1156,7 +1156,9 @@ docs/accounts-api.md 5.11).
   session object with its per-address lockout); a code never skips it.
 - **Who can make one.** Only the host, proven by its member credential (the
   rejoin key, checked in constant time and bound to its account, failures
-  counting toward the per-address lockout); 30 codes per network per hour.
+  counting toward the per-address lockout); 30 issued codes per network per
+  hour (a refused request, such as a member who is not the host, costs no
+  quota, so it cannot use up a shared network's codes).
   Every member sees the code (`lobby.invite`): anyone in a lobby could share
   the long link before anyway.
 - **Private lobbies.** A private session now has an unlisted directory row
@@ -1176,10 +1178,12 @@ docs/accounts-api.md 5.11).
   oracle than signup is.
 - **Blocking cannot be detected.** A request to a player who blocked the
   sender is answered like any other and shows as waiting to the sender; it
-  is stored hidden from the receiver. Ignoring a request works the same way.
+  is stored hidden from the receiver, and cannot be accepted by name while
+  the block stands. Ignoring a request works the same way.
   A blocked player trying to join a session gets "You cannot join this
   session." without being told who blocked it, and an invite code lookup
-  answers it like an unknown code.
+  answers it like an unknown code (without counting as a failed lookup, so a
+  blocked player cannot lock its network out of invite codes).
 - **Blocking applies everywhere.** No requests or friend invites either way
   (a block ends any friendship, request and invite between the two), no
   joining a session (lobby or running game, also as a spectator) one of
@@ -1196,8 +1200,10 @@ docs/accounts-api.md 5.11).
   mutual, accepted relation) see any of it; strangers see nothing. The
   online counter (`/api/online`) is a number only.
 - **Heartbeat cost.** The presence heartbeat is stored at most every 45 s
-  per account unless `away` changes, so a client cannot turn it into many
-  D1 writes; the friends list is read-only and polled every 30 s.
+  per account, and a change of `away` at most every 5 s after the last
+  write, so flipping the flag cannot turn it into many D1 writes. Both the
+  heartbeat and the friends list (read-only, polled every 30 s) have a
+  burst limit per address (20 a minute with the rate limit binding).
 - **Authorization.** Every friends route needs a signed-in, active account
   and only acts on rows of the caller (the SQL always names the caller's
   id); invites need friendship and the caller's own membership of the

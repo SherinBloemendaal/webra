@@ -23,7 +23,8 @@ import {
   parseServerMessage,
   randomInviteCode,
   S2C,
-  SOCIAL_DEFAULTS,
+  SOCIAL_SETTING_DEFAULTS,
+  validateSettingsDocument,
   socialSettings,
   STALL_LOG_MAX,
 } from '../src/index.js';
@@ -146,8 +147,11 @@ test('invite codes: alphabet without look-alikes, normalized input, display form
 });
 
 test('privacy settings: defaults, and only booleans count', () => {
-  assert.deepEqual(socialSettings(null), SOCIAL_DEFAULTS);
-  assert.deepEqual(SOCIAL_DEFAULTS, { showOnline: true, friendsJoin: true, allowSpectate: false });
+  assert.deepEqual(socialSettings(null), SOCIAL_SETTING_DEFAULTS);
+  assert.deepEqual(SOCIAL_SETTING_DEFAULTS, { showOnline: true, friendsJoin: true, allowSpectate: false });
   assert.deepEqual(socialSettings({ social: { showOnline: false, allowSpectate: 'yes' } }), { showOnline: false, friendsJoin: true, allowSpectate: false });
-  assert.deepEqual(socialSettings({ social: [] }), SOCIAL_DEFAULTS);
+  assert.deepEqual(socialSettings({ social: [] }), SOCIAL_SETTING_DEFAULTS);
+  // The stored document keeps them under `social` (what the server's json_extract('$.social.*') reads).
+  const doc = validateSettingsDocument({ schema: 1, social: { showOnline: false, allowSpectate: true } });
+  assert.deepEqual(socialSettings(doc), { showOnline: false, friendsJoin: true, allowSpectate: true });
 });

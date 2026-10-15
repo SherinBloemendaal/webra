@@ -1288,7 +1288,8 @@ may carry the dash, spaces, or be a whole link (`/join/<code>` or
 `?invite=<code>`).
 
 - `POST /api/sessions/:id/invite` (host only, its `X-WebRA-Member`
-  credential, 30 per network per hour): a new random code (the D1 primary
+  credential, 30 issued codes per network per hour; refused requests do not
+  count): a new random code (the D1 primary
   key is the collision check; another code is drawn on a clash), valid while
   the lobby is open and at most INVITE_TTL_MS (2 hours). The previous code
   stops working in the same step. Every member sees the current code in
@@ -1301,7 +1302,7 @@ may carry the dash, spaces, or be a whole link (`/join/<code>` or
   without D1 when the rate limit binding exists) and failed ones (404 and
   410) to 30 per network per hour, then 429 for every lookup until the hour
   ends. A signed-in player that a present member of the lobby blocked gets
-  404.
+  404 (not counted as a failed lookup).
 - The code is only a name: a password lobby still asks for its password
   (`invite.locked`), a full lobby can still be watched while there are
   spectator places, and the long link with the session id keeps working.
