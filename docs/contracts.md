@@ -2127,7 +2127,16 @@ models, single player, skirmish and multiplayer:
   nearby infantry). A smart order (or the bulk repair order) on an own
   depot sends the selected units that can be repaired there; with nothing
   to repair (or, minelayers, to reload) the cursor is blocked (cursor 15)
-  and the click does nothing, as OpenRA ignores the Repair order then.
+  and the click does nothing (it does not select the depot, and the units
+  do not reply), as OpenRA ignores the Repair order then. In a mixed
+  selection the units with nothing to get there ignore it the same way and
+  go on with what they were doing (an undamaged ore truck keeps
+  harvesting). A damaged ore truck is sent whatever it was doing, also full
+  or unloading on the refinery's dock (it lets the dock go and keeps its
+  load); once repaired and off the pad it goes back to harvesting after
+  the short pause WebRA gives every idle truck (units.rs
+  HARVESTER_IDLE_RESUME; OpenRA's truck stays idle after Resupply until it
+  gets an order).
 - On its way a unit joins the line within 6 cells of the pad, or where it
   is held up on the way while the pad can still be reached. Its ticket is
   the tick it joined, ties by actor index: first come first served, the

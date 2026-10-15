@@ -33,10 +33,16 @@
 
 import { CURSORS, ACTION_CURSORS, ACTION, MODE_CURSORS, POWER_CURSORS, minimapCursor, scrollCursor } from './cursors.js';
 
-/** Smart orders that act on own actors (instead of selecting them). */
+/**
+ * Smart orders that act on own actors (instead of selecting them). The
+ * blocked ones keep their cursor and the click selects nothing: an
+ * undamaged unit over an own service depot shows enter-blocked and the
+ * order is ignored (OpenRA EnterAlliedActorTargeter, Repairable).
+ */
 const TARGETS_OWN = new Set([
   ACTION.DOCK,
   ACTION.REPAIR,
+  ACTION.ENTER_BLOCKED,
   ACTION.LOAD,
   ACTION.DELIVER_CASH,
   ACTION.INSTANT_REPAIR,

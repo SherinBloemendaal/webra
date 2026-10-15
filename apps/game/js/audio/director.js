@@ -107,6 +107,12 @@ export const EV = {
 
 /** The order behind a smart order's action code (js/cursors.js ACTION), for its voice line. */
 const SMART_ORDERS = { 2: 'attack', 8: 'capture', 9: 'infiltrate', 10: 'demolish', 11: 'repair', 12: 'attack', 13: 'attack', 14: 'disguise', 17: 'capture' };
+/**
+ * Smart orders the units ignore (js/cursors.js ACTION ENTER_BLOCKED,
+ * REPAIR_BLOCKED): no reply, like OpenRA's IOrderVoice returning no voice
+ * for an order it will not carry out (Repairable with nothing to repair).
+ */
+const SILENT_SMART_ORDERS = new Set([15, 16]);
 /** The order of each order method (js/audio/index.js ORDER_METHODS); the rest are moves. */
 const METHOD_ORDERS = { order_attack: 'attack', order_attack_ground: 'attack' };
 export const STRIDE = 6;
@@ -324,6 +330,10 @@ export class Director {
    * per order, the voice line of the trait behind it (OpenRA IOrderVoice).
    */
   onOrder(ids, method = 'order_move') {
+    if (method === 'order_smart' && SILENT_SMART_ORDERS.has(this.smartAction)) {
+      this.smartAction = null;
+      return;
+    }
     const order = method === 'order_smart' ? (SMART_ORDERS[this.smartAction] ?? 'move') : (METHOD_ORDERS[method] ?? 'move');
     this.smartAction = null;
     const u = this.ownUnit(ids);
