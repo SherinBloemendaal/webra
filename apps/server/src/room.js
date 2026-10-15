@@ -1428,4 +1428,25 @@ export class Room {
   hostName() {
     return this.hostId === null ? null : this.nameOf(this.hostId);
   }
+
+  /** The name an AI slot plays under (OpenRA's bot name, with the difficulty unless Normal). */
+  aiNameOf(slot) {
+    return aiName(slot);
+  }
+
+  /**
+   * Account ids of the members present now: in the lobby every member, in a
+   * running game the spectators and the seats that are not gone.
+   */
+  memberAccounts() {
+    const ids = new Set();
+    for (const [id, account] of Object.entries(this.accounts)) {
+      const client = Number(id);
+      const seat = this.seatOf(client);
+      const present =
+        this.phase === 'lobby' ? this.isMember(client) : this.isSpectator(client) || (seat >= 0 && this.seatState(seat) !== 'gone');
+      if (present && account) ids.add(account);
+    }
+    return [...ids];
+  }
 }

@@ -184,8 +184,12 @@ imports it only through the re-export file `apps/game/js/protocol.js` (from
   every merged value (ranges, list lengths, shapes, references to weapons and
   actors). **Any map with `rules` is a modded map**: the client
   shows a warning ("This map changes game rules (costs, damage, speed...). It
-  can be unfair or act as a cheat.") and the player must accept before the map
-  is installed. The lobby shows a MODDED badge for such maps.
+  can be unfair or act as a cheat.") with a list of what the rules change,
+  one line per value from the built-in value to the map's (times in ticks
+  also as game time at normal speed; `js/maprules.js` `describeMapRules`,
+  in the skirmish lobby, the online lobby and for replays and saves), and
+  the player must accept before the map is installed. The lobby shows a
+  MODDED badge for such maps.
 - Engine API (landed): `Game.from_map(mapJson, optionsJson)` builds a world
   from a map (players fill spawns in slot order, extra spawns stay empty,
   neutral actors get a passive owner); `Game.map_hash(mapJson)`,
@@ -594,12 +598,41 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   (build time follows the cost as in OpenRA, or `Buildable.BuildDuration` /
   `BuildDurationModifier`), `Health.HP`, `Mobile.Speed`,
   `Mobile.TurnSpeed`, `RevealsShroud.Range`, `Power.Amount`,
-  `Buildable.Prerequisites`; weapons `Range`, `MinRange`, `ReloadDelay`,
-  `Burst`, `Projectile.Speed`, `Projectile.Inaccuracy`, and `Damage` of a
-  single warhead. Each kept field is checked by the engine alone; refused
-  fields are dropped and reported. Everything else (removals, inheritance,
-  other traits, `Player`, `World`) is listed as unsupported and never
-  applied. Lua scripts are never run. Custom sequences, voices, music,
+  `Buildable.Prerequisites` (tech level tokens such as `~techlevel.low`
+  included); support powers, matched by the trait's full key (`NukePower`,
+  `AirstrikePower@spyplane`, `GrantExternalConditionPower@IRONCURTAIN`, ...):
+  `ChargeInterval` (ticks in both games: WebRA's tick is OpenRA's, 40 ms at
+  normal speed and 20 ms at fastest), `OneShot`, `StartFullyCharged`,
+  `Prerequisites` and `DisplayTimerRelationships`, written as the actor's
+  whole `abilities.support_powers` list with the built-in entries and the
+  changed fields (the list is replaced whole, see `rules` above); weapons
+  `Range`, `MinRange`, `ReloadDelay`, `Burst`, `Projectile.Speed`,
+  `Projectile.Inaccuracy`, and `Damage` of a single warhead. A later
+  duplicate of an actor merges into the earlier one (OpenRA MiniYaml), the
+  last value winning. A change to an actor also reaches the actors that
+  inherit it in OpenRA (`INHERITS` in `tables.js`, generated from
+  `data/source/rules`: AFLD.Ukraine from AFLD, SPY.England from SPY, E1R1
+  from E1, ...) except for the keys those set themselves, as OpenRA
+  resolves `Inherits` after merging a map's rules. Each kept field is
+  checked by the engine alone; refused fields are dropped and reported.
+- Lobby options in the `World` and `Player` rules become the map's
+  `options` and `lockedOptions` (not rules: the map is not modded for
+  them): `MapOptions` `TechLevel`, `GameSpeed` (`default` is `normal`),
+  `ShortGameCheckboxEnabled`; `CrateSpawner`, `MapBuildRadius` (build
+  radius, ally build radius), `MapStartingLocations` (separate team
+  spawns), `SpawnStartingUnits` `StartingUnitsClass` (`none` is `mcv`),
+  `TimeLimitManager` `TimeLimitDefault`, `PlayerResources` `DefaultCash`,
+  `DeveloperMode` (the debug menu), `Shroud` (fog, explored map) and the
+  `LobbyPrerequisiteCheckbox` options bounty, redeployable MCVs and
+  reusable engineers, each with its `...Locked` field. A locked option the
+  map does not set keeps OpenRA's default, as OpenRA's lobby does; a value
+  the lobby has no choice for (a starting cash of 3000) is reported, and
+  when the map locks it the option is left unset and unlocked (warned)
+  rather than locked at OpenRA's default or snapped to the nearest choice.
+- Everything else (removals, `Inherits`, templates, other traits and
+  fields such as `AllowMultiple` or the `...Visible` lobby flags, other
+  `World` and `Player` traits) is listed as unsupported and never applied.
+  Lua scripts are never run. Custom sequences, voices, music,
   notifications and other files are ignored and reported.
 - Import report (shown before the map is used): converted, rules applied,
   warnings, skipped, not supported, and the validation errors when the
@@ -1011,7 +1044,11 @@ travel over the network. The server never runs the simulation.
 | Method | Path | Body / result |
 |--------|------|---------------|
 | `GET` | `/api/version` | `{ version, protocol }` |
-| `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded } \| { name, modded, shared: true }, version, state }]` (public, open lobbies only; a map shared with the session shows only its name) |
+| `GET` | `/api/sessions` | `[{ id, name, host, players, maxPlayers, locked, map: { id, name, hash, modded } \| { name, modded, shared: true } \| { mission, name, modded }, version, state: lobby \| game, summary }]` (public sessions only, lobbies first: open and full lobbies and running games (protocol 8); a map shared with the session shows only its name; `summary` see "Session directory"; cached per isolate for 5 s) |
+| `GET` | `/api/online` | `{ players, lobbies, games }` (protocol 8, see "Session directory"; cached per isolate for 30 s) |
+| `POST` | `/api/sessions/:id/invite` | host only, `X-WebRA-Member`: -> `{ code, expiresAt, path }`, a new invite code for the lobby (the previous one stops working; see "Invite codes") |
+| `GET` | `/api/invite/:code` | the lobby an invite code names: `{ invite: { code, session, name, host, map, players, maxPlayers, spectators, maxSpectators, mode, locked, public, version, expiresAt } }`; 404 unknown, 410 expired (see "Invite codes") |
+| `GET` | `/join/:code` | an invite link: 302 to `/play/?invite=<code>` (a malformed code: the 404 page) |
 | `POST` | `/api/sessions` | `{ name, password?, public, maxPlayers, version }` -> `{ id, hostKey }` |
 | `GET` | `/api/sessions/:id/ws` | WebSocket upgrade into the session's Durable Object |
 | `POST` | `/api/sessions/:id/map` | host only, `X-WebRA-Member`: map JSON -> `{ id, hash, upgradedFrom? }`; shares a map file with this session only (see "Lobby maps") |
@@ -1027,6 +1064,7 @@ travel over the network. The server never runs the simulation.
 | any | `/api/site`, `/api/auth/*`, `/api/account/*`, `/api/admin/*` | Accounts, sign-in, self service and the admin API: [accounts API](accounts-api.md) |
 | `GET`, `POST` | `/api/account/replays` | The signed-in account's replays (list) and uploading one (the replay file, section 7): [accounts API](accounts-api.md) 5.10 |
 | `GET`, `DELETE` | `/api/account/replays/:id` | One replay of the signed-in account: the file, or deleting it (5.10) |
+| any | `/api/account/friends/*`, `/api/account/presence` | Friends, requests, blocks, friend invites and the presence heartbeat (protocol 8): [accounts API](accounts-api.md) 5.11 |
 
 Every request that is not `GET` or `HEAD` needs `Origin` equal to the site,
 `Sec-Fetch-Site` same-origin or absent, and the header `X-WebRA-CSRF: 1`
@@ -1117,8 +1155,11 @@ Client to server:
 | `chat` | `text` (<= 200 chars), `team?: true` (team chat) | any time |
 | `defeated` | | in game, a player whose engine defeated it (once per connection) |
 | `start` | (host only, everyone ready) | lobby |
+| `loaded` | | in game, once: this player's loading screen has closed (the start gate, see "Start gate"); spectators, rejoining players and resumed saves may send it, it is ignored |
 | `orders` | `tick, orders: [...]` | in game, every tick (may be empty) |
 | `hash` | `tick, hash` | in game, every 25 ticks |
+| `ping` | `n` (0..2^31-1), `at` (the sender's clock, whole milliseconds), and `rtt, jitter, late` together once the sender has a measurement (rtt and jitter 0..60000 ms, late 0..100 percent) | lobby and game, every 2 s (see "Network quality") |
+| `stalls` | | any time after hello: the game's stall log (see "Network quality") |
 | `leave` | | any time |
 
 Server to client: `welcome {you, name, hostId, session, role, key?}`, `lobby {slots,
@@ -1143,10 +1184,20 @@ orders: [[player, [...]], ...]}`, `desync {tick}`, `left {player, client, name,
 reason}` (`player` null for spectators and lobby members; reasons `left`,
 `dropped`, `kicked`, `disconnected`, `removed`, `expired`), `log {frames:
 [[tick, orders], ...]}`, `sync {tick, check: {tick, hash} | null}`, `back
-{player, client, name, tick}`, `error {code, message}`. Protocol version 7
+{player, client, name, tick}`, `pong {n, at}`, `netstat {players: [{client,
+rtt, jitter, late, silent?}]}`, `waiting {client, heldMs, dropInMs}` or
+`waiting {client: null}`, `stalls {stalls: [{tick, client, ms}], totals:
+[{client, ms, count}]}` (see "Network quality"), `lobby.invite? {code,
+expiresAt}` (see "Invite codes"), `error {code, message}`. Protocol version 8
 (`PROTOCOL_VERSION`); `/api/version` reports it and older clients are refused
-at `hello` with "Protocol 7 required. Reload the page.", which the client
-shows in its error banner. Version 7 made live
+at `hello` with "Protocol 8 required. Reload the page.", which the client
+shows in its error banner. Version 8 added the start gate (`loaded`: no
+frame past the start frames until every player's loading screen closed),
+network quality (`ping`, `pong`, `netstat`, `waiting`, `stalls`) and invite
+codes (`lobby.invite`); the session list also shows full lobbies and running
+games with a summary, and the Worker answers `/api/online`. A version 7
+client would refuse a lobby with an invite code and could not start a game
+(it never sends `loaded`). Version 7 made live
 lobby messages stricter: lobby options must carry `factoryLoss` (section
 3), and the host may change several slots at once (`slots`) and edit
 other players' team, handicap and spawn; frames may carry the bulk orders
@@ -1171,7 +1222,147 @@ or whose stall debt (the same time, draining by 1 s every 20 s) passes 10 s.
 Time within 1 s of the frame a client needed going out does not count; the
 client runs waiting frames at once as soon as more than `delay` are queued.
 Passwords are stored as salted PBKDF2 hashes in the Durable Object. Order
-delay: 3 ticks.
+delay: 3 ticks. A signed-in player that a member present in the session
+blocked (accounts API 5.11) is refused at `hello` with `forbidden` "You
+cannot join this session." (who blocked it is not said).
+
+### Start gate
+
+The game, and every AI in it, starts only once every player's loading screen
+has closed. After `start` the server sends the empty start frames 0 to
+`delay - 1` at once (the clients need them to begin) but no frame after them
+until every seat that holds a person sent `loaded` (`apps/server/src/lockstep.js`
+`loading`). Clients stay at tick 0 until their loading screen closes, then
+send `loaded` once. Orders a fast client sends meanwhile (for ticks up to
+`delay` past the start frames) wait in the relay.
+
+- The wait at the start counts toward nothing: no stall time, no stall debt
+  (HOLD_GRACE_MS, DROP_AFTER_MS), no `waiting` message and no stall log
+  entry. When the last seat loaded, every stall clock starts from that
+  moment, as if the start frames went out then.
+- A seat that has not sent `loaded` LOAD_TIMEOUT_MS (60 s) after the start
+  is dropped by the session alarm like a stalling player (`error dropped`
+  "You did not finish loading in time. You can rejoin.", `left` with reason
+  `dropped`): its seat waits RECONNECT_GRACE_MS for a rejoin, and the other
+  players begin at once.
+- Rejoining players and resumed online saves have no start gate: their
+  `resume` says they caught up. `loaded` from them, from spectators, or a
+  second one is ignored; in the lobby it is refused (`bad_state`).
+
+### Network quality
+
+Measured with a ping through the game server, in the lobby and in the game
+(`packages/protocol/src/netquality.js`, `apps/game/js/netquality.js`). A
+client sends `ping { n, at }` every PING_INTERVAL_MS (2 s), `at` from its
+own clock; the server answers at once with `pong { n, at }`, so the round
+trip needs no clock synchronization. A pong slower than LATE_PING_MS (1 s),
+or one that never comes, is a late ping: WebSocket runs over TCP, so nothing
+is lost visibly, and late pings are what a player feels as stutter (the
+UI calls them loss). Each ping carries the sender's last measurement:
+`rtt`, the median of its last NET_SAMPLES (10) round trips; `jitter`, the
+mean difference between consecutive round trips among them; `late`, the
+share of late pings among its last NET_LATE_WINDOW (100) in percent, one
+decimal.
+
+The server keeps each connection's last measurement (in its socket
+attachment, so hibernation keeps it) and sends `netstat` to everyone in the
+room at most every NETSTAT_INTERVAL_MS (2 s), triggered by an incoming ping
+(no alarm wakes the lobby for it). `netstat.players` lists every connected
+player (a lobby slot or a seat of the running game); spectators get the
+message but are not listed. `rtt`, `jitter` and `late` are null until the
+player reported a measurement; `silent` (milliseconds) is present when the
+server has not heard a ping from it for more than NET_SILENT_MS (5 s).
+
+Quality (`netQuality`, the same in lobby, game and statistics): poor above
+NET_POOR_RTT_MS (150 ms) or with more than NET_POOR_LATE_PCT (2) percent
+late; good below NET_GOOD_RTT_MS (80 ms) with jitter up to
+NET_GOOD_JITTER_MS (20 ms) and no late pings; fair otherwise. Signal bars:
+4 good, 3 fair, 1 poor.
+
+Pings have their own budget per connection besides the message rate limit
+(60 per second): 2 per second, bursts of 6 ("Test again" sends three).
+Pings beyond it get no pong (an honest client never sends that many) and a
+flood of refused pings closes the connection. They count against nothing
+else (the one-click content relay budgets of `relayquota.js` are
+unrelated). Cost: pings keep the session object awake while members are
+connected; in the game it is awake anyway (the alarm runs every second), in
+the lobby it now is too (one small message per member every 2 s).
+
+`waiting`: while the game waits for a player beyond HOLD_GRACE_MS (1 s
+after it could have sent the frame and the frame before went out), the
+session alarm (every second) sends `waiting { client, heldMs, dropInMs }`
+to everyone: whom, for how long so far, and how long until the drop rule
+removes it (from its drop window and stall debt). When several players hold
+the game, the one waited for longest. Once the game runs again (that player
+delivered, or was dropped or left), `waiting { client: null }` goes out at
+once. Never during the start gate.
+
+`stalls`: every wait beyond HOLD_GRACE_MS of a running game (also one that
+ended with the player dropped or leaving) is logged as `{ tick, client, ms }`:
+the frame that waited, the player, and how long it waited from when the
+player could have sent it and the frame before it went out (a player
+catching up after one long stall does not log the frames behind it). The
+server keeps the newest STALL_LOG_MAX (500) and per player `totals` of all
+of them (`{ client, ms, count }`). A member asks with `stalls` (at most every
+5 s per connection, bursts of 2; more get `rate_limited`); the answer is
+`stalls { stalls, totals }`, empty in the lobby (a finished game's log goes
+with its relay at a rematch). The order log does not change.
+
+The per-player series of the statistics (one point per 10 s, at most 150
+points) are recorded by each client from `netstat`, not by the server.
+
+### Invite codes
+
+A short name for a lobby (`packages/protocol/src/invite.js`,
+`apps/server/src/invites.js`): six characters from INVITE_ALPHABET
+(`23456789ABCDEFGHJKMNPQRSTUVWXYZ`: no 0/O or 1/I/L, 31 characters,
+887,503,681 codes), shown as `K7Q-2MX`. Input is folded to upper case and
+may carry the dash, spaces, or be a whole link (`/join/<code>` or
+`?invite=<code>`).
+
+- `POST /api/sessions/:id/invite` (host only, its `X-WebRA-Member`
+  credential, 30 issued codes per network per hour; refused requests do not
+  count): a new random code (the D1 primary
+  key is the collision check; another code is drawn on a clash), valid while
+  the lobby is open and at most INVITE_TTL_MS (2 hours). The previous code
+  stops working in the same step. Every member sees the current code in
+  `lobby.invite { code, expiresAt }` (without the dash); members share it.
+- The code ends when the game starts, when the session closes, or when it is
+  replaced. A code that ended answers 410 for a day, then 404 (rows are
+  deleted by the daily job). A rematch back to the lobby needs a new code.
+- `GET /api/invite/:code`: `{ invite }` for a code whose lobby is open; 404
+  unknown, 410 expired. Lookups are limited per address (20 per minute,
+  without D1 when the rate limit binding exists) and failed ones (404 and
+  410) to 30 per network per hour, then 429 for every lookup until the hour
+  ends. A signed-in player that a present member of the lobby blocked gets
+  404 (not counted as a failed lookup).
+- The code is only a name: a password lobby still asks for its password
+  (`invite.locked`), a full lobby can still be watched while there are
+  spectator places, and the long link with the session id keeps working.
+- `/join/:code` (the Worker, `run_worker_first`) redirects to
+  `/play/?invite=<code>`; the game reads the parameter
+  (`apps/game/js/invites.js` `inviteFromLocation`), looks the code up and
+  joins.
+
+### Session directory
+
+Every session object keeps a D1 row (`apps/server/src/directory.js`):
+written when something listed changes and every 60 s; a change of the
+summary alone is written at most every 10 s. Private sessions have rows too
+(`public = 0`): they are never listed, but invite codes and the friends list
+find them. `summary` (null for rows of older versions): `{ players: [{ name,
+team, color, ai? }], spectators, maxSpectators, mode, options: { startingCash,
+fog, techLevel, gameSpeed, crates, timeLimit }, startedAt? }`; `mode` is the
+id of the built-in game mode (section 3, protocol `BUILTIN_MODES`) whose
+options the lobby has exactly, `custom` otherwise, null for a co-op mission;
+`startedAt` while the game runs. Only what a public lobby shows anyone
+anyway.
+
+`GET /api/online`: `players` counts signed-in players with a presence
+heartbeat in the last PRESENCE_ONLINE_MS (accounts API 5.11, whatever their
+`social.showOnline`: it is only a count) or in a session, plus anonymous
+members of sessions; `lobbies` and `games` count sessions (public or not)
+in each phase.
 
 ### Start positions
 
@@ -2810,7 +3001,16 @@ after it (OpenRA's Beacon only removes itself for a positive duration: with
 an advance of `flight_delay` or more it stays, in WebRA while the missile
 flies); drawn with fx specials 4 and 5, OpenRA's `atomic` image `up` and
 `down` with the original graphics), `GpsPower` launches by itself when
-charged and is `OneShot` (it disappears from `powers` after launch). The
+charged and is `OneShot` (it disappears from `powers` after launch). A
+power charges for its `charge` ticks (OpenRA ChargeInterval) from empty, or
+starts ready when its `start_fully_charged` is set (OpenRA
+StartFullyCharged; no built-in power has it, map rules may set it), which
+applies only when a provider creates the player's instance. As in OpenRA's
+SupportPowerManager, a power whose `prerequisites` go missing leaves the
+power bar and resets to a full charge but its instance stays (also after
+its last provider is lost), so rebuilding the prerequisite charges it from
+empty; an instance whose prerequisites are met goes with its last
+provider. The
 client starts targeting with `Input.startPowerTargeting(key, kind)`.
 
 Support power timers (OpenRA `SupportPowerTimerWidget`, the
@@ -4154,7 +4354,9 @@ drawn.
 
 Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
 render setting; `js/content/atlas.js` `originalSlotInfo`, plus the slots of
-WebRA's own pixel art, `js/gameart.js` `applyGameArt`) are drawn the way
+WebRA's own pixel art, `js/gameart.js` `applyGameArt`, and the actor slots of
+texture packs with `"perspective": "classic"`, such as the built-in 3D
+minimal pack) are drawn the way
 OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
 slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
 10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
@@ -4174,7 +4376,13 @@ b side offset in world units, drawn from slot `2t + 1` with the idle
 pose), kind 1 a structure whose body shows the storage level (OpenRA
 WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
 capacity of its owner, mode 3), kind 2 the original damage smoke
-(milliseconds per frame, start frames, loop frames). Presentation only: the state hash is the
+(milliseconds per frame, start frames, loop frames), kind 5 the ground
+shear of an actor type's art (a: the pack's `groundShear` in 1024ths,
+clamped to plus or minus 1024): its turret, rotor and muzzle offsets move
+a / 1024 world pixels sideways per world pixel south, as its sheared hull
+does (`render.rs` `sheared_offset`), so every mount (the Cruiser has two
+turrets, the Chinook two rotors) carries its part in every facing.
+Presentation only: the state hash is the
 same either way.
 
 Sprite slots after the specials: the effects module (`fx_base`: 0 damage

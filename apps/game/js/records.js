@@ -61,10 +61,19 @@ export function dialog(title, build, { screen = false } = {}) {
   });
 }
 
-/** The modded-map warning; resolves true only when the player accepts. */
-export function confirmModdedMap(mapName) {
+/**
+ * The modded-map warning with what the map's rules change (`changes`, lines
+ * of js/maprules.js); resolves true only when the player accepts.
+ */
+export function confirmModdedMap(mapName, changes = []) {
   return dialog('Modded map', (body, close) => {
     body.append(el('p', 'records-warning', MODDED_WARNING), el('p', 'records-muted', `Map: ${mapName}`));
+    if (changes.length) {
+      const list = el('ul', 'records-modded-rules');
+      list.setAttribute('aria-label', 'Rules this map changes');
+      for (const line of changes) list.append(el('li', null, line));
+      body.append(list);
+    }
     const row = el('div', 'records-actions');
     row.append(button('Decline', null, () => close(false)), button('Accept and play', 'records-danger', () => close(true)));
     body.append(row);

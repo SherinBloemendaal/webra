@@ -238,6 +238,9 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   // Two exclusive choices drawn as segmented controls: WebRA's own art and
   // sounds, or the installed originals. "Original" stays off until it exists.
   const graphicsNote = el('p', { class: 'audio-note', id: 'content-graphics-note' });
+  // Why the built-in 3D minimal pack is not drawn (content/index.js builtinError): shown only then.
+  const graphicsProblem = el('p', { class: 'audio-note', id: 'content-graphics-problem', role: 'status' });
+  graphicsProblem.hidden = true;
   const soundsNote = el('p', { class: 'audio-note', id: 'content-sounds-note' });
   const ORIGINAL_NOT_INSTALLED = 'Install the original content below to use this.';
   const graphics = segmented({
@@ -245,8 +248,9 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     label: 'Graphics',
     describedBy: graphicsNote.id,
     options: [
-      { value: 'webra', label: 'WebRA' },
-      { value: 'original', label: 'Original' },
+      { value: 'webra2d', label: '2D minimal' },
+      { value: 'webra3d', label: '3D minimal' },
+      { value: 'original', label: 'Red Alert original' },
     ],
     value: content.graphics,
     onChange: (value) => settings.set(GRAPHICS_SETTING, value),
@@ -326,7 +330,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     label: 'Use the original graphics and sounds',
     rowClass: 'audio-row',
     onChange: (on) => {
-      settings.set(GRAPHICS_SETTING, on && content.hasOriginalGraphics ? 'original' : 'webra');
+      settings.set(GRAPHICS_SETTING, on && content.hasOriginalGraphics ? 'original' : content.graphics === 'original' ? 'webra2d' : content.graphics);
       audio?.prefs.set({ original: on });
     },
   });
@@ -482,8 +486,11 @@ export function mountContentSettings(root, content, audio, opts = {}) {
     graphics.setDisabled('original', !content.hasOriginalGraphics);
     graphics.setTitle('original', content.hasOriginalGraphics ? '' : ORIGINAL_NOT_INSTALLED);
     graphicsNote.textContent = content.hasOriginalGraphics
-      ? 'Original graphics: units, structures, infantry animations, cameos and terrain from your files. Effects keep WebRA art. The choice applies at once, also in a running game.'
-      : 'Original is off until the original content is installed: install it below to use the original graphics.';
+      ? '2D minimal is WebRA\'s flat art, 3D minimal its blocky low-poly art (built in, texture packs you install come first). Red Alert original: units, structures, infantry animations, cameos and terrain from your files, effects keep WebRA art. The choice applies at once, also in a running game.'
+      : '2D minimal is WebRA\'s flat art, 3D minimal its blocky low-poly art (built in, texture packs you install come first). Red Alert original is off until the original content is installed: install it below to use the original graphics.';
+    const builtinProblem = content.graphics === 'webra3d' ? (content.builtinError ?? null) : null;
+    graphicsProblem.hidden = !builtinProblem;
+    graphicsProblem.textContent = builtinProblem ? `Not drawn, 2D minimal is used meanwhile: ${builtinProblem}` : '';
     sounds.set(audio?.prefs.get().original ? 'original' : 'webra');
     useAll.checked = content.graphics === 'original' && !!audio?.prefs.get().original;
     try {
@@ -1026,6 +1033,7 @@ export function mountContentSettings(root, content, audio, opts = {}) {
       el('h2', { id: 'content-use-title', text: 'Use' }),
       choiceRow('Graphics', graphics),
       graphicsNote,
+      graphicsProblem,
       choiceRow('Sounds', sounds),
       soundsNote,
     ),
@@ -1046,7 +1054,11 @@ export function mountContentSettings(root, content, audio, opts = {}) {
   );
   sync();
   return {
-    refresh: sync,
+    // Opening the dialog tries a built-in pack that failed to load again (its reload calls sync when done).
+    refresh: () => {
+      content.retryBuiltin?.();
+      return sync();
+    },
     install,
     handleFiles,
     inspectPackFile,

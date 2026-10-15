@@ -7,7 +7,9 @@
 // Sentry when SENTRY_DSN is set (telemetry.js).
 
 import {
+  formatInviteCode,
   framesDigest,
+  normalizeInviteCode,
   LOG_MAX_BYTES,
   MAP_MAX_BYTES,
   MEMBER_HEADER,
@@ -20,9 +22,11 @@ import {
 } from '@webra/protocol';
 import pkg from '../package.json' with { type: 'json' };
 import { checkCsrf, checkOrigin, errorResponse, HttpError, json, jsonText, readJson, readText, withCookies } from './http.js';
-import { listSessions, pruneSessions } from './directory.js';
+import { listSessions, onlineCounts, pruneSessions } from './directory.js';
+import { blockedBySessionMember, lookupInviteCode } from './invites.js';
+import { networkOf } from './accounts/ip.js';
 import { checkJsonType, getMap, getMapThumbnail, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, uploadMap } from './maps.js';
-import { pruneQuotas, takeQuota } from './quota.js';
+import { countQuota, peekQuota, pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
 import { quickInstall } from './content.js';
 import { loadSaveRecord, missionDigest } from './onlinesaves.js';
@@ -140,6 +144,78 @@ async function sessionMapShare(ctx, id) {
   return json({ id: r.id, hash: r.hash, ...(prepared.upgradedFrom ? { upgradedFrom: prepared.upgradedFrom } : {}) }, r.created ? 201 : 200);
 }
 
+/** Invite codes a network may make per hour (each one replaces the lobby's previous code). */
+const INVITE_LIMIT = 30;
+/** Failed invite code lookups (unknown or expired) a network may make per hour before it must wait. */
+const INVITE_MISS_LIMIT = 30;
+
+/**
+ * POST /api/sessions/<id>/invite: the host makes a new invite code for its
+ * lobby (the previous one stops working). Answers { code, expiresAt, path }.
+ * Only codes the session object actually issued count toward the network's
+ * quota (a refused request costs no quota and no write).
+ */
+async function sessionInvite(ctx, id) {
+  const member = memberOf(ctx.request);
+  const stub = sessionStub(ctx.env, id);
+  const account = await requirePlay(ctx);
+  const network = networkOf(ctx.ip);
+  if ((await peekQuota(ctx.env.DB, ctx.salt(), 'invites', network, UPLOAD_WINDOW_MS, ctx.now)) >= INVITE_LIMIT) {
+    throw new HttpError(429, 'rate_limited', 'Too many invite codes. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
+  }
+  const r = rpcResult(await stub.newInvite({ member, account, ip: ctx.ip }));
+  await countQuota(ctx.env.DB, ctx.salt(), 'invites', network, UPLOAD_WINDOW_MS, ctx.now);
+  return json({ code: formatInviteCode(r.code), expiresAt: r.expiresAt, path: `/join/${formatInviteCode(r.code)}` }, 201);
+}
+
+/**
+ * GET /api/invite/<code>: the lobby an invite code names (404 unknown, 410
+ * expired). A burst limit per address, and a stricter one on failed lookups,
+ * keep guessing codes useless (docs/security.md "Invite codes"). A
+ * signed-in player that a member of the lobby blocked gets 404.
+ */
+async function inviteLookup(ctx, raw) {
+  await ctx.burst('invite', [20, 60 * 1000]);
+  const network = networkOf(ctx.ip);
+  await ctx.assertNotLocked('invite-miss', network, INVITE_MISS_LIMIT, UPLOAD_WINDOW_MS);
+  const code = normalizeInviteCode(raw);
+  const r = code ? await lookupInviteCode(ctx.env.DB, code, ctx.now) : { status: 'unknown' };
+  const { user } = await ctx.auth();
+  const unknown = () => new HttpError(404, 'not_found', 'No lobby has this code. Check it with your friend.');
+  // A blocked player's lookup of a real code is no guess: answered like an unknown code, but it
+  // does not count toward the network's failures (others on that network are not locked out).
+  if (r.status === 'ok' && user && (await blockedBySessionMember(ctx.env.DB, r.sessionId, user.id))) throw unknown();
+  if (r.status === 'unknown') {
+    await ctx.countFailure('invite-miss', network, UPLOAD_WINDOW_MS);
+    throw unknown();
+  }
+  if (r.status === 'expired') {
+    await ctx.countFailure('invite-miss', network, UPLOAD_WINDOW_MS);
+    throw new HttpError(410, 'expired', 'The lobby closed or the code was replaced.');
+  }
+  return json({ invite: r.invite });
+}
+
+/**
+ * /join/<code>: an invite link opens the game with the code (`/play/?invite=`);
+ * the game looks it up and asks what it needs (sign-in, a password). Anything
+ * that is not a code gets the site's 404 page.
+ */
+export function joinRedirect(request, env, url) {
+  const m = /^\/join\/([^/]{1,32})\/?$/.exec(url.pathname);
+  let code = null;
+  try {
+    code = m ? normalizeInviteCode(decodeURIComponent(m[1])) : null;
+  } catch {
+    code = null;
+  }
+  if (!code) return env.ASSETS.fetch(new Request(new URL('/404.html', url), { method: 'GET' })).then((r) => new Response(r.body, { status: 404, headers: r.headers }));
+  return new Response(null, {
+    status: 302,
+    headers: { location: `/play/?invite=${formatInviteCode(code)}`, 'cache-control': 'no-store', 'referrer-policy': 'same-origin' },
+  });
+}
+
 /** Resumes per network and hour (each upload is a whole save file). */
 const RESUME_LIMIT = 10;
 /**
@@ -221,10 +297,26 @@ async function route(ctx) {
     if (method !== 'GET') throw methodNotAllowed('GET');
     return json({ version: SERVER_VERSION, protocol: PROTOCOL_VERSION });
   }
+  if (path === '/api/online') {
+    // Players online and sessions in each phase: counts only, cached for a little while (directory.js).
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    return json(await onlineCounts(env.DB, ctx.now));
+  }
+  let inv = /^\/api\/invite\/([^/]+)$/.exec(path);
+  if (inv) {
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    let raw = '';
+    try {
+      raw = decodeURIComponent(inv[1]);
+    } catch {
+      raw = '';
+    }
+    return inviteLookup(ctx, raw);
+  }
   if (path === '/api/sessions') {
     if (method === 'GET') {
       if (Math.random() < 0.02) exec.waitUntil(pruneSessions(env.DB).catch(() => {}));
-      return json(await listSessions(env.DB));
+      return json(await listSessions(env.DB, ctx.now));
     }
     if (method === 'POST') return createSession(ctx);
     throw methodNotAllowed('GET, POST');
@@ -239,6 +331,11 @@ async function route(ctx) {
     if (method === 'GET') return sessionMapGet(ctx, m[1]);
     if (method === 'POST') return sessionMapShare(ctx, m[1]);
     throw methodNotAllowed('GET, POST');
+  }
+  m = /^\/api\/sessions\/([^/]+)\/invite$/.exec(path);
+  if (m) {
+    if (method !== 'POST') throw methodNotAllowed('POST');
+    return sessionInvite(ctx, m[1]);
   }
   m = /^\/api\/sessions\/([^/]+)\/resume$/.exec(path);
   if (m) {
@@ -296,6 +393,7 @@ export default withTelemetry({
   async fetch(request, env, exec) {
     const url = new URL(request.url);
     if (isPlayPath(url.pathname)) return servePlay(request, env, exec);
+    if (url.pathname.startsWith('/join/')) return joinRedirect(request, env, url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
     const ctx = newContext(request, env, exec);
     try {

@@ -410,7 +410,8 @@ const SETTINGS_SECTIONS = {
     hideReplayChat: boolean,
     uiFeedbackNotifications: boolean,
     gameEventNotifications: boolean,
-    graphics: choice(['webra', 'original']),
+    // 'webra' is the old name of 'webra2d': accounts that stored it stay valid, the game maps it (registry aliases).
+    graphics: choice(['webra2d', 'webra3d', 'original', 'webra']),
     hotkeys,
     attackMoveTipSeen: boolean,
     mouseCapture: choice(['off', 'fullscreen', 'always']),

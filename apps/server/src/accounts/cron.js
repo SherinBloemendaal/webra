@@ -11,6 +11,8 @@ import { IP_RETENTION_MS, SESSION_IDLE_MS } from './sessions.js';
 import { DELETED_RETENTION_MS, softDeleteStatement } from './users.js';
 import { effective, loadSite } from './site.js';
 import { deleteAccountReplaysStatement, expireReplays } from './replays.js';
+import { friendsRetentionStatements } from './friends.js';
+import { INVITE_KEEP_MS } from '../invites.js';
 
 export const PRESENCE_RETENTION_MS = 24 * 60 * 60 * 1000;
 /**
@@ -46,12 +48,17 @@ export async function runRetention(env, now = Date.now()) {
     onlineSaves: await run('DELETE FROM online_saves WHERE created_at < ?1', now - ONLINE_SAVE_RETENTION_MS),
     // Old hashes of upgraded maps (map versions) go with the map they point to.
     mapAliases: await run('DELETE FROM map_aliases WHERE hash NOT IN (SELECT hash FROM maps)'),
+    // Invite codes a day after they ended (until then a lookup answers "expired").
+    inviteCodes: await run('DELETE FROM invite_codes WHERE expires_at < ?1', now - INVITE_KEEP_MS),
     expiredSignups: 0,
     purged: 0,
     replays: 0,
     replayObjects: 0,
   };
   out.expiredSignups = await expireUnconfirmedSignups(env, now);
+  // Friends (docs/accounts-api.md 5.11): old requests, ended invites, stale heartbeats, and every
+  // row of an account deleted in any way (self-service deletion removes its rows at once already).
+  for (const [k, stmt] of Object.entries(friendsRetentionStatements(db, now))) out[k] = (await stmt.run()).meta.changes ?? 0;
   // Maps stored before a format version change: upgraded in batches (reads upgrade them too).
   out.mapUpgrades = await upgradeStaleMaps(db, { now, limit: DAILY_UPGRADE_BATCH });
   const { results } = await db

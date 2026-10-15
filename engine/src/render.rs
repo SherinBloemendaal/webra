@@ -110,9 +110,18 @@ pub const CLASSIC_PITCH_SIN_1024: i32 = 654;
 /// way OpenRA places turrets and overlays on pre-rendered art
 /// (BodyOrientation.LocalToWorld with the classic perspective fudge).
 pub fn classic_offset(fwd: i32, side: i32, facing: i32) -> [f32; 2] {
+    sheared_offset(fwd, side, facing, 0.0)
+}
+
+/// `classic_offset` for art drawn with a ground shear (a texture pack's
+/// `groundShear`, `RenderOptions::ground_shear`): screen x moves `shear`
+/// world pixels per world pixel south, as the art's hull does, so a turret
+/// or rotor stays on its mount in every facing.
+pub fn sheared_offset(fwd: i32, side: i32, facing: i32, shear: f32) -> [f32; 2] {
     let (s, c) = (facing as f32 * std::f32::consts::TAU / 1024.0).sin_cos();
     let (f, r) = (px(fwd), px(side));
-    [s * f + c * r, CLASSIC_PITCH_SIN * (-c * f + s * r)]
+    let south = -c * f + s * r;
+    [s * f + c * r + shear * south, CLASSIC_PITCH_SIN * south]
 }
 
 /// Opacity of the black layer over a disabled structure (OpenRA
@@ -424,9 +433,10 @@ impl World {
                     // at OpenRA's Turreted offset on the body (the Mobile Flak's is
                     // behind the cab); WebRA's vector turrets have it drawn in.
                     Some(&(fwd, side)) if (fwd, side) != (0, 0) && self.render_opts.is_original(slot) => {
+                        let g = self.render_opts.ground_shear(a.ty);
                         sink.sprite(
                             &mut turrets,
-                            r.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)),
+                            r.offset_moving(sheared_offset(fwd, side, a.pfacing, g), sheared_offset(fwd, side, a.facing, g)),
                         );
                     }
                     _ => sink.sprite(&mut turrets, r),
@@ -709,10 +719,11 @@ impl World {
         let turret = at.facing(a.pturret, angle_diff(a.pturret, a.turret)).look(body + 1.0, team, 1.0, 1.0, flash);
         let offsets: &[(i32, i32)] = if info.turret_offsets.is_empty() { &[(0, 0)] } else { &info.turret_offsets };
         let original = self.render_opts.is_original(body as u32 + 1);
+        let g = self.render_opts.ground_shear(a.ty);
         for &(fwd, side) in offsets {
             if original {
                 // OpenRA's placement on the pre-rendered hull (classic perspective).
-                sink.sprite(turrets, turret.offset_moving(classic_offset(fwd, side, a.pfacing), classic_offset(fwd, side, a.facing)));
+                sink.sprite(turrets, turret.offset_moving(sheared_offset(fwd, side, a.pfacing, g), sheared_offset(fwd, side, a.facing, g)));
                 continue;
             }
             // Forward is (sin, -cos) of the hull angle, right is (cos, sin).

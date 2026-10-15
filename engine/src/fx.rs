@@ -17,7 +17,7 @@
 //! tick picks instead, so every client draws the same.
 
 use crate::instances::{Sink, SpriteRec};
-use crate::render::{classic_offset, posed, px, Pose, SpriteIds};
+use crate::render::{posed, px, sheared_offset, Pose, SpriteIds};
 use crate::rules::{Kind, Rules};
 use crate::world::{Effect, EffectKind, World};
 
@@ -587,9 +587,11 @@ impl World {
                 k += 1;
                 let Some(age) = age_of(stamp, self.tick).filter(|&g| g < life) else { continue };
                 let aim = if m.turret { a.turret } else { a.facing };
-                // The barrel turns with the turret, the turret sits on the body (OpenRA Armament.MuzzleOffset).
-                let b = classic_offset(barrel[0], barrel[1], aim);
-                let t = if m.turret { classic_offset(m.turret_offset[0], m.turret_offset[1], a.facing) } else { [0.0, 0.0] };
+                // The barrel turns with the turret, the turret sits on the body (OpenRA Armament.MuzzleOffset),
+                // both sheared like the actor's art (RenderOptions::ground_shear).
+                let g = self.render_opts.ground_shear(a.ty);
+                let b = sheared_offset(barrel[0], barrel[1], aim, g);
+                let t = if m.turret { sheared_offset(m.turret_offset[0], m.turret_offset[1], a.facing, g) } else { [0.0, 0.0] };
                 let up = px(barrel[2] + if m.turret { m.turret_offset[2] } else { 0 });
                 let (dx, dy) = (b[0] + t[0], b[1] + t[1] - up - lift);
                 let r = at.facing(aim, 0);
