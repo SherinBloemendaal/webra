@@ -401,6 +401,15 @@ for (const key of VECTOR) {
   });
 }
 
+test('the war factory ramp is clear: no drawn vehicle where the units it builds roll out', () => {
+  const bounds = [];
+  BUILDING_DRAW.WEAP(fakeContext([], bounds), passes({ team: 0 }).colour);
+  // Below the bay (y 52 on) only the asphalt, the ramp and paint: no team coloured (grey) shape.
+  const team = bounds.filter((b) => b.y0 >= 52 && typeof b.style === 'string' && /^rgb\(/.test(b.style));
+  assert.deepEqual(team, []);
+  assert.equal(rasterMask((ctx, P) => BUILDING_DRAW.WEAP(ctx, P), 72, 72).over, 0);
+});
+
 for (const [key, [w, h, draw]] of Object.entries(BUILDING_TURRET)) {
   test(`building turret ${key}: team coloured, nothing translucent over it`, () => {
     const m = rasterMask(draw, w, h);

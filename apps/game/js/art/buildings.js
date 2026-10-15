@@ -564,8 +564,8 @@ export const BUILDING_DRAW = {
     circle(ctx, P.c(RED), 20, 22, 1.5);
   },
 
-  // War factory 3x3: a steel shed with team bands, the open bay, and a tank
-  // rolling down the ramp onto the asphalt.
+  // War factory 3x3: a steel shed with team bands, the open bay, and the
+  // ramp down onto the asphalt (left clear: the units it builds roll out there).
   WEAP: (ctx, P) => {
     texRect(ctx, P, 'asphalt', 0, 52, 72, 20);
     polyline(ctx, P.c(PAINT), 1.5, [7, 58, 11, 62, 7, 66]);
@@ -575,18 +575,13 @@ export const BUILDING_DRAW = {
     rect(ctx, P.team(TEAM), 12, 17, 48, 3);
     rect(ctx, P.team(TEAM), 12, 28, 48, 3);
     rect(ctx, P.c(STEEL_D), 12, 23, 48, 1);
+    // the ramp: a concrete slab with grooves and yellow edges, out of the bay
+    rect(ctx, P.c(CONC), 21, 52, 30, 18);
+    for (const y of [55, 58.5, 62, 65.5]) rect(ctx, P.c(CONC_LINE), 22, y, 28, 0.5);
+    rect(ctx, P.c(C.yellow), 21, 52, 1, 18);
+    rect(ctx, P.c(C.yellow), 50, 52, 1, 18);
     rect(ctx, P.c(C.yellow), 19, 44, 34, 8);
     rect(ctx, P.c(PIT), 21, 45, 30, 7);
-    // the tank on the ramp
-    for (const x of [28, 40]) {
-      rect(ctx, P.c(BLACK), x, 54, 4, 15);
-      for (const y of [56, 59, 62, 65]) rect(ctx, P.c(C.trackLight), x, y - 0.375, 4, 0.75);
-    }
-    rect(ctx, P.c(STEEL), 31, 55, 10, 13);
-    rect(ctx, P.team(TEAM), 31, 55, 10, 2);
-    rect(ctx, P.c(STEEL_D), 35.25, 63, 1.5, 8);
-    circle(ctx, P.c(STEEL_L), 36, 61, 3.5);
-    circle(ctx, P.c(GUNMETAL), 36, 61, 1);
   },
 
   // Service depot 3x3: a hexagonal repair pad in hazard paint with a big
