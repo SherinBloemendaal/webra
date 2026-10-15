@@ -878,12 +878,12 @@ def checker(ramp, size, x0, y0, dark=-0.1):
 LROD_PAD = 11.0  # half the pad's side
 LROD_PAD_TOP = 1.2
 PLINTH_TOP = 5.0
-LROD_MAST_TOP = 27.0
+LROD_MAST_TOP = 25.0
 LROD_BREAK = 17.0  # where the damaged mast bends
 LROD_RINGS = [(11.6, 12.4, 3.4), (19.0, 19.6, 2.6)]  # corona rings: z0, z1, radius
 # The frames' box around the cell's centre: the cell with room above for the
 # mast and to the right and below for the cast shadow.
-LROD_CLIP = (-12, 32, -44, 20)
+LROD_CLIP = (-12, 48, -44, 24)
 # The make (build-up) animation, a stage per frame: pad (0 bare earth, 1
 # formwork and half poured, 2 done), the plinth's height over the pad, the
 # mast's top (0 none) and the top (0 none, 1 the insulator, 2 the rod and
@@ -963,11 +963,11 @@ def lrod_top(stage, z, ball=('copper', 0.15)):
     out = [ellipsoid(0.0, 0.0, z + 1.0, 1.5, 1.5, 1.2, mat=('grey', 0.3))]
     if stage >= 2:
         out.append(bar('z', (0.0, 0.0, 0.0), 0.6, z + 1.0, z + 6.0, mat=('copper', 0.1)))
-        out.append(ellipsoid(0.0, 0.0, z + 6.6, 1.7, 1.7, 1.7, mat=ball))
+        out.append(ellipsoid(0.0, 0.0, z + 6.4, 1.5, 1.5, 1.5, mat=ball))
     if stage >= 3:
         # Four points round the ball, standing clear above it.
         for (px, py), r in [((1.9, 0.0), 0.5), ((-1.9, 0.0), 0.5), ((0.0, 1.6), 0.55), ((0.0, -1.6), 0.55)]:
-            out.append(bar('z', (px, py, 0.0), r, z + 6.2, z + 11.0, mat=('copper', 0.2)))
+            out.append(bar('z', (px, py, 0.0), r, z + 6.0, z + 9.6, mat=('copper', 0.2)))
     return out
 
 

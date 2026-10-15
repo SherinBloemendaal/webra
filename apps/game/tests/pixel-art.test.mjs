@@ -61,7 +61,7 @@ test('the Lightning Rod is idle, damaged and a 12 frame make animation on its 1x
   }
   // Selectable DecorationBounds 1024, 2048, 0, -512: about 36 pixels above the cell's centre.
   const idle = frames[0];
-  assert.ok(idle.top <= -34 && idle.top >= -40, `the rod's tip at ${idle.top}`);
+  assert.ok(Math.abs(idle.top + 36) <= 1, `the rod's tip at ${idle.top}, not -36`);
   assert.ok(frames[1].top > idle.top + 6, 'the damaged mast is bent over');
   // The rod and its crown are copper, the damaged rod too.
   const pal = Uint8Array.from(atob(PIXEL_PALETTE), (ch) => ch.charCodeAt(0));
@@ -89,13 +89,13 @@ test('structures are drawn in Westwood\'s structure view: their pads fill the fo
   const pal = Uint8Array.from(atob(PIXEL_PALETTE), (ch) => ch.charCodeAt(0));
   const at = (f, x, y) => f.data[(y - f.top) * f.width + x - f.left];
   const lum = (v) => pal[v * 3] + pal[v * 3 + 1] + pal[v * 3 + 2];
+  // The column of pad just east of the plinth (its east face is at x 5; the shadow is some 2.5 pixels wide).
+  const x = 6;
   let darker = 0;
   for (let y = -2; y <= 2; y++) {
-    for (let x = 6; x <= 6; x++) {
-      const [before, after] = [at(pad, x, y), at(plinth, x, y)];
-      assert.ok(before !== SHADOW && after !== SHADOW && after !== 0, `(${x}, ${y}) is concrete`);
-      if (lum(after) < lum(before) - 60) darker++;
-    }
+    const [before, after] = [at(pad, x, y), at(plinth, x, y)];
+    assert.ok(before !== SHADOW && after !== SHADOW && after !== 0, `(${x}, ${y}) is concrete`);
+    if (lum(after) < lum(before) - 60) darker++;
   }
   assert.ok(darker >= 3, `${darker} pad pixels in the plinth's shadow`);
 });
