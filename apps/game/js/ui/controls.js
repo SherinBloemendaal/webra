@@ -574,6 +574,7 @@ export function selectPlate({
 
   function place() {
     if (!open) return;
+    if (!root.isConnected) return close(false);
     const r = button.getBoundingClientRect();
     const vw = window.innerWidth || document.documentElement.clientWidth || r.right;
     const vh = window.innerHeight || document.documentElement.clientHeight || r.bottom;
@@ -616,11 +617,24 @@ export function selectPlate({
     // A press outside closes the list without a choice. The sheet's dim area
     // is the panel itself: its click handler closes it, so the press never
     // reaches what lies under the sheet.
+    // A list whose control left the page (a screen re-rendered, a menu
+    // closed) closes itself at the next event; screens still call destroy().
     const onDown = (e) => {
       const t = e.target;
-      if (!panel.contains(t) && !button.contains(t)) close(false);
+      if (!root.isConnected || (!panel.contains(t) && !button.contains(t))) close(false);
     };
-    const onMove = () => place();
+    const onMove = () => {
+      if (!root.isConnected) return close(false);
+      // Crossing the phone breakpoint: open again as a sheet or a drop-down.
+      if (sheet === 'auto' && selectSheetMode(window.innerWidth, window.innerHeight) !== asSheet) {
+        const keep = active;
+        close(false);
+        openList();
+        if (keep && enabled(keep)) activate(keep);
+        return;
+      }
+      place();
+    };
     document.addEventListener('pointerdown', onDown, true);
     window.addEventListener?.('resize', onMove);
     window.addEventListener?.('scroll', onMove, true);
@@ -769,7 +783,7 @@ export function selectRow({ id = nextControlId('select'), label, hint, rowClass,
   const labelEl = make('span', { class: 'ui-label', id: `${id}-label`, text: label });
   const hintEl = hint ? make('p', { class: 'ui-hint', id: `${id}-hint`, text: hint }) : null;
   const select = selectPlate({ ...rest, id, label, labelledBy: labelEl.id, describedBy: hintEl ? hintEl.id : rest.describedBy });
-  // A click on the label opens the list, like a <label> on a native select focuses it.
+  // A click on the label focuses the select, like a <label> on a native select.
   labelEl.addEventListener('click', () => select.button.focus());
   const row = make('div', { class: ['ui-row', 'ui-row-choice', rowClass].filter(Boolean).join(' ') }, labelEl, select.root);
   if (hintEl) row.append(hintEl);

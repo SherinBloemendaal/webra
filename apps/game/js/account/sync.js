@@ -16,7 +16,7 @@
 //   so also across reloads) and go up when the browser is online again or
 //   on the next start.
 
-import { diffValues, GROUPS, normalizeValues } from '../registry.js';
+import { checkValue, diffValues, GROUPS, normalizeValues } from '../registry.js';
 import { AccountError } from './api.js';
 
 /** localStorage key of the sync state: `{ userId, version, base, dirty }`. */
@@ -33,6 +33,26 @@ const clone = (v) => (v === undefined ? undefined : structuredClone(v));
  * changed settings meanwhile) every difference is a conflict.
  * @returns {{ merged: object, conflicts: { group: string, key: string, local: any, remote: any }[], localChanges: number, remoteChanges: number }}
  */
+/**
+ * JSON settings merged key by key instead of as one value: guide.done (step
+ * id -> true) keeps every step done on either device. A three-way set merge:
+ * a step stays when both sides have it, or when one side added it (it is not
+ * in the base); a step one side removed (a reset of the guide) stays removed.
+ * Without a base it is the union. If the result would not fit the setting,
+ * the account's value stays and the setting is a conflict as before.
+ */
+export const KEYED_MERGE = Object.freeze(new Set(['guide.done']));
+
+function mergeKeyed(b, l, r) {
+  const has = (o, k) => !!o && typeof o === 'object' && Object.hasOwn(o, k);
+  const out = {};
+  for (const k of new Set([...Object.keys(l ?? {}), ...Object.keys(r ?? {})])) {
+    const keep = (has(l, k) && has(r, k)) || (has(l, k) && !has(b, k)) || (has(r, k) && !has(b, k));
+    if (keep) out[k] = clone(has(l, k) ? l[k] : r[k]);
+  }
+  return out;
+}
+
 export function mergeSettings({ base, local, remote }) {
   const merged = clone(remote);
   const conflicts = [];
@@ -42,6 +62,20 @@ export function mergeSettings({ base, local, remote }) {
     for (const key of Object.keys(GROUPS[group].settings)) {
       const l = local?.[group]?.[key];
       const r = remote?.[group]?.[key];
+      if (KEYED_MERGE.has(`${group}.${key}`) && !same(l, r)) {
+        const b = base?.[group]?.[key];
+        const lc = !base || !same(l, b);
+        const rc = !base || !same(r, b);
+        if (base && lc) localChanges++;
+        if (base && rc) remoteChanges++;
+        if (lc && !rc) merged[group][key] = clone(l);
+        else if (lc && rc) {
+          const m = mergeKeyed(base ? b : null, l, r);
+          if (checkValue(GROUPS[group].settings[key], m) === null) merged[group][key] = m;
+          else conflicts.push({ group, key, local: clone(l), remote: clone(r) });
+        }
+        continue;
+      }
       if (!base) {
         if (!same(l, r)) conflicts.push({ group, key, local: clone(l), remote: clone(r) });
         continue;
