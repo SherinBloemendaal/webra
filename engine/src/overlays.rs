@@ -68,8 +68,14 @@ pub struct RenderOptions {
     /// Sprite slots drawn from the original graphics (apps/game/js/content/atlas.js
     /// originalSlotInfo), sorted: those are drawn the OpenRA way (rotor
     /// sequences, effects that animate themselves, projectiles with their
-    /// own facings). Empty with WebRA's art and texture packs.
+    /// own facings). Also the slots of other art pre-rendered in the classic
+    /// perspective: WebRA's pixel art and the actor parts of texture packs
+    /// with `"perspective": "classic"` (the built-in 3D minimal pack).
     pub original_slots: Vec<u32>,
+    /// Per actor type drawn with a ground shear (`ORIGINAL_INFO_SHEAR`, a
+    /// pack's `groundShear`): screen x per world pixel south, applied to its
+    /// turret, rotor and muzzle offsets (render.rs `sheared_offset`).
+    pub ground_shears: Vec<(u16, f32)>,
     /// Overlays drawn over units without a turret (OpenRA
     /// WithIdleOverlay@SPINNER): `(actor type, forward, side)` in world units.
     pub unit_overlays: Vec<(u16, i32, i32)>,
@@ -132,6 +138,7 @@ impl Default for RenderOptions {
             death_art: Vec::new(),
             infantry_ticks: Vec::new(),
             make_art: Vec::new(),
+            ground_shears: Vec::new(),
         }
     }
 }
@@ -146,6 +153,10 @@ pub const ORIGINAL_INFO_SMOKE: i32 = 2;
 /// `[kind, size, loop frames, end frames]` of an original tree fire (size 0..=2).
 pub const ORIGINAL_INFO_FIRE: i32 = 3;
 pub const ORIGINAL_INFO_FIRE_TAIL: i32 = 4;
+/// `[kind, actor type, shear in 1024ths, 0]`: the actor's art is drawn with a
+/// ground shear (`RenderOptions::ground_shears`), at most one world pixel
+/// sideways per world pixel south.
+pub const ORIGINAL_INFO_SHEAR: i32 = 5;
 /// Integers per `info` record.
 pub const ORIGINAL_INFO_STRIDE: usize = 4;
 
@@ -171,8 +182,9 @@ impl RenderOptions {
     /// slots drawn from it and `info` records `[kind, actor type, a, b]`:
     /// an overlay over a unit (`ORIGINAL_INFO_OVERLAY`, a forward, b side
     /// offset in world units) or a structure showing the storage level
-    /// (`ORIGINAL_INFO_LEVEL`, a stages). Unknown kinds and a trailing
-    /// partial record are ignored.
+    /// (`ORIGINAL_INFO_LEVEL`, a stages), the original smoke and fires,
+    /// and the ground shear of an actor's art (`ORIGINAL_INFO_SHEAR`).
+    /// Unknown kinds and a trailing partial record are ignored.
     pub fn set_original_art(&mut self, slots: &[u32], info: &[i32]) {
         let mut slots = slots.to_vec();
         slots.sort_unstable();
@@ -180,6 +192,7 @@ impl RenderOptions {
         self.original_slots = slots;
         self.unit_overlays.clear();
         self.level_stages.clear();
+        self.ground_shears.clear();
         self.smoke_frames = None;
         self.fire_frames = [None; 3];
         let mut fire_heads = [None; 3];
@@ -198,6 +211,7 @@ impl RenderOptions {
             match r[0] {
                 ORIGINAL_INFO_OVERLAY => self.unit_overlays.push((ty, r[2], r[3])),
                 ORIGINAL_INFO_LEVEL if r[2] > 0 => self.level_stages.push((ty, r[2] as u32)),
+                ORIGINAL_INFO_SHEAR if r[2] != 0 => self.ground_shears.push((ty, r[2].clamp(-1024, 1024) as f32 / 1024.0)),
                 ORIGINAL_INFO_SMOKE if r[1] > 0 && r[2] >= 0 && r[3] >= 0 => {
                     self.smoke_frames = Some((r[1] as u32, r[2] as u32, r[3] as u32))
                 }
@@ -214,6 +228,11 @@ impl RenderOptions {
     /// The forward and side offset of the overlay drawn over units of type `ty`, if any.
     pub fn unit_overlay(&self, ty: u16) -> Option<(i32, i32)> {
         self.unit_overlays.iter().find(|o| o.0 == ty).map(|o| (o.1, o.2))
+    }
+
+    /// The ground shear of type `ty`'s art (0 for art without one).
+    pub fn ground_shear(&self, ty: u16) -> f32 {
+        self.ground_shears.iter().find(|o| o.0 == ty).map_or(0.0, |o| o.1)
     }
 
     /// The level stages of structures of type `ty`, if their body shows the storage level.

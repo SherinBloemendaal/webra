@@ -759,6 +759,15 @@ The player's game settings, synchronized across devices.
 
 Version 0 with `settings: {}` means nothing is stored yet.
 
+Rolling upgrade of `game.graphics`: a client from before 0.17.0 knows only
+`"webra"` and `"original"`, so it reads `"webra2d"` and `"webra3d"` as
+`"webra"` and uploads that with its next change. A newer client
+(`js/account/sync.js` `keepGraphicsFromOldClients`) treats an incoming
+`"webra"` as "WebRA's own art": when it last synced `"webra2d"` or
+`"webra3d"` it keeps that choice and writes it back once; after `"original"`
+(a real choice on the old client) it takes `"webra2d"`. The old client
+itself still shows WebRA's art for `"webra3d"` until it is updated.
+
 `PUT /api/account/settings` with `If-Match: "v<version>"` and body
 `{ "settings": SettingsDocument }` replaces the whole document:
 
@@ -794,7 +803,7 @@ Serialized size at most 32 KiB.
     "hideReplayChat": false,       // OpenRA HideReplayChat: replay chat only in the chat history
     "uiFeedbackNotifications": true, // OpenRA TextNotificationPoolFilters Feedback
     "gameEventNotifications": true,  // OpenRA TextNotificationPoolFilters Transients
-    "graphics": "webra",           // "webra" | "original"
+    "graphics": "webra2d",         // "webra2d" | "webra3d" | "original"; "webra" (before 0.17.0) is still accepted, read as "webra2d"
     "hotkeys": { "attackMove": ["A"], "stop": [] },
     "attackMoveTipSeen": false,    // the one-time attack-move tip was shown (apps/game/js/hints.js)
     "mouseCapture": "fullscreen",  // "off" | "fullscreen" | "always" (Pointer Lock, js/mouselock.js)
@@ -862,7 +871,11 @@ Serialized size at most 32 KiB.
 - `packs`: at most 64 entries with distinct ids; an id is 1 to 160
   characters of text without control characters.
 - `guide.done`: a JSON object with the same rules as `extra` below, at most
-  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`).
+  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`). The game merges it step
+  by step when two devices changed it (`mergeSettings` in
+  `apps/game/js/account/sync.js`): a step stays when both have it or one side
+  added it, a step one side removed stays removed; only a result over 2 KiB
+  is a conflict.
 - `lastOptions` and `extra`: JSON objects at most 4 levels deep, keys
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at

@@ -3727,14 +3727,27 @@ changes only, never on `set()`.
   Home, End, Page Up, Page Down move (disabled options are skipped, no
   wrap), typing jumps (`TYPEAHEAD_MS` 500; one letter again cycles), Enter
   or Space chooses, Tab chooses and moves on, Esc closes without a change
-  (and does not reach the menu behind). Focus returns to the button. A
-  press outside closes without a change. The list is a `popover="manual"`
+  and stops there (`stopPropagation`; a handler on the window in the
+  capture phase still sees it first, see the key rule below). Focus returns
+  to the button. A press outside closes without a change. The list is a `popover="manual"`
   in the top layer (over modal dialogs, not clipped by scrolling cards),
   placed at the button through `--sp-left`, `--sp-top`/`--sp-bottom`,
   `--sp-width`, `--sp-max-h`; above the button when there is no room
   below. In the phone layouts (`selectSheetMode(w, h)`, js/layout.js) it is
   a sheet at the bottom (`.ui-sp-sheet`) with the label as title, a close
-  button and 44 px options; a tap on the dimmed area closes it.
+  button and 44 px options; a tap on the dimmed area closes it. A resize
+  across that breakpoint reopens the open list in the other mode.
+- **Unmounting**: an open list keeps listeners on the document and the
+  window. Screens call `destroy()` on a select they remove (or `close()`
+  before hiding it); a list whose control left the page also closes itself
+  at the next press, scroll or resize.
+- **Screens with global key handlers** (a keydown listener on the window or
+  the document, often in the capture phase, such as the game menu and the
+  statistics): let the key through, without `preventDefault` or
+  `stopPropagation`, when `event.target` is inside `[role=listbox]`,
+  `[role=spinbutton]` or `[role=tablist]` (`target.closest(...)`), so the
+  control gets its arrows, Home/End, typing and Esc. Esc in an open list
+  closes the list, not the menu.
 - **Stepper**: an ARIA spinbutton (`aria-valuenow` is the index,
   `aria-valuetext` the formatted value); Up/Right and Down/Left step,
   Page Up/Down step a tenth, Home/End go to the ends; the minus and plus
@@ -3760,7 +3773,10 @@ changes only, never on `set()`.
 `.ui-btn-icon`; `.ui-dialog` with `.ui-dialog-body`, `.ui-dialog-title`,
 `.ui-dialog-text`, `.ui-dialog-actions`; `.ui-menubar` with
 `.ui-menubar-brand` and `.ui-menubar-item[aria-current]` (a `.ui-led`
-inside); `.ui-brand` with `.ui-brand-emblem` and `.ui-brand-word`;
+inside); `.ui-brand` with `.ui-brand-emblem` and the word (in a `.ui-brand-word`,
+or as plain text in the `.ui-brand` itself as the start screen's
+`h1.start-logo` has it; `RA` in a `<span>` takes `--ui-brand-red` either
+way, unless the screen's sheet colours it);
 `.ui-slot-row` with `.ui-slot-strip` (`--slot-color` set from script);
 `.ui-table` (`.ui-table-head`, `[aria-selected=true]` rows); `.ui-toast`;
 `.ui-meter` with `.ui-meter-seg.ui-ok|.ui-warn|.ui-bad`; `.ui-progress`
@@ -4227,7 +4243,9 @@ drawn.
 
 Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
 render setting; `js/content/atlas.js` `originalSlotInfo`, plus the slots of
-WebRA's own pixel art, `js/gameart.js` `applyGameArt`) are drawn the way
+WebRA's own pixel art, `js/gameart.js` `applyGameArt`, and the actor slots of
+texture packs with `"perspective": "classic"`, such as the built-in 3D
+minimal pack) are drawn the way
 OpenRA draws them: helicopter rotors are OpenRA's rotor overlays (pose 0 the
 slow-rotor sequence on the ground, 1 the rotor sequence in the air, 9 and
 10 for a second rotor; no WebRA rotor disc or wash), placed like turrets on
@@ -4247,7 +4265,13 @@ b side offset in world units, drawn from slot `2t + 1` with the idle
 pose), kind 1 a structure whose body shows the storage level (OpenRA
 WithResourceLevelSpriteBody, the silo: `age` = (a - 1) * resources /
 capacity of its owner, mode 3), kind 2 the original damage smoke
-(milliseconds per frame, start frames, loop frames). Presentation only: the state hash is the
+(milliseconds per frame, start frames, loop frames), kind 5 the ground
+shear of an actor type's art (a: the pack's `groundShear` in 1024ths,
+clamped to plus or minus 1024): its turret, rotor and muzzle offsets move
+a / 1024 world pixels sideways per world pixel south, as its sheared hull
+does (`render.rs` `sheared_offset`), so every mount (the Cruiser has two
+turrets, the Chinook two rotors) carries its part in every facing.
+Presentation only: the state hash is the
 same either way.
 
 Sprite slots after the specials: the effects module (`fx_base`: 0 damage

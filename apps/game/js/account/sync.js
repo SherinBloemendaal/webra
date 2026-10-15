@@ -16,7 +16,7 @@
 //   so also across reloads) and go up when the browser is online again or
 //   on the next start.
 
-import { diffValues, GROUPS, normalizeValues } from '../registry.js';
+import { checkValue, diffValues, GROUPS, normalizeValues } from '../registry.js';
 import { AccountError } from './api.js';
 
 /** localStorage key of the sync state: `{ userId, version, base, dirty }`. */
@@ -33,6 +33,26 @@ const clone = (v) => (v === undefined ? undefined : structuredClone(v));
  * changed settings meanwhile) every difference is a conflict.
  * @returns {{ merged: object, conflicts: { group: string, key: string, local: any, remote: any }[], localChanges: number, remoteChanges: number }}
  */
+/**
+ * JSON settings merged key by key instead of as one value: guide.done (step
+ * id -> true) keeps every step done on either device. A three-way set merge:
+ * a step stays when both sides have it, or when one side added it (it is not
+ * in the base); a step one side removed (a reset of the guide) stays removed.
+ * Without a base it is the union. If the result would not fit the setting,
+ * the account's value stays and the setting is a conflict as before.
+ */
+export const KEYED_MERGE = Object.freeze(new Set(['guide.done']));
+
+function mergeKeyed(b, l, r) {
+  const has = (o, k) => !!o && typeof o === 'object' && Object.hasOwn(o, k);
+  const out = {};
+  for (const k of new Set([...Object.keys(l ?? {}), ...Object.keys(r ?? {})])) {
+    const keep = (has(l, k) && has(r, k)) || (has(l, k) && !has(b, k)) || (has(r, k) && !has(b, k));
+    if (keep) out[k] = clone(has(l, k) ? l[k] : r[k]);
+  }
+  return out;
+}
+
 export function mergeSettings({ base, local, remote }) {
   const merged = clone(remote);
   const conflicts = [];
@@ -42,6 +62,20 @@ export function mergeSettings({ base, local, remote }) {
     for (const key of Object.keys(GROUPS[group].settings)) {
       const l = local?.[group]?.[key];
       const r = remote?.[group]?.[key];
+      if (KEYED_MERGE.has(`${group}.${key}`) && !same(l, r)) {
+        const b = base?.[group]?.[key];
+        const lc = !base || !same(l, b);
+        const rc = !base || !same(r, b);
+        if (base && lc) localChanges++;
+        if (base && rc) remoteChanges++;
+        if (lc && !rc) merged[group][key] = clone(l);
+        else if (lc && rc) {
+          const m = mergeKeyed(base ? b : null, l, r);
+          if (checkValue(GROUPS[group].settings[key], m) === null) merged[group][key] = m;
+          else conflicts.push({ group, key, local: clone(l), remote: clone(r) });
+        }
+        continue;
+      }
       if (!base) {
         if (!same(l, r)) conflicts.push({ group, key, local: clone(l), remote: clone(r) });
         continue;
@@ -56,6 +90,20 @@ export function mergeSettings({ base, local, remote }) {
     }
   }
   return { merged, conflicts, localChanges, remoteChanges };
+}
+
+/**
+ * A rolling upgrade: a client from before 0.17.0 knows Graphics only as 'webra' or 'original', so it turns
+ * 'webra2d' and 'webra3d' into 'webra' when it reads the account and uploads that with its next change. Such a
+ * 'webra' only says "WebRA's own art": when this device last synced 2D or 3D minimal (`base`), the account
+ * keeps that choice instead of falling back to 2D minimal. Any other value (and 'webra' after 'original', a real
+ * choice on the old client) is taken as it is.
+ * @returns {{ settings: object, kept: boolean }} the remote document to use, and whether a 'webra' was replaced
+ */
+export function keepGraphicsFromOldClients(settings, base) {
+  const was = base?.game?.graphics;
+  if (settings?.game?.graphics !== 'webra' || (was !== 'webra2d' && was !== 'webra3d')) return { settings, kept: false };
+  return { settings: { ...settings, game: { ...settings.game, graphics: was } }, kept: true };
 }
 
 /** Apply the player's choice for conflicts: 'local' keeps this device's values, 'remote' the account's. */
@@ -209,7 +257,8 @@ export class SettingsSync {
    */
   async reconcile(remote, attempt = 0) {
     if (!this.state) return;
-    const remoteValues = normalizeValues(remote.settings ?? {}).values;
+    const { settings: remoteSettings, kept } = keepGraphicsFromOldClients(remote.settings ?? {}, this.state.base);
+    const remoteValues = normalizeValues(remoteSettings).values;
     if (!remote.version) {
       // Nothing stored for the account yet: this device's settings become its first version.
       this.state.version = 0;
@@ -219,9 +268,11 @@ export class SettingsSync {
     }
     const local = this.registry.values();
     if (!this.state.dirty) {
-      this.registry.applyDocument(remote.settings ?? {}, { origin: 'remote' });
-      this.state = { ...this.state, version: remote.version, base: this.registry.values(), dirty: false };
+      this.registry.applyDocument(remoteSettings, { origin: 'remote' });
+      // A Graphics choice an old client flattened to 'webra' is written back once (it uploads only its own changes).
+      this.state = { ...this.state, version: remote.version, base: this.registry.values(), dirty: kept };
       this.save();
+      if (kept) return this.push(attempt);
       this.setStatus('synced');
       return;
     }
@@ -238,7 +289,7 @@ export class SettingsSync {
     this.registry.applyDocument(patch, { origin: 'remote' });
     this.state.version = remote.version;
     this.state.base = remoteValues;
-    this.state.dirty = diffValues(remoteValues, this.registry.values()).length > 0;
+    this.state.dirty = kept || diffValues(remoteValues, this.registry.values()).length > 0;
     this.save();
     if (this.state.dirty) return this.push(attempt);
     this.setStatus('synced');

@@ -82,8 +82,8 @@ test('Graphics follow the game setting: original art builds the pixel-art atlas,
   assert.ok(original.slots.includes(2 * index('E1')));
   let changes = 0;
   art.onChange(() => changes++);
-  art.graphics = 'webra';
-  assert.equal(settings.get('graphics'), 'webra', 'the choice is the game setting (registry game.graphics)');
+  art.graphics = 'webra2d';
+  assert.equal(settings.get('graphics'), 'webra2d', 'the choice is the game setting (registry game.graphics)');
   assert.ok(changes >= 1, 'the editor hears about it and rebuilds');
   ({ atlas, original } = art.build(ACTORS, 'temperate'));
   assert.equal(atlas.filter, 'linear');

@@ -16,6 +16,25 @@ Priority, per sprite part, cameo, terrain and sound: **enabled texture packs
 (first in the player's list wins) > original Red Alert content > WebRA's own
 art and sounds**.
 
+## Built-in pack: 3D minimal
+
+WebRA ships one texture pack itself, **3D minimal**: every actor, cameo and the terrain redrawn in a blocky,
+bright, low-poly style (boxes, octagons instead of circles, stepped domes, three flat tones per face, no outlines,
+no dither) in the game's own 3/4 camera. The **Graphics** setting has three choices: **2D minimal** (WebRA's flat
+art, the default; `webra` in older settings means this), **3D minimal** and **Red Alert original** (the player's own
+installed files). With 3D minimal the built-in pack sits **below** the packs the player installed and above
+WebRA's flat art; it is read from the game's own files (`apps/game/packs/minimal3d*.webrapack`, one archive per
+biome set), nothing is downloaded.
+
+The archives are generated and committed: `python3 tools/gen_minimal3d/generate.py` writes them,
+`--check` (CI) fails when they are out of date, `--preview ID ...` draws models enlarged. The generator is
+plain Python (`tools/gen_minimal3d/`): `core.py` is the renderer (primitives, flat tones, z-buffer, PNG), one
+`models_*.py` file per category declares the actors, `models_terrain.py` the tiles. Its archives are bigger than a
+player's pack may be (`BUILTIN_LIMITS` in `content/packs.js`). Its manifest says `"perspective": "classic"` and
+`"groundShear": -0.35` (the generator's `GSHEAR`): the game places the turrets, rotors and muzzle flashes on its
+sheared hulls with the same shear, so the Cruiser's two turrets and the Chinook's two rotors sit on their mounts in
+all 32 facings.
+
 ## Format version 1
 
 A pack is a ZIP archive, named `*.webrapack` (or `*.zip`), with
@@ -104,6 +123,8 @@ any other kind of file makes the pack invalid.
 | `version` | yes | up to 32 characters, for example `1.0.0` |
 | `license` | yes | the license the pack is under (an SPDX id or a short text), up to 64 characters |
 | `description` | no | up to 500 characters |
+| `perspective` | no | `flat` (default): turrets and rotors are placed like WebRA's flat art. `classic`: the actor sprites are pre-rendered in Red Alert's 3/4 camera like the original graphics, so the game places turrets, rotors and muzzle flashes at OpenRA's offsets (the north-south part shortened by sin 40 degrees) and helicopter rotors play their `idle` (on the ground) and `move` (in the air) poses, without WebRA's rotor disc |
+| `groundShear` | no | with `classic` only: the art leans sideways, screen x moving this many world pixels per world pixel south (-1 to 1, default 0); the game shears turret, rotor and muzzle offsets the same way, so parts ahead of or behind a unit's centre stay on their mounts. Draw each unit with its centre unsheared |
 | `sprites`, `cameos`, `terrain`, `sounds` | at least one | see below |
 
 ### Sprites

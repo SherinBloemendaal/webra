@@ -647,3 +647,34 @@ test('patterns sheet: the shared classes exist, use tokens only, and have contra
   assert.match(css, /@media \(forced-colors: active\)/);
   assert.doesNotMatch(css, /@keyframes|animation:|transition:/, 'no motion here (it would need a reduced-motion rule)');
 });
+
+test('select: a list whose control left the page closes at the next event; resizing across the phone breakpoint reopens it as a sheet', () => {
+  doc = installDom({ windowEvents: true });
+  window.innerWidth = 1280;
+  window.innerHeight = 800;
+  const s = selectPlate({ label: 'AI type', options: AI, value: 'turtle' });
+  doc.body.append(s.root);
+  click(s.button);
+  assert.equal(s.isSheet(), false);
+  // The window narrows to a phone: the resize listener reopens it in sheet mode, the highlight kept.
+  const resize = [];
+  window.addEventListener = (t, fn) => t === 'resize' && resize.push(fn);
+  click(s.button);
+  click(s.button);
+  window.innerWidth = 390;
+  window.innerHeight = 844;
+  for (const fn of resize) fn();
+  assert.equal(s.isOpen(), true);
+  assert.equal(s.isSheet(), true);
+  assert.equal(doc.getElementById(s.listbox.getAttribute('aria-activedescendant')).querySelector('.ui-sp-label').textContent, 'Turtle AI');
+  // The screen re-renders without it: the next press anywhere closes it and drops the listeners.
+  s.root.remove();
+  doc.body.dispatchEvent(new FakeEvent('pointerdown'));
+  assert.equal(s.isOpen(), false);
+  delete window.innerWidth;
+  delete window.innerHeight;
+});
+
+test('CSS: the screen-reader-only rule ships with the controls (the website has no theme.css)', () => {
+  assert.match(read('../css/controls.css'), /\.ui-sr-only \{[^}]*position: absolute !important;[^}]*clip: rect\(0 0 0 0\)/s);
+});

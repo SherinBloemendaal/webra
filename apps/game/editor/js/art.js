@@ -130,13 +130,13 @@ export class EditorArt {
     for (const fn of this.listeners) fn();
   }
 
-  /** 'webra' or 'original' (the game's Graphics setting). */
+  /** 'webra2d', 'webra3d' or 'original' (the game's Graphics setting). */
   get graphics() {
-    return this.settings.get(GRAPHICS_SETTING) === 'original' ? 'original' : 'webra';
+    return this.content?.graphics ?? 'webra2d';
   }
 
   set graphics(v) {
-    this.settings.set(GRAPHICS_SETTING, v === 'original' ? 'original' : 'webra');
+    this.settings.set(GRAPHICS_SETTING, ['webra3d', 'original'].includes(v) ? v : 'webra2d');
   }
 
   /** Whether the original graphics are installed on this device. */
