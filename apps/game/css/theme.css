@@ -2,7 +2,9 @@
    every screen (start screen, lobby, sidebar, menus, dialogs). Gunmetal
    panels with bevels and rivets, faint scanlines, and one accent on every
    screen: Red Alert red. The website keeps the same palette in
-   apps/website/assets/site.css. Loaded before every other sheet. */
+   apps/website/assets/site.css. Loaded before every other sheet but
+   css/fonts.css (the @font-face rules of the self-hosted fonts). The
+   design system's tokens: docs/contracts.md, "Design system". */
 
 :root {
   /* ---- Gunmetal chrome ---- */
@@ -14,17 +16,27 @@
   --ui-metal-4: #3a424d; /* pressed highlights, plate edges */
   --ui-edge: #030405; /* the dark outline around every part */
   --ui-line: #343c46; /* separators inside panels */
+  --ui-line-soft: #1d2329; /* lines between table rows */
   --ui-bevel-hi: rgba(255, 255, 255, 0.13);
   --ui-bevel-lo: rgba(0, 0, 0, 0.62);
 
-  /* ---- Text ---- */
+  /* ---- Text ----
+     Text colours (tests/theme-tokens.test.mjs checks 4.5:1 on the panels
+     and wells): --ui-text, --ui-text-2 (body copy in dialogs and tooltips),
+     --ui-muted (labels, hints), --ui-money, --ui-ok, --ui-warn,
+     --ui-info-text. --ui-bad reads as text on the wells, the window
+     background and tooltips only; on panels use it for parts that are not
+     text. --ui-dim is for decoration (version tags, units next to a value),
+     never for text a player has to read. */
   --ui-text: #e2e6ea;
+  --ui-text-2: #c3cad2;
   --ui-muted: #949eaa;
   --ui-dim: #5f6873;
   --ui-money: #f0cf63;
   --ui-ok: #4fd067;
   --ui-warn: #f0c030;
   --ui-bad: #ec4532;
+  --ui-info-text: #8fb6e6;
   /* Information callouts (notes, messages of the day): not the accent, so
      they never read as an error or a selected part. */
   --ui-info: #4a82c4;
@@ -47,20 +59,90 @@
   --ui-primary-hover: #d8301f;
   --ui-primary-active: #8f1a12;
   --ui-primary-disabled: #3a2422;
+  --ui-primary-disabled-text: #8a6a66; /* label of a disabled main button */
   --ui-focus: var(--ui-accent-hi);
+  /* The focus ring: 2 px, 2 px away from the part (Foundations board). */
+  --ui-focus-ring: 2px solid var(--ui-focus);
+  --ui-focus-offset: 2px;
   /* The main action button, at rest, under the pointer and pressed. */
   --ui-primary-fill: linear-gradient(180deg, var(--ui-primary-hi), var(--ui-primary));
   --ui-primary-fill-hover: linear-gradient(180deg, var(--ui-primary-hover), var(--ui-primary-hi));
   --ui-primary-fill-active: linear-gradient(180deg, var(--ui-primary), var(--ui-primary-active));
 
-  /* ---- Type ---- */
-  --ui-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --ui-font-display: 'Arial Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
-  --ui-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* ---- Lamps (LEDs): the state of a part, always next to a word or mark ----
+     Off, chosen (the accent), ok, attention, bad and information, each with
+     its rim and its glow. css/patterns.css (.ui-led) and css/controls.css
+     draw them. */
+  --ui-led-off: #0b0e11;
+  --ui-led-off-edge: var(--ui-edge);
+  --ui-led-off-glow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --ui-led-on: var(--ui-accent-hi);
+  --ui-led-on-edge: var(--ui-accent);
+  --ui-led-on-glow: 0 0 8px rgba(224, 48, 31, 0.6);
+  --ui-led-ok: var(--ui-ok);
+  --ui-led-ok-edge: #2a7a3a;
+  --ui-led-ok-glow: 0 0 8px rgba(79, 208, 103, 0.55);
+  --ui-led-warn: var(--ui-warn);
+  --ui-led-warn-edge: #9c7d20;
+  --ui-led-warn-glow: 0 0 8px rgba(240, 192, 48, 0.55);
+  --ui-led-bad: var(--ui-bad);
+  --ui-led-bad-edge: #8f1a12;
+  --ui-led-bad-glow: 0 0 8px rgba(236, 69, 50, 0.6);
+  --ui-led-info: var(--ui-info);
+  --ui-led-info-edge: #2c4f78;
+  --ui-led-info-glow: 0 0 8px color-mix(in srgb, var(--ui-info) 55%, transparent);
+
+  /* ---- The WebRA red of the logo's "RA" (brand/, tools/gen-brand.mjs) ---- */
+  --ui-brand-red: #ff4a36;
+
+  /* ---- Sides and terrain (meanings, not accents) ---- */
+  --ui-allies: #4d8cf2;
+  --ui-soviet: #ff5a3c;
+  --ui-neutral: #8f9aa6;
+  --ui-terrain: #3b4a2c;
+
+  /* ---- Tooltips (css/tooltip.css): Red Alert's dark "dialog4" panel ---- */
+  --ui-tip-bg: rgba(6, 7, 8, 0.94);
+  --ui-tip-rim: #5a5f66;
+  --ui-tip-key: #f2d64b; /* hotkeys and times, never anything else */
+  --ui-tip-text: var(--ui-text-2);
+  --ui-tip-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.6);
+
+  /* ---- Type ----
+     Barlow for text, Barlow Condensed (upper case, tracked) for titles,
+     labels and buttons, JetBrains Mono for numbers. Self-hosted (css/fonts.css,
+     the files in fonts/, OFL), with the system fonts as fallback. */
+  --ui-font: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ui-font-display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', system-ui, sans-serif;
+  --ui-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --ui-fs-xs: 10px;
   --ui-fs-s: 11px;
   --ui-fs-m: 13px;
   --ui-fs-l: 15px;
+  /* The type scale of the Foundations board: display (screen names), title
+     (dialogs, panels), section (headers inside a screen), label (field
+     labels, table heads), body. Display sizes are Barlow Condensed 700 in
+     upper case with the tracking next to them; labels 600. */
+  --ui-fs-display: 44px;
+  --ui-fs-title: 26px;
+  --ui-fs-section: 20px;
+  --ui-fs-label: 14px;
+  --ui-fs-body: 15px;
+  --ui-track-display: 0.06em;
+  --ui-track-title: 0.08em;
+  --ui-track-section: 0.1em;
+  --ui-track-button: 0.12em;
+  --ui-track-label: 0.14em;
+  --ui-lh-body: 1.5;
+
+  /* ---- Space and shape: steps of 4, radius 2 px everywhere ---- */
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-space-6: 32px;
+  --ui-space-7: 48px;
   --ui-radius: 2px;
 
   /* ---- UI scale ----
@@ -74,7 +156,17 @@
   /* ---- Metal recipes ---- */
   --ui-bevel: inset 1px 1px 0 var(--ui-bevel-hi), inset -1px -1px 0 var(--ui-bevel-lo);
   --ui-bevel-in: inset 1px 1px 0 var(--ui-bevel-lo), inset -1px -1px 0 var(--ui-bevel-hi);
-  --ui-shadow: 0 18px 60px rgba(0, 0, 0, 0.65);
+  --ui-shadow: 0 18px 60px rgba(0, 0, 0, 0.65); /* dialogs */
+  --ui-shadow-pop: 0 18px 40px rgba(0, 0, 0, 0.65); /* drop-down panels, the select's list */
+  --ui-shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
+  /* Surfaces: the well (fields, meters, tracks), raised metal (buttons), the panel. */
+  --ui-well: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  --ui-raised: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  --ui-raised-hover: linear-gradient(180deg, #4a535f, var(--ui-metal-3));
+  --ui-panel: linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  /* The main button's glow at rest and under the pointer. */
+  --ui-primary-glow: 0 0 14px -4px rgba(224, 48, 31, 0.6);
+  --ui-primary-glow-hover: 0 0 14px -2px rgba(224, 48, 31, 0.7);
   --ui-rivet: radial-gradient(circle at 40% 38%, #c4ccd4 0 0.8px, #6b747e 1.4px, #262b31 2.3px, rgba(0, 0, 0, 0.55) 2.9px, transparent 3.4px);
   --ui-scan: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px);
   --ui-brushed: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 4px);
@@ -142,6 +234,18 @@
   --ui-fs-s: calc(11 * var(--ui-px));
   --ui-fs-m: calc(13 * var(--ui-px));
   --ui-fs-l: calc(15 * var(--ui-px));
+  --ui-fs-display: calc(44 * var(--ui-px));
+  --ui-fs-title: calc(26 * var(--ui-px));
+  --ui-fs-section: calc(20 * var(--ui-px));
+  --ui-fs-label: calc(14 * var(--ui-px));
+  --ui-fs-body: calc(15 * var(--ui-px));
+  --ui-space-1: calc(4 * var(--ui-px));
+  --ui-space-2: calc(8 * var(--ui-px));
+  --ui-space-3: calc(12 * var(--ui-px));
+  --ui-space-4: calc(16 * var(--ui-px));
+  --ui-space-5: calc(24 * var(--ui-px));
+  --ui-space-6: calc(32 * var(--ui-px));
+  --ui-space-7: calc(48 * var(--ui-px));
   /* The themed controls (css/controls.css) are sized from these. */
   --ctl-size: calc(14 * var(--ui-px));
   --ctl-row: calc(36 * var(--ui-px));
@@ -205,8 +309,8 @@
 }
 
 :focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 1px;
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 /* ---- In-game notifications (js/notifications.js) ---------------------------
