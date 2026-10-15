@@ -1062,6 +1062,8 @@ export class Lobby {
   /** (Re)build every slot row; slots come and go, so rows are not kept. */
   renderSlots() {
     this.closePickers(null);
+    // The rows' select plates go with their rows (an open list closes, its listeners go).
+    for (const rec of this.slotRows) for (const k of ['type', 'bot', 'faction', 'team', 'handicap', 'spawn']) rec?.[k]?.destroy();
     this.slotTable.textContent = '';
     this.pickers = [];
     this.slotRows = [];

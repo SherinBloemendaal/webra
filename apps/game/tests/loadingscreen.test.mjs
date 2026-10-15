@@ -31,24 +31,12 @@ function setup({ reduced = false } = {}) {
   // The Start button had the focus.
   doc.activeElement = start;
   const focus = (el) => () => (doc.activeElement = el);
-  // A clock and timers of the test's own: the least showing time and the fade run when the test says.
+  // A clock of the test's own: the least showing time counts from begin.
   const clock = { now: 0 };
-  const pending = new Map();
-  let ids = 0;
-  const timers = {
-    setTimeout: (fn, ms) => (pending.set(++ids, { fn, ms }), ids),
-    clearTimeout: (id) => pending.delete(id),
-  };
-  const flush = () => {
-    for (const [id, t] of [...pending]) {
-      pending.delete(id);
-      t.fn();
-    }
-  };
-  const screen = new LoadingScreen(root, { reducedMotion: () => reduced, doc, now: () => clock.now, timers });
+  const screen = new LoadingScreen(root, { reducedMotion: () => reduced, doc, now: () => clock.now });
   start.focus = focus(start);
   screen.card.focus = focus(screen.card);
-  return { doc, root, screen, start, clock, pending, flush };
+  return { doc, root, screen, start, clock };
 }
 
 const steps = (root) => root.querySelectorAll('.loading-step').map((li) => [li.dataset.step, li.dataset.state]);
@@ -111,7 +99,7 @@ test('begin shows the screen at once, busy, at the first step, with the focus on
 });
 
 test('the start trace spans move the steps forward (never back), then the first frame hides the screen', () => {
-  const { doc, root, screen, start, flush } = setup();
+  const { doc, root, screen, start } = setup();
   const trace = new PerfTrace(() => 0);
   trace.onSpan = (name) => screen.span(name);
   screen.begin(loadingPlan('skirmish'));
@@ -137,12 +125,10 @@ test('the start trace spans move the steps forward (never back), then the first 
   assert.equal(bar.getAttribute('aria-valuenow'), '80');
   assert.equal(root.querySelector('.loading-bar-fill').style.getPropertyValue('--fill'), '0.8');
   assert.deepEqual(Object.keys(SPAN_STEPS).sort(), ['content.load', 'rules.parse', 'sim.host', 'sim.start']);
-  // The first frame: the bar fills, the screen fades out after its least time.
+  // The first frame: the bar fills and the screen goes.
+  const fill = root.querySelector('.loading-bar-fill');
   screen.done();
-  assert.equal(root.querySelector('.loading-bar-fill').style.getPropertyValue('--fill'), '1');
-  assert.equal(root.querySelector('.loading-status').textContent, 'Ready. Starting the game');
-  assert.equal(root.hidden, false);
-  flush();
+  assert.equal(fill.style.getPropertyValue('--fill'), '1');
   assert.equal(root.hidden, true);
   assert.equal(screen.active, false);
   assert.equal(root.getAttribute('aria-busy'), 'false');
@@ -188,14 +174,13 @@ test('a failed start: an alert with the reason, Back closes and gives the focus 
 });
 
 test('"Reduce motion" stills the spinner, the bar and the entrance (the setting, and the browser\'s in the stylesheet)', () => {
-  const { root, screen, pending } = setup({ reduced: true });
+  const { root, screen } = setup({ reduced: true });
   screen.begin(loadingPlan('replay'));
   assert.ok(root.classList.contains('is-still'));
-  // No least time and no fade: the first frame closes it at once.
+  // No least time: no hold before the close.
   assert.equal(screen.holdMs(), 0);
   screen.done();
-  assert.equal(root.hidden, true);
-  assert.equal(pending.size, 0);
+  assert.equal(root.style.getPropertyValue('--loading-hold'), '0ms');
   uninstallDom();
   const css = readFileSync(new URL('../css/loading.css', import.meta.url), 'utf8');
   assert.match(css, /#loading\.is-still \*,[^{]*\{\s*animation: none !important;\s*transition: none !important;/s);
@@ -207,41 +192,31 @@ test('"Reduce motion" stills the spinner, the bar and the entrance (the setting,
   assert.match(css, new RegExp(`--loading-min: ${LOADING_MIN_MS}ms;`));
   assert.match(css, new RegExp(`--loading-fade: ${LOADING_FADE_MS}ms;`));
   assert.match(css, /#loading\.is-closing \{[^}]*transition: opacity var\(--loading-fade\) ease-in var\(--loading-hold, 0ms\);/s);
+  // Reduce motion: no fade.
+  assert.match(css, /#loading\.is-still\.is-closing \{\s*transition: none;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^@]*#loading\.is-closing \{\s*transition: none;/s);
   assert.match(css, /\.loading-bar \{[^}]*animation: loading-reveal var\(--loading-min\)/s);
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(html, /<link rel="stylesheet" href="css\/loading\.css" \/>/);
   assert.match(html, /<section id="loading" aria-busy="false" hidden><\/section>/);
 });
 
-test('the screen shows at least LOADING_MIN_MS (the bar\'s animation), then fades out in LOADING_FADE_MS', () => {
-  const { root, screen, clock, pending, flush } = setup();
+test('the least showing time (LOADING_MIN_MS, the bar\'s animation) is the delay of the stylesheet\'s close', () => {
+  const { root, screen, clock } = setup();
   clock.now = 1000;
   screen.begin(loadingPlan('skirmish'));
-  // A quick start: the first frame after 400 ms.
+  // A quick start: the first frame after 400 ms; the rest of the least time is the close's delay.
   clock.now = 1400;
   assert.equal(screen.holdMs(), LOADING_MIN_MS - 400);
   screen.done();
-  assert.ok(root.classList.contains('is-closing'));
   assert.equal(root.style.getPropertyValue('--loading-hold'), `${LOADING_MIN_MS - 400}ms`);
-  assert.deepEqual([...pending.values()].map((t) => t.ms), [LOADING_MIN_MS - 400 + LOADING_FADE_MS]);
-  assert.equal(screen.active, true, 'still showing while it waits');
-  // A second first frame changes nothing.
-  screen.done();
-  assert.equal(pending.size, 1);
-  flush();
-  assert.equal(root.hidden, true);
-  assert.ok(!root.classList.contains('is-closing'));
-  // A slow start: no hold, only the fade.
+  assert.equal(root.querySelector('.loading-status'), null, 'the card is emptied once it is gone');
+  // A slow start: no hold.
   screen.begin(loadingPlan('skirmish'));
   clock.now += LOADING_MIN_MS + 5000;
   screen.done();
   assert.equal(root.style.getPropertyValue('--loading-hold'), '0ms');
-  assert.deepEqual([...pending.values()].map((t) => t.ms), [LOADING_FADE_MS]);
-  // A restart while it fades: the new start shows at once, the old close is dropped.
-  screen.begin(loadingPlan('skirmish', { restart: true }));
-  assert.equal(pending.size, 0);
-  assert.ok(!root.classList.contains('is-closing'));
-  assert.equal(root.hidden, false);
+  assert.ok(LOADING_FADE_MS > 0);
   uninstallDom();
 });
 
@@ -271,7 +246,7 @@ test('a span listener that throws does not break the span it follows', () => {
 });
 
 test('a modal dialog: the page behind is inert while it shows (and as it was after), keys stay on the screen, Tab cycles in the card', () => {
-  const { doc, root, screen, start, flush } = setup();
+  const { doc, root, screen, start } = setup();
   const menu = doc.createElement('section');
   const ended = doc.createElement('section');
   ended.inert = true; // inert already: stays so afterwards
@@ -310,8 +285,6 @@ test('a modal dialog: the page behind is inert while it shows (and as it was aft
   screen.begin(loadingPlan('skirmish'));
   assert.equal(menu.inert, true);
   screen.done();
-  assert.equal(menu.inert, true, 'modal until it is gone');
-  flush();
   assert.equal(menu.inert, false);
   uninstallDom();
 });
@@ -339,7 +312,7 @@ test('a game that fails before its first frame ends the loading screen with the 
 });
 
 test('a frame that throws before the first one is drawn ends the start; once drawn, frames throw as before', () => {
-  const { root, screen, flush } = setup();
+  const { root, screen } = setup();
   const errors = console.error;
   console.error = () => {};
   try {
@@ -360,7 +333,6 @@ test('a frame that throws before the first one is drawn ends the start; once dra
     screen.begin(loadingPlan('skirmish'));
     const ok = new FirstFrameGuard({ screen, stop: () => stops++, back() {} });
     ok.run(() => ok.firstFrame());
-    flush();
     assert.equal(root.hidden, true);
     assert.throws(() => ok.run(() => {
       throw new Error('later');

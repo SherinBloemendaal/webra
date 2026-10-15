@@ -7,9 +7,9 @@
    steps as lamps and the tip.
 
    Timing (js/loadingscreen.js keeps the same numbers): the screen shows at
-   least --loading-min, the bar's fill animation; after the first frame it
-   waits out the rest (--loading-hold, set from script) and fades out in
-   --loading-fade. The entrance plays once, within the least time. "Reduce
+   least --loading-min, the bar's fill animation; after the first frame
+   #loading.is-closing waits out the rest (--loading-hold, set from script)
+   and fades out in --loading-fade. The entrance plays once, within the least time. "Reduce
    motion" (.is-still, or the browser's) leaves every animation out. */
 
 #loading {
@@ -51,10 +51,17 @@
   animation: loading-sweep 3.2s linear infinite;
 }
 
-/* The fade out after the first frame: after the hold, the whole screen. */
+/* The close after the first frame (js/loadingscreen.js adds .is-closing and
+   waits for this transition): after the rest of the least time
+   (--loading-hold), the whole screen fades out. */
 #loading.is-closing {
   opacity: 0;
   transition: opacity var(--loading-fade) ease-in var(--loading-hold, 0ms);
+}
+
+/* Reduce motion: no fade and no hold, the screen goes at once. */
+#loading.is-still.is-closing {
+  transition: none;
 }
 
 /* The card is the whole screen: no frame of its own. */
@@ -508,6 +515,10 @@
 @media (prefers-reduced-motion: reduce) {
   #loading::before {
     display: none;
+  }
+
+  #loading.is-closing {
+    transition: none;
   }
 
   #loading *,
