@@ -3492,6 +3492,60 @@ the rules below.
   release notes, the bulk repair and sell chooser, help tips and tooltips,
   and the map editor's dialogs keep their widths.
 
+### The in-game HUD and its connection parts (`apps/game/js/sidebar.js`, `js/netwarn.js`, `css/netwarn.css`)
+
+The HUD follows the InGame, NetInGame and Tooltips boards. The logic of
+production (clicks, holds, cancels, queue counts, the red funds marker of
+`shortOfFunds`) is unchanged; the sidebar adds:
+
+- **Fullscreen** in the top row (callback `fullscreen: { available, active,
+  toggle }`, js/fullscreen.js; Alt+Enter is the same): pressed while
+  fullscreen, dark with js/fullscreen.js UNAVAILABLE in its tooltip where
+  the page cannot go fullscreen. Without the callback there is no button.
+- **Tab lamps**: a `.sb-tab-led` (js/ui/controls.js `led`) per production
+  tab, `on` (white) for the open tab, `warn` (gold, with a gold edge
+  `.sb-tab.ready`) when something of it is ready; the count badge ("!" or
+  N) stays as the word.
+- **Selection panel**: the cameo of the selected type (or the most numerous
+  one) in its owner's colour, "3 × Mobile Flak" for one type, the count and
+  up to three "N × name" for more (`selectionTypes(ids, infoOf, nameOf)`,
+  infoOf js/sim/methods.js `actorInfo`), and "Group N" when the whole
+  selection is one control group (`selectionGroup(ids, groups)`,
+  js/controlgroups.js). js/main.js `selectionInfo` passes `types` and
+  `group`.
+- `netSlot`: the place next to the clock where js/netwarn.js puts the signal
+  bars.
+
+**Connection parts of an online game** (`NetWarn`, docs/redesign-uitwerking.md
+29). js/main.js makes one when `online.net` is given: js/online.js passes
+`net: { quality, roster, you }` to `onStartGame` (`quality`: the session's
+NetQuality, js/netquality.js, which lives on across the lobby and the game;
+`roster`: the start message's players `[{ client, player, name }]`; `you`:
+this member's client id). Single player, skirmish and replays have none.
+
+- **Signal bars** (players only, in the sidebar): 4 bars lit by NetQuality's
+  own `self.bars` (4 good, 3 fair, 1 poor, 0 measuring), the level as
+  `data-level` and in the label ("Your connection: poor, 320 ms"), a tooltip
+  with ping, jitter and loss (late pings). A click dispatches
+  `OPEN_NETWORK_EVENT` (`'webra:open-network'`, a CustomEvent with `detail:
+  { tab: 'network' }`) on the window; the game menu (js/gamemenu.js) opens on
+  its Network tab when it hears it.
+- **Own warning** (players only): `role=alert` at the top of the battlefield
+  once the own quality has been `poor` for SELF_WARN_AFTER_MS (10 s) without
+  a break ("320 ms · 6% loss."). Its close button hides it until the
+  connection was not poor once and then poor for 10 s again; it also goes
+  when the connection recovers (`SelfWarning`).
+- **Waiting for a player** (players and spectators): on a `waiting` for
+  another client, the system line "Waiting for X." once per wait; after
+  WAIT_PANEL_AFTER_MS (2 s from the first `waiting` of that client) the
+  panel over a dimmed battlefield with the drop countdown (`dropInMs` less
+  the time since it came, as a share of DROP_AFTER_MS) and a row per person
+  of the game (`waitRows`: behind, ok, fair, poor, silent or measuring, as a
+  word and a lamp). `waiting { client: null }` closes it (`WaitWatch`). Never
+  for this member itself.
+- Settings: `net.signalBars`, `net.warnSelf`, `net.warnOthers` (the `net`
+  group of js/registry.js) switch the three off at once.
+
 ### Design system: tokens, fonts, controls and patterns (`apps/game/css`, `js/ui/controls.js`)
 
 The design system boards (Foundations, Controls, Patterns, Tooltips, Logo)

@@ -32,7 +32,8 @@ import { LOBBY_COLOR_COUNT, NEUTRAL_COLOR, Renderer, TEAM_COLORS, TEAM_PALETTE }
 import { AnimClock } from './anim.js';
 import { SimClock } from './simclock.js';
 import { Input } from './input.js';
-import { Sidebar } from './sidebar.js';
+import { selectionGroup, selectionTypes, Sidebar } from './sidebar.js';
+import { NetWarn } from './netwarn.js';
 import { PowerBar } from './powers.js';
 import { PowerTimers, timerLines } from './powertimers.js';
 import { CommandBar } from './commandbar.js';
@@ -86,7 +87,7 @@ import { allOriginalNames, TIME_LIMIT_LINES } from './audio/catalog.js';
 import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
-import { askOf } from './sim/methods.js';
+import { actorInfo, askOf } from './sim/methods.js';
 import { BoxChooser } from './boxchooser.js';
 import { COMBINED_VIEW, ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 import { ICON_CSS as OBSERVER_ICON_CSS } from './observer-icons.js';
@@ -662,7 +663,7 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null }) => {
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null, net = null }) => {
           entry.hidden = true;
           // A co-op mission: its players and colours; the people under their names.
           const missionPlayers = mission ? host.game.info.mission.players : null;
@@ -673,7 +674,7 @@ function setupOnline(lobby, gpuError) {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            online: { driver, onQuit, spectator, rematch, save, chat },
+            online: { driver, onQuit, spectator, rematch, save, chat, net },
             recorder,
             viewer: spectator ? roster : null,
             roster,
@@ -1702,6 +1703,14 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
+      fullscreen: {
+        available: () => fullscreenAvailable(),
+        active: () => isFullscreen(),
+        toggle: async () => {
+          const r = await toggleFullscreen();
+          if (!r.ok) showToast(r.message);
+        },
+      },
       onCashTick: (direction) => audio?.cashTick(direction),
       onProductionClick: (id, outcome) => audio?.productionClick(id, outcome),
     },
@@ -1798,6 +1807,20 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     maxLength: onlineChat?.maxLength,
   }));
   if (onlineChat?.bars) chat.extras.append(onlineChat.bars);
+  // Connection quality of an online game (js/netwarn.js): signal bars by the clock, the own warning, "Waiting for X".
+  if (online?.net?.quality) {
+    scope.own(new NetWarn({
+      quality: online.net.quality,
+      roster: online.net.roster ?? [],
+      you: online.net.you ?? null,
+      field: $('field'),
+      slot: viewer ? null : sidebar.netSlot,
+      registry: settings.registry,
+      line: (text) => chatLog.system(text),
+      colorOf: (p) => cssColor(TEAM_COLORS[p]),
+      warnSelf: !online.spectator,
+    }));
+  }
   // An online game's replay: its chat as the replay passes it (js/chatlog.js ReplayChat).
   const replayLines = replay && replayChat?.length
     ? new ReplayChat(replayChat, chatLog, { teamOf: (p) => replayTeams[p] ?? 0, colorOf: (p) => cssColor(TEAM_COLORS[p]), dead: (p) => lost.has(p) })
@@ -2680,7 +2703,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         );
         commandBar.update();
         audio?.playerState(state);
-        sidebar.setSelection(selectionInfo(game, input.selection, allied));
+        sidebar.setSelection(selectionInfo(game, input.selection, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
         sidebar.setDeployState(input.deployState());
       }
       const stats = watching() ? game.observer_stats() : null;
@@ -2852,17 +2875,25 @@ function saveScreenshot(canvas) {
 /**
  * Selection panel info: actor_json() of one actor, with `description` set to
  * the TooltipDescription its viewer reads (tech buildings: @ally for the owner
- * and its allies, @other for the rest); a summary for several.
+ * and its allies, @other for the rest); a summary for several, with the
+ * types (js/sidebar.js selectionTypes). Both carry the control group the
+ * selection is (`group`, js/sidebar.js selectionGroup).
  * @param {(owner: number) => boolean} allied whether the local player is allied to `owner`
+ * @param {Map<string, number[]>} groups the control groups (js/controlgroups.js)
+ * @param {(type: string) => string | undefined} nameOf a type's name
  */
-function selectionInfo(game, ids, allied) {
+function selectionInfo(game, ids, allied, groups, nameOf) {
   if (ids.length === 0) return null;
+  const group = selectionGroup(ids, groups);
   if (ids.length === 1) {
     const info = JSON.parse(game.actor_json(ids[0]));
-    if (info) info.description = (allied(info.owner) ? info.allyDescription : info.otherDescription) || '';
+    if (info) {
+      info.description = (allied(info.owner) ? info.allyDescription : info.otherDescription) || '';
+      info.group = group;
+    }
     return info;
   }
-  return { count: ids.length, name: `${ids.length} units selected` };
+  return { count: ids.length, name: `${ids.length} units selected`, types: selectionTypes(ids, (id) => actorInfo(game, id), nameOf), group };
 }
 
 function capitalize(s) {
