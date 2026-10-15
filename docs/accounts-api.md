@@ -833,6 +833,21 @@ Serialized size at most 32 KiB.
   },
   "releaseNotes": { "lastSeenVersion": "0.6.0" },   // VERSION_RE
   "privacy": { "errorReports": true, "cloudReplays": true }, // "Send error reports" (docs/security.md, "Error reports"); "Save replays to my account" (5.10)
+  "net": {                         // online games (NET_SETTING_DEFAULTS: all true)
+    "warnSelf": true,              // a banner when the player's own ping or loss is poor
+    "warnOthers": true,            // a chat line and the waiting dialog when someone holds the game up
+    "signalBars": true             // signal bars next to the clock
+  },
+  "social": {                      // friends privacy (SOCIAL_SETTING_DEFAULTS); the server applies them
+    "showOnline": true,            // friends see when the player is around
+    "friendsJoin": true,           // friends may join the player's lobby without an invite, if there is room
+    "allowSpectate": false         // friends may watch the player's games
+  },
+  "guide": {
+    "tourInGames": true,           // the tour starts by itself in the player's skirmish games
+    "done": { "ch1.deploy": true },  // guide and tour steps done: step id -> true, JSON object at most 2 KiB
+    "lastTip": -1                  // index of the last loading screen tip shown, -1 to 999 (-1: none yet)
+  },
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
                                    // (the game keeps e.g. "mouseCaptureHints": 0..99 and the
                                    // repair box chooser's "repairBoxChoice" there)
@@ -846,6 +861,8 @@ Serialized size at most 32 KiB.
   characters without spaces (`Ctrl+Shift+F1`); `[]` means unbound.
 - `packs`: at most 64 entries with distinct ids; an id is 1 to 160
   characters of text without control characters.
+- `guide.done`: a JSON object with the same rules as `extra` below, at most
+  2 KiB serialized (`SETTINGS_GUIDE_DONE_MAX_BYTES`).
 - `lastOptions` and `extra`: JSON objects at most 4 levels deep, keys
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at
