@@ -333,7 +333,9 @@ test('tooltip: the replaced title attributes are gone and the stylesheet is link
   const lobby = read('../js/lobby.js');
   for (const name of ['this.button.title', 'this.diceBtn.title', 'remove.title', 'node.title']) assert.ok(!lobby.includes(name), name);
   const css = read('../css/tooltip.css');
-  assert.match(css, /#ffff00/i, 'the hotkey in OpenRA yellow');
+  // The hotkey in yellow (OpenRA TextColor FFFF00, the Tooltips board's #f2d64b as --ui-tip-key).
+  assert.match(css, /\.ui-tooltip-key \{[^}]*color: var\(--ui-tip-key\)/);
+  assert.match(read('../css/theme.css'), /--ui-tip-key: #f2d64b;/);
   assert.match(css, /pointer-events: none/);
   assert.doesNotMatch(read('../js/ui/tooltip.js'), /innerHTML|setAttribute\('style'/);
 });
