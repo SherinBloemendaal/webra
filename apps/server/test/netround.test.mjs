@@ -98,6 +98,39 @@ test('start gate: a player that does not load within LOAD_TIMEOUT_MS is dropped 
   assert.deepEqual(frameTicks(host), [3, 4, 5], 'the host plays on');
 });
 
+test('start gate: a player that loaded, lost its connection and rejoined plays on without sending loaded again', async (t) => {
+  const { s, host, guest, gw, gSeat } = await room(t);
+  await s.send(host, { t: 'loaded' });
+  await s.send(guest, { t: 'loaded' });
+  await orders(s, host, 3, 6);
+  await orders(s, guest, 3, 6);
+  host.take('frame');
+  await s.drop(guest);
+  const back = s.connect('guest2');
+  await s.send(back, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  await s.send(back, { t: 'resume' });
+  assert.equal(s.session.room.seatState(gSeat), 'active');
+  assert.equal(s.session.lockstep.starting, false);
+  const at = back.take('back')[0].tick;
+  await orders(s, host, 6, at + 2);
+  await orders(s, back, at, at + 2);
+  assert.ok(frameTicks(host).includes(at + 1), 'frames flow with the rejoined player, no second loaded needed');
+});
+
+test('start gate: a player dropped before it loaded and rejoining does not hold the others', async (t) => {
+  const { s, host, guest, gw, gSeat } = await room(t);
+  await s.send(host, { t: 'loaded' });
+  await orders(s, host, 3, 6);
+  await s.drop(guest);
+  assert.deepEqual(frameTicks(host), [0, 1, 2, 3, 4, 5], 'the gate opened when the last loading seat left');
+  const back = s.connect('guest2');
+  await s.send(back, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  await s.send(back, { t: 'resume' });
+  await s.send(back, { t: 'loaded' });
+  assert.deepEqual(back.take('error'), [], 'its loaded is ignored');
+  assert.equal(s.session.room.seatState(gSeat), 'active');
+});
+
 // ---- Ping, pong, netstat --------------------------------------------------------------------------
 
 test('ping: pong at once with n and at; netstat to the whole room, players only, at most every 2 s', async (t) => {
