@@ -704,6 +704,24 @@ code {
   border: 1px solid var(--edge-dark);
 }
 
+/* Less motion asked for: the still picture instead of the animated one, by
+   CSS alone (SMIL cannot be paused from a stylesheet, and this works before
+   and without script). */
+.hero-still {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-live,
+  .hero-pause {
+    display: none !important;
+  }
+
+  .hero-still {
+    display: block;
+  }
+}
+
 .hero-figure figcaption {
   margin-top: 8px;
   color: var(--muted);

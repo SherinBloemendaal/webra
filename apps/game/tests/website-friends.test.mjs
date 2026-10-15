@@ -332,3 +332,21 @@ test('dialogs: Esc in an open select list closes the list only; Esc again closes
   await settle();
   assert.equal(closed, true, 'Esc on the closed select closes the dialog');
 });
+
+test('home: the hero battle stands still for reduced motion with CSS alone; the moving one has a Pause button', () => {
+  const dir = fileURLToPath(new URL('../../website/', import.meta.url));
+  const html = readFileSync(`${dir}index.html`, 'utf8');
+  const svgs = [...html.matchAll(/<svg class="(hero-art[^"]*)"[\s\S]*?<\/svg>/g)];
+  const live = svgs.find((m) => m[1].includes('hero-live'));
+  const still = svgs.find((m) => m[1].includes('hero-still'));
+  assert.ok(live && still, 'an animated and a still picture');
+  assert.match(live[0], /<animateMotion /);
+  assert.doesNotMatch(still[0], /<animate/, 'the still picture has no animation');
+  assert.match(still[0], /<title id="hero-still-title">/);
+  const ids = (svg) => [...svg.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(ids(live[0]).filter((id) => ids(still[0]).includes(id)), [], 'ids are not shared');
+  assert.match(html, /data-hero-pause/);
+  const css = readFileSync(`${dir}assets/site.css`, 'utf8');
+  assert.match(css, /\.hero-still \{\s*display: none;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.hero-live,\s*\.hero-pause \{\s*display: none !important;\s*\}\s*\.hero-still \{\s*display: block;/);
+});

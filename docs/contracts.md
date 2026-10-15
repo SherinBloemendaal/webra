@@ -3652,8 +3652,9 @@ set through CSSOM (`--avatar`, `--fill`, the select plate's `--sp-*`).
   Account (the current page `aria-current="page"`, accent text and a rule)
   and Play. Under 680 px a Menu button opens the links.
 - **Home**: the hero's battlefield is an inline SVG animated with SMIL (no
-  script, no game sprites); `prefers-reduced-motion` and a Pause button stop
-  it (`svg.pauseAnimations()`), and it rests off screen. The badge over the
+  script, no game sprites). Under `prefers-reduced-motion` the stylesheet
+  shows a still copy instead (no script needed); otherwise a Pause button
+  stops it (`svg.pauseAnimations()`), and it rests off screen. The badge over the
   hero comes from `GET /api/site` (`registration.open`,
   `registration.approvalRequired`) and `version.json`
   (`assets/site-data.js` `betaBadge`: "Closed beta · v0.17"); the sign-up
@@ -3693,6 +3694,11 @@ set through CSSOM (`--avatar`, `--fill`, the select plate's `--sp-*`).
   x.y.z", the date, a Live badge for the running version, and per kind of
   change and part of the game a tagged heading (New, Fixed, Faster,
   Breaking; `site-data.js` `releaseTag`).
+- **Depends on the protocol round** (branch work/netround): "Join with a
+  code", the invite card and the friends section need its routes
+  (`/join/<code>`, `GET /api/invite/:code`, `/api/account/friends/*`) and
+  work once it is merged; before that the lookup answers unknown and the
+  friends section says friends are not available.
 - **Adapters until the protocol round is merged**: `assets/invite.js`
   (`normalizeInviteCode`, `formatInviteCode`, `invitePath`) and
   `assets/friends.js` (`FriendsClient`, `SOCIAL_DEFAULTS`,

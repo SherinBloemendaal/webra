@@ -67,7 +67,7 @@
           </div>
           <figure class="hero-figure">
             <div class="hero-frame">
-              <svg class="hero-art" viewBox="0 0 520 340" role="img" aria-labelledby="hero-art-title">
+              <svg class="hero-art hero-live" viewBox="0 0 520 340" role="img" aria-labelledby="hero-art-title">
                 <title id="hero-art-title">A battle in WebRA's 2D style: Allied tanks cross a bridge toward a Soviet Tesla Coil while a harvester gathers ore</title>
                 <defs>
                   <pattern id="hero-grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="rgba(0,0,0,0.14)" stroke-width="1" /></pattern>
@@ -100,6 +100,41 @@
                 <circle cx="372" cy="146" r="2" fill="#ffb02a" opacity="0"><animate attributeName="r" values="2;16" dur="2.2s" repeatCount="indefinite" /><animate attributeName="opacity" values="0;0;0;0.9;0" dur="2.2s" repeatCount="indefinite" /></circle>
                 <rect x="360" y="0" width="160" height="340" fill="url(#hero-fog)" />
                 <g><animateMotion path="M-40 300 C 150 250, 320 320, 580 190" dur="16s" repeatCount="indefinite" rotate="auto" /><ellipse cx="4" cy="22" rx="11" ry="4" fill="#000" opacity="0.3" /><rect class="ally-mid" x="-24" y="-1.5" width="14" height="3" /><ellipse class="ally ally-edge" rx="11" ry="4.5" stroke-width="1" /><ellipse class="glass" cx="6" rx="3" ry="2.5" /><g><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="0.3s" repeatCount="indefinite" /><rect x="-16" y="-1" width="32" height="2" fill="#1a1c1f" opacity="0.75" /><rect x="-1" y="-16" width="2" height="32" fill="#1a1c1f" opacity="0.75" /></g></g>
+              </svg>
+              <!-- The same battle standing still, for visitors who ask for less motion (shown by CSS alone). -->
+              <svg class="hero-art hero-still" viewBox="0 0 520 340" role="img" aria-labelledby="hero-still-title">
+                <title id="hero-still-title">A battle in WebRA's 2D style: Allied tanks cross a bridge toward a Soviet Tesla Coil while a harvester gathers ore</title>
+                <defs>
+                  <pattern id="hero-grid-still" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="rgba(0,0,0,0.14)" stroke-width="1" /></pattern>
+                  <linearGradient id="hero-fog-still" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#000" stop-opacity="0" /><stop offset="1" stop-color="#000" stop-opacity="0.6" /></linearGradient>
+                  <g id="hero-tank-still"><rect x="-9" y="-8" width="18" height="4" fill="#2b2b28" /><rect x="-9" y="4" width="18" height="4" fill="#2b2b28" /><rect class="ally ally-edge" x="-8" y="-5" width="16" height="10" stroke-width="1" /><rect class="ally-gun" x="0" y="-1.2" width="12" height="2.4" /><circle class="ally-hi" r="4" /></g>
+                </defs>
+                <rect class="ground" width="520" height="340" />
+                <rect width="520" height="340" fill="url(#hero-grid-still)" />
+                <g fill="#c99a2e"><circle cx="190" cy="285" r="9" /><circle cx="206" cy="296" r="7" /><circle cx="176" cy="300" r="6" /><circle cx="200" cy="274" r="5" /><circle cx="214" cy="281" r="4" /></g>
+                <g fill="#e6c25a"><circle cx="188" cy="283" r="3" /><circle cx="205" cy="294" r="2.5" /></g>
+                <path class="river" d="M250 0 C 285 100, 225 200, 292 340" fill="none" stroke-width="38" />
+                <path class="river-deep" d="M250 0 C 285 100, 225 200, 292 340" fill="none" stroke-width="28" />
+                <rect x="236" y="141" width="56" height="18" fill="#7a6a52" />
+                <path d="M236 143H292M236 157H292" stroke="#4e4434" stroke-width="2" />
+                <rect x="30" y="40" width="70" height="60" fill="#b8b5a7" /><rect class="ally" x="30" y="40" width="70" height="5" /><rect x="30" y="100" width="70" height="8" fill="#8a877a" /><rect x="52" y="100" width="26" height="8" fill="#d9b23a" /><path d="M44 80 L94 62" stroke="#d9b23a" stroke-width="4" />
+                <rect x="30" y="128" width="46" height="40" fill="#b8b5a7" /><rect class="ally" x="30" y="128" width="46" height="4" /><circle cx="42" cy="146" r="8" fill="#98a0a8" /><circle cx="42" cy="146" r="5" fill="#55585c" /><circle cx="64" cy="146" r="8" fill="#98a0a8" /><circle cx="64" cy="146" r="5" fill="#55585c" />
+                <rect x="84" y="200" width="52" height="46" fill="#b8b5a7" /><rect class="ally" x="84" y="200" width="52" height="4" /><circle cx="148" cy="210" r="10" fill="#98a0a8" /><circle cx="148" cy="210" r="6" fill="#c99a2e" />
+                <rect x="116" y="108" width="58" height="46" fill="#70747a" /><rect class="ally" x="116" y="108" width="58" height="4" /><rect x="132" y="150" width="26" height="6" fill="#d9b23a" />
+                <rect x="452" y="112" width="44" height="38" fill="#b8b5a7" /><rect x="452" y="112" width="44" height="4" fill="#e64033" /><circle cx="466" cy="130" r="7" fill="#98a0a8" /><circle cx="484" cy="130" r="7" fill="#98a0a8" />
+                <rect x="428" y="58" width="26" height="26" fill="#8d8b80" /><circle cx="441" cy="71" r="10" fill="#55585c" /><circle cx="441" cy="71" r="7" fill="none" stroke="#b0703a" stroke-width="2.5" />
+                <circle cx="441" cy="71" r="4.5" fill="#ffd98a"></circle>
+                <rect x="390" y="110" width="22" height="22" fill="#8d8b80" />
+                <g transform="translate(401 121)"><g transform="rotate(175)"><rect x="0" y="-1.6" width="14" height="3.2" fill="#2b2b28" /><circle r="7" fill="#e64033" stroke="#7a1a12" stroke-width="1" /></g></g>
+                <g transform="translate(184 283) rotate(40)"><rect class="ally ally-edge" x="-10" y="-7" width="20" height="14" stroke-width="1" /><rect x="-8" y="-5" width="10" height="10" fill="#c99a2e" /><rect class="ally-mid" x="3" y="-5" width="6" height="10" /></g>
+                <g transform="translate(330 146) rotate(-10)"><use href="#hero-tank-still" /><circle cx="14" cy="0" r="3" fill="#ffd98a" opacity="0"></circle></g>
+                <g transform="translate(262 158) rotate(-14)"><use href="#hero-tank-still" /><path d="M-12 -11h6M-12 -11v6M12 11h-6M12 11v-6" stroke="#4fd067" stroke-width="1.6" /></g>
+                <g transform="translate(196 174) rotate(-7)"><use href="#hero-tank-still" /><circle cx="14" cy="0" r="3" fill="#ffd98a" opacity="0"></circle></g>
+                <polyline class="tesla" points="441,66 426,92 434,100 410,118 418,126 378,146" fill="none" stroke-width="5" opacity="0.45"></polyline>
+                <polyline points="441,66 426,92 434,100 410,118 418,126 378,146" fill="none" stroke="#e0f8ff" stroke-width="1.8" opacity="1"></polyline>
+                <circle cx="372" cy="146" r="2" fill="#ffb02a" opacity="0"></circle>
+                <rect x="360" y="0" width="160" height="340" fill="url(#hero-fog-still)" />
+                <g transform="translate(200 270) rotate(-12)"><ellipse cx="4" cy="22" rx="11" ry="4" fill="#000" opacity="0.3" /><rect class="ally-mid" x="-24" y="-1.5" width="14" height="3" /><ellipse class="ally ally-edge" rx="11" ry="4.5" stroke-width="1" /><ellipse class="glass" cx="6" rx="3" ry="2.5" /><g transform="rotate(30)"><rect x="-16" y="-1" width="32" height="2" fill="#1a1c1f" opacity="0.75" /><rect x="-1" y="-16" width="2" height="32" fill="#1a1c1f" opacity="0.75" /></g></g>
               </svg>
               <div class="hero-hud" aria-hidden="true"><span class="hud-money">$ 4,250</span><span class="hud-power">PWR 140/180</span></div>
               <button class="hero-pause" type="button" aria-pressed="false" data-hero-pause hidden>Pause</button>

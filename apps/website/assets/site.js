@@ -294,12 +294,13 @@ function spritesUnavailable(container, access) {
 /**
  * The hero's battlefield is an inline SVG animated with SMIL, so it plays
  * without script and without the game's sprites. Visitors who ask for less
- * motion get the still picture; everyone gets a Pause button (moving
- * pictures longer than five seconds must be stoppable), and the animation
- * rests while the hero is off screen.
+ * motion get a still copy of it (site.css shows it instead, without
+ * script); everyone else gets a Pause button (moving pictures longer than
+ * five seconds must be stoppable), and the animation rests while the hero
+ * is off screen.
  */
 function initHeroArt() {
-  const svg = document.querySelector('.hero-art');
+  const svg = document.querySelector('.hero-live');
   if (!svg || typeof svg.pauseAnimations !== 'function') return;
   const button = document.querySelector('[data-hero-pause]');
   const reduce = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
