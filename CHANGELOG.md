@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/SherinBloemendaal/webra/compare/v0.15.0...v0.15.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **game:** record campaign progress when a mission is won ([e8fcf61](https://github.com/SherinBloemendaal/webra/commit/e8fcf61e0484a49b4ee41051cdd3d566b95bca93))
+
 ## [0.15.0](https://github.com/SherinBloemendaal/webra/compare/v0.14.0...v0.15.0) (2026-10-14)
 
 
