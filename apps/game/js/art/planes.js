@@ -1,10 +1,12 @@
-// Art for planes (flat 1996 style). Entries: id -> { body: [w, h, draw], turret?: [w, h, draw] },
-// drawn facing north. Helpers and palette come from ./kit.js.
+// Art for planes (2D minimal pack, flat 1996 style). Entries: id -> { body: [w, h, draw], turret?: [w, h, draw] },
+// drawn facing north. Materials follow the design canvas's Units board: team plating with
+// panel lines, steel and hull grey, glass canopies. Helpers come from ./kit.js and ./unitkit.js.
 //
 // The engine draws airborne planes raised by their altitude with a faint copy
 // as the ground shadow (engine/src/render.rs), so the sprites carry no shadow.
 
 import { C, rect, rrect, circle, poly, line } from './kit.js';
+import { U, PANEL_SHADE, plate, steel, glass } from './unitkit.js';
 
 const RED = '#c23a26';
 
@@ -20,35 +22,38 @@ function star(ctx, P, cx, cy, r) {
 }
 
 export const PLANE_DRAW = {
-  // Yak-9: propeller fighter with straight wings.
+  // Yak-9: propeller fighter with straight team wings, a steel cowling.
   YAK: {
     body: [26, 24, (ctx, P) => {
-      rrect(ctx, P.team(0.7), 1, 8, 24, 5, 2); // wings
+      plate(ctx, P, 1, 8, 24, 5, 0.7, 2, 2.5); // wings
       rect(ctx, P.team(0.45), 1.5, 11.5, 23, 1.2); // trailing edge
-      rrect(ctx, P.team(0.6), 7.5, 18.5, 11, 3, 1); // tailplane
-      rrect(ctx, P.c(C.steelDark), 11, 2, 4, 20.5, 2); // fuselage outline
+      plate(ctx, P, 7.5, 18.5, 11, 3, 0.6, 1, 2); // tailplane
+      rrect(ctx, P.c(U.steelDark), 11, 2, 4, 20.5, 2); // fuselage outline
       rrect(ctx, P.team(0.55), 11.5, 2.5, 3, 19.5, 1.5);
-      rect(ctx, P.team(0.85), 12, 3, 2, 4); // cowling highlight
-      rrect(ctx, P.c(C.glass), 12, 8, 2, 3.5, 1); // canopy
-      rect(ctx, P.c(C.steelDark), 12.6, 19, 0.8, 4); // fin
+      steel(ctx, P, 11.6, 2.6, 2.8, 4.2, 1); // cowling
+      glass(ctx, P, 12, 8, 2, 3.5, 0.8); // canopy
+      rect(ctx, P.c(U.steelDark), 12.6, 19, 0.8, 4); // fin
       star(ctx, P, 4.5, 10.5, 1.8);
       star(ctx, P, 21.5, 10.5, 1.8);
       // Spinning propeller: a blurred disc and the spinner.
       rect(ctx, P.c('rgba(40,40,40,0.45)'), 8, 1.2, 10, 1);
-      circle(ctx, P.c(C.steelLight), 13, 2, 1.3);
+      circle(ctx, P.c(U.steelLight), 13, 2, 1.3);
     }],
   },
-  // MiG: swept-wing jet with a pointed nose.
+  // MiG: swept-wing jet with a pointed nose, a dark hull-grey fuselage.
   MIG: {
     body: [28, 30, (ctx, P) => {
-      poly(ctx, P.c(C.steelDark), [14, 6, 27, 21, 27, 24, 14, 20, 1, 24, 1, 21]); // wing outline
+      poly(ctx, P.c(U.hullDark), [14, 6, 27, 21, 27, 24, 14, 20, 1, 24, 1, 21]); // wing outline
       poly(ctx, P.team(0.68), [14, 7.5, 25.5, 21, 25.5, 22.5, 14, 19, 2.5, 22.5, 2.5, 21]);
+      line(ctx, P.team(0.68 * PANEL_SHADE), 0.5, 7, 17.6, 12, 12.6); // panel lines
+      line(ctx, P.team(0.68 * PANEL_SHADE), 0.5, 21, 17.6, 16, 12.6);
       poly(ctx, P.team(0.5), [14, 22, 20, 28, 8, 28]); // tailplane
-      rrect(ctx, P.c(C.steelDark), 12.2, 1, 3.6, 27, 1.8); // fuselage
-      rrect(ctx, P.team(0.55), 12.7, 2, 2.6, 25, 1.3);
-      poly(ctx, P.c(C.steelLight), [14, 0, 15.6, 3, 12.4, 3]); // nose cone
-      rrect(ctx, P.c(C.glass), 13, 6, 2, 4.5, 1); // canopy
-      rect(ctx, P.c(C.steelDark), 13.6, 21, 0.8, 7); // fin
+      rrect(ctx, P.c(U.hullDark), 12.2, 1, 3.6, 27, 1.8); // fuselage
+      rrect(ctx, P.c(U.hull), 12.7, 2, 2.6, 25, 1.3);
+      rect(ctx, P.team(0.8), 12.7, 13, 2.6, 2.5); // team band
+      poly(ctx, P.c(U.steelLight), [14, 0, 15.6, 3, 12.4, 3]); // nose cone
+      glass(ctx, P, 13, 6, 2, 4.5, 0.8); // canopy
+      rect(ctx, P.c(U.hullDark), 13.6, 21, 0.8, 7); // fin
       rect(ctx, P.c('#3a2a20'), 12.8, 27.5, 2.4, 1.5); // exhaust
       star(ctx, P, 6, 21, 1.8);
       star(ctx, P, 22, 21, 1.8);
@@ -56,41 +61,44 @@ export const PLANE_DRAW = {
       for (const x of [7.5, 20.5]) rect(ctx, P.c('#e8e6dc'), x - 0.5, 15, 1, 5);
     }],
   },
-  // U-2 spy plane: long glider wings, slim dark fuselage.
+  // U-2 spy plane: long glider wings, a slim hull-grey fuselage.
   U2: {
     body: [42, 28, (ctx, P) => {
-      rrect(ctx, P.c(C.steelDark), 0.5, 9, 41, 3.6, 1.8); // wings
-      rrect(ctx, P.team(0.5), 1, 9.5, 40, 2.6, 1.3);
+      rrect(ctx, P.c(U.hullDark), 0.5, 9, 41, 3.6, 1.8); // wings
+      plate(ctx, P, 1, 9.5, 40, 2.6, 0.5, 1.3);
       rect(ctx, P.team(0.8), 1.5, 9.5, 39, 0.8);
-      rrect(ctx, P.c(C.steelDark), 14, 22, 14, 3, 1); // tailplane
-      rrect(ctx, P.c(C.steelDark), 19.5, 1, 3, 26, 1.5); // fuselage
-      rrect(ctx, P.c('#3d4044'), 20, 1.5, 2, 25, 1);
-      rrect(ctx, P.c(C.glass), 20.2, 5, 1.6, 3, 0.8); // canopy
+      for (const x of [8, 14, 28, 34]) rect(ctx, P.team(0.5 * PANEL_SHADE), x, 10.3, 0.5, 1.8); // panel lines
+      rrect(ctx, P.c(U.hullDark), 14, 22, 14, 3, 1); // tailplane
+      rrect(ctx, P.c(U.hullDark), 19.5, 1, 3, 26, 1.5); // fuselage
+      rrect(ctx, P.c(U.hull), 20, 1.5, 2, 25, 1);
+      glass(ctx, P, 20.2, 5, 1.6, 3, 0.6); // canopy
       rect(ctx, P.team(0.9), 20, 14, 2, 1.5); // team band
-      rect(ctx, P.c(C.steelLight), 20.6, 22, 0.8, 5); // fin
+      rect(ctx, P.c(U.steelLight), 20.6, 22, 0.8, 5); // fin
       // Camera window and wing-tip skids.
-      circle(ctx, P.c('#9fd0e8'), 21, 11, 0.8);
-      rect(ctx, P.c(C.steelLight), 0.5, 10, 1, 2);
-      rect(ctx, P.c(C.steelLight), 40.5, 10, 1, 2);
+      circle(ctx, P.c(U.glassLight), 21, 11, 0.8);
+      rect(ctx, P.c(U.steelLight), 0.5, 10, 1, 2);
+      rect(ctx, P.c(U.steelLight), 40.5, 10, 1, 2);
     }],
   },
-  // Tu-16 Badger: twin-jet bomber (paratroopers and parabombs).
+  // Tu-16 Badger: twin-jet bomber (paratroopers and parabombs), steel nacelles.
   BADR: {
     body: [42, 40, (ctx, P) => {
-      poly(ctx, P.c(C.steelDark), [21, 9, 41, 22, 41, 25, 21, 19, 1, 25, 1, 22]); // wing outline
+      poly(ctx, P.c(U.steelDark), [21, 9, 41, 22, 41, 25, 21, 19, 1, 25, 1, 22]); // wing outline
       poly(ctx, P.team(0.62), [21, 10.5, 39.5, 22, 39.5, 23.5, 21, 18, 2.5, 23.5, 2.5, 22]);
+      line(ctx, P.team(0.62 * PANEL_SHADE), 0.5, 6, 22, 11, 17); // panel lines
+      line(ctx, P.team(0.62 * PANEL_SHADE), 0.5, 36, 22, 31, 17);
       for (const x of [14, 28]) {
-        rrect(ctx, P.c(C.steelDark), x - 2.2, 10, 4.4, 12, 2); // engine nacelles
-        rrect(ctx, P.team(0.45), x - 1.6, 10.5, 3.2, 11, 1.5);
-        circle(ctx, P.c(C.track), x, 11, 1.2);
+        rrect(ctx, P.c(U.steelDark), x - 2.2, 10, 4.4, 12, 2); // engine nacelles
+        steel(ctx, P, x - 1.6, 10.5, 3.2, 11, 1.5);
+        circle(ctx, P.c(U.track), x, 11, 1.2);
       }
       poly(ctx, P.team(0.5), [21, 30, 31, 37, 11, 37]); // tailplane
-      rrect(ctx, P.c(C.steelDark), 18.5, 1, 5, 38, 2.5); // fuselage
-      rrect(ctx, P.team(0.55), 19.2, 2, 3.6, 36, 1.8);
-      rrect(ctx, P.c(C.glass), 19.6, 1.5, 2.8, 4, 1.4); // glazed nose
-      rrect(ctx, P.c(C.glass), 19.8, 7, 2.4, 2.5, 1); // cockpit
-      rect(ctx, P.c(C.steelDark), 20.6, 29, 0.8, 10); // fin
-      rect(ctx, P.c(C.steelDark), 19.5, 36.5, 3, 2); // tail gun
+      rrect(ctx, P.c(U.steelDark), 18.5, 1, 5, 38, 2.5); // fuselage
+      plate(ctx, P, 19.2, 2, 3.6, 36, 0.55, 1.8, 3.5);
+      glass(ctx, P, 19.6, 1.5, 2.8, 4, 1.2); // glazed nose
+      glass(ctx, P, 19.8, 7, 2.4, 2.5, 0.8); // cockpit
+      rect(ctx, P.c(U.steelDark), 20.6, 29, 0.8, 10); // fin
+      rect(ctx, P.c(U.steelDark), 19.5, 36.5, 3, 2); // tail gun
       star(ctx, P, 7, 23, 2);
       star(ctx, P, 35, 23, 2);
     }],

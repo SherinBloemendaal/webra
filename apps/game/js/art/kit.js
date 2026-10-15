@@ -134,35 +134,6 @@ export function trefoil(ctx, P, cx, cy, r) {
   circle(ctx, P.c(C.track), cx, cy, r * 0.2);
 }
 
-export function tracks(ctx, P, x, y, w, h) {
-  rrect(ctx, P.c(C.track), x, y, w, h, 2);
-  for (let ty = y + 2; ty < y + h - 1; ty += 3) rect(ctx, P.c(C.trackLight), x + 0.5, ty, w - 1, 1);
-}
-
-/** Pairs of tyres on both flanks of a w-wide vehicle, one pair per entry in ys. */
-export function wheels(ctx, P, w, ys, tw = 3, th = 5) {
-  for (const y of ys) {
-    for (const x of [0.5, w - tw - 0.5]) {
-      rrect(ctx, P.c(C.track), x, y, tw, th, 1);
-      rect(ctx, P.c(C.trackLight), x + 0.5, y + th / 2 - 0.5, tw - 1, 1);
-    }
-  }
-}
-
-/**
- * Wheeled truck chassis with a team cab at the front; the cargo bed is left to
- * the caller. Returns the bed's top y.
- */
-export function truck(ctx, P, w, h, ys, cabH = 7) {
-  wheels(ctx, P, w, ys);
-  rrect(ctx, P.c(C.steelDark), 3, 1, w - 6, h - 2, 1.5);
-  rrect(ctx, P.team(0.65), 3, 1, w - 6, cabH, 2);
-  rect(ctx, P.team(0.85), 4, 1, w - 8, 1.5);
-  rect(ctx, P.c(C.glass), 4.5, 3, w - 9, 2.5);
-  rect(ctx, P.c(C.steelDark), 3, cabH + 1, w - 6, 1);
-  return cabH + 2;
-}
-
 /** Radar / satellite dish seen from above, lit from the top-left. */
 export function dish(ctx, P, cx, cy, r) {
   circle(ctx, P.c(C.steelDark), cx, cy, r);
@@ -170,16 +141,6 @@ export function dish(ctx, P, cx, cy, r) {
   circle(ctx, P.c('#c4c7cb'), cx - r * 0.25, cy - r * 0.25, r * 0.45);
   line(ctx, P.c(C.steelDark), 0.8, cx, cy, cx + r * 0.55, cy - r * 0.55);
   circle(ctx, P.c(C.steelDark), cx + r * 0.55, cy - r * 0.55, Math.max(0.8, r * 0.16));
-}
-
-/** Missile pod: a team box with a grid of dark launch tubes. */
-export function pod(ctx, P, x, y, w, h, cols, rows) {
-  rrect(ctx, P.c(C.steelDark), x, y, w, h, 1);
-  rrect(ctx, P.team(0.6), x + 0.5, y + 0.5, w - 1, h - 1, 1);
-  const tr = Math.min((w - 1) / cols, (h - 1) / rows) * 0.3;
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows; j++) circle(ctx, P.c(C.track), x + 0.5 + ((i + 0.5) * (w - 1)) / cols, y + 0.5 + ((j + 0.5) * (h - 1)) / rows, tr);
-  }
 }
 
 /** Tank turret drum with a top-left highlight. */
