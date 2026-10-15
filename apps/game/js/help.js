@@ -99,6 +99,8 @@ export const HELP = Object.freeze({
     'How big units and terrain look, from 50 % to 300 %: the zoom Reset zoom returns to. The mouse wheel, pinch and the zoom keys zoom from there, and the zoom you last used is remembered as a share of this scale: the next game (also missions, replays and watching) starts there, and changing the scale keeps it. Reset zoom and Defaults forget it. The marks on the slider are the scales where pixel art is sharpest. Unlike Max resolution and Low quality, it changes size, not sharpness.',
   'settings.scaleAuto':
     'Auto picks the scale for your screen and picks again when the window or its pixel density changes; moving the slider turns it off. UI scale: 100 % on phones and in windows of at least 1600 x 900, smaller in smaller windows, never below 85 %, the same on retina and other screens. Game scale: 100 % at 1920 x 1080, from 85 % to 150 % for other window sizes, 100 % on phones; on sharp screens it moves to the nearest scale where pixel art is sharpest, and in windows smaller than 1920 x 1080 to the smaller one (a 14 inch MacBook gets 67 %), so small screens show more of the map.',
+  'settings.zoomFactor':
+    'How close the battlefield is: 1.0x is the game scale itself, higher zooms in. The mouse wheel and pinch change it too, and the next game starts at the zoom you last used.',
   'settings.pixelRatioCap':
     'Highest number of pixels the battlefield is drawn with per screen pixel. Sharp screens report 2 or 3; a lower cap is much faster on phones and slightly softer. Sharpness and speed only: sizes are UI scale and game scale.',
   'settings.lowQuality':
@@ -175,6 +177,156 @@ export const HELP = Object.freeze({
   'audio.musicShuffle': 'Plays the tracks in a random order. Off: in playlist order.',
   'audio.musicRepeat': 'All: the playlist starts again after the last track. One: the current track repeats. Off: music stops after the last track.',
 });
+
+/**
+ * The guide (game menu, Guide; js/guideview.js) and the tour in the first
+ * skirmish games (js/tour.js): chapters of steps. A step has an `id` (kept
+ * in the settings as guide.done, js/guide.js), a `title`, its `text`,
+ * `watch` (what ticks it off by itself, shown as "Watching: ...") and, in
+ * the tour's chapter, `tour` (the tour card's text). `{key:action}` stands
+ * for the key bound to that hotkey action now. The facts follow the README
+ * and the engine: lightning (engine/src/lightning.rs), the ore values
+ * (help `startingCash`), the countdowns (help `techLevel`), rejoining
+ * (docs/contracts.md, Reconnecting); change them with the rules.
+ */
+export const GUIDE = Object.freeze(
+  [
+    {
+      id: 'base',
+      title: 'Your first base',
+      intro: 'Every game starts with a Mobile Construction Vehicle, the MCV. It becomes your Construction Yard, and everything else is built from there.',
+      tip: 'Buildings must touch the area around your other buildings. Build toward the ore to keep the trucks close.',
+      steps: [
+        {
+          id: 'base.mcv',
+          title: 'Deploy the MCV',
+          text: 'Select it and press Deploy ({key:deploy}), or click it again. It unfolds into the Construction Yard.',
+          watch: 'MCV deployed',
+          tour: 'Select your MCV and press Deploy ({key:deploy}), or click it once more. It unfolds into your Construction Yard.',
+        },
+        {
+          id: 'base.power',
+          title: 'Build a Power Plant',
+          text: 'Open the Buildings tab, click Power Plant, wait for READY, then click the map near your yard to place it.',
+          watch: 'Power Plant placed',
+          tour: 'Click the glowing Power Plant in the sidebar. When it says READY, click the map next to your Construction Yard.',
+        },
+        {
+          id: 'base.refinery',
+          title: 'Build an Ore Refinery',
+          text: 'It comes with a free Ore Truck that starts gathering at once. This is your income.',
+          watch: 'Ore Refinery placed',
+          tour: 'Build the glowing Ore Refinery and place it toward the ore. Its free Ore Truck starts gathering at once.',
+        },
+        {
+          id: 'base.production',
+          title: 'Build Barracks and a War Factory',
+          text: 'Barracks train infantry, the War Factory builds vehicles. Both need power.',
+          watch: 'Barracks and War Factory placed in one game',
+          tour: 'Build Barracks for infantry and a War Factory for vehicles. Both need power.',
+        },
+        {
+          id: 'base.radar',
+          title: 'Build a Radar Dome',
+          text: 'It turns on the radar minimap in the sidebar.',
+          watch: 'Radar Dome placed',
+          tour: 'Build a Radar Dome: it turns on the radar minimap at the top of the sidebar.',
+        },
+      ],
+    },
+    {
+      id: 'ore',
+      title: 'Money and ore',
+      intro: 'Credits pay for everything. Ore Trucks bring ore and gems to a refinery, which turns them into credits.',
+      tip: 'An engineer can capture a neutral Oil Derrick: it pays a bonus when taken and a steady income after.',
+      steps: [
+        { id: 'ore.deliver', title: 'Keep the trucks busy', text: 'Trucks gather by themselves. Send one to a field by selecting it and clicking the ore.', watch: 'Ore delivered' },
+        { id: 'ore.truck', title: 'Add a second truck', text: 'More trucks on the same refinery means more income, up to the point where they wait in line.', watch: 'Ore Truck built' },
+        { id: 'ore.gems', title: 'Gems are worth more', text: 'A bale of gems pays 50 credits, a bale of ore 25. Ore fields grow back if the lobby allows it.', watch: 'Chapter read' },
+        { id: 'ore.silo', title: 'Build silos', text: 'When the refinery is full you hear "Silos needed". Silos store the extra.', watch: 'Silo placed' },
+      ],
+    },
+    {
+      id: 'power',
+      title: 'Power',
+      intro: 'Almost every building uses power. The bar at the left of the sidebar shows what you make against what you use.',
+      tip: 'Power plants are a favourite target: protect them, or the enemy turns your defences off.',
+      steps: [
+        { id: 'power.bar', title: 'Watch the power bar', text: 'Green is fine. When the use line passes the top of the bar you are on low power.', watch: 'Chapter read' },
+        { id: 'power.low', title: 'Low power hurts', text: 'Production slows down, the radar goes dark and powered defences such as the Tesla Coil stop working.', watch: 'First low power' },
+        { id: 'power.more', title: 'Build more power', text: 'A Power Plant, or later an Advanced Power Plant, which makes more on the same space.', watch: 'Second Power Plant placed' },
+        { id: 'power.down', title: 'Power down to save', text: 'The power button on the sidebar turns a building off, so the others keep running.', watch: 'A building powered down' },
+      ],
+    },
+    {
+      id: 'units',
+      title: 'Commanding units',
+      intro: 'Select units by clicking them or dragging a box. Then click where they should go or what they should attack.',
+      tip: 'Hover any button for a tooltip with its key. Every key can be changed under Controls.',
+      steps: [
+        { id: 'units.order', title: 'Move and attack', text: 'Left click the ground to move, an enemy to attack. Right click cancels.', watch: 'First order given' },
+        { id: 'units.attackMove', title: 'Attack move ({key:attackMove})', text: 'Units walk to the spot and fight everything they meet on the way.', watch: 'First attack move' },
+        {
+          id: 'units.guard',
+          title: 'Guard, Stop and Scatter',
+          text: 'Guard ({key:guard}) follows and protects a unit, Stop ({key:stop}) halts, Scatter ({key:scatter}) spreads units against splash damage.',
+          watch: 'Guard, Stop or Scatter used',
+        },
+        { id: 'units.queue', title: 'Queue with Shift', text: 'Hold Shift while clicking to add waypoints that run one after another.', watch: 'First queued waypoint' },
+        { id: 'units.stance', title: 'Fire stances', text: 'The four buttons right of the commands: attack anything, defend, return fire, hold fire.', watch: 'Fire stance changed' },
+      ],
+    },
+    {
+      id: 'weather',
+      title: 'Weather and lightning',
+      intro: 'Some maps have weather. A badge on the screen says what it does. Thunderstorms are the dangerous one.',
+      tip: 'The lobby can make the weather only for show, or turn it off.',
+      steps: [
+        { id: 'weather.storm', title: 'Lightning halves health', text: 'A strike takes half the health of whatever it hits.', watch: 'First thunderstorm' },
+        {
+          id: 'weather.plants',
+          title: 'It likes power plants',
+          text: "Lightning prefers to strike power plants, and a hit knocks out its owner's power for 15 seconds.",
+          watch: 'Chapter read',
+        },
+        { id: 'weather.rod', title: 'Build a Lightning Rod', text: 'It grounds every strike within 6 cells. Put one between your power plants.', watch: 'Lightning Rod placed' },
+        {
+          id: 'weather.other',
+          title: 'Other weather',
+          text: 'Bad weather shortens sight, vehicles slide on snow and ice, and in a heat wave vehicles that keep driving or firing overheat.',
+          watch: 'Chapter read',
+        },
+      ],
+    },
+    {
+      id: 'powers',
+      title: 'Superweapons',
+      intro: 'Late in the game, tech buildings unlock support powers. Their countdowns show at the top left.',
+      tip: 'The Iron Curtain makes units invulnerable for a while; the Chronosphere teleports them.',
+      steps: [
+        {
+          id: 'powers.timers',
+          title: 'Read the timers',
+          text: "Every player sees the Atom Bomb and GPS countdowns of all players, AI players too, in each owner's colour.",
+          watch: 'Chapter read',
+        },
+        { id: 'powers.ready', title: 'Support powers', text: 'A support power button lights up when it is ready. Click it, then click the map where it should go.', watch: 'A support power ready' },
+        { id: 'powers.spread', title: 'Spread your base', text: 'Do not put everything in one spot when an enemy Atom Bomb is close to ready.', watch: 'Chapter read' },
+      ],
+    },
+    {
+      id: 'team',
+      title: 'Teams and online',
+      intro: 'In team games allies share vision and win together. AI players are in the slot list like everyone else.',
+      tip: "Spectators can watch any player's view or all of them, with statistics per team.",
+      steps: [
+        { id: 'team.chat', title: 'Talk to your team', text: 'Team chat ({key:openTeamChat}) only reaches allies; all chat ({key:openGeneralChat}) reaches everyone.', watch: 'First team chat' },
+        { id: 'team.online', title: 'Online, the game goes on', text: 'Online the game does not pause: the menu opens over the running game.', watch: 'First online game' },
+        { id: 'team.rejoin', title: 'Losing the connection', text: 'Reload within 2 minutes and you take your seat back.', watch: 'Chapter read' },
+      ],
+    },
+  ].map((c) => Object.freeze({ ...c, steps: Object.freeze(c.steps.map((s) => Object.freeze(s))) })),
+);
 
 /** The help text of `key`; throws for an unknown key so a missing text is a bug, not a blank tooltip. */
 export function helpText(key) {

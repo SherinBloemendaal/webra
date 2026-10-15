@@ -1,0 +1,508 @@
+/* The guide (js/guideview.js, the game menu's Guide page; design board
+   Guide) and the tour card of the first skirmish games (js/tour.js; board
+   GuideTour). Tokens only (css/theme.css). Every state has a second signal
+   next to its colour: a lamp with words, a tick, "Watching" or "Done". */
+
+/* ---- Guide page ------------------------------------------------------------------ */
+
+.guide-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-2) var(--ui-space-4);
+}
+
+.guide-count {
+  color: var(--ui-text-2);
+  font: 400 var(--ui-fs-m) / 1.3 var(--ui-font-mono);
+}
+
+.guide-tour-switch {
+  min-width: min(calc(280 * var(--ui-px)), 100%);
+}
+
+.guide-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+}
+
+@container gm (min-width: 760px) {
+  .guide-body {
+    grid-template-columns: minmax(calc(200 * var(--ui-px)), 0.3fr) minmax(0, 1fr);
+  }
+
+  .guide-chapters {
+    border-right: 1px solid var(--ui-edge);
+    border-bottom: 0;
+  }
+}
+
+.guide-chapters {
+  padding: var(--ui-space-3);
+  background: var(--ui-metal-0);
+  border-bottom: 1px solid var(--ui-edge);
+}
+
+.guide-chapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--ui-px));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-chapter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ui-space-2);
+  width: 100%;
+  min-height: max(var(--ctl-row), calc(40 * var(--ui-px)));
+  margin: 0;
+  padding: 0 var(--ui-space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  color: var(--ui-text-2);
+  font: 700 var(--ui-fs-m) / 1.15 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.guide-chapter:hover {
+  color: var(--ui-text);
+}
+
+.guide-chapter[aria-current='step'] {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+}
+
+.guide-chapter:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.guide-chapter-n {
+  color: var(--ui-muted);
+}
+
+.guide-chapter-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-3);
+  min-width: 0;
+  padding: var(--ui-space-4) var(--ui-space-5) var(--ui-space-5);
+}
+
+.guide-chapter-heading {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--ui-px));
+  margin: 0;
+  font: 700 var(--ui-fs-title) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-title);
+  text-transform: uppercase;
+}
+
+.guide-eyebrow {
+  font: 700 var(--ui-fs-s) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  color: var(--ui-accent-hi);
+}
+
+.guide-intro {
+  max-width: var(--ui-measure);
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+.guide-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--ui-space-2) var(--ui-space-3);
+  padding: var(--ui-space-3);
+  background: var(--ui-well);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+}
+
+.guide-step-active {
+  background: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-well));
+  border-color: var(--ui-accent);
+}
+
+.guide-step-n {
+  display: grid;
+  place-items: center;
+  width: calc(28 * var(--ui-px));
+  height: calc(28 * var(--ui-px));
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-edge);
+  font-weight: 700;
+}
+
+.guide-step-active .guide-step-n {
+  background: var(--ui-primary-fill);
+  color: #fff;
+}
+
+.guide-step-done .guide-step-n {
+  color: var(--ui-ok);
+}
+
+.guide-step-title {
+  margin: 0;
+  font: 700 var(--ui-fs-l) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.guide-step-done .guide-step-title {
+  color: var(--ui-muted);
+}
+
+.guide-step-body {
+  max-width: var(--ui-measure);
+  margin: calc(2 * var(--ui-px)) 0 0;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-m);
+}
+
+.guide-step-status {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+.guide-step-watch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  color: var(--ui-muted);
+  font: 700 var(--ui-fs-s) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.guide-step-active .guide-step-watch {
+  color: var(--ui-accent-hi);
+}
+
+.guide-step-done .guide-step-watch {
+  color: var(--ui-ok);
+}
+
+@container gm (min-width: 760px) {
+  .guide-step {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .guide-step-status {
+    grid-column: 3;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
+
+.guide-tip {
+  display: flex;
+  gap: var(--ui-space-3);
+  max-width: var(--ui-measure);
+  margin: 0;
+  padding: var(--ui-space-2) var(--ui-space-3);
+  border-left: 3px solid var(--ui-tip-key);
+  background: var(--ui-metal-0);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-m);
+}
+
+.guide-tip-label {
+  flex: none;
+  color: var(--ui-tip-key);
+  font: 700 var(--ui-fs-s) / 1.5 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+}
+
+.guide-pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+/* ---- Tour card (over the battlefield, above the command bar) ----------------------------- */
+
+.tour {
+  position: absolute;
+  left: calc(8 * var(--ui-px));
+  bottom: calc(var(--cb-bottom, calc(52 * var(--ui-px))) + calc(44 * var(--ui-px)));
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  width: min(calc(360 * var(--ui-px)), calc(100% - calc(16 * var(--ui-px))));
+  pointer-events: none;
+}
+
+.tour-card,
+.tour-toast:not(:empty) {
+  pointer-events: auto;
+}
+
+.tour-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3);
+  background:
+    var(--ui-scan),
+    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  border: 1px solid var(--ui-edge);
+  border-top: 3px solid var(--ui-tip-key);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel), var(--ui-shadow-pop);
+  color: var(--ui-text);
+  font: 400 var(--ui-fs-m) / 1.4 var(--ui-font);
+  animation: tour-in 220ms ease-out;
+}
+
+.tour-card[hidden] {
+  display: none;
+}
+
+.tour-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+.tour-where {
+  color: var(--ui-tip-key);
+  font: 700 var(--ui-fs-s) / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+}
+
+/* The close cross: two drawn lines on a row-high target (44 px on touch screens). */
+.tour-close {
+  position: relative;
+  flex: none;
+  width: var(--ctl-row);
+  height: var(--ctl-row);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  cursor: pointer;
+}
+
+.tour-close::before,
+.tour-close::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 55%;
+  height: calc(2 * var(--ui-px));
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.tour-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.tour-close:hover {
+  color: var(--ui-text);
+  border-color: var(--ui-line);
+}
+
+.tour-close:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.tour-title {
+  margin: 0;
+  font: 700 var(--ui-fs-section) / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.tour-text {
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+.tour-watch {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: var(--ui-fs-s);
+}
+
+.tour-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-2);
+}
+
+.tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+/* The steps as dots; the words stay for screen readers. */
+.tour-dots {
+  display: flex;
+  gap: calc(5 * var(--ui-px));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tour-dot {
+  overflow: hidden;
+  width: calc(10 * var(--ui-px));
+  height: calc(10 * var(--ui-px));
+  background: var(--ui-led-off);
+  border: 1px solid var(--ui-edge);
+  border-radius: 50%;
+  color: transparent;
+  font-size: 0;
+}
+
+.tour-dot-done {
+  background: var(--ui-led-ok);
+}
+
+.tour-dot-active {
+  background: var(--ui-tip-key);
+  box-shadow: 0 0 0 calc(2 * var(--ui-px)) var(--ui-metal-0), 0 0 0 3px var(--ui-tip-key);
+}
+
+.tour-toast {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--ui-space-1) var(--ui-space-3);
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-led-ok);
+  border-radius: var(--ui-radius);
+  color: var(--ui-ok);
+  font: 700 var(--ui-fs-s) / 1.4 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+  animation: tour-toast 4s ease-out both;
+}
+
+.tour-toast:empty {
+  display: none;
+}
+
+/* The sidebar's cameo of the open step (js/sidebar.js .sb-card): a yellow frame that pulses. */
+.sb-card.tour-target {
+  outline: calc(2 * var(--ui-px)) solid var(--ui-tip-key);
+  outline-offset: -2px;
+  animation: tour-pulse 1.6s ease-out infinite;
+}
+
+@keyframes tour-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-tip-key) 75%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 calc(10 * var(--ui-px)) transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes tour-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  10%,
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes tour-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Phones: the card spans the battlefield's width. */
+@media (max-width: 600px) {
+  .tour {
+    left: var(--ui-space-2);
+    right: var(--ui-space-2);
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-card,
+  .tour-toast,
+  .sb-card.tour-target {
+    animation: none;
+  }
+
+  /* The lit cameo keeps its frame: a still glow instead of the pulse. */
+  .sb-card.tour-target {
+    box-shadow: 0 0 0 calc(3 * var(--ui-px)) color-mix(in srgb, var(--ui-tip-key) 60%, transparent);
+  }
+}
+
+@media (forced-colors: active) {
+  .sb-card.tour-target,
+  .guide-chapter[aria-current='step'],
+  .guide-step-active {
+    outline: 3px solid Highlight;
+  }
+
+  .tour-dot {
+    forced-color-adjust: none;
+  }
+
+  .tour-card {
+    border: calc(2 * var(--ui-px)) solid CanvasText;
+  }
+}
