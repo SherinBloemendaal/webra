@@ -356,9 +356,10 @@ function modes(sr, r, partials, seconds, tick = 0.3) {
 
 /**
  * A bleep of the old sound cards: a pulse wave (`duty` of each cycle high)
- * starting at `from` Hz and gliding to `to` Hz with time constant `glide`.
+ * starting at `from` Hz and gliding to `to` Hz with time constant `glide`,
+ * ending in a `release` second fade so a pulse wave never stops on a click.
  */
-function bleep(sr, from, seconds, { to = from, glide = 0.01, duty = 0.5, tau = seconds / 3, a = 0.002, vibrato = 0, vibratoHz = 12 } = {}) {
+function bleep(sr, from, seconds, { to = from, glide = 0.01, duty = 0.5, tau = seconds / 3, a = 0.002, vibrato = 0, vibratoHz = 12, release = Math.min(0.01, seconds / 4) } = {}) {
   const out = buffer(sr, seconds);
   const kGlide = fall(sr, glide);
   const kTau = fall(sr, tau);
@@ -375,6 +376,7 @@ function bleep(sr, from, seconds, { to = from, glide = 0.01, duty = 0.5, tau = s
     d *= kGlide;
     env *= kTau;
   }
+  fadeOut(out, sr, release);
   return out;
 }
 
@@ -530,6 +532,13 @@ function splash(sr, r, seconds) {
 function squelch(sr, r, seconds, gain = 1) {
   const out = noise(sr, r, { seconds, from: 1900, q: 1.1, tau: seconds / 2.5, a: 0.003, grain: 0.7, grainHz: 400 });
   for (let i = 0; i < out.length; i++) out[i] *= 2.2 * gain;
+  return out;
+}
+
+/** Fade the last `seconds` of a sound out linearly (a release: the end of a held tone without a click). */
+function fadeOut(out, sr, seconds) {
+  const n = Math.min(out.length, Math.round(sr * seconds));
+  for (let i = 0; i < n; i++) out[out.length - 1 - i] *= i / n;
   return out;
 }
 
@@ -812,8 +821,8 @@ export const RECIPES = {
       METAL,
     ),
   // Credits counter ticking up and down (OpenRA CashTickUp cashup1, CashTickDown cashdn1): short bright ticks.
-  cash_up: (sr) => finish(sr, bleep(sr, 2600, 0.035, { to: 2200, glide: 0.006, duty: 0.5, tau: 0.014, a: 0.0005 }), LEVEL.cash_up, CHIP),
-  cash_down: (sr) => finish(sr, bleep(sr, 1700, 0.035, { to: 1400, glide: 0.006, duty: 0.5, tau: 0.014, a: 0.0005 }), LEVEL.cash_down, CHIP),
+  cash_up: (sr) => finish(sr, bleep(sr, 2600, 0.035, { to: 2200, glide: 0.006, duty: 0.5, tau: 0.014, a: 0.0005, release: 0.012 }), LEVEL.cash_up, CHIP),
+  cash_down: (sr) => finish(sr, bleep(sr, 1700, 0.035, { to: 1400, glide: 0.006, duty: 0.5, tau: 0.014, a: 0.0005, release: 0.012 }), LEVEL.cash_down, CHIP),
   // Power down button (OpenRA DisablePower bleep11, EnablePower bleep12) and beacons (Beacon beepslct).
   power_down: (sr) => finish(sr, bleeps(sr, [[900, 0.08], [520, 0.13]], 0.09, { tau: 0.05 }), LEVEL.power_down, CHIP),
   power_up: (sr) => finish(sr, bleeps(sr, [[520, 0.08], [900, 0.13]], 0.09, { tau: 0.05, slide: 1.04 }), LEVEL.power_up, CHIP),
@@ -886,8 +895,8 @@ export const RECIPES = {
       GUN,
     ),
   // Cloak CloakSound / UncloakSound (subshow1, appear1): a warbling chip sweep up or down.
-  cloak: (sr) => finish(sr, bleep(sr, 420, 0.45, { to: 1700, glide: 0.18, duty: 0.5, tau: 0.25, a: 0.01, vibrato: 0.04, vibratoHz: 14 }), LEVEL.cloak, CHIP),
-  uncloak: (sr) => finish(sr, bleep(sr, 1700, 0.45, { to: 420, glide: 0.18, duty: 0.5, tau: 0.25, a: 0.01, vibrato: 0.04, vibratoHz: 14 }), LEVEL.uncloak, CHIP),
+  cloak: (sr) => finish(sr, bleep(sr, 420, 0.45, { to: 1700, glide: 0.18, duty: 0.5, tau: 0.25, a: 0.01, vibrato: 0.04, vibratoHz: 14, release: 0.1 }), LEVEL.cloak, CHIP),
+  uncloak: (sr) => finish(sr, bleep(sr, 1700, 0.45, { to: 420, glide: 0.18, duty: 0.5, tau: 0.25, a: 0.01, vibrato: 0.04, vibratoHz: 14, release: 0.1 }), LEVEL.uncloak, CHIP),
   // AmmoPool.RearmSound (minelay1): a mechanical clunk and click.
   rearm: (sr, r) =>
     finish(
@@ -912,13 +921,13 @@ export const RECIPES = {
   // LevelUp (hydrod1): a promotion fanfare.
   level_up: (sr) => finish(sr, bleeps(sr, [[523, 0.12], [784, 0.12], [1047, 0.3]], 0.08, { duty: 0.25, tau: 0.1, slide: 1 }), LEVEL.level_up, CHIP),
   // ChatLine (rabeep1): a short beep for a chat line.
-  chat_line: (sr) => finish(sr, bleep(sr, 1250, 0.07, { tau: 0.03, to: 1180 }), LEVEL.chat_line, CHIP),
+  chat_line: (sr) => finish(sr, bleep(sr, 1250, 0.07, { tau: 0.03, to: 1180, release: 0.02 }), LEVEL.chat_line, CHIP),
   // PlayerJoined (bleep11), PlayerLeft (bleep12), LobbyOptionChanged (bleep17).
   player_joined: (sr) => finish(sr, bleeps(sr, [[700, 0.06], [1050, 0.08]], 0.07, { tau: 0.03 }), LEVEL.player_joined, CHIP),
   player_left: (sr) => finish(sr, bleeps(sr, [[1050, 0.06], [700, 0.08]], 0.07, { tau: 0.03 }), LEVEL.player_left, CHIP),
-  lobby_option: (sr) => finish(sr, bleep(sr, 880, 0.08, { tau: 0.03, to: 830 }), LEVEL.lobby_option, CHIP),
+  lobby_option: (sr) => finish(sr, bleep(sr, 880, 0.08, { tau: 0.03, to: 830, release: 0.02 }), LEVEL.lobby_option, CHIP),
   // AlertBuzzer (buzzy1), AlertBleep (bleep6), AngryBleep (bleep5), BaseSetup (bleep9): mission script cues.
-  alert_buzzer: (sr) => finish(sr, bleep(sr, 140, 0.5, { tau: 0.4, duty: 0.45, vibrato: 0.03, vibratoHz: 30 }), LEVEL.alert_buzzer, CHIP),
+  alert_buzzer: (sr) => finish(sr, bleep(sr, 140, 0.5, { tau: 0.4, duty: 0.45, vibrato: 0.03, vibratoHz: 30, release: 0.06 }), LEVEL.alert_buzzer, CHIP),
   alert_bleep: (sr) => finish(sr, bleeps(sr, [[1600, 0.07], [1600, 0.07]], 0.1, { tau: 0.03, slide: 0.97 }), LEVEL.alert_bleep, CHIP),
   angry_bleep: (sr) => finish(sr, bleeps(sr, [[420, 0.08], [380, 0.12]], 0.09, { tau: 0.05 }), LEVEL.angry_bleep, CHIP),
   base_setup: (sr) => finish(sr, bleeps(sr, [[440, 0.14], [660, 0.14], [880, 0.17]], 0.07, { tau: 0.06, slide: 1 }), LEVEL.base_setup, CHIP),
@@ -1044,6 +1053,8 @@ function radar(sr, r, up) {
     const data = chatter ? (cp < 0.5 ? 1 : -1) * 0.35 * (up ? k : 1 - k) : 0;
     out[i] = (sweep + data) * attack(t, 0.01) * (up ? 1 - 0.4 * k : 1 - k);
   }
+  // The sweep dies away over the last 80 ms (starting up, under the closing bleep).
+  fadeOut(out, sr, 0.08);
   if (up) mix(out, bleep(sr, 1400, 0.15, { tau: 0.05 }), Math.round(sr * 0.48), 0.5);
   return out;
 }

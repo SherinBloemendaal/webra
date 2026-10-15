@@ -54,7 +54,13 @@ const BASELINE = {
   angry_bleep: [0.35, 0.2364], base_setup: [0.35, 0.1863], radio_ack: [0.4, 0.0732], radio_select: [0.35, 0.0711], radio_open: [0.3, 0.0624],
   radio_close: [0.3, 0.0655],
 };
-/** Seconds of sound in one variant of every 0.16 recipe (thunder and chimes included): the render work of that set. */
+/**
+ * Seconds of sound in one variant of every 0.16 recipe (thunder and chimes
+ * included): the render work of that set (55.5 s). Tight on purpose (the new
+ * set has 55.39 s): the rule is "no more sound to render than before", so a
+ * new or longer sound must give the time back elsewhere, or raise this
+ * together with a measured render cost (BASELINE_COST still holds).
+ */
 const BASELINE_SECONDS = 55.5;
 /** Render time of every effect (the BASELINE ids) against the thunder's in the same run, with the 0.16 set. */
 const BASELINE_COST = 0.89;
@@ -136,9 +142,23 @@ function renderAll(runs) {
   return { sounds, effects, thunder };
 }
 
-const { sounds, effects, thunder } = renderAll(3);
+/** The rendered set and its cost, made once on first use (it takes a second or two). */
+let rendered = null;
+const renderedSet = () => (rendered ??= renderAll(3));
+
+/** RMS of the 5 ms before normalize()'s 64 sample fade, against the peak: what is left when the sound stops. */
+function tailLevel(s, sr, peak) {
+  const end = s.length - 64;
+  const n = Math.round(sr * 0.005);
+  let e = 0;
+  for (let i = Math.max(0, end - n); i < end; i++) e += s[i] * s[i];
+  return Math.sqrt(e / n) / peak;
+}
+/** At most this tail level (of the peak): louder, the 3 ms fade cuts the sound off with an audible tick. */
+const MAX_TAIL = 0.1;
 
 test('the effects never clip, end in silence, sit on zero and render the same every time', () => {
+  const { sounds } = renderedSet();
   for (const [id, variants] of sounds) {
     for (const [v, s] of variants.entries()) {
       let peak = 0;
@@ -151,6 +171,8 @@ test('the effects never clip, end in silence, sit on zero and render the same ev
       assert.ok(peak <= 1, `${id}#${v} peaks at ${peak}`);
       if (BASELINE[id]) assert.ok(peak <= BASELINE[id][0] + 1e-6, `${id}#${v} peaks at ${peak}, no higher than before (${BASELINE[id][0]})`);
       assert.ok(Math.abs(s[s.length - 1]) < 1e-6, `${id}#${v} fades out`);
+      const tail = tailLevel(s, SR, peak);
+      assert.ok(tail < MAX_TAIL, `${id}#${v} has died away before it ends (last 5 ms at ${tail.toFixed(3)} of the peak)`);
       assert.ok(Math.abs(sum / s.length) < 0.02 * peak + 1e-4, `${id}#${v} has no DC offset (${sum / s.length})`);
     }
     assert.deepEqual(render(id, SR, 0), variants[0], `${id} renders the same each time`);
@@ -160,6 +182,7 @@ test('the effects never clip, end in silence, sit on zero and render the same ev
 });
 
 test('each effect is as loud as the one it replaced (within 3 dB), and the mix as a whole within 1 dB', () => {
+  const { sounds } = renderedSet();
   let before = 0;
   let after = 0;
   for (const [id, [, loud]] of Object.entries(BASELINE)) {
@@ -178,14 +201,22 @@ test('each effect is as loud as the one it replaced (within 3 dB), and the mix a
   assert.ok(level('explosion_large') > level('explosion_small'));
   assert.ok(level('cannon') > level('rifle'));
   assert.ok(level('rifle') > level('hit'));
-  // The same at the lowest common output rate, where the grain of the finish is off.
-  for (const id of Object.keys(BASELINE)) assert.ok(Math.abs(dB(loudness(render(id, 22050, 0), 22050) / BASELINE[id][1])) <= 3.5, `${id} at 22050 Hz`);
+  // The same at the other common output rates: 44.1 kHz, and 22050 Hz where the grain of the finish is off.
+  for (const sr of [44100, 22050]) {
+    const within = sr === 22050 ? 3.5 : 3;
+    for (const id of Object.keys(BASELINE)) {
+      const off = dB(loudness(render(id, sr, 0), sr) / BASELINE[id][1]);
+      assert.ok(Math.abs(off) <= within, `${id} at ${sr} Hz: ${off.toFixed(1)} dB`);
+    }
+  }
 });
 
-test('rendering costs no more than the 0.16 set', () => {
+test('rendering costs no more than the 0.16 set', (t) => {
+  const { sounds, effects, thunder } = renderedSet();
   let seconds = 0;
   for (const variants of sounds.values()) seconds += variants[0].length / SR;
   assert.ok(seconds <= BASELINE_SECONDS, `${seconds.toFixed(2)} s of sound per variant, at most ${BASELINE_SECONDS}`);
   // Wall time depends on the machine: against the unchanged thunder, rendered in the same run.
+  t.diagnostic(`${seconds.toFixed(2)} s of sound (budget ${BASELINE_SECONDS}); effects ${effects.toFixed(0)} ms, thunder ${thunder.toFixed(0)} ms, ratio ${(effects / thunder).toFixed(2)} (at most ${BASELINE_COST})`);
   assert.ok(effects / thunder <= BASELINE_COST, `effects take ${effects.toFixed(0)} ms, ${(effects / thunder).toFixed(2)} of the thunder's ${thunder.toFixed(0)} ms (at most ${BASELINE_COST})`);
 });
