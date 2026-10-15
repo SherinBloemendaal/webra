@@ -1,71 +1,53 @@
 // Animated layers of buildings, drawn over the static art (art/buildings.js)
-// like the looping overlays of the 1996 Red Alert sprites: the radar dish
-// turning, chimney smoke, blinking beacons, turbine fans and the crane hook.
+// like the looping overlays of the 1996 Red Alert sprites: steam over the
+// cooling towers, the radar sweep, the crane trolley, chasing runway and pad
+// lights, glowing reactor rings, turning portal rings, crackling tesla arcs.
 //
 // Each entry is { box: [x, y, w, h], frames, fps, draw(ctx, P, f) }. `draw`
 // paints frame f (0 <= f < frames) in the building's own coordinates (the
 // footprint box of buildings.js, origin at its top left); the atlas keeps only
 // `box` of it, so a layer costs a handful of small frames. The box may reach
-// above the footprint (smoke rises over the roof). Frame 0 is the still image
+// above the footprint (steam rises over the roof). Frame 0 is the still image
 // used by icons, cameos, fogged buildings and prefers-reduced-motion.
 //
 // The GPU picks the frame from a render clock (js/anim.js, shaders/sprite.wgsl),
 // so the simulation never sees any of this.
 
-import { C, circle, poly } from './kit.js';
-import { K, at, box, col, radial, stroke } from './volume.js';
-import { fan, lamp, teamLamp, puff, siloHatch, STEEL, STEEL_D } from './buildings.js';
+import { C, circle, poly, polyline, rect, ring } from './kit.js';
+import { siloHatch, dashRing, HPAD_LIGHTS, AFLD_LIGHTS, AFLD_LIGHT_ROWS } from './buildings.js';
 
 const TAU = Math.PI * 2;
+const GLOW = '#ffd98a';
 
-/**
- * A radar dish turning about its post at (cx, cy) from height z0: the rim is
- * the projected circle of a bowl whose axis points at `theta` (radians, in
- * the ground plane; 0 is east, PI / 2 towards the viewer).
- */
-export function spinDish(ctx, P, cx, cy, z0, r, theta, spec = K('#c4c7cb')) {
-  const [px, py] = at(cx, cy, z0 + r * 0.9);
-  const [bx, by] = at(cx, cy, z0);
-  stroke(ctx, P.c(C.steelDark), 1.2, bx, by, px, py);
-  const c = Math.cos(theta);
-  const s = Math.sin(theta);
-  // Rim: the circle across the axis n = (c, s, 0), spanned by the horizontal
-  // u = (-s, c, 0) and the vertical, projected like every other point (at()).
-  const rim = (k) => {
-    const pts = [];
-    for (let i = 0; i < 16; i++) {
-      const phi = (i / 16) * TAU;
-      const u = Math.cos(phi) * r * k;
-      const v = Math.sin(phi) * r * k;
-      pts.push(px - s * u + 0.28 * v, py + c * u - 0.92 * v);
-    }
-    return pts;
-  };
-  const horn = [px + c * r * 0.8, py + s * r * 0.8];
-  const facing = s > -0.15; // the bowl opens towards the camera (south)
-  const drawHorn = () => {
-    stroke(ctx, P.c(C.steelDark), 0.7, px, py, horn[0], horn[1]);
-    circle(ctx, P.c('#c23a26'), horn[0], horn[1], 0.7);
-  };
-  if (!facing) drawHorn();
-  poly(ctx, P.c(C.steelDark), rim(1.12));
-  const bowl = facing ? radial(ctx, P, spec, px - r * 0.3, py - r * 0.3, 0, px, py, r, [[0, 0.5], [0.6, -0.05], [1, -0.4]]) : col(P, spec, -0.3);
-  poly(ctx, bowl, rim(1));
-  if (facing) drawHorn();
+/** How far a puff has faded in at s (0 at its source) so new puffs do not pop up. */
+const fadeIn = (s) => Math.min(1, s / 0.2);
+
+/** One flat puff of steam (white) or smoke (grey) of radius r and opacity a. */
+function puff(ctx, P, x, y, r, a, rgb = '242,246,248') {
+  if (a <= 0.01) return;
+  circle(ctx, P.c(`rgba(${rgb},${a.toFixed(3)})`), x, y, r);
 }
 
 /**
- * Smoke rising from (x, y): `n` puffs evenly spaced along the plume, moved on
- * by `t` (0..1) of one spacing, growing and fading as they rise.
+ * Puffs rising from (x, y): `n` of them evenly spaced along the plume, moved
+ * on by `t` (0..1) of one spacing, growing and fading as they rise `rise`
+ * pixels and drift `drift` sideways.
  */
-export function plume(ctx, P, x, y, size, t, n = 4) {
+function plume(ctx, P, x, y, t, o) {
+  const n = o.n ?? 2;
   for (let k = n - 1; k >= 0; k--) {
     const s = (k + t) / n;
-    const fadeIn = Math.min(1, s / 0.12);
-    const a = 0.5 * (1 - s) * fadeIn;
-    if (a <= 0.01) continue;
-    const wobble = Math.sin(s * 5.5) * 0.8;
-    puff(ctx, P, x + (s * 5 + wobble) * size, y - s * 11 * size, (1.4 + s * 2) * size, a);
+    puff(ctx, P, x + s * o.drift, y - s * o.rise, o.r0 + s * o.grow, o.a * (1 - s) * fadeIn(s), o.rgb);
+  }
+}
+
+/** A small lamp: lit (halo of radius `halo` and a bright dot) or dark. */
+function lamp(ctx, P, x, y, r, on, lit = GLOW, haloFill = 'rgba(255,217,138,0.45)', dark = '#6b5a3a', halo = r * 1.9) {
+  if (on) {
+    circle(ctx, P.c(haloFill), x, y, halo);
+    circle(ctx, P.c(lit), x, y, r);
+  } else {
+    circle(ctx, P.c(dark), x, y, r);
   }
 }
 
@@ -73,134 +55,217 @@ export function plume(ctx, P, x, y, size, t, n = 4) {
 function beacon(ctx, P, x, y, r, on) {
   if (on) {
     circle(ctx, P.team(0.6), x, y, r + 1.4);
-    teamLamp(ctx, P, x, y, r);
+    circle(ctx, P.team(0.9), x, y, r);
+    circle(ctx, P.team(1), x - r * 0.3, y - r * 0.3, r * 0.35);
   } else {
-    circle(ctx, P.c(C.steelDark), x, y, r + 0.7);
+    circle(ctx, P.c(C.steelDark), x, y, r + 0.5);
     circle(ctx, P.team(0.3), x, y, r);
   }
 }
 
-/** A red warning lamp, lit (with halo) or dark. */
-function warning(ctx, P, x, y, on) {
-  if (on) lamp(ctx, P, x, y);
-  else lamp(ctx, P, x, y, '#5a1d16', 'rgba(0,0,0,0)');
-}
+/** The tesla coil's three arcs as drawn on the board (frame 0). */
+const TESLA_ARCS = [
+  [12, 12, 9, 10, 7.5, 11.5, 4.5, 8.5, 3, 9.5, 1, 6.5],
+  [12, 12, 15, 9.5, 16, 11, 19, 7.5, 20.5, 8.5, 23, 5],
+  [12, 12, 13.5, 15.5, 12, 17, 14, 20, 12.5, 21.5, 14, 23.5],
+];
 
-const HPAD_BEACONS = [[6, 7], [42, 7], [6, 42], [42, 42]].map(([x, y]) => at(x, y, 1.6));
+/** The iron curtain's hexagonal force field. */
+const FIELD = [24, 5, 42.5, 15, 42.5, 36, 24, 46, 5.5, 36, 5.5, 15];
 
 /** Animated layers by sprite key (sprites.js resolves aliases such as fakes). */
 export const BUILDING_ANIM = {
-  // Radar dome: the dish turns once every 8 frames.
+  // Radar dome: the green sweep goes round the dome (the antenna is part of
+  // the structure, so the layer stays the size of the dome).
   DOME: {
-    box: [32, 9, 16, 19],
+    box: [7, 16, 30, 30],
     frames: 8,
     fps: 6,
-    draw: (ctx, P, f) => spinDish(ctx, P, 39, 31, 8, 3.6, (f / 8) * TAU + 0.6),
-  },
-  // Power plant: smoke from the stack.
-  POWR: {
-    box: [36, -12, 12, 26],
-    frames: 6,
-    fps: 6,
     draw: (ctx, P, f) => {
-      const [sx, sy] = at(35, 34, 24);
-      plume(ctx, P, sx, sy - 1.5, 0.8, f / 6);
+      const a = (f / 8) * TAU - 0.55;
+      ctx.fillStyle = P.c('rgba(79,208,103,0.55)');
+      ctx.beginPath();
+      ctx.moveTo(22, 31);
+      ctx.arc(22, 31, 15, a, a + 0.8);
+      ctx.closePath();
+      ctx.fill();
     },
   },
-  // Advanced power plant: three turbine fans (four blades, so a quarter turn loops).
-  APWR: {
-    box: [11, 4, 57, 14],
+  // Power plant: steam billows from both cooling towers.
+  POWR: {
+    box: [1, -8, 44, 32],
     frames: 4,
-    fps: 10,
+    fps: 4,
     draw: (ctx, P, f) => {
-      for (const x of [14, 36, 58]) {
-        const [lx, ly] = at(x, 22, 12);
-        fan(ctx, P, lx, ly, 4.6, (f / 4) * (Math.PI / 2));
+      for (const x of [13, 31]) {
+        plume(ctx, P, x + 2.5, 11.5, f / 4, { r0: 3.5, grow: 3, rise: 12, drift: -5, a: 0.6 });
+        puff(ctx, P, x - 1.5, 15, 6, 0.75);
       }
     },
   },
-  // Refinery: smoke from the stack.
+  // Advanced power plant: the reactor rings glow brighter and dimmer (the
+  // stack's wisp of steam is part of the structure).
+  APWR: {
+    box: [3, 5, 66, 34],
+    frames: 4,
+    fps: 5,
+    draw: (ctx, P, f) => {
+      const core = ['#ffd98a', '#ffe6ae', '#fff3d6', '#ffe6ae'][f];
+      const halo = [0.2, 0.32, 0.45, 0.32][f];
+      for (const x of [20, 52]) {
+        ring(ctx, P.c(`rgba(255,217,138,${halo})`), x, 22, 14.5, 3.5);
+        ring(ctx, P.c(core), x, 22, 14.5, 1.5);
+      }
+    },
+  },
+  // Refinery: the furnace flickers and smokes.
   PROC: {
-    box: [45, 2, 12, 22],
+    box: [28, 14, 20, 34],
     frames: 6,
     fps: 6,
     draw: (ctx, P, f) => {
-      const [sx, sy] = at(45, 40, 18);
-      plume(ctx, P, sx, sy - 1, 0.7, f / 6);
+      rect(ctx, P.c(['#ff9a2a', '#ffb24a', '#ff8a1a', '#ffc060', '#ff9a2a', '#ffb24a'][f]), 32.5, 39.5, 5, 5);
+      rect(ctx, P.c(GLOW), 34, 41, 2, 2);
+      plume(ctx, P, 38, 35, f / 6, { n: 3, r0: 4.5, grow: 2, rise: 12, drift: 3, a: 0.55, rgb: '106,110,116' });
     },
   },
   // Soviet barracks: a thin wisp from the chimney.
   BARR: {
-    box: [34, -5, 10, 15],
+    box: [6, -4, 18, 20],
     frames: 6,
     fps: 5,
+    draw: (ctx, P, f) => plume(ctx, P, 14, 14, f / 6, { n: 3, r0: 1.5, grow: 2.5, rise: 12, drift: 4, a: 0.5, rgb: '214,214,208' }),
+  },
+  // Helipad: two lights chase round the pad on opposite sides, each with a
+  // dimmer one behind it (the hut beacon is part of the structure).
+  HPAD: {
+    box: [0, 21, 48, 50],
+    frames: 4,
+    fps: 6,
     draw: (ctx, P, f) => {
-      const [sx, sy] = at(33, 24, 16);
-      plume(ctx, P, sx, sy - 1, 0.6, f / 6, 3);
+      for (const k of [f, f + 4]) {
+        const [tx, ty] = HPAD_LIGHTS[(k + 7) % 8];
+        circle(ctx, P.c('#d9b870'), tx, ty, 1.25);
+        const [x, y] = HPAD_LIGHTS[k];
+        lamp(ctx, P, x, y, 1.3, true, GLOW, 'rgba(255,217,138,0.4)', undefined, 2.4);
+      }
     },
   },
-  // Helipad: the corner beacons blink in diagonal pairs.
-  HPAD: {
-    box: [2, 1, 46, 46],
-    frames: 2,
-    fps: 1.5,
-    draw: (ctx, P, f) => HPAD_BEACONS.forEach(([x, y], k) => beacon(ctx, P, x, y, 1.1, (k === 0 || k === 3) === (f === 0))),
-  },
-  // Airfield: runway lights chase towards the threshold, the tower dish turns,
-  // the beacon on the corner blinks.
+  // Airfield: two lights chase down each runway edge (the tower beacon is
+  // part of the structure).
   AFLD: {
-    box: [0, 3, 72, 45],
-    frames: 8,
-    fps: 8,
+    box: [9, 19, 51, 29],
+    frames: 3,
+    fps: 6,
     draw: (ctx, P, f) => {
-      for (let i = 0; i < 9; i++) {
-        if ((i + f) % 8 !== 0) continue;
-        const x = 68 - i * 8;
-        for (const y of [28.5, 46]) {
-          circle(ctx, P.c('rgba(255,230,140,0.45)'), x, y, 2.2);
-          circle(ctx, P.c('#fff3b8'), x, y, 1.1);
+      for (const y of AFLD_LIGHT_ROWS) {
+        for (const k of [f, f + 3]) {
+          circle(ctx, P.c(GLOW), AFLD_LIGHTS[(k + 5) % 6], y, 0.75);
+          lamp(ctx, P, AFLD_LIGHTS[k], y, 0.95, true, '#fff3b8', 'rgba(255,217,138,0.45)', undefined, 1.4);
         }
       }
-      spinDish(ctx, P, 56, 20, 14, 2.4, (f / 8) * TAU + 0.6);
-      beacon(ctx, P, 68, 6, 1.2, f < 4);
     },
   },
-  // Allied tech center: the big dish sweeps, the yard lamps blink.
+  // Allied tech center: the dish's feed turns round, the mast lamp blinks.
   ATEK: {
-    box: [2, 7, 46, 46],
-    frames: 8,
-    fps: 4,
+    box: [5, 3, 28, 17],
+    frames: 4,
+    fps: 2,
     draw: (ctx, P, f) => {
-      // A slow sweep back and forth instead of full turns, like a tracking antenna.
-      spinDish(ctx, P, 31, 36, 10, 7, 0.6 + Math.sin((f / 8) * TAU) * 0.7);
-      warning(ctx, P, 5, 50, f % 4 < 2);
-      warning(ctx, P, 41, 50, f % 4 >= 2);
+      const a = (f / 4) * TAU - (3 * Math.PI) / 4;
+      const fx = 24 + Math.cos(a) * 5.6;
+      const fy = 11.5 + Math.sin(a) * 5.6;
+      polyline(ctx, P.c('#3f4247'), 0.75, [24, 11.5, fx, fy]);
+      circle(ctx, P.c('#3f4247'), fx, fy, 1.25);
+      beacon(ctx, P, 9, 7, 1.5, f < 2);
     },
   },
-  // Soviet tech center: the lab dish turns, the mast lamps blink.
+  // Soviet tech center: the red antenna light blinks.
   STEK: {
-    box: [3, 4, 69, 38],
-    frames: 8,
-    fps: 4,
+    box: [49, 16, 8, 8],
+    frames: 2,
+    fps: 1.5,
     draw: (ctx, P, f) => {
-      spinDish(ctx, P, 35, 33, 18, 4.6, (f / 8) * TAU + 0.6);
-      warning(ctx, P, ...at(4, 46, 9), f < 4);
-      warning(ctx, P, ...at(68, 46, 9), f >= 4);
+      lamp(ctx, P, 53, 20, 2, f === 0, '#e84a3a', 'rgba(232,74,58,0.4)', '#5a1d16');
+      if (f === 0) circle(ctx, P.c('#ff9a80'), 52.4, 19.4, 0.6);
     },
   },
-  // Construction yard: the crane hook goes up and down, the tower lamp blinks.
+  // Construction yard: the crane trolley runs along the jib with its load,
+  // the lamp on the cabin blinks.
   FACT: {
-    box: [30, 14, 32, 22],
+    box: [8, 10, 57, 19],
     frames: 8,
     fps: 4,
     draw: (ctx, P, f) => {
-      const z = 16.6 + (1 - Math.cos((f / 8) * TAU)) * 4.5;
-      const [cx0, cy0] = at(28, 50.3, 31);
-      const [cx1, cy1] = at(28, 50.3, z + 2.4);
-      stroke(ctx, P.c(C.steelDark), 0.5, cx0, cy0, cx1, cy1);
-      box(ctx, P, 27, 49.5, 2, 1.6, 2.4, STEEL_D, STEEL, { z0: z });
-      const [lx, ly] = at(49, 50, 33.5);
-      beacon(ctx, P, lx, ly, 1.2, f % 4 < 2);
+      const x = 45 + Math.cos((f / 8) * TAU) * 11;
+      rect(ctx, P.c('rgba(0,0,0,0.3)'), x - 2, 23.5, 7, 4.5);
+      rect(ctx, P.c('#3f4247'), x - 2, 14.25, 4, 3.5);
+      polyline(ctx, P.c('#2b2b28'), 0.75, [x, 17.5, x, 22]);
+      rect(ctx, P.c('#5e4624'), x - 3.5, 22, 7, 4.5);
+      rect(ctx, P.c('#8a6a3a'), x - 3, 22.5, 6, 3.5);
+      polyline(ctx, P.c('#5e4624'), 0.5, [x - 3, 22.5, x + 3, 26]);
+      lamp(ctx, P, 12.5, 14.5, 0.9, f % 4 < 2);
+    },
+  },
+  // Gap generator: the jamming rings turn against each other, the core pulses.
+  GAP: {
+    box: [0, 0, 24, 24],
+    frames: 4,
+    fps: 6,
+    draw: (ctx, P, f) => {
+      dashRing(ctx, P.c('rgba(127,224,255,0.8)'), 0.6, 12, 12, 10, 12, 0.5, (f / 4) * (TAU / 12));
+      dashRing(ctx, P.c('rgba(127,224,255,0.8)'), 0.6, 12, 12, 7.5, 10, 0.5, -(f / 4) * (TAU / 10));
+      circle(ctx, P.c('#7fe0ff'), 12, 12, [2, 2.4, 2.8, 2.4][f]);
+    },
+  },
+  // Chronosphere: the two portal rings turn against each other.
+  PDOX: {
+    box: [11, 11, 26, 26],
+    frames: 4,
+    fps: 6,
+    draw: (ctx, P, f) => {
+      dashRing(ctx, P.c('#7fe0ff'), 1.25, 24, 24, 12, 10, 0.67, (f / 4) * (TAU / 10));
+      dashRing(ctx, P.c('#7fe0ff'), 1.25, 24, 24, 8.5, 10, 0.64, -(f / 4) * (TAU / 10));
+    },
+  },
+  // Iron curtain: the force field pulses.
+  IRON: {
+    box: [4, 3, 40, 45],
+    frames: 4,
+    fps: 4,
+    draw: (ctx, P, f) => {
+      poly(ctx, P.c(`rgba(255,90,58,${[0.18, 0.24, 0.3, 0.24][f]})`), FIELD);
+      for (const [a, b] of [[0, 3], [1, 4], [2, 5]]) {
+        polyline(ctx, P.c('rgba(255,90,58,0.4)'), 0.4, [FIELD[a * 2], FIELD[a * 2 + 1], FIELD[b * 2], FIELD[b * 2 + 1]]);
+      }
+      polyline(ctx, P.c(`rgba(255,90,58,${[0.8, 0.88, 0.95, 0.88][f]})`), 1, [...FIELD, FIELD[0], FIELD[1]]);
+    },
+  },
+  // Tesla coil: the arcs crackle round the head.
+  TSLA: {
+    box: [0, 0, 24, 24],
+    frames: 4,
+    fps: 8,
+    draw: (ctx, P, f) => {
+      const turn = f * (TAU / 12);
+      const c = Math.cos(turn);
+      const s = Math.sin(turn);
+      for (const arc of TESLA_ARCS) {
+        const pts = [];
+        for (let i = 0; i < arc.length; i += 2) {
+          // The ends stay put on the head; the kinks jitter from frame to frame.
+          const j = i === 0 || i === arc.length - 2 || f === 0 ? 0 : Math.sin(i * 7.1 + f * 13.7) * 0.8;
+          const dx = arc[i] - 12;
+          const dy = arc[i + 1] - 12;
+          // Turned arcs keep inside the coil's cell (with room for the glow).
+          const clamp = (v) => Math.max(1, Math.min(23, v));
+          pts.push(clamp(12 + dx * c - dy * s + j), clamp(12 + dx * s + dy * c - j));
+        }
+        polyline(ctx, P.c('rgba(127,224,255,0.45)'), 2, pts);
+        polyline(ctx, P.c('#e0f8ff'), 0.8, pts);
+      }
+      circle(ctx, P.c(GLOW), 12, 12, 2.5);
+      circle(ctx, P.c('#ffffff'), 12, 12, 1);
     },
   },
 };

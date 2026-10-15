@@ -31,7 +31,8 @@ function keyOf(id) {
 }
 
 /** A recording Canvas2D stub that validates every number it is given. */
-function fakeContext(log, bounds) {
+/** `strokes`: record the bounds of strokes too (half their width past the path). */
+function fakeContext(log, bounds, strokes = false) {
   let depth = 0; // save() nesting
   let transforms = 0; // active translate/scale/rotate
   let clips = 0; // active clip regions (shapes inside are cut to the box)
@@ -41,8 +42,8 @@ function fakeContext(log, bounds) {
     for (const v of vals) assert.ok(Number.isFinite(v), `${name} got a non-finite number: ${vals.join(',')}`);
     log.push(`${name}(${vals.map((v) => v.toFixed(3)).join(',')})`);
   };
-  const addBox = (x0, y0, x1, y1) => {
-    if (transforms === 0 && clips === 0 && bounds) bounds.push({ x0, y0, x1, y1, style: ctx.fillStyle });
+  const addBox = (x0, y0, x1, y1, style = ctx.fillStyle) => {
+    if (transforms === 0 && clips === 0 && bounds) bounds.push({ x0, y0, x1, y1, style });
   };
   const gradient = (kind, args) => {
     for (const v of args) assert.ok(Number.isFinite(v), `${kind} gradient got a non-finite number: ${args.join(',')}`);
@@ -98,9 +99,9 @@ function fakeContext(log, bounds) {
     },
     stroke() {
       log.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}`);
-      // A stroke reaches half its width past its path.
-      const hw = ctx.lineWidth / 2;
-      if (path.length && transforms === 0 && clips === 0 && bounds) bounds.push({ x0: Math.min(...path.map((p) => p[0])) - hw, y0: Math.min(...path.map((p) => p[1])) - hw, x1: Math.max(...path.map((p) => p[0])) + hw, y1: Math.max(...path.map((p) => p[1])) + hw, style: ctx.strokeStyle, stroke: true });
+      // A stroke reaches half its width past its path (round caps included).
+      const r = ctx.lineWidth / 2;
+      if (strokes && path.length) addBox(Math.min(...path.map((p) => p[0])) - r, Math.min(...path.map((p) => p[1])) - r, Math.max(...path.map((p) => p[0])) + r, Math.max(...path.map((p) => p[1])) + r, ctx.strokeStyle);
     },
     clip() { clips++; log.push('clip'); },
     getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4) }; },
@@ -193,11 +194,11 @@ for (const a of buildings) {
           const log = [];
           const bounds = [];
           const counter = { team: 0 };
-          const ctx = fakeContext(log, bounds);
+          // Fills and strokes (half their width past the path), also for the neutral world (art/world.js).
+          const ctx = fakeContext(log, bounds, true);
           draw(ctx, passes(counter, biome)[pass]);
           assert.equal(ctx.depth, 0, `${a.id} leaves save/restore unbalanced`);
           for (const b of bounds) {
-            if (b.stroke && !world) continue; // strokes are checked for the neutral world's art (art/world.js)
             const margin = isShadow(b.style) ? 8 : 1.5;
             assert.ok(
               b.x0 >= -margin && b.y0 >= -margin && b.x1 <= w + margin && b.y1 <= h + margin,
@@ -212,6 +213,228 @@ for (const a of buildings) {
     }
   });
 }
+
+// ---- Footprint and team mask per building ---------------------------------------------
+
+/**
+ * Rasterise what a drawing leaves in the team mask (the mask pass of
+ * sprites.js: team areas white, opaque colours black, translucent colours
+ * opaque black too), sampling every half pixel of its w x h box and a margin.
+ * Returns the team samples inside and outside the box and the samples where
+ * something translucent was drawn over a team area: in the colour pass that
+ * shape blends over the team grey, in the mask pass it cuts the team colour
+ * away, so the player's colour would show a grey hole there.
+ */
+function rasterMask(draw, w, h, biome = 'temperate') {
+  const S = 2;
+  const [mx, my] = [-6, -14];
+  const W = (w - 2 * mx) * S;
+  const H = (h - 2 * my) * S;
+  const grid = new Uint8Array(W * H); // 0 empty, 1 opaque, 2 team
+  let over = 0;
+  let subs = [];
+  let cur = null;
+  const clips = [];
+  const saved = [];
+  const arcPts = (cx, cy, rx, ry, a0, a1, ccw) => {
+    let span = ccw ? a0 - a1 : a1 - a0;
+    if (span < 0 || span >= Math.PI * 2) span = span >= Math.PI * 2 ? Math.PI * 2 : span + Math.PI * 2;
+    const n = Math.max(4, Math.ceil(span * 8));
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + ((ccw ? -1 : 1) * span * i) / n;
+      pts.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+    }
+    return pts;
+  };
+  const inside = (polys, x, y) => {
+    let odd = false;
+    for (const p of polys) {
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        const [xi, yi] = p[i];
+        const [xj, yj] = p[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) odd = !odd;
+      }
+    }
+    return odd;
+  };
+  const near = (polys, x, y, r) => {
+    for (const p of polys) {
+      const n = p.closed ? p.length : p.length - 1;
+      for (let i = 0; i < n; i++) {
+        const [x0, y0] = p[i];
+        const [x1, y1] = p[(i + 1) % p.length];
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const t = dx || dy ? Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy))) : 0;
+        if (Math.hypot(x - x0 - t * dx, y - y0 - t * dy) <= r) return true;
+      }
+    }
+    return false;
+  };
+  const kind = (style) => (style === '#fff' ? 2 : style === '#000' ? 1 : style === 'rgba(0,0,0,1)' ? 3 : -1);
+  const paint = (polys, style, test) => {
+    const k = kind(style);
+    assert.ok(k > 0, `unexpected mask style ${style}`);
+    const pts = polys.flat();
+    if (!pts.length) return;
+    const pad = ctx.lineWidth;
+    const x0 = Math.max(0, Math.floor((Math.min(...pts.map((p) => p[0])) - pad - mx) * S));
+    const x1 = Math.min(W - 1, Math.ceil((Math.max(...pts.map((p) => p[0])) + pad - mx) * S));
+    const y0 = Math.max(0, Math.floor((Math.min(...pts.map((p) => p[1])) - pad - my) * S));
+    const y1 = Math.min(H - 1, Math.ceil((Math.max(...pts.map((p) => p[1])) + pad - my) * S));
+    for (let gy = y0; gy <= y1; gy++) {
+      for (let gx = x0; gx <= x1; gx++) {
+        const x = (gx + 0.5) / S + mx;
+        const y = (gy + 0.5) / S + my;
+        if (!test(x, y) || !clips.every((c) => inside(c, x, y))) continue;
+        const i = gy * W + gx;
+        if (k === 3 && grid[i] === 2) over++;
+        grid[i] = k === 2 ? 2 : 1;
+      }
+    }
+  };
+  const ctx = {
+    fillStyle: '#000',
+    strokeStyle: '#000',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    save() { saved.push(clips.length); },
+    restore() { clips.length = saved.pop(); },
+    translate() { throw new Error('building art draws without transforms'); },
+    rotate() { throw new Error('building art draws without transforms'); },
+    scale() { throw new Error('building art draws without transforms'); },
+    beginPath() { subs = []; cur = null; },
+    moveTo(x, y) { cur = [[x, y]]; subs.push(cur); },
+    lineTo(x, y) {
+      if (!cur) { cur = []; subs.push(cur); }
+      cur.push([x, y]);
+    },
+    closePath() { if (cur) cur.closed = true; },
+    rect(x, y, rw, rh) { subs.push(Object.assign([[x, y], [x + rw, y], [x + rw, y + rh], [x, y + rh]], { closed: true })); cur = null; },
+    roundRect(x, y, rw, rh) { this.rect(x, y, rw, rh); },
+    arc(cx, cy, r, a0, a1, ccw = false) {
+      const pts = arcPts(cx, cy, r, r, a0, a1, ccw);
+      if (cur) cur.push(...pts);
+      else { cur = pts; subs.push(cur); }
+    },
+    ellipse(cx, cy, rx, ry, rot, a0, a1, ccw = false) {
+      assert.equal(rot, 0, 'ellipses are axis aligned');
+      const pts = arcPts(cx, cy, rx, ry, a0, a1, ccw);
+      if (cur) cur.push(...pts);
+      else { cur = pts; subs.push(cur); }
+    },
+    fill() { const polys = subs; paint(polys, ctx.fillStyle, (x, y) => inside(polys, x, y)); },
+    stroke() { const polys = subs; const r = ctx.lineWidth / 2; paint(polys, ctx.strokeStyle, (x, y) => near(polys, x, y, r)); },
+    fillRect(x, y, rw, rh) { paint([[[x, y], [x + rw, y], [x + rw, y + rh], [x, y + rh]]], ctx.fillStyle, (px, py) => px >= x && px <= x + rw && py >= y && py <= y + rh); },
+    clip() { clips.push(subs); },
+    createLinearGradient() { throw new Error('flat art: no gradients'); },
+    createRadialGradient() { throw new Error('flat art: no gradients'); },
+  };
+  draw(ctx, { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000'), biome });
+  let inBox = 0;
+  let outBox = 0;
+  for (let gy = 0; gy < H; gy++) {
+    for (let gx = 0; gx < W; gx++) {
+      if (grid[gy * W + gx] !== 2) continue;
+      const x = (gx + 0.5) / S + mx;
+      const y = (gy + 0.5) / S + my;
+      if (x >= -0.5 && x <= w + 0.5 && y >= -0.5 && y <= h + 0.5) inBox++;
+      else outBox++;
+    }
+  }
+  return { team: inBox / (S * S), outside: outBox / (S * S), over: over / (S * S) };
+}
+
+/** The shapes of a recorded log without their colours (a stroke keeps its width). */
+const shapesOf = (log) => log.map((l) => (l.startsWith('fill:') ? 'fill' : l.startsWith('stroke:') ? `stroke:${l.split(':').pop()}` : l)).join('|');
+
+test('the mask check finds translucent paint over team colour and team colour outside the box', () => {
+  const m = rasterMask((ctx, P) => {
+    ctx.fillStyle = P.team(1);
+    ctx.fillRect(2, 2, 10, 10);
+    ctx.fillStyle = P.c('rgba(0,0,0,0.3)');
+    ctx.fillRect(4, 4, 4, 4);
+    ctx.fillStyle = P.team(1);
+    ctx.fillRect(20, 2, 10, 4);
+  }, 24, 24);
+  assert.equal(m.over, 16);
+  assert.equal(m.outside, 22);
+  assert.equal(m.team, 100 - 16 + 18);
+});
+
+// The Lightning Rod is WebRA's pixel art (tests/pixel-art.test.mjs checks its frames and mask).
+const VECTOR = Object.keys(BUILDING_DRAW).filter((k) => k !== 'LROD');
+
+test('every building art key keeps the footprint the rules give it, fakes and variants included', () => {
+  const sizes = new Map();
+  for (const a of buildings) {
+    if (isWorld(a)) continue;
+    const key = keyOf(a.id);
+    const [w, h] = BUILDING_SIZE[key];
+    assert.deepEqual([w, h], [a.width, a.height], `${a.id} draws as ${key}`);
+    if (sizes.has(key)) assert.deepEqual(sizes.get(key), [w, h], `${a.id} and the other ${key} actors share one footprint`);
+    sizes.set(key, [w, h]);
+  }
+  for (const key of VECTOR) assert.ok(sizes.has(key), `${key} is drawn for an actor in the rules`);
+});
+
+for (const key of VECTOR) {
+  test(`building mask ${key}: the mask draws the colour pass's shapes, its team area is visible, inside the footprint and not covered`, () => {
+    const [cw, ch] = BUILDING_SIZE[key];
+    const [w, h] = [cw * 24, ch * 24];
+    const draw = BUILDING_DRAW[key];
+    // Same geometry in both passes: the mask lines up with the picture.
+    const logs = {};
+    for (const pass of ['colour', 'mask']) {
+      const log = [];
+      draw(fakeContext(log, null), passes({ team: 0 })[pass]);
+      logs[pass] = shapesOf(log);
+    }
+    assert.equal(logs.mask, logs.colour, `${key}: the mask pass draws other shapes than the colour pass`);
+    for (const biome of key === 'HBOX' ? BIOMES : ['temperate']) {
+      const m = rasterMask(draw, w, h, biome);
+      assert.equal(m.over, 0, `${key}: something translucent is drawn over its team colour (${m.over} px)`);
+      assert.equal(m.outside, 0, `${key}: team colour outside its ${w}x${h} footprint (${m.outside} px)`);
+      if (WALLS.has(key)) {
+        assert.equal(m.team, 0, `${key}: walls are neutral`);
+        continue;
+      }
+      assert.ok(m.team >= 4, `${key}: the team colour shows (${m.team} px)`);
+      // Team colour sits in strips, lamps and flags: the structure stays readable as a shape.
+      assert.ok(m.team <= 0.45 * w * h, `${key}: team colour covers ${m.team} of ${w * h} px`);
+    }
+  });
+}
+
+test('the war factory ramp is clear: no drawn vehicle where the units it builds roll out', () => {
+  const bounds = [];
+  BUILDING_DRAW.WEAP(fakeContext([], bounds), passes({ team: 0 }).colour);
+  // Below the bay (y 52 on) only the asphalt, the ramp and paint: no team coloured (grey) shape.
+  const team = bounds.filter((b) => b.y0 >= 52 && typeof b.style === 'string' && /^rgb\(/.test(b.style));
+  assert.deepEqual(team, []);
+  assert.equal(rasterMask((ctx, P) => BUILDING_DRAW.WEAP(ctx, P), 72, 72).over, 0);
+});
+
+for (const [key, [w, h, draw]] of Object.entries(BUILDING_TURRET)) {
+  test(`building turret ${key}: team coloured, nothing translucent over it`, () => {
+    const m = rasterMask(draw, w, h);
+    assert.ok(m.team >= 2, `${key} turret shows the team colour`);
+    assert.equal(m.over, 0);
+    assert.equal(m.outside, 0);
+  });
+}
+
+test('animated and working layers keep their own mask intact in every frame', () => {
+  for (const [key, layer] of [...Object.entries(BUILDING_ANIM), ...Object.entries(BUILDING_WORKING)]) {
+    const [cw, ch] = BUILDING_SIZE[key];
+    for (let f = 0; f < layer.frames; f++) {
+      const m = rasterMask((ctx, P) => layer.draw(ctx, P, f), cw * 24, ch * 24);
+      assert.equal(m.over, 0, `${key} frame ${f}: something translucent over its team colour`);
+    }
+  }
+});
 
 // ---- Animated layers (art/animated.js) --------------------------------------------------
 
@@ -230,8 +453,8 @@ function stubDocument(sizes = []) {
   };
 }
 
-test('animated layers: radar, smoke, beacons, fans and the crane hook, a handful of frames each', () => {
-  for (const key of ['DOME', 'POWR', 'APWR', 'PROC', 'BARR', 'HPAD', 'AFLD', 'ATEK', 'STEK', 'FACT']) {
+test('animated layers: radar, steam, smoke, lights, reactor rings, the crane trolley and the effects, a handful of frames each', () => {
+  for (const key of ['DOME', 'POWR', 'APWR', 'PROC', 'BARR', 'HPAD', 'AFLD', 'ATEK', 'STEK', 'FACT', 'GAP', 'PDOX', 'IRON', 'TSLA']) {
     const anim = BUILDING_ANIM[key];
     assert.ok(anim, `${key} has an animated layer`);
     assert.ok(BUILDING_DRAW[key], `${key} is a building`);
@@ -244,6 +467,7 @@ test('animated layers: radar, smoke, beacons, fans and the crane hook, a handful
   }
 });
 
+const EPS = 1e-6;
 for (const [key, anim] of Object.entries(BUILDING_ANIM)) {
   test(`animated layer ${key}: every frame finite, inside its box, deterministic, frames differ`, () => {
     const [bx, by, bw, bh] = anim.box;
@@ -253,12 +477,13 @@ for (const [key, anim] of Object.entries(BUILDING_ANIM)) {
       for (let run = 0; run < 2; run++) {
         const log = [];
         const bounds = [];
-        const ctx = fakeContext(log, bounds);
+        const ctx = fakeContext(log, bounds, true);
         anim.draw(ctx, passes({ team: 0 }).colour, f);
         assert.equal(ctx.depth, 0, `${key} frame ${f} leaves save/restore unbalanced`);
         for (const b of bounds) {
           assert.ok(
-            b.x0 >= bx - 1.5 && b.y0 >= by - 1.5 && b.x1 <= bx + bw + 1.5 && b.y1 <= by + bh + 1.5,
+            // The atlas cuts each frame to its box: nothing may reach past it, halos included.
+            b.x0 >= bx - EPS && b.y0 >= by - EPS && b.x1 <= bx + bw + EPS && b.y1 <= by + bh + EPS,
             `${key} frame ${f} draws outside its box ${anim.box}: ${JSON.stringify(b)}`,
           );
         }
@@ -322,6 +547,25 @@ test('the atlas holds every animation once: head slots point at their frames, fo
   } finally {
     delete globalThis.document;
   }
+});
+
+test('the minimal pack atlas stays 2048 wide: animated layers cover only what moves', () => {
+  const sizes = [];
+  globalThis.document = stubDocument(sizes);
+  try {
+    buildAtlas(actors);
+  } finally {
+    delete globalThis.document;
+  }
+  // The colour and the mask atlas: phones keep both in GPU memory.
+  assert.equal(sizes.length, 2);
+  for (const [w, h] of sizes) {
+    assert.equal(w, 2048, `atlas ${w}x${h}`);
+    assert.ok(h <= 2048 * 1.5, `atlas ${w}x${h} is no taller than its sprites need`);
+  }
+  // Every layer frame is small: the whole set of layers costs less than a tenth of the atlas.
+  const px = Object.values(BUILDING_ANIM).reduce((n, a) => n + (a.box[2] * 2 + 4) * (a.box[3] * 2 + 4) * a.frames, 0);
+  assert.ok(px < 0.1 * sizes[0][0] * sizes[0][1], `animated layers take ${px} atlas pixels`);
 });
 
 test('the silo hatch is a working layer the engine plays once for a launch, at rest otherwise', () => {
