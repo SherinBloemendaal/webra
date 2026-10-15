@@ -5,11 +5,13 @@
 // row, top to bottom; Shift on a checkbox sets that range like the box.
 // One action list (grouped) and Apply act on the selection, or on every
 // slot when nothing is selected. Keyboard: Tab reaches the checkboxes,
-// Space ticks one (Shift+Space a range), Enter in the action list applies.
+// Space ticks one (Shift+Space a range); the action list is a select plate
+// (js/ui/controls.js): Enter in it chooses, Enter on it applies the choice.
 // DOM through createElement and textContent only (strict CSP).
 
 import { RowSelection, bulkActions } from './lobby-bulk.js';
 import { infoTip } from './infotip.js';
+import { selectPlate } from './ui/controls.js';
 
 let uid = 0;
 
@@ -27,7 +29,7 @@ export class BulkBar {
   /**
    * @param {{
    *   context: 'skirmish' | 'online',
-   *   selectClass: string,
+   *   selectClass?: string,  (unused: the action list is a select plate)
    *   buttonClass: string,
    *   onApply: (id: string, selected: number[]) => { summary?: string, error?: string, pending?: boolean },
    *   note?: string,  a line under the actions (what they cannot change)
@@ -82,12 +84,18 @@ export class BulkBar {
     const selectId = `${id}-action`;
     const label = el('label', 'bulk-label', 'Action');
     label.htmlFor = selectId;
-    this.select = el('select', `${o.selectClass} bulk-action`);
-    this.select.id = selectId;
-    this.select.addEventListener('change', () => (this.applyBtn.disabled = !this.select.value));
-    // Enter applies (and must not start the game, like Enter elsewhere in the lobby).
-    this.select.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' || e.isComposing) return;
+    this.select = selectPlate({
+      id: selectId,
+      label: 'Action',
+      options: [],
+      placeholder: 'Choose an action',
+      className: 'bulk-action',
+      onChange: () => (this.applyBtn.disabled = this.action() === null),
+    });
+    // Enter on the chosen action applies it (and must not start the game, like Enter elsewhere in
+    // the lobby); Space and the arrow keys open the list again.
+    this.select.button.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing || this.action() === null) return;
       e.preventDefault();
       e.stopPropagation();
       this.apply();
@@ -96,7 +104,7 @@ export class BulkBar {
     this.applyBtn.type = 'button';
     this.applyBtn.disabled = true;
     this.applyBtn.addEventListener('click', () => this.apply());
-    act.append(label, this.select, this.applyBtn);
+    act.append(label, this.select.root, this.applyBtn);
 
     this.status = el('p', 'bulk-status');
     this.status.setAttribute('role', 'status');
@@ -135,24 +143,15 @@ export class BulkBar {
     }
   }
 
+  /** The chosen action's id, or null. */
+  action() {
+    return this.select.get() ?? null;
+  }
+
   fillActions() {
-    const keep = this.select.value;
-    this.select.textContent = '';
-    const none = el('option', null, 'Choose an action');
-    none.value = '';
-    this.select.append(none);
-    for (const g of bulkActions(this.actionOpts)) {
-      const group = el('optgroup');
-      group.label = g.label;
-      for (const item of g.items) {
-        const o = el('option', null, item.label);
-        o.value = item.id;
-        group.append(o);
-      }
-      this.select.append(group);
-    }
-    this.select.value = [...this.select.querySelectorAll('option')].some((o) => o.value === keep) ? keep : '';
-    this.applyBtn.disabled = !this.select.value;
+    // The chosen action stays when the new list still has it.
+    this.select.setOptions(bulkActions(this.actionOpts).map((g) => ({ label: g.label, options: g.items.map((item) => ({ value: item.id, label: item.label })) })));
+    this.applyBtn.disabled = this.action() === null;
   }
 
   /**
@@ -201,7 +200,7 @@ export class BulkBar {
   }
 
   apply() {
-    const id = this.select.value;
+    const id = this.action();
     if (!id || !this.active) return;
     const out = this.o.onApply(id, this.selection.list()) ?? {};
     // Online the server answers later (report): until then the bar says so.

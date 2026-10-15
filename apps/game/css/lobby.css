@@ -145,33 +145,48 @@
   min-width: 0;
 }
 
+/* The Skirmish board: each panel a metal card (Patterns .ui-card) with its
+   name in Barlow Condensed capitals; the players panel adds its count and
+   the team presets to the head. */
 #menu .lobby-panel {
   min-width: 0;
-  background: linear-gradient(180deg, var(--l-panel), var(--l-panel-2));
+  background: var(--ui-panel);
   border: 1px solid var(--ui-edge);
   border-radius: var(--l-radius);
-  box-shadow:
-    inset 1px 1px 0 var(--l-edge-hi),
-    inset -1px -1px 0 var(--l-edge-lo),
-    0 2px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: var(--ui-bevel);
+}
+
+#menu .lobby-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 14px 16px 0;
 }
 
 #menu .lobby-panel-title {
   margin: 0;
-  padding: 7px 12px 7px 10px;
-  background: var(--l-head);
-  border-bottom: 1px solid var(--l-edge);
-  border-left: 3px solid var(--l-accent-edge);
-  font: 700 12px/1.2 var(--ui-font);
-  letter-spacing: 1.8px;
+  font: 700 22px/1.1 var(--ui-font-display);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--l-accent);
+  color: var(--l-text);
+}
+
+#menu .lobby-panel-count {
+  color: var(--l-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* FFA, 2 teams, Humans v AI: a compact row of buttons in the head. */
+#menu .lobby-team-preset {
+  font-size: 13px;
 }
 
 /* Each panel is a container ("lobby-panel"): the player slots and the
    option grid follow the panel's width (Responsive, below). */
 #menu .lobby-panel-body {
-  padding: 12px;
+  padding: 12px 16px 16px;
   container: lobby-panel / inline-size;
 }
 
@@ -259,12 +274,10 @@
 
 #menu .lobby-field-label,
 #menu .lobby-stress-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1.2px;
+  font: 600 14px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
   color: var(--l-muted);
-  cursor: help;
 }
 
 #menu .lobby-muted {
@@ -274,29 +287,29 @@
 
 /* ---- Buttons ---------------------------------------------------------------- */
 
+/* Raised metal like the Patterns board's .ui-btn: the label in Barlow
+   Condensed capitals. */
 #menu .lobby-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 32px;
+  min-height: max(var(--ctl-row), 36px);
   padding: 0 14px;
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  background: var(--ui-raised);
   color: var(--l-text);
   border: 1px solid var(--ui-edge);
   border-radius: var(--l-radius);
-  box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.12),
-    inset -1px -1px 0 rgba(0, 0, 0, 0.45);
-  font: 700 12px/1 var(--ui-font);
-  letter-spacing: 1.2px;
+  box-shadow: var(--ui-bevel);
+  font: 700 14px/1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
 }
 
 #menu .lobby-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, #4a5360, var(--ui-metal-3));
+  background: var(--ui-raised-hover);
 }
 
 #menu .lobby-btn:active:not(:disabled) {
@@ -312,15 +325,23 @@
 }
 
 #menu .lobby-btn-primary {
-  height: 46px;
+  min-height: 46px;
   min-width: 220px;
   padding: 0 28px;
   background: var(--ui-primary-fill);
   border-color: var(--ui-edge);
+  box-shadow:
+    var(--ui-bevel),
+    var(--ui-primary-glow);
   color: #fff;
-  font-size: 15px;
-  letter-spacing: 2.5px;
+  font-size: 18px;
+  letter-spacing: 0.14em;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+#menu .lobby-save-setup {
+  min-height: 46px;
+  font-size: 16px;
 }
 
 #menu .lobby-btn-primary:hover:not(:disabled) {
@@ -1117,14 +1138,15 @@
 /* Wide cards: the map, the players and the options side by side. The
    players panel stays wider than 560 px from here (so its slots are a
    table); the map column grows with the card up to 440 px. */
-@container lobby (min-width: 1440px) {
+@container lobby (min-width: 1200px) {
+  /* The board's three cards: map 1, players 2, options 1 (the side column's
+     two panels become cards of the row). */
   #menu .lobby-body {
-    grid-template-columns: minmax(0, clamp(300px, 26%, 440px)) minmax(0, 1fr);
+    grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr) minmax(300px, 1fr);
   }
 
   #menu .lobby-side {
-    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-    align-items: start;
+    display: contents;
   }
 }
 
@@ -1384,4 +1406,55 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---- Redesign (Skirmish board): plates, stepper, speed, footer ---------------- */
+
+/* Select plates (js/ui/controls.js) fill their cell; in the slot rows they
+   are the compact plates (.ui-sm). */
+#menu .lobby-plate {
+  width: 100%;
+  min-width: 0;
+}
+
+#menu .lobby-who > .lobby-plate {
+  flex: 1 0 auto;
+  width: auto;
+  max-width: 100%;
+}
+
+#menu .lobby-who > .ui-badge {
+  align-self: center;
+}
+
+/* Starting cash and game speed take the whole row: the label above them. */
+#menu .lobby-field-wide {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+#menu .lobby-option-grid > .lobby-field-wide {
+  grid-column: 1 / -1;
+}
+
+#menu .lobby-option-grid .ui-stepper-value {
+  color: var(--ui-money);
+}
+
+/* Six game speeds: two rows of three. */
+#menu .lobby-speed.ui-segmented.ui-block {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* The footer's hint (which start is yours) on the left. */
+#menu .lobby-spawn-hint {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--l-muted);
+  font-size: 14px;
+}
+
+#menu .lobby-spawn-hint:empty {
+  display: none;
 }
