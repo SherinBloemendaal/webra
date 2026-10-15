@@ -425,6 +425,8 @@ export class OnlineUI {
    *   sounds?: { chatLine(): void, lobby(event: 'joined' | 'left' | 'option'): void },
    *   mapVersions?: object,  the map format version registry (tests; the protocol's by default)
    *   lens?: () => import('./maplens/lens.js').MapLens,  a magnifier over the map preview (js/maplens)
+   *   loading?: { begin(o: { map: boolean, mission: boolean }): void, fail(message: string): void, cancel(): void },
+   *     the loading screen (js/loadingscreen.js): shown when the lockstep start arrives, until the game's first frame
    * }} ctx  account: signed-in players play under their username (protocol 5);
    *   sounds: OpenRA's chat and lobby sounds (js/audio/index.js)
    */
@@ -2089,6 +2091,8 @@ export class OnlineUI {
     // Joining a running game (rejoin, late spectator): the order log follows.
     // A resumed save starts like a rejoin: every client fast-forwards through the saved orders.
     const catchUp = st.rejoin || !st.lobbySeen || !!m.resume;
+    // The loading screen shows from here to the game's first frame (js/main.js).
+    this.ctx.loading?.begin({ map: !!m.map, mission: !!m.mission });
     let resumeFailed = false;
     this.pendingNet ??= [];
     const conn = this.conn;
@@ -2106,7 +2110,10 @@ export class OnlineUI {
         if (!this.ctx.missionText) throw new Error('This game cannot load missions.');
         missionText = await this.ctx.missionText(m.mission.id, m.mission.hash);
       }
-      if (this.conn !== conn) return;
+      if (this.conn !== conn) {
+        this.ctx.loading?.cancel();
+        return;
+      }
       // The game, its LockstepDriver and its recorder run where the
       // simulation runs (a worker when possible); `driver` relays to it.
       session = await this.ctx.createGame({
@@ -2150,6 +2157,7 @@ export class OnlineUI {
     } catch (err) {
       this.leaveSession();
       this.showBrowser(`Could not start the game: ${err.message ?? err}`);
+      this.ctx.loading?.fail(`Could not start the game: ${err.message ?? err}`);
       return;
     } finally {
       this.startingGame = false;
@@ -2157,6 +2165,8 @@ export class OnlineUI {
     if (this.conn !== conn || this.driver) {
       // The connection went away (or the game started) while the simulation loaded.
       session.host.dispose();
+      // A game that did start has the loading screen; else it goes.
+      if (!this.driver) this.ctx.loading?.cancel();
       return;
     }
     const { host, game, driver, recorder } = session;
