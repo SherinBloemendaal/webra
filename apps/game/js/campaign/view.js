@@ -99,7 +99,22 @@ export class MissionView {
     this.panel.id = 'mission-panel';
     this.button.setAttribute('aria-expanded', 'false');
     o.hudButtons.prepend(this.button);
-    attachTooltip(this.button, () => ({ title: 'Objectives', desc: 'What the mission asks of you, and which objectives are done or failed. Opens by itself when they change.' }), { side: 'bottom' });
+    this.tip = attachTooltip(this.button, () => ({ title: 'Objectives', desc: 'What the mission asks of you, and which objectives are done or failed. Opens by itself when they change.' }), { side: 'bottom' });
+  }
+
+  /**
+   * The game is going (a restart in place, the next mission): a movie or its
+   * card ends, and the panel, the lines, the Objectives button and the
+   * script error leave the screen.
+   */
+  dispose() {
+    this.card?.close();
+    this.card = null;
+    this.tip.detach();
+    for (const f of this.floating) f.node?.remove();
+    this.floating = [];
+    this.error?.remove();
+    for (const node of [this.panel, this.messages, this.text, this.button]) node.remove();
   }
 
   toggle(open = this.panel.hidden) {

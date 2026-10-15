@@ -404,6 +404,28 @@ export class SimCore {
     }
   }
 
+  /**
+   * The game is over for this page without a reload (js/sim/host.js
+   * DirectHost.dispose: a restart in place on the main thread): background
+   * ticks stop and the engine's memory for the game is freed. A worker needs
+   * none of this: terminating it frees everything.
+   */
+  release() {
+    this.setBackground(false);
+    this.driver?.stop();
+    this.replay?.dispose();
+    try {
+      this.game?.free?.();
+    } catch {
+      // Already freed, or the engine stopped with an error: nothing more to free.
+    }
+    this.game = null;
+    this.local = null;
+    this.driver = null;
+    this.replay = null;
+    this.recorder = null;
+  }
+
   // ---- Background ticks ----------------------------------------------------------------------
 
   /**

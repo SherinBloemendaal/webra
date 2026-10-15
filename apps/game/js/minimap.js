@@ -315,6 +315,13 @@ export class Minimap {
     }
   }
 
+  /** The game is going (a restart in place): stop watching the radar box's size and take the radar off the page. */
+  dispose() {
+    this.resizer?.disconnect();
+    this.resizer = null;
+    this.root.remove();
+  }
+
   /** Size the picture to the largest map-shaped rectangle in the radar box. */
   fit() {
     const r = fitRect(this.root.clientWidth, this.root.clientHeight, this.mapW, this.mapH);

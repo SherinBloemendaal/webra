@@ -248,7 +248,13 @@ export class DebugMenu {
     this.panel = this.buildPanel();
     this.panel.hidden = true;
     field.append(this.overlay, this.button, this.panel);
+  }
 
+  /** The game is going (a restart in place): the overlay, the button and the panel leave the battlefield. */
+  dispose() {
+    this.overlay.remove();
+    this.button.remove();
+    this.panel.remove();
   }
 
   toggle(open = this.panel.hidden) {

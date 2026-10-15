@@ -73,6 +73,12 @@ export class PowerTimers {
     this.nodes = new Map(); // id -> element
   }
 
+  /** The game is going (a restart in place): the timers leave the HUD. */
+  dispose() {
+    this.nodes.clear();
+    this.root.remove();
+  }
+
   /** Show `lines` (timerLines), top to bottom (OpenRA Order: Descending). */
   update(lines) {
     const els = lines.map((l) => {

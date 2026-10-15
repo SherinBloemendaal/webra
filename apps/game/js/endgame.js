@@ -264,15 +264,20 @@ export class EndGameDialog {
     this.card.setAttribute('aria-describedby', 'endgame-text');
     root.replaceChildren(this.card);
     root.hidden = true;
-    window.addEventListener(
-      'keydown',
-      (e) => {
-        if (this.root.hidden || this.blocked()) return;
-        if (e.key === 'Escape') e.preventDefault();
-        e.stopImmediatePropagation();
-      },
-      true,
-    );
+    this.onKey = (e) => {
+      if (this.root.hidden || this.blocked()) return;
+      if (e.key === 'Escape') e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', this.onKey, true);
+  }
+
+  /** The game is going (a restart in place): the key listener goes and the section is emptied for the next game's dialog. */
+  dispose() {
+    window.removeEventListener('keydown', this.onKey, true);
+    if (this.root.contains(document.activeElement)) document.activeElement.blur();
+    this.root.hidden = true;
+    this.root.replaceChildren();
   }
 
   /** Show the flow's dialog, or hide when none is open. */

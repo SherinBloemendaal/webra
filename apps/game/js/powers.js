@@ -42,6 +42,13 @@ export class PowerBar {
     this.targeting = null;
   }
 
+  /** The game is going (a restart in place): the tooltips go and the bar leaves the HUD. */
+  dispose() {
+    for (const b of this.buttons.values()) b.tip?.detach();
+    this.buttons.clear();
+    this.root.remove();
+  }
+
   /** Refresh from `player_json().powers`. */
   update(powers) {
     const seen = new Set();

@@ -100,14 +100,25 @@ export class Layout {
     this.onChange = onChange;
     this.drawer = new DrawerState();
     this.mode = null;
-    toggle.addEventListener('click', () => {
+    const onToggle = () => {
       this.drawer.toggle();
       this.apply();
-    });
+    };
+    toggle.addEventListener('click', onToggle);
     const update = () => this.update();
     win.addEventListener('resize', update);
     win.addEventListener('orientationchange', update);
+    this.offs = [
+      () => toggle.removeEventListener('click', onToggle),
+      () => win.removeEventListener('resize', update),
+      () => win.removeEventListener('orientationchange', update),
+    ];
     this.update();
+  }
+
+  /** The game is going (a restart in place): the toggle button and the window are let go (the next game's layout binds them again). */
+  dispose() {
+    for (const off of this.offs.splice(0)) off();
   }
 
   get compact() {

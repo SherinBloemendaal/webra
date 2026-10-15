@@ -291,6 +291,10 @@ export class Renderer {
     const d = this.device;
     this.mapW = w;
     this.mapH = h;
+    // The previous game's map textures (a restart in place keeps the renderer).
+    this.terrainTex?.destroy();
+    this.cellTex?.destroy();
+    this.fogTex?.destroy();
     this.terrainTex = d.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     this.cellTex = d.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     this.fogTex = d.createTexture({ size: [w, h], format: 'r8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
@@ -303,6 +307,23 @@ export class Renderer {
         { binding: 1, resource: this.linearSampler },
       ],
     });
+  }
+
+  /**
+   * The game is going without the page (a restart in place, the next
+   * mission): its atlases, map textures and frame table are freed on the GPU.
+   * The next game uploads its own before it draws (setAtlas, setMapSize,
+   * setTerrainAtlas); the pipelines and the per-frame buffers stay.
+   */
+  releaseGame() {
+    for (const key of ['atlasTex', 'maskTex', 'frames', 'terrainTex', 'cellTex', 'fogTex', 'terrainAtlasTex']) {
+      this[key]?.destroy();
+      this[key] = null;
+    }
+    this.spriteGroup = null;
+    this.terrainGroup = null;
+    this.fogGroup = null;
+    this.measure = null;
   }
 
   /**

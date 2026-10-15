@@ -172,8 +172,9 @@ export class DirectHost extends Events {
   }
 
   dispose() {
-    // A hidden game's background timer runs on this thread: it ends with the game.
-    this.core.setBackground(false);
+    // A hidden game's background timer runs on this thread: it ends with the
+    // game, and so does the engine's memory for it (a restart in place keeps the page).
+    this.core.release();
   }
 }
 

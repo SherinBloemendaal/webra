@@ -323,8 +323,8 @@ export class Input {
 
   /**
    * The view is gone: stop following the remembered zoom (a zoom that waits
-   * is stored first) and drop every listener bind() added to the canvas and
-   * the window.
+   * is stored first), unregister the hotkey actions and drop every listener
+   * bind() added to the canvas and the window.
    */
   dispose() {
     // An open chooser or sell confirmation (js/boxchooser.js) goes with the view.
@@ -332,6 +332,11 @@ export class Input {
     this.flushZoom();
     this.offZoomFactor?.();
     this.offZoomFactor = null;
+    // The hotkey actions go too: a new game registers them again.
+    this.unregister?.();
+    this.unregister = null;
+    if (this.zoomSave) clearTimeout(this.zoomSave);
+    this.zoomSave = 0;
     for (const off of this.offs) off();
     this.offs = [];
     this.setPageCursor('');

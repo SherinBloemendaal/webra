@@ -119,4 +119,9 @@ export class TipView {
     this.root?.remove();
     this.root = null;
   }
+
+  /** The game is going (a restart in place): an open tip closes. */
+  dispose() {
+    this.close();
+  }
 }
