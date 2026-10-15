@@ -5,7 +5,7 @@
 // account accepts. DOM only through createElement and textContent.
 
 import { GROUPS, checkValue, specOf } from '../registry.js';
-import { switchInput } from '../ui/controls.js';
+import { selectPlate, switchInput } from '../ui/controls.js';
 
 /** How a setting is edited: the control kind and its attributes. */
 export function controlFor(spec) {
@@ -158,13 +158,11 @@ export function buildSettingsForm(doc, { onInput = () => {}, groups = Object.key
       const c = controlFor(spec);
       const current = doc?.[group]?.[key] ?? spec.default;
       let input;
+      let select = null;
+      // A choice from a list: the design system's select plate (named by the label through aria-labelledby).
       if (c.kind === 'select') {
-        input = mk('select', { id });
-        for (const o of c.options) {
-          const opt = mk('option', { value: o.value }, o.label);
-          input.append(opt);
-        }
-        input.value = String(current);
+        select = selectPlate({ id, labelledBy: `${id}-label`, options: c.options, value: String(current), block: true, onChange: () => changed() });
+        input = select.button;
       } else if (c.kind === 'textarea') {
         input = mk('textarea', { id, rows: String(c.rows), spellcheck: 'false' });
         input.value = formatValue(spec, current);
@@ -174,22 +172,26 @@ export function buildSettingsForm(doc, { onInput = () => {}, groups = Object.key
         input = mk('input', { id, ...c.attrs });
         input.value = formatValue(spec, current);
       }
-      if (readOnly) input.setAttribute('disabled', '');
+      if (readOnly) {
+        if (select) select.setDisabled(true);
+        else input.setAttribute('disabled', '');
+      }
       const error = mk('p', { class: 'form-status form-status-error', id: `${id}-error`, hidden: '' });
       const hintText = [spec.help, c.hint].filter(Boolean).join(' ');
       const hint = hintText ? mk('p', { class: 'form-help', id: `${id}-hint` }, hintText) : null;
       input.setAttribute('aria-describedby', [hint ? `${id}-hint` : null, `${id}-error`].filter(Boolean).join(' '));
       const row = mk('div', { class: c.kind === 'checkbox' ? 'check setting-row' : 'field setting-row' });
-      const label = mk('label', { for: id }, spec.label);
+      const label = select ? mk('span', { class: 'field-label', id: `${id}-label` }, spec.label) : mk('label', { for: id }, spec.label);
       if (c.kind === 'checkbox') row.append(input, label);
-      else row.append(label, input);
+      else row.append(label, select ? select.root : input);
       if (hint) row.append(hint);
       row.append(error);
-      input.addEventListener(c.kind === 'checkbox' || c.kind === 'select' ? 'change' : 'input', () => {
+      const changed = () => {
         validate(entry);
         onInput();
-      });
-      const entry = { group, key, spec, input, error, kind: c.kind };
+      };
+      if (!select) input.addEventListener(c.kind === 'checkbox' ? 'change' : 'input', changed);
+      const entry = { group, key, spec, input, select, error, kind: c.kind };
       controls.push(entry);
       fs.append(row);
     }
@@ -197,7 +199,8 @@ export function buildSettingsForm(doc, { onInput = () => {}, groups = Object.key
   }
 
   function validate(entry) {
-    const r = parseValue(entry.spec, entry.kind === 'checkbox' ? entry.input.checked : entry.input.value);
+    const raw = entry.kind === 'checkbox' ? entry.input.checked : entry.select ? String(entry.select.get() ?? '') : entry.input.value;
+    const r = parseValue(entry.spec, raw);
     entry.error.textContent = r.error ? `${entry.spec.label} ${r.error}.` : '';
     entry.error.hidden = !r.error;
     if (r.error) entry.input.setAttribute('aria-invalid', 'true');
