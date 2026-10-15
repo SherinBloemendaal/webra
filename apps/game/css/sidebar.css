@@ -593,6 +593,31 @@
   display: block;
 }
 
+/* Queued items the credits do not cover yet (js/production.js shortOfFunds):
+   production waits for money. A red frame and a red "$" under the count. */
+#sidebar .sb-short {
+  position: absolute;
+  right: calc(2 * var(--ui-px));
+  top: calc(17 * var(--ui-px));
+  display: none;
+  min-width: calc(12 * var(--ui-px));
+  padding: 0 calc(2 * var(--ui-px));
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid var(--ui-bad);
+  color: var(--ui-bad);
+  font: 700 calc(10 * var(--ui-px)) / calc(12 * var(--ui-px)) var(--ui-font-mono);
+  text-align: center;
+  pointer-events: none;
+}
+
+#sidebar .sb-card.short {
+  box-shadow: inset 0 0 0 2px var(--ui-bad);
+}
+
+#sidebar .sb-card.short .sb-short {
+  display: block;
+}
+
 #sidebar .sb-card.placing {
   box-shadow: inset 0 0 0 2px var(--ui-money);
   animation: none;

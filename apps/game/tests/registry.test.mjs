@@ -51,6 +51,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
   assert.deepEqual(Object.keys(GROUPS), ['game', 'audio', 'content', 'debug', 'lobby', 'releaseNotes', 'privacy', 'extra']);
   assert.deepEqual(Object.keys(GROUPS.game.settings).sort(), [
     'attackMoveTipSeen',
+    'buildRightClick',
     'edgeScrollSpeed',
     'gameEventNotifications',
     'gameScale',
@@ -237,7 +238,7 @@ test('registry: every old key migrates once, and the old keys are removed after 
 
   assert.deepEqual(
     v.game,
-    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, mouseCaptureNotice: 'always', pauseWhenHidden: false, attackMoveTipSeen: false },
+    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, mouseCaptureNotice: 'always', pauseWhenHidden: false, attackMoveTipSeen: false, buildRightClick: 'openra' },
     'settings the old key did not have get their default',
   );
   assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false, cashTicks: true, clickSounds: true, menuMusic: true, musicOn: true, musicShuffle: true, musicRepeat: 'all' });

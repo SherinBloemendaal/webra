@@ -84,7 +84,7 @@ test('orders the engine emits pass protocol validation and round-trip into apply
   game.order_stop(0, Uint32Array.from(units));
   game.deploy(0, Uint32Array.from(units.slice(0, 1)));
   game.start_production(0, 'POWR', 2);
-  game.cancel_production(0, 'POWR');
+  game.cancel_production(0, 'POWR', 1);
   game.pause_production(0, 'POWR', true);
   game.pause_production(0, 'POWR', false);
   // Command bar orders (engine/src/commands.rs).

@@ -403,6 +403,7 @@ const SETTINGS_SECTIONS = {
     mouseCaptureEscMenu: boolean,
     mouseCaptureNotice: choice(['always', 'first', 'off']),
     pauseWhenHidden: boolean,
+    buildRightClick: choice(['openra', 'webra']),
   },
   audio: {
     enabled: boolean,

@@ -77,10 +77,34 @@ export const MENU_HELP_KEYS = Object.freeze([
 export const MENU_PAGE_HELP_KEYS = Object.freeze(['menu.gameInfo', 'menu.surrender']);
 
 /** The notes under the Controls page's list (js/help.js `controls.<key>`). */
-export const CONTROLS_HELP_KEYS = Object.freeze(['keys', 'focus', 'selection']);
+export const CONTROLS_HELP_KEYS = Object.freeze(['keys', 'focus', 'selection', 'production']);
+
+/** Settings on the Controls page, each with a "?" (js/help.js `settings.<key>`); "Reset all hotkeys" leaves them. */
+export const CONTROLS_SETTINGS = Object.freeze(['buildRightClick']);
 
 /** The "?" of setting `key` beside the row's label, describing `control`. */
 const withHelp = (row, key, control) => labelWithHelp(row, `settings.${key}`, control);
+
+/** A row of segmented buttons for choice setting `key` of settings store `s`, with an optional hint under it. */
+function choiceRow(s, key, text, labels, hint) {
+  const id = `game-menu-${key}`;
+  const group = segmented({
+    name: id,
+    label: text,
+    value: s.get(key),
+    describedBy: hint ? `${id}-hint` : undefined,
+    options: SCHEMA[key].options.map((option) => ({ value: option, label: labels[option] ?? option })),
+    onChange: (v) => group.set(s.set(key, v)),
+  });
+  const row = el('div', 'ui-row ui-row-choice game-menu-row');
+  row.append(el('span', 'ui-label', text), group.root);
+  if (hint) {
+    const note = el('p', 'ui-hint', hint);
+    note.id = `${id}-hint`;
+    row.append(note);
+  }
+  return row;
+}
 
 /** Controls that are not in the hotkey registry (fixed keys and the mouse). */
 export function fixedControls(mac = isMac()) {
@@ -110,6 +134,9 @@ export function fixedControls(mac = isMac()) {
     ['Repair key, own actors selected', 'Repair the selected damaged structures and send the selected damaged units to repair'],
     ['Drag in sell mode', 'Sell your structures in the box, never a Construction Yard (more than one: click Sell or press S or Y; Enter or Esc cancels)'],
     ['Shift + production key', 'Build 5 (production slots, numpad)'],
+    ['Build menu: left / Shift + left click', 'Queue 1 / 5, with or without the credits'],
+    ['Build menu: right / Shift + right click', 'Hold or cancel 1 / 5 (Right click in the build menu above)'],
+    ['Build menu: middle click', 'Cancel at once (Shift: 5)'],
   ];
 }
 
@@ -584,25 +611,7 @@ export class GameMenu {
       const t = createToggle({ id: `game-menu-${key}`, label: text, checked: !!s.get(key), rowClass: 'game-menu-row', onChange: (on) => s.set(key, on) });
       return withHelp(t.row, key, t.input);
     };
-    const choice = (key, text, labels, hint) => {
-      const id = `game-menu-${key}`;
-      const group = segmented({
-        name: id,
-        label: text,
-        value: s.get(key),
-        describedBy: hint ? `${id}-hint` : undefined,
-        options: SCHEMA[key].options.map((option) => ({ value: option, label: labels[option] ?? option })),
-        onChange: (v) => group.set(s.set(key, v)),
-      });
-      const row = el('div', 'ui-row ui-row-choice game-menu-row');
-      row.append(el('span', 'ui-label', text), group.root);
-      if (hint) {
-        const note = el('p', 'ui-hint', hint);
-        note.id = `${id}-hint`;
-        row.append(note);
-      }
-      return row;
-    };
+    const choice = (key, text, labels, hint) => choiceRow(s, key, text, labels, hint);
 
     // ---- Display ----
     list.append(el('h2', null, 'Display'), el('p', 'hint game-menu-explain', DISPLAY_HELP));
@@ -828,6 +837,12 @@ export class GameMenu {
     c.append(el('h1', null, 'Controls'));
     c.append(el('p', 'hint', 'Change a hotkey, then press the new key (Esc cancels). Settings are saved in this browser.'));
     const list = el('div', 'game-menu-scroll');
+    // ---- Build menu (js/production.js rightClickAction); synced with the account like the other settings ----
+    const s = this.opts.settings;
+    if (s) {
+      const right = choiceRow(s, 'buildRightClick', 'Right click in the build menu', SCHEMA.buildRightClick.labels);
+      list.append(el('h2', null, 'Build menu'), withHelp(right, 'buildRightClick', right.querySelector('[role="radiogroup"]')));
+    }
     const groups = new Map();
     for (const a of reg.list()) {
       if (!groups.has(a.group)) groups.set(a.group, []);

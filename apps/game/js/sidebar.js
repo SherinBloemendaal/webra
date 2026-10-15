@@ -27,6 +27,8 @@ import {
   productionTip,
   queueOutcome,
   rightClickAction,
+  SHIFT_COUNT,
+  shortOfFunds,
   summarizeQueues,
 } from './production.js';
 
@@ -73,7 +75,9 @@ export class Sidebar {
    * @param {number} playerId local player id
    * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onMode?: (mode: string) => void,
    *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean,
+   *   rightClickStyle?: () => string,
    *   onProductionClick?: (id: string, outcome: string | null) => void}} callbacks
+   *   rightClickStyle: the "Right click in the build menu" setting, 'openra' or 'webra' (production.js rightClickAction);
    *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed;
    *   onProductionClick: a cameo click did something, with the queue's speech for it
    *   ('queued', 'blocked', 'limited', 'resumed', 'onHold', 'cancelled', or null)
@@ -346,26 +350,40 @@ export class Sidebar {
     const veteran = el('span', 'sb-veteran');
     veteran.setAttribute('aria-hidden', 'true');
     veteran.hidden = true;
-    btn.append(canvas, veteran, clock, eta, count, ready, hold, slot, req, name);
+    // Not enough credits for every queued one yet (production.js shortOfFunds): a red frame and "$".
+    const short = el('span', 'sb-short', '$');
+    short.setAttribute('aria-hidden', 'true');
+    btn.append(canvas, veteran, clock, eta, count, ready, hold, slot, req, short, name);
     this.paintIcon(canvas, actor, btn);
 
     // shiftLatched: the touch action bar's Add toggle stands in for Shift.
     btn.addEventListener('click', (e) => this.onCardClick(id, e.shiftKey || !!this.callbacks.shiftLatched?.()));
+    // Right click acts on the press, like OpenRA (HandleMouseInput takes
+    // MouseInputEvent.Down), and not on contextmenu: Firefox opens its own
+    // menu for Shift + right click without a contextmenu event for the page.
+    let rightPress = false;
+    btn.addEventListener('mousedown', (e) => {
+      rightPress = e.button === 2;
+      if (!rightPress) return;
+      this.onCardCancel(id, { shift: e.shiftKey });
+    });
     btn.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      this.onCardCancel(id);
+      // The menu key (and a touch long press, which js/touch.js handles first) has no right press before it.
+      if (rightPress) rightPress = false;
+      else this.onCardCancel(id, { shift: e.shiftKey });
     });
     // OpenRA HandleMiddleClick: cancel at once, skipping "on hold".
     btn.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
       e.preventDefault();
-      this.onCardCancel(id, { direct: true });
+      this.onCardCancel(id, { direct: true, shift: e.shiftKey });
     });
     btn.addEventListener('keydown', (e) => {
       // Keyboard equivalent of right click.
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        this.onCardCancel(id);
+        this.onCardCancel(id, { shift: e.shiftKey });
       }
     });
     // OpenRA's production tooltip; a long press on touch screens also cancels one (js/touch.js).
@@ -393,6 +411,7 @@ export class Sidebar {
       building: null,
       ready: null,
       paused: null,
+      short: 0,
       head: undefined,
       queued: -1,
       progress: -1,
@@ -481,29 +500,34 @@ export class Sidebar {
       return;
     }
     const queue = this.state?.queues?.[c.actor.queue] ?? [];
-    const outcome = queueOutcome({ queueLength: queue.length, limitLeft: this.buildable?.get(id)?.limitLeft ?? null });
+    const b = this.buildable?.get(id);
+    // OpenRA CanQueue: never the credits (items wait for money), only ItemLimit and BuildLimit.
+    const outcome = queueOutcome({ itemRoom: b?.itemRoom ?? null, limitLeft: b?.limitLeft ?? null });
     this.callbacks.onProductionClick?.(id, queue.length ? null : outcome);
     if (outcome === 'queued') this.game.start_production(this.playerId, id, action.count);
   }
 
   /**
-   * Right click (or Delete) on a card (OpenRA HandleRightClick): put the item
-   * being built on hold, or cancel one (on hold, finished, not started yet).
-   * `direct` (middle click) always cancels.
+   * Right click (or Delete, or a touch long press) on a card: hold or cancel
+   * by the player's "Right click in the build menu" style (production.js
+   * rightClickAction; 'openra' is OpenRA's HandleRightClick). Shift (or the
+   * touch Add toggle) cancels five. `direct` (middle click, OpenRA
+   * HandleMiddleClick) always cancels.
    */
-  onCardCancel(id, { direct = false } = {}) {
+  onCardCancel(id, { direct = false, shift = false } = {}) {
     const c = this.cards.get(id);
     if (!c) return;
+    const many = shift || this.callbacks.shiftLatched?.() ? SHIFT_COUNT : 1;
     // Disabled cards can be cancelled too, so nothing ever stays stuck.
-    const what = direct && c.head?.count ? 'cancel' : rightClickAction(c.head);
+    const what = direct ? (c.head?.count ? { kind: 'cancel', count: many } : null) : rightClickAction(c.head, { style: this.callbacks.rightClickStyle?.(), many });
     if (!what) return;
-    if (what === 'pause') {
+    if (what.kind === 'pause') {
       this.game.pause_production(this.playerId, id, true);
       this.callbacks.onProductionClick?.(id, 'onHold');
       return;
     }
-    const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: c.queued });
-    this.game.cancel_production(this.playerId, id);
+    const endsPlacement = cancelEndsPlacement({ queue: c.actor.queue, ready: c.ready, queued: c.queued }, what.count);
+    this.game.cancel_production(this.playerId, id, what.count);
     this.callbacks.onProductionClick?.(id, 'cancelled');
     if (endsPlacement) this.callbacks.onCancelPlace?.();
   }
@@ -539,7 +563,13 @@ export class Sidebar {
     if (!actor) return null;
     const slot = this.visibleIds?.indexOf(id) ?? -1;
     const hotkey = slot >= 0 ? this.keyOf(`production${String(slot + 1).padStart(2, '0')}`) : null;
-    return productionTip(actor, this.buildable.get(id), this.state, { hotkey, ticksPerSecond: this.ticksPerSecond, lowPowerModifier: this.lowPowerModifier });
+    return productionTip(actor, this.buildable.get(id), this.state, {
+      hotkey,
+      ticksPerSecond: this.ticksPerSecond,
+      lowPowerModifier: this.lowPowerModifier,
+      short: this.short?.get(id) ?? 0,
+      rightClickStyle: this.callbacks.rightClickStyle?.(),
+    });
   }
 
   /** Credits and the ore in the silos. */
@@ -582,6 +612,9 @@ export class Sidebar {
 
     // Summarise queues: per id, the number queued and the head item.
     const { perId, activity: tabActivity, ready: tabReady } = summarizeQueues(state.queues);
+    // Queued items the credits do not cover yet (production.js shortOfFunds): marked on their cameos.
+    const funds = state.funds ?? (state.cash ?? 0) + (state.resources ?? 0);
+    this.short = shortOfFunds(state.queues, funds, (id) => this.actors.get(id)?.cost ?? 0);
     // The structure being placed was cancelled (lost its Construction Yard or
     // prerequisites): leave placement mode instead of placing nothing.
     if (placementLost(perId, this.placingId)) this.callbacks.onCancelPlace?.();
@@ -642,7 +675,7 @@ export class Sidebar {
       const c = this.cards.get(id);
       const on = enabled.get(id);
       const s = perId.get(id);
-      this.updateCard(c, on, s, state.tick ?? 0);
+      this.updateCard(c, on, s, state.tick ?? 0, this.short.get(id) ?? 0);
       this.updateRequirements(c, info.get(id), i);
       this.updateLabel(c);
     });
@@ -650,7 +683,7 @@ export class Sidebar {
     this.refreshTips();
   }
 
-  updateCard(c, enabled, s, tick = 0) {
+  updateCard(c, enabled, s, tick = 0, short = 0) {
     if (c.enabled !== enabled) {
       c.enabled = enabled;
       c.btn.classList.toggle('disabled', !enabled);
@@ -690,6 +723,11 @@ export class Sidebar {
       setText(c.eta, eta);
       c.eta.hidden = !eta;
     }
+    if (c.short !== short) {
+      // Not enough credits for `short` of its queued items yet: production waits for money.
+      c.short = short;
+      c.btn.classList.toggle('short', short > 0);
+    }
     if (c.queued !== count) {
       c.queued = count;
       c.count.hidden = count <= 1;
@@ -705,6 +743,7 @@ export class Sidebar {
     else if (c.paused) label += ', on hold';
     else if (c.building) label += c.etaText ? `, building, ${c.etaText} left` : ', building';
     if (c.queued > 1) label += `, ${c.queued} queued`;
+    if (c.short > 0) label += c.short === c.queued ? ', waiting for credits' : `, ${c.short} waiting for credits`;
     if (c.overlays.split(' ').includes('Veterancy')) label += ', produced as a veteran';
     if (c.label !== label) {
       c.label = label;
@@ -764,7 +803,7 @@ export class Sidebar {
   activateSlot(n, { shift = false, cancel = false } = {}) {
     const id = this.visibleIds?.[n - 1];
     if (!id) return;
-    if (cancel) this.onCardCancel(id);
+    if (cancel) this.onCardCancel(id, { shift });
     else this.onCardClick(id, shift);
   }
 

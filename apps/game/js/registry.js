@@ -187,6 +187,16 @@ export const GROUPS = deepFreeze({
         label: 'Mouse captured notice',
         help: 'The short notice at the top that names the key that releases the mouse.',
       },
+      // Right click on a sidebar cameo (js/production.js rightClickAction). OpenRA's
+      // ProductionPaletteWidget is the default: it is what the sidebar always did.
+      buildRightClick: {
+        type: 'choice',
+        default: 'openra',
+        options: ['openra', 'webra'],
+        labels: { openra: 'OpenRA: hold first', webra: 'WebRA: last queued first' },
+        label: 'Right click in the build menu',
+        help: 'OpenRA: the first right click puts the item being built on hold, the next ones cancel. WebRA: right clicks remove the most recently queued items first; only the item being built is held, then cancelled.',
+      },
       // A single-player game whose page is hidden (another tab, a minimised window): the menu opens and pauses it, or it plays on (js/main.js).
       pauseWhenHidden: {
         type: 'boolean',

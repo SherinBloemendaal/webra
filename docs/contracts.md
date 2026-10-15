@@ -1691,8 +1691,23 @@ serialized).
 
 ### Production queues (`engine/src/production.rs`)
 
-Orders `start_production {ty, count}`, `cancel_production {ty}` and
-`pause_production {ty, paused}` serve every queue, structures included:
+Orders `start_production {ty, count}`, `cancel_production {ty, count?}`
+and `pause_production {ty, paused}` serve every queue, structures included:
+
+- Queueing never depends on the credits (OpenRA ProductionQueue
+  StartProduction and CanQueue): `start_production` queues as many as fit
+  under Buildable.BuildLimit and ProductionQueueInfo ItemLimit (999 of one
+  type per queue, `ITEM_LIMIT`; Red Alert keeps OpenRA's default and its
+  QueueLimit 0, so a queue has no cap on the total). The "all tech" cheat
+  lifts both limits. Earlier WebRA versions capped every queue at 30 items,
+  which made further clicks do nothing. Production pays as it goes (OpenRA
+  ProductionItem.Tick): each tick the head takes its share of the cost, and
+  when the credits do not cover it the item stands still (no progress,
+  InsufficientFunds, throttled) and goes on by itself once money comes in.
+  `player_json().buildable[].itemRoom` is how many more of a type its queue
+  takes (null under "all tech"); queue items carry `paid` (credits paid so
+  far). `CancelUnbuildableItems` below asks each item type's availability
+  once per queue and tick, so long queues stay cheap.
 
 - Structures queue like units (OpenRA): left click queues one, shift queues
   five. Only the first item of a queue is built. A finished structure waits
@@ -1746,24 +1761,51 @@ Orders `start_production {ty, count}`, `cancel_production {ty}` and
   compares the wall type). OpenRA puts a piece on every passed cell, even an
   unexplored occupied one; WebRA structures never share a cell, so such a
   cell stays empty.
-- `cancel_production` removes the last queued item of that type and refunds
-  what was paid for it (a finished structure refunds its full cost).
+- `cancel_production` (OpenRA CancelProduction with its count) removes the
+  last `count` queued items of that type, the most recently queued first,
+  and refunds what was paid for each (a partly built one what it cost so
+  far, a finished structure its full cost). `count` is 1..50 like
+  `start_production`'s; orders without one (older replays) cancel one.
 - `pause_production` (OpenRA PauseProduction) puts the first queued item of
   that type on hold or resumes it. An item on hold at the head of its queue
   holds up the queue (no progress, nothing paid); finished items are never
-  on hold. It is in the state hash. The sidebar follows OpenRA's
-  ProductionPaletteWidget: right click holds the item being built and
-  cancels one that is on hold, finished or not started (nothing paid yet),
-  middle click cancels at once, left click on a held item resumes it.
+  on hold. It is in the state hash.
+- The sidebar (`js/production.js`) follows OpenRA's ProductionPaletteWidget:
+  left click queues one, Shift five (`SHIFT_COUNT`); left click on a held
+  item resumes it; middle click cancels at once (Shift: five). Right click
+  acts on the press (OpenRA handles MouseInputEvent.Down; Firefox shows its
+  own menu for Shift + right click without a contextmenu event) and follows
+  the personal setting `game.buildRightClick` (Controls page, synced with
+  the account), which only changes the orders the client sends:
+  `openra` (default, OpenRA HandleRightClick, the sidebar's behaviour
+  before the setting existed): the first queued item of the type is held
+  while it is being built; on hold, finished or not started (nothing paid)
+  it cancels the click's count, the most recently queued first, so a held
+  item goes last. OpenRA has no other Shift rule: Shift only sets the count
+  to five. `webra` (a stack, the item being built at the bottom): while the
+  first item of the type is being built and others of the type are queued,
+  a right click cancels the most recently queued ones (at most all but the
+  one being built); once it is the only one, it is held, then cancelled.
+  Shift cancels five the same way. Ctrl + right click (OpenRA: cancel the
+  whole queue's count) is not mapped, as Ctrl + click is a right click on
+  macOS. A touch long press is the right click, the Add toggle is Shift.
   `player_json().queues[][]` items have `paused` and `started` (something
   paid).
+- Short of credits: a cameo gets a red frame and a red "$" (class `short`,
+  `shortOfFunds`) while the credits (`funds`) are less than what is still to
+  pay for one of its queued items plus every item ahead of it in its queue
+  (cost minus `paid`; finished items are paid). Each queue is counted on
+  its own though all draw on the same credits. Updated with every
+  `player_json` refresh; the tooltip says how many items wait for credits
+  and the accessible name adds "waiting for credits". WebRA's own marker:
+  OpenRA's palette shows none.
 - Buildable.BuildLimit (`build_limit` in rules.json, 0 none: the
   superweapons, Tanya): owned plus queued of that type stay within it;
   `start_production` queues only what fits, the "all tech" cheat lifts it.
   `player_json().buildable[].limitLeft` is how many more fit (null: no
-  limit); with the queue length (at most 30) the sidebar knows what OpenRA's
-  CanQueue would say (Building or Training, Unable to build more, Building
-  in progress).
+  limit); with `itemRoom` the sidebar knows what OpenRA's CanQueue would say
+  (Building or Training; Building in progress at ItemLimit; Unable to build
+  more at BuildLimit).
 - OpenRA `CancelUnbuildableItems`: every tick, before production advances,
   each queued item that can no longer be produced is cancelled and refunded,
   wherever it is in the queue. That is an item whose prerequisites were lost
