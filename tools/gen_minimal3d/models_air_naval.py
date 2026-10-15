@@ -420,8 +420,8 @@ ACTORS = {
     'MSUB': VehicleSpec(msub_body, shadow=False),
     # Turret mounts: DD 469/1024 cell = 11 px ahead; CA -896 and 768 /1024 cell = -21 and +18 px (the same turret twice).
     'DD': VehicleSpec(dd_body, dd_turret, shadow=False, turret_pivot=(0.0, 11.0)),
-    # Two mounts (-21 and +18 px, rules.json): the hull's shear is anchored between them.
-    'CA': VehicleSpec(ca_body, ca_turret, shadow=False, turret_pivot=(0.0, 18.0), shear_pivot=(0.0, -1.5)),
+    # Two mounts (-21 and +18 px, rules.json): the game places the same turret on both.
+    'CA': VehicleSpec(ca_body, ca_turret, shadow=False, turret_pivot=(0.0, 18.0)),
 }
 # The Badger bomber of the paradrop and parabomb raids is the same plane.
 ALIASES = {'BADR.Bomber': 'BADR'}

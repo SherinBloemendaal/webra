@@ -208,10 +208,8 @@ class VehicleSpec:
     kind = 'unit'
 
     def __init__(self, body, turret=None, facings=FACINGS, shadow=True, cameo_heading=215.0, cameo_with_turret_heading=-40.0,
-                 turret_pivot=(0.0, 0.0), shear_pivot=None):
+                 turret_pivot=(0.0, 0.0)):
         self.body, self.turret, self.facings, self.shadow = body, turret, facings, shadow
-        # Where the hull's ground shear is anchored (forward px): the mount, or the middle of several mounts.
-        self.shear_pivot = shear_pivot if shear_pivot is not None else turret_pivot
         self.cameo_heading = cameo_heading
         self.cameo_turret_yaw = cameo_with_turret_heading
         self.turret_pivot = turret_pivot
@@ -219,22 +217,15 @@ class VehicleSpec:
     def sprites(self):
         n = self.facings
         body = self.body()
-        # The engine puts the turret sprite at the pivot without shear: the hull is sheared about the pivot (its
-        # world y after the heading), so the turret stays on its mount. Several mounts (CA): about their middle.
-        rows = [[render(body, 360.0 * f / n, shadow=self.shadow, anchor=self.pivot_y(360.0 * f / n))] for f in range(n)]
+        # The hull is sheared about its centre; the game shears the turret offsets the same way (manifest
+        # groundShear, engine render.rs sheared_offset), so every mount (CA has two) carries its turret.
+        rows = [[render(body, 360.0 * f / n, shadow=self.shadow)] for f in range(n)]
         out = [Sprite(_sheet(rows, n), facings=n)]
         if self.turret:
             t = self.turret()
             trows = [[render(t, 360.0 * f / n)] for f in range(n)]
             out.append(Sprite(_sheet(trows, n), part='second', facings=n))
         return out
-
-    def pivot_y(self, heading):
-        """World y of the turret pivot (the shear anchor of the hull) at a heading; 0 without a turret."""
-        if not self.turret:
-            return 0.0
-        x, f = self.shear_pivot
-        return x * core.dsin(heading) - f * core.dcos(heading)
 
     def cameo(self):
         m = Unit()

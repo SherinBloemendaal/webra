@@ -26,7 +26,7 @@ import {
   unpackSprite,
 } from '../js/content/sequences.js';
 import { ACTOR_ART, FAKE_ACTORS, SEQUENCES, GRAPHICS_FILES, TERRAIN, ACTOR_PALETTE, RESOURCES } from '../js/content/tables.js';
-import { originalSlots, combineSlots, poseTable, compositeUnder, bibImage } from '../js/content/atlas.js';
+import { originalSlots, combineSlots, originalSlotInfo, ORIGINAL_INFO, poseTable, compositeUnder, bibImage } from '../js/content/atlas.js';
 import {
   originalTerrain,
   packTerrain,
@@ -764,6 +764,26 @@ test('priority: pack, then original content, then WebRA, with the second slot ru
   assert.equal(poseTable({}), null, 'no idle, no pose table');
 });
 
+test('classic packs: their actor slots are placed like pre-rendered art, sheared by the body\'s pack', () => {
+  const art = (name) => ({ name, images: [], poses: [] });
+  const classic = { name: 'C', perspective: 'classic', groundShear: -0.35, slots: new Map([[2, art('c2')], [3, art('c3')], [5, null], [9, art('c-special')]]) };
+  const flat = { name: 'F', perspective: 'flat', groundShear: 0, slots: new Map([[0, art('f0')], [1, art('f1')], [3, art('f3')]]) };
+  const r = combineSlots(4, { packs: [flat, classic] });
+  assert.equal(r.slots.get(3).name, 'f3', 'the first pack still wins');
+  assert.deepEqual([...r.classic].sort(), [[2, -0.35]], 'actor parts the classic pack draws; not hidden ones, not specials');
+  const info = originalSlotInfo(r.source, null, r.classic);
+  assert.deepEqual([...info.slots], [2]);
+  assert.deepEqual([...info.info], [ORIGINAL_INFO.SHEAR, 1, Math.round(-0.35 * 1024), 0], 'the shear of actor type 1 (its body slot)');
+  // Classic without a shear: placed the OpenRA way, no shear record.
+  const plain = combineSlots(4, { packs: [{ ...classic, groundShear: 0 }] });
+  const plainInfo = originalSlotInfo(plain.source, null, plain.classic);
+  assert.deepEqual([...plainInfo.slots], [2, 3]);
+  assert.equal(plainInfo.info.length, 0);
+  // Original slots and classic ones merge, sorted and once each.
+  const both = originalSlotInfo(new Map([[3, 'original'], [7, 'original']]), null, new Map([[2, 0], [3, 0]]));
+  assert.deepEqual([...both.slots], [2, 3, 7]);
+});
+
 test('original cameos come from the icon sequence, opaque, without team remap', () => {
   const files = syntheticGraphics();
   const pic = originalCameoPixels('1TNK', (n) => files.get(n) ?? null);
@@ -1200,6 +1220,12 @@ test('pack manifest: a valid example; cosmetic only (unknown keys such as rules 
   const ok = validateManifest(exampleManifest(), KNOWN);
   assert.deepEqual(ok.errors, []);
   assert.equal(ok.manifest.sprites[0].pose, 'idle');
+  assert.equal(ok.manifest.perspective, 'flat', 'placed like WebRA\'s flat art unless the pack says otherwise');
+  assert.equal(ok.manifest.groundShear, 0);
+  const classic = validateManifest(exampleManifest({ perspective: 'classic', groundShear: -0.35 }), KNOWN);
+  assert.deepEqual(classic.errors, []);
+  assert.deepEqual([classic.manifest.perspective, classic.manifest.groundShear], ['classic', -0.35]);
+  assert.deepEqual(validateManifest(ok.manifest, KNOWN).errors, [], 'a normalized manifest is valid again');
   for (const [patch, pattern] of [
     [{ rules: { actors: {} } }, /unknown key "rules"/],
     [{ format: 'zip' }, /format/],
@@ -1218,6 +1244,10 @@ test('pack manifest: a valid example; cosmetic only (unknown keys such as rules 
     [{ sprites: [{ actor: '1TNK', image: 'x.png', frameSize: [4, 4] }, { actor: '1TNK', image: 'y.png', frameSize: [4, 4] }] }, /twice/],
     [{ terrain: { clear: 'c.png' } }, /clear" and "water/],
     [{ sounds: { cannon: 'boom.exe' } }, /OGG, WAV or MP3/],
+    [{ perspective: 'isometric' }, /"perspective" must be one of flat, classic/],
+    [{ perspective: 'classic', groundShear: 2 }, /"groundShear" must be a number from -1 to 1/],
+    [{ perspective: 'classic', groundShear: '0.3' }, /"groundShear" must be a number/],
+    [{ groundShear: 0.3 }, /needs "perspective": "classic"/],
     [{ sprites: [], cameos: {}, terrain: undefined, sounds: {} }, /replaces nothing/],
   ]) {
     const r = validateManifest({ ...exampleManifest(), ...patch }, KNOWN);

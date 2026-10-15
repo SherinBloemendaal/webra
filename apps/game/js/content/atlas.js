@@ -761,14 +761,22 @@ function specialArt(spec, { files, tileset, lookup }) {
  * comment for the second-slot rule.
  * `layers` lists the second slots that are layers over a structure
  * (originalSlots `layers`) and came from the original graphics.
- * @returns {{ slots: Map<number, object | null>, source: Map<number, string>, layers: Set<number> }}
+ * `classic` maps the actor slots drawn by a pack with `perspective`
+ * 'classic' (packs.js PERSPECTIVES) to that pack's `groundShear`.
+ * @returns {{ slots: Map<number, object | null>, source: Map<number, string>, layers: Set<number>, classic: Map<number, number> }}
  */
 export function combineSlots(actorCount, { packs = [], original = null } = {}) {
   const slots = new Map();
   const source = new Map();
   const layers = new Set();
+  const classic = new Map();
   const fromPacks = (k) => {
-    for (const p of packs) if (p.slots.has(k)) return { art: p.slots.get(k), name: p.name ?? 'pack' };
+    for (const p of packs) {
+      if (!p.slots.has(k)) continue;
+      const art = p.slots.get(k);
+      if (art && p.perspective === 'classic') classic.set(k, p.groundShear ?? 0);
+      return { art, name: p.name ?? 'pack' };
+    }
     return null;
   };
   for (let t = 0; t < actorCount; t++) {
@@ -815,11 +823,11 @@ export function combineSlots(actorCount, { packs = [], original = null } = {}) {
       }
     }
   }
-  return { slots, source, layers };
+  return { slots, source, layers, classic };
 }
 
 /** Kinds of the records of originalSlotInfo `info` (engine/src/overlays.rs ORIGINAL_INFO_*). */
-export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2, FIRE: 3, FIRE_TAIL: 4 });
+export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2, FIRE: 3, FIRE_TAIL: 4, SHEAR: 5 });
 
 /**
  * What the engine needs to know about the original art in use
@@ -834,11 +842,19 @@ export const ORIGINAL_INFO = Object.freeze({ OVERLAY: 0, LEVEL: 1, SMOKE: 2, FIR
  * the original damage smoke (ORIGINAL_INFO.SMOKE: milliseconds per frame,
  * start frames, loop frames) and the tree fires (ORIGINAL_INFO.FIRE: size,
  * milliseconds per frame, start frames; FIRE_TAIL: size, loop and end frames).
- * `original` is originalSlots' result (or null).
+ * `original` is originalSlots' result (or null). `classic` (combineSlots)
+ * adds the actor slots of packs pre-rendered in the classic perspective:
+ * the engine places their turrets and rotors the same way, sheared like
+ * the art (ORIGINAL_INFO.SHEAR: actor type, shear in 1024ths, from the pack
+ * that draws the body).
  */
-export function originalSlotInfo(source, original = null) {
-  const slots = [...source].filter(([, from]) => from === 'original').map(([k]) => k).sort((a, b) => a - b);
+export function originalSlotInfo(source, original = null, classic = new Map()) {
+  const slots = [...new Set([...[...source].filter(([, from]) => from === 'original').map(([k]) => k), ...classic.keys()])].sort((a, b) => a - b);
   const info = [];
+  for (const [k, shear] of classic) {
+    const q = Math.round(shear * 1024);
+    if (k % 2 === 0 && q !== 0) info.push(ORIGINAL_INFO.SHEAR, k / 2, q, 0);
+  }
   for (const [t, fwd, side] of original?.unitOverlays ?? []) {
     if (source.get(2 * t + 1) === 'original') info.push(ORIGINAL_INFO.OVERLAY, t, fwd, side);
   }

@@ -103,7 +103,16 @@ export const POSE_NAMES = Object.freeze([
 ]);
 export const TERRAIN_CLASSES = Object.freeze(['clear', 'rough', 'rock', 'water', 'tree', 'ford']);
 export const PACK_BIOMES = Object.freeze(['temperate', 'snow', 'desert']);
-const TOP_KEYS = new Set(['format', 'formatVersion', 'name', 'author', 'version', 'license', 'description', 'sprites', 'cameos', 'terrain', 'sounds']);
+const TOP_KEYS = new Set(['format', 'formatVersion', 'name', 'author', 'version', 'license', 'description', 'perspective', 'groundShear', 'sprites', 'cameos', 'terrain', 'sounds']);
+
+/**
+ * How a pack's actor sprites were drawn (manifest `perspective`): 'flat' (the default) places turrets and rotors
+ * like WebRA's flat art; 'classic' art is pre-rendered in Red Alert's 3/4 camera like the original graphics, so
+ * they sit at OpenRA's offsets, shortened north to south (engine render.rs classic_offset) and helicopter rotors
+ * play their idle and move poses. `groundShear` (classic only) is the art's sideways lean: screen x moves this
+ * many world pixels per world pixel south (render.rs sheared_offset), at most 1 either way.
+ */
+export const PERSPECTIVES = Object.freeze(['flat', 'classic']);
 const SPRITE_KEYS = new Set(['actor', 'special', 'part', 'pose', 'image', 'teamMask', 'frameSize', 'facings', 'frames', 'fps', 'offset', 'scale', 'rotate', 'hidden']);
 const TERRAIN_KEYS = new Set(['biomes', 'tileSize', ...TERRAIN_CLASSES, 'ore', 'gems']);
 /** Files a pack may hold besides the manifest. */
@@ -161,11 +170,22 @@ export function validateManifest(raw, known = {}, limits = PACK_LIMITS) {
     version: text('version', 32, true),
     license: text('license', 64, true),
     description: text('description', 500, false),
+    perspective: 'flat',
+    groundShear: 0,
     sprites: [],
     cameos: {},
     terrain: null,
     sounds: {},
   };
+  if (raw.perspective !== undefined) {
+    if (!PERSPECTIVES.includes(raw.perspective)) err(`"perspective" must be one of ${PERSPECTIVES.join(', ')}`);
+    else m.perspective = raw.perspective;
+  }
+  if (raw.groundShear !== undefined) {
+    if (typeof raw.groundShear !== 'number' || !Number.isFinite(raw.groundShear) || Math.abs(raw.groundShear) > 1) err('"groundShear" must be a number from -1 to 1');
+    else if (raw.groundShear !== 0 && raw.perspective !== 'classic') err('"groundShear" needs "perspective": "classic"');
+    else m.groundShear = raw.groundShear;
+  }
   const files = new Set();
   const usePath = (where, p) => {
     const s = safePath(p);

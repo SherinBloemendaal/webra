@@ -183,6 +183,10 @@ def manifest_for(archive, sprites, cameos, aliases, terrain_files):
         'author': AUTHOR, 'version': VERSION, 'license': LICENSE, 'description': DESCRIPTION,
     }
     if archive == 'minimal3d':
+        # Drawn in the classic 3/4 camera with the ground shear: the game places turrets and rotors on their
+        # mounts the same way (docs/texture-packs.md, engine render.rs sheared_offset).
+        m['perspective'] = 'classic'
+        m['groundShear'] = core.GSHEAR
         m['sprites'] = sprite_list
         m['cameos'] = {k: cam[k] for k in sorted(cam)}
     if terrain_files:

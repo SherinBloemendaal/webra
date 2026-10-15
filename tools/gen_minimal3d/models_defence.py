@@ -6,6 +6,8 @@ Ported from the Verdediging3D board. Buildings are drawn in cells (see core.Buil
 all [0, 0] in rules.json); their bodies stay static. A wall actor is one 1x1 cell piece that must look right when
 many sit side by side: the segment runs the full width of the cell east-west, with no visible end caps. The pack
 format cannot select connection frames."""
+import math
+
 from core import Unit, dsin, dcos
 from specs import BuildingSpec
 from kit import barrel
@@ -152,7 +154,7 @@ def lrod(b):
     b.box(0.25, 0.25, 0.5, 0.5, 0.1, 'concrete')
     for x, y in ((-0.05, -0.05), (1.05, -0.05), (-0.05, 1.05), (1.05, 1.05)):
         dx, dy = x - 0.5, y - 0.5
-        l = (dx * dx + dy * dy) ** 0.5
+        l = math.sqrt(dx * dx + dy * dy)
         px, py = -dy / l * 0.025, dx / l * 0.025
         b.flat([(0.5 + px, 0.5 + py), (x + px, y + py), (x - px, y - py), (0.5 - px, 0.5 - py)], 0.003, 'copper')
     b.box(0.25, 0.75, 0.5, 0.03, 0.08, 'T', 0.02)

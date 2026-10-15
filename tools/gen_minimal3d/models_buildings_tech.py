@@ -5,21 +5,22 @@ Ported from the Tech3D design board to the game's 3/4 camera. Coordinates are ce
 translucent (alpha) and stay readable against the ground."""
 import math
 
+from core import dcos, dsin
 from specs import BuildingSpec
 
 
 def circ(cx, cy, r, n=12):
-    return [(cx + r * math.cos(i / n * math.pi * 2), cy + r * math.sin(i / n * math.pi * 2)) for i in range(n)]
+    return [(cx + r * dcos(360.0 * i / n), cy + r * dsin(360.0 * i / n)) for i in range(n)]
 
 
 def sector(cx, cy, r0, r1, a0, a1):
     pts = []
     for i in range(5):
         a = a0 + (a1 - a0) * i / 4
-        pts.append((cx + r1 * math.cos(a), cy + r1 * math.sin(a)))
+        pts.append((cx + r1 * dcos(a * 180.0 / math.pi), cy + r1 * dsin(a * 180.0 / math.pi)))
     for i in range(4, -1, -1):
         a = a0 + (a1 - a0) * i / 4
-        pts.append((cx + r0 * math.cos(a), cy + r0 * math.sin(a)))
+        pts.append((cx + r0 * dcos(a * 180.0 / math.pi), cy + r0 * dsin(a * 180.0 / math.pi)))
     return pts
 
 
@@ -106,8 +107,7 @@ def iron(b):
         b.box(x, y, 0.22, 0.22, 0.95, 'steel', 0.12)
         b.box(x, y, 0.22, 0.22, 0.06, 'T', 1.07)
     for deg in (200, 235, 270, 305, 340):
-        a = deg * math.pi / 180
-        b.box(1 + 0.62 * math.cos(a) - 0.09, 1 + 0.62 * math.sin(a) - 0.09, 0.18, 0.18, 0.8, 'steel2', 0.12)
+        b.box(1 + 0.62 * dcos(deg) - 0.09, 1 + 0.62 * dsin(deg) - 0.09, 0.18, 0.18, 0.8, 'steel2', 0.12)
     b.box(0.6, 0.75, 0.8, 0.65, 0.4, 'dark', 0.12)
     b.cyl(1, 1.07, 0.18, 0.1, 'darker', 0.52)
     b.cyl(1, 1.07, 0.1, 0.06, 'red', 0.62)

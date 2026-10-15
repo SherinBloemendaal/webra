@@ -312,13 +312,13 @@ export class ContentSystem {
       const r = packSlots(p.manifest, p.images, actors);
       report.problems.push(...r.problems.map((m) => `${p.manifest.name}: ${m}`));
       if (r.slots.size) {
-        packs.push({ slots: r.slots, name: p.manifest.name });
+        packs.push({ slots: r.slots, name: p.manifest.name, perspective: p.manifest.perspective, groundShear: p.manifest.groundShear });
         report.packs.push(p.manifest.name);
       }
     }
-    const { slots, source, layers } = combineSlots(actors.length, { packs, original });
+    const { slots, source, layers, classic } = combineSlots(actors.length, { packs, original });
     const pixelArt = slots.size > 0;
-    const info = originalSlotInfo(source, original);
+    const info = originalSlotInfo(source, original, classic);
     return { slots, source, layers, filter: pixelArt ? 'nearest' : 'linear', poses: pixelArt, original: info, report };
   }
 

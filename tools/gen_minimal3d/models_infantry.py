@@ -5,7 +5,6 @@ soldier. E1 carries every pose the engine knows (body idle, move, attack, stand2
 prone idle, move, attack). The others carry the required poses only (idle, move, attack, die1..die6, crushed and, for
 soldiers that take cover, prone idle, move, attack) to keep the atlas small. 8 facings; deaths have one. Pixels, nose
 towards +y, origin on the ground. The dog has its own four-legged skeleton."""
-import math
 
 from core import Unit, dsin, dcos
 from specs import InfantrySpec, Pose
@@ -295,7 +294,7 @@ def fall(look, t, kind):
         shirt = skin = pants = '#2a2622'
     if kind == 'zap':
         shirt = skin = pants = 'paint'
-    lift = 5 * math.sin(math.pi * min(1.0, t * 1.6)) if kind == 'blown' else 0
+    lift = 5 * dsin(180.0 * min(1.0, t * 1.6)) if kind == 'blown' else 0
     tt = min(1.0, t * 1.4)
     th = 4.6 * (1 - tt) + 2 * tt
     u.box(-2.4, -1.5 - 3 * tt, 4.8, 3 + 2 * tt, th, shirt, 4.2 * (1 - tt) + 0 * tt + lift)
@@ -368,7 +367,7 @@ def dog_fall(t, kind):
         main = light = dark = '#2a2622'
     if kind == 'zap':
         main = light = dark = 'paint'
-    lift = 4 * math.sin(math.pi * min(1.0, t * 1.6)) if kind == 'blown' else 0
+    lift = 4 * dsin(180.0 * min(1.0, t * 1.6)) if kind == 'blown' else 0
     tt = min(1.0, t * 1.4)
     u.box(-1.8 - 0.8 * tt, -5.4, 3.6 + 1.6 * tt, 9, 3.4 * (1 - tt) + 2.4 * tt, main, 2.6 * (1 - tt) + lift)
     for x, y in ((-1.9, 2.8), (0.7, 2.8), (-1.9, -4.6), (0.7, -4.6)):

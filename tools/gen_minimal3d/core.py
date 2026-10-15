@@ -39,7 +39,9 @@ PITCH = 654 / 1024  # engine render.rs CLASSIC_PITCH_SIN
 # its facade and looked flat. The shear is linear and applied AFTER a unit's heading rotation, so it holds in all
 # 32 facings, and a turret rendered with the same shear lines up with its body. Terrain tiles are not sheared.
 # The shear is anchored (see Model.anchor): a structure keeps its front edge exactly on its cells and leans
-# its back to the east; a unit keeps its centre.
+# its back to the east; a unit keeps its centre. The pack declares it (manifest groundShear) and the game shears
+# the offsets of turrets, rotors and muzzle flashes the same way (engine render.rs sheared_offset), so a part on
+# a mount ahead of or behind a unit's centre stays on it in every facing.
 GSHEAR = -0.35
 
 # Flat tones: brightness multiplier of the light, mid and dark face of a material.
@@ -448,8 +450,8 @@ def render(model, heading=0.0, zmax=None, shadow=False, team_rgb=None, res=RES, 
     """Render `model` turned `heading` degrees clockwise from north. Returns an Image cropped to its pixels.
     shadow: also cast a translucent shadow on the ground (units, trees and props). team_rgb: paint 'T' faces
     in this colour (cameos) instead of grey with a mask. zmax: hide everything above this height (make
-    animations). zoom: scale (cameos). anchor: world y the ground shear leaves in place (default model.anchor; a
-    turreted unit anchors its hull at the turret pivot, where the engine places the turret sprite). shear=False
+    animations). zoom: scale (cameos). anchor: world y the ground shear leaves in place (default model.anchor: a
+    structure's front edge, a unit's centre, where the game also anchors the offsets it shears). shear=False
     draws without the ground shear (bridges, which must meet the unsheared terrain)."""
     cs, sn = dcos(heading), dsin(heading)
     ay = (model.anchor if anchor is None else anchor) if shear else 0.0
