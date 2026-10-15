@@ -259,18 +259,24 @@ test('without anyone to talk to the panel shows the history with the line off; E
   uninstallDom();
 });
 
-test('Esc in a select list, stepper or tab row stays with that control while the chat is open', async () => {
+test('Esc in an open select list stays with the list; from tabs and steppers it still closes the chat', async () => {
   const { doc, p, byName } = await panel();
   byName('openGeneralChat').handler();
-  for (const role of ['listbox', 'spinbutton', 'tablist']) {
-    const box = doc.createElement('div');
-    box.setAttribute('role', role);
-    const inner = doc.createElement('span');
-    box.append(inner);
-    doc.body.append(box);
-    const esc = keydown(inner, 'Escape');
-    assert.equal(p.isOpen, true, `${role}: the chat stays open`);
-    assert.equal(esc.defaultPrevented, false, `${role}: the control gets the key`);
+  const box = doc.createElement('div');
+  box.setAttribute('role', 'listbox');
+  const inner = doc.createElement('span');
+  box.append(inner);
+  doc.body.append(box);
+  const esc = keydown(inner, 'Escape');
+  assert.equal(p.isOpen, true, 'the list gets the key');
+  assert.equal(esc.defaultPrevented, false);
+  for (const role of ['spinbutton', 'tablist']) {
+    byName('openGeneralChat').handler();
+    const ctl = doc.createElement('div');
+    ctl.setAttribute('role', role);
+    doc.body.append(ctl);
+    keydown(ctl, 'Escape');
+    assert.equal(p.isOpen, false, `${role}: Esc closes the chat`);
   }
   uninstallDom();
 });

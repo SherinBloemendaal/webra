@@ -124,8 +124,8 @@ export class ChatPanel {
     // its own keys (onInputKey).
     this.onWindowKey = (e) => {
       if (!this.isOpen || e.target === this.input || e.ctrlKey || e.altKey || e.metaKey) return;
-      // A select list, stepper or tab row (js/ui/controls.js) keeps its keys: Esc closes the list, not the chat.
-      if (e.target?.closest?.('[role="listbox"], [role="spinbutton"], [role="tablist"], .ui-sp-panel')) return;
+      // An open select list (js/ui/controls.js) closes on its own Esc, not the chat; tabs and steppers own only their arrows.
+      if (e.target?.closest?.('[role="listbox"], .ui-sp-panel')) return;
       if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey && this.input.disabled)) {
         e.preventDefault();
         e.stopImmediatePropagation();
