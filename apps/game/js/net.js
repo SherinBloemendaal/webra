@@ -104,6 +104,19 @@ export const api = {
     (await postJson(`/api/sessions/${encodeURIComponent(sessionId)}/resume`, saveText, true, memberHeader(member))).body,
   /** Host: share a map file with this session only. @returns {Promise<{id: string, hash: string}>} */
   shareSessionMap: async (sessionId, member, json) => (await postJson(sessionMapPath(sessionId), json, true, memberHeader(member))).body,
+  /** Players online and sessions per phase (protocol 8): `{ players, lobbies, games }`. */
+  online: async () => (await request('/api/online')).body,
+  /**
+   * Host: a new invite code for the lobby (the previous one stops working):
+   * `{ code: 'K7Q-2MX', expiresAt, path: '/join/K7Q-2MX' }`.
+   */
+  createInvite: async (sessionId, member) => (await postJson(`/api/sessions/${encodeURIComponent(sessionId)}/invite`, {}, false, memberHeader(member))).body,
+  /**
+   * The lobby an invite code names: `{ invite: { code, session, name, host, map, players, maxPlayers,
+   * spectators, maxSpectators, mode, locked, public, version, expiresAt } }`. Throws ApiError with
+   * status 404 (`not_found`, unknown), 410 (`expired`) or 429 (`rate_limited`, too many failed lookups).
+   */
+  lookupInvite: async (code) => (await request(`/api/invite/${encodeURIComponent(code)}`, { cache: 'no-store' })).body,
 };
 
 // ---- WebSocket ------------------------------------------------------------------
