@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.15.0](https://github.com/SherinBloemendaal/webra/compare/v0.14.0...v0.15.0) (2026-10-14)
+
+
+### Features
+
+* **engine:** add the factory loss lobby option ([363094d](https://github.com/SherinBloemendaal/webra/commit/363094dc36aad0252667af432f3837232837cdd9))
+* **engine:** queue through passes and defer boxed-in route searches ([e7a932d](https://github.com/SherinBloemendaal/webra/commit/e7a932dc7292fe1c26812a441bdbf21c87fd3d58))
+* **engine:** selling plays the make animation backwards before the refund like OpenRA ([d278e63](https://github.com/SherinBloemendaal/webra/commit/d278e635304520a3631ed6bd0f5d2be2ac957ac2))
+* **engine:** send damaged planes with the bulk repair order ([b2e740f](https://github.com/SherinBloemendaal/webra/commit/b2e740ff238c0325ea5b65b738473a731f3e4928))
+* **engine:** the Construction Yard packs up by playing its make animation backwards ([9330054](https://github.com/SherinBloemendaal/webra/commit/933005459110e547bba4ec942e6f42542d8fb35d))
+* **game:** make the menu screens full-width cards ([c44aba4](https://github.com/SherinBloemendaal/webra/commit/c44aba4aa32979652e520229d76ffcf8dd108f44))
+* **game:** save every game's replay to the signed-in account ([afa784c](https://github.com/SherinBloemendaal/webra/commit/afa784c88b382bc9c6091655153c0e85a1ca79ff))
+* **protocol:** bump the protocol version to 7 ([981204f](https://github.com/SherinBloemendaal/webra/commit/981204f2c26d0f32bb136d8c76b0ab7af1d467a3))
+* **server:** hash new passwords with 100,000 PBKDF2 iterations on the Paid plan ([1b440e9](https://github.com/SherinBloemendaal/webra/commit/1b440e92771469a4f971186a1a436e7655bc5717))
+* **server:** keep replays in accounts in an R2 bucket ([9dda4c2](https://github.com/SherinBloemendaal/webra/commit/9dda4c296a8b8b0757a49ef820be55286ba8b4fd))
+
+
+### Bug Fixes
+
+* **engine:** a yard unfolding again shows its make animation, paused pack-ups stay silent ([e528978](https://github.com/SherinBloemendaal/webra/commit/e528978ac1d64241e7f653562fd35ef6957340a6))
+* **engine:** bound waiting short of weapon range and follow at once ([f1da789](https://github.com/SherinBloemendaal/webra/commit/f1da78970dd249488a8953a05abd500bb0cd509e))
+* **engine:** cancel a finished unit that no structure makes ([a1c0406](https://github.com/SherinBloemendaal/webra/commit/a1c0406ac67f27178995bf6b527bc6a373054463))
+* **engine:** check placement against the true world state like OpenRA ([44ac35e](https://github.com/SherinBloemendaal/webra/commit/44ac35e8b5be7e14e954f6ce9a388c1f926fead1))
+* **engine:** exit production types and measured seed notes ([0a0ae47](https://github.com/SherinBloemendaal/webra/commit/0a0ae475b177a5e120745daab4daa55534064b05))
+* **engine:** fair route search budget and keep the cell a unit backs out to ([6cc5bfd](https://github.com/SherinBloemendaal/webra/commit/6cc5bfdaf14fdf4883f14096bc17b18241e98a88))
+* **engine:** follow OpenRA closer in placement checks and naval idle test ([317a80a](https://github.com/SherinBloemendaal/webra/commit/317a80a89e3f89a99a22b61f664dbcdc4bec0c7f))
+* **engine:** give units that rejoin a depot's line a fresh place ([6f69248](https://github.com/SherinBloemendaal/webra/commit/6f692487646fd78364c7a61af83a22c48daffc7e))
+* **engine:** hide the Lightning Rod from mission sidebars and keep bots powered ([30897eb](https://github.com/SherinBloemendaal/webra/commit/30897eb2d089ca288b05c6d59f12fc4f6befcc68))
+* **engine:** keep the depot pad held and the line clear of other ways ([a8c09ef](https://github.com/SherinBloemendaal/webra/commit/a8c09ef1697293910449c6826df622456f862e91))
+* **engine:** keep the Lightning Rod out of missions and calm bots in blackouts ([b6e8667](https://github.com/SherinBloemendaal/webra/commit/b6e86675eab614ed85ba3513e3021ee05e07f5aa))
+* **engine:** let a damaged vehicle on the depot join its line at any tick ([0c569d7](https://github.com/SherinBloemendaal/webra/commit/0c569d713f894efe6722a845d06f5b0be8bbe18f))
+* **engine:** let crates and cell triggers follow OpenRA's ActorMap ([fe8c128](https://github.com/SherinBloemendaal/webra/commit/fe8c12829d4cd3b96c3b4e02009e8203a6b8102c))
+* **engine:** move into weapon range toward the nearest cell in range ([efff0c9](https://github.com/SherinBloemendaal/webra/commit/efff0c99d947699ef0efb8cade81efd6a7704273))
+* **engine:** name only the faction's producers of a missing queue ([95ad50e](https://github.com/SherinBloemendaal/webra/commit/95ad50e45cf179b143765f465b1cb1327091c727))
+* **engine:** pick producers by the all tech production type ([5dbcce8](https://github.com/SherinBloemendaal/webra/commit/5dbcce88e1220ae1dbbd26e30cb02d8148f6fdad))
+* **engine:** retry crate drops in DropRange and block minefields like OpenRA ([a22b07a](https://github.com/SherinBloemendaal/webra/commit/a22b07a80991617bf81084c5a8c998fbb35c9bf5))
+* **engine:** script-created structures play the make animation, naval test seeds explained ([7de7caa](https://github.com/SherinBloemendaal/webra/commit/7de7caa4da631aa2f31e25db7a9bf3b892f8f806))
+* **engine:** share one cell occupancy rule and judge idle fleets per squad ([b90e0d2](https://github.com/SherinBloemendaal/webra/commit/b90e0d2cacc222151f0ecb266f3f140cf308961f))
+* **engine:** ships leave yards by the production exit rule ([b68a15b](https://github.com/SherinBloemendaal/webra/commit/b68a15b0a31401adca76615ee563fdd0b10cce8d))
+* **engine:** skip occupied minefield cells like OpenRA's LayMines ([c32cc30](https://github.com/SherinBloemendaal/webra/commit/c32cc304376ba3ca608e5b8a99250aef6ef8631f))
+* **game:** clear the corner buttons on the statistics and Load game cards ([d64eba6](https://github.com/SherinBloemendaal/webra/commit/d64eba6383efae4009b5b03197d2401d4853a170))
+* **game:** give the page edge scroll cursor a fallback value ([3af0e67](https://github.com/SherinBloemendaal/webra/commit/3af0e6766ead84d1a8a3f81aaad5f04dbabeeb39))
+* **game:** keep finger taps and drags out of window edge scrolling ([c03be45](https://github.com/SherinBloemendaal/webra/commit/c03be450218d300143082eff8a906aeea3e6d8cc))
+* **game:** remove the input listeners on dispose and rewrap the edge scroll docs ([70f4aa4](https://github.com/SherinBloemendaal/webra/commit/70f4aa4997e8952cc3bf36b5b507323d5709867e))
+* **game:** scroll the map at the window edge, over the sidebar too ([2d059a9](https://github.com/SherinBloemendaal/webra/commit/2d059a9269ea8b2a37b29d193f4a4a2a9db312cc))
+* **game:** show the account's Replays list as a screen card like Load game ([d071fd1](https://github.com/SherinBloemendaal/webra/commit/d071fd143f4dcfce27d80f5837ad86378e67215e))
+* **protocol:** keep a resumed lobby's save time within the Date range ([02a981a](https://github.com/SherinBloemendaal/webra/commit/02a981a82813b1645d757b1f4b547d93daa3e016))
+* **server:** harden replays in accounts after review ([54b0215](https://github.com/SherinBloemendaal/webra/commit/54b0215bf309c41fbd9369ccd06b2e5f56bf1798))
+
 ## [0.14.0](https://github.com/SherinBloemendaal/webra/compare/v0.13.0...v0.14.0) (2026-10-13)
 
 
