@@ -5,8 +5,10 @@
 //! storage level, and none of WebRA's own drawing is mixed in. Presentation
 //! only: the state hash never changes.
 
-use crate::overlays::{ORIGINAL_INFO_LEVEL, ORIGINAL_INFO_OVERLAY};
-use crate::render::{classic_offset, posed, Pose, SpriteIds, View, CLASSIC_PITCH_SIN, POSE_CODES, POSE_STRIDE, SPRITE_FLOATS};
+use crate::overlays::{ORIGINAL_INFO_LEVEL, ORIGINAL_INFO_OVERLAY, ORIGINAL_INFO_SHEAR};
+use crate::render::{
+    classic_offset, posed, sheared_offset, Pose, SpriteIds, View, CLASSIC_PITCH_SIN, POSE_CODES, POSE_STRIDE, SPRITE_FLOATS,
+};
 use crate::rules::Projectile as Flight;
 use crate::world::{cell_center, Effect, EffectKind, GameOptions, PlayerSetup, Projectile, World};
 
@@ -238,7 +240,8 @@ fn original_art_never_changes_the_simulation() {
         let mut w = world();
         if original {
             let slots: Vec<u32> = (0..w.rules.actors.len() as u32 * 2 + 60).collect();
-            w.render_opts.set_original_art(&slots, &[ORIGINAL_INFO_LEVEL, ty(&w, "SILO") as i32, 5, 0]);
+            let info = [ORIGINAL_INFO_LEVEL, ty(&w, "SILO") as i32, 5, 0, ORIGINAL_INFO_SHEAR, ty(&w, "HIND") as i32, -358, 0];
+            w.render_opts.set_original_art(&slots, &info);
         }
         w.spawn_unit(ty(&w, "HIND"), 0, cell_center(20), cell_center(20), 0);
         for _ in 0..50 {
@@ -262,4 +265,72 @@ fn classic_offsets_shorten_the_north_south_part_like_openra() {
     let right = classic_offset(0, 1024, 0);
     assert!((right[0] - 24.0).abs() < 1e-4 && right[1].abs() < 1e-4, "{right:?}");
     assert!((CLASSIC_PITCH_SIN - 654.0 / 1024.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn ground_shear_records_are_parsed_per_actor_type_and_clamped() {
+    let mut w = world();
+    let (ca, tran, dd) = (ty(&w, "CA") as i32, ty(&w, "TRAN") as i32, ty(&w, "DD") as i32);
+    w.render_opts
+        .set_original_art(&[], &[ORIGINAL_INFO_SHEAR, ca, -358, 0, ORIGINAL_INFO_SHEAR, tran, 5000, 0, ORIGINAL_INFO_SHEAR, dd, 0, 0]);
+    assert!((w.render_opts.ground_shear(ca as u16) + 358.0 / 1024.0).abs() < 1e-6);
+    assert_eq!(w.render_opts.ground_shear(tran as u16), 1.0, "at most one pixel sideways per pixel south");
+    assert_eq!(w.render_opts.ground_shear(dd as u16), 0.0, "no shear, no record");
+    assert_eq!(w.render_opts.ground_shears.len(), 2);
+    w.render_opts.set_original_art(&[], &[]);
+    assert!(w.render_opts.ground_shears.is_empty());
+}
+
+#[test]
+fn sheared_offsets_move_screen_x_with_the_north_south_part() {
+    let g = -0.35;
+    // Facing north, 1024 ahead is 24 px north: the shear moves it 8.4 px east (x + g * y, y south).
+    let north = sheared_offset(1024, 0, 0, g);
+    assert!((north[0] - 8.4).abs() < 1e-4 && (north[1] + 24.0 * CLASSIC_PITCH_SIN).abs() < 1e-4, "{north:?}");
+    // Facing east, nothing changes north to south.
+    let east = sheared_offset(1024, 0, 256, g);
+    assert!((east[0] - 24.0).abs() < 1e-4 && east[1].abs() < 1e-4, "{east:?}");
+    // Without a shear it is the classic offset.
+    for facing in [0, 100, 512, 900] {
+        assert_eq!(sheared_offset(-298, 64, facing, 0.0), classic_offset(-298, 64, facing));
+    }
+}
+
+#[test]
+fn sheared_art_keeps_both_cruiser_turrets_and_both_chinook_rotors_on_their_mounts() {
+    let mut w = world();
+    let (ca, tran) = (ty(&w, "CA"), ty(&w, "TRAN"));
+    let c = w.spawn_unit(ca, 0, cell_center(20), cell_center(20), 0);
+    let t = w.spawn_unit(tran, 0, cell_center(40), cell_center(20), 0);
+    let g = -358;
+    let slots = [ca as u32 * 2, ca as u32 * 2 + 1, tran as u32 * 2, tran as u32 * 2 + 1];
+    w.render_opts.set_original_art(&slots, &[ORIGINAL_INFO_SHEAR, ca as i32, g, 0, ORIGINAL_INFO_SHEAR, tran as i32, g, 0]);
+    let shear = g as f32 / 1024.0;
+    for facing in [0, 128, 256, 640] {
+        for i in [c, t] {
+            w.actors[i].facing = facing;
+            w.actors[i].pfacing = facing;
+        }
+        let all = sprites(&w);
+        let parts = |id: u16| {
+            // The opaque body (an aircraft also has a faint shadow of it on the ground).
+            let body = all.iter().find(|s| unpack(s[3]).0 == id as u32 * 2 && s[6] == 1.0).expect("the body")[..2].to_vec();
+            let mut at: Vec<[f32; 2]> = in_slot(&all, id as u32 * 2 + 1).iter().map(|s| [s[0] - body[0], s[1] - body[1]]).collect();
+            at.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            at
+        };
+        let want = |offsets: &[i32]| {
+            let mut at: Vec<[f32; 2]> = offsets.iter().map(|&o| sheared_offset(o, 0, facing, shear)).collect();
+            at.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            at
+        };
+        let close = |a: &[[f32; 2]], b: &[[f32; 2]]| {
+            a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (p[0] - q[0]).abs() < 1e-3 && (p[1] - q[1]).abs() < 1e-3)
+        };
+        let (got, expect) = (parts(ca), want(&[-896, 768]));
+        assert!(close(&got, &expect), "CA facing {facing}: {got:?} {expect:?}");
+        // The rotors sit on the fuselage (both are lifted by the altitude alike).
+        let (got, expect) = (parts(tran), want(&[597, -597]));
+        assert!(close(&got, &expect), "TRAN facing {facing}: {got:?} {expect:?}");
+    }
 }
