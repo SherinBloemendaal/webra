@@ -3727,7 +3727,13 @@ mission of `COOP_MISSIONS` with this version's file, every player a person.
   the stored hashes ("this replay no longer matches the game from m:ss").
   The viewer plays, pauses, runs at 1x to 8x, seeks by re-simulating
   (backwards from in-memory snapshots, `Game.snapshot`), and switches between
-  the whole map and each player's view with the observer stats.
+  the whole map and each player's view with the observer stats. Its bar
+  (`js/records.js` ReplayBar) has Download (the file as it was opened,
+  `downloadReplayFile`) and Exit, and marks on the seek bar for the part
+  already watched (`js/replaymarks.js`, from `Game.observer_stats`): a
+  player defeated (at `defeatedAt`), a structure destroyed, heavy fighting
+  (6 or more units lost within 250 ticks); frames more than 125 ticks apart
+  (a seek) count no losses. Presentation only.
 - Restart (`js/gamesession.js`): single player games, loaded saves and the
   map editor's test play restart from tick 0 with the same options and map
   in the page. The loading screen shows at once; the game is left (its
@@ -3747,7 +3753,12 @@ mission of `COOP_MISSIONS` with this version's file, every player a person.
   last tick. Loading re-simulates it (fast-forward with progress), refuses it
   when a stored hash does not match, then play continues and the recording
   goes on from the save. Saves go to the browser (IndexedDB database
-  `webra`, store `saves`, at most 50) or to a file.
+  `webra`, store `saves`, at most 50) or to a file. A row keeps, besides
+  the header fields, `summary` (`saveSummary`: the map's name, the players
+  as `replaySummary` lists them, a mission's id and difficulty) and `thumb`
+  (`js/savethumb.js`: the map's terrain as the radar draws it, a PNG, WebP or
+  JPEG data URL of at most 8192 characters, else null); rows from before
+  0.17 have neither and show without them.
 - An online save (mode `online`, with `online.id`) ends right after a hash
   tick (`ticks - 1` is a multiple of 25) and is never loaded alone: it is
   resumed online with its players (section 4, "Online saves").
