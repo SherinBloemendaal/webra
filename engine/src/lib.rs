@@ -1608,9 +1608,11 @@ impl Game {
         }
     }
 
-    pub fn cancel_production(&mut self, player: u8, actor: &str) {
+    /// Cancel the last `count` queued `actor` items (OpenRA CancelProduction:
+    /// one with a right click, five with Shift).
+    pub fn cancel_production(&mut self, player: u8, actor: &str, count: i32) {
         if let Some(ty) = self.world.rules.actor_index(actor) {
-            self.submit(Order::CancelProduction { player, ty: ty as u16 });
+            self.submit(Order::CancelProduction { player, ty: ty as u16, count });
         }
     }
 
@@ -1661,7 +1663,7 @@ impl Game {
                     .iter()
                     .map(|it| {
                         let progress = if it.total > 0 { (it.total - it.remaining) as f32 / it.total as f32 } else { 0.0 };
-                        json!({"id": w.rules.actors[it.ty as usize].id, "progress": progress, "done": it.done, "paused": it.paused, "started": it.paid > 0})
+                        json!({"id": w.rules.actors[it.ty as usize].id, "progress": progress, "done": it.done, "paused": it.paused, "started": it.paid > 0, "paid": it.paid})
                     })
                     .collect::<Vec<_>>()
             })
@@ -1683,6 +1685,8 @@ impl Game {
                     "buildTicks": w.build_time_with(player, t as u16, w.producer_count_in(&factories, t as u16)),
                     // Buildable.BuildLimit: how many more may be queued (null: no limit).
                     "limitLeft": Some(w.build_limit_left(player, t as u16)).filter(|&n| n != i32::MAX),
+                    // ProductionQueue ItemLimit: how many more of it the queue takes (null: the "all tech" cheat).
+                    "itemRoom": w.item_room(player, t as u16),
                     // ProductionIconOverlayManager: the cameo's overlays ("Veterancy": produced with a level).
                     "overlays": w.production_overlays(player, t as u16),
                 })

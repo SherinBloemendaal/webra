@@ -132,7 +132,8 @@ const ORDER_SCHEMA = {
   attack: { ids: idList, target: u32 },
   stop: { ids: idList },
   start_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), count: (v, w) => int(v, 1, ORDER_MAX_COUNT, w) },
-  cancel_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w) },
+  // OpenRA CancelProduction's count (right click 1, Shift 5); without one the engine cancels 1.
+  cancel_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), count: optional((v, w) => int(v, 1, ORDER_MAX_COUNT, w)) },
   // engine/src/production.rs: put the first queued item of a type on hold or resume it.
   pause_production: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), paused: bool },
   place: { ty: (v, w) => int(v, 0, ACTOR_TYPE_MAX, w), cx: i32, cy: i32 },

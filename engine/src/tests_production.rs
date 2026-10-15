@@ -106,11 +106,11 @@ fn structures_queue_and_wait_for_placement_one_at_a_time() {
     assert!(items[0].paid > 0 && !items[0].done, "the second one is being built");
     // Right click cancels the last queued one (nothing paid yet), then the one
     // in progress, refunding what it cost so far.
-    w.queue_order(Order::CancelProduction { player: 0, ty: powr });
+    w.queue_order(Order::CancelProduction { player: 0, ty: powr, count: 1 });
     run(&mut w, 1);
     assert_eq!(w.players[0].queues[BQ].items.len(), 1);
     assert!(w.players[0].queues[BQ].items[0].paid > 0, "the one in progress stayed");
-    w.queue_order(Order::CancelProduction { player: 0, ty: powr });
+    w.queue_order(Order::CancelProduction { player: 0, ty: powr, count: 1 });
     run(&mut w, 1);
     assert!(w.players[0].queues[BQ].items.is_empty());
     assert_eq!(100_000 - w.players[0].funds(), 300, "net cost: only the placed power plant");
@@ -124,7 +124,7 @@ fn a_ready_structure_cancelled_refunds_its_full_cost() {
     w.queue_order(Order::StartProduction { player: 0, ty: powr, count: 1 });
     run_until_done(&mut w, 0, BQ);
     assert_eq!(w.players[0].funds(), 9_700);
-    w.queue_order(Order::CancelProduction { player: 0, ty: powr });
+    w.queue_order(Order::CancelProduction { player: 0, ty: powr, count: 1 });
     run(&mut w, 1);
     assert!(w.players[0].queues[BQ].items.is_empty());
     assert_eq!(w.players[0].funds(), 10_000);
@@ -799,4 +799,130 @@ fn missing_producers_are_named_for_the_faction() {
         let labels: Vec<String> = w.requirements(0, e1).into_iter().map(|r| r.label).collect();
         assert_eq!(labels, vec![want.to_string()], "{faction}");
     }
+}
+
+// ---- Queueing without money, shift +5/-5 (OpenRA ProductionQueue) ----------------
+
+const IQ: usize = QueueType::Infantry as usize;
+
+/// `base` with a barracks in the open, so riflemen can leave it.
+fn infantry_base(w: &mut World) {
+    base(w, 0, "TENT");
+    let (x, y) = spot(w, 0, "TENT");
+    w.spawn_building(ty(w, "TENT"), 0, x, y).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+}
+
+#[test]
+fn items_queue_without_money_and_build_once_it_comes_in() {
+    let mut w = World::new(31, 80, &[("allies", false), ("soviet", false)]);
+    infantry_base(&mut w);
+    w.players[0].cash = 0;
+    w.players[0].resources = 0;
+    let e1 = ty(&w, "E1");
+    // Seven shift clicks: 35 riflemen, more than the old cap of 30 per queue.
+    for _ in 0..7 {
+        w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 5 });
+    }
+    run(&mut w, 1);
+    assert_eq!(w.players[0].queues[IQ].items.len(), 35, "every item queued with no credits");
+    assert!(w.can_start(0, e1), "money never stops queueing");
+    // Production waits for money (OpenRA ProductionItem.Tick: TakeCash fails).
+    run(&mut w, 200);
+    let items = &w.players[0].queues[IQ].items;
+    assert_eq!(items.len(), 35);
+    assert_eq!(items[0].paid, 0);
+    assert_eq!(items[0].remaining, items[0].total, "no progress without credits");
+    assert_eq!(count(&w, 0, "E1"), 0);
+    // Once the money arrives it resumes on its own.
+    w.players[0].cash = 1_000;
+    run(&mut w, 600);
+    assert!(count(&w, 0, "E1") >= 1, "the first rifleman was trained");
+    assert!(w.players[0].queues[IQ].items.len() < 35);
+}
+
+#[test]
+fn production_pauses_mid_item_while_money_is_short_and_resumes() {
+    let mut w = World::new(32, 80, &[("allies", false), ("soviet", false)]);
+    infantry_base(&mut w);
+    let e1 = ty(&w, "E1");
+    // Enough for part of one rifleman (cost 100).
+    w.players[0].cash = 40;
+    w.players[0].resources = 0;
+    w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 1 });
+    run(&mut w, 400);
+    let it = w.players[0].queues[IQ].items[0].clone();
+    assert!(it.paid > 0 && it.paid <= 40, "paid what there was: {}", it.paid);
+    assert!(!it.done && it.remaining > 0);
+    let stalled = it.remaining;
+    run(&mut w, 50);
+    assert_eq!(w.players[0].queues[IQ].items[0].remaining, stalled, "stalled while short");
+    w.players[0].cash += 100;
+    run(&mut w, 400);
+    assert_eq!(count(&w, 0, "E1"), 1);
+    assert_eq!(w.players[0].funds(), 40, "paid 100 in all");
+}
+
+#[test]
+fn cancel_with_a_count_removes_the_last_items_and_refunds_partly_paid_ones() {
+    let mut w = World::new(33, 80, &[("allies", false), ("soviet", false)]);
+    infantry_base(&mut w);
+    let (e1, e3) = (ty(&w, "E1"), ty(&w, "E3"));
+    let start = w.players[0].funds();
+    w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 4 });
+    w.queue_order(Order::StartProduction { player: 0, ty: e3, count: 2 });
+    w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 3 });
+    run(&mut w, 40);
+    let head = w.players[0].queues[IQ].items[0].clone();
+    assert!(head.ty == e1 && head.paid > 0 && !head.done, "the head is partly paid");
+    assert_eq!(start - w.players[0].funds(), head.paid);
+    // Shift + right click: the last five riflemen go, last first; the
+    // rocket soldiers between them stay.
+    w.queue_order(Order::CancelProduction { player: 0, ty: e1, count: 5 });
+    run(&mut w, 1);
+    assert_eq!(queue_ids(&w, 0, IQ), ["E1", "E1", "E3", "E3"]);
+    // Five more: only two riflemen are left, the partly paid head among
+    // them, and what it cost so far comes back.
+    w.queue_order(Order::CancelProduction { player: 0, ty: e1, count: 5 });
+    run(&mut w, 1);
+    assert_eq!(queue_ids(&w, 0, IQ), ["E3", "E3"]);
+    let paid_e3: i32 = w.players[0].queues[IQ].items.iter().map(|it| it.paid).sum();
+    assert_eq!(start - w.players[0].funds(), paid_e3, "the rifleman's payment was refunded");
+}
+
+#[test]
+fn an_order_without_a_cancel_count_cancels_one_and_counts_are_capped() {
+    let o: Order = serde_json::from_str(r#"{"o":"cancel_production","player":0,"ty":3}"#).unwrap();
+    assert!(matches!(o, Order::CancelProduction { count: 1, .. }), "older clients and replays cancel one");
+    assert!(o.is_reasonable());
+    let o: Order = serde_json::from_str(r#"{"o":"cancel_production","player":0,"ty":3,"count":5}"#).unwrap();
+    assert!(matches!(o, Order::CancelProduction { count: 5, .. }) && o.is_reasonable());
+    for bad in [0, -1, 51] {
+        assert!(!Order::CancelProduction { player: 0, ty: 3, count: bad }.is_reasonable(), "count {bad}");
+    }
+}
+
+#[test]
+fn a_queue_takes_up_to_item_limit_of_one_type_unless_all_tech() {
+    let mut w = World::new(34, 80, &[("allies", false), ("soviet", false)]);
+    infantry_base(&mut w);
+    let (e1, e3) = (ty(&w, "E1"), ty(&w, "E3"));
+    for _ in 0..21 {
+        w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 50 });
+    }
+    run(&mut w, 1);
+    let n = |w: &World, t: u16| w.players[0].queues[IQ].items.iter().filter(|it| it.ty == t).count() as i32;
+    assert_eq!(n(&w, e1), crate::production::ITEM_LIMIT, "OpenRA ItemLimit 999");
+    assert!(!w.can_start(0, e1));
+    assert_eq!(w.item_room(0, e1), Some(0));
+    // The limit is per type: the queue itself has none (QueueLimit 0).
+    w.queue_order(Order::StartProduction { player: 0, ty: e3, count: 5 });
+    run(&mut w, 1);
+    assert_eq!(n(&w, e3), 5);
+    w.players[0].dev.all_tech = true;
+    assert_eq!(w.item_room(0, e1), None);
+    w.queue_order(Order::StartProduction { player: 0, ty: e1, count: 2 });
+    run(&mut w, 1);
+    assert_eq!(n(&w, e1), crate::production::ITEM_LIMIT + 2, "the all tech cheat lifts it");
 }

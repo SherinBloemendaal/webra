@@ -163,6 +163,8 @@ test('orders and hash', () => {
     { o: 'attack', player: 1, ids: [3], target: 9 },
     { o: 'stop', player: 1, ids: [3] },
     { o: 'cancel_production', player: 1, ty: 0 },
+    // Shift + right click (OpenRA CancelProduction count 5).
+    { o: 'cancel_production', player: 1, ty: 0, count: 5 },
     { o: 'pause_production', player: 1, ty: 3, paused: true },
     { o: 'pause_production', player: 1, ty: 3, paused: false },
     { o: 'place', player: 1, ty: 2, cx: 5, cy: 6 },
@@ -208,6 +210,7 @@ test('orders and hash', () => {
   const nuke = { o: 'support_power', player: 0, key: 'NukePower', x: 5, y: 6 };
   assert.deepEqual(ok({ t: 'orders', tick: 3, orders: [{ ...nuke, x2: null, y2: null }] }).orders[0], nuke);
   bad({ t: 'orders', tick: 3, orders: [{ o: 'start_production', player: 0, ty: 1, count: 51 }] });
+  for (const count of [0, 51, 2.5, '5']) bad({ t: 'orders', tick: 3, orders: [{ o: 'cancel_production', player: 0, ty: 1, count }] });
   bad({ t: 'orders', tick: 3, orders: [{ o: 'lay_mines', player: 0, ids: [1], x0: 0, y0: 0, x1: 63, y1: 63 }] }, /minefield/);
   // Command bar orders (engine/src/commands.rs).
   bad({ t: 'orders', tick: 3, orders: [{ o: 'set_stance', player: 0, ids: [1], stance: 'aggressive' }] }, /unsupported value/);

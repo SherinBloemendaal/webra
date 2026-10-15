@@ -203,7 +203,7 @@ fn build_limits_hold_owned_and_queued_ones() {
     assert_eq!(w.build_limit_left(0, mslo), 0, "the queued one counts");
     w.start_production(0, mslo, 1);
     assert_eq!(w.players[0].queues[q].items.len(), 1);
-    w.cancel_production(0, mslo);
+    w.cancel_production(0, mslo, 1);
     assert_eq!(w.build_limit_left(0, mslo), 1);
     // An owned one counts too.
     let (sx, sy) = w.players[0].start;

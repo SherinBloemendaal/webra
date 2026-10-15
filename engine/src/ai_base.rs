@@ -290,7 +290,7 @@ fn tick_queue(w: &mut World, player: u8, cfg: &BotConfig, idx: usize) -> bool {
                 q.fail_count += 1;
                 if q.fail_count >= bb.maximum_failed_placement_attempts {
                     q.last_failed = Some(item.ty);
-                    w.cancel_production(player, item.ty);
+                    w.cancel_production(player, item.ty, 1);
                 }
                 return true;
             };

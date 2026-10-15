@@ -184,7 +184,7 @@ fn economy_production_and_combat_counters() {
     assert_eq!(w.player_detail(0).built.get(&jeep), Some(&2));
     w.queue_order(Order::StartProduction { player: 0, ty: jeep, count: 1 });
     run(&mut w, 20);
-    w.queue_order(Order::CancelProduction { player: 0, ty: jeep });
+    w.queue_order(Order::CancelProduction { player: 0, ty: jeep, count: 1 });
     run(&mut w, 2);
     assert_eq!(w.player_stats(0).spent, 2 * cost, "the cancelled jeep's payments were refunded");
     // Selling.

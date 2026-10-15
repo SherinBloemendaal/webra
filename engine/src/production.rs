@@ -6,8 +6,11 @@ use crate::rules::{Kind, QueueType};
 use crate::sound_events::{SoundEventKind, SOLD_STARTED};
 use crate::world::{cell_center, Activity, Effect, EffectKind, QueueItem, World, NONE};
 
-/// Most items a single queue holds.
-const MAX_QUEUED: usize = 30;
+/// Most items of one actor type a queue holds: OpenRA ProductionQueueInfo
+/// ItemLimit (999, which Red Alert's player.yaml keeps). Its QueueLimit, the
+/// cap on all items of a queue, is 0 there: no cap. The "all tech" cheat
+/// lifts both, like OpenRA's developer mode AllTech.
+pub const ITEM_LIMIT: i32 = 999;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Requirement {
@@ -357,29 +360,47 @@ impl World {
     }
 
     /// Whether `player` can queue one more `ty`: `can_produce` within its
-    /// Buildable.BuildLimit (`build_limit_left`). Items already queued are not
-    /// cancelled by the limit.
+    /// Buildable.BuildLimit and the queue's ItemLimit (`queue_room`). Items
+    /// already queued are not cancelled by the limits. Money plays no part:
+    /// items queue without credits and wait for them (`tick_production`).
     pub fn can_start(&self, player: u8, ty: u16) -> bool {
-        self.can_produce(player, ty) && self.build_limit_left(player, ty) > 0
+        self.can_produce(player, ty) && self.queue_room(player, ty) > 0
     }
 
-    /// Queue `count` items of `ty`. Structures queue like units (OpenRA): only
-    /// the first item is built, and a finished structure waits for placement
+    /// Queue `count` items of `ty` (OpenRA ProductionQueue StartProduction):
+    /// as many as fit under Buildable.BuildLimit and ItemLimit, whatever
+    /// the player's credits. Structures queue like units (OpenRA): only the
+    /// first item is built, and a finished structure waits for placement
     /// while the items behind it wait too.
     pub fn start_production(&mut self, player: u8, ty: u16, count: i32) {
         if ty as usize >= self.rules.actors.len() || !self.can_start(player, ty) {
             return;
         }
-        // OpenRA ProductionQueue StartProduction: Buildable.BuildLimit counts owned and queued ones.
-        let count = count.max(1).min(self.build_limit_left(player, ty));
+        let count = count.max(1).min(self.queue_room(player, ty));
         let q = self.rules.actors[ty as usize].queue;
         let queue = &mut self.players[player as usize].queues[q as usize];
         for _ in 0..count {
-            if queue.items.len() >= MAX_QUEUED {
-                return;
-            }
             queue.items.push(QueueItem { ty, total: 0, remaining: 0, paid: 0, slow: 0, done: false, paused: false });
         }
+    }
+
+    /// How many more of `ty` `player` may queue: OpenRA StartProduction's
+    /// `fromLimit`, the smaller of ItemLimit minus those queued and
+    /// Buildable.BuildLimit minus those owned and queued (`build_limit_left`).
+    /// `i32::MAX` with the "all tech" cheat.
+    pub fn queue_room(&self, player: u8, ty: u16) -> i32 {
+        self.item_room(player, ty).unwrap_or(i32::MAX).min(self.build_limit_left(player, ty))
+    }
+
+    /// How many more of `ty` its queue takes under ItemLimit (None with the
+    /// "all tech" cheat, which lifts it).
+    pub fn item_room(&self, player: u8, ty: u16) -> Option<i32> {
+        if self.players[player as usize].dev.all_tech {
+            return None;
+        }
+        let q = self.rules.actors[ty as usize].queue as usize;
+        let queued = self.players[player as usize].queues[q].items.iter().filter(|it| it.ty == ty).count() as i32;
+        Some((ITEM_LIMIT - queued).max(0))
     }
 
     /// How many more of `ty` `player` may queue under its Buildable.BuildLimit
@@ -407,19 +428,20 @@ impl World {
         }
     }
 
-    /// Remove the last queued item of this type; refund what was paid for it.
-    pub fn cancel_production(&mut self, player: u8, ty: u16) {
-        if ty as usize >= self.rules.actors.len() {
+    /// OpenRA CancelProduction(item, count): remove the last `count` queued
+    /// items of this type, last first, refunding what was paid for each (a
+    /// partly built one what it cost so far, a finished one in full).
+    pub fn cancel_production(&mut self, player: u8, ty: u16, count: i32) {
+        if ty as usize >= self.rules.actors.len() || player as usize >= self.players.len() {
             return;
         }
-        let q = self.rules.actors[ty as usize].queue;
-        let queue = &mut self.players[player as usize].queues[q as usize];
-        if let Some(pos) = queue.items.iter().rposition(|it| it.ty == ty) {
-            let item = queue.items.remove(pos);
-            self.refund(player, item.paid);
-            self.note_production_refund(player, item.paid);
-            if pos == 0 {
-                self.sound.unblock(player, q as usize);
+        let qi = self.rules.actors[ty as usize].queue as usize;
+        for _ in 0..count.max(1) {
+            if !self.players[player as usize].queues[qi].items.iter().any(|it| it.ty == ty) {
+                break;
+            }
+            if self.cancel_last_of(player, qi, ty) {
+                self.sound.unblock(player, qi);
             }
         }
     }
@@ -464,9 +486,19 @@ impl World {
             let producer = !q.is_structure() || self.has_producer(player, q);
             // Back to front, so removing an item does not shift the ones still to check.
             let mut cancelled = None;
+            // A queue may hold hundreds of items of a few types: ask once per type.
+            let mut checked: Vec<(u16, bool)> = Vec::new();
             for i in (0..self.players[player as usize].queues[qi].items.len()).rev() {
                 let ty = self.players[player as usize].queues[qi].items[i].ty;
-                if producer && self.availability(player, ty).enabled {
+                let buildable = match checked.iter().find(|c| c.0 == ty) {
+                    Some(&(_, ok)) => ok,
+                    None => {
+                        let ok = producer && self.availability(player, ty).enabled;
+                        checked.push((ty, ok));
+                        ok
+                    }
+                };
+                if buildable {
                     continue;
                 }
                 let item = self.players[player as usize].queues[qi].items.remove(i);
