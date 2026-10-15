@@ -143,36 +143,54 @@ export function loudness(out, sr, window = 0.05) {
  * loudness]) with the short fade-out of normalize().
  */
 function finish(sr, out, [peak, loud], { drive = 0, hz = 0, bits = 0 } = {}) {
-  normalize(out, 1);
-  if (drive > 0) {
-    const k = 1 / softClip(drive);
-    for (let i = 0; i < out.length; i++) out[i] = softClip(out[i] * drive) * k;
-  }
-  if (hz && hz < sr) {
-    // Sample and hold: the steps alias like a low-rate sample; a gentle low-pass takes the edge off them.
-    const step = hz / sr;
-    const lp = lowpass(sr, hz * 0.45);
-    let acc = 1;
-    let held = 0;
-    for (let i = 0; i < out.length; i++) {
+  // One pass does it all (the filters inlined), then one scales: every effect goes through here.
+  let max = 0;
+  for (let i = 0; i < out.length; i++) max = Math.max(max, Math.abs(out[i]));
+  if (!max) return out;
+  const gain = 1 / max;
+  const clip = drive > 0 ? 1 / softClip(drive) : 1;
+  // Sample and hold: the steps alias like a low-rate sample; a gentle low-pass takes the edge off them.
+  const hold = hz && hz < sr;
+  const step = hz / sr;
+  const cl = 1 - Math.exp((-TAU * hz * 0.45) / sr);
+  const q = bits ? 2 ** (bits - 1) : 0;
+  // A thud's falling sine leaves a little DC: a 15 Hz high-pass takes it out (no click as the sound starts or stops).
+  const ch = 1 - Math.exp((-TAU * 15) / sr);
+  const window = Math.max(1, Math.round(sr * 0.05));
+  let acc = 1;
+  let held = 0;
+  let yl = 0;
+  let yh = 0;
+  let top = 0;
+  let energy = 0;
+  let loudest = 0;
+  for (let i = 0; i < out.length; i++) {
+    let x = out[i] * gain;
+    if (drive > 0) x = softClip(x * drive) * clip;
+    if (hold) {
       acc += step;
       if (acc >= 1) {
         acc -= 1;
-        held = out[i];
+        held = x;
       }
-      out[i] = lp(held);
+      x = yl += cl * (held - yl);
     }
+    if (q) x = Math.round(x * q) / q;
+    yh += ch * (x - yh);
+    x -= yh;
+    out[i] = x;
+    top = Math.max(top, Math.abs(x));
+    // The loudness (loudness()) of the result, before the final scale.
+    energy += x * x;
+    if (i >= window) energy -= out[i - window] * out[i - window];
+    loudest = Math.max(loudest, energy);
   }
-  if (bits) {
-    const q = 2 ** (bits - 1);
-    for (let i = 0; i < out.length; i++) out[i] = Math.round(out[i] * q) / q;
-  }
-  // A thud's falling sine leaves a little DC: a 15 Hz high-pass takes it out (no click as the sound starts or stops).
-  const hp = highpass(sr, 15);
-  for (let i = 0; i < out.length; i++) out[i] = hp(out[i]);
-  normalize(out, peak);
-  const now = loudness(out, sr);
-  if (now > loud) for (let i = 0; i < out.length; i++) out[i] *= loud / now;
+  const rms = Math.sqrt(loudest / Math.min(window, out.length));
+  const k = Math.min(peak / top, loud / rms);
+  const fade = Math.min(out.length, 64);
+  for (let i = 0; i < out.length; i++) out[i] *= k;
+  // Short fade-out against clicks, as normalize() does.
+  for (let i = 0; i < fade; i++) out[out.length - 1 - i] *= i / fade;
   return out;
 }
 
@@ -292,6 +310,7 @@ function rumble(sr, r, { seconds, bright, dark, darken, tau, a = 0.003, grain = 
  */
 function crackle(sr, r, { seconds, rate, tau, tone: hz, q = 1.4 }) {
   const out = buffer(sr, seconds);
+  let last = 0;
   for (let t = 0; ; ) {
     const now = rate * Math.exp(-t / tau);
     if (now < 0.05) break;
@@ -299,9 +318,12 @@ function crackle(sr, r, { seconds, rate, tau, tone: hz, q = 1.4 }) {
     const i = Math.round(t * sr);
     if (i >= out.length) break;
     out[i] = (r() * 2 - 1) * 8;
+    last = i;
   }
+  // After the last pop the band-pass rings out within 30 ms; the rest stays silent.
   const bp = bandpass(sr, hz, q);
-  for (let i = 0; i < out.length; i++) out[i] = bp(out[i]);
+  const end = Math.min(out.length, last + Math.round(sr * 0.03));
+  for (let i = 0; i < end; i++) out[i] = bp(out[i]);
   return out;
 }
 
