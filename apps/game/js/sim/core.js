@@ -7,13 +7,15 @@
 //
 // The main thread drives it with messages (docs/contracts.md, section 8):
 //   start(spec)          create the game and its driver; returns static facts
+//                        (`held: true`: the game stands at tick 0 until `begin`)
 //   call(method, args)   an order or a selection / hover change
 //   query(method, args)  a read-only Game query
 //   step(request)        advance by the frame's wall time, build the render data
 //                        (per frame: instances; `instances: 'gpu'`: tick-rate
 //                        records for the GPU instance pass, only when they change)
 //   command(name, args)  network, replay, recorder and debug controls
-//                        (`background`: a hidden local game ticks on a timer, see below)
+//                        (`background`: a hidden local game ticks on a timer, see below;
+//                        `begin`: a held game starts, see `held`)
 // Events (network sends, caught up, hash check) go out through `emit`.
 
 import { LockstepDriver } from '../net.js';
@@ -83,6 +85,16 @@ export class SimCore {
     this.acc = 0;
     this.simMs = 0;
     this.hidden = false;
+    /**
+     * The game waits for its start (`start` with `held: true`, until the
+     * command `begin`): js/main.js holds it while the loading screen shows,
+     * so the first frames draw the map at tick 0 and nothing plays behind
+     * the screen. No tick of any kind runs, no wall time is banked, no
+     * background timer starts, and an online game does not run the frames
+     * that arrive while hidden. Only fast-forwards through recorded history
+     * go on (a save loading, an online catch-up): they decide nothing new.
+     */
+    this.held = false;
     /** Connection epoch for network sends (bumped by a reconnect). */
     this.epoch = 0;
     this.tableTick = -1;
@@ -170,6 +182,7 @@ export class SimCore {
     const G = this.Game;
     this.kind = spec.kind;
     this.tickMs = spec.tickMs ?? 40;
+    this.held = !!spec.held;
     switch (spec.kind) {
       case 'skirmish': {
         const json = JSON.stringify(spec.options);
@@ -227,7 +240,8 @@ export class SimCore {
           recorder: this.recorder,
           onCaughtUp: () => this.emit('caughtUp', null),
           onCheck: (ok, tick) => this.emit('check', { ok, tick }),
-          hidden: () => this.hidden,
+          // Frames that arrive while hidden run at once, never before the start.
+          hidden: () => this.hidden && !this.held,
           now: this.now,
         });
         break;
@@ -349,6 +363,9 @@ export class SimCore {
       // A hidden local game that is not paused: tick on a timer until the page shows again.
       case 'background':
         return this.setBackground(!!args[0]);
+      // The loading screen is gone: a held game starts from now (`held`).
+      case 'begin':
+        return this.begin();
       // Replays (ReplayController).
       case 'seek':
         this.replay?.seek(args[0]);
@@ -386,7 +403,7 @@ export class SimCore {
       }
       // Debug menu: one tick while paused (local games only).
       case 'debugStep':
-        if (this.driver || this.replay || this.busy()) return false;
+        if (this.held || this.driver || this.replay || this.busy()) return false;
         if (this.local) this.local.tick();
         else this.game.tick();
         this.tableDirty = true;
@@ -426,6 +443,19 @@ export class SimCore {
     this.recorder = null;
   }
 
+  /**
+   * A held game starts (`held`): time counts from now, nothing from the
+   * wait is caught up. Returns whether it was held.
+   */
+  begin() {
+    if (!this.held) return false;
+    this.held = false;
+    this.acc = 0;
+    if (this.driver) this.driver.acc = 0;
+    if (this.replay) this.replay.acc = 0;
+    return true;
+  }
+
   // ---- Background ticks ----------------------------------------------------------------------
 
   /**
@@ -435,7 +465,8 @@ export class SimCore {
    * Returns whether the timer runs.
    */
   setBackground(on) {
-    const local = !!this.game && !this.driver && !this.replay;
+    // A held game has not started: the timer waits for `begin` and the next ask.
+    const local = !!this.game && !this.driver && !this.replay && !this.held;
     // After an error in a background tick the game cannot go on (the tick may
     // be half applied): the error stays, every later step throws it.
     if (!on || !local || this.failure || this.backgroundError) {
@@ -471,7 +502,7 @@ export class SimCore {
    */
   idle(dt) {
     return this.guard(() => {
-      if (!this.game || this.driver || this.replay || this.busy()) return 0;
+      if (!this.game || this.held || this.driver || this.replay || this.busy()) return 0;
       const tickMs = this.tickMs;
       this.acc += Math.min(Math.max(0, Number(dt) || 0), BACKGROUND_MAX_MS);
       const max = Math.ceil(BACKGROUND_MAX_MS / tickMs);
@@ -535,7 +566,12 @@ export class SimCore {
     // driver and replays tick inside: one tick is its time, several their mean).
     let tickMaxMs = perf ? 0 : null;
     let loadError = null;
-    if (this.driver || this.replay) {
+    // A held game (`held`) runs no ticks and banks no time; the history of a
+    // save or of an online game it rejoins may fast-forward meanwhile.
+    const held = this.held;
+    if (held && !this.busy()) {
+      alpha = 1;
+    } else if (this.driver || this.replay) {
       const t0 = this.now();
       const r = this.driver ? this.driver.advance(dt) : this.replay.advance(dt, tickMs);
       simFrameMs = this.now() - t0;

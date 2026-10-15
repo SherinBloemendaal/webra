@@ -253,7 +253,16 @@ test('js/main.js: the game setup puts what outlives a game into its scope, and R
   // A game that stops before its first frame fails the loading screen instead of leaving it up (FirstFrameGuard).
   assert.match(body, /host\.on\('failed', \(message\) => \{[^}]*firstFrame\.fail\(/);
   assert.match(body, /function frame\(now\) \{\s*if \(stopped\) return;[^}]*firstFrame\.run\(\(\) => frameBody\(now\)\);/);
-  assert.match(body, /firstFrame\.firstFrame\(\);/);
+  // The first frame closes the screen; the game starts once it is gone (docs/contracts.md section 8, "Start").
+  assert.match(body, /firstFrame\.firstFrame\(\)\.then\(\(\) => \{\s*if \(!stopped\) gameStart\.begin\(performance\.now\(\)\);/);
+  assert.match(body, /const \{ raw: rawDt, dt \} = gameStart\.frame\(now\);/);
+  assert.match(body, /const suspend = !gameStart\.started \|\|/);
+  assert.match(body, /const on = gameStart\.started && runsInBackground\(/);
+  assert.doesNotMatch(body, /Math\.min\(rawDt, 250\)/);
+  assert.match(body, /if \(online && !online\.spectator\) \{\s*import\('\.\/net\.js'\)\s*\.then\(\(\{ sendLoaded \}\) => sendLoaded\(online\.driver\.conn\)\)/);
+  // Every start's simulation is held until then.
+  assert.equal(main.match(/host\.start\(\{ \.\.\.spec, held: true \}\)/g)?.length, 2);
+  assert.equal(main.match(/host\.start\(/g)?.length, 2);
   // The campaign's progress is not shadowed by the save loading overlay (a won mission records its progress).
   assert.doesNotMatch(body, /const progress = /);
 });

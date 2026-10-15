@@ -15,6 +15,9 @@
 // When taking the game down fails part way, the page is in an unknown state:
 // it reloads with the js/restart.js record instead, which starts the same
 // game after the reload, as every restart did before.
+//
+// GameStart (below) is the start of each game on screen, a restart's too:
+// the game stands at tick 0 until its loading screen is gone.
 
 /**
  * @typedef {object} RunningGame
@@ -97,5 +100,63 @@ export class GameSession {
       return;
     }
     this.loading.fail('Could not restart the game here. Start it again from the menu.', { label: 'Back to the menu', run: () => this.reload() });
+  }
+}
+
+/** The longest frame time a game advances by in one animation frame (a hitch or a hidden tab drops the rest). */
+export const MAX_FRAME_MS = 250;
+
+/**
+ * The start of one game on screen (js/main.js runGame). Its frame loop runs
+ * from the end of the setup on, so the first frame is drawn behind the
+ * loading screen and closes it (js/loadingscreen.js FirstFrameGuard), but
+ * the game stands at tick 0 until the screen is gone: the simulation is held
+ * (js/sim/core.js `held`), every frame advances it by nothing, and the
+ * input and the background timer of a hidden tab wait. `begin`, on the
+ * screen's `closed`, starts it: the frame clock counts from that moment, so
+ * the time the screen took is never caught up in a burst of ticks.
+ */
+export class GameStart {
+  /**
+   * @param {{ host: { command(name: string, args?: any[]): Promise<any> }, now: number,
+   *   onStart?: () => void, maxFrameMs?: number }} o
+   *   `now`: the frame clock's start (performance.now()); `onStart`: runs once
+   *   the game started (sounds, the online `loaded` message, the background timer)
+   */
+  constructor({ host, now, onStart = () => {}, maxFrameMs = MAX_FRAME_MS }) {
+    this.host = host;
+    this.onStart = onStart;
+    this.maxFrameMs = maxFrameMs;
+    this.last = now;
+    /** The game runs (the loading screen is gone). */
+    this.started = false;
+    /** The game was left or taken down before it started: it never does. */
+    this.stopped = false;
+  }
+
+  /**
+   * One animation frame at `now`: `raw`, the time since the last frame
+   * (performance capture), and `dt`, what the game advances by (0 until it
+   * started, at most `maxFrameMs`).
+   */
+  frame(now) {
+    const raw = now - this.last;
+    this.last = now;
+    return { raw, dt: this.started ? Math.min(Math.max(0, raw), this.maxFrameMs) : 0 };
+  }
+
+  /** The loading screen is gone at `now`: the game starts (once; never after `stop`). Returns whether it did. */
+  begin(now) {
+    if (this.started || this.stopped) return false;
+    this.started = true;
+    this.last = now;
+    this.host.command('begin').catch(() => {});
+    this.onStart();
+    return true;
+  }
+
+  /** The game is left before it started (a restart, the page going). */
+  stop() {
+    this.stopped = true;
   }
 }

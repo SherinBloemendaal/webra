@@ -221,6 +221,23 @@ export class Connection {
   }
 }
 
+/**
+ * The loading screen is gone and the game runs here (js/main.js): `loaded`
+ * tells the server, which holds the game's frames until every seat sent it
+ * (docs/contracts.md section 4). Sent on `conn` (a Connection, or anything
+ * with `send`); false when this protocol has no such message (nothing sent).
+ */
+export function sendLoaded(conn) {
+  if (!C2S.LOADED || !conn) return false;
+  try {
+    conn.send({ t: C2S.LOADED });
+    return true;
+  } catch (err) {
+    console.error('Could not send', C2S.LOADED, err?.message ?? err);
+    return false;
+  }
+}
+
 // ---- Order packing ------------------------------------------------------------------
 
 /** Orders with id lists are split into chunks small enough for one message. */

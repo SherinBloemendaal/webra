@@ -107,7 +107,7 @@ import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
 import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
-import { GameSession } from './gamesession.js';
+import { GameSession, GameStart } from './gamesession.js';
 
 const PLAYER = 0;
 
@@ -714,7 +714,8 @@ async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
   const host = await perfTrace.spanAsync('sim.host', () => newSimHost(), (h) => ({ mode: h?.mode ?? null }));
   let info;
   try {
-    info = await perfTrace.spanAsync('sim.start', () => host.start(spec), (i) => ({ kind: spec.kind, engineMs: i?.timings?.createMs ?? null }));
+    // Held at tick 0 until the loading screen is gone (runGame); the server holds the frames until every seat said `loaded`.
+    info = await perfTrace.spanAsync('sim.start', () => host.start({ ...spec, held: true }), (i) => ({ kind: spec.kind, engineMs: i?.timings?.createMs ?? null }));
   } catch (err) {
     host.dispose();
     throw err;
@@ -1008,7 +1009,8 @@ let perfAutoPending = false;
  * frame). A capture still running for the previous game ends first, with that
  * game's facts. With "Record the start of every game" a capture starts at the
  * new game's first frame (`perfFirstFrame`), so a slow load never uses up its
- * 60 seconds; the start's spans are in its file either way.
+ * 60 seconds; the start's spans are in its file either way. It records the
+ * frames only: the game itself starts once the loading screen is gone.
  */
 function perfLaunch() {
   if (perf.recording) perf.stop('restarted');
@@ -1108,7 +1110,8 @@ async function launch(spec, lobby, failText) {
       await content?.load();
     });
     host = await perfTrace.spanAsync('sim.host', () => newSimHost(), (h) => ({ mode: h?.mode ?? null }));
-    const info = await perfTrace.spanAsync('sim.start', () => host.start(spec), (i) => ({ kind: spec.kind, engineMs: i?.timings?.createMs ?? null }));
+    // Held at tick 0 until the loading screen is gone (runGame, js/gamesession.js GameStart).
+    const info = await perfTrace.spanAsync('sim.start', () => host.start({ ...spec, held: true }), (i) => ({ kind: spec.kind, engineMs: i?.timings?.createMs ?? null }));
     // A save continues a skirmish or a mission.
     tagGame(spec.kind === 'save' ? (spec.mission ? 'mission' : 'skirmish') : spec.kind);
     // start() builds the battlefield in one go (sprites, terrain, sounds):
@@ -1531,8 +1534,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   );
   // Engine events (sound_events.rs) feed the sound and the radar pings, with or without sound.
   game.set_audio_events(true);
-  // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
-  if (!stress && !fromSave) audio?.startGame();
   // Orders and production clicks made through `ui` get unit replies and announcements.
   // Spectators and replays look around and select, but cannot give orders.
   const watched = audio ? audio.watch(game) : game;
@@ -1936,9 +1937,13 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // of the simulation's own meanwhile (js/sim/core.js setBackground; in the
   // worker browsers do not throttle it, on the main thread they do).
   let background = false;
+  // The game stands at tick 0 until the loading screen is gone (js/gamesession.js
+  // GameStart, js/sim/core.js `held`): no ticks, input or background timer before.
+  const gameStart = new GameStart({ host, now: performance.now(), onStart: () => gameStarted() });
   const gameKind = { stress: !!stress, online: !!online, replay: !!replay };
   const syncBackground = () => {
-    const on = runsInBackground(gameKind, { hidden: document.hidden, paused });
+    // Not before the game started: a tab hidden while the loading screen shows keeps it at tick 0.
+    const on = gameStart.started && runsInBackground(gameKind, { hidden: document.hidden, paused });
     if (on === background) return;
     background = on;
     host.command('background', [on]).catch(() => {});
@@ -2515,10 +2520,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   let uploadedFog = null;
   const NO_RECTS = new Float32Array(0);
 
-  let last = performance.now();
   let simMs = 0;
   let fpsFrames = 0;
-  let fpsTime = last;
+  let fpsTime = performance.now();
   let fps = 0;
   let uiTime = 0;
   let over = false;
@@ -2533,11 +2537,10 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   function frameBody(now) {
     const frameStart = performance.now();
     perfFirstFrame();
-    const rawDt = now - last;
-    const dt = Math.min(rawDt, 250);
-    last = now;
+    // Nothing advances before the start (dt 0): the frames draw the map at tick 0 behind the loading screen.
+    const { raw: rawDt, dt } = gameStart.frame(now);
     const catching = busy();
-    const suspend = catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
+    const suspend = !gameStart.started || catching || menu.isOpen || flow.dialog !== null || !!statsScreen?.isOpen;
     if (suspend !== input.suspended) input.setSuspended(suspend);
     // Menus, the end of the game, statistics and modal dialogs (saves, online)
     // get the OS cursor, and the window edge does not scroll the map.
@@ -2670,10 +2673,13 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     renderer.draw(drawCamera, simSeconds, f.sprites(), f.spriteCount, rects, rects.length / 8, animClock.uniform(), lines, f.lineCount, gpu, fx);
     const drawMs = performance.now() - drawStart;
     renderer.measure = null;
-    // The game's start ends with its first drawn frame (js/perfcapture.js startup).
+    // The game's start trace ends with its first drawn frame (js/perfcapture.js startup);
+    // the game itself starts once the loading screen it closes is gone.
     if (!firstFrame.drawn) {
       perfTrace.endStartup();
-      firstFrame.firstFrame();
+      firstFrame.firstFrame().then(() => {
+        if (!stopped) gameStart.begin(performance.now());
+      });
     }
     battle.frame(fxTick, drawCamera);
     // Read the canvas in the same task as the draw, before it is presented.
@@ -2805,6 +2811,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   const running = {
     leaving: async () => {
       leaving = true;
+      gameStart.stop();
       // The game stands still behind the loading screen while its replay is
       // queued: no frames (so no ticks), no input, the mouse let go.
       stopped = true;
@@ -2824,11 +2831,30 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   scope.add(() => session.detach(running));
   // The loop: stopped first when the game is taken down.
   scope.add(() => {
+    gameStart.stop();
     stopped = true;
     cancelAnimationFrame(rafId);
   });
   loader.step('frame');
   rafId = requestAnimationFrame(frame);
+
+  /**
+   * The loading screen is gone and the game runs (GameStart.begin): the
+   * input follows from the next frame, a hidden tab ticks on the background
+   * timer, "Battle control online" plays, and an online player tells the
+   * server it is ready (`loaded`: the server holds the game's frames until
+   * every seat said it; spectators hold no seat).
+   */
+  function gameStarted() {
+    syncBackground();
+    // OpenRA StartGameNotification: "Battle control online" (a loaded save says "Game loaded" once it is ready).
+    if (!stress && !fromSave) audio?.startGame();
+    if (online && !online.spectator) {
+      import('./net.js')
+        .then(({ sendLoaded }) => sendLoaded(online.driver.conn))
+        .catch((err) => console.error('Could not tell the server the game loaded:', err));
+    }
+  }
 
   /** What the observer's statistics panel needs per player besides observer_stats (js/observer.js `needs`). */
   function observerExtra(need) {
