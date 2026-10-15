@@ -1,7 +1,9 @@
-/* Themed form controls: toggle switch, segmented choice, checkbox, range
-   slider, select and text field, in the gunmetal style of css/theme.css.
-   Built by js/ui/controls.js (the website links this sheet too, with its
-   palette mapped onto the --ui-* names in apps/website/assets/site.css).
+/* Themed form controls (the Controls board of the design system): toggle
+   switch, segmented choice, checkbox, range slider, the select plate with
+   its list (a sheet on phones), stepper, tabs, lamps and badges, text
+   fields, in the gunmetal style of css/theme.css. Built by
+   js/ui/controls.js (the website links this sheet too, with its palette
+   mapped onto the --ui-* names in apps/website/assets/site.css).
 
    Everything is sized in em from --ctl-size (rem based, so it follows the UI
    scale and the root font size) and every state has a visible, non-colour
@@ -36,8 +38,9 @@
   display: block;
   margin: 0;
   color: var(--ui-text);
-  font: var(--ui-fs-m) / 1.35 var(--ui-font);
-  font-size: 0.95em;
+  font: 600 1.05em / 1.25 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
@@ -50,8 +53,7 @@
   grid-column: 1 / -1;
   margin: 0;
   color: var(--ui-muted);
-  font-size: 0.85em;
-  line-height: 1.4;
+  font: 400 0.93em / 1.4 var(--ui-font);
 }
 
 .ui-row.ui-row-check {
@@ -82,6 +84,8 @@
 }
 
 .ui-row.ui-row-choice > .ui-segmented,
+.ui-row.ui-row-choice > .ui-select-plate,
+.ui-row.ui-row-choice > .ui-stepper,
 .ui-row.ui-row-choice > select {
   flex: 0 1 auto;
   margin-left: auto;
@@ -102,6 +106,8 @@
   }
 
   .ui-row.ui-row-choice > .ui-segmented,
+  .ui-row.ui-row-choice > .ui-select-plate,
+  .ui-row.ui-row-choice > .ui-stepper,
   .ui-row.ui-row-choice > select {
     flex-basis: 100%;
     margin-left: 0;
@@ -110,7 +116,7 @@
 
 .ui-value {
   min-width: 3.4em;
-  color: var(--ui-muted);
+  color: var(--ui-text);
   font: 0.9em / 1 var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -125,10 +131,11 @@
 /* ---- Toggle switch: <input type="checkbox" role="switch" class="ui-switch"> */
 
 input.ui-switch {
-  --sw-w: 4em;
-  --sw-h: 1.75em;
+  /* 66 x 28 px at the 14 px control size, the plate 26 x 20. */
+  --sw-w: 4.7em;
+  --sw-h: 2em;
   --sw-pad: 0.2em;
-  --sw-thumb: 1.7em;
+  --sw-thumb: 1.85em;
   appearance: none;
   -webkit-appearance: none;
   position: relative;
@@ -142,7 +149,7 @@ input.ui-switch {
   font-size: var(--ctl-size);
   background:
     var(--ui-brushed),
-    linear-gradient(180deg, #06080a, var(--ui-metal-0));
+    var(--ui-well);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
@@ -163,8 +170,8 @@ input.ui-switch::before {
   width: var(--sw-thumb);
   height: calc(var(--sw-h) - 2 * var(--sw-pad) - 2px);
   background:
-    var(--ui-rivet) center / 0.85em 0.85em no-repeat,
-    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+    var(--ui-rivet) center / 0.65em 0.65em no-repeat,
+    var(--ui-raised);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
@@ -179,7 +186,7 @@ input.ui-switch::after {
   top: 50%;
   right: 0.6em;
   color: var(--ui-dim);
-  font: 700 0.62em / 1 var(--ui-font-mono);
+  font: 600 0.64em / 1 var(--ui-font-mono);
   letter-spacing: 0.1em;
   transform: translateY(-50%);
 }
@@ -208,8 +215,8 @@ input.ui-switch:checked::after {
 
 input.ui-switch:hover:not(:disabled)::before {
   background:
-    var(--ui-rivet) center / 0.85em 0.85em no-repeat,
-    linear-gradient(180deg, #4a535f, var(--ui-metal-3));
+    var(--ui-rivet) center / 0.65em 0.65em no-repeat,
+    var(--ui-raised-hover);
 }
 
 input.ui-switch:active:not(:disabled)::before {
@@ -235,7 +242,7 @@ input.ui-check {
   margin: 0;
   padding: 0;
   font-size: var(--ctl-size);
-  background: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  background: var(--ui-well);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
@@ -243,7 +250,8 @@ input.ui-check {
   vertical-align: middle;
   transition:
     background-color 0.12s ease,
-    border-color 0.12s ease;
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 input.ui-check::after {
@@ -260,8 +268,9 @@ input.ui-check::after {
 }
 
 input.ui-check:checked {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 70%, #000), var(--ui-accent-lo));
+  background: var(--ui-accent-lo);
   border-color: var(--ui-accent);
+  box-shadow: 0 0 0.55em -0.15em var(--ui-accent-glow);
 }
 
 input.ui-check:checked::after {
@@ -270,7 +279,7 @@ input.ui-check:checked::after {
 
 /* Select all with only some rows chosen. */
 input.ui-check:indeterminate {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent-lo) 70%, #000), var(--ui-accent-lo));
+  background: var(--ui-accent-lo);
   border-color: var(--ui-accent);
 }
 
@@ -291,8 +300,8 @@ input.ui-check:hover:not(:disabled) {
 
 input.ui-switch:focus-visible,
 input.ui-check:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 input.ui-switch:disabled,
@@ -323,7 +332,7 @@ input.ui-check:indeterminate:disabled {
   box-sizing: border-box;
   padding: 2px;
   font-size: var(--ctl-size);
-  background: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  background: var(--ui-well);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
@@ -346,20 +355,20 @@ input.ui-check:indeterminate:disabled {
   flex: 1 1 auto;
   align-items: center;
   justify-content: center;
-  gap: 0.55em;
+  gap: 0.6em;
   box-sizing: border-box;
   min-width: 0;
-  min-height: calc(var(--ctl-row) - 0.5em);
+  min-height: calc(var(--ctl-row) - 0.15em);
   margin: 0;
-  padding: 0.4em 1em;
+  padding: 0.3em 1.15em;
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
   border-right-width: 0;
   border-radius: 0;
   box-shadow: var(--ui-bevel);
   color: var(--ui-muted);
-  font: 700 0.86em / 1.2 var(--ui-font);
-  letter-spacing: 0.08em;
+  font: 700 1.07em / 1.15 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
   text-align: center;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
   text-transform: uppercase;
@@ -385,12 +394,12 @@ input.ui-check:indeterminate:disabled {
 .ui-segmented > .ui-segment::before {
   content: '';
   flex: none;
-  width: 0.5em;
-  height: 0.5em;
-  background: #0b0e11;
-  border: 1px solid var(--ui-edge);
+  width: 0.53em;
+  height: 0.53em;
+  background: var(--ui-led-off);
+  border: 1px solid var(--ui-led-off-edge);
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  box-shadow: var(--ui-led-off-glow);
 }
 
 .ui-segmented > input:hover:not(:disabled):not(:checked) + .ui-segment {
@@ -408,16 +417,16 @@ input.ui-check:indeterminate:disabled {
 }
 
 .ui-segmented > input:checked + .ui-segment::before {
-  background: var(--ui-accent-hi);
-  border-color: var(--ui-accent);
-  box-shadow: 0 0 0.6em var(--ui-accent-glow);
+  background: var(--ui-led-on);
+  border-color: var(--ui-led-on-edge);
+  box-shadow: var(--ui-led-on-glow);
 }
 
 .ui-segmented > input:focus-visible + .ui-segment {
   position: relative;
   z-index: 1;
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 1px;
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 .ui-segmented > input:disabled + .ui-segment {
@@ -440,8 +449,9 @@ input.ui-check:indeterminate:disabled {
    js/ui/controls.js keeps --ui-fill (a percentage) in step with the value.  */
 
 input.ui-slider {
+  /* Track 8 px, plate 18 x 22 px with a rivet, at the 14 px control size. */
   --track: 0.6em;
-  --thumb-w: 0.95em;
+  --thumb-w: 1.3em;
   --thumb-h: 1.6em;
   appearance: none;
   -webkit-appearance: none;
@@ -460,8 +470,8 @@ input.ui-slider::-webkit-slider-runnable-track {
   box-sizing: border-box;
   height: var(--track);
   background:
-    linear-gradient(90deg, var(--ui-accent) 0 var(--ui-fill, 0%), transparent var(--ui-fill, 0%)),
-    linear-gradient(180deg, #06080a, var(--ui-metal-0));
+    linear-gradient(90deg, var(--ui-primary-active), var(--ui-accent)) 0 0 / var(--ui-fill, 0%) 100% no-repeat,
+    var(--ui-well);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
@@ -470,7 +480,7 @@ input.ui-slider::-webkit-slider-runnable-track {
 input.ui-slider::-moz-range-track {
   box-sizing: border-box;
   height: var(--track);
-  background: linear-gradient(180deg, #06080a, var(--ui-metal-0));
+  background: var(--ui-well);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
@@ -478,8 +488,9 @@ input.ui-slider::-moz-range-track {
 
 input.ui-slider::-moz-range-progress {
   height: calc(var(--track) - 2px);
-  background: var(--ui-accent);
+  background: linear-gradient(90deg, var(--ui-primary-active), var(--ui-accent));
   border-radius: var(--ui-radius);
+  box-shadow: 0 0 0.55em -0.15em var(--ui-accent-glow);
 }
 
 input.ui-slider::-webkit-slider-thumb {
@@ -490,8 +501,8 @@ input.ui-slider::-webkit-slider-thumb {
   height: var(--thumb-h);
   margin-top: calc((var(--track) - 2px - var(--thumb-h)) / 2);
   background:
-    linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(0, 0, 0, 0.65) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+    var(--ui-rivet) center / 0.57em 0.57em no-repeat,
+    var(--ui-raised);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
@@ -502,8 +513,8 @@ input.ui-slider::-moz-range-thumb {
   width: var(--thumb-w);
   height: var(--thumb-h);
   background:
-    linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(0, 0, 0, 0.65) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+    var(--ui-rivet) center / 0.57em 0.57em no-repeat,
+    var(--ui-raised);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel);
@@ -522,8 +533,8 @@ input.ui-slider:active:not(:disabled)::-webkit-slider-thumb {
 }
 
 input.ui-slider:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
 }
 
 input.ui-slider:disabled {
@@ -533,8 +544,8 @@ input.ui-slider:disabled {
 
 input.ui-slider:disabled::-webkit-slider-runnable-track {
   background:
-    linear-gradient(90deg, var(--ui-accent-disabled) 0 var(--ui-fill, 0%), transparent var(--ui-fill, 0%)),
-    linear-gradient(180deg, #06080a, var(--ui-metal-0));
+    linear-gradient(90deg, var(--ui-accent-disabled), var(--ui-accent-disabled)) 0 0 / var(--ui-fill, 0%) 100% no-repeat,
+    var(--ui-well);
 }
 
 input.ui-slider:disabled::-moz-range-progress {
@@ -550,13 +561,15 @@ input.ui-slider:disabled::-moz-range-progress {
 .menu-card input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color'])) {
   box-sizing: border-box;
   min-width: 0;
-  padding: 0.45em 0.7em;
+  min-height: var(--ctl-row);
+  padding: 0.3em 0.85em;
   background-color: var(--ui-metal-0);
+  background-image: var(--ui-well);
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
-  font: inherit;
+  font: 500 1.07em / 1.3 var(--ui-font);
 }
 
 .menu-card select,
@@ -572,11 +585,16 @@ input.ui-slider:disabled::-moz-range-progress {
   cursor: pointer;
   background-image:
     linear-gradient(45deg, transparent 50%, var(--ui-accent-hi) 50%),
-    linear-gradient(135deg, var(--ui-accent-hi) 50%, transparent 50%);
+    linear-gradient(135deg, var(--ui-accent-hi) 50%, transparent 50%),
+    var(--ui-well);
   background-position:
     calc(100% - 1.1em) 52%,
-    calc(100% - 0.75em) 52%;
-  background-size: 0.4em 0.4em;
+    calc(100% - 0.75em) 52%,
+    0 0;
+  background-size:
+    0.4em 0.4em,
+    0.4em 0.4em,
+    100% 100%;
   background-repeat: no-repeat;
 }
 
@@ -595,12 +613,44 @@ input.ui-slider:disabled::-moz-range-progress {
 
 .ui-select:focus-visible,
 .ui-input:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 0;
+  border-color: var(--ui-accent);
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.ui-input::placeholder {
+  color: var(--ui-dim);
 }
 
 .ui-input[aria-invalid='true'] {
   border-color: var(--ui-bad);
+}
+
+/* The message under a field that is not valid (with the word, not only the red rim). */
+.ui-field-error {
+  margin: 0.3em 0 0;
+  color: var(--ui-accent-hi);
+  font: 400 0.86em / 1.35 var(--ui-font);
+}
+
+/* A field label above its field (Controls board, "Velden"). */
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  min-width: 0;
+  font-size: var(--ctl-size);
+}
+
+.ui-field > .ui-field-label {
+  color: var(--ui-muted);
+  font: 600 1em / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.ui-field:has(> [aria-invalid='true']) > .ui-field-label {
+  color: var(--ui-accent-hi);
 }
 
 .ui-select:disabled,
@@ -623,6 +673,622 @@ button.ui-mini {
   letter-spacing: 0.06em;
 }
 
+/* ---- Lamps: <span class="ui-led ui-led-{off|on|ok|warn|bad|info}"> ---------
+   js/ui/controls.js led(); always next to a word, a mark or a label. */
+
+.ui-led {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 0.57em;
+  height: 0.57em;
+  vertical-align: middle;
+  background: var(--ui-led-off);
+  border: 1px solid var(--ui-led-off-edge);
+  border-radius: 50%;
+  box-shadow: var(--ui-led-off-glow);
+}
+
+.ui-led.ui-led-on {
+  background: var(--ui-led-on);
+  border-color: var(--ui-led-on-edge);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+.ui-led.ui-led-ok {
+  background: var(--ui-led-ok);
+  border-color: var(--ui-led-ok-edge);
+  box-shadow: var(--ui-led-ok-glow);
+}
+
+.ui-led.ui-led-warn {
+  background: var(--ui-led-warn);
+  border-color: var(--ui-led-warn-edge);
+  box-shadow: var(--ui-led-warn-glow);
+}
+
+.ui-led.ui-led-bad {
+  background: var(--ui-led-bad);
+  border-color: var(--ui-led-bad-edge);
+  box-shadow: var(--ui-led-bad-glow);
+}
+
+.ui-led.ui-led-info {
+  background: var(--ui-led-info);
+  border-color: var(--ui-led-info-edge);
+  box-shadow: var(--ui-led-info-glow);
+}
+
+/* ---- Badges: <span class="ui-badge ui-badge-{kind}"> ------------------------
+   js/ui/controls.js badge(): READY, HOST, MODDED, LOCKED. A word in capitals
+   on a small plate; ok and warn carry a lamp too. */
+
+.ui-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.45em;
+  box-sizing: border-box;
+  padding: 0.22em 0.65em;
+  background: var(--ui-metal-0);
+  border: 1px solid var(--ui-metal-4);
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  font: 700 var(--ui-fs-m) / 1.15 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ui-badge > .ui-led {
+  width: 0.55em;
+  height: 0.55em;
+}
+
+.ui-badge-accent {
+  background: var(--ui-accent-lo);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent-hi);
+}
+
+.ui-badge-ok {
+  border-color: var(--ui-led-ok-edge);
+  color: var(--ui-ok);
+}
+
+.ui-badge-warn {
+  border-color: var(--ui-led-warn-edge);
+  color: var(--ui-warn);
+}
+
+.ui-badge-bad {
+  border-color: var(--ui-bad);
+  color: var(--ui-bad);
+}
+
+.ui-badge-info,
+.ui-badge-allies {
+  border-color: var(--ui-info);
+  color: var(--ui-info-text);
+}
+
+.ui-badge-soviet {
+  border-color: var(--ui-soviet);
+  color: var(--ui-accent-hi);
+}
+
+/* MODDED: the word on a well inside a yellow hazard stripe. */
+.ui-badge-hazard {
+  padding: 0.2em 0.55em;
+  background: repeating-linear-gradient(-45deg, var(--ui-warn) 0 5px, #0b0d10 5px 10px);
+  border-color: var(--ui-edge);
+}
+
+.ui-badge-hazard > .ui-badge-text {
+  padding: 0.08em 0.45em;
+  background: var(--ui-metal-0);
+  color: var(--ui-warn);
+}
+
+/* ---- Select plate (js/ui/controls.js selectPlate) ---------------------------
+   div.ui-select-plate > button.ui-sp-button[aria-haspopup=listbox]
+     > span.ui-sp-face (span.ui-led, span.ui-sp-value) + span.ui-sp-flap
+   div.ui-sp-panel[popover] > div.ui-sp-card > div.ui-sp-head + div.ui-sp-list[role=listbox]
+     > (div.ui-sp-group > div.ui-sp-group-label)? div.ui-sp-option[role=option]
+       > span.ui-led + span.ui-sp-text (span.ui-sp-label, span.ui-sp-hint)
+   The panel sits in the top layer (Popover API) at the button (--sp-left,
+   --sp-top or --sp-bottom, --sp-width, --sp-max-h from the script); on
+   phones it is a sheet at the bottom of the screen (.ui-sp-sheet). */
+
+.ui-select-plate {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--ctl-size);
+}
+
+.ui-select-plate.ui-block {
+  display: flex;
+  width: 100%;
+}
+
+.ui-sp-button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 10em;
+  min-height: max(var(--ctl-row), 2.85em);
+  margin: 0;
+  padding: 0;
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--ui-bevel);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-sp-face {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.7em;
+  min-width: 0;
+  padding: 0 0.85em;
+}
+
+.ui-sp-value {
+  min-width: 0;
+  overflow: hidden;
+  font: 700 1.14em / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ui-sp-empty .ui-sp-value {
+  color: var(--ui-muted);
+}
+
+/* The flap with the chevron (a rotated corner, no image). */
+.ui-sp-flap {
+  position: relative;
+  flex: none;
+  width: 2.7em;
+  background: var(--ui-well);
+  border-left: 1px solid var(--ui-edge);
+  box-shadow: inset 1px 1px 0 var(--ui-bevel-lo);
+}
+
+.ui-sp-flap::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.45em;
+  height: 0.45em;
+  border: solid var(--ui-accent-hi);
+  border-width: 0 0.16em 0.16em 0;
+  transform: translate(-50%, -70%) rotate(45deg);
+  transition: transform 0.15s ease;
+}
+
+.ui-sp-open .ui-sp-flap::before {
+  transform: translate(-50%, -30%) rotate(-135deg);
+}
+
+.ui-sp-button:hover:not(:disabled) {
+  background: var(--ui-raised-hover);
+}
+
+.ui-sp-open .ui-sp-button,
+.ui-sp-button:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+}
+
+.ui-sp-button:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.ui-sp-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ui-sm > .ui-sp-button {
+  min-width: 7em;
+  min-height: calc(var(--ctl-row) - 0.4em);
+  font-size: 0.86em;
+}
+
+/* The list's layer. Resets the browser's popover box. */
+.ui-sp-panel {
+  position: fixed;
+  inset: var(--sp-top, auto) auto var(--sp-bottom, auto) var(--sp-left, 0);
+  z-index: 1000;
+  box-sizing: border-box;
+  width: var(--sp-width, auto);
+  max-width: calc(100vw - 16px);
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  color: var(--ui-text);
+  font-size: var(--sp-font, var(--ctl-size));
+}
+
+.ui-sp-panel[hidden],
+.ui-sp-panel[popover]:not(:popover-open) {
+  display: none;
+}
+
+.ui-sp-card {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: var(--sp-max-h, 22em);
+  padding: 0.3em;
+  background:
+    var(--ui-rivet) right 4px bottom 4px / 8px 8px no-repeat,
+    var(--ui-panel);
+  border: 1px solid var(--ui-edge);
+  border-radius: var(--ui-radius);
+  box-shadow:
+    inset 1px 1px 0 var(--ui-bevel-hi),
+    var(--ui-shadow-pop);
+}
+
+.ui-sp-head {
+  display: none;
+}
+
+.ui-sp-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+.ui-sp-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-sp-group-label {
+  padding: 0.6em 0.7em 0.25em;
+  color: var(--ui-muted);
+  font: 600 0.86em / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.ui-sp-option {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.7em;
+  min-height: max(var(--ctl-row), 2.85em);
+  padding: 0.25em 0.7em;
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+  cursor: pointer;
+}
+
+.ui-sp-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ui-sp-label {
+  font: 700 1.07em / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-section);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.ui-sp-hint {
+  color: var(--ui-muted);
+  font: 400 0.86em / 1.3 var(--ui-font);
+}
+
+.ui-sp-option[aria-selected='true'] {
+  background: var(--ui-accent-lo);
+}
+
+.ui-sp-option[aria-selected='true'] .ui-sp-label {
+  color: var(--ui-accent-hi);
+}
+
+/* The highlighted option (keyboard or pointer): a rim, so it differs from the chosen one. */
+.ui-sp-option.ui-sp-active {
+  box-shadow: inset 0 0 0 1px var(--ui-accent-hi);
+}
+
+.ui-sp-option:not([aria-selected='true']).ui-sp-active {
+  background: var(--ui-metal-3);
+}
+
+.ui-sp-option[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Phones: a sheet at the bottom over a dimmed screen (the panel is the dim area). */
+.ui-sp-panel.ui-sp-sheet {
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.ui-sp-panel.ui-sp-sheet[hidden],
+.ui-sp-panel.ui-sp-sheet[popover]:not(:popover-open) {
+  display: none;
+}
+
+.ui-sp-sheet > .ui-sp-card {
+  width: 100%;
+  max-height: min(70dvh, 70vh);
+  padding: 0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  border-width: 1px 0 0;
+  border-radius: 0;
+  box-shadow:
+    inset 0 1px 0 var(--ui-bevel-hi),
+    var(--ui-shadow);
+  animation: ui-sp-sheet-in 0.18s ease-out;
+}
+
+.ui-sp-sheet .ui-sp-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  min-height: 3.2em;
+  padding: 0 0.4em 0 0.7em;
+  border-bottom: 1px solid var(--ui-line);
+  background: var(--ui-hazard) left bottom / 8em 3px no-repeat;
+}
+
+.ui-sp-title {
+  color: var(--ui-muted);
+  font: 700 1.07em / 1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+}
+
+.ui-sp-close {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--ui-metal-4);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+  cursor: pointer;
+}
+
+.ui-sp-close::before,
+.ui-sp-close::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.1em;
+  height: 0.14em;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.ui-sp-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.ui-sp-sheet .ui-sp-list {
+  padding-top: 0.3em;
+}
+
+.ui-sp-sheet .ui-sp-option {
+  min-height: 44px;
+}
+
+@keyframes ui-sp-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* ---- Stepper (js/ui/controls.js stepper) -------------------------------------
+   div.ui-stepper > button.ui-stepper-dec + div.ui-stepper-value[role=spinbutton] + button.ui-stepper-inc */
+
+.ui-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: max(var(--ctl-row), 2.85em);
+  font-size: var(--ctl-size);
+}
+
+.ui-stepper.ui-block {
+  display: flex;
+  width: 100%;
+}
+
+.ui-stepper > button {
+  position: relative;
+  flex: none;
+  width: max(2.85em, var(--ctl-row));
+  margin: 0;
+  padding: 0;
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-edge);
+  box-shadow: inset 1px 1px 0 var(--ui-bevel-hi);
+  color: var(--ui-text);
+  cursor: pointer;
+}
+
+.ui-stepper > .ui-stepper-dec {
+  border-radius: var(--ui-radius) 0 0 var(--ui-radius);
+}
+
+.ui-stepper > .ui-stepper-inc {
+  border-radius: 0 var(--ui-radius) var(--ui-radius) 0;
+}
+
+/* Minus and plus drawn with bars. */
+.ui-stepper > button::before,
+.ui-stepper > .ui-stepper-inc::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.85em;
+  height: 0.18em;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.ui-stepper > .ui-stepper-inc::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.ui-stepper > button:hover:not(:disabled) {
+  background: var(--ui-raised-hover);
+  color: var(--ui-accent-hi);
+}
+
+.ui-stepper > button:active:not(:disabled) {
+  box-shadow: var(--ui-bevel-in);
+}
+
+.ui-stepper > button:disabled {
+  color: var(--ui-dim);
+  cursor: not-allowed;
+}
+
+.ui-stepper-value {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 6.5em;
+  padding: 0 0.6em;
+  background: var(--ui-well);
+  border-block: 1px solid var(--ui-edge);
+  box-shadow: inset 0 1px 0 var(--ui-bevel-lo);
+  color: var(--ui-money);
+  font: 600 1.07em / 1 var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.ui-stepper-value:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.ui-stepper.ui-disabled {
+  opacity: 0.45;
+}
+
+/* ---- Tabs (js/ui/controls.js tabs) -------------------------------------------
+   div.ui-tabs[role=tablist] > button.ui-tab[role=tab] > span.ui-led + span */
+
+.ui-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--ui-line);
+  font-size: var(--ctl-size);
+  scrollbar-width: none;
+}
+
+.ui-tabs.ui-vertical {
+  flex-direction: column;
+  overflow-x: visible;
+  border-bottom: 0;
+  border-right: 1px solid var(--ui-line);
+}
+
+.ui-tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.6em;
+  min-height: max(var(--ctl-row), 2.85em);
+  margin: 0 0 -1px;
+  padding: 0 1.3em;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+  color: var(--ui-muted);
+  font: 700 1.07em / 1.15 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ui-vertical > .ui-tab {
+  margin: 0 -1px 0 0;
+  border: 1px solid transparent;
+  border-right: 0;
+  border-radius: var(--ui-radius) 0 0 var(--ui-radius);
+}
+
+.ui-tab > .ui-led {
+  width: 0.5em;
+  height: 0.5em;
+}
+
+.ui-tab:hover:not(:disabled) {
+  color: var(--ui-text);
+}
+
+.ui-tab[aria-selected='true'] {
+  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-1));
+  border-color: var(--ui-line);
+  color: var(--ui-text);
+}
+
+.ui-tab:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: calc(-1 * var(--ui-focus-offset));
+}
+
+.ui-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ---- Motion, contrast ------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
@@ -630,8 +1296,13 @@ button.ui-mini {
   input.ui-switch::before,
   input.ui-check,
   input.ui-check::after,
-  .ui-segmented > .ui-segment {
+  .ui-segmented > .ui-segment,
+  .ui-sp-flap::before {
     transition: none;
+  }
+
+  .ui-sp-sheet > .ui-sp-card {
+    animation: none;
   }
 }
 
@@ -657,5 +1328,50 @@ button.ui-mini {
 
   input.ui-check::after {
     border-color: HighlightText;
+  }
+
+  /* Lamps keep their shape: lit ones fill, dark ones are a ring. */
+  .ui-led {
+    border-color: CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .ui-led:not(.ui-led-off) {
+    background: CanvasText;
+  }
+
+  .ui-badge,
+  .ui-sp-button,
+  .ui-sp-card,
+  .ui-stepper > button,
+  .ui-stepper-value,
+  .ui-tab[aria-selected='true'] {
+    border-color: ButtonText;
+  }
+
+  .ui-sp-option[aria-selected='true'],
+  .ui-tab[aria-selected='true'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .ui-sp-option.ui-sp-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .ui-sp-flap::before,
+  .ui-sp-close::before,
+  .ui-sp-close::after,
+  .ui-stepper > button::before,
+  .ui-stepper > .ui-stepper-inc::after {
+    border-color: ButtonText;
+    background: ButtonText;
+  }
+
+  .ui-sp-flap::before {
+    background: transparent;
   }
 }
