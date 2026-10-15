@@ -202,10 +202,10 @@ export class GuideProgress {
 
 /**
  * Whether the tour runs in a game. Only the player's own skirmish games
- * (a skirmish save too): never missions, online games, replays, spectators
- * or the stress test, and only while "Tour in my games" is on and a tour
+ * (a skirmish save too): never missions, online games, replays, spectators,
+ * the map editor's test play (kind 'editor') or the stress test, and only while "Tour in my games" is on and a tour
  * step is open.
- * @param {{ kind: 'skirmish'|'mission'|'online'|'replay'|'stress', watching?: boolean }} game
+ * @param {{ kind: 'skirmish'|'mission'|'online'|'replay'|'editor'|'stress', watching?: boolean }} game
  */
 export function tourRuns(game, progress) {
   if (game?.kind !== 'skirmish' || game.watching) return false;
@@ -214,7 +214,8 @@ export function tourRuns(game, progress) {
 
 /**
  * Whether the guide follows a game at all: the local player plays it
- * (skirmish, mission or online), not a replay, a spectator or the stress test.
+ * (skirmish, mission or online), not a replay, a spectator, the map
+ * editor's test play or the stress test.
  */
 export function guideFollows(game) {
   return !!game && !game.watching && (game.kind === 'skirmish' || game.kind === 'mission' || game.kind === 'online');
@@ -262,6 +263,10 @@ export class GuideTracker {
     if (this.disposed || !events?.length) return;
     const hits = [];
     let placedNew = false;
+    // The open steps once per frame (each read copies the setting), not per event.
+    const anyEvent = this.open('anyEvent');
+    const ownEvent = this.open('event');
+    const placed = this.open('placed');
     for (let i = 0; i + STRIDE <= events.length; i += STRIDE) {
       const kind = events[i];
       const type = this.actors[events[i + 1]]?.id ?? '';
@@ -271,10 +276,10 @@ export class GuideTracker {
         this.memory.placed.set(type, (this.memory.placed.get(type) ?? 0) + 1);
         placedNew = true;
       }
-      for (const id of this.open('anyEvent')) if (TRIGGERS[id].anyEvent(kind)) hits.push(id);
+      for (const id of anyEvent) if (TRIGGERS[id].anyEvent(kind)) hits.push(id);
       if (owner !== this.player) continue;
-      for (const id of this.open('event')) if (TRIGGERS[id].event(kind, type, owner, b)) hits.push(id);
-      if (kind === EV.BUILDING_PLACED) for (const id of this.open('placed')) if (TRIGGERS[id].placed.includes(type)) hits.push(id);
+      for (const id of ownEvent) if (TRIGGERS[id].event(kind, type, owner, b)) hits.push(id);
+      if (kind === EV.BUILDING_PLACED) for (const id of placed) if (TRIGGERS[id].placed.includes(type)) hits.push(id);
     }
     this.mark(hits);
     // Steps that count what was placed in this game.

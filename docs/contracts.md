@@ -3687,7 +3687,10 @@ Debug and NetMenu.
   three switches. The HUD's signal bars open it with
   `window.dispatchEvent(new CustomEvent('webra:open-network'))`
   (`OPEN_NETWORK_EVENT`); without a source the event does nothing.
-  `js/online.js` passes `net` with `onStartGame`.
+  `js/main.js` hands `onStartGame`'s `net` to the menu; the online screen's
+  work (work/onlineui) provides it as its canonical net object `{ quality,
+  source, roster, you, players() }`, of which the menu reads `source` and
+  `players()`. Until that is merged online games have no Network tab.
 - **Guide** (texts: `GUIDE` in `js/help.js`): seven chapters of steps. A
   step ticks off by itself (`js/guide.js` `GuideTracker`) from the local
   player's engine events (MCV deployed, structure placed, unit produced,

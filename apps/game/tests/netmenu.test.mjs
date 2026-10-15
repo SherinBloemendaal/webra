@@ -11,7 +11,7 @@ import { createRegistry } from '../js/registry.js';
 import { createSettings } from '../js/settings.js';
 import { HotkeyRegistry } from '../js/hotkeys.js';
 import { BANDS, CHART_WINDOW_MS, NetHistory, OPEN_NETWORK_EVENT, waitingText } from '../js/netmenu.js';
-import { GameMenu, filterHotkeys, packCards, syncLine } from '../js/gamemenu.js';
+import { GameMenu, ZOOM_SLIDER, filterHotkeys, packCards, syncLine } from '../js/gamemenu.js';
 import { selectPlate } from '../js/ui/controls.js';
 
 let doc;
@@ -124,12 +124,12 @@ test('network page: tiles, chart, table, waiting time and the three switches; Ba
     { client: 2, rtt: 210, jitter: 60, late: 4, quality: 'poor' },
   ]);
   menu.open();
-  const button = root.querySelectorAll('button').find((b) => b.textContent.startsWith('Network'));
+  const button = [...root.querySelectorAll('button')].find((b) => b.textContent.startsWith('Network'));
   assert.match(button.textContent, /34 ms, good/);
   click(button);
   assert.equal(root.querySelector('h1').textContent, 'Network');
   assert.equal(net.asked, 1, 'the stall log is asked for');
-  const tiles = root.querySelectorAll('.net-tile');
+  const tiles = [...root.querySelectorAll('.net-tile')];
   assert.deepEqual(tiles.map((t) => t.dataset.tile), ['ping', 'jitter', 'late', 'slowest']);
   assert.match(textOf(tiles[0]), /34 ms/);
   assert.match(textOf(tiles[0]), /Good: to the game server/, 'the quality in words beside the colour');
@@ -139,7 +139,7 @@ test('network page: tiles, chart, table, waiting time and the three switches; Ba
   assert.equal(svg.querySelectorAll('path.net-line').length, 2);
   assert.equal(svg.querySelectorAll('path.net-line')[1].getAttribute('stroke'), '#e64033');
   assert.ok(BANDS.good < BANDS.poor);
-  const rows = root.querySelectorAll('.net-table tbody tr');
+  const rows = [...root.querySelectorAll('.net-table tbody tr')];
   assert.match(textOf(rows[0]), /Commander \(you\)/);
   assert.match(textOf(rows[1]), /210 ms.*±60.*4%.*Poor/);
   assert.match(textOf(root), /No waiting this game\./);
@@ -153,8 +153,8 @@ test('network page: tiles, chart, table, waiting time and the three switches; Ba
   assert.equal(registry.get('net', 'warnSelf'), false);
   registry.set('net', 'signalBars', false);
   assert.equal(root.querySelector('#net-signalBars').checked, false, 'follows changes made elsewhere');
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Back'));
-  assert.ok(root.querySelectorAll('button').find((b) => b.textContent === 'Resume'));
+  click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Back'));
+  assert.ok([...root.querySelectorAll('button')].find((b) => b.textContent === 'Resume'));
   menu.close();
   // The HUD's signal bars: one event on the window opens the menu on this page.
   globalThis.window.dispatchEvent?.(new FakeEvent(OPEN_NETWORK_EVENT));
@@ -168,7 +168,7 @@ test('network page: tiles, chart, table, waiting time and the three switches; Ba
 test('without a network source (single player, skirmish) there is no Network button and the event does nothing', () => {
   const { menu, root } = menuWith({ online: false });
   menu.open();
-  assert.ok(!root.querySelectorAll('button').some((b) => b.textContent.startsWith('Network')));
+  assert.ok(![...root.querySelectorAll('button')].some((b) => b.textContent.startsWith('Network')));
   menu.close();
   menu.openAt('network');
   assert.equal(menu.isOpen, false);
@@ -230,11 +230,17 @@ test('texture pack cards: the three packs with their install state, chosen with 
   menu.show('settings', 'graphics');
   const group = root.querySelector('.gm-packs');
   assert.equal(group.getAttribute('role'), 'radiogroup');
-  const radios = group.querySelectorAll('[role="radio"]');
+  const radios = [...group.querySelectorAll('[role="radio"]')];
   const original = radios.find((r) => r.dataset.value === 'original');
   click(original);
   assert.equal(settings.get('graphics'), 'original');
   assert.equal(group.querySelector('[data-value="original"]').getAttribute('aria-checked'), 'true');
+  // The arrows move the choice like radios, wrapping around.
+  group.querySelector('[data-value="original"]').focus();
+  group.dispatchEvent(new FakeEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  assert.equal(settings.get('graphics'), group.querySelectorAll('[role="radio"]')[0].dataset.value, 'from the last card to the first');
+  group.dispatchEvent(new FakeEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+  assert.equal(settings.get('graphics'), 'original');
   menu.dispose();
 });
 
@@ -261,7 +267,7 @@ test('hotkeys tab: the search filters the rows, a group resets alone, the listen
   const search = root.querySelector('#game-menu-keys-search');
   search.value = 'guard';
   search.dispatchEvent(new FakeEvent('input'));
-  const labels = () => root.querySelectorAll('.gm-panel-hotkeys .game-menu-key-label').map((l) => l.textContent);
+  const labels = () => [...root.querySelectorAll('.gm-panel-hotkeys .game-menu-key-label')].map((l) => l.textContent);
   assert.deepEqual(labels(), ['Guard']);
   search.value = 'nothing like it';
   search.dispatchEvent(new FakeEvent('input'));
@@ -274,10 +280,10 @@ test('hotkeys tab: the search filters the rows, a group resets alone, the listen
     click(group.querySelector('button'));
     assert.deepEqual(hotkeys.bindingsFor('guard'), ['D']);
   }
-  const change = root.querySelectorAll('.gm-panel-hotkeys button').find((b) => b.textContent === 'Change');
+  const change = [...root.querySelectorAll('.gm-panel-hotkeys button')].find((b) => b.textContent === 'Change');
   click(change);
   assert.match(textOf(root), /Press the new key for/);
-  assert.ok(root.querySelector('.gm-panel-hotkeys button.game-menu-mini').textContent === 'Cancel' || root.querySelectorAll('.gm-panel-hotkeys button').some((b) => b.textContent === 'Cancel'));
+  assert.ok(root.querySelector('.gm-panel-hotkeys button.game-menu-mini').textContent === 'Cancel' || [...root.querySelectorAll('.gm-panel-hotkeys button')].some((b) => b.textContent === 'Cancel'));
   menu.dispose();
 });
 
@@ -287,4 +293,29 @@ test('sync line: saved in this browser, synced, syncing, offline, not synced', (
   assert.equal(syncLine({ signedIn: true, status: 'syncing' }).led, 'warn');
   assert.equal(syncLine({ signedIn: true, status: 'offline' }).text, 'Offline: settings will sync later');
   assert.equal(syncLine({ signedIn: true, status: 'error' }).led, 'bad');
+});
+
+test('battlefield zoom: the slider steps in tenths that land on 1.0x; the setting keeps its limits', () => {
+  const { menu, root, settings } = menuWith();
+  menu.open();
+  menu.show('settings', 'graphics');
+  const slider = root.querySelector('#game-menu-zoomFactor');
+  const min = Number(slider.min);
+  const step = Number(slider.step);
+  assert.equal(min, ZOOM_SLIDER.min);
+  assert.equal(step, 0.1);
+  const steps = (1 - min) / step;
+  assert.ok(Math.abs(steps - Math.round(steps)) < 1e-9, '1.0 is a stop of the slider');
+  slider.value = '1.2';
+  slider.dispatchEvent(new FakeEvent('input'));
+  assert.equal(settings.get('zoomFactor'), 1.2);
+  slider.value = '1';
+  slider.dispatchEvent(new FakeEvent('input'));
+  assert.equal(settings.get('zoomFactor'), 1, 'exactly the default');
+  assert.equal(root.querySelector('#game-menu-zoomFactor').closest('.ui-row').querySelector('output').textContent, '1.0x');
+  // The ends past the setting's limits are clamped to them.
+  slider.value = String(ZOOM_SLIDER.min);
+  slider.dispatchEvent(new FakeEvent('input'));
+  assert.ok(Math.abs(settings.get('zoomFactor') - 1 / 3) < 1e-9);
+  menu.dispose();
 });

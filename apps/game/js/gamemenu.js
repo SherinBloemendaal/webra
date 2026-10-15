@@ -35,7 +35,7 @@ import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
 import { led, segmented, slider as createSlider, switchInput, tabs as tabBar, toggle as createToggle } from './ui/controls.js';
-import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
+import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, ZOOM_FACTOR_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
 import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
 import { DEFAULT_PREFS } from './audio/prefs.js';
@@ -282,6 +282,9 @@ export class MenuState {
 export function speedLabel(v) {
   return v === 0 ? 'Off' : `${Number(v.toFixed(2))}x`;
 }
+
+/** The battlefield zoom slider's ends: whole tenths around the setting's limits (1/3 to 8/3), so its steps land on 1.0. */
+export const ZOOM_SLIDER = Object.freeze({ min: Math.floor(ZOOM_FACTOR_LIMITS.min * 10) / 10, max: Math.ceil(ZOOM_FACTOR_LIMITS.max * 10) / 10 });
 
 /** Text for the battlefield zoom: "1.0x". */
 export function zoomLabel(v) {
@@ -935,19 +938,20 @@ export class GameMenu {
   /** Row builders for the Settings tabs. */
   rows() {
     const s = this.opts.settings;
-    const slider = (key, text, { step = 0.25, format = speedLabel } = {}) => {
-      const spec = SCHEMA[key];
+    // `min`/`max`: the slider's ends when they differ from the setting's (its step counts from `min`);
+    // the registry clamps what is stored to the setting's limits.
+    const slider = (key, text, { step = 0.25, format = speedLabel, min = SCHEMA[key].min, max = SCHEMA[key].max } = {}) => {
       const control = createSlider({
         id: `game-menu-${key}`,
         label: text,
-        min: spec.min,
-        max: spec.max,
+        min,
+        max,
         step,
         value: s.get(key),
         format,
         rowClass: 'game-menu-row',
         onInput: (v) => {
-          control.output.textContent = format(s.set(key, v));
+          control.output.textContent = format(s.set(key, Number(v.toFixed(6))));
         },
       });
       // Follow the setting when it changes elsewhere (the mouse wheel's zoom, another tab).
@@ -995,7 +999,8 @@ export class GameMenu {
     if (this.opts.onContent) p.append(button('Original content and texture packs...', 'ui-btn ui-btn-sm gm-content', () => this.opts.onContent()));
     p.append(el('h2', 'gm-section-title', 'Display'), el('p', 'gm-note', DISPLAY_HELP));
     p.append(this.uiScaleRow(), this.gameScaleRow());
-    p.append(slider('zoomFactor', 'Battlefield zoom', { step: 0.1, format: zoomLabel }));
+    // Tenths from 0.3x to 2.7x, so 1.0x (the default) is a stop; the setting keeps 1/3 to 8/3.
+    p.append(slider('zoomFactor', 'Battlefield zoom', { step: 0.1, format: zoomLabel, ...ZOOM_SLIDER }));
     p.append(slider('pixelRatioCap', 'Max resolution (pixel ratio)'), check('lowQuality', 'Low quality (faster on phones)'));
     // Camera shake and the nuke's flash (js/battlefx.js).
     p.append(choice('reduceMotion', 'Reduce motion', SCHEMA.reduceMotion.labels));
@@ -1042,7 +1047,7 @@ export class GameMenu {
       const next = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
       if (!next) return;
       e.preventDefault();
-      const all = group.querySelectorAll('button').filter((b) => b.getAttribute('aria-disabled') !== 'true');
+      const all = [...group.querySelectorAll('button')].filter((b) => b.getAttribute('aria-disabled') !== 'true');
       const at = all.indexOf(document.activeElement);
       const to = all[(Math.max(0, at) + next + all.length) % all.length];
       if (!to) return;

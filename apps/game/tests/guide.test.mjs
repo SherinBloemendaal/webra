@@ -5,6 +5,7 @@
 // page shows chapters, ticks off read steps and has the tour switch. Fake
 // DOM, no browser, no WebAssembly.
 import { test, beforeEach, afterEach } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { installDom, uninstallDom, click, check, textOf, memoryStorage } from './dom-fixtures.mjs';
 import { createRegistry } from '../js/registry.js';
@@ -171,6 +172,12 @@ test('tour: only in the player\'s own skirmish games, while the switch is on and
   assert.equal(guideFollows({ kind: 'mission' }), true);
   assert.equal(guideFollows({ kind: 'replay' }), false);
   assert.equal(guideFollows({ kind: 'online', watching: true }), false, 'spectators');
+  // The map editor's test play: no tour and no ticks.
+  assert.equal(tourRuns({ kind: 'editor' }, progress), false);
+  assert.equal(guideFollows({ kind: 'editor' }), false);
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /editorTestPlay = params\.get\('editorTest'\) === '1'/, 'the test play page is known');
+  assert.match(main, /editorTestPlay \? 'editor' : 'skirmish'/, 'and its games are not skirmish games for the guide');
   progress.mark(TOUR_STEPS);
   assert.equal(progress.tourComplete(), true);
   assert.equal(progress.tourInGames, false, 'finished: the switch goes off');
@@ -220,11 +227,11 @@ test('tour card: the open step, its dots and lit cameo; Step done; Skip step; Sk
   assert.ok(!cards[1].classList.contains(TARGET_CLASS));
   assert.deepEqual(tourModel(progress).dots, ['done', 'active', 'open', 'open', 'open']);
   // Skip step: the next one, the cameo moves.
-  click(root.querySelectorAll('button').find((b) => b.textContent === 'Skip step'));
+  click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Skip step'));
   assert.ok(progress.isDone('base.power'));
   assert.ok(!cards[0].classList.contains(TARGET_CLASS) && cards[1].classList.contains(TARGET_CLASS));
   // Full guide opens the game menu's Guide page.
-  click(root.querySelectorAll('button').find((b) => b.textContent.startsWith('Full guide')));
+  click([...root.querySelectorAll('button')].find((b) => b.textContent.startsWith('Full guide')));
   assert.equal(guideOpened, 1);
   // The close button skips the whole tour; the Guide's switch turns it on again.
   click(root.querySelector('.tour-close'));
@@ -257,7 +264,7 @@ test('Guide page: chapters with lamps, the steps with Watching and Done, Skip th
     guide: progress,
   });
   menu.open();
-  const guideButton = root.querySelectorAll('button').find((b) => b.textContent.startsWith('Guide'));
+  const guideButton = [...root.querySelectorAll('button')].find((b) => b.textContent.startsWith('Guide'));
   assert.match(guideButton.textContent, /1 of 28 steps done/);
   assert.ok(guideButton.classList.contains('gm-item-accent'));
   click(guideButton);
@@ -268,7 +275,7 @@ test('Guide page: chapters with lamps, the steps with Watching and Done, Skip th
   assert.ok(root.querySelector('#guide-chapter-base .ui-led-warn'));
   assert.match(textOf(root.querySelector('[data-step="base.mcv"]')), /Done: MCV deployed/);
   assert.match(textOf(root.querySelector('[data-step="base.power"]')), /Watching: Power Plant placed/);
-  click(root.querySelector('[data-step="base.power"]').querySelectorAll('button').find((b) => b.textContent === 'Skip this step'));
+  click([...root.querySelector('[data-step="base.power"]').querySelectorAll('button')].find((b) => b.textContent === 'Skip this step'));
   assert.ok(progress.isDone('base.power'));
   await Promise.resolve();
   assert.match(textOf(root.querySelector('[data-step="base.refinery"]')), /Watching/, 'drawn again: the next step is open');
@@ -282,7 +289,20 @@ test('Guide page: chapters with lamps, the steps with Watching and Done, Skip th
   assert.equal(sw.checked, true);
   check(sw, false);
   assert.equal(registry.get('guide', 'tourInGames'), false);
-  click(root.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Back to the game menu'));
-  assert.ok(root.querySelectorAll('button').find((b) => b.textContent === 'Resume'));
+  click([...root.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back to the game menu'));
+  assert.ok([...root.querySelectorAll('button')].find((b) => b.textContent === 'Resume'));
   menu.dispose();
+});
+
+test('tracker: a frame with many events reads the progress a fixed number of times', () => {
+  const { registry, tracker } = setup();
+  let reads = 0;
+  const get = registry.get.bind(registry);
+  registry.get = (...a) => {
+    reads++;
+    return get(...a);
+  };
+  const many = Array.from({ length: 500 }, () => [EV.FIRE, T.E1, 1]);
+  tracker.onEvents(events(...many));
+  assert.ok(reads <= 4, `${reads} reads for 500 events`);
 });

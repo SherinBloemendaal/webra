@@ -583,6 +583,8 @@ async function dropContent(files) {
 
 /** Where the map editor's test play starts the camera (world pixels), or null. */
 let testCamera = null;
+/** This page plays the map editor's test map (`?editorTest=1`): no guide and no tour in its games. */
+let editorTestPlay = false;
 
 /** The test play camera, once: a restarted game starts at the player's base. */
 function takeTestCamera() {
@@ -605,6 +607,7 @@ async function offerLinkedMap(lobby) {
     // Test play from the editor: its slots and bots, and where the camera starts.
     const setup = loadTestSetup(params);
     testCamera = setup?.camera ?? null;
+    editorTestPlay = params.get('editorTest') === '1';
     if (map) lobby.offerMapText(JSON.stringify(map), params.get('editorTest') === '1' ? 'editor' : 'link', setup);
   } catch (err) {
     lobby.reportMapProblem(loadErrorText(err));
@@ -1512,7 +1515,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // OpenRA's target lines (js/targetlines.js): ordered and newly selected units show theirs for a moment.
   const targetLines = new TargetLines({ mode: () => settings.get('targetLines') });
   // The guide (js/guide.js): steps tick off as the local player plays; the tour in the first skirmish games (js/tour.js).
-  const guideGame = { kind: mission ? 'mission' : replay ? 'replay' : online ? 'online' : stress ? 'stress' : 'skirmish', watching: !!viewer || !!online?.spectator };
+  // The map editor's test play is not a game of the player's own: kind 'editor' (js/guide.js leaves it out).
+  const guideGame = {
+    kind: mission ? 'mission' : replay ? 'replay' : online ? 'online' : stress ? 'stress' : editorTestPlay ? 'editor' : 'skirmish',
+    watching: !!viewer || !!online?.spectator,
+  };
   const guide = new GuideProgress(settings.registry);
   let tour = null;
   const guideTracker = guideFollows(guideGame) ? new GuideTracker({ progress: guide, actors: rules.actors, player, onDone: (ids) => tour?.stepsDone(ids) }) : null;
