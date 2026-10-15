@@ -185,8 +185,9 @@ export class FriendsScreen {
     });
     this.onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      // A select list, stepper or tab row takes its own keys (Esc closes the list, not the screen).
-      if (e.target?.closest?.('[role="listbox"], [role="spinbutton"], [role="tablist"], .ui-sp-panel')) return;
+      // An open select list takes Esc itself (it closes the list, not the screen); steppers and
+      // tabs own only their arrow keys, so Esc from them still closes the screen.
+      if (e.target?.closest?.('[role="listbox"], .ui-sp-panel')) return;
       if (this.menuFor) {
         e.preventDefault();
         const name = this.menuFor;
