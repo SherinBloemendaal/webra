@@ -472,3 +472,28 @@ test('statistics: the Network tab of an online game: tiles, the stalls on the ch
   assert.deepEqual(opened, [21300]);
   screen.dispose();
 });
+
+test('statistics: the Network tab reads the game\'s net object (js/online.js gameNet): quality, roster and you', async () => {
+  const { netStatsData } = await import('../js/netstats.js');
+  assert.equal(await netStatsData(null), null);
+  assert.equal(await netStatsData({ quality: null, roster: [] }), null, 'offline: no tab data');
+  const report = new Map([[11, { series: [], avg: 30, worst: 40, worstAt: 0, jitter: 2, late: 0 }]]);
+  const quality = {
+    report: () => report,
+    requestStalls: async () => ({ stalls: [], totals: [] }),
+    self: { sent: 10, latePings: 0 },
+    lastStalls: null,
+  };
+  const roster = [{ client: 11, player: 0, name: 'Commander' }];
+  const data = await netStatsData({ quality, source: quality, roster, you: 11, players: () => [] });
+  assert.deepEqual(data, { seats: roster, report, stalls: { stalls: [], totals: [] }, self: { sent: 10, latePings: 0 }, you: 11 });
+  // The server does not answer: the last stall log it sent.
+  const failing = { ...quality, lastStalls: { stalls: [{ tick: 5, client: 11, ms: 1200 }], totals: [] }, requestStalls: async () => Promise.reject(new Error('The server did not answer.')) };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal((await netStatsData({ quality: failing, roster, you: 11 })).stalls.stalls.length, 1);
+  } finally {
+    console.warn = warn;
+  }
+});

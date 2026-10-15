@@ -677,8 +677,8 @@ function setupOnline(lobby, gpuError) {
           $('menu').hidden = false;
           entry.hidden = false;
         },
-        // `net` (js/netquality.js NetQuality) and `seats` (the start message's players) feed the statistics' Network tab.
-        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null, net = null, seats = null }) => {
+        // `net` (js/online.js gameNet: { quality, source, roster, you, players() }) feeds the statistics' Network tab.
+        onStartGame: ({ host, player, driver, options, onQuit, recorder = null, spectator = false, rematch = null, save = null, mission = null, about = null, chat = null, net = null }) => {
           entry.hidden = true;
           // A co-op mission: its players and colours; the people under their names.
           const missionPlayers = mission ? host.game.info.mission.players : null;
@@ -689,7 +689,7 @@ function setupOnline(lobby, gpuError) {
             stress: false,
             tickMs: driver.tickMs,
             player: spectator ? 0 : player,
-            online: { driver, onQuit, spectator, rematch, save, chat, net, seats },
+            online: { driver, onQuit, spectator, rematch, save, chat, net },
             recorder,
             viewer: spectator ? roster : null,
             roster,
@@ -2000,7 +2000,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         live: true,
         actions: [],
         // Online games: the Network tab (js/netstats.js), its stalls open this game's replay at their moment.
-        network: online?.net && online?.seats ? () => netStatsData({ net: online.net, seats: online.seats }) : undefined,
+        network: online?.net?.quality ? () => netStatsData(online.net) : undefined,
         tickMs,
         openReplayAt: online && recorder && records ? (tick) => openReplayAt(recorder, tick, () => online.onQuit()) : undefined,
         canOpenReplay: () => over,

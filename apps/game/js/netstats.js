@@ -5,8 +5,9 @@
 // stall, a table per player (average, worst, jitter, loss, held up) and the
 // stalls, each opening the replay at that moment.
 //
-// The data comes from the connection quality module of the online session
-// (js/netquality.js NetQuality, protocol 8): its per-player series and
+// The data comes from the game's network object (js/online.js gameNet:
+// its `quality` is the session's js/netquality.js NetQuality, protocol 8,
+// and its `roster` the people of the game): the per-player series and
 // totals (`report()`, one point per 10 s, recorded from `netstat`), the
 // server's stall log (`requestStalls()`) and the own ping counts (`self`).
 // netStatsData() reads them; shapeNetwork() is pure (tests), renderNetwork()
@@ -52,21 +53,22 @@ export function clock(ms) {
 }
 
 /**
- * Read the data of the Network tab from the online session's connection
- * quality (`net`, js/netquality.js NetQuality): the series and totals, the
- * stall log (asked from the server; the last answer when it does not
- * answer) and the own ping counts. `seats` are the start's players
- * (`start.players`: { player, client, name, type }).
+ * Read the data of the Network tab from the game's network object
+ * (onStartGame `net`, js/online.js gameNet: `{ quality, source, roster, you,
+ * players() }`): the NetQuality's series and totals, the stall log (asked
+ * from the server; its last answer when it does not answer) and the own ping
+ * counts, with the roster (`[{ client, player, name }]`) as the seats.
  */
-export async function netStatsData({ net, seats }) {
-  if (!net || !seats) return null;
-  let stalls = net.lastStalls ?? null;
+export async function netStatsData(net) {
+  const nq = net?.quality ?? null;
+  if (!nq || !net.roster) return null;
+  let stalls = nq.lastStalls ?? null;
   try {
-    stalls = await net.requestStalls();
+    stalls = await nq.requestStalls();
   } catch (err) {
     console.warn('The stall log is unavailable:', err?.message ?? err);
   }
-  return { seats, report: net.report(), stalls, self: { sent: net.self?.sent ?? 0, latePings: net.self?.latePings ?? 0 }, you: net.you ?? null };
+  return { seats: net.roster, report: nq.report(), stalls, self: { sent: nq.self?.sent ?? 0, latePings: nq.self?.latePings ?? 0 }, you: net.you ?? nq.you ?? null };
 }
 
 /**

@@ -3526,9 +3526,10 @@ NetStats in code.
   from the account's upload events) and `rematch` (the online rematch
   handle's `status()`: `{ by, voters: [{ name, accepted }] }`).
 - **Statistics** (`js/stats.js`, `js/netstats.js`): the Network tab shows
-  for online games when main.js gets `net` (`js/netquality.js` NetQuality)
-  and `seats` (the `start` message's players) from `onStartGame`;
-  `netStatsData` reads `report()`, `requestStalls()` and `self`, quality is
+  for online games when `onStartGame` gives main.js the game's `net`
+  (js/online.js gameNet: `{ quality, source, roster, you, players() }`);
+  `netStatsData(net)` reads `quality` (the NetQuality: `report()`,
+  `requestStalls()`, `self`) with `roster` as the seats, quality is
   the protocol's `netQuality`. A stall's entry opens the game's replay at its
   tick (`openReplayAt`: the session is left and the replay viewer seeks
   there) once the game is over. Keys: an open select list gets every key,
