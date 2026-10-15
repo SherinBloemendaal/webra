@@ -5,7 +5,7 @@
 // throws on both, as the CSP refuses them).
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { installDom, uninstallDom, click, check, textOf, FakeNode } from './dom-fixtures.mjs';
+import { installDom, uninstallDom, click, check, textOf, FakeEvent, FakeNode } from './dom-fixtures.mjs';
 import { LAYERS, FAIRNESS_COLUMNS, checkVerdict, problemEntries, fairnessView, historyList, keysList, layersList, problemsView, spread, stampsList } from '../editor/js/panels.js';
 import { EDITOR_ICONS, editorIcon } from '../editor/js/icons.js';
 import { COMMANDS, TOOLS, actionName } from '../editor/js/commands.js';
@@ -197,6 +197,31 @@ test('check verdict: errors first, then warnings and fixable problems, else vali
   // An editor error while the engine accepts the map is a warning.
   const soft = { engine: { ok: true, errors: [] }, issues: [{ level: 'error', message: 'Actor off the map.', x: 0, y: 0 }], fixes: [] };
   assert.deepEqual([checkVerdict(soft).kind, checkVerdict(soft).text], ['warn', '1 warning']);
+  // A fix for an editor error while the engine accepts the map: a warning in the list and in the count.
+  const fixable = { engine: { ok: true, errors: [] }, issues: [], fixes: [{ level: 'error', message: 'Yard on rock.', x: 1, y: 1, fixes: [{ label: 'Move' }] }] };
+  assert.deepEqual(problemEntries(fixable).map((e) => e.level), ['warning']);
+  assert.deepEqual([checkVerdict(fixable).kind, checkVerdict(fixable).text], ['warn', '1 warning']);
   // The engine refusing without a message still counts one error.
   assert.equal(checkVerdict({ engine: { ok: false, errors: [] }, issues: [], fixes: [] }).text, '1 error');
+});
+
+test('a click on the map that closes an open select list does not edit the map', async () => {
+  uninstallDom();
+  installDom({ windowEvents: true });
+  const { EditorView } = await import('../editor/js/view.js');
+  const { selectPlate } = await import('../js/ui/controls.js');
+  const canvas = document.createElement('canvas');
+  canvas.setPointerCapture = () => {};
+  const downs = [];
+  new EditorView(canvas, {}, { down: (cell) => downs.push(cell), move() {}, up() {}, leave() {}, cancel() {} });
+  const plate = selectPlate({ label: 'Symmetry', options: [{ value: 'none', label: 'None' }, { value: 'x', label: 'Mirror' }], value: 'none' });
+  document.body.append(plate.root, canvas);
+  const press = () => canvas.dispatchEvent(new FakeEvent('pointerdown', { button: 0, pointerId: 1, clientX: 10, clientY: 10 }));
+  click(plate.button);
+  press();
+  assert.equal(plate.isOpen(), false, 'the press closed the list');
+  assert.deepEqual(downs, [], 'and painted nothing');
+  await new Promise((r) => setTimeout(r, 0));
+  press();
+  assert.equal(downs.length, 1, 'the next press paints');
 });

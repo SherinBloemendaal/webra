@@ -183,7 +183,8 @@ async function start() {
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
   // A restored draft with changes not saved to a file stays marked as edited.
-  fileVersion = edited ? -1 : doc.version;
+  // A restored draft with changes not saved to a file stays edited (a saved point no history reaches).
+  savedPoint = edited ? { top: {}, time: -1 } : historyPoint();
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
   view = new EditorView($('#view'), renderer, {
     down: (c, e) => ctl.down(c, e),
@@ -450,7 +451,7 @@ function updatePanels() {
 function autosave() {
   autosaveTask.cancel();
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
-  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"edited":${doc.version !== fileVersion},"map":${doc.snapshot().json}}`);
+  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"edited":${isEdited()},"map":${doc.snapshot().json}}`);
   $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
 }
 
@@ -513,16 +514,31 @@ function showVerdict(v) {
 }
 
 /** The map's name and whether it changed since it was opened or last saved to a file or published. */
-let fileVersion = 0;
+/**
+ * The saved point: the newest undo step when the map was opened or saved (and
+ * its time, which moves when typing joins that step). Undoing back to it is
+ * clean again; one comparison, no map snapshot.
+ */
+let savedPoint = { top: undefined, time: undefined };
+function historyPoint() {
+  const top = doc.undoStack[doc.undoStack.length - 1];
+  return { top, time: top?.time };
+}
+function isEdited() {
+  const now = historyPoint();
+  return !!doc.tx || now.top !== savedPoint.top || now.time !== savedPoint.time;
+}
 function markSaved() {
-  fileVersion = doc.version;
+  savedPoint = historyPoint();
   updateTitle();
+  // The draft says so too, so a reload does not mark the saved map as edited.
+  autosave();
 }
 function updateTitle() {
   const name = doc.meta.name || 'Untitled';
   const title = $('#map-title');
   title.querySelector('.map-name').textContent = name;
-  const edited = doc.version !== fileVersion;
+  const edited = isEdited();
   title.querySelector('.map-edited').hidden = !edited;
   title.title = edited ? `${name}: changed since it was opened or saved (the draft in this browser keeps the changes)` : name;
   document.title = `${edited ? '* ' : ''}${name} - WebRA Map Editor`;

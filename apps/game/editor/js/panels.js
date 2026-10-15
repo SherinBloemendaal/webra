@@ -116,14 +116,16 @@ export function fairnessView(report, teamCss, onJump, warnAt = 1.25) {
 export function problemEntries({ engine, issues, fixes }) {
   const out = [];
   const fixed = new Set();
+  // While the engine accepts the map, what the editor calls an error is a warning (fixes and issues alike).
+  const soft = (level) => (level === 'error' && engine.errors.length === 0 ? 'warning' : level);
   for (const p of fixes) {
-    out.push({ level: p.level, message: p.message, fix: p, x: p.x, y: p.y });
+    out.push({ level: soft(p.level), message: p.message, fix: p, x: p.x, y: p.y });
     fixed.add(p.message);
   }
   for (const e of engine.errors) if (![...fixed].some((m) => e.includes(m) || m.includes(e))) out.push({ level: 'error', message: e });
   for (const i of issues) {
     if (fixed.has(i.message)) continue;
-    const level = i.level === 'error' && engine.errors.length === 0 ? 'warning' : i.level;
+    const level = soft(i.level);
     const located = i.x !== undefined && i.y !== undefined;
     if (level !== 'warning' && !located) continue;
     out.push({ level, message: i.message, x: located ? i.x : undefined, y: located ? i.y : undefined });
