@@ -7,7 +7,7 @@
 // PRIMARY tag and the crate pickup animations.
 // Helpers and palette come from ./kit.js.
 
-import { C, rect, rrect, circle, poly, line, ring, crate } from './kit.js';
+import { C, rect, rrect, circle, poly, line, ring } from './kit.js';
 
 const OUTLINE = '#141414';
 
@@ -18,14 +18,29 @@ const OUTLINE = '#141414';
  */
 export const LEFTOVER_SPECIAL_OFFSET = 68;
 
+/** Design canvas materials: "Staal" for the steel crate, the "Kratten" wood for the wooden one. */
+const STEEL = { base: '#70747a', lit: '#98a0a8', dark: '#3f4247' };
+const WOOD = { plank: '#8a6a3a', seam: '#5e4624', lit: '#b08e58' };
+
 /** A steel crate (OpenRA scrate: the multiplayer crate). */
 function steelCrate(ctx, P, x, y, s) {
   rect(ctx, P.c(OUTLINE), x - 0.5, y - 0.5, s + 1, s + 1);
-  rect(ctx, P.c(C.steel), x, y, s, s);
-  rect(ctx, P.c(C.steelLight), x + 1, y + 1, s - 2, s - 2);
-  rect(ctx, P.c(C.steel), x + 1, y + s / 2 - 0.6, s - 2, 1.2);
-  rect(ctx, P.c(C.steel), x + s / 2 - 0.6, y + 1, 1.2, s - 2);
+  rect(ctx, P.c(STEEL.dark), x, y, s, s);
+  rect(ctx, P.c(STEEL.base), x + 1, y + 1, s - 2, s - 2);
+  rect(ctx, P.c(STEEL.lit), x + 1, y + 1, s - 2, 1);
+  rect(ctx, P.c(STEEL.dark), x + 1, y + s / 2 - 0.6, s - 2, 1.2);
+  rect(ctx, P.c(STEEL.dark), x + s / 2 - 0.6, y + 1, 1.2, s - 2);
   circle(ctx, P.c(C.yellow), x + s / 2, y + s / 2, 1.1);
+}
+
+/** A wooden crate (OpenRA wcrate): planks with dark seams, a cross brace and a lit top edge. */
+function woodCrate(ctx, P, x, y, s) {
+  rect(ctx, P.c(OUTLINE), x - 0.5, y - 0.5, s + 1, s + 1);
+  rect(ctx, P.c(WOOD.seam), x, y, s, s);
+  rect(ctx, P.c(WOOD.plank), x + 0.5, y + 0.5, s - 1, s - 1);
+  for (let k = 1; k < 3; k++) rect(ctx, P.c(WOOD.seam), x + 0.5, y + (k * s) / 3 - 0.3, s - 1, 0.6);
+  line(ctx, P.c(WOOD.seam), 0.7, x + 1, y + s - 1, x + s - 1, y + 1);
+  rect(ctx, P.c(WOOD.lit), x + 0.5, y + 0.5, s - 1, 0.8);
 }
 
 /** Ripples around a crate bobbing in the water. */
@@ -44,11 +59,11 @@ const steelWater = [16, 16, (ctx, P) => {
 }];
 const woodLand = [14, 14, (ctx, P) => {
   circle(ctx, P.c(C.shadow), 7.8, 7.8, 5.8);
-  crate(ctx, P, 2.5, 2.5, 9, 9);
+  woodCrate(ctx, P, 2.5, 2.5, 9);
 }];
 const woodWater = [16, 16, (ctx, P) => {
   ripples(ctx, P);
-  crate(ctx, P, 4, 4, 8, 8);
+  woodCrate(ctx, P, 4, 4, 8);
 }];
 
 /**
