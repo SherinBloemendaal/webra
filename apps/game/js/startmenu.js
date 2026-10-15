@@ -10,6 +10,22 @@
 // closes it and returns focus to the button, and so do a click outside and
 // Tab leaving it (Escape on the More button too); ArrowDown on the button opens it at the first entry, the
 // arrows, Home and End move within it. Entries without a handler stay hidden.
+//
+// The bar is the design system's menu bar (css/startmenu.css): the brand on
+// a hazard stripe, a lamp in every item, the screen on show red with a white
+// lamp. Next to the account it says how many players are online
+// (`onlineCount`, the server's /api/online), refreshed every
+// ONLINE_REFRESH_MS while the start screen shows; without the server's count
+// it stays hidden.
+
+/** How often the online count is asked again while the start screen shows. */
+export const ONLINE_REFRESH_MS = 60_000;
+
+/** "1 player online", "1,204 players online"; null for no count. */
+export function onlineText(count) {
+  if (!Number.isInteger(count) || count < 0) return null;
+  return `${count.toLocaleString('en-US')} ${count === 1 ? 'player' : 'players'} online`;
+}
 
 /** The dialogs the More entries open (index.html). */
 const DIALOGS = '#audio-panel, #music-panel, #content-panel, #release-notes';
@@ -22,6 +38,9 @@ const DIALOGS = '#audio-panel, #music-panel, #content-panel, #release-notes';
  *   onSound?: (entry: HTMLElement) => void,
  *   onReleaseNotes?: (entry: HTMLElement) => void,
  *   onStress?: (entry: HTMLElement) => void,
+ *   onlineCount?: () => Promise<{ players: number } | null | undefined>,  players online (/api/online)
+ *   visible?: () => boolean,  whether the start screen shows (the count is asked only then)
+ *   timers?: { setInterval: Function, clearInterval: Function },
  * }} handlers
  */
 export function mountStartMenu(nav, handlers = {}) {
@@ -102,7 +121,36 @@ export function mountStartMenu(nav, handlers = {}) {
   wire('start-stress', handlers.onStress);
   byId('start-skirmish')?.addEventListener('click', () => handlers.onSkirmish?.());
 
+  // Players online, next to the account (a status line: it changes by itself).
+  const online = byId('start-online');
+  let onlineTimer = null;
+  async function refreshOnline() {
+    if (!online || !handlers.onlineCount) return;
+    if (handlers.visible && !handlers.visible()) return;
+    let text = null;
+    try {
+      text = onlineText((await handlers.onlineCount())?.players);
+    } catch {
+      text = null;
+    }
+    online.hidden = text === null;
+    const label = online.querySelector('.start-online-text');
+    if (label) label.textContent = text ?? '';
+  }
+  if (online && handlers.onlineCount) {
+    const timers = handlers.timers ?? globalThis;
+    refreshOnline();
+    onlineTimer = timers.setInterval(refreshOnline, ONLINE_REFRESH_MS);
+  }
+
   return {
+    /** Ask for the online count now (back on the start screen). */
+    refreshOnline,
+    /** Stop asking for the online count. */
+    stop() {
+      if (onlineTimer !== null) (handlers.timers ?? globalThis).clearInterval(onlineTimer);
+      onlineTimer = null;
+    },
     /** Whether the More list is open. */
     get open() {
       return !list.hidden;

@@ -22,6 +22,12 @@
   flex: 1 0 auto;
 }
 
+/* The design system's menu bar (Patterns .ui-menubar, the Skirmish board):
+   a metal strip; the brand on a hazard stripe at its left end; the items
+   flat, divided by dark lines, each with a lamp; the screen on show red with
+   a white lamp (a second signal besides the colour: the lit lamp and
+   aria-current). Items show and hide by themselves (online, campaign,
+   records), so the bar wraps instead of assuming a count. */
 .start-nav {
   position: relative;
   z-index: 3;
@@ -29,55 +35,46 @@
   box-sizing: border-box;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  padding: 10px 16px;
-  background:
-    var(--ui-rivet) left 4px top 4px / 8px 8px no-repeat,
-    var(--ui-rivet) right 4px top 4px / 8px 8px no-repeat,
-    var(--ui-rivet) left 4px bottom 4px / 8px 8px no-repeat,
-    var(--ui-rivet) right 4px bottom 4px / 8px 8px no-repeat,
-    var(--ui-scan),
-    linear-gradient(180deg, var(--ui-metal-2), var(--ui-metal-1));
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--ui-panel);
   border: 1px solid var(--ui-edge);
-  border-top: 3px solid var(--ui-accent);
   border-radius: var(--ui-radius);
   box-shadow:
-    var(--ui-bevel),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
     0 12px 40px rgba(0, 0, 0, 0.55);
   color: var(--ui-text);
   font: var(--ui-fs-m) / 1.4 var(--ui-font);
 }
 
-/* The WebRA name on a bevelled steel plate (the lobby's former title). */
+/* The emblem and the word on a dark plate over the hazard stripe. */
 .start-logo {
+  display: flex;
+  align-items: center;
   margin: 0;
-  padding: 5px 14px 3px;
-  background:
-    var(--ui-brushed),
-    linear-gradient(180deg, #67717c, #3a414a 48%, #2a3037 52%, #424a54);
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.28),
-    inset -1px -1px 0 rgba(0, 0, 0, 0.6),
-    0 2px 0 rgba(0, 0, 0, 0.45);
-  font: 900 28px/1 var(--ui-font-display);
-  letter-spacing: 3px;
-  color: #dfe4ea;
-  text-shadow:
-    0 -1px 0 rgba(0, 0, 0, 0.85),
-    0 1px 0 rgba(255, 255, 255, 0.3);
+  padding: 0 16px;
+  background: var(--ui-hazard);
+  font: 700 20px/1 var(--ui-font-display);
 }
 
-.start-logo span {
-  color: var(--ui-accent-hi);
+.start-logo-plate {
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--ui-bg);
+  letter-spacing: 0.14em;
+}
+
+.start-logo-plate > .ui-brand-emblem {
+  width: 22px;
+  height: 22px;
 }
 
 .start-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: stretch;
+  gap: 0;
   min-width: 0;
 }
 
@@ -86,10 +83,9 @@
   display: none;
 }
 
-/* The saved games sit apart from Play: a separator line before them. */
+/* The saved games: a heavier line before them. */
 .start-records {
-  padding-left: 14px;
-  border-left: 1px solid var(--ui-line);
+  border-left: 1px solid var(--ui-edge);
 }
 
 .start-end {
@@ -97,32 +93,53 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px 10px;
+  gap: 8px 12px;
   margin-left: auto;
+  padding: 4px 12px;
   min-width: 0;
 }
 
-/* Every entry: a metal button with the label in capitals. */
+/* Every entry: a flat menu bar item, the label in Barlow Condensed capitals
+   after its lamp. */
 .start-item,
 #records-entry button,
 .start-more-item {
-  min-height: 34px;
-  padding: 6px 14px;
-  background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
-  color: var(--ui-text);
-  border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
-  box-shadow: var(--ui-bevel);
-  font: 700 var(--ui-fs-s) / 1.4 var(--ui-font);
-  letter-spacing: 0.1em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: max(var(--ctl-row, 2.25rem), 48px);
+  margin: 0;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--ui-text-2);
+  border: 0;
+  border-right: 1px solid var(--ui-edge);
+  border-radius: 0;
+  box-shadow: none;
+  font: 700 16px / 1.1 var(--ui-font-display);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.start-item::before,
+#records-entry button::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: var(--ui-led-off);
+  border: 1px solid var(--ui-led-off-edge);
+  border-radius: 50%;
+  box-shadow: var(--ui-led-off-glow);
 }
 
 .start-item:hover,
 #records-entry button:hover,
 .start-more-item:hover {
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-3));
+  background: var(--ui-metal-3);
+  color: var(--ui-text);
 }
 
 .start-item:active,
@@ -134,31 +151,40 @@
 .start-item:focus-visible,
 #records-entry button:focus-visible,
 .start-more-item:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
+  outline: var(--ui-focus-ring);
+  outline-offset: calc(-1 * var(--ui-focus-offset));
 }
 
-/* The screen on show: pressed in, with the accent under it. */
+/* The screen on show: red, its lamp white and lit. */
 .start-item[aria-current='page'] {
-  background: var(--ui-metal-0);
-  box-shadow:
-    var(--ui-bevel-in),
-    inset 0 -3px 0 var(--ui-accent);
-}
-
-/* Play online: the red of the main actions (theme.css --ui-primary-fill). */
-.start-item.start-primary {
   background: var(--ui-primary-fill);
   color: #fff;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
 }
 
-.start-item.start-primary:hover {
-  background: var(--ui-primary-fill-hover);
+.start-item[aria-current='page']::before {
+  background: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
 
-.start-item.start-primary:active {
-  background: var(--ui-primary-fill-active);
+/* Play online keeps the accent on its lamp: the way to other players. */
+.start-item.start-primary::before {
+  background: var(--ui-led-on);
+  border-color: var(--ui-led-on-edge);
+  box-shadow: var(--ui-led-on-glow);
+}
+
+/* Players online, next to the account. */
+.start-online {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-muted);
+  font: 600 14px/1.2 var(--ui-font-display);
+  letter-spacing: var(--ui-track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* More: a small list under its button. */
@@ -179,6 +205,17 @@
 #start-more-button[aria-expanded='true'] {
   background: var(--ui-metal-0);
   box-shadow: var(--ui-bevel-in);
+  color: var(--ui-text);
+}
+
+/* More sits in the bar's end: a framed item. */
+#start-more-button {
+  border: 1px solid var(--ui-edge);
+  min-height: max(var(--ctl-row, 2.25rem), 40px);
+}
+
+#start-more-button::before {
+  display: none;
 }
 
 .start-more-list {
@@ -201,6 +238,8 @@
 }
 
 .start-more-item {
+  min-height: max(var(--ctl-row, 2.25rem), 40px);
+  border-right: 0;
   text-align: left;
 }
 
@@ -233,17 +272,13 @@
 
 /* Phones: rows instead of one bar. */
 @media (max-width: 600px) {
-  .start-nav {
-    padding: 10px 12px;
-    gap: 8px;
-  }
-
   .start-logo {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   .start-end {
     order: 1;
+    flex: 1 1 auto;
   }
 
   .start-play,
@@ -252,6 +287,7 @@
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
     flex: 1 1 100%;
+    border-top: 1px solid var(--ui-edge);
   }
 
   .start-play {
@@ -260,16 +296,38 @@
 
   .start-records {
     order: 3;
-    padding-left: 0;
     border-left: 0;
   }
 
   .start-item,
   #records-entry button {
-    padding: 6px 8px;
+    justify-content: center;
+    padding: 0 8px;
+    font-size: 14px;
   }
 
   #account-entry {
     max-width: 100%;
+  }
+
+  .start-online {
+    font-size: 12px;
+  }
+}
+
+@media (forced-colors: active) {
+  .start-item[aria-current='page'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .start-item::before,
+  #records-entry button::before {
+    border-color: ButtonText;
+  }
+
+  .start-item[aria-current='page']::before {
+    background: HighlightText;
   }
 }
