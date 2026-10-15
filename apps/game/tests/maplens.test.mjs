@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import init, { Game } from '../pkg/webra_sim.js';
 import { FakeEvent, installDom, uninstallDom } from './dom-fixtures.mjs';
+import { chooseValue } from './plate-fixtures.mjs';
 import { decodeTestPng, pixelDocument, syntheticGraphics, syntheticTheater } from './content-fixtures.mjs';
 import { MemoryStore } from '../js/content/store.js';
 import { ContentSystem } from '../js/content/index.js';
@@ -1293,8 +1294,8 @@ test('skirmish lobby: the lens sits on the preview and reads the same map (gener
     assert.equal(lens.last('source')[1], key);
     assert.deepEqual(lens.last('markers')[1].map((m) => [m.label, m.picked]), [['A', false], ['B', true]]);
     // The tech buildings change the map a game gets: the lens follows.
-    lobby.techSelect.value = 'extra';
-    lobby.techSelect.dispatchEvent(new FakeEvent('change'));
+    // The tech buildings list is a select plate (js/ui/controls.js).
+    chooseValue(lobby.techSelect, 'extra');
     lobby.drawPreview();
     assert.notEqual(lens.last('source')[1], key);
     assert.equal(lens.last('source')[2](askedArt)[1].tech, 'extra');
