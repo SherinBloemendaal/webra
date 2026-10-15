@@ -1,11 +1,20 @@
-/* The loading screen (js/loadingscreen.js): from Start, Restart, a mission,
-   a save, a replay or an online game's start to the game's first frame. A
-   menu screen like the start screen (css/style.css #menu): one card as wide
-   and as tall as the window less --ui-screen-gap (theme.css), over the grid.
-   The card's title and button are the dialog card's (css/style.css
-   .menu-card); the steps sit in the middle at --ui-measure at most. */
+/* The loading screen (js/loadingscreen.js, js/loadingboard.js): from Start,
+   Restart, a mission, a save, a replay or an online game's start to the
+   game's first frame. The canvas board "Laadscherm (geanimeerd)": the grid
+   over a dark red glow with a light sweeping down, the emblem, the kind of
+   game and the map's name in large capitals, the sides facing each other
+   with VS between them, and at the bottom the step, the striped bar, the
+   steps as lamps and the tip.
+
+   Timing (js/loadingscreen.js keeps the same numbers): the screen shows at
+   least --loading-min, the bar's fill animation; after the first frame it
+   waits out the rest (--loading-hold, set from script) and fades out in
+   --loading-fade. The entrance plays once, within the least time. "Reduce
+   motion" (.is-still, or the browser's) leaves every animation out. */
 
 #loading {
+  --loading-min: 1600ms;
+  --loading-fade: 300ms;
   position: fixed;
   inset: 0;
   /* Over the menu screens, the game and its dialogs; under the toast and the tooltips. */
@@ -13,39 +22,245 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   overflow: auto;
-  padding: var(--ui-screen-pad);
-  background: var(--ui-screen-bg);
+  overflow-x: hidden;
+  padding: 32px 16px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
+    radial-gradient(ellipse at 50% 35%, #3a120d, var(--ui-bg) 65%);
+  background-color: var(--ui-bg);
   color: var(--ui-text);
   font: var(--ui-fs-m) var(--ui-font);
+  opacity: 1;
 }
 
 #loading[hidden] {
   display: none;
 }
 
+/* A light sweeping down the screen, behind everything. */
+#loading::before {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 120px;
+  background: linear-gradient(180deg, transparent, rgba(255, 90, 60, 0.07), transparent);
+  pointer-events: none;
+  animation: loading-sweep 3.2s linear infinite;
+}
+
+/* The fade out after the first frame: after the hold, the whole screen. */
+#loading.is-closing {
+  opacity: 0;
+  transition: opacity var(--loading-fade) ease-in var(--loading-hold, 0ms);
+}
+
+/* The card is the whole screen: no frame of its own. */
 #loading .loading-card {
-  width: auto;
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
   min-width: 0;
+  margin: 0 auto;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 18px;
+  gap: 26px;
+  background: none;
+  border: 0;
+  box-shadow: none;
   outline: none;
 }
 
-#loading .loading-card > * {
-  width: min(100%, 520px, var(--ui-measure));
+/* ---- Intro: emblem, kicker, title ---------------------------------------------- */
+
+.loading-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  text-align: center;
 }
 
-#loading .loading-card h1 {
+.loading-brand {
+  margin-bottom: 8px;
+  font: 800 24px/1 var(--ui-font-display);
+  letter-spacing: 0.06em;
+  animation: loading-drop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.loading-brand .ui-brand-emblem {
+  width: 34px;
+  height: 34px;
+}
+
+.loading-kicker {
+  margin: 0;
+  color: var(--ui-accent-hi);
+  font: 600 16px/1.2 var(--ui-font-display);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  animation: loading-fade 0.5s 0.15s ease-out both;
+}
+
+#loading .loading-card h1.loading-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  max-width: 100%;
+  font: 800 clamp(40px, 8vw, 96px) / 0.95 var(--ui-font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   text-align: center;
+  overflow-wrap: anywhere;
+  color: var(--ui-text);
+  text-shadow: none;
+  animation: loading-wipe 0.7s 0.25s cubic-bezier(0.6, 0, 0.2, 1) both;
+}
+
+/* ---- Sides --------------------------------------------------------------------- */
+
+.loading-sides {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.loading-sides[hidden] {
+  display: none;
+}
+
+.loading-side {
+  flex: 1 1 340px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loading-side-label {
+  margin: 0;
+  color: var(--ui-muted);
+  font: 700 15px/1.2 var(--ui-font-display);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  animation: loading-fade 0.4s 0.4s both;
+}
+
+.loading-players {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+/* More than two sides: the players in a grid, nobody facing anybody. */
+.loading-sides:not(.loading-sides-two) .loading-side {
+  flex: 1 1 260px;
+}
+
+.loading-player {
+  display: grid;
+  grid-template-columns: 6px 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding-right: 12px;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-edge);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1);
+  animation: loading-left 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(0.5s + var(--player-delay, 0s));
+}
+
+.loading-side-right .loading-player {
+  animation-name: loading-right;
+}
+
+.loading-player-strip {
+  align-self: stretch;
+  background: var(--player-color, var(--ui-neutral));
+}
+
+#loading .loading-flag {
+  width: 30px;
+  height: 20px;
+}
+
+.loading-player-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.loading-player-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.loading-player-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.loading-player-tag {
+  flex: none;
+  color: var(--ui-muted);
+  font: 700 12px/1 var(--ui-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.loading-player-tag.is-you {
+  color: var(--ui-accent-hi);
+}
+
+.loading-player-faction {
+  color: var(--ui-muted);
+  font: 600 13px/1.3 var(--ui-font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.loading-vs {
+  flex: none;
+  color: var(--ui-brand-red);
+  font: 800 60px/1 var(--ui-font-display);
+  letter-spacing: 0.04em;
+  animation:
+    loading-punch 0.7s 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    loading-glow 2.4s 1.6s ease-in-out infinite;
+}
+
+/* ---- Bottom: step, bar, steps, tip --------------------------------------------- */
+
+.loading-bottom {
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: auto;
+  animation: loading-fade 0.5s 0.6s both;
 }
 
 .loading-head {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 12px;
 }
 
@@ -53,8 +268,8 @@
    thread builds the battlefield. */
 .loading-spinner {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border: 3px solid var(--ui-accent);
   border-right-color: transparent;
   border-radius: 50%;
@@ -63,53 +278,64 @@
 
 .loading-status {
   margin: 0;
-  font: 700 var(--ui-fs-l) / 1.3 var(--ui-font);
-  letter-spacing: 0.06em;
+  font: 700 16px/1.3 var(--ui-font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--ui-text);
 }
 
-/* The bar: the share of steps done, in the accent. */
+/* The bar: a well with red stripes that move. The fill follows the steps
+   done, but never runs ahead of the reveal, which opens the bar in
+   --loading-min: the bar's animation is the least time on screen. */
 .loading-bar {
   position: relative;
-  height: 10px;
+  height: 18px;
   overflow: hidden;
-  background: var(--ui-metal-0);
+  padding: 3px;
+  background: var(--ui-well);
   border: 1px solid var(--ui-edge);
-  border-radius: var(--ui-radius);
   box-shadow: var(--ui-bevel-in);
+  animation: loading-reveal var(--loading-min) linear both;
 }
 
 .loading-bar-fill {
   position: absolute;
-  inset: 0;
+  inset: 3px;
   transform-origin: left center;
   transform: scaleX(var(--fill, 0));
-  background: var(--ui-hazard);
+  background: repeating-linear-gradient(-45deg, var(--ui-accent) 0 8px, var(--ui-primary) 8px 16px);
+  background-size: 32px 100%;
+  box-shadow: 0 0 14px -2px var(--ui-accent-glow);
   transition: transform 0.25s ease-out;
+  animation: loading-stripes 0.6s linear infinite;
 }
 
 .loading-steps {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
 }
 
+/* Every step has a lamp: lit red while it runs (blinking), green when done;
+   the word and aria-current say it too. */
 .loading-step {
-  position: relative;
-  padding-left: 22px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   color: var(--ui-dim);
+  font-size: 14px;
 }
 
 .loading-step::before {
   content: '';
-  position: absolute;
-  left: 4px;
-  top: 0.45em;
+  flex: none;
   width: 8px;
   height: 8px;
-  border: 1px solid currentColor;
+  background: var(--ui-led-off);
+  border: 1px solid var(--ui-led-off-edge);
   border-radius: 50%;
 }
 
@@ -118,17 +344,120 @@
 }
 
 .loading-step[data-state='active']::before {
-  background: var(--ui-accent);
-  border-color: var(--ui-accent);
+  background: var(--ui-led-on);
+  border-color: var(--ui-led-on-edge);
+  box-shadow: var(--ui-led-on-glow);
+  animation: loading-blink 0.8s ease-in-out infinite;
 }
 
 .loading-step[data-state='done'] {
-  color: var(--ui-muted);
+  color: var(--ui-text-2);
 }
 
 .loading-step[data-state='done']::before {
-  background: var(--ui-ok);
-  border-color: var(--ui-ok);
+  background: var(--ui-led-ok);
+  border-color: var(--ui-led-ok-edge);
+  box-shadow: var(--ui-led-ok-glow);
+}
+
+/* The tip: a dark plate with the yellow TIP label, the key in yellow too. */
+.loading-tip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 10px 12px 10px 16px;
+  background: rgba(14, 17, 21, 0.85);
+  border: 1px solid var(--ui-line);
+}
+
+.loading-tip-label {
+  flex: none;
+  padding: 2px 8px;
+  background: var(--ui-tip-key);
+  color: var(--ui-bg);
+  font: 800 14px/1.2 var(--ui-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.loading-tip-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.loading-tip-text.is-new {
+  animation: loading-fade 0.45s ease-out both;
+}
+
+.loading-tip-key {
+  color: var(--ui-tip-key);
+  font: 700 15px/1 var(--ui-font-display);
+}
+
+.loading-tip-buttons {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+.loading-tip-prev,
+.loading-tip-next {
+  position: relative;
+  width: max(30px, var(--ctl-row, 30px));
+  height: max(30px, var(--ctl-row, 30px));
+  margin: 0;
+  padding: 0;
+  background: var(--ui-raised);
+  border: 1px solid var(--ui-edge);
+  color: var(--ui-text);
+  cursor: pointer;
+}
+
+/* A drawn chevron, so the buttons need no icon font. */
+.loading-tip-prev::before,
+.loading-tip-next::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border: solid currentColor;
+  border-width: 0 3px 3px 0;
+  transform: translate(-30%, -50%) rotate(135deg);
+}
+
+.loading-tip-next::before {
+  transform: translate(-70%, -50%) rotate(-45deg);
+}
+
+.loading-tip-prev:hover,
+.loading-tip-next:hover {
+  background: var(--ui-raised-hover);
+}
+
+.loading-tip-prev:focus-visible,
+.loading-tip-next:focus-visible {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.loading-tip-count {
+  margin: 0;
+  color: var(--ui-dim);
+  font: 12px/1.3 var(--ui-font-mono);
+}
+
+/* ---- A start that failed --------------------------------------------------------- */
+
+#loading.is-failed .loading-card {
+  justify-content: center;
+  max-width: var(--ui-measure, 640px);
 }
 
 .loading-error {
@@ -137,23 +466,217 @@
   overflow-wrap: break-word;
 }
 
-/* "Reduce motion" (the setting: .is-still; or the browser's): the spinner and the bar stand still. */
-#loading.is-still .loading-spinner,
-#loading.is-still .loading-bar-fill {
-  animation: none;
-  transition: none;
+/* ---- Phones ------------------------------------------------------------------- */
+
+@media (max-width: 600px) {
+  #loading {
+    padding: 20px 16px;
+  }
+
+  #loading .loading-card {
+    gap: 18px;
+  }
+
+  .loading-vs {
+    font-size: 40px;
+  }
+
+  .loading-player {
+    min-height: 48px;
+  }
+
+  .loading-tip {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- Reduce motion and contrast --------------------------------------------------- */
+
+/* "Reduce motion" (the setting: .is-still; or the browser's): nothing moves,
+   the bar shows the steps done at once, the screen closes without a fade. */
+#loading.is-still::before,
+#loading.is-still *,
+#loading.is-still *::before {
+  animation: none !important;
+  transition: none !important;
+}
+
+#loading.is-still::before {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .loading-spinner,
+  #loading::before {
+    display: none;
+  }
+
+  #loading *,
+  #loading *::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
   .loading-bar-fill {
-    animation: none;
-    transition: none;
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .loading-step::before {
+    border-color: CanvasText;
+  }
+
+  .loading-step[data-state='active']::before {
+    background: Highlight;
+  }
+
+  .loading-step[data-state='done']::before {
+    background: CanvasText;
+  }
+
+  .loading-tip,
+  .loading-player {
+    border-color: CanvasText;
+  }
+
+  .loading-tip-label {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
   }
 }
 
 @keyframes loading-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-sweep {
+  from {
+    transform: translateY(-120px);
+  }
+
+  to {
+    transform: translateY(110vh);
+  }
+}
+
+@keyframes loading-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-28px) scale(1.08);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes loading-left {
+  from {
+    opacity: 0;
+    transform: translateX(-80px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes loading-right {
+  from {
+    opacity: 0;
+    transform: translateX(80px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes loading-punch {
+  0% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+
+  55% {
+    opacity: 1;
+    transform: scale(0.88);
+  }
+
+  75% {
+    transform: scale(1.06);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes loading-fade {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes loading-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes loading-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 18px rgba(224, 48, 31, 0.45);
+  }
+
+  50% {
+    text-shadow: 0 0 34px rgba(224, 48, 31, 0.95);
+  }
+}
+
+@keyframes loading-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes loading-stripes {
+  to {
+    background-position: 32px 0;
+  }
+}
+
+/* The bar opens from the left in --loading-min: what the fill shows never runs ahead of it. */
+@keyframes loading-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
   }
 }

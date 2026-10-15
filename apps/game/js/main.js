@@ -105,6 +105,7 @@ import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
 import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
+import { LoadingBoard, colorCss, describeStart } from './loadingboard.js';
 import { GameSession } from './gamesession.js';
 
 const PLAYER = 0;
@@ -185,7 +186,11 @@ async function boot() {
   // UI scale first, so every screen and dialog opens at its size.
   uiScale = new UiScale({ settings, win: window, root: document.documentElement });
   // The loading screen follows the spans of each game's start (js/perfcapture.js).
-  loader = new LoadingScreen($('loading'), { reducedMotion: motionIsReduced });
+  loader = new LoadingScreen($('loading'), {
+    reducedMotion: motionIsReduced,
+    // The board around the steps (js/loadingboard.js): the tips go on where the last start left them (guide.lastTip).
+    board: new LoadingBoard({ tips: { get: () => defaultRegistry().get('guide', 'lastTip'), set: (i) => defaultRegistry().set('guide', 'lastTip', i) } }),
+  });
   perfTrace.onSpan = (name) => loader.span(name);
   setupAudio();
   setupAccount();
@@ -233,6 +238,9 @@ async function boot() {
     onSound: audioPanel ? (entry) => audioPanel.open(entry) : undefined,
     onReleaseNotes: () => releaseNotes.open(),
     onStress: () => lobby.openStress(),
+    // Players online (protocol 8, /api/online through js/net.js api.online): hidden until the server has it.
+    onlineCount: async () => (await import('./net.js')).api.online?.(),
+    visible: () => !$('menu').hidden && document.visibilityState !== 'hidden',
   });
   if (!gpuError) {
     try {
@@ -702,6 +710,7 @@ function setupOnline(lobby, gpuError) {
  */
 async function createOnlineGame({ spec, conn, onCaughtUp, onCheck }) {
   perfLaunch();
+  loader.describe(describeStart(spec, { colorOf: (c) => colorCss(TEAM_PALETTE[c]) }));
   const host = await perfTrace.spanAsync('sim.host', () => newSimHost(), (h) => ({ mode: h?.mode ?? null }));
   let info;
   try {
@@ -1083,6 +1092,7 @@ function perfContext() {
  */
 async function launch(spec, lobby, failText) {
   perfLaunch();
+  loader.describe(describeStart(spec, { colorOf: (c) => colorCss(TEAM_PALETTE[c]) }));
   let host = null;
   try {
     // Installed graphics are read before the first frame, so a game never starts with WebRA art for a moment.

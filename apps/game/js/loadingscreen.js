@@ -12,11 +12,23 @@
 // hotkey (Esc and the menu) reach what it covers. FirstFrameGuard ends the
 // screen with an error when the game stops before its first frame.
 //
-// One screen card like the menu screens (css/loading.css): the grid shows
-// around it. The spinner and the bar stand still with "Reduce motion" (the
-// setting or the browser's). While loading the section is aria-busy, the
-// step is a polite status line and the bar a progressbar; an error is an
-// alert and takes the focus.
+// The look is the canvas board "Laadscherm (geanimeerd)" (css/loading.css):
+// js/loadingboard.js adds the emblem, the kind of game, the map's name, the
+// players by side and the tips around the steps. The screen always shows,
+// also for a quick start, for at least LOADING_MIN_MS: the bar's animation
+// (its stripes fill it in that time, never ahead of the real steps). Then
+// it fades out in LOADING_FADE_MS (`.is-closing`; the hold before it is the
+// --loading-hold delay, so a close that waits for the stylesheet's
+// transition waits for both). The spinner, the bar and the entrance stand
+// still with "Reduce motion" (the setting or the browser's), and the screen
+// then closes at once. While loading the section is aria-busy, the step is a
+// polite status line and the bar a progressbar; an error is an alert and
+// takes the focus.
+
+/** The least time the screen shows (the bar's fill animation, css/loading.css --loading-min). */
+export const LOADING_MIN_MS = 1600;
+/** The fade out after the first frame (css/loading.css --loading-fade). */
+export const LOADING_FADE_MS = 300;
 
 /** What each step says while it runs. */
 export const STEP_LABELS = Object.freeze({
@@ -101,10 +113,18 @@ export class LoadingScreen {
    * @param {{ reducedMotion?: () => boolean, doc?: Document }} [o]
    *   `reducedMotion`: "Reduce motion" now (the setting or the browser's)
    */
-  constructor(root, { reducedMotion = () => false, doc = globalThis.document } = {}) {
+  constructor(root, { reducedMotion = () => false, doc = globalThis.document, board = null, now = () => globalThis.performance?.now() ?? Date.now(), timers = globalThis } = {}) {
     this.root = root;
     this.doc = doc;
     this.reducedMotion = reducedMotion;
+    /** The board around the steps (js/loadingboard.js), or null. */
+    this.board = board;
+    this.now = now;
+    this.timers = timers;
+    /** When the current start's screen came up (the least showing time counts from here). */
+    this.shownAt = 0;
+    /** The hold and fade after the first frame (cleared when the screen closes or a start begins). */
+    this.closeTimer = null;
     /** 'idle', 'loading' or 'failed'. */
     this.state = 'idle';
     this.steps = [];
@@ -160,6 +180,8 @@ export class LoadingScreen {
   /** Show the screen for a start of `plan` (loadingPlan) at its first step. */
   begin(plan) {
     const doc = this.doc;
+    this.stopClosing();
+    this.shownAt = this.now();
     this.state = 'loading';
     this.steps = plan.steps.slice();
     this.index = -1;
@@ -190,6 +212,7 @@ export class LoadingScreen {
       return li;
     });
     this.card.replaceChildren(this.title, head, this.bar, this.list);
+    this.board?.begin(this.card, plan);
     this.root.classList.toggle('is-still', !!this.reducedMotion());
     this.root.classList.remove('is-failed');
     this.root.setAttribute('aria-busy', 'true');
@@ -223,12 +246,47 @@ export class LoadingScreen {
     if (Object.hasOwn(SPAN_STEPS, name)) this.step(SPAN_STEPS[name]);
   }
 
-  /** The game drew its first frame: the screen goes. */
+  /** The start's players and map are known (js/loadingboard.js describeStart): the board shows them. */
+  describe(info) {
+    if (this.state === 'loading') this.board?.describe(info);
+  }
+
+  /** How much longer the screen must show (LOADING_MIN_MS from begin; 0 with "Reduce motion"). */
+  holdMs() {
+    if (this.reducedMotion()) return 0;
+    return Math.max(0, Math.round(LOADING_MIN_MS - (this.now() - this.shownAt)));
+  }
+
+  /**
+   * The game drew its first frame: the bar fills, and the screen goes once
+   * it showed LOADING_MIN_MS, fading out in LOADING_FADE_MS (at once with
+   * "Reduce motion").
+   */
   done() {
-    if (this.state !== 'loading') return;
+    if (this.state !== 'loading' || this.closeTimer !== null) return;
     // The game has the screen now: the focus stays where the game puts it.
     this.before = null;
-    this.close();
+    this.fill.style.setProperty('--fill', '1');
+    this.bar.setAttribute('aria-valuenow', '100');
+    this.bar.setAttribute('aria-valuetext', 'Ready');
+    this.status.textContent = 'Ready. Starting the game';
+    if (this.reducedMotion()) {
+      this.close();
+      return;
+    }
+    const hold = this.holdMs();
+    this.root.style.setProperty('--loading-hold', `${hold}ms`);
+    this.root.classList.add('is-closing');
+    this.closeTimer = this.timers.setTimeout(() => {
+      this.closeTimer = null;
+      this.close();
+    }, hold + LOADING_FADE_MS);
+  }
+
+  stopClosing() {
+    if (this.closeTimer !== null) this.timers.clearTimeout(this.closeTimer);
+    this.closeTimer = null;
+    this.root.classList.remove('is-closing');
   }
 
   /**
@@ -238,6 +296,8 @@ export class LoadingScreen {
    */
   fail(message, { label = 'Back', run = null } = {}) {
     const doc = this.doc;
+    this.stopClosing();
+    this.board?.end();
     this.state = 'failed';
     this.root.setAttribute('aria-busy', 'false');
     this.root.classList.add('is-failed');
@@ -259,6 +319,8 @@ export class LoadingScreen {
 
   /** Hide the screen (a start that was given up before it began, or Back after an error). */
   close() {
+    this.stopClosing();
+    this.board?.end();
     this.state = 'idle';
     this.root.hidden = true;
     this.root.setAttribute('aria-busy', 'false');
