@@ -257,8 +257,9 @@ async function befriend(ctx, user, other) {
 async function sendRequest(ctx) {
   const body = await ctx.body(['username']);
   const user = await me(ctx);
-  const other = await target(ctx, user, body.username);
+  // Counted before the name is looked up, so the route is no faster a username oracle than this limit.
   await ctx.limit('friend-request', user.id, FRIEND_LIMITS.requests, HOUR, 'You sent many friend requests. Try again later.');
+  const other = await target(ctx, user, body.username);
   if (await blocks(ctx.db, user.id, other.id)) throw new HttpError(409, 'blocked', 'You blocked this player. Unblock them first.');
   if (await areFriends(ctx.db, user.id, other.id)) throw new HttpError(409, 'conflict', 'You are friends already.');
   const reverse = await ctx.db.prepare('SELECT 1 AS r FROM friend_requests WHERE from_user = ?1 AND to_user = ?2').bind(other.id, user.id).first();
@@ -326,8 +327,8 @@ async function removeFriend(ctx, { username }) {
 async function block(ctx) {
   const body = await ctx.body(['username']);
   const user = await me(ctx);
-  const other = await target(ctx, user, body.username);
   await ctx.limit('block', user.id, FRIEND_LIMITS.blocks, HOUR, 'You blocked many players. Try again later.');
+  const other = await target(ctx, user, body.username);
   if ((await count(ctx.db, 'SELECT COUNT(*) AS n FROM user_blocks WHERE user_id = ?1', user.id)) >= BLOCKS_MAX) {
     throw new HttpError(409, 'limit', `At most ${BLOCKS_MAX} blocked players.`);
   }
@@ -359,9 +360,9 @@ async function invite(ctx) {
   const body = await ctx.body(['username', 'session']);
   const user = await me(ctx);
   if (typeof body.session !== 'string' || !SESSION_ID_RE.test(body.session)) throw invalid('session', 'Name the session.');
+  await ctx.limit('friend-invite', user.id, FRIEND_LIMITS.invites, HOUR, 'You sent many invites. Try again later.');
   const other = await accountByName(ctx.db, body.username);
   if (!other || other.id === user.id || !(await areFriends(ctx.db, user.id, other.id))) throw new HttpError(404, 'not_found', 'This player is not your friend.');
-  await ctx.limit('friend-invite', user.id, FRIEND_LIMITS.invites, HOUR, 'You sent many invites. Try again later.');
   const member = await ctx.db.prepare('SELECT 1 AS m FROM game_presence WHERE session_id = ?1 AND user_id = ?2').bind(body.session, user.id).first();
   if (!member) throw new HttpError(403, 'forbidden', 'You are not in this session.');
   const code = await liveInviteCode(ctx.db, body.session, ctx.now);
