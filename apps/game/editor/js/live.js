@@ -213,3 +213,50 @@ export class LiveTerrain {
     return { x0, y0, x1: Math.min(this.w - 1, x0 + CHUNK - 1), y1: Math.min(this.h - 1, y0 + CHUNK - 1) };
   }
 }
+
+/** An edit in progress rebuilds the engine preview (its actors, spawns and trees) at most this often. */
+export const LIVE_PREVIEW_MS = 100;
+/** ...and spends at most about 1 / LIVE_PREVIEW_SHARE of the time on it: a slow rebuild spaces the next ones out. */
+export const LIVE_PREVIEW_SHARE = 8;
+
+/**
+ * When the editor builds the engine preview (js/world.js): at once after a
+ * closed transaction (`full`: the checks and the fog follow, `onFull`), and
+ * during an edit that changes actors or trees (`want`, then `live` once a
+ * frame) at most every `interval` ms. Live rebuilds are for the picture
+ * only: the checks wait for the commit.
+ */
+export class LivePreview {
+  constructor({ build, onFull = () => {}, ms = LIVE_PREVIEW_MS, clock = () => performance.now() }) {
+    this.build = build;
+    this.onFull = onFull;
+    this.ms = ms;
+    this.clock = clock;
+    this.interval = ms;
+    this.wanted = false;
+    this.at = -Infinity;
+  }
+
+  /** The document changed and its transaction closed: build now, the checks follow. */
+  full() {
+    this.wanted = false;
+    this.build();
+    this.onFull();
+  }
+
+  /** The edit in progress changed what the preview shows. */
+  want() {
+    this.wanted = true;
+  }
+
+  /** A frame of an edit in progress: builds when wanted and due. Returns whether it built. */
+  live(now) {
+    if (!this.wanted || now - this.at < this.interval) return false;
+    this.wanted = false;
+    this.at = now;
+    const t0 = this.clock();
+    this.build();
+    this.interval = Math.max(this.ms, (this.clock() - t0) * LIVE_PREVIEW_SHARE);
+    return true;
+  }
+}

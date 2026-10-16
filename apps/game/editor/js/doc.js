@@ -328,6 +328,23 @@ export class MapDoc {
   }
 
   /**
+   * Put cells `list` (indices) back as they were before the open
+   * transaction, which stays open: a dragged shape gives back the cells
+   * that left it.
+   */
+  revertCells(list) {
+    const tx = this.tx;
+    if (!tx) return;
+    for (const i of list) {
+      const before = tx.cells.get(i);
+      if (!before) continue;
+      [this.terrain[i], this.ore[i], this.gems[i]] = before;
+      tx.cells.delete(i);
+      this.live.cells.add(i);
+    }
+  }
+
+  /**
    * The live changes since the last call: `{ cells, objects }` (cell
    * indices, whether spawns or actors changed). Empty outside a
    * transaction: a closed one tells its listeners (`onChange`).
@@ -359,8 +376,12 @@ export class MapDoc {
     return this.redoStack.length > 0;
   }
 
+  /**
+   * Undo the last step. An open transaction (a drag in progress) is rolled
+   * back first, not recorded: redo never holds half an edit.
+   */
   undo() {
-    if (this.tx) this.commit();
+    if (this.tx) this.rollback();
     const e = this.undoStack.pop();
     if (!e) return null;
     this.apply(e, 'before');
@@ -368,8 +389,9 @@ export class MapDoc {
     return e.label;
   }
 
+  /** Redo the last undone step (an open transaction is rolled back first, as for undo). */
   redo() {
-    if (this.tx) this.commit();
+    if (this.tx) this.rollback();
     const e = this.redoStack.pop();
     if (!e) return null;
     this.apply(e, 'after');

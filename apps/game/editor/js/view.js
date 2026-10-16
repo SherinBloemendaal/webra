@@ -275,7 +275,17 @@ export class EditorView {
       this.handlers.up(this.cellAt(p.x, p.y), e);
     };
     c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', up);
+    // The system took the pointer (a gesture of its own, a dialog): the tool's edit is cancelled, not kept half done.
+    c.addEventListener('pointercancel', (e) => {
+      if (this.pan && e.pointerId === this.pan.id) {
+        this.pan = null;
+        c.classList.remove('panning');
+        return;
+      }
+      if (e.pointerId !== this.toolPointer) return;
+      this.toolPointer = null;
+      this.handlers.cancel?.();
+    });
     // The capture went without a release (the window lost the pointer): the gesture ends where the pointer was last.
     c.addEventListener('lostpointercapture', (e) => {
       if (e.pointerId !== this.toolPointer) return;

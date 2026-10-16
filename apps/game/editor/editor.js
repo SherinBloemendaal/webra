@@ -19,6 +19,7 @@ import { renderReport } from '../js/oramap/report.js';
 import { EditorArt } from './js/art.js';
 import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
 import { InstalledTiles, TileWorker } from './js/tiles.js';
+import { LivePreview } from './js/live.js';
 import { idleTask } from './js/idle.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, controlOwnsKeys, isTyping } from './js/view.js';
@@ -324,21 +325,26 @@ let previewDirty = true;
 /** The engine checks (Game.editor_cells, editor_report) are out of date. */
 let analysisDirty = true;
 
-/** Previews built so far, and the fog shown (js/world.js, Game.editor_fog). */
-let previewBuilds = 0;
+/** The fog shown (Game.editor_fog), for the full preview build it was made from. */
 let shownFog = 'clear';
 
 /** Layers that need the engine's cell checks. */
 const ANALYSIS_LAYERS = ['passability', 'buildable', 'zones', 'rush', 'reach'];
 
+/** Full preview builds (after a closed transaction): the fog preview follows them, not the live ones. */
+let fullBuilds = 0;
 /**
- * An edit in progress that changes actors or trees (the preview's actors)
- * builds the preview again at most this often; its cells show every frame
- * (js/live.js).
+ * When the preview is built (js/live.js): after every closed transaction,
+ * and during an edit that changes actors or trees at most every 100 ms (a
+ * slow build spaces them out more). Only the full builds rerun the checks.
  */
-const LIVE_PREVIEW_MS = 100;
-let livePreviewAt = -Infinity;
-let livePreviewWanted = false;
+const livePreview = new LivePreview({
+  build: () => buildPreview(),
+  onFull: () => {
+    analysisDirty = true;
+    fullBuilds++;
+  },
+});
 
 /** A frame; the first one tells the boot whether the editor draws (a throw there is the boot's error, not a hang). */
 function frame(now) {
@@ -364,8 +370,7 @@ function drawFrame(now) {
   ctl.flush();
   if (previewDirty) {
     previewDirty = false;
-    livePreviewWanted = false;
-    buildPreview();
+    livePreview.full();
     view.terrainDirty = true;
   } else if (doc.inTransaction) {
     liveFrame(now);
@@ -377,7 +382,7 @@ function drawFrame(now) {
     if (activeTab === 'check') fairnessTask.soon();
   }
   // Fog preview: what the chosen spawn sees at the start, else everything visible.
-  const fogKey = state.layers.fog && preview.game ? `${previewBuilds}:${state.fogSpawn}` : 'clear';
+  const fogKey = state.layers.fog && preview.game ? `${fullBuilds}:${state.fogSpawn}` : 'clear';
   if (fogKey !== shownFog) {
     shownFog = fogKey;
     view.uploadFog(fogKey === 'clear' ? null : preview.game.editor_fog(state.fogSpawn));
@@ -399,34 +404,30 @@ function drawFrame(now) {
   requestAnimationFrame(frame);
 }
 
-/** Build the engine preview of the map as it is now (js/world.js); the live view patches from it. */
+/** Build the engine preview of the map as it is now (js/world.js); the live view patches from it. The checks are `livePreview`'s to rerun. */
 function buildPreview() {
-  if (preview.update(doc.snapshot().json)) previewBuilds++;
+  preview.update(doc.snapshot().json);
   if (preview.error) console.warn('Map preview:', preview.error);
   view.live.setBase(doc, preview.error ? null : preview.terrain());
-  analysisDirty = true;
 }
 
 /**
  * The frame of an edit in progress (a transaction is open): the cells it
  * changed since the last frame go into the drawn terrain and the minimap
  * (only those, js/live.js); actors and trees it changed come with a new
- * preview, at most every LIVE_PREVIEW_MS.
+ * preview, at most every LIVE_PREVIEW_MS (js/live.js LivePreview).
  */
 function liveFrame(now) {
   const { cells, objects } = doc.takeLive();
   if (cells.length) {
-    if (view.live.mark(doc, cells)) livePreviewWanted = true;
+    if (view.live.mark(doc, cells)) livePreview.want();
     minimap.patch(doc, cells);
   }
   if (objects) {
-    livePreviewWanted = true;
+    livePreview.want();
     minimap.invalidate();
   }
-  if (livePreviewWanted && now - livePreviewAt >= LIVE_PREVIEW_MS) {
-    livePreviewWanted = false;
-    livePreviewAt = now;
-    buildPreview();
+  if (livePreview.live(now)) {
     // The cells patched from the document take the new preview's bytes (a tree cell is clear ground under its tree there).
     view.live.remark(doc);
   }

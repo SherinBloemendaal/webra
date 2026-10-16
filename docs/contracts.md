@@ -670,10 +670,18 @@ guards it by counting reads, not by the clock.
   tool changes the map while the pointer is down, inside one transaction
   from press to release (one undo step; Esc rolls it back with
   `MapDoc.rollback`, and the closed transaction rebuilds the picture).
-  Strokes add cells with each move; a shape or a moved region is made again
-  from the start (`MapDoc.revert`, which keeps the transaction open) when its
-  corner, offset or the tool settings changed, at most once a frame
-  (`Controller.flush`). `MapDoc.takeLive()` hands the frame the cells changed
+  Strokes add cells with each move; a shape or a moved region is remade
+  when its corner, offset or the tool settings changed, at most once a frame
+  (`Controller.flush`). A shape whose paint stayed the same gives back only
+  the cells that left it (`MapDoc.revertCells`) and paints only the ones that
+  came in, so a corner moved on a full-map filled rectangle costs its edge
+  (a 256 x 256 rectangle: about 3 ms a frame, median); with beaches along
+  painted water, a changed paint and for moved regions it is made again from
+  the start (`MapDoc.revert`, which keeps the transaction open). Undo or redo
+  during a drag rolls the drag back first (`MapDoc.undo`), so redo never
+  holds half an edit; a `pointercancel` from the system cancels the drag
+  too. A region moved by nothing still makes an undo step, and the analysis
+  layers and the checks follow at the release, not during the drag. `MapDoc.takeLive()` hands the frame the cells changed
   since the last frame and whether spawns or actors changed (`touchObjects`
   on every object change). The frame patches the uploaded picture instead of
   rebuilding the engine preview: the changed cells' terrain bytes (the
@@ -685,8 +693,12 @@ guards it by counting reads, not by the clock.
   (`Renderer.uploadTerrainRect`). The minimap redraws the changed cells only
   (`Minimap.patch`). Actors and the trees of tree terrain are the preview's:
   a gesture that changes actors, spawns or tree cells builds the preview
-  again at most every 100 ms (`LIVE_PREVIEW_MS`); a tree cell shows the tree
-  tile until then. The commit builds the preview and the full picture as
+  again at most every 100 ms (`LivePreview`, `LIVE_PREVIEW_MS`), and less
+  often when a build is slow (at most an eighth of the time; one build of a
+  256 x 256 map with 2000 actors takes about 12 ms in Node); a tree cell
+  shows the tree tile until then. These live builds only draw: the checks
+  (`editor_cells`, the fairness table) and the fog preview follow the full
+  build after the commit. The commit builds the preview and the full picture as
   before, with the new decal seed (the decals follow the whole map's terrain,
   as in a game). The canvas captures the tool's pointer from press to
   release; a capture lost without a release ends the gesture where the

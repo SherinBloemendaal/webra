@@ -167,9 +167,12 @@ test('a drag shows the cells it changed before the release, for every drag tool'
 test('a shape follows its corner, made again once a frame; the release is one undo step with the final shape', () => {
   const e = editor(blank(), { tool: 'rect', material: TERRAIN.ROCK });
   const original = e.doc.toMap();
+  // Each remake gives cells back first: all of them (revert) or those that left the shape (revertCells).
   let reverts = 0;
   const revert = e.doc.revert.bind(e.doc);
+  const revertCells = e.doc.revertCells.bind(e.doc);
   e.doc.revert = () => (reverts++, revert());
+  e.doc.revertCells = (list) => (reverts++, revertCells(list));
   e.ctl.down(at(10, 10), LEFT);
   const made = reverts;
   // Many moves in one frame: the rectangle is made once, at the last corner.
@@ -188,7 +191,6 @@ test('a shape follows its corner, made again once a frame; the release is one un
   // A frame without a move makes nothing again.
   e.frame();
   assert.equal(reverts, made + 2);
-  // A bigger brush mid-drag (a key) remakes a line.
   e.ctl.up(at(14, 12), LEFT);
   assert.equal(e.doc.undoStack.length, 1);
   assert.equal(e.doc.undoStack[0].label, 'Rectangle of terrain');
@@ -451,18 +453,118 @@ test('placing, moving and erasing actors report object changes for the live prev
   assert.deepEqual([e.doc.actors[0].x, e.doc.actors[0].y], [7, 8]);
 });
 
-test('an undo while dragging ends the gesture: it changes nothing after that', () => {
-  const e = editor(blank(), { tool: 'rect', material: TERRAIN.ROCK });
+test('an undo while dragging cancels the drag and undoes the step before it; redo never holds half a shape', () => {
+  const e = editor(blank(), { tool: 'brush', material: TERRAIN.ROUGH });
+  const blankMap = e.doc.toMap();
+  e.ctl.down(at(30, 30), LEFT);
+  e.ctl.up(at(30, 30), LEFT);
+  const painted = e.doc.toMap();
+  Object.assign(e.state, { tool: 'rect', material: TERRAIN.ROCK });
   e.ctl.down(at(4, 4), LEFT);
   e.ctl.move(at(10, 10));
   e.frame();
-  e.doc.undo(); // commits the open rectangle, then undoes it
-  const map = e.doc.toMap();
+  assert.equal(e.doc.undo(), 'Paint terrain', 'the step before the drag is undone');
+  assert.deepEqual(e.doc.toMap(), blankMap, 'the half rectangle rolled back, the stroke undone');
+  assert.equal(e.doc.redoStack.length, 1);
+  // The drag is over: its moves and release change nothing.
   e.ctl.move(at(20, 20));
   e.frame();
   e.ctl.up(at(20, 20), LEFT);
-  assert.deepEqual(e.doc.toMap(), map);
   assert.equal(e.ctl.gesture, null);
+  assert.deepEqual(e.doc.toMap(), blankMap);
+  assert.equal(e.doc.redo(), 'Paint terrain', 'redo brings the stroke back, not a half rectangle');
+  assert.deepEqual(e.doc.toMap(), painted);
+  assert.equal(e.doc.redoStack.length, 0);
+  // Redo while dragging rolls the drag back too.
+  e.doc.undo();
+  e.ctl.down(at(4, 4), LEFT);
+  e.ctl.move(at(10, 10));
+  e.frame();
+  e.doc.redo();
+  assert.deepEqual(e.doc.toMap(), painted);
+});
+
+test('a dragged big filled shape changes only its edge when its corner moves, and stays one exact undo step', () => {
+  for (const symmetry of ['none', 'quad']) {
+    const e = editor(JSON.parse(Game.generated_map_with(3, 128, 4, 'lakes', 'temperate', 'extra')), { tool: 'rect', material: TERRAIN.ROCK, symmetry });
+    const original = e.doc.toMap();
+    e.ctl.down(at(0, 0), LEFT);
+    e.ctl.move(at(120, 120));
+    e.frame();
+    let writes = 0;
+    const setCell = e.doc.setCell.bind(e.doc);
+    e.doc.setCell = (...a) => (writes++, setCell(...a));
+    e.ctl.move(at(122, 121));
+    e.frame();
+    // One new column and row at each mirror image, not the area again.
+    assert.ok(writes <= 4 * (123 + 122), `${symmetry}: ${writes} cells painted`);
+    e.ctl.move(at(119, 118));
+    e.frame();
+    e.doc.setCell = setCell;
+    assertPictureIsDoc(e, `${symmetry}: shrunk`);
+    // The same map as the shape painted at once.
+    const once = new MapDoc(original);
+    const ctl = new Controller(once, VIEW(128, 128), CATALOG, { ...e.state }, HOOKS);
+    once.begin('once');
+    ctl.paintCells(ctl.shapeCells('rect', 0, 0, 119, 118), false);
+    once.commit();
+    assert.deepEqual(e.doc.terrain, once.terrain, `${symmetry}: the shape as painted at once`);
+    e.ctl.up(at(119, 118), LEFT);
+    assert.deepEqual(e.doc.terrain, once.terrain);
+    assert.equal(e.doc.undoStack.length, 1);
+    e.doc.undo();
+    assert.deepEqual(e.doc.toMap(), original, `${symmetry}: one undo step restores the map`);
+  }
+});
+
+test('a dragged shape painting ore or with beaches along water comes out as painted at once', () => {
+  for (const set of [{ paint: 'ore', ore: 5 }, { paint: 'terrain', material: TERRAIN.WATER, autoShore: true }, { paint: 'gems', symmetry: 'rotate180' }]) {
+    const e = editor(JSON.parse(Game.generated_map_with(4, 64, 2, 'lakes', 'temperate', 'extra')), { tool: 'ellipse', ...set });
+    const original = e.doc.toMap();
+    e.ctl.down(at(5, 5), LEFT);
+    for (const [x, y] of [[40, 30], [50, 44], [20, 18], [33, 33]]) {
+      e.ctl.move(at(x, y));
+      e.frame();
+    }
+    e.ctl.up(at(33, 33), LEFT);
+    const once = new MapDoc(original);
+    const ctl = new Controller(once, VIEW(64, 64), CATALOG, { ...e.state }, HOOKS);
+    once.begin('once');
+    ctl.paintCells(ctl.shapeCells('ellipse', 5, 5, 33, 33), false);
+    once.commit();
+    assert.deepEqual([e.doc.terrain, e.doc.ore, e.doc.gems], [once.terrain, once.ore, once.gems], JSON.stringify(set));
+  }
+});
+
+test('live preview builds: full ones after a commit rerun the checks, live ones only draw, at most every interval', async () => {
+  const { LivePreview, LIVE_PREVIEW_MS, LIVE_PREVIEW_SHARE } = await import('../editor/js/live.js');
+  let builds = 0;
+  let checks = 0;
+  let cost = 2;
+  let clock = 0;
+  const p = new LivePreview({ build: () => (builds++, (clock += cost)), onFull: () => checks++, clock: () => clock });
+  p.full();
+  assert.deepEqual([builds, checks], [1, 1]);
+  assert.equal(p.live(0), false, 'nothing wanted');
+  p.want();
+  assert.equal(p.live(1000), true);
+  assert.equal(p.live(1001), false);
+  p.want();
+  assert.equal(p.live(1000 + LIVE_PREVIEW_MS - 1), false, 'not yet');
+  assert.equal(p.live(1000 + LIVE_PREVIEW_MS), true);
+  assert.deepEqual([builds, checks], [3, 1], 'live builds rerun no checks');
+  // A slow build spaces the next ones out.
+  cost = 40;
+  p.want();
+  p.live(5000);
+  p.want();
+  assert.equal(p.live(5000 + 40 * LIVE_PREVIEW_SHARE - 1), false);
+  assert.equal(p.live(5000 + 40 * LIVE_PREVIEW_SHARE), true);
+  // editor.js: the checks are marked out of date by full builds only.
+  const src = readFileSync(new URL('../editor/editor.js', import.meta.url), 'utf8');
+  const build = /function buildPreview\(\) \{([\s\S]*?)\n\}/.exec(src)[1];
+  assert.doesNotMatch(build, /analysisDirty|fairness/);
+  assert.match(src, /onFull: \(\) => \{\n    analysisDirty = true;/);
 });
 
 // ---- Pointer capture -------------------------------------------------------------------------------
@@ -498,6 +600,12 @@ test('the canvas captures the tool\'s pointer: no stuck stroke when it leaves or
       ['move', 20, 1],
       ['up', 20, 1],
     ]);
+    // The system cancels the pointer: the edit is cancelled, not committed half done.
+    calls.length = 0;
+    fire('pointerdown', { clientX: 30, clientY: 30, pointerId: 2 });
+    fire('pointercancel', { clientX: 60, clientY: 30, pointerId: 2 });
+    fire('pointerup', { clientX: 60, clientY: 30, pointerId: 2 });
+    assert.deepEqual(calls, [['down', 1, 1], ['cancel']]);
     // A second press while one is down (another pointer) is not a new gesture; its release ends nothing.
     calls.length = 0;
     fire('pointerdown', { clientX: 30, clientY: 30, pointerId: 5 });

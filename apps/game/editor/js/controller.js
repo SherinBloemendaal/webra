@@ -352,14 +352,82 @@ export class Controller {
     if (key === g.made) return;
     g.made = key;
     const doc = this.doc;
-    doc.revert();
     if (g.kind === 'shape') {
-      this.paintCells(this.shapeCells(g.shape, g.x0, g.y0, g.x1, g.y1), g.right);
-    } else {
-      const r = g.from;
-      clearRegion(doc, this.catalog, r.x0, r.y0, r.x1, r.y1);
-      g.result = pasteRegion(doc, this.catalog, g.clip, r.x0 + g.dx, r.y0 + g.dy, 'none');
+      this.remakeShape(g);
+      return;
     }
+    doc.revert();
+    const r = g.from;
+    clearRegion(doc, this.catalog, r.x0, r.y0, r.x1, r.y1);
+    g.result = pasteRegion(doc, this.catalog, g.clip, r.x0 + g.dx, r.y0 + g.dy, 'none');
+  }
+
+  /**
+   * Make a dragged shape match its corners. While the paint stays the same
+   * (layer, material, density, button) every cell is painted on its own, so
+   * only the cells that left the shape go back (doc.revertCells) and only
+   * the ones that came in are painted: a corner moved on a big filled
+   * rectangle costs its edge, not its area. Beaches along painted water
+   * depend on the whole shape: with them, and when the paint changed, the
+   * shape is made again from the start.
+   */
+  remakeShape(g) {
+    const s = this.state;
+    const doc = this.doc;
+    const material = g.right ? TERRAIN.CLEAR : s.material;
+    const shores = s.paint === 'terrain' && s.autoShore && material === TERRAIN.WATER;
+    const paint = [g.right, s.paint, s.material, s.ore, s.gems].join(',');
+    const n = doc.width * doc.height;
+    if (g.inShape?.length !== n) g.inShape = new Uint8Array(n);
+    if (shores || !g.cells || g.paint !== paint) {
+      doc.revert();
+      for (const i of g.cells ?? []) g.inShape[i] = 0;
+      this.paintCells(this.shapeCells(g.shape, g.x0, g.y0, g.x1, g.y1), g.right);
+      g.cells = this.shapeTargets(g);
+      for (const i of g.cells) g.inShape[i] = 1;
+      g.paint = paint;
+      return;
+    }
+    const next = this.shapeTargets(g);
+    const leaving = g.cells.filter((i) => g.stamp[i] !== g.gen);
+    doc.revertCells(leaving);
+    for (const i of leaving) g.inShape[i] = 0;
+    const entering = [];
+    for (const i of next) {
+      if (g.inShape[i]) continue;
+      g.inShape[i] = 1;
+      entering.push([i % doc.width, Math.floor(i / doc.width)]);
+    }
+    this.paintCells(entering, g.right, 'none');
+    g.cells = next;
+  }
+
+  /**
+   * The map cells (indices) of a dragged shape at all its symmetric
+   * positions, each once; they are marked `g.gen` in `g.stamp`.
+   */
+  shapeTargets(g) {
+    const doc = this.doc;
+    const { width: w, height: h } = doc;
+    if (g.stamp?.length !== w * h) {
+      g.stamp = new Uint32Array(w * h);
+      g.gen = 0;
+    }
+    const gen = ++g.gen;
+    const stamp = g.stamp;
+    const transforms = transformsFor(this.state.symmetry, w, h);
+    const out = [];
+    for (const [cx, cy] of this.shapeCells(g.shape, g.x0, g.y0, g.x1, g.y1)) {
+      for (const t of transforms) {
+        const [px, py] = applyTransform(t, cx, cy, w, h);
+        if (px < 0 || py < 0 || px >= w || py >= h) continue;
+        const i = py * w + px;
+        if (stamp[i] === gen) continue;
+        stamp[i] = gen;
+        out.push(i);
+      }
+    }
+    return out;
   }
 
   // ---- Painting ---------------------------------------------------------------------
@@ -372,16 +440,16 @@ export class Controller {
     return right ? 'clear ground' : 'terrain';
   }
 
-  /** Paint `cells` with the paint layer (and their symmetric copies); shores follow painted water. */
-  paintCells(cells, right) {
+  /** Paint `cells` with the paint layer (and their copies under `symmetry`, the tool's by default); shores follow painted water. */
+  paintCells(cells, right, symmetry = this.state.symmetry) {
     const s = this.state;
     const doc = this.doc;
-    if (s.paint === 'ore') paintOre(doc, cells, right ? 0 : s.ore, s.symmetry);
-    else if (s.paint === 'gems') paintGems(doc, cells, right ? 0 : s.gems, s.symmetry);
+    if (s.paint === 'ore') paintOre(doc, cells, right ? 0 : s.ore, symmetry);
+    else if (s.paint === 'gems') paintGems(doc, cells, right ? 0 : s.gems, symmetry);
     else {
       const material = right ? TERRAIN.CLEAR : s.material;
-      paintTerrain(doc, cells, material, s.symmetry);
-      if (s.autoShore && material === TERRAIN.WATER) autoShore(doc, cells, s.symmetry);
+      paintTerrain(doc, cells, material, symmetry);
+      if (s.autoShore && material === TERRAIN.WATER) autoShore(doc, cells, symmetry);
     }
   }
 
