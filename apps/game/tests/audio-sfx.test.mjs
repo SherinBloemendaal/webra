@@ -67,13 +67,17 @@ const BASELINE_SECONDS = 55.5;
  * same run (0.62 to 0.66 measured on the current set, which renders the 0.16
  * set's sound budget; the wall time ratio this replaced was 0.89), and the margin the median of COST_RUNS runs
  * may exceed it by. CPU time (process.cpuUsage) rather than wall time, both
- * kinds rendered in every run in alternating order, and the median: other
- * work on the machine (parallel test suites, builds) moves the ratio by a
- * few percent at most, well within the margin, while a new sound that costs
- * as much as a tenth of the set still fails.
+ * kinds rendered in every run in alternating order, after a pass over every
+ * recipe that is not measured (the first, cold JIT pass came out at 1.08),
+ * and the median: other work on the machine (parallel test suites, builds)
+ * moves the ratio by a few percent at most. The baseline was measured on
+ * macOS (Apple silicon, Node 26) only, while CI runs Linux and Node 22: the
+ * margin is 25% (at most 0.81) until a CI value is recorded from the
+ * diagnostic line this test prints; a new sound that costs as much as a
+ * third of the set still fails.
  */
 const BASELINE_COST = 0.65;
-const COST_MARGIN = 0.1;
+const COST_MARGIN = 0.25;
 const COST_RUNS = 5;
 
 const SR = 48000;
@@ -144,13 +148,15 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
 /**
  * Every recipe rendered `runs` times (the order reversed every other run, so
- * effects and thunder share whatever else the machine does): the sounds, and
- * per run the CPU time of the effects and of the thunder. `effects`,
+ * effects and thunder share whatever else the machine does), after one pass
+ * over all of them that is not measured (it warms the JIT up): the sounds,
+ * and per run the CPU time of the effects and of the thunder. `effects`,
  * `thunder` and `ratio` are the medians.
  */
 function renderAll(runs) {
   const sounds = new Map();
   const ids = Object.keys(RECIPES);
+  for (const id of ids) for (let v = 0; v < VARIANTS; v++) render(id, SR, v);
   const fxRuns = [];
   const thRuns = [];
   const ratios = [];
