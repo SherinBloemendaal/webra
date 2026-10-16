@@ -263,6 +263,8 @@ export class CommandBar {
     this.cmd = null;
     this.state = null;
     this.hotkeys = hotkeys;
+    this.parent = parent;
+    this.placed = { bottom: null, height: null }; // what place() last wrote on the parent
     this.root = document.createElement('div');
     this.root.id = 'commandbar';
     this.root.setAttribute('role', 'toolbar');
@@ -317,6 +319,8 @@ export class CommandBar {
     this.offKeys.forEach((off) => off());
     this.offChange();
     this.tips.forEach((t) => t.detach());
+    this.setVar('bottom', '--cb-bottom', null);
+    this.setVar('height', '--cb-height', null);
     this.root.remove();
   }
 
@@ -353,13 +357,28 @@ export class CommandBar {
     return this.input.selectedOwnUnits();
   }
 
-  /** Stay above the touch action bar (js/touch.js) while it shows. */
+  /**
+   * Stay above the touch action bar (js/touch.js) while it shows. Where the
+   * bar sits (--cb-bottom) and how tall it is (--cb-height: it wraps to two
+   * rows on narrow screens) go on its parent, the battlefield, so what sits
+   * above the bar follows it: the tour card (css/guide.css .tour) would cover
+   * the bar's buttons and take their clicks otherwise.
+   */
   place() {
     const bar = document.getElementById('touch-bar');
     const h = bar && bar.offsetParent !== null ? bar.offsetHeight : 0;
-    // The gap above the bar follows the UI scale (css/theme.css --ui-px); the bar's height is measured.
-    if (h > 0) this.root.style.setProperty('--cb-bottom', `calc(${h}px + 14 * var(--ui-px))`);
-    else this.root.style.removeProperty('--cb-bottom');
+    // The gap above the touch bar follows the UI scale (css/theme.css --ui-px); the heights are measured.
+    this.setVar('bottom', '--cb-bottom', h > 0 ? `calc(${h}px + 14 * var(--ui-px))` : null);
+    const own = this.root.offsetHeight;
+    this.setVar('height', '--cb-height', own > 0 ? `${own}px` : null);
+  }
+
+  /** Write (or with null remove) a custom property on the parent when it changed. */
+  setVar(slot, name, value) {
+    if (this.placed[slot] === value) return;
+    this.placed[slot] = value;
+    if (value === null) this.parent.style.removeProperty(name);
+    else this.parent.style.setProperty(name, value);
   }
 
   /** Refresh from the selection (call on selection changes and every UI tick). */

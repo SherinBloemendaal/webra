@@ -3,7 +3,8 @@
    (css/theme.css tokens). It lives inside #field, so it never covers the
    sidebar. It sits above the Sound button on desktop and above the touch
    action bar (js/touch.js) on touch screens: the bar sets --cb-bottom from
-   the touch bar's height. */
+   the touch bar's height, and its own --cb-height, on #field (inherited here;
+   the tour card, css/guide.css, keeps clear of the bar with both). */
 
 #commandbar {
   position: absolute;

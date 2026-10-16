@@ -245,6 +245,81 @@ test('tour card: the open step, its dots and lit cameo; Step done; Skip step; Sk
   assert.equal(field.querySelector('.tour'), null);
 });
 
+/**
+ * Timers that behave like a browser's: window.setTimeout and clearTimeout are
+ * WebIDL operations that throw "Illegal invocation" when called on anything
+ * but the window (or with no receiver), for example as a method of another
+ * object. Node's own timers do not care, which is how the tour card shipped
+ * calling them as `this.timers.set(...)`. Returns the pending callbacks and a
+ * restore function.
+ */
+function browserTimers() {
+  const saved = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  const pending = new Map();
+  let next = 1;
+  const guard = (self, name) => {
+    if (self !== undefined && self !== null && self !== globalThis && self !== globalThis.window) {
+      throw new TypeError(`Failed to execute '${name}' on 'Window': Illegal invocation`);
+    }
+  };
+  globalThis.setTimeout = function setTimeout(fn) {
+    guard(this, 'setTimeout');
+    pending.set(next, fn);
+    return next++;
+  };
+  globalThis.clearTimeout = function clearTimeout(id) {
+    guard(this, 'clearTimeout');
+    pending.delete(id);
+  };
+  return {
+    pending,
+    run() {
+      const fns = [...pending.values()];
+      pending.clear();
+      fns.forEach((fn) => fn());
+    },
+    restore: () => Object.assign(globalThis, saved),
+  };
+}
+
+test('tour card in the game: every tour step the game ticks off says Step done without throwing (browser timers)', () => {
+  const timers = browserTimers();
+  try {
+    const { progress, tracker } = setup();
+    const field = doc.createElement('div');
+    doc.body.append(field);
+    // As js/main.js builds it: no timers of its own, so the page's setTimeout.
+    const card = new TourCard(field, { progress, onGuide: () => {} });
+    tracker.onDone = (ids) => card.stepsDone(ids);
+    const toast = () => field.querySelector('.tour-toast').textContent;
+    // What the engine reports for each tour step (js/guide.js TRIGGERS), in a frame of its own.
+    const frames = [
+      ['base.mcv', [[EV.TRANSFORMED, T.MCV, 0, T.FACT]], /Step done: MCV deployed/],
+      ['base.power', [[EV.BUILDING_PLACED, T.POWR, 0]], /Step done: Power Plant placed/],
+      ['base.refinery', [[EV.BUILDING_PLACED, T.PROC, 0]], /Step done: Ore Refinery placed/],
+      ['base.production', [[EV.BUILDING_PLACED, T.TENT, 0], [EV.BUILDING_PLACED, T.WEAP, 0]], /Step done: Barracks and War Factory/],
+      ['base.radar', [[EV.BUILDING_PLACED, T.DOME, 0]], /Tour done/],
+    ];
+    for (const [id, list, said] of frames) {
+      // A throw here leaves js/main.js frameBody before it asks for the next animation frame: the game stands still.
+      assert.doesNotThrow(() => tracker.onEvents(events(...list)), id);
+      assert.ok(progress.isDone(id), id);
+      assert.match(toast(), said, id);
+      assert.equal(timers.pending.size, 1, `${id}: one toast timer, the last one cleared`);
+    }
+    timers.run();
+    assert.equal(toast(), '', 'the toast goes after TOAST_MS');
+    // The buttons say things too: Skip the tour.
+    progress.setTourInGames(true);
+    assert.doesNotThrow(() => click(field.querySelector('.tour-close')));
+    assert.match(toast(), /Tour off/);
+    assert.doesNotThrow(() => card.dispose());
+    assert.equal(timers.pending.size, 0, 'dispose clears the toast timer');
+  } finally {
+    timers.restore();
+  }
+});
+
 test('Guide page: chapters with lamps, the steps with Watching and Done, Skip this step, read steps, the tour switch', async () => {
   const registry = createRegistry({ storage: memoryStorage() });
   const settings = createSettings(registry);

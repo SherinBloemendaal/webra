@@ -75,7 +75,13 @@ export class TourCard {
   constructor(field, o) {
     this.o = o;
     this.progress = o.progress;
-    this.timers = { set: o.setTimeout ?? globalThis.setTimeout, clear: o.clearTimeout ?? globalThis.clearTimeout };
+    // The page's timers are called on the window: as methods of another object
+    // (`this.timers.set(...)`) browsers throw "Illegal invocation", and that
+    // throw, from the GuideTracker inside js/main.js frameBody, stopped the game loop.
+    this.timers = {
+      set: o.setTimeout ?? ((fn, ms) => globalThis.setTimeout(fn, ms)),
+      clear: o.clearTimeout ?? ((id) => globalThis.clearTimeout(id)),
+    };
     this.toastTimer = null;
     this.lit = [];
     this.root = el('section', 'tour');

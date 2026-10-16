@@ -3,6 +3,7 @@
 // TouchControls and Minimap over a fake game and a minimal fake DOM. No
 // browser and no WebAssembly. Run with: node --test apps/game/tests/minimap-orders.test.mjs
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { ACTION, CURSORS, setCursorArt } from '../js/cursors.js';
 import { RADAR, TRANSITION_MS, REFRESH_MS } from '../js/minimap.js';
@@ -176,7 +177,8 @@ async function setup({ spectator = false } = {}) {
     { hotkeys, settings: createSettings(null), spectator },
   );
   input.camera.zoom = 1;
-  commandBar = new CommandBar(fakeElement('main'), { game, input, player: 0, hotkeys, spectator });
+  const field = fakeElement('main');
+  commandBar = new CommandBar(field, { game, input, player: 0, hotkeys, spectator });
   const touch = new TouchControls({ canvas: view, field: fakeElement('main'), input, hotkeys });
   const radar = fakeElement('div');
   const mm = new Minimap(radar, { game, fog: () => new Uint8Array(MAP * MAP), player: 0, input, colors: [[1, 1, 1]], touch });
@@ -203,8 +205,38 @@ async function setup({ spectator = false } = {}) {
     },
   };
   const orders = () => raw.calls.filter(([name]) => name !== 'set_selection');
-  return { input, commandBar, touch, mm, raw, lines, replies, centers, p, orders };
+  return { input, commandBar, field, touch, mm, raw, lines, replies, centers, p, orders };
 }
+
+test('command bar: where it sits and how tall it is go on the battlefield, so the tour card above it keeps clear', async () => {
+  const { commandBar, field } = await setup();
+  const touchBar = fakeElement('div');
+  touchBar.offsetParent = {};
+  touchBar.offsetHeight = 0;
+  const getById = document.getElementById;
+  document.getElementById = (id) => (id === 'touch-bar' ? touchBar : getById?.call(document, id) ?? null);
+  try {
+    commandBar.root.offsetHeight = 39;
+    commandBar.update();
+    assert.equal(field.style.getPropertyValue('--cb-height'), '39px');
+    assert.equal(field.style.getPropertyValue('--cb-bottom'), '', 'desktop: the default place (css/commandbar.css)');
+    // Touch: the action bar shows and the command bar wraps to two rows.
+    touchBar.offsetHeight = 100;
+    commandBar.root.offsetHeight = 78;
+    commandBar.update();
+    assert.equal(field.style.getPropertyValue('--cb-bottom'), 'calc(100px + 14 * var(--ui-px))');
+    assert.equal(field.style.getPropertyValue('--cb-height'), '78px');
+    // The tour card (css/guide.css .tour) adds both up; the bar's own element keeps nothing of its own.
+    const css = readFileSync(new URL('../css/guide.css', import.meta.url), 'utf8');
+    assert.match(css, /\.tour \{[^}]*bottom: calc\(var\(--cb-bottom[^;]*var\(--cb-height/);
+    commandBar.root.remove ??= () => {}; // the minimal fake DOM's elements have no remove()
+    commandBar.destroy();
+    assert.equal(field.style.getPropertyValue('--cb-bottom'), '');
+    assert.equal(field.style.getPropertyValue('--cb-height'), '');
+  } finally {
+    document.getElementById = getById;
+  }
+});
 
 test('radar: a left click with units selected moves them there, like a click on the battlefield', async () => {
   const { input, p, orders, centers, lines, replies } = await setup();
