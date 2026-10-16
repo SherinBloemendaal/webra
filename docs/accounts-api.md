@@ -884,9 +884,14 @@ Serialized size at most 32 KiB.
   added it, a step one side removed stays removed; only a result over 2 KiB
   is a conflict. A reset epoch decides first (`guide.resetAt` below).
 - `guide.resetAt`: an integer from 0 to 8.64e15 (`GUIDE_RESET_AT_MAX`), the
-  reset epoch of the guide progress. Every reset sets a newer one: the
-  player's Reset guide progress and Take the tour again (the Guide page) and
-  the admin guide actions (8.11). The new epoch is the current time, but at
+  reset epoch of the guide progress. A reset of the whole progress sets a
+  newer one: the player's Reset guide progress (the Guide page) and the
+  admin's `reset` and `complete` (8.11). Take the tour again and the admin's
+  `restartTour` keep the epoch: the set merge already removes the tour's
+  steps on a device that has a base, and a newer epoch would drop the
+  passive and outside steps other devices ticked meanwhile (a device without
+  a base, its first sync with changes of its own, can bring tour steps back
+  there; that is accepted). The new epoch is the current time, but at
   least the stored epoch plus 1 (`nextGuideEpoch` in the protocol package,
   `src/guide.js`), so a clock that is behind still moves it on. **The epoch
   rule** (`EPOCH_MERGE` in `apps/game/js/account/sync.js`): when the two sides
@@ -897,10 +902,17 @@ Serialized size at most 32 KiB.
   device still had from before the reset. Steps a device ticked off before it
   learned of a newer reset are dropped with them: the reset counts as later
   than anything that device did. Equal epochs merge as described above.
-  `guide.seen` and `guide.lastTip` keep their own rules. A client from before
-  0.20.0 leaves the key out of the document it uploads (like `guide.seen`
-  with 0.17 clients); a current device then has the newer epoch and uploads
-  its progress whole.
+  `guide.seen` and `guide.lastTip` keep their own rules.
+  Device clocks decide the order of two resets: device A, whose clock is
+  ahead, resets; device B resets later in real time while it has not synced
+  A's reset. B's epoch is lower than A's, so at B's next sync A's reset
+  wins and B's is absorbed (both are resets, so the progress ends up empty
+  either way, but steps B ticked after its own reset are dropped too).
+  Clients before 0.20.0 do not know the key and leave it out of the
+  document they upload (like `guide.seen` with 0.17 clients). During such a
+  rolling upgrade a current device then has the newer epoch and uploads its
+  progress whole: the steps a 0.19 client ticked since its last sync with
+  that device can be overwritten.
 - `guide.seen`: a version (the same rule as `releaseNotes.lastSeenVersion`).
   It only moves forward: when two devices differ, the game keeps the newer
   one (`NEWEST_MERGE` in `apps/game/js/account/sync.js`), never a conflict.
@@ -1644,26 +1656,36 @@ the new `ETag`:
   player's own Reset guide progress does the same). `guide.seen` stays: the
   guide content the player was shown stays shown.
 - `restartTour`: the tour's steps start over, passive and outside steps keep
-  their ticks, `tourInGames` on (Take the tour again).
+  their ticks, `tourInGames` on (Take the tour again). The epoch stays
+  (5.8): the set merge removes the tour's steps on the player's devices.
 - `complete`: every step done and `quickTipsAsked` true, so no tour card
   shows at all (the quick tips question is the tour's last card: an admin
   who completes the guide for a player ends the tour); `tourInGames` stays
   as it is, as when a player finishes the tour.
 
-Each sets a newer `guide.resetAt` (the epoch rule of 5.8), keeps every other
-setting, validates the result (`validateSettingsDocument`) and writes it as
+`reset` and `complete` set a newer `guide.resetAt` (the epoch rule of 5.8).
+Each action keeps every other setting, validates the result (`validateSettingsDocument`) and writes it as
 a new version (`updated_by` is the admin). The game takes it on its next
 sync (start, sign-in, or its next upload, which gets `412` and merges):
 without unsynced changes it takes the document as it is; with them, the
 newer epoch wins the guide progress, so steps the device still has do not
 come back, and there is no conflict question. A write of the player in
 between (`412` inside the server) is merged by doing the action again on the
-newer document, at most three times. `409 conflict` when the account has no
+newer document, at most three times; after that the answer is
+`409 conflict` "The player's settings kept changing; try again in a
+moment." and nothing is written. `409 conflict` also when the account has no
 settings document yet: its progress is only in the player's browser, and a
 document made by the server would replace that browser's settings at its
 first sync. `400 invalid` for another action or another field. The audit
 entry (`user.guide_update`) stores `{ version, guide }` before and
-`{ action, version, guide }` after. Rate limit: 9.
+`{ action, version, guide }` after. Rate limit: 9 (charged after the check
+for a settings document).
+
+The guide filter and sort of the users list (8.1) count the done steps with
+a `json_each` subquery over each listed account's settings document. That
+is fine for the current number of accounts; at a larger scale a
+`guide_done` column, kept up to date on every settings write, would be the
+fix.
 
 ## 9. Rate limits
 

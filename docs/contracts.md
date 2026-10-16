@@ -4396,12 +4396,20 @@ Debug and NetMenu.
   `quickTipsAsked` false (the last card asks again), and a new reset epoch
   `guide.resetAt`. `guide.seen` stays: it holds what the player was shown,
   not progress, and setting it back would mark every step "New". Take the
-  tour again stays as it is (only the tour's counted steps) and sets a new
-  epoch too. The epoch makes a reset win the account sync on every device
-  (docs/accounts-api.md 5.8, the epoch rule): the side of a merge with the
-  newer epoch gives `guide.done`, `tourInGames` and `quickTipsAsked` whole
-  instead of the set merge, which would bring back steps another device
-  still had. Admins can complete, reset or restart a player's guide from
+  tour again stays as it is (only the tour's counted steps) and keeps the
+  epoch: the set merge removes the tour's steps on the other devices and
+  keeps the passive and outside steps they ticked meanwhile. The epoch makes
+  a reset win the account sync on every device (docs/accounts-api.md 5.8,
+  the epoch rule): the side of a merge with the newer epoch gives
+  `guide.done`, `tourInGames` and `quickTipsAsked` whole instead of the set
+  merge, which would bring back steps another device still had. Device
+  clocks order two resets: when device A (clock ahead) resets and device B
+  resets later while it has not synced A's reset, B's reset is absorbed by
+  A's newer epoch at B's next sync (steps B ticked after its reset are
+  dropped). Clients before 0.20.0 leave `guide.resetAt` out of what they
+  upload, so during a rolling upgrade a current device uploads its progress
+  whole and the steps a 0.19 client ticked since its last sync can be
+  overwritten. Admins can complete, reset or restart a player's guide from
   the dashboard (docs/accounts-api.md 8.11); the game takes it the same way.
 - **Guide outline for the server**: `packages/protocol/src/guide-outline.js`
   is the guide's structure without texts (chapters, step ids, `since`,
