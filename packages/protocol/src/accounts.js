@@ -420,6 +420,7 @@ const SETTINGS_SECTIONS = {
     mouseCaptureEscMenu: boolean,
     mouseCaptureNotice: choice(['always', 'first', 'off']),
     pauseWhenHidden: boolean,
+    quickTips: boolean,
     buildRightClick: choice(['openra', 'webra']),
   },
   audio: {

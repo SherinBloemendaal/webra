@@ -989,6 +989,8 @@ impl Game {
             "owner": t.owner,
             "faction": t.owner.and_then(|o| w.players.get(o as usize)).map(|p| w.rules.factions[p.faction].clone()),
             "extras": t.extras,
+            // The actor type the label names for this view (tooltip.rs `shown_type`): the quick tip's key.
+            "type": t.shown.map(|ty| &w.rules.actors[ty].id),
         })
         .to_string()
     }

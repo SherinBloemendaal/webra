@@ -95,6 +95,7 @@ export function tooltipText(spec) {
   if (!spec) return '';
   const lines = [spec.hotkey ? `${spec.title} (${spec.hotkey})` : spec.title];
   if (spec.requires) lines.push(spec.requires);
+  if (spec.tip) lines.push(spec.tip);
   for (const s of spec.stats ?? []) lines.push(`${s.label}: ${s.text}`);
   if (spec.desc) lines.push(spec.desc);
   for (const n of spec.notes ?? []) lines.push(n.text);
@@ -106,6 +107,7 @@ export function tooltipText(spec) {
  * @property {string} title the name, in bold
  * @property {string | null} [hotkey] the bound key ("D", "Ctrl+X"), shown in yellow after the name
  * @property {string} [requires] small line under the name (production prerequisites)
+ * @property {string} [tip] the quick tip: one line on what it does (js/quicktips.js), under the name
  * @property {string} [desc] the description
  * @property {{ kind: 'cost' | 'time' | 'power', label: string, text: string, bad?: boolean }[]} [stats]
  *   the right column of production tooltips, red when `bad` (cannot afford, low power)
@@ -129,6 +131,7 @@ function render(doc, panel, spec) {
   if (spec.hotkey) head.append(el(doc, 'span', 'ui-tooltip-key', `(${spec.hotkey})`));
   main.append(head);
   if (spec.requires) main.append(el(doc, 'div', 'ui-tooltip-requires', spec.requires));
+  if (spec.tip) main.append(el(doc, 'div', 'ui-tooltip-quick', spec.tip));
   if (spec.desc) main.append(el(doc, 'div', 'ui-tooltip-desc', spec.desc));
   for (const n of spec.notes ?? []) main.append(el(doc, 'div', `ui-tooltip-note ui-tooltip-${n.tone ?? 'hint'}`, n.text));
   const parts = [main];

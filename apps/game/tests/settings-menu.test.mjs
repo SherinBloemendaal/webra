@@ -13,7 +13,7 @@ import { GameMenu, scaleLabel, MENU_SETTINGS, DISPLAY_HELP } from '../js/gamemen
 import { UiScale, crispGameScales, autoGameScale, screenOf } from '../js/scale.js';
 import { AudioSystem } from '../js/audio/index.js';
 import { mountAudioPanel, musicText, AUDIO_HELP_KEYS } from '../js/audio/panel.js';
-import { MENU_HELP_KEYS, CONTROLS_SETTINGS } from '../js/gamemenu.js';
+import { MENU_HELP_KEYS, CONTROLS_SETTINGS, SECTION_SETTINGS } from '../js/gamemenu.js';
 import { HELP } from '../js/help.js';
 import { Jukebox, playOrder } from '../js/audio/music.js';
 import { DEFAULT_PREFS, busGain } from '../js/audio/prefs.js';
@@ -533,6 +533,18 @@ test('settings page: Pause when the game is hidden, off by default, with help th
   assert.ok(MENU_HELP_KEYS.includes('pauseWhenHidden') && MENU_SETTINGS.includes('pauseWhenHidden'));
   assert.match(HELP['settings.pauseWhenHidden'], /Browsers slow down hidden pages/);
   assert.match(HELP['settings.pauseWhenHidden'], /Losing the focus to another window never pauses it/);
+});
+
+test('settings page: Quick tips on the Game tab, on by default, with help, reset with the tab', () => {
+  const { settings, root } = setup();
+  const box = root.querySelector('#game-menu-quickTips');
+  assert.ok(box);
+  assert.equal(box.checked, true, 'on for everyone');
+  check(box, false);
+  assert.equal(settings.get('quickTips'), false);
+  assert.ok(MENU_HELP_KEYS.includes('quickTips') && MENU_SETTINGS.includes('quickTips'));
+  assert.ok(SECTION_SETTINGS.game.includes('quickTips'), 'Reset this section turns them back on');
+  assert.match(HELP['settings.quickTips'], /what it does/);
 });
 
 test('settings page: Raw mouse input, off by default, with help, after the speed', () => {

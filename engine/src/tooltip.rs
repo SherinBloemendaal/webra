@@ -37,11 +37,16 @@ pub struct WorldTooltip {
     pub owner: Option<u8>,
     /// More lines (`IProvideTooltipInfo`: TooltipDescription).
     pub extras: Vec<String>,
+    /// The actor type the label names for this viewer (`shown_type`), for
+    /// the quick tips (apps/game/js/quicktips.js): a disguise's type, and
+    /// for an enemy's fake the structure it imitates. None for resources and
+    /// shroud.
+    pub shown: Option<usize>,
 }
 
 impl WorldTooltip {
     fn text(kind: TooltipKind, label: &str) -> WorldTooltip {
-        WorldTooltip { kind, label: label.to_string(), actor: None, owner: None, extras: Vec::new() }
+        WorldTooltip { kind, label: label.to_string(), actor: None, owner: None, extras: Vec::new(), shown: None }
     }
 }
 
@@ -219,7 +224,27 @@ impl World {
         let rel = viewer.map(|v| relationship(self, owner, v));
         let info = &self.rules.actors[ty];
         let show = info.tooltip.as_ref().is_some_and(|t| t.show_owner) && !self.players.get(owner as usize).is_none_or(|p| p.neutral);
-        WorldTooltip { kind, label: self.tooltip_label(ty, rel), actor: None, owner: show.then_some(owner), extras: Vec::new() }
+        WorldTooltip {
+            kind,
+            label: self.tooltip_label(ty, rel),
+            actor: None,
+            owner: show.then_some(owner),
+            extras: Vec::new(),
+            shown: self.shown_type(ty, rel),
+        }
+    }
+
+    /// The actor type `tooltip_label` names: `ty` itself, or for the
+    /// relationships of GenericVisibility the type whose own name is the
+    /// generic name (a fake shows the structure it imitates to enemies, so
+    /// nothing tells it apart), None when no type has that name.
+    pub fn shown_type(&self, ty: usize, rel: Option<u8>) -> Option<usize> {
+        let info = &self.rules.actors[ty];
+        let Some(TooltipInfo { generic_name, generic_visibility, .. }) = info.tooltip.as_ref() else { return Some(ty) };
+        if !rel.is_some_and(|r| generic_visibility & r != 0) {
+            return Some(ty);
+        }
+        self.rules.actors.iter().position(|a| a.name == *generic_name && a.tooltip.as_ref().is_some_and(|t| t.generic_visibility == 0))
     }
 
     /// OpenRA `TooltipInfo.TooltipForPlayerStance`: the name, or for the

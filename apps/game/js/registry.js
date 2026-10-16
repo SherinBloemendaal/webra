@@ -216,6 +216,14 @@ export const GROUPS = deepFreeze({
         label: 'Pause when the game is hidden',
         help: 'Single player: open the menu (and so pause) when the game\'s tab or window is hidden. Off: the game plays on.',
       },
+      // One line on what a structure or unit does in the build menu's and the battlefield's tooltips (js/quicktips.js).
+      // On for everyone, also players from before 0.19.0; the end of the guide asks whether to keep it.
+      quickTips: {
+        type: 'boolean',
+        default: true,
+        label: 'Quick tips',
+        help: 'Hovering a structure, defence or unit (in the build menu or on the battlefield) also says in one line what it does.',
+      },
     },
   },
   audio: {

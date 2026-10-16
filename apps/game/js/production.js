@@ -212,16 +212,18 @@ export function formatPower(power) {
  * The production tooltip of a sidebar cameo (OpenRA ProductionTooltipLogic,
  * mods/common/chrome/tooltips.yaml PRODUCTION_TOOLTIP): the name and its
  * hotkey, what is still missing, cost, build time and power in a column, the
- * description, and how the mouse works on it. Cost turns red when the player
+ * description, and how the mouse works on it; with the quick tips on, a line
+ * under the name on what it does (js/quicktips.js). Cost turns red when the player
  * cannot afford it, the time red while low power slows production, the power
  * red when building it would overload the grid, like OpenRA.
  * @param {{ name: string, description?: string, cost: number, power?: number, kind?: string, queue: number }} actor rules_json actor
  * @param {{ enabled?: boolean, requires?: string[], exclusive?: string | null, buildTicks?: number } | undefined} item player_json `buildable` entry
  * @param {{ funds?: number, cash?: number, resources?: number, powerGenerated?: number, powerUsed?: number, lowPower?: boolean } | null} state player_json
- * @param {{ hotkey?: string | null, ticksPerSecond?: number, lowPowerModifier?: number, short?: number, rightClickStyle?: string }} [o]
- *   short: queued items the credits do not cover yet (`shortOfFunds`); rightClickStyle: the `buildRightClick` setting
+ * @param {{ hotkey?: string | null, ticksPerSecond?: number, lowPowerModifier?: number, short?: number, rightClickStyle?: string, tip?: string | null }} [o]
+ *   short: queued items the credits do not cover yet (`shortOfFunds`); rightClickStyle: the `buildRightClick` setting;
+ *   tip: the quick tip (js/quicktips.js `quickTip`), null while the `quickTips` setting is off
  */
-export function productionTip(actor, item, state, { hotkey = null, ticksPerSecond = 25, lowPowerModifier = 100, short = 0, rightClickStyle = 'openra' } = {}) {
+export function productionTip(actor, item, state, { hotkey = null, ticksPerSecond = 25, lowPowerModifier = 100, short = 0, rightClickStyle = 'openra', tip = null } = {}) {
   const stats = [];
   const funds = state ? (state.funds ?? (state.cash ?? 0) + (state.resources ?? 0)) : Infinity;
   stats.push({ kind: 'cost', label: 'cost', text: `$${actor.cost}`, bad: funds < actor.cost });
@@ -249,5 +251,5 @@ export function productionTip(actor, item, state, { hotkey = null, ticksPerSecon
   const notes = [];
   if (short > 0) notes.push({ text: `Not enough credits yet for ${short === 1 ? '1 queued item' : `${short} queued items`}: production waits until the money comes in.`, tone: 'warn' });
   notes.push({ text: hint, tone: 'hint' });
-  return { title: actor.name, hotkey, requires, stats, desc: actor.description || '', notes };
+  return { title: actor.name, hotkey, requires, tip: tip || '', stats, desc: actor.description || '', notes };
 }

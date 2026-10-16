@@ -136,6 +136,7 @@ fn a_disguised_spy_shows_its_disguise_to_enemies() {
     // The enemy sees a rifleman of their own.
     let t = tip(&w, 1, 10, 10).unwrap();
     assert_eq!((t.label.clone(), t.owner, t.actor), (name(&w, "E1"), Some(1), Some(spy)));
+    assert_eq!(t.shown, Some(ty(&w, "E1") as usize), "the quick tip is the rifleman's too");
     // DisguiseTooltip: the owner gets the disguise's name too, under its own flag.
     let t = tip(&w, 0, 10, 10).unwrap();
     assert_eq!((t.label.clone(), t.owner), (name(&w, "E1"), Some(0)));
@@ -151,6 +152,9 @@ fn fakes_show_their_generic_name_to_enemies_only() {
     assert_eq!((tooltip.generic_name.as_str(), tooltip.generic_visibility, tooltip.generic_prefix), ("Power Plant", REL_ENEMY, false));
     assert_eq!(tip(&w, 0, 12, 12).unwrap().label, "Fake Power Plant");
     assert_eq!(tip(&w, 1, 12, 12).unwrap().label, "Power Plant", "no prefix (GenericStancePrefix false)");
+    // The quick tip follows the name: the owner's fake, the enemy's power plant.
+    assert_eq!(tip(&w, 0, 12, 12).unwrap().shown, Some(fpwr));
+    assert_eq!(tip(&w, 1, 12, 12).unwrap().shown, Some(ty(&w, "POWR") as usize));
     // GenericStancePrefix with an ally visibility: "Ally" before the generic name.
     assert_eq!(w.tooltip_label(fpwr, Some(REL_ALLY)), "Fake Power Plant");
     w.rules.actors[fpwr].tooltip.as_mut().unwrap().generic_visibility = REL_ALLY | REL_ENEMY;
@@ -244,6 +248,7 @@ fn the_game_query_answers_json_for_every_view() {
     assert_eq!(j["owner"], 0);
     assert_eq!(j["faction"], "england");
     assert!(j["id"].is_u64());
+    assert_eq!(j["type"], "E1");
     assert_eq!(g.world_tooltip(0, px(50), px(50), false, false), "null");
     for view in [crate::observer::OBSERVER, crate::combined::COMBINED] {
         let j: serde_json::Value = serde_json::from_str(&g.world_tooltip(view, px(10), px(10), false, false)).unwrap();

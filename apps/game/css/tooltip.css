@@ -63,6 +63,15 @@
   font-size: calc(12 * var(--ui-px));
 }
 
+/* The quick tip (js/quicktips.js): what it does, in the text colour, one step above the description. */
+#ui-tooltip .ui-tooltip-quick {
+  margin-top: calc(2 * var(--ui-px));
+  max-width: calc(240 * var(--ui-px));
+  color: var(--ui-text);
+  font-size: var(--ui-fs-m);
+  line-height: 1.4;
+}
+
 #ui-tooltip .ui-tooltip-desc,
 #ui-tooltip .ui-tooltip-note {
   margin-top: calc(2 * var(--ui-px));

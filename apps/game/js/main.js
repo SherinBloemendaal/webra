@@ -1856,6 +1856,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       },
       shiftLatched: () => !!touch?.queue,
       rightClickStyle: () => settings.get('buildRightClick'),
+      quickTips: () => settings.get('quickTips'),
       onMode: (mode) => input.toggleMode(mode),
       onDeploy: () => input.deploySelection(),
       onMenu: () => menu.toggle(),
@@ -2033,6 +2034,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
     colorOf: (owner) => TEAM_COLORS[owner] ?? [1, 1, 1],
     blocked: () => !!document.querySelector('dialog[open]'),
+    quickTips: () => settings.get('quickTips'),
   }));
   // Spectators and replays give no orders: no power bar, no command bar.
   if (viewer) {

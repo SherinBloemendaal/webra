@@ -139,6 +139,9 @@ test('settings document: the mouse captured notice and pausing a hidden game', (
   for (const bad of ['never', true, 3, null]) throwsField(() => validateSettingsDocument({ game: { mouseCaptureNotice: bad } }), 'settings.game.mouseCaptureNotice');
   for (const ok of [true, false]) assert.deepEqual(validateSettingsDocument({ game: { pauseWhenHidden: ok } }), { game: { pauseWhenHidden: ok } });
   for (const bad of ['yes', 1, null]) throwsField(() => validateSettingsDocument({ game: { pauseWhenHidden: bad } }), 'settings.game.pauseWhenHidden');
+  // The quick tips (apps/game/js/quicktips.js): on by default, the end of the guide may turn them off.
+  for (const ok of [true, false]) assert.deepEqual(validateSettingsDocument({ game: { quickTips: ok } }), { game: { quickTips: ok } });
+  for (const bad of ['on', 0, null]) throwsField(() => validateSettingsDocument({ game: { quickTips: bad } }), 'settings.game.quickTips');
 });
 
 test('site settings: merge, validation, stored values over defaults', () => {

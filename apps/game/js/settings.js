@@ -55,6 +55,8 @@ export const KEYS = Object.freeze({
   mouseCaptureNotice: ['game', 'mouseCaptureNotice'],
   // Single player: whether a hidden page opens the menu (and so pauses); off, the game plays on.
   pauseWhenHidden: ['game', 'pauseWhenHidden'],
+  // Quick tips (js/quicktips.js): what a structure or unit does, in the cameo and battlefield tooltips.
+  quickTips: ['game', 'quickTips'],
   // Right click on a sidebar cameo (js/production.js rightClickAction): 'openra' or 'webra'.
   buildRightClick: ['game', 'buildRightClick'],
   mouseCaptureHints: ['extra', 'mouseCaptureHints'],

@@ -70,6 +70,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     'pauseWhenHidden',
     'pixelRatioCap',
     'playerStanceColors',
+    'quickTips',
     'reduceMotion',
     'showUnitPaths',
     'targetLines',
@@ -234,8 +235,8 @@ test('registry: every old key migrates once, and the old keys are removed after 
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
   // Settings newer than every old key get their default too; the rest of the group is compared below.
-  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw, v.game.hideReplayChat, v.game.uiFeedbackNotifications, v.game.gameEventNotifications], [1, false, false, true, true]);
-  for (const key of ['zoomFactor', 'mouseCaptureRaw', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications']) delete v.game[key];
+  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw, v.game.hideReplayChat, v.game.uiFeedbackNotifications, v.game.gameEventNotifications, v.game.quickTips], [1, false, false, true, true, true]);
+  for (const key of ['zoomFactor', 'mouseCaptureRaw', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications', 'quickTips']) delete v.game[key];
 
   assert.deepEqual(
     v.game,
@@ -398,6 +399,7 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
     ['game', 'mouseCaptureRaw'],
     ['game', 'mouseCaptureNotice'],
     ['game', 'pauseWhenHidden'],
+    ['game', 'quickTips'],
     ['game', 'hideReplayChat'],
     ['game', 'gameEventNotifications'],
     ['audio', 'musicOn'],

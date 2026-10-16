@@ -14,6 +14,7 @@ import { watchPixelRatio } from './scale.js';
 import { icon } from './ui-icons.js';
 import { formatCombo } from './hotkeys.js';
 import { attachTooltip } from './ui/tooltip.js';
+import { quickTip } from './quicktips.js';
 import { menuKeys } from './hudtips.js';
 import { CashCounter } from './cashcounter.js';
 import { blinkOn, clockText } from './gametimer.js';
@@ -86,9 +87,10 @@ export class Sidebar {
    * @param {{onPlace?: (id: string) => void, onCancelPlace?: () => void, onMode?: (mode: string) => void,
    *   onDeploy?: () => void, onMenu?: () => void, shiftLatched?: () => boolean,
    *   fullscreen?: { available: () => boolean, active: () => boolean, toggle: () => void },
-   *   rightClickStyle?: () => string,
+   *   rightClickStyle?: () => string, quickTips?: () => boolean,
    *   onProductionClick?: (id: string, outcome: string | null) => void}} callbacks
    *   rightClickStyle: the "Right click in the build menu" setting, 'openra' or 'webra' (production.js rightClickAction);
+   *   quickTips: the "Quick tips" setting: cameo tooltips say what the item does (js/quicktips.js);
    *   onMode: a top row mode button ('beacon', 'sell', 'powerDown', 'repair') was pressed;
    *   fullscreen: the Fullscreen button (js/fullscreen.js), left out when there is none;
    *   onProductionClick: a cameo click did something, with the queue's speech for it
@@ -677,6 +679,7 @@ export class Sidebar {
       lowPowerModifier: this.lowPowerModifier,
       short: this.short?.get(id) ?? 0,
       rightClickStyle: this.callbacks.rightClickStyle?.(),
+      tip: this.callbacks.quickTips?.() ? quickTip(id) : null,
     });
   }
 

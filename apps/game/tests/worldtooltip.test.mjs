@@ -20,6 +20,7 @@ import {
 } from '../js/worldtooltip.js';
 import { FOLLOW_LATEST, QUERIES, QUERY_DEFAULTS, UI_STATE } from '../js/sim/methods.js';
 import { installDom, uninstallDom } from './dom-fixtures.mjs';
+import { quickTip } from '../js/quicktips.js';
 
 const wasm = initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 
@@ -52,6 +53,7 @@ test('content: name, owner row in the owner colour and extra lines; refund only 
     label: 'Unrevealed Terrain',
     kind: 'unexplored',
     owner: null,
+    tip: null,
     extras: [],
     refund: null,
   });
@@ -60,6 +62,7 @@ test('content: name, owner row in the owner colour and extra lines; refund only 
     label: 'Heavy Tank',
     kind: 'actor',
     owner: { name: 'Bob', color: 'rgb(0, 128, 255)', faction: 'russia' },
+    tip: null,
     extras: ['Captured'],
     refund: 'Refund: $350',
   });
@@ -69,6 +72,18 @@ test('content: name, owner row in the owner colour and extra lines; refund only 
   assert.equal(worldTooltipContent(tip, { ...ctx, refund: -1 }).refund, null);
   assert.equal(worldTooltipContent(tip, ctx).refund, null);
   assert.deepEqual(worldTooltipContent(tip, { ...ctx, refund: 0 }).extras, ['Captured'], 'the refund is a line of its own');
+});
+
+test('content: the quick tip of the type the label names, only while the setting is on', () => {
+  const ctx = { nameOf: () => 'Bob', colorOf: () => [1, 1, 1] };
+  const tip = { kind: 'actor', label: 'War Factory', id: 7, owner: 1, faction: 'russia', extras: [], type: 'WEAP' };
+  assert.equal(worldTooltipContent(tip, ctx).tip, null, 'off unless asked');
+  assert.equal(worldTooltipContent(tip, { ...ctx, quickTips: true }).tip, quickTip('WEAP'));
+  assert.equal(worldTooltipContent({ ...tip, kind: 'frozen' }, { ...ctx, quickTips: true }).tip, quickTip('WEAP'), 'remembered structures too');
+  // An enemy's fake comes with the type it imitates (engine tooltip.rs shown_type), so nothing tells it apart.
+  assert.equal(worldTooltipContent({ ...tip, label: 'Power Plant', type: 'POWR' }, { ...ctx, quickTips: true }).tip, quickTip('POWR'));
+  assert.equal(worldTooltipContent({ ...tip, type: 'TC01' }, { ...ctx, quickTips: true }).tip, null, 'no tip for a tree');
+  assert.equal(worldTooltipContent({ kind: 'resource', label: 'Valuable Minerals', owner: null, type: null }, { ...ctx, quickTips: true }).tip, null);
 });
 
 test('the worker proxy asks world_tooltip like pick and sends the placement as UI state', () => {
@@ -125,8 +140,9 @@ test('Game.world_tooltip: own units, enemies under the shroud, spectators', () =
   assert.equal(own.owner, 0);
   assert.equal(own.faction, 'england');
   assert.equal(own.id, unit);
+  assert.equal(own.type, info.type, 'the type the label names (the quick tip)');
   // The enemy has not explored player 0's base: shroud there.
-  assert.deepEqual(JSON.parse(game.world_tooltip(1, x, y, false, false)), { kind: 'unexplored', label: 'Unrevealed Terrain', id: null, owner: null, faction: null, extras: [] });
+  assert.deepEqual(JSON.parse(game.world_tooltip(1, x, y, false, false)), { kind: 'unexplored', label: 'Unrevealed Terrain', id: null, owner: null, faction: null, extras: [], type: null });
   // Spectators see it with no shroud.
   assert.equal(JSON.parse(game.world_tooltip(Game.observer_player(), x, y, false, false)).label, info.name);
   assert.equal(game.world_tooltip(0, -100, -100, false, false), 'null', 'off the map');
@@ -194,6 +210,7 @@ test('the panel: label, owner row and extras from the query, hidden until the mo
     assert.equal(panel.querySelector('.world-tooltip-owner-name').textContent, 'Bob');
     assert.equal(panel.querySelector('.world-tooltip-flag').dataset.faction, 'england');
     assert.equal(panel.querySelector('.world-tooltip-extras').textContent, 'Line two');
+    assert.equal(panel.querySelector('.world-tooltip-tip').hidden, true, 'quick tips off');
     answer = 'null';
     tip.frame(1400);
     assert.equal(panel.hidden, true, 'nothing there');
@@ -207,6 +224,16 @@ test('the panel: label, owner row and extras from the query, hidden until the mo
     input.drag = true;
     tip.frame(1600);
     assert.equal(panel.hidden, true, 'not while box selecting');
+    // The quick tips setting adds what it does under the owner row.
+    input.drag = false;
+    input.mode = null;
+    answer = JSON.stringify({ kind: 'actor', label: 'Pillbox', id: 3, owner: 1, faction: 'england', extras: [], type: 'PBOX' });
+    const withTips = new WorldTooltip({ input, game, view: () => 4, player: 0, nameOf: () => 'Bob', colorOf: () => [0, 0, 1], quickTips: () => true, doc });
+    withTips.frame(2000);
+    withTips.frame(2300);
+    const line = withTips.el.querySelector('.world-tooltip-tip');
+    assert.equal(line.hidden, false);
+    assert.equal(line.textContent, quickTip('PBOX'));
   } finally {
     uninstallDom();
   }
