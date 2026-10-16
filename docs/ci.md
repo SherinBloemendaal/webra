@@ -13,21 +13,26 @@ needs.
 | Job | Runner | What it checks |
 |---|---|---|
 | Changed paths | small | Decides whether the engine and shader jobs run (below) |
-| Engine | enormous | `cargo fmt`, `cargo clippy` (with tests and examples), `cargo test` (lib and bins, then doctests), a headless AI vs AI match |
+| Engine | enormous | `cargo fmt`, `cargo clippy` (with tests and examples), `cargo test` (unit tests and doctests; builds every example), a headless AI vs AI match with the example it built |
 | WGSL shaders | small | `cargo run -p shader-check` |
 | Rules and tables | small | Every generator in `tools/` reproduces the committed files |
 | Web | medium | `npm run build:wasm`, the JS checks and the protocol, server, web and tools tests, `test:luastack` |
 
 The engine job builds with the `ci` profile (`Cargo.toml`): release with
-`panic = "unwind"`. Tests need unwinding anyway, so clippy, the test binary
-and the AI match example share one build of the dependencies; with the release
-profile (`panic = "abort"`) the example would rebuild everything. The game's
-wasm build keeps the release profile.
+`panic = "unwind"`. Tests need unwinding anyway, so the test binary and the
+examples share one build of the dependencies; with the release profile
+(`panic = "abort"`) the examples would need a second one. One `cargo test`
+compiles the test binary, the lib and the examples side by side, and the AI
+match runs `target/ci/examples/ai_vs_ai` directly: a later `cargo build` or
+`cargo run -p webra-sim` would compile the engine again (cargo gives
+`cargo build` and `cargo test` units different hashes, and `-p` other
+features than `--workspace`). The game's wasm build keeps the release
+profile.
 
 The web job builds the Lua stack probe (`test:luastack`, a second wasm32
 release build with the `stack-probe` feature) in the background: it waits
 for wasm-pack's cargo build (they share `target/`), then compiles while
-wasm-opt and the JS tests run. It then uploads `apps/game/pkg` as the
+wasm-opt and the JS tests run. Right after wasm-pack, the job uploads `apps/game/pkg` as the
 artifact `webra-pkg` (kept one day); Deploy ships exactly that build.
 
 wasm-pack is pinned (0.13.1, a prebuilt binary through

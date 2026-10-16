@@ -87,21 +87,18 @@ jobs:
         with:
           cache-on-failure: true
       - run: cargo fmt --all -- --check
-      # Clippy, the tests and the AI match share one build: the ci profile is
-      # release with panic = "unwind" (Cargo.toml), which tests need anyway,
-      # so the example does not rebuild the engine with panic = "abort".
-      # Clippy checks every example; the tests build only the lib and bins,
-      # and one cargo build compiles the test binary, the plain lib and the
-      # AI match example side by side (each is a long single-threaded LTO
-      # build).
+      # The ci profile is release with panic = "unwind" (Cargo.toml), which
+      # the test harness needs anyway. One cargo test builds the test binary,
+      # the plain lib and every example side by side (each a long
+      # single-threaded LTO build, so they cost cores, not time), runs the
+      # tests and the doctests; the AI match then runs the example binary it
+      # built. A separate cargo build or cargo run would compile again: other
+      # unit hashes (cargo build against cargo test) or features (-p instead
+      # of --workspace).
       - run: cargo clippy --workspace --profile ci --tests --examples -- -D warnings
-      - name: Build the tests and the AI match
-        run: cargo build --workspace --profile ci --lib --bins --tests --example ai_vs_ai
-      - run: cargo test --workspace --profile ci --lib --bins
-      - name: Doctests
-        run: cargo test --workspace --profile ci --doc
+      - run: cargo test --workspace --profile ci
       - name: Headless AI vs AI match finishes
-        run: cargo run -p webra-sim --profile ci --example ai_vs_ai -- 3 | tee match.log && grep -q '^winner' match.log
+        run: ./target/ci/examples/ai_vs_ai 3 | tee match.log && grep -q '^winner' match.log
 
   data:
     name: Rules and tables in sync with data
