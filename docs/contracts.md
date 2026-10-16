@@ -3624,8 +3624,9 @@ rearm actors), not OpenRA's longer Buildable descriptions.
   It is on for every player, also those whose stored settings predate
   0.19.0 (a missing key reads as its default). The game menu shows it on
   the Settings Game tab ("Quick tips", with help; Reset this section turns
-  it back on). The end of the guide asks whether to keep it:
-  `setQuickTips(registry, on)` writes it (`QUICK_TIPS_SETTING` names the key).
+  it back on). The guide's finale (work/guideflow) asks whether to keep
+  it: `setQuickTips(registry, on)` writes it (`QUICK_TIPS_SETTING` names
+  the key).
 - Build menu: `productionTip(..., { tip })` puts the line under the name
   (spec `tip`, css `.ui-tooltip-quick`), next to the cost, build time and
   power; the sidebar passes `quickTip(id)` while the setting is on

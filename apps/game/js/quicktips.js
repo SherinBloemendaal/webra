@@ -2,7 +2,7 @@
 // vehicle, ship and aircraft does, shown in the build menu's cameo tooltip
 // (js/production.js `productionTip`) and in the battlefield tooltip
 // (js/worldtooltip.js) while the `game.quickTips` setting is on (default on;
-// the end of the guide asks whether to keep it).
+// the guide's finale (work/guideflow) asks whether to keep it).
 //
 // Every actor type the build menu can list (engine/rules.json: a production
 // queue and no `~disabled` prerequisite) has a tip, and nothing else does
@@ -47,8 +47,8 @@ export const QUICK_TIPS = Object.freeze({
   PDOX: 'Teleports a group of units for a short time. Needs power.',
   IRON: 'Makes a group of units invulnerable for a short time. Needs power.',
   MSLO: 'Launches a nuclear missile. Needs power.',
-  SBAG: 'Stops infantry and light vehicles. Tanks crush it.',
-  FENC: 'Stops infantry and light vehicles. Tanks crush it.',
+  SBAG: 'Stops infantry and light vehicles. Tanks and heavy vehicles crush it.',
+  FENC: 'Stops infantry and light vehicles. Tanks and heavy vehicles crush it.',
   BRIK: 'Blocks units and enemy fire. Only Mammoth Tanks crush it.',
   PBOX: 'Machine gun defence against infantry. Detects cloaked units.',
   HBOX: 'Camouflaged pillbox: hidden from the enemy until it fires.',
@@ -80,7 +80,7 @@ export const QUICK_TIPS = Object.freeze({
   MECH: 'Repairs vehicles and turns husks back into working vehicles.',
   SPY: 'Disguises itself and sneaks into enemy structures to sabotage them.',
   'SPY.England': 'Cheaper spy: disguises itself and sabotages enemy structures.',
-  THF: 'Steals credits from refineries and silos, and hijacks vehicles.',
+  THF: 'Steals credits from enemy refineries and silos.',
   SHOK: 'Fires Tesla bolts. Good against infantry and vehicles.',
   // Vehicles.
   HARV: 'Gathers ore and gems for your refineries.',
@@ -129,7 +129,7 @@ export function quickTip(id) {
   return (id && Object.hasOwn(QUICK_TIPS, id) && QUICK_TIPS[id]) || null;
 }
 
-/** Turn the quick tips on or off (the end of the guide asks; js/registry.js). */
+/** Turn the quick tips on or off (for the guide's finale on work/guideflow; js/registry.js). */
 export function setQuickTips(registry, on) {
   registry.set(QUICK_TIPS_SETTING[0], QUICK_TIPS_SETTING[1], !!on);
 }
