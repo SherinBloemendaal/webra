@@ -2225,28 +2225,54 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   (`~techlevel.*`). WebRA keeps showing, locked and with what is still
   missing, what this player can get by building something, so it hides an
   item only when a prerequisite can never be met: one it does not hold and
-  that nothing it can build provides (`reachable_tokens`: the tokens of its
-  structures now, then a fixed point from a Construction Yard with its
-  faction, as rules.rs `solve_obtainable`). For a plain (non-`~`)
+  that nothing it can build provides (`World::reach`: the tokens of its
+  structures now, then a fixed point from a Construction Yard of every
+  faction it can place structures with, as rules.rs `solve_obtainable`). For a plain (non-`~`)
   prerequisite that holds only when some structure gives it to some faction
   (`Rules::structure_token`), which hides items that need the other side's
   tech center (the Longbow for Soviets, who build helipads in WebRA); a
   plain prerequisite no structure gives (only a mission prop, or nothing)
   leaves the item listed and locked like OpenRA's greyed items, its
   `requires` naming the prop ("Reach the mainland") or else the token. A
-  `~!` prerequisite hides the item while held (as in OpenRA), when this
-  faction's Construction Yard gives it (`Rules::always_provided`: Ukraine
-  never sees the plain Airfield, also without a yard), or when the structure
-  that provides another missing prerequisite always brings it (England's
-  barracks gives `infantry.england`: England never sees the generic Spy). Held now always counts: a captured Construction Yard keeps
-  its faction (OpenRA FactionInit, no ResetOnOwnerChange), so an Allied
-  player who captures a Soviet one is offered the Soviet structures and
-  what they unlock, until it is lost. The debug menu's "all tech" lists
-  every item of the game (OpenRA AllTech). Before 0.19.0 the list held
+  `~!` prerequisite hides the item while held (as in OpenRA), when the
+  Construction Yard of every faction it can place structures with gives it
+  (`Rules::always_provided`: Ukraine never sees the plain Airfield, also
+  without a yard), or when every structure that provides another missing
+  prerequisite always brings it (England's barracks gives
+  `infantry.england`: England never sees the generic Spy). Held now always
+  counts: a captured Construction Yard keeps its faction (OpenRA
+  FactionInit, no ResetOnOwnerChange), so an Allied player who captures a
+  Soviet one is offered the Soviet structures and what they unlock. The
+  debug menu's "all tech" lists every item of the game (OpenRA AllTech).
+  Before 0.19.0 the list held
   every item of the game mode, the other side's marked `exclusive`
   ("Soviet only"); `exclusive` stays for a prerequisite that can never be
   met on an item that is still listed. Presentation only: the state hash
   never sees it.
+- Factions of new actors (`Actor::faction`, OpenRA FactionInit; part of the
+  state hash). A placed structure, and the wall pieces it fills in, gets
+  the faction of its queue's most likely producer (`World::placement_faction`,
+  OpenRA PlaceBuilding with ClassicProductionQueue.MostLikelyProducer): of
+  the player's structures that produce the queue, the primary one, then
+  the newest (highest `Actor::serial`, OpenRA ActorID, given in creation
+  order). No Red Alert Construction Yard can be primary, so it is the
+  newest yard, own or captured; the player's own faction only without
+  one. A produced unit gets its factory's faction (OpenRA BuildUnit's
+  FactionInit of Production.Faction; Buildable.ForceFaction would override
+  both, no Red Alert actor sets it), and an MCV or Construction Yard keeps
+  its faction when it deploys or packs up (OpenRA Transforms). So an Allied
+  player whose newest yard is a captured Soviet one places Soviet
+  structures: its war factory gives `vehicles.soviet` (not
+  `vehicles.allies`) and makes Soviet units, and an MCV from it deploys
+  into a Soviet yard. A structure keeps its faction for good: losing the
+  captured yard leaves the Soviet war factory Soviet (Red Alert sets
+  neither ProvidesPrerequisite.ResetOnOwnerChange nor
+  Production.UpdateFactionOnOwnerChange; only the unported allies-07
+  mission map sets ResetOnOwnerChange). `reach` therefore counts a faction
+  when the player has a yard or MCV of it, or a structure of it that makes
+  (or can make) an MCV; which yard places next is not the player's choice
+  beyond which yards it keeps, so every one counts. Up to 0.19.0 placed
+  structures and produced units always got the owner's faction.
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`; under
   the `openra` factory loss rule likewise for units without a structure of
@@ -2262,8 +2288,9 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   the queue's type; under the debug menu's "all tech" the queue's type, so
   a submarine comes out of a naval yard and a dog out of barracks then).
   The structures whose Production types hold that type make it; a finished
-  unit tries the primary one, then the others (OpenRA: the newest first;
-  WebRA: in actor order). The build time still counts the structures by
+  unit tries the primary one, then the others newest first (OpenRA
+  ActorID, WebRA `Actor::serial`), and gets the faction of the one it
+  leaves. The build time still counts the structures by
   `build_at` (OpenRA GetBuildTime). A structure's exits are those whose
   `exit_types` (OpenRA ExitInfo.ProductionTypes, empty for any) hold the
   type the unit is built as. The sub pen has four Submarine exits, (-1, 2)

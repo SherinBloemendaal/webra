@@ -51,6 +51,20 @@ pub struct Availability {
     pub enabled: bool,
 }
 
+/// What a player holds now or can still get (`World::reach`), for the build menu.
+pub(crate) struct Reach {
+    /// Prerequisite tokens held now or still to get.
+    pub tokens: Vec<bool>,
+    /// Factions the player can place structures with (`World::placement_faction`).
+    pub factions: Vec<bool>,
+}
+
+impl Reach {
+    pub fn faction_list(&self) -> Vec<usize> {
+        (0..self.factions.len()).filter(|&f| self.factions[f]).collect()
+    }
+}
+
 impl World {
     pub(crate) fn refresh_tokens(&mut self) {
         self.tokens_dirty = false;
@@ -185,8 +199,8 @@ impl World {
     /// while one of its `~` prerequisites is unmet (TechTree IsHidden), so a
     /// player never sees the other side's or another country's items. WebRA
     /// also lists, locked and with what is missing, the items this player can
-    /// still get by building something (`reachable_tokens`), and hides the
-    /// ones it can never get:
+    /// still get by building something (`reach`), and hides the ones it can
+    /// never get:
     /// - a `~` prerequisite that is not held and that nothing this player can
     ///   build provides: the other side, another country, a higher lobby tech
     ///   level;
@@ -196,20 +210,24 @@ impl World {
     ///   `mainland`, or nothing at all) leaves the item listed and locked,
     ///   like OpenRA's greyed items;
     /// - `~!token` while held (as in OpenRA), or when it is sure to come:
-    ///   this faction's Construction Yard gives it (Ukraine never sees the
-    ///   plain Airfield, also without a yard), or every structure of this
-    ///   faction that provides another missing prerequisite also provides it
-    ///   (England's barracks gives `infantry.england`, so England never sees
-    ///   the Spy).
+    ///   the Construction Yard of every faction this player can place
+    ///   structures with gives it (Ukraine never sees the plain Airfield,
+    ///   also without a yard), or every structure it can add that provides
+    ///   another missing prerequisite also provides it (England's barracks
+    ///   gives `infantry.england`, so England never sees the Spy).
+    ///
+    /// Structures get the faction of the Construction Yard that places them
+    /// (`placement_faction`), so a captured yard of another faction adds its
+    /// faction's structures and what they give (`Reach::factions`).
     ///
     /// The debug menu's "all tech" lists everything of this game (OpenRA
     /// AllTech, ProductionQueue.AllItems).
     pub fn listed(&self, player: u8, ty: u16) -> bool {
-        self.listed_with(player, ty, &self.reachable_tokens(player))
+        self.listed_with(player, ty, &self.reach(player))
     }
 
-    /// `listed` with `player`'s `reachable_tokens` worked out once.
-    pub(crate) fn listed_with(&self, player: u8, ty: u16, reach: &[bool]) -> bool {
+    /// `listed` with `player`'s `reach` worked out once.
+    pub(crate) fn listed_with(&self, player: u8, ty: u16, reach: &Reach) -> bool {
         if !self.in_game_mode(ty) {
             return false;
         }
@@ -218,62 +236,122 @@ impl World {
             return true;
         }
         let prereqs = &self.rules.actors[ty as usize].prerequisites;
-        if prereqs.iter().any(|pr| !pr.negate && !reach[pr.token as usize] && (pr.hidden || self.rules.structure_token(pr.token))) {
+        if prereqs.iter().any(|pr| !pr.negate && !reach.tokens[pr.token as usize] && (pr.hidden || self.rules.structure_token(pr.token))) {
             return false;
         }
         let held = |t: u16| p.tokens[t as usize];
+        let factions = reach.faction_list();
         prereqs.iter().filter(|pr| pr.negate && pr.hidden).all(|pr| {
-            if held(pr.token) || self.rules.always_provided(p.faction, pr.token) {
+            if held(pr.token) || factions.iter().all(|&f| self.rules.always_provided(f, pr.token)) {
                 return false;
             }
             !prereqs.iter().filter(|o| !o.negate && !held(o.token)).any(|o| {
-                let givers = self.provider_types(p.faction, o.token);
-                !givers.is_empty() && givers.iter().all(|&g| self.provides(g, p.faction, pr.token))
+                let givers = self.provider_types(&factions, o.token);
+                !givers.is_empty() && givers.iter().all(|&(g, f)| self.provides(g, f, pr.token))
             })
         })
     }
 
-    /// Prerequisite tokens `player` holds now or can still get: those of its
-    /// structures now (a captured one keeps its own faction, OpenRA
-    /// FactionInit) and of every structure it could add with its faction, from
-    /// a Construction Yard on (the fixed point of rules.rs `solve_obtainable`,
-    /// started from what the player holds).
-    pub(crate) fn reachable_tokens(&self, player: u8) -> Vec<bool> {
+    /// What `player` holds now or can still get: the factions it can place
+    /// structures with and the prerequisite tokens of its structures now (a
+    /// captured one keeps its own faction, OpenRA FactionInit) and of every
+    /// structure it could add with one of those factions, from a
+    /// Construction Yard on (the fixed point of rules.rs `solve_obtainable`,
+    /// started from what the player has).
+    ///
+    /// A faction is reachable when the player has a Construction Yard of it
+    /// (its own faction always: every game starts from one), an MCV of it,
+    /// or a structure of it that makes (or can make) an MCV, which gets the
+    /// factory's faction (`produce_at`) and keeps it when it deploys
+    /// (`transform_now`). Which one of its yards places the next structure
+    /// is OpenRA's MostLikelyProducer (`placement_faction`); the player
+    /// chooses it by which yards it keeps, so every one counts here.
+    pub(crate) fn reach(&self, player: u8) -> Reach {
         let p = &self.players[player as usize];
-        let mut have = p.tokens.clone();
-        let mut built = vec![false; self.rules.actors.len()];
+        let nf = self.rules.factions.len();
+        let mut tokens = p.tokens.clone();
+        let mut factions = vec![false; nf];
+        factions[p.faction] = true;
+        // (actor type, faction) of the structures it has or can add.
+        let mut built = vec![vec![false; nf]; self.rules.actors.len()];
+        for a in self.actors.iter().filter(|a| a.alive && a.owner == player) {
+            let f = a.faction as usize;
+            if a.kind == Kind::Building {
+                built[a.ty as usize][f] = true;
+            }
+            if self.places_structures(a.ty as usize) {
+                factions[f] = true;
+            }
+        }
         let fact = self.rules.actor_index("FACT");
         loop {
             let mut changed = false;
             for (i, a) in self.rules.actors.iter().enumerate() {
-                if built[i] || a.kind == Kind::Proxy {
+                if a.kind == Kind::Proxy {
                     continue;
                 }
-                let Some(b) = &a.building else { continue };
                 // Every game starts from a Construction Yard (an MCV).
                 let can = Some(i) == fact
-                    || (self.in_game_mode(i as u16) && a.prerequisites.iter().all(|pr| pr.negate || have[pr.token as usize]));
+                    || (self.in_game_mode(i as u16) && a.prerequisites.iter().all(|pr| pr.negate || tokens[pr.token as usize]));
                 if !can {
                     continue;
                 }
-                built[i] = true;
-                changed = true;
-                for &t in &b.provides[p.faction] {
-                    have[t as usize] = true;
+                if let Some(b) = &a.building {
+                    for f in 0..nf {
+                        if !factions[f] || built[i][f] {
+                            continue;
+                        }
+                        built[i][f] = true;
+                        changed = true;
+                        for &t in &b.provides[f] {
+                            tokens[t as usize] = true;
+                        }
+                    }
+                } else if self.places_structures(i) {
+                    for f in 0..nf {
+                        if !factions[f] && (0..built.len()).any(|g| built[g][f] && self.makes(g, i)) {
+                            factions[f] = true;
+                            changed = true;
+                        }
+                    }
                 }
             }
             if !changed {
                 break;
             }
         }
-        have
+        Reach { tokens, factions }
+    }
+
+    /// Whether actor type `ty` places structures: it produces a structure
+    /// queue (the Construction Yard) or deploys into something that does (the MCV).
+    fn places_structures(&self, ty: usize) -> bool {
+        let produces = |t: usize| self.rules.actors[t].building.as_ref().is_some_and(|b| b.produces.iter().any(|q| q.is_structure()));
+        let info = &self.rules.actors[ty];
+        produces(ty) || (info.building.is_none() && info.transforms_into.is_some_and(produces))
+    }
+
+    /// Whether a structure of type `g` makes units of type `ty` (`producers_of`).
+    fn makes(&self, g: usize, ty: usize) -> bool {
+        let info = &self.rules.actors[ty];
+        self.rules.actors[g]
+            .building
+            .as_ref()
+            .is_some_and(|b| b.produces.contains(&info.queue) && b.production_types.contains(&info.build_at))
     }
 
     /// Unmet prerequisites of `ty` for `player`, as labels for the sidebar:
     /// the buildings that would provide each missing token, or the side or
-    /// country an item is exclusive to when this faction can never get it.
+    /// country an item is exclusive to when this player can never get it.
     pub fn requirements(&self, player: u8, ty: u16) -> Vec<Requirement> {
+        self.requirements_with(player, ty, &self.reach(player))
+    }
+
+    /// `requirements` with `player`'s `reach` worked out once: providers are
+    /// the structures of every faction it can place structures with.
+    pub(crate) fn requirements_with(&self, player: u8, ty: u16, reach: &Reach) -> Vec<Requirement> {
         let p = &self.players[player as usize];
+        let factions = reach.faction_list();
         let mut out: Vec<Requirement> = Vec::new();
         // Structures also need a building that produces their queue (the
         // Construction Yard); under OpenRA's factory loss rule so do units
@@ -281,7 +359,7 @@ impl World {
         let q = self.rules.actors[ty as usize].queue;
         let shown = q.is_structure() || self.availability(player, ty).enabled;
         if shown && self.queue_needs_producer(q) && !self.has_producer(player, q) {
-            let names = self.queue_producer_names(p.faction, q);
+            let names = self.queue_producer_names(&factions, q);
             if !names.is_empty() {
                 out.push(Requirement { label: names.join(" or "), never: false });
             }
@@ -297,7 +375,7 @@ impl World {
                 // e.g. the generic spy is replaced by the British spy for England.
                 Requirement { label: format!("Not available to {}", title(&self.rules.factions[p.faction])), never: true }
             } else {
-                let providers = self.providers(p.faction, pr.token);
+                let providers = self.providers(&factions, pr.token);
                 let name = &self.rules.tokens[pr.token as usize];
                 if let Some(level) = name.strip_prefix("techlevel.") {
                     Requirement { label: format!("Tech level {}", tech_level_label(level)), never: true }
@@ -320,10 +398,10 @@ impl World {
         out
     }
 
-    /// Names of buildings that give `token` to `faction` and that the faction can build.
-    fn providers(&self, faction: usize, token: u16) -> Vec<String> {
+    /// Names of buildings that give `token` with one of `factions` and that the faction can build.
+    fn providers(&self, factions: &[usize], token: u16) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for idx in self.provider_types(faction, token) {
+        for (idx, _) in self.provider_types(factions, token) {
             let a = &self.rules.actors[idx];
             if !names.contains(&a.name) {
                 names.push(a.name.clone());
@@ -332,9 +410,13 @@ impl World {
         names
     }
 
-    /// Actor types of the buildings that give `token` to `faction` and that the faction can build.
-    fn provider_types(&self, faction: usize, token: u16) -> Vec<usize> {
-        (0..self.rules.actors.len()).filter(|&idx| self.rules.obtainable[faction][idx] && self.provides(idx, faction, token)).collect()
+    /// (actor type, faction) of the buildings that give `token` with one of
+    /// `factions` and that the faction can build.
+    fn provider_types(&self, factions: &[usize], token: u16) -> Vec<(usize, usize)> {
+        (0..self.rules.actors.len())
+            .flat_map(|idx| factions.iter().map(move |&f| (idx, f)))
+            .filter(|&(idx, f)| self.rules.obtainable[f][idx] && self.provides(idx, f, token))
+            .collect()
     }
 
     /// Whether a building of type `idx` with `faction` gives `token`.
@@ -342,14 +424,14 @@ impl World {
         self.rules.actors[idx].building.as_ref().is_some_and(|b| b.provides[faction].contains(&token))
     }
 
-    /// Names of the buildings that produce queue `q` and that `faction` can
-    /// have (`providers` likewise; the Construction Yard, where every game
-    /// starts, counts as obtainable for every faction).
-    fn queue_producer_names(&self, faction: usize, q: QueueType) -> Vec<String> {
+    /// Names of the buildings that produce queue `q` and that one of
+    /// `factions` can have (`providers` likewise; the Construction Yard,
+    /// where every game starts, counts as obtainable for every faction).
+    fn queue_producer_names(&self, factions: &[usize], q: QueueType) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for (idx, a) in self.rules.actors.iter().enumerate() {
             let produces = a.building.as_ref().is_some_and(|b| b.produces.contains(&q));
-            if produces && self.rules.obtainable[faction][idx] && !names.contains(&a.name) {
+            if produces && factions.iter().any(|&f| self.rules.obtainable[f][idx]) && !names.contains(&a.name) {
                 names.push(a.name.clone());
             }
         }
@@ -359,7 +441,7 @@ impl World {
     /// "Allies only", "Soviet only" or "Russia only" for a token no building of
     /// this faction provides.
     fn exclusive_label(&self, token: u16) -> String {
-        let factions: Vec<usize> = (0..self.rules.factions.len()).filter(|&f| !self.providers(f, token).is_empty()).collect();
+        let factions: Vec<usize> = (0..self.rules.factions.len()).filter(|&f| !self.providers(&[f], token).is_empty()).collect();
         if factions.is_empty() {
             return "Not available yet".into();
         }
@@ -762,20 +844,62 @@ impl World {
     }
 
     /// OpenRA ClassicProductionQueue.BuildUnit: the finished unit leaves the
-    /// primary structure, else the first other one whose exit it can use
-    /// (OpenRA: the newest first). One being captured has its exits shut
-    /// (Exit RequiresCondition !being-captured, infantry.rs). Some(false)
-    /// while every producer's exits are blocked: the item stays done and
-    /// tries again next tick. None when no structure makes it at all.
+    /// primary structure, else the newest other one (highest ActorID,
+    /// `Actor::serial`) whose exit it can use, and gets that structure's
+    /// faction (`produce_at`). One being captured has its exits shut (Exit
+    /// RequiresCondition !being-captured, infantry.rs). Some(false) while
+    /// every producer's exits are blocked: the item stays done and tries
+    /// again next tick. None when no structure makes it at all.
     fn spawn_produced(&mut self, player: u8, ty: u16) -> Option<bool> {
         let producers = self.producers_of(player, ty);
         if producers.is_empty() {
             return None;
         }
         let mut producers: Vec<usize> = producers.into_iter().filter(|&b| !self.being_captured(b)).collect();
-        // Stable: the primary one first, the others in actor order.
-        producers.sort_by_key(|&b| !self.actors[b].primary);
+        self.sort_producers(&mut producers);
         Some(producers.into_iter().any(|b| self.produce_at(b, player, ty).is_some()))
+    }
+
+    /// OpenRA's producer order (ClassicProductionQueue.BuildUnit and
+    /// MostLikelyProducer): the primary structure first, then the newest
+    /// (`OrderByDescending(IsPrimaryBuilding).ThenByDescending(ActorID)`).
+    /// Serials are unique, so the order is total and the same on every client.
+    fn sort_producers(&self, producers: &mut [usize]) {
+        producers.sort_by_key(|&b| (std::cmp::Reverse(self.actors[b].primary), std::cmp::Reverse(self.actors[b].serial)));
+    }
+
+    /// OpenRA ClassicProductionQueue.MostLikelyProducer: of `player`'s
+    /// structures that produce queue `q`, the primary one, else the newest.
+    /// OpenRA first puts producers whose Production is paused last; no Red
+    /// Alert producer pauses its Production (the Construction Yard has no
+    /// PauseOnCondition), and WebRA models none.
+    pub(crate) fn most_likely_producer(&self, player: u8, q: QueueType) -> Option<usize> {
+        let mut producers: Vec<usize> = (0..self.actors.len())
+            .filter(|&i| {
+                let a = &self.actors[i];
+                a.alive
+                    && a.owner == player
+                    && a.kind == Kind::Building
+                    && self.rules.actors[a.ty as usize].building.as_ref().unwrap().produces.contains(&q)
+            })
+            .collect();
+        self.sort_producers(&mut producers);
+        producers.first().copied()
+    }
+
+    /// The faction a structure of type `ty` that `player` places gets (OpenRA
+    /// PlaceBuilding: `FactionInit` of `queue.MostLikelyProducer()`'s
+    /// Production.Faction, else the owner's faction). A Construction Yard
+    /// keeps the faction it was made for when captured, so an Allied player
+    /// whose newest yard is a captured Soviet one places Soviet structures:
+    /// a Soviet war factory then gives `vehicles.soviet`. Buildable.ForceFaction
+    /// would override it; no Red Alert actor sets it.
+    pub fn placement_faction(&self, player: u8, ty: u16) -> usize {
+        let q = self.rules.actors[ty as usize].queue;
+        match self.most_likely_producer(player, q) {
+            Some(b) => self.actors[b].faction as usize,
+            None => self.players[player as usize].faction,
+        }
     }
 
     /// OpenRA ProductionQueue.CancelProductionInner: the last item of type
@@ -815,6 +939,10 @@ impl World {
         let height = self.rules.actors[self.actors[b].ty as usize].building.as_ref().unwrap().height;
         let (ex, ey, facing) = self.select_exit(b, player, ty)?;
         let u = self.spawn_unit(ty, player, cell_center(ex), cell_center(ey), facing);
+        // OpenRA FactionInit(BuildableInfo.GetInitialFaction(unit,
+        // Production.Faction)): the factory's own faction, so a Soviet war
+        // factory of an Allied player makes Soviet units.
+        self.actors[u].faction = self.actors[b].faction;
         // OpenRA LocationInit(exit): the unit holds its exit cell from the
         // tick it is made, so the next one waits until it has driven off.
         if self.cell_moves() && self.occupies_cells(u) {
@@ -1095,7 +1223,9 @@ impl World {
         }
         // OpenRA PlaceBuilding: NewOptions when the placement adds buildable items (sound only).
         let options_before = self.sound.enabled().then(|| self.buildable_count(player));
+        let faction = self.placement_faction(player, ty);
         let Some(b) = self.spawn_building(ty, player, cx, cy) else { return false };
+        self.actors[b].faction = faction as u8;
         self.begin_make(b);
         self.players[player as usize].queues[qi].items.remove(0);
         self.note_built(player, ty);
@@ -1106,7 +1236,7 @@ impl World {
         // The construction yard's placement animation (fx.rs, presentation only).
         self.note_placed(player);
         if let Some(lb) = self.rules.actors[ty as usize].abilities.line_build.clone() {
-            self.fill_wall_line(player, ty, cx, cy, lb.range);
+            self.fill_wall_line(player, ty, faction, cx, cy, lb.range);
         }
         // Anyone ordered through the new building re-paths (passability version changed).
         for a in self.actors.iter_mut() {
@@ -1147,7 +1277,8 @@ impl World {
     /// puts a piece on every passed cell, even an unexplored one that
     /// something occupies; WebRA structures never share a cell, so such a
     /// cell stays empty.
-    fn fill_wall_line(&mut self, player: u8, ty: u16, cx: i32, cy: i32, range: i32) {
+    /// The pieces get the placed one's `faction` (OpenRA PlaceBuilding's LineBuild branch).
+    fn fill_wall_line(&mut self, player: u8, ty: u16, faction: usize, cx: i32, cy: i32, range: i32) {
         let on_water = self.rules.actors[ty as usize].building.as_ref().is_some_and(|b| b.on_water);
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let mut gap = Vec::new();
@@ -1168,7 +1299,9 @@ impl World {
                         // A piece may cover more than its gap cell (modded walls):
                         // every cell must be free, also of pieces placed just now.
                         if self.footprint_free(ty, gx, gy) {
-                            self.spawn_building(ty, player, gx, gy);
+                            if let Some(piece) = self.spawn_building(ty, player, gx, gy) {
+                                self.actors[piece].faction = faction as u8;
+                            }
                         }
                     }
                 }
@@ -1409,6 +1542,7 @@ impl World {
     fn transform_now(&mut self, i: usize) -> bool {
         let Some((into, cx, cy)) = self.deploy_target(i) else { return false };
         let (from, owner, x, y) = (self.actors[i].ty, self.actors[i].owner, self.actors[i].x, self.actors[i].y);
+        let faction = self.actors[i].faction;
         let facing = self.rules.actors[from as usize].abilities.transforms.as_ref().unwrap().facing;
         let hp_ratio = (self.actors[i].hp as i64, self.rules.actors[from as usize].hp as i64);
         // The new form first: should it not fit after all, the old one stays.
@@ -1425,6 +1559,9 @@ impl World {
         } else {
             self.spawn_unit(into, owner, cell_center(cx), cell_center(cy), facing)
         };
+        // OpenRA Transforms passes its FactionInit on: a Soviet MCV of an
+        // Allied player deploys into a Soviet Construction Yard, and back.
+        self.actors[j].faction = faction;
         self.release_dock(i);
         self.remove(i);
         // Free the old form's cells now, in the same tick.

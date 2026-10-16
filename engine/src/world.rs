@@ -241,8 +241,15 @@ pub struct Actor {
     pub world: crate::neutral::ActorWorld,
 
     /// Faction it was made for (OpenRA FactionInit): a captured structure
-    /// keeps providing its own faction's prerequisites.
+    /// keeps providing its own faction's prerequisites. A placed structure
+    /// gets its queue's most likely producer's faction (production.rs
+    /// `placement_faction`), a produced unit its factory's, and a
+    /// transformed one keeps it (MCV and Construction Yard).
     pub faction: u8,
+    /// Creation order (OpenRA ActorID): every new actor gets a higher one.
+    /// Production picks the newest of equal producers (production.rs
+    /// `most_likely_producer`, `spawn_produced`).
+    pub serial: u32,
     /// Infantry abilities: entering, disguise, leaps, C4 (infantry.rs, dog.rs).
     pub inf: crate::infantry::InfantryState,
     /// Husks and crates (husks.rs, crates.rs): burn timer, slide, age on the ground.
@@ -344,6 +351,7 @@ impl Actor {
             powered_off: false,
             world: crate::neutral::ActorWorld::default(),
             faction: 0,
+            serial: 0,
             inf: Default::default(),
             leftover: Default::default(),
             primary: false,
@@ -1097,6 +1105,8 @@ pub struct World {
     pub flow: FlowCache,
     pub actors: Vec<Actor>,
     free: Vec<u32>,
+    /// The next actor's `serial` (OpenRA World.NextAID).
+    next_serial: u32,
     /// Actor index occupying each cell's footprint (buildings only), or NONE.
     pub building_at: Vec<u32>,
     pub players: Vec<Player>,
@@ -1470,6 +1480,7 @@ impl World {
             flow: FlowCache::new(),
             actors: Vec::new(),
             free: Vec::new(),
+            next_serial: 0,
             building_at: vec![NONE; cells],
             players: Vec::new(),
             projectiles: Vec::new(),
@@ -1630,6 +1641,12 @@ impl World {
         }
     }
 
+    /// The `serial` of the next actor (OpenRA World.NextAID).
+    fn next_serial(&mut self) -> u32 {
+        self.next_serial += 1;
+        self.next_serial
+    }
+
     // ---- Spawning ----------------------------------------------------------
 
     pub fn spawn_unit(&mut self, ty: u16, owner: u8, x: i32, y: i32, facing: i32) -> usize {
@@ -1638,11 +1655,13 @@ impl World {
         let first_scan = self.rng.range(1, crate::combat::MAX_SCAN_TICKS);
         let i = self.alloc();
         let gen = self.actors[i].gen;
+        let serial = self.next_serial();
         let info = &self.rules.actors[ty as usize];
         let mut a = Actor::blank();
         a.alive = true;
         a.gen = gen;
         a.faction = self.players.get(owner as usize).map_or(0, |p| p.faction as u8);
+        a.serial = serial;
         a.kind = info.kind;
         a.ty = ty;
         a.owner = owner;
@@ -1708,6 +1727,7 @@ impl World {
         }
         let i = self.alloc();
         let gen = self.actors[i].gen;
+        let serial = self.next_serial();
         let info = &self.rules.actors[ty as usize];
         let b = info.building.as_ref()?;
         let mut a = Actor::blank();
@@ -1717,6 +1737,7 @@ impl World {
         a.ty = ty;
         a.owner = owner;
         a.faction = self.players.get(owner as usize).map_or(0, |p| p.faction as u8);
+        a.serial = serial;
         a.cx = cx;
         a.cy = cy;
         a.x = cx * CELL + b.width * HALF_CELL;
@@ -2925,6 +2946,7 @@ impl World {
                 mix(a.leftover.drag_ticks as i64);
                 mix(a.altitude as i64);
                 mix(a.primary as i64);
+                mix(a.serial as i64);
                 // Infantry abilities (infantry.rs).
                 self.hash_infantry_actor(a, &mut mix);
                 // Cells and moves of the OpenRA movement model (movement/cellmove.rs).
