@@ -216,6 +216,7 @@ export const GROUPS = deepFreeze({
         label: 'Pause when the game is hidden',
         help: 'Single player: open the menu (and so pause) when the game\'s tab or window is hidden. Off: the game plays on.',
       },
+      quickTips: { type: 'boolean', default: true, label: 'Quick tips', help: 'Show what a building or unit does when you hover it in the build menu.' },
     },
   },
   audio: {
@@ -368,6 +369,8 @@ export const GROUPS = deepFreeze({
       seen: { type: 'string', default: null, nullable: true, maxLength: 64, version: true, label: 'Guide content seen' },
       // The loading screen shows the tips in turn: the index of the last one shown, -1 before the first.
       lastTip: { type: 'integer', default: -1, min: -1, max: LOADING_TIP_INDEX_MAX, label: 'Last loading tip shown' },
+      // The tour's last card asked whether to keep game.quickTips (js/tour.js): once per player, ever.
+      quickTipsAsked: { type: 'boolean', default: false, label: 'Quick tips question asked' },
     },
   },
   extra: {

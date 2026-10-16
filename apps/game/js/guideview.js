@@ -4,11 +4,11 @@
 // one, the chapter's tip, Previous and Next chapter, the progress and the
 // "Tour in my games" switch (js/guide.js GuideProgress), with Take the tour
 // again once it is done. Showing a chapter ticks off its steps that only
-// explain. Steps a later version added since the player last opened the
+// explain, in order: one waits for the steps before it. Steps a later version added since the player last opened the
 // Guide carry a "New" badge, their chapters the count (js/gamemenu.js takes
 // them when the page opens and marks them seen). Texts: js/help.js GUIDE.
 
-import { guideText, readSteps, stepStatus } from './guide.js';
+import { guideText, stepStatus } from './guide.js';
 import { badge, led, toggle } from './ui/controls.js';
 
 function el(tag, className, text) {
@@ -60,8 +60,8 @@ export function renderGuide(c, o) {
     chapters.find((x) => x.steps.some((s) => fresh.has(s.id))) ??
     chapters.find((x) => progress.firstOpen(x.id)) ??
     chapters[0];
-  // Reading the chapter is what its explaining steps ask for.
-  progress.mark(readSteps(chapter.id, progress.content));
+  // Reading the chapter is what its explaining steps ask for: in order, each once the steps before it are done.
+  progress.markRead(chapter.id);
 
   const head = el('div', 'gm-head');
   const back = button('', 'ui-btn ui-btn-icon gm-back', () => o.onBack());

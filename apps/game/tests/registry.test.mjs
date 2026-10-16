@@ -70,6 +70,7 @@ test('registry: every setting has a type, a label and a valid default', () => {
     'pauseWhenHidden',
     'pixelRatioCap',
     'playerStanceColors',
+    'quickTips',
     'reduceMotion',
     'showUnitPaths',
     'targetLines',
@@ -239,7 +240,7 @@ test('registry: every old key migrates once, and the old keys are removed after 
 
   assert.deepEqual(
     v.game,
-    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, mouseCaptureNotice: 'always', pauseWhenHidden: false, attackMoveTipSeen: false, buildRightClick: 'openra' },
+    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, mouseCaptureNotice: 'always', pauseWhenHidden: false, attackMoveTipSeen: false, buildRightClick: 'openra', quickTips: true },
     'settings the old key did not have get their default',
   );
   assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false, cashTicks: true, clickSounds: true, menuMusic: true, musicOn: true, musicShuffle: true, musicRepeat: 'all' });
@@ -424,12 +425,14 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   const protocol = await import('../protocol/accounts.js');
   assert.deepEqual(Object.keys(GROUPS.net.settings), ['warnSelf', 'warnOthers', 'signalBars']);
   assert.deepEqual(Object.keys(GROUPS.social.settings), ['showOnline', 'friendsJoin', 'allowSpectate']);
-  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'seen', 'lastTip']);
+  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'seen', 'lastTip', 'quickTipsAsked']);
   const r = createRegistry({ storage: null });
   // Defaults: every network aid on; shown online and joinable by friends, spectating off; the tour on.
   assert.deepEqual(r.values().net, { warnSelf: true, warnOthers: true, signalBars: true });
   assert.deepEqual(r.values().social, { showOnline: true, friendsJoin: true, allowSpectate: false });
-  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, seen: null, lastTip: -1 });
+  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, seen: null, lastTip: -1, quickTipsAsked: false });
+  // The tour's last card asks about the quick tips (game.quickTips, on by default) once.
+  assert.equal(r.values().game.quickTips, true);
   assert.deepEqual(r.values().net, { ...protocol.NET_SETTING_DEFAULTS });
   assert.deepEqual(r.values().social, { ...protocol.SOCIAL_SETTING_DEFAULTS }, 'the server applies the same defaults');
   assert.equal(GROUPS.guide.settings.done.maxBytes, protocol.SETTINGS_GUIDE_DONE_MAX_BYTES);
@@ -438,9 +441,11 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   // Values the registry keeps pass the server; what it refuses, the server refuses too.
   r.patch('net', { warnSelf: false, signalBars: false });
   r.patch('social', { allowSpectate: true, showOnline: false });
-  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12 });
+  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12, quickTipsAsked: true });
+  r.patch('game', { quickTips: false });
   const doc = r.document();
-  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12 });
+  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12, quickTipsAsked: true });
+  assert.equal(protocol.validateSettingsDocument(doc).game.quickTips, false);
   assert.deepEqual(doc.social, { showOnline: false, friendsJoin: true, allowSpectate: true });
   for (const bad of [
     { net: { warnSelf: 'yes' } },
@@ -451,6 +456,8 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
     { guide: { lastTip: 1.5 } },
     { guide: { done: [] } },
     { guide: { seen: 18 } },
+    { guide: { quickTipsAsked: 'yes' } },
+    { game: { quickTips: 1 } },
     { guide: { seen: 'not a version!' } },
     { guide: { done: { 'bad key!': true } } },
     { guide: { done: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`chapter.step${i}`, true])) } },

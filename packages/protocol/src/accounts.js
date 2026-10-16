@@ -421,6 +421,7 @@ const SETTINGS_SECTIONS = {
     mouseCaptureNotice: choice(['always', 'first', 'off']),
     pauseWhenHidden: boolean,
     buildRightClick: choice(['openra', 'webra']),
+    quickTips: boolean,
   },
   audio: {
     enabled: boolean,
@@ -485,6 +486,8 @@ const SETTINGS_SECTIONS = {
       return v;
     },
     lastTip: integer(-1, LOADING_TIP_INDEX_MAX),
+    // quickTipsAsked: the tour's last card asked about game.quickTips.
+    quickTipsAsked: boolean,
   },
 };
 

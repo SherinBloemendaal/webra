@@ -4163,60 +4163,124 @@ Debug and NetMenu.
   work (work/onlineui) provides it as its canonical net object `{ quality,
   source, roster, you, players() }`, of which the menu reads `source` and
   `players()`. Until that is merged online games have no Network tab.
-- **Guide** (texts: `GUIDE` in `js/help.js`): seven chapters of steps. A
-  step ticks off by itself (`js/guide.js` `GuideTracker`) from the local
+- **Guide** (texts: `GUIDE` in `js/help.js`): seven chapters of steps, in
+  tour order (`js/guide.js` `TOUR_ORDER`: base, units, ore, power, weather,
+  powers, team). Steps tick off in their chapter's order
+  (`GuideProgress.reachable`): a step waits for the step before it, or for
+  the steps its `after` names. Optional step fields: `parallel` (a step
+  beside the chapter's main line with its own `after`; the steps behind it
+  do not wait for it: Train infantry after the Barracks, Build a vehicle
+  after the War Factory), `passive` (something that happens to the player:
+  ore delivered, low power, a thunderstorm, a support power ready; never
+  waited for, it ticks when it happens once its turn has come, so it may
+  tick after a later step of its chapter), `outside` (only outside a
+  skirmish: team chat, an online game), `builds` and `needs` (actors; a
+  step whose `builds` or `needs` are all missing from the game's
+  `player_json.buildable` is not in that game: it is passed, does not
+  tick, and comes back in a game that has it). The tracker (`js/guide.js`
+  `GuideTracker`) remembers what happened in the game (`memory`): the local
   player's engine events (MCV deployed, structure placed, unit produced,
-  building powered down, support power ready, lightning), the player state
-  every 100 ms (ore delivered: the stored ore goes up; low power; the sky's
-  thunderstorm), the orders given through the UI's game (`withGuide`, a
-  wrapper like `withTargetLines`) and signals (a team chat line, an online
-  game); explaining steps tick off when their chapter is shown. Skip this
-  step ticks one off by hand. The tracker follows skirmish games, missions
-  and online games of the local player, never replays or spectators.
-  Progress is the declared setting `guide.done` (`{ stepId: true }`); ids
-  the game does not know are kept. Steps added after the guide the player
-  was last shown (`guide.seen`) carry a "New" badge (`badge('info')`) on
-  the game menu's Guide button ("N new"), their chapter ("N new") and
-  themselves until the player opens the Guide, which marks them seen; the
-  badges stay for that visit. The Guide opens at the first chapter with a
-  new step.
+  building powered down, support power ready, lightning anywhere), the
+  player state every 100 ms (a Construction Yard from `hasProducer[0]`, so
+  a "Construction Yard" start counts; ore delivered: the stored ore goes
+  up; low power; the sky's thunderstorm), the orders given through the UI's
+  game (`withGuide`, a wrapper like `withTargetLines`) and signals (a team
+  chat line, an online game). After each it marks every open step whose
+  turn it is and whose test holds, again until nothing more ticks: a step
+  already achieved ticks the moment its turn comes ("already done" on the
+  tour card), all in one `onDone`. Tests about "now" (the power margin)
+  only run on a fresh player state, never on an event. A refinery's free
+  Ore Truck is spawned with the refinery and is not reported as produced
+  (`engine/src/tests_sound.rs`); Build a vehicle counts no Ore Truck or MCV.
+  A hidden tab drops engine events; what it missed is not remembered (the
+  yard has the state as a fallback). While the tour runs, only the tour's
+  chapter is marked; the rest waits in `memory`. Explaining steps tick off
+  when the Guide shows their chapter, in order (each once the steps before
+  it are done), or with Got it on the tour card. Skip this step ticks one
+  off by hand. A done step is never unticked; the order only governs new
+  ticks. The tracker follows skirmish games, missions and online games of
+  the local player, never replays or spectators. Progress is the declared
+  setting `guide.done` (`{ stepId: true }`); ids the game does not know are
+  kept. Steps added after the guide the player was last shown
+  (`guide.seen`) carry a "New" badge (`badge('info')`) on the game menu's
+  Guide button ("N new"), their chapter ("N new") and themselves until the
+  player opens the Guide, which marks them seen; the badges stay for that
+  visit. The Guide opens at the first chapter with a new step.
 - **Tour** (`js/tour.js`): a card above the command bar in the player's own
   skirmish games (a skirmish save too; never missions, online games,
-  replays or spectators) while `guide.tourInGames` is on and a step of the
-  first chapter is open. It lights the sidebar's cameo of the step
-  (`.sb-card.tour-target`), says "Step done" in a polite live region, has
-  Skip step, Full guide (the menu's Guide page) and a close button that
-  skips the tour (`tourInGames` off). `tourInGames` is the player's
-  choice only: finishing the tour leaves it on (0.17.0 switched it off;
-  see below), so tour steps a later version adds show in the next
-  skirmish, the open ones only. Players who finished on 0.17.0, which
-  switched it off then, keep it off and find later tour steps through the
-  "New" badges and the Guide. The Guide's "Take the tour again" (once
-  the tour is done), or turning "Tour in my games" on when every tour step
-  is done, clears the tour's steps (the rest of the guide keeps its
-  ticks), so it shows in the next skirmish. It sits above the command bar
-  wherever that is (`--cb-bottom` and `--cb-height`, which
-  `js/commandbar.js` sets on `#field`). It never takes the focus.
+  replays or spectators) while `guide.tourInGames` is on and a step it
+  counts is open, or its last card has not shown (below). It walks every
+  chapter in `TOUR_ORDER` by itself: the current chapter is the first with
+  an open counted step in this game (counted: not `passive`, not
+  `outside`); the card shows that chapter's first open step whose turn it
+  is ("Tour · Chapter · n of m", dots for the chapter's counted steps) and
+  an "Also" line (`.tour-also`) with the first open `parallel` step; both
+  light their sidebar cameos (`.sb-card.tour-target`, the also step's with
+  `.tour-target-also`). A step that only explains has Got it instead of
+  Skip step. While the player is on low power (`player_json.lowPower`) the
+  card shows "Low power: everything builds three times slower. Build a
+  Power Plant." (`.tour-warn`), lights the Power Plant and says the line
+  once in the live region each time the power drops (not again while it
+  stays low); `refresh(state)` gets the state every 100 ms. Before the Radar Dome the base chapter asks
+  for room for it ("Check your power before the radar": generated minus
+  used power at least the dome's 40, from `rules.actors`, or a dome
+  placed). The polite live region says "Step done", "(already done)",
+  "Chapter done: ..." and "Tour done" with the number of steps that tick by
+  themselves later. When the open counted steps left are all missing from
+  this game, the card says so; its close button then only closes it for
+  this game. On a step the close button skips the tour (`tourInGames`
+  off). `tourInGames` is the player's choice only: finishing the tour
+  leaves it on (0.17.0 switched it off; see below), so tour steps a later
+  version adds show in the next skirmish, the open ones only. Players who
+  finished on 0.17.0, which switched it off then, keep it off and find
+  later tour steps through the "New" badges and the Guide. The Guide's
+  "Take the tour again" (once the tour is done), or turning "Tour in my
+  games" on when every tour step is done, clears the counted steps (the
+  rest of the guide keeps its ticks), so it shows in the next skirmish. It
+  sits above the command bar wherever that is (`--cb-bottom` and
+  `--cb-height`, which `js/commandbar.js` sets on `#field`). It never takes
+  the focus.
+- **The tour's last card**: when every counted step is done and
+  `guide.quickTipsAsked` is false (and the switch is on), the card asks
+  whether to keep the quick tips (`game.quickTips`): a `role="group"` panel
+  labelled by its title, Keep quick tips and Turn them off (both described
+  by the text). Either answer sets `game.quickTips` and
+  `guide.quickTipsAsked`; the close button sets only `quickTipsAsked`
+  and leaves `tourInGames` on (the tour is done, not skipped, so tour steps
+  of later versions still come). A tour finished without the card (a mission, an online
+  game) shows the question in the next skirmish. It is asked once per
+  player, ever: Take the tour again does not ask again, and players who
+  skipped the tour are not asked.
 - **Guide content in later versions**: every chapter of `GUIDE` has
   `since`, the version that brought it (0.17.0 for the first guide,
   `GUIDE_BASELINE`); a step added to an existing chapter later has its own
   `since`. `js/guide.js` `GuideProgress.reconcile()` runs at the start of
-  each game: the first time (`guide.seen` not set), a player without
-  history (no step done, the tour not switched off) has seen everything
-  (`guide.seen` = the newest `since`: no badges), and a player of 0.17.0
-  has seen `GUIDE_BASELINE`. `tourInGames` stays as stored: 0.17.0 turned
-  it off both on finishing and on skipping, and its tracker ticked tour
-  steps whatever the switch said, so the two cannot be told apart. To add
-  guide content in a release:
+  each game. Every time, it carries credit over (`CARRIED`): from retired
+  ids (0.19.0 split `base.production`, "Barracks and a War Factory in one
+  game", into `base.barracks` and `base.factory`) and to a step a later one
+  implies (`base.radar` done makes `base.morePower` done: the dome is
+  built, so a player who finished 0.18.0 never gets the power check before
+  it). The first time
+  (`guide.seen` not set), a player without history (no step done, the tour
+  not switched off) has seen everything (`guide.seen` = the newest
+  `since`: no badges), and a player of 0.17.0 has seen `GUIDE_BASELINE`.
+  `tourInGames` stays as stored: 0.17.0 turned it off both on finishing
+  and on skipping, and its tracker ticked tour steps whatever the switch
+  said, so the two cannot be told apart. To add guide content in a
+  release:
   1. Add the step to its chapter in `GUIDE` (`js/help.js`) with
      `since: 'x.y.z'`, the version it ships in (the next release), or add a
-     chapter with `since` (its steps inherit it). Give a tour chapter step
-     a `tour` text, and its sidebar cameos in `js/tour.js` `TOUR_TARGETS`.
-  2. Add its trigger to `TRIGGERS` in `js/guide.js` (`read: true` for a
-     step that only explains).
+     chapter with `since` (its steps inherit it) and its place in
+     `TOUR_ORDER`. Give the step a `tour` text, its `after`, `parallel`,
+     `passive`, `outside`, `builds` or `needs` where they apply, and its
+     sidebar cameos in `js/tour.js` `TOUR_TARGETS`.
+  2. Add its trigger to `TRIGGERS` in `js/guide.js` (a `test` on the
+     game's memory, `read: true` for a step that only explains).
   3. Use a new id. Ids are never reused, also not after a step is removed:
      `guide.done` keeps the ids of every version, so a reused id would come
-     back done. Never change the `since` of shipped content.
+     back done. Never change the `since` of shipped content. A step whose
+     meaning changes gets a new id; a carry-over in `reconcile()`
+     (`CARRIED`) may mark it from the old id.
   4. Players who had the guide before see the step as "New" until they
      open the Guide; a new tour step runs in the next skirmish for players
      whose tour is on (finished since 0.18.0 included), never for those

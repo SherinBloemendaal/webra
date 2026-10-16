@@ -1661,7 +1661,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // The player's stored progress meets this version's guide: which steps are new to them (js/guide.js reconcile).
   guide.reconcile();
   let tour = null;
-  const guideTracker = guideFollows(guideGame) ? new GuideTracker({ progress: guide, actors: rules.actors, player, onDone: (ids) => tour?.stepsDone(ids) }) : null;
+  const guideTracker = guideFollows(guideGame) ? new GuideTracker({ progress: guide, actors: rules.actors, player, tour: tourRuns(guideGame, guide), onDone: (ids) => tour?.stepsDone(ids) }) : null;
   if (guideTracker) scope.add(() => guideTracker.dispose());
   const ordersUi = withTargetLines(viewer ? viewOnly(watched) : viewOnly(watched, () => spectating), (ids) => targetLines.ordered(ids));
   const ui = guideTracker ? withGuide(ordersUi, (method, args) => guideTracker.onOrder(method, args)) : ordersUi;
@@ -2431,7 +2431,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     onExit: exit,
   }));
   // The tour card, in the player's own skirmish games until its steps are done or skipped.
-  if (guideTracker && tourRuns(guideGame, guide)) tour = scope.own(new TourCard($('field'), { progress: guide, hotkeys, onGuide: () => menu.openAt('guide') }));
+  if (guideTracker && tourRuns(guideGame, guide)) tour = scope.own(new TourCard($('field'), { progress: guide, hotkeys, ctx: () => guideTracker.ctx(), onGuide: () => menu.openAt('guide') }));
   if (guideGame.kind === 'online') guideTracker?.signal('onlineGame');
   $('menu-button').hidden = false;
   // A click on Menu opens the menu, which lets go of the mouse: it does not capture it first.
@@ -2944,7 +2944,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         safe('command bar state', () => commandBar.update());
         safe('sound state', () => audio?.playerState(state));
         safe('guide state', () => guideTracker?.onState(state, { weather: sky?.weather ?? null }));
-        safe('tour', () => tour?.refresh());
+        safe('tour', () => tour?.refresh(state));
         safe('sidebar selection', () => {
           sidebar.setSelection(selectionInfo(game, input.selection, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
           sidebar.setDeployState(input.deployState());
