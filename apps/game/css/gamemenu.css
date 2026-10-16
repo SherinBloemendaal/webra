@@ -191,6 +191,13 @@
   color: var(--ui-text-2);
 }
 
+/* The Guide's "N new" badge (steps a later version added) beside its hint. */
+.gm-item-side {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+
 .gm-exits {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(calc(110 * var(--ui-px)), 1fr));

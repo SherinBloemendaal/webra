@@ -424,12 +424,12 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   const protocol = await import('../protocol/accounts.js');
   assert.deepEqual(Object.keys(GROUPS.net.settings), ['warnSelf', 'warnOthers', 'signalBars']);
   assert.deepEqual(Object.keys(GROUPS.social.settings), ['showOnline', 'friendsJoin', 'allowSpectate']);
-  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'lastTip']);
+  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'seen', 'lastTip']);
   const r = createRegistry({ storage: null });
   // Defaults: every network aid on; shown online and joinable by friends, spectating off; the tour on.
   assert.deepEqual(r.values().net, { warnSelf: true, warnOthers: true, signalBars: true });
   assert.deepEqual(r.values().social, { showOnline: true, friendsJoin: true, allowSpectate: false });
-  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, lastTip: -1 });
+  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, seen: null, lastTip: -1 });
   assert.deepEqual(r.values().net, { ...protocol.NET_SETTING_DEFAULTS });
   assert.deepEqual(r.values().social, { ...protocol.SOCIAL_SETTING_DEFAULTS }, 'the server applies the same defaults');
   assert.equal(GROUPS.guide.settings.done.maxBytes, protocol.SETTINGS_GUIDE_DONE_MAX_BYTES);
@@ -438,9 +438,9 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   // Values the registry keeps pass the server; what it refuses, the server refuses too.
   r.patch('net', { warnSelf: false, signalBars: false });
   r.patch('social', { allowSpectate: true, showOnline: false });
-  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, lastTip: 12 });
+  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12 });
   const doc = r.document();
-  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, lastTip: 12 });
+  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12 });
   assert.deepEqual(doc.social, { showOnline: false, friendsJoin: true, allowSpectate: true });
   for (const bad of [
     { net: { warnSelf: 'yes' } },
@@ -450,6 +450,8 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
     { guide: { lastTip: 1000 } },
     { guide: { lastTip: 1.5 } },
     { guide: { done: [] } },
+    { guide: { seen: 18 } },
+    { guide: { seen: 'not a version!' } },
     { guide: { done: { 'bad key!': true } } },
     { guide: { done: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`chapter.step${i}`, true])) } },
   ]) {
@@ -487,4 +489,23 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   const big = mergeSettings({ base, local: done(many('x')), remote: done(many('y')) });
   assert.deepEqual(big.conflicts.map((c) => `${c.group}.${c.key}`), ['guide.done']);
   assert.deepEqual(big.merged.guide.done, many('y'));
+});
+
+test('registry: guide.seen syncs as the newer version of two devices, never a conflict', () => {
+  const seen = (v) => normalizeValues({ guide: { seen: v } }).values;
+  const base = seen('0.17.0');
+  // Both sides moved on: the newer stays (semantic order, not text order).
+  const both = mergeSettings({ base, local: seen('0.9.0'), remote: seen('0.18.0') });
+  assert.equal(both.merged.guide.seen, '0.18.0');
+  assert.deepEqual(both.conflicts, []);
+  assert.equal(mergeSettings({ base, local: seen('0.19.0'), remote: seen('0.18.0') }).merged.guide.seen, '0.19.0');
+  // One side only: the newer too, also when that side went back (an older client never lowers it).
+  assert.equal(mergeSettings({ base, local: seen('0.17.0'), remote: seen('0.18.0') }).merged.guide.seen, '0.18.0');
+  assert.equal(mergeSettings({ base: seen('0.18.0'), local: seen('0.18.0'), remote: seen('0.17.0') }).merged.guide.seen, '0.18.0');
+  // A new device (no base) against an account that never set it: the version, no conflict.
+  const fresh = mergeSettings({ base: null, local: seen('0.18.0'), remote: normalizeValues({}).values });
+  assert.equal(fresh.merged.guide.seen, '0.18.0');
+  assert.deepEqual(fresh.conflicts.filter((c) => c.key === 'seen'), []);
+  // A pre-release sorts before its release.
+  assert.equal(mergeSettings({ base: null, local: seen('0.18.0-rc.1'), remote: seen('0.18.0') }).merged.guide.seen, '0.18.0');
 });

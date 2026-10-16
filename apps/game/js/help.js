@@ -185,7 +185,11 @@ export const HELP = Object.freeze({
  * skirmish games (js/tour.js): chapters of steps. A step has an `id` (kept
  * in the settings as guide.done, js/guide.js), a `title`, its `text`,
  * `watch` (what ticks it off by itself, shown as "Watching: ...") and, in
- * the tour's chapter, `tour` (the tour card's text). `{key:action}` stands
+ * the tour's chapter, `tour` (the tour card's text). Every chapter has
+ * `since`, the version that brought it; a step added to an existing chapter
+ * later has its own `since` (js/guide.js: newer than the guide a player has
+ * seen, it is "New" to them). Ids are never reused, also not after a step
+ * goes (docs/contracts.md, "The guide and the tour"). `{key:action}` stands
  * for the key bound to that hotkey action now. The facts follow the README
  * and the engine: lightning (engine/src/lightning.rs), the ore values
  * (help `startingCash`), the countdowns (help `techLevel`), rejoining
@@ -195,6 +199,7 @@ export const GUIDE = Object.freeze(
   [
     {
       id: 'base',
+      since: '0.17.0',
       title: 'Your first base',
       intro: 'Every game starts with a Mobile Construction Vehicle, the MCV. It becomes your Construction Yard, and everything else is built from there.',
       tip: 'Buildings must touch the area around your other buildings. Build toward the ore to keep the trucks close.',
@@ -238,6 +243,7 @@ export const GUIDE = Object.freeze(
     },
     {
       id: 'ore',
+      since: '0.17.0',
       title: 'Money and ore',
       intro: 'Credits pay for everything. Ore Trucks bring ore and gems to a refinery, which turns them into credits.',
       tip: 'An engineer can capture a neutral Oil Derrick: it pays a bonus when taken and a steady income after.',
@@ -250,6 +256,7 @@ export const GUIDE = Object.freeze(
     },
     {
       id: 'power',
+      since: '0.17.0',
       title: 'Power',
       intro: 'Almost every building uses power. The bar at the left of the sidebar shows what you make against what you use.',
       tip: 'Power plants are a favourite target: protect them, or the enemy turns your defences off.',
@@ -262,6 +269,7 @@ export const GUIDE = Object.freeze(
     },
     {
       id: 'units',
+      since: '0.17.0',
       title: 'Commanding units',
       intro: 'Select units by clicking them or dragging a box. Then click where they should go or what they should attack.',
       tip: 'Hover any button for a tooltip with its key. Every key can be changed under Controls.',
@@ -280,6 +288,7 @@ export const GUIDE = Object.freeze(
     },
     {
       id: 'weather',
+      since: '0.17.0',
       title: 'Weather and lightning',
       intro: 'Some maps have weather. A badge on the screen says what it does. Thunderstorms are the dangerous one.',
       tip: 'The lobby can make the weather only for show, or turn it off.',
@@ -302,6 +311,7 @@ export const GUIDE = Object.freeze(
     },
     {
       id: 'powers',
+      since: '0.17.0',
       title: 'Superweapons',
       intro: 'Late in the game, tech buildings unlock support powers. Their countdowns show at the top left.',
       tip: 'The Iron Curtain makes units invulnerable for a while; the Chronosphere teleports them.',
@@ -318,6 +328,7 @@ export const GUIDE = Object.freeze(
     },
     {
       id: 'team',
+      since: '0.17.0',
       title: 'Teams and online',
       intro: 'In team games allies share vision and win together. AI players are in the slot list like everyone else.',
       tip: "Spectators can watch any player's view or all of them, with statistics per team.",

@@ -5,14 +5,15 @@
 // step off (js/guide.js GuideTracker). Skip step ticks the step off by hand,
 // the close button skips the whole tour (guide.tourInGames off: the Guide's
 // "Tour in my games" switch turns it on again), Full guide opens the game
-// menu's Guide page. The tour never takes the focus; its announcements are a
+// menu's Guide page. Tour steps that a later version adds show to players
+// who finished the tour before (the open steps only; js/guide.js
+// GuideProgress.reconcile), never to players who skipped it. The tour never takes the focus; its announcements are a
 // polite live region.
 //
 // When it runs is js/guide.js tourRuns: the player's own skirmish games
 // only, never missions, online games, replays or spectators.
 
-import { GUIDE } from './help.js';
-import { STEPS, TOUR_CHAPTER, TOUR_STEPS, guideText } from './guide.js';
+import { TOUR_CHAPTER, guideText } from './guide.js';
 import { boundKey } from './hotkeys.js';
 
 /** How long "Step done" stays (ms). */
@@ -47,16 +48,17 @@ function button(text, className, onClick) {
 export function tourModel(progress, hotkeys = null) {
   const id = progress.tourStep();
   if (!id) return null;
-  const { step, index } = STEPS.get(id);
-  const chapter = GUIDE.find((c) => c.id === TOUR_CHAPTER);
+  const { steps, chapters, tourSteps } = progress.content;
+  const { step, index } = steps.get(id);
+  const chapter = chapters.find((c) => c.id === TOUR_CHAPTER);
   const done = progress.done;
   return {
     id,
-    where: `Tour · ${chapter.title} · ${index + 1} of ${TOUR_STEPS.length}`,
+    where: `Tour · ${chapter.title} · ${index + 1} of ${tourSteps.length}`,
     title: guideText(step.title, hotkeys),
     text: guideText(step.tour ?? step.text, hotkeys),
     watch: `Ticks off by itself: ${step.watch}.`,
-    dots: TOUR_STEPS.map((s) => (done[s] === true ? 'done' : s === id ? 'active' : 'open')),
+    dots: tourSteps.map((s) => (done[s] === true ? 'done' : s === id ? 'active' : 'open')),
     targets: TOUR_TARGETS[id] ?? [],
   };
 }
@@ -168,9 +170,10 @@ export class TourCard {
 
   /** Steps the game just ticked off (GuideTracker onDone): "Step done" for the tour's. */
   stepsDone(ids) {
-    const mine = ids.filter((id) => TOUR_STEPS.includes(id));
+    const { steps, tourSteps } = this.progress.content;
+    const mine = ids.filter((id) => tourSteps.includes(id));
     if (!mine.length || this.disposed) return;
-    const last = STEPS.get(mine[mine.length - 1]).step;
+    const last = steps.get(mine[mine.length - 1]).step;
     this.say(this.progress.tourComplete() ? 'Tour done. The Guide (Esc) has more.' : `Step done: ${last.watch}`);
   }
 

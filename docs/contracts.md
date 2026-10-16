@@ -4089,17 +4089,50 @@ Debug and NetMenu.
   step ticks one off by hand. The tracker follows skirmish games, missions
   and online games of the local player, never replays or spectators.
   Progress is the declared setting `guide.done` (`{ stepId: true }`); ids
-  the game does not know are kept.
+  the game does not know are kept. Steps added after the guide the player
+  was last shown (`guide.seen`) carry a "New" badge (`badge('info')`) on
+  the game menu's Guide button ("N new"), their chapter ("N new") and
+  themselves until the player opens the Guide, which marks them seen; the
+  badges stay for that visit. The Guide opens at the first chapter with a
+  new step.
 - **Tour** (`js/tour.js`): a card above the command bar in the player's own
   skirmish games (a skirmish save too; never missions, online games,
   replays or spectators) while `guide.tourInGames` is on and a step of the
   first chapter is open. It lights the sidebar's cameo of the step
   (`.sb-card.tour-target`), says "Step done" in a polite live region, has
   Skip step, Full guide (the menu's Guide page) and a close button that
-  skips the tour (`tourInGames` off). Done, the tour switches
-  `tourInGames` off; turning "Tour in my games" on again in the Guide
-  clears the tour's steps (the rest of the guide keeps its ticks), so it
-  shows in the next skirmish. It never takes the focus.
+  skips the tour (`tourInGames` off). `tourInGames` is the player's
+  choice only: finishing the tour leaves it on (0.17.0 switched it off;
+  see below), so tour steps a later version adds show in the next
+  skirmish, the open ones only. The Guide's "Take the tour again" (once
+  the tour is done), or turning "Tour in my games" on when every tour step
+  is done, clears the tour's steps (the rest of the guide keeps its
+  ticks), so it shows in the next skirmish. It sits above the command bar
+  wherever that is (`--cb-bottom` and `--cb-height`, which
+  `js/commandbar.js` sets on `#field`). It never takes the focus.
+- **Guide content in later versions**: every chapter of `GUIDE` has
+  `since`, the version that brought it (0.17.0 for the first guide,
+  `GUIDE_BASELINE`); a step added to an existing chapter later has its own
+  `since`. `js/guide.js` `GuideProgress.reconcile()` runs at the start of
+  each game: the first time (`guide.seen` not set), a player without
+  history (no step done, the tour not switched off) has seen everything
+  (`guide.seen` = the newest `since`: no badges), a player of 0.17.0 has
+  seen `GUIDE_BASELINE`, and if that player finished the 0.17.0 tour
+  (which switched it off) `tourInGames` goes on again, while a player who
+  skipped it keeps it off and only gets the badges. To add guide content
+  in a release:
+  1. Add the step to its chapter in `GUIDE` (`js/help.js`) with
+     `since: 'x.y.z'`, the version it ships in (the next release), or add a
+     chapter with `since` (its steps inherit it). Give a tour chapter step
+     a `tour` text, and its sidebar cameos in `js/tour.js` `TOUR_TARGETS`.
+  2. Add its trigger to `TRIGGERS` in `js/guide.js` (`read: true` for a
+     step that only explains).
+  3. Use a new id. Ids are never reused, also not after a step is removed:
+     `guide.done` keeps the ids of every version, so a reused id would come
+     back done. Never change the `since` of shipped content.
+  4. Players who had the guide before see the step as "New" until they
+     open the Guide; a new tour step runs in the next skirmish for players
+     whose tour is on (finished included), never for those who skipped it.
 - **Sound and Music dialogs**: `.ui-dialog` cards with `.ui-btn` buttons;
   the music player's tracks carry a lamp.
 - **Debug menu** (`js/debug.js`): the panel on the right with a hazard

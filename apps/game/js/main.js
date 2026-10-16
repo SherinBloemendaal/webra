@@ -1640,6 +1640,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     watching: !!viewer || !!online?.spectator,
   };
   const guide = new GuideProgress(settings.registry);
+  // The player's stored progress meets this version's guide: what is new to them, a finished 0.17.0 tour.
+  guide.reconcile();
   let tour = null;
   const guideTracker = guideFollows(guideGame) ? new GuideTracker({ progress: guide, actors: rules.actors, player, onDone: (ids) => tour?.stepsDone(ids) }) : null;
   if (guideTracker) scope.add(() => guideTracker.dispose());

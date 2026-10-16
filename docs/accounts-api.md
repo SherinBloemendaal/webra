@@ -857,6 +857,7 @@ Serialized size at most 32 KiB.
   "guide": {
     "tourInGames": true,           // the tour starts by itself in the player's skirmish games
     "done": { "ch1.deploy": true },  // guide and tour steps done: step id -> true, JSON object at most 2 KiB
+    "seen": "0.18.0",              // the newest guide content the player was shown, a version (left out: not yet)
     "lastTip": -1                  // index of the last loading screen tip shown, -1 to 999 (-1: none yet)
   },
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
@@ -878,6 +879,9 @@ Serialized size at most 32 KiB.
   `apps/game/js/account/sync.js`): a step stays when both have it or one side
   added it, a step one side removed stays removed; only a result over 2 KiB
   is a conflict.
+- `guide.seen`: a version (the same rule as `releaseNotes.lastSeenVersion`).
+  It only moves forward: when two devices differ, the game keeps the newer
+  one (`NEWEST_MERGE` in `apps/game/js/account/sync.js`), never a conflict.
 - `lastOptions` and `extra`: JSON objects at most 4 levels deep, keys
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at

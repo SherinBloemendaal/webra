@@ -93,6 +93,14 @@
   color: var(--ui-muted);
 }
 
+/* "New" and "N new" (js/guideview.js newBadge): steps a later version added. */
+.guide-chapter-title .ui-badge,
+.guide-step-title .ui-badge {
+  margin-left: var(--ui-space-1);
+  font-size: var(--ui-fs-s);
+  vertical-align: middle;
+}
+
 .guide-chapter-body {
   display: flex;
   flex-direction: column;

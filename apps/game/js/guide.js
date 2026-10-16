@@ -5,7 +5,15 @@
 //
 // Progress is a declared setting (registry guide.done: { stepId: true }), so
 // it follows the account like every other setting; guide.tourInGames is the
-// "Tour in my games" switch.
+// "Tour in my games" switch, the player's own choice (skipping the tour turns
+// it off; finishing it does not, so tour steps a later version adds still
+// show).
+//
+// Content added in later versions (docs/contracts.md, "The guide and the
+// tour"): every chapter, and a step that came later than its chapter, says
+// in `since` which version brought it. guide.seen is the newest guide
+// content the player was shown; steps newer than that are "New" in the game
+// menu and on the Guide page until the player opens the Guide.
 //
 // A GuideTracker watches one game for the local player (never spectators or
 // replays) and marks steps done:
@@ -29,18 +37,60 @@
 import { GUIDE } from './help.js';
 import { EV, STRIDE } from './audio/director.js';
 import { boundKey } from './hotkeys.js';
+import { compareVersions, newestVersion } from './releasenotes.js';
 
 /** The chapter the tour walks through in the first skirmish games. */
 export const TOUR_CHAPTER = 'base';
 
-/** Step id -> { step, chapter, index (in its chapter) }. */
-export const STEPS = new Map(GUIDE.flatMap((chapter) => chapter.steps.map((step, index) => [step.id, { step, chapter, index }])));
+/**
+ * The guide as 0.17.0 shipped it, the first one: the content of every
+ * player who had a guide before guide.seen existed (it came in 0.18.0).
+ */
+export const GUIDE_BASELINE = '0.17.0';
+
+/** Whether version `a` is newer than `b`; null `b` (nothing seen) is older than every version. */
+export function newerThan(a, b) {
+  return b === null || b === undefined ? true : compareVersions(a, b) > 0;
+}
+
+/**
+ * The guide's content, indexed: `chapters` (help.js GUIDE), `steps` (step id
+ * -> { step, chapter, index in its chapter, since }), `stepIds` in guide
+ * order, `tourSteps` (the tour chapter's steps in order) and `version`, the
+ * newest `since` of all. A step's `since` is its own or its chapter's.
+ */
+export function guideContent(chapters) {
+  const steps = new Map();
+  let version = GUIDE_BASELINE;
+  for (const chapter of chapters) {
+    const chapterSince = chapter.since ?? GUIDE_BASELINE;
+    chapter.steps.forEach((step, index) => {
+      const since = step.since ?? chapterSince;
+      steps.set(step.id, { step, chapter, index, since });
+      if (compareVersions(since, version) > 0) version = since;
+    });
+  }
+  const tour = chapters.find((c) => c.id === TOUR_CHAPTER);
+  return Object.freeze({
+    chapters,
+    steps,
+    stepIds: Object.freeze([...steps.keys()]),
+    tourSteps: Object.freeze(tour ? tour.steps.map((s) => s.id) : []),
+    version,
+  });
+}
+
+/** This game's guide (help.js GUIDE). */
+export const CONTENT = guideContent(GUIDE);
+
+/** Step id -> { step, chapter, index (in its chapter), since }. */
+export const STEPS = CONTENT.steps;
 
 /** Every step id, in guide order. */
-export const STEP_IDS = Object.freeze([...STEPS.keys()]);
+export const STEP_IDS = CONTENT.stepIds;
 
 /** The tour's steps, in order. */
-export const TOUR_STEPS = Object.freeze(GUIDE.find((c) => c.id === TOUR_CHAPTER).steps.map((s) => s.id));
+export const TOUR_STEPS = CONTENT.tourSteps;
 
 /** The orders that count as "an order given" (units.order). */
 const ORDER_METHODS = new Set(['order_smart', 'order_move', 'order_attack', 'order_attack_ground', 'order_waypoint', 'order_guard', 'order_stop', 'order_scatter']);
@@ -93,8 +143,8 @@ function placedAny(memory, ids) {
 }
 
 /** The "Watching: ..." line of a step, or its done or plain form. */
-export function stepStatus(id, { done, active }) {
-  const watch = STEPS.get(id)?.step.watch ?? '';
+export function stepStatus(id, { done, active }, content = CONTENT) {
+  const watch = content.steps.get(id)?.step.watch ?? '';
   if (done) return `Done: ${watch}`;
   return active ? `Watching: ${watch}` : watch;
 }
@@ -108,13 +158,16 @@ export function guideText(text, hotkeys = null) {
 }
 
 /**
- * The player's progress: which steps are done and whether the tour runs in
- * their skirmish games. Reads and writes the registry's guide group.
+ * The player's progress: which steps are done, whether the tour runs in
+ * their skirmish games and which steps are new to them. Reads and writes the
+ * registry's guide group. `content` is the guide (guideContent; tests pass
+ * their own).
  */
 export class GuideProgress {
   /** @param {ReturnType<import('./registry.js').createRegistry>} registry */
-  constructor(registry) {
+  constructor(registry, content = CONTENT) {
     this.registry = registry;
+    this.content = content;
   }
 
   /** `{ stepId: true }` of the steps done (a copy). */
@@ -128,25 +181,25 @@ export class GuideProgress {
   }
 
   /** Steps done of `ids` (default: every step). */
-  count(ids = STEP_IDS) {
+  count(ids = this.content.stepIds) {
     const done = this.done;
     return ids.filter((id) => done[id] === true).length;
   }
 
   get total() {
-    return STEP_IDS.length;
+    return this.content.stepIds.length;
   }
 
   /** `{ done, total }` of a chapter. */
   chapter(chapterId) {
-    const c = GUIDE.find((x) => x.id === chapterId);
+    const c = this.content.chapters.find((x) => x.id === chapterId);
     const ids = c ? c.steps.map((s) => s.id) : [];
     return { done: this.count(ids), total: ids.length };
   }
 
   /** The first step of a chapter not done yet, or null. */
   firstOpen(chapterId) {
-    const c = GUIDE.find((x) => x.id === chapterId);
+    const c = this.content.chapters.find((x) => x.id === chapterId);
     const done = this.done;
     return c?.steps.find((s) => done[s.id] !== true)?.id ?? null;
   }
@@ -158,40 +211,90 @@ export class GuideProgress {
    */
   mark(ids) {
     const done = this.done;
-    const fresh = [...new Set(ids)].filter((id) => STEPS.has(id) && done[id] !== true);
+    const fresh = [...new Set(ids)].filter((id) => this.content.steps.has(id) && done[id] !== true);
     if (!fresh.length) return [];
     for (const id of fresh) done[id] = true;
     this.registry.set('guide', 'done', done);
-    // The tour is over once its steps are: it does not start again until the switch goes on.
-    if (fresh.some((id) => TOUR_STEPS.includes(id)) && this.tourComplete()) this.registry.set('guide', 'tourInGames', false);
     return fresh;
   }
 
+  /**
+   * The "Tour in my games" switch: off only when the player skipped the tour
+   * or switched it off. A finished tour leaves it on, so tour steps that a
+   * later version adds show in the next skirmish.
+   */
   get tourInGames() {
     return this.registry.get('guide', 'tourInGames') === true;
   }
 
   /**
-   * The "Tour in my games" switch. Switched on after the tour was finished,
-   * the tour's steps start over (the rest of the guide keeps its ticks), so
-   * the tour shows again in the next skirmish.
+   * Set the switch. Switched on after the tour was finished, the tour's steps
+   * start over (the rest of the guide keeps its ticks), so the tour shows
+   * again in the next skirmish.
    */
   setTourInGames(on) {
-    if (on && this.tourComplete()) {
-      const done = this.done;
-      for (const id of TOUR_STEPS) delete done[id];
-      this.registry.set('guide', 'done', done);
-    }
+    if (on && this.tourComplete()) this.restartTour();
     return this.registry.set('guide', 'tourInGames', !!on);
   }
 
+  /** Take the tour again: its steps start over and the switch goes on. */
+  restartTour() {
+    const done = this.done;
+    for (const id of this.content.tourSteps) delete done[id];
+    this.registry.set('guide', 'done', done);
+    this.registry.set('guide', 'tourInGames', true);
+  }
+
   tourComplete() {
-    return this.count(TOUR_STEPS) === TOUR_STEPS.length;
+    return this.count(this.content.tourSteps) === this.content.tourSteps.length;
   }
 
   /** The tour step to show now, or null when the tour is done. */
   tourStep() {
     return this.firstOpen(TOUR_CHAPTER);
+  }
+
+  /** The newest guide content the player was shown (guide.seen), or null before reconcile. */
+  get seen() {
+    return this.registry.get('guide', 'seen');
+  }
+
+  /** Steps that came after the content the player was shown and are not done yet, in guide order. */
+  newSteps() {
+    const seen = this.seen;
+    if (seen === null) return [];
+    const done = this.done;
+    return this.content.stepIds.filter((id) => done[id] !== true && newerThan(this.content.steps.get(id).since, seen));
+  }
+
+  /** The player opened the Guide: what it holds now is seen. */
+  markSeen() {
+    const next = newestVersion(this.seen, this.content.version);
+    if (next !== this.seen) this.registry.set('guide', 'seen', next);
+  }
+
+  /**
+   * Bring a player's stored progress up to this game's guide, at the start
+   * of each game (js/main.js). Once per player, the first time (guide.seen
+   * not set yet):
+   * - a new player (no step done, the tour not switched off) has seen
+   *   everything: no "New" badges, the tour as usual;
+   * - a player from 0.17.0 has seen the baseline guide, so what came later
+   *   is new to them. 0.17.0 switched the tour off when it was finished;
+   *   such a player (every baseline tour step done) gets the switch back on,
+   *   so new tour steps reach them. A player who skipped the tour keeps it off.
+   */
+  reconcile() {
+    if (this.seen !== null) return;
+    const done = this.done;
+    const history = Object.keys(done).length > 0 || !this.tourInGames;
+    if (!history) {
+      this.registry.set('guide', 'seen', this.content.version);
+      return;
+    }
+    const baselineTour = this.content.tourSteps.filter((id) => !newerThan(this.content.steps.get(id).since, GUIDE_BASELINE));
+    const finished = baselineTour.length > 0 && baselineTour.every((id) => done[id] === true);
+    this.registry.patch('guide', { seen: GUIDE_BASELINE, ...(finished && !this.tourInGames ? { tourInGames: true } : {}) });
   }
 
   /** Follow changes of the guide settings (here, another tab, the account): fn(). Returns the unsubscribe. */
@@ -248,7 +351,7 @@ export class GuideTracker {
   /** The steps still open whose trigger has a `field`. */
   open(field) {
     const done = this.progress.done;
-    return STEP_IDS.filter((id) => done[id] !== true && TRIGGERS[id]?.[field] !== undefined);
+    return this.progress.content.stepIds.filter((id) => done[id] !== true && TRIGGERS[id]?.[field] !== undefined);
   }
 
   mark(ids) {
@@ -320,8 +423,8 @@ export class GuideTracker {
 }
 
 /** The read-only steps of a chapter (ticked off when the guide shows it). */
-export function readSteps(chapterId) {
-  const c = GUIDE.find((x) => x.id === chapterId);
+export function readSteps(chapterId, content = CONTENT) {
+  const c = content.chapters.find((x) => x.id === chapterId);
   return c ? c.steps.filter((s) => TRIGGERS[s.id]?.read).map((s) => s.id) : [];
 }
 

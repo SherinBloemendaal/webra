@@ -2,12 +2,14 @@
 // with a lamp each (all steps done, some, none), the chosen chapter's steps
 // with what ticks each off ("Watching: ..."), Skip this step for the open
 // one, the chapter's tip, Previous and Next chapter, the progress and the
-// "Tour in my games" switch (js/guide.js GuideProgress). Showing a chapter
-// ticks off its steps that only explain. Texts: js/help.js GUIDE.
+// "Tour in my games" switch (js/guide.js GuideProgress), with Take the tour
+// again once it is done. Showing a chapter ticks off its steps that only
+// explain. Steps a later version added since the player last opened the
+// Guide carry a "New" badge, their chapters the count (js/gamemenu.js takes
+// them when the page opens and marks them seen). Texts: js/help.js GUIDE.
 
-import { GUIDE } from './help.js';
 import { guideText, readSteps, stepStatus } from './guide.js';
-import { led, toggle } from './ui/controls.js';
+import { badge, led, toggle } from './ui/controls.js';
 
 function el(tag, className, text) {
   const e = document.createElement(tag);
@@ -34,19 +36,32 @@ export function progressText(progress) {
   return `${progress.count()} of ${progress.total} steps done`;
 }
 
+/** The "New" badge of a step, or of a chapter with `n` new steps. */
+export function newBadge(n = 1) {
+  return badge('info', n === 1 ? 'New' : `${n} new`, { title: n === 1 ? 'Added since you last opened the guide' : `${n} steps added since you last opened the guide` });
+}
+
 /**
  * Draw the Guide page into `c` with chapter `chapterId` open; returns the
  * chapter shown. `o.onChapter(id)` switches chapters, `o.onBack()` goes back
- * to the menu. The caller draws the page again when the progress changes.
+ * to the menu, `o.fresh` holds the step ids shown as new. The caller draws
+ * the page again when the progress changes.
  * @param {HTMLElement} c
  * @param {{ progress: import('./guide.js').GuideProgress, hotkeys?: object, chapter?: string,
- *   onChapter(id: string): void, onBack(): void }} o
+ *   fresh?: Set<string>, onChapter(id: string): void, onBack(): void }} o
  */
 export function renderGuide(c, o) {
   const { progress } = o;
-  const chapter = GUIDE.find((x) => x.id === o.chapter) ?? GUIDE.find((x) => progress.firstOpen(x.id)) ?? GUIDE[0];
+  const { chapters } = progress.content;
+  const fresh = o.fresh ?? new Set();
+  // The chapter asked for, else the first with a new step, else the first with an open step.
+  const chapter =
+    chapters.find((x) => x.id === o.chapter) ??
+    chapters.find((x) => x.steps.some((s) => fresh.has(s.id))) ??
+    chapters.find((x) => progress.firstOpen(x.id)) ??
+    chapters[0];
   // Reading the chapter is what its explaining steps ask for.
-  progress.mark(readSteps(chapter.id));
+  progress.mark(readSteps(chapter.id, progress.content));
 
   const head = el('div', 'gm-head');
   const back = button('', 'ui-btn ui-btn-icon gm-back', () => o.onBack());
@@ -55,35 +70,42 @@ export function renderGuide(c, o) {
   title.append(back, el('h1', 'gm-title', 'Guide'));
   const side = el('div', 'guide-progress');
   const count = el('span', 'guide-count ui-num', progressText(progress));
+  const finished = progress.tourComplete();
   const tour = toggle({
     id: 'guide-tour-in-games',
     label: 'Tour in my games',
-    hint: 'Steps tick off as you play. The tour starts by itself in your skirmish games.',
+    hint: finished
+      ? 'Tour done. Steps that later versions add to it start by themselves in your skirmish games.'
+      : 'Steps tick off as you play. The tour starts by itself in your skirmish games.',
     checked: progress.tourInGames,
     rowClass: 'guide-tour-switch',
     onChange: (on) => progress.setTourInGames(on),
   });
   side.append(count, tour.row);
+  if (finished) side.append(button('Take the tour again', 'ui-btn ui-btn-sm ui-btn-ghost guide-tour-again', () => progress.restartTour()));
   head.append(title, side);
 
   const body = el('div', 'guide-body');
   const nav = el('nav', 'guide-chapters');
   nav.setAttribute('aria-label', 'Chapters');
   const list = el('ol', 'guide-chapter-list');
-  GUIDE.forEach((ch, i) => {
+  chapters.forEach((ch, i) => {
     const p = progress.chapter(ch.id);
     const b = button('', 'guide-chapter', () => o.onChapter(ch.id));
     b.id = `guide-chapter-${ch.id}`;
     if (ch.id === chapter.id) b.setAttribute('aria-current', 'step');
     const state = chapterLamp(p);
-    b.append(el('span', 'guide-chapter-n ui-num', String(i + 1)), el('span', 'guide-chapter-title', ch.title), led(state, `${p.done} of ${p.total} done`));
+    const name = el('span', 'guide-chapter-title', ch.title);
+    const n = ch.steps.filter((s) => fresh.has(s.id)).length;
+    if (n) name.append(' ', newBadge(n));
+    b.append(el('span', 'guide-chapter-n ui-num', String(i + 1)), name, led(state, `${p.done} of ${p.total} done`));
     const li = el('li');
     li.append(b);
     list.append(li);
   });
   nav.append(list);
 
-  const index = GUIDE.indexOf(chapter);
+  const index = chapters.indexOf(chapter);
   const main = el('section', 'guide-chapter-body');
   main.setAttribute('aria-labelledby', 'guide-chapter-title');
   const heading = el('h2', 'guide-chapter-heading');
@@ -103,10 +125,15 @@ export function renderGuide(c, o) {
     const n = el('span', 'guide-step-n ui-num', isDone ? '✓' : String(i + 1));
     n.setAttribute('aria-hidden', 'true');
     const text = el('div', 'guide-step-text');
-    text.append(el('h3', 'guide-step-title', guideText(s.title, o.hotkeys)), el('p', 'guide-step-body', guideText(s.text, o.hotkeys)));
+    const title = el('h3', 'guide-step-title', guideText(s.title, o.hotkeys));
+    if (fresh.has(s.id)) {
+      li.classList.add('guide-step-new');
+      title.append(' ', newBadge());
+    }
+    text.append(title, el('p', 'guide-step-body', guideText(s.text, o.hotkeys)));
     const status = el('div', 'guide-step-status');
     const line = el('span', 'guide-step-watch');
-    line.append(led(isDone ? 'ok' : active ? 'on' : 'off'), el('span', null, stepStatus(s.id, { done: isDone, active })));
+    line.append(led(isDone ? 'ok' : active ? 'on' : 'off'), el('span', null, stepStatus(s.id, { done: isDone, active }, progress.content)));
     status.append(line);
     if (active) status.append(button('Skip this step', 'ui-btn ui-btn-sm ui-btn-ghost', () => progress.mark([s.id])));
     li.append(n, text, status);
@@ -119,10 +146,10 @@ export function renderGuide(c, o) {
     main.append(tip);
   }
   const pager = el('div', 'guide-pager');
-  const prev = button('Previous', 'ui-btn ui-btn-ghost', () => o.onChapter(GUIDE[index - 1].id));
+  const prev = button('Previous', 'ui-btn ui-btn-ghost', () => o.onChapter(chapters[index - 1].id));
   prev.disabled = index === 0;
-  const next = button('Next chapter', 'ui-btn ui-btn-primary', () => o.onChapter(GUIDE[index + 1].id));
-  next.disabled = index === GUIDE.length - 1;
+  const next = button('Next chapter', 'ui-btn ui-btn-primary', () => o.onChapter(chapters[index + 1].id));
+  next.disabled = index === chapters.length - 1;
   pager.append(prev, next);
   main.append(pager);
 
