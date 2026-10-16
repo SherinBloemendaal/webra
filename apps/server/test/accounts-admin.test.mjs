@@ -451,6 +451,25 @@ test('guide progress: admins see it per user, filter and sort by it, and complet
   assert.equal(restart.body.settings.guide.quickTipsAsked, true);
   assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 3);
 
+  // A write of the player between the server's read and its write: the action runs again on the newer document.
+  const prepare = env.DB.prepare.bind(env.DB);
+  let raced = false;
+  env.DB.prepare = (sql) => {
+    if (!raced && /^UPDATE settings_docs SET version/.test(sql)) {
+      raced = true;
+      env.DB.sqlite.prepare("UPDATE settings_docs SET version = version + 1, doc = json_set(doc, '$.audio.master', 0.7) WHERE user_id = ?1").run(id);
+    }
+    return prepare(sql);
+  };
+  const again = await action('reset');
+  env.DB.prepare = prepare;
+  assert.equal(raced, true);
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.version, restart.body.version + 2);
+  assert.equal(again.body.settings.audio.master, 0.7, 'the player\'s write is kept');
+  assert.deepEqual(again.body.settings.guide.done, {});
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4, 'one entry for the action');
+
   // The player wrote meanwhile with the version they had: their write is refused (412) and merges as usual.
   assert.equal((await target.put('/api/account/settings', { settings: { guide } }, { headers: { 'If-Match': `"v${before.version}"` } })).status, 412);
 
@@ -458,7 +477,7 @@ test('guide progress: admins see it per user, filter and sort by it, and complet
   env.DB.sqlite.prepare("UPDATE settings_docs SET doc = ?1 WHERE user_id = ?2").run(JSON.stringify({ guide: { lastTip: 'x' } }), id);
   const broken = await action('reset');
   assert.equal(broken.status, 400);
-  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 3);
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4);
 
   // Admins act within a rate limit (120 an hour each).
   for (let i = 0; i < 120; i++) await takeQuota(env.DB, env.IP_HASH_SALT, 'admin-guide', admin.user.id, 120, 3600 * 1000, Date.now());
