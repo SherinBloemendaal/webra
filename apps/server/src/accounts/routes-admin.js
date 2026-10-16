@@ -648,6 +648,8 @@ async function putUserSettings(ctx, { id }) {
   await audit(ctx.db, { actor, action: 'user.settings_update', targetType: 'user', targetId: row.id, targetLabel: row.username, before, after: doc }, ctx.now);
   // Every device of the account loads the new document (no origin: the admin's own game tab too).
   notify(ctx, (env) => publishToUsers(env, [row.id], { topic: 'settings', kind: 'updated', data: { version: doc.version } }));
+  // The dashboard's guide column reads the document.
+  adminHints(ctx, row.id, { admin: 'user_updated' });
   return settingsResponse(doc);
 }
 
@@ -695,6 +697,9 @@ async function guideAction(ctx, { id }) {
       },
       ctx.now,
     );
+    // The player's devices load the new document (the game's sync applies it); other dashboards reload the row.
+    notify(ctx, (env) => publishToUsers(env, [row.id], { topic: 'settings', kind: 'updated', data: { version: doc.version } }));
+    adminHints(ctx, row.id, { admin: 'user_updated' });
     return settingsResponse({ ...doc, guide: guideView(doc) });
   }
 }

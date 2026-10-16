@@ -306,7 +306,19 @@ test('admin: sign-ups, approvals, bans and settings reach the account and the da
   const put = await admin.put(`/api/admin/users/${waiting.user.id}/settings`, { settings: { ...doc.body.settings, schema: 1 } }, { headers: { 'If-Match': `"v${doc.body.version}"` } });
   assert.equal(put.status, 200, JSON.stringify(put.body));
   assert.deepEqual(hubs(env).to(`user:${waiting.user.id}`), [{ topic: 'settings', kind: 'updated', data: { version: put.body.version }, origin: null }]);
+  assert.deepEqual(events(env, 'topic:admin'), [['admin', 'user_updated', { userId: waiting.user.id }]], 'the guide column reads the document');
   hubs(env).clear();
+
+  // A guide action: the player's devices sync, other dashboards reload the row.
+  const guided = await admin.post(`/api/admin/users/${waiting.user.id}/guide`, { action: 'reset' });
+  assert.equal(guided.status, 200, JSON.stringify(guided.body));
+  assert.deepEqual(hubs(env).to(`user:${waiting.user.id}`), [{ topic: 'settings', kind: 'updated', data: { version: guided.body.version }, origin: null }]);
+  assert.deepEqual(hubs(env).to('topic:admin'), [{ topic: 'admin', kind: 'user_updated', data: { userId: waiting.user.id }, origin: sidAdmin }]);
+  hubs(env).clear();
+  const nodoc = await signup(env, 'Nodoc');
+  hubs(env).clear();
+  assert.equal((await admin.post(`/api/admin/users/${nodoc.user.id}/guide`, { action: 'reset' })).status, 409, 'no settings document yet');
+  assert.deepEqual(hubs(env).publishes, [], 'a refused action publishes nothing');
 
   const friend = await player(env, 'Friend');
   await befriend(friend, waiting);
