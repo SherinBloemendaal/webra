@@ -45,7 +45,38 @@
     <link rel="stylesheet" href="css/gamemenu.css" />
     <link rel="stylesheet" href="css/guide.css" />
   </head>
-  <body>
+  <body class="is-booting">
+    <!-- The boot screen (js/bootscreen.js, css/loading.css): over the page from its first paint until the
+         start menu is ready, with the boot's real steps as lamps. Static, so it shows before any script;
+         .is-booting hides the menu screens behind it until then. -->
+    <section id="boot" class="loading-screen" aria-busy="true" aria-labelledby="boot-title">
+      <div class="loading-card">
+        <div class="loading-intro">
+          <div class="loading-brand ui-brand" aria-hidden="true"><img class="ui-brand-emblem" src="brand/favicon.svg" alt="" width="34" height="34" /><span class="ui-brand-word">Web<span>RA</span></span></div>
+          <p class="loading-kicker">Starting up</p>
+          <h1 id="boot-title" class="loading-title">Main menu</h1>
+        </div>
+        <div class="loading-bottom">
+          <div class="loading-head">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <p class="loading-status" role="status" aria-live="polite">Loading the game files...</p>
+          </div>
+          <div class="loading-bar" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="loading-bar-fill"></span></div>
+          <ol class="loading-steps">
+            <li class="loading-step" data-step="files" data-state="active" aria-current="step">Loading the game files</li>
+            <li class="loading-step" data-step="engine" data-state="pending">Starting the engine</li>
+            <li class="loading-step" data-step="account" data-state="pending">Checking your account</li>
+            <li class="loading-step" data-step="content" data-state="pending">Reading installed content</li>
+            <li class="loading-step" data-step="graphics" data-state="pending">Checking the graphics card</li>
+            <li class="loading-step" data-step="menu" data-state="pending">Opening the menu</li>
+          </ol>
+          <noscript><p class="loading-error">WebRA needs JavaScript. Turn it on for this site and reload the page.</p></noscript>
+          <!-- Shown by css/loading.css after a long wait (no script needed): a link to this page reloads it. -->
+          <p class="boot-late" aria-live="polite">This is taking longer than usual. Check your internet connection, or <a class="boot-reload" href="">reload the page</a>.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- The start screen: the main menu (js/startmenu.js) over the skirmish lobby (js/lobby.js) -->
     <section id="menu" aria-label="Start screen">
       <nav id="start-nav" class="start-nav" aria-label="Main menu">
@@ -141,6 +172,8 @@
     <section id="release-notes" hidden></section>
 
     <script type="module" src="js/telemetry/boot.js"></script>
+    <!-- The boot screen's steps; js/main.js imports the same module and goes on with them. -->
+    <script type="module" src="js/bootscreen.js"></script>
     <script type="module" src="js/main.js"></script>
   </body>
 </html>

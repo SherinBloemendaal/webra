@@ -3865,6 +3865,29 @@ NetStats in code.
   duration plus its delay, before the screen hides and the game begins; so
   the screen waits out the hold, then fades. Reduce motion: no hold, no
   fade.
+- **Boot screen** (`index.html #boot`, `js/bootscreen.js`, `css/loading.css`):
+  the loading screen's look from the page's first paint until the start menu
+  is ready. Static markup (no inline script or style, the CSP holds), with
+  `body.is-booting` hiding `#menu`, `#online-root`, `#campaign-root` and
+  `#friends-root` (visibility, so they still lay out) until it goes; the
+  browser's `prefers-reduced-motion` applies before the settings load.
+  `js/bootscreen.js` loads ahead of main.js, which imports the same
+  `bootScreen`: `started()` (the files are loaded), `track(id, promise)` for
+  `engine` (loadEngine), `account` (`AccountSession.whenReady()`), `content`
+  (`ContentSystem.load()`), `graphics` (`Renderer.create`), `begin('menu')`
+  before the lobby, and `ready()` at the end of boot (after the records, an
+  invite or rejoin's online screen and a linked map). `ready()` waits at most
+  `BOOT_WAIT_MS` (5 s) more for `account` and `content`, marks steps that
+  never ran `skipped`, removes `is-booting` and fades with the loading
+  screen's `.is-closing` transition (no least time, no hold). A game that
+  starts during the boot hands over (`LoadingScreen` `onBegin` calls
+  `handOver()`; `#boot` is z-index 84, over `#loading` at 82 and under the
+  account dialogs at 85). Known problems (no engine, no WebGPU) are not
+  failures: their steps fail, the lobby shows them. A main script that does
+  not load or a module error before main.js runs (`watchGameFiles`), and a
+  `boot()` that throws, call `fail()`: an alert and Reload. After
+  `--boot-late` (`BOOT_LATE_MS`, 20 s) `.boot-late` shows a reload link by CSS
+  alone.
 - **End of game** (`js/endgame.js`): `EndGameDialog` takes `report()` (the
   parsed `observer_report`), `players`, `localPlayer` and `reducedMotion`;
   its `context()` adds `replay` (`saving`, `saved`, `failed` or null: main.js

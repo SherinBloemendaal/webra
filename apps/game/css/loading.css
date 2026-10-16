@@ -13,8 +13,14 @@
    delay, so the screen waits out the hold and then fades out in
    --loading-fade. The entrance plays once, within the least time. "Reduce
    motion" (.is-still, or the browser's) leaves every animation out, the
-   hold and the fade too. */
+   hold and the fade too.
 
+   The boot screen (#boot, js/bootscreen.js) is the same screen from the
+   page's first paint until the start menu is ready: static markup in
+   index.html with these classes, shown before any script runs. See "The
+   boot screen" below for what it does differently. */
+
+#boot,
 #loading {
   --loading-min: 1600ms;
   --loading-fade: 300ms;
@@ -37,11 +43,13 @@
   opacity: 1;
 }
 
+#boot[hidden],
 #loading[hidden] {
   display: none;
 }
 
 /* A light sweeping down the screen, behind everything. */
+#boot::before,
 #loading::before {
   content: '';
   position: fixed;
@@ -58,17 +66,20 @@
    and waits for this transition, its duration plus its delay, before the
    screen hides): the rest of the least time (--loading-hold) is the delay,
    then the whole screen fades out. Opacity changes, so transitionend fires. */
+#boot.is-closing,
 #loading.is-closing {
   opacity: 0;
   transition: opacity var(--loading-fade) ease-in var(--loading-hold, 0ms);
 }
 
 /* Reduce motion: no fade and no hold, the screen goes at once. */
+#boot.is-still.is-closing,
 #loading.is-still.is-closing {
   transition: none;
 }
 
 /* The card is the whole screen: no frame of its own. */
+#boot .loading-card,
 #loading .loading-card {
   position: relative;
   width: 100%;
@@ -118,6 +129,7 @@
   animation: loading-fade 0.5s 0.15s ease-out both;
 }
 
+#boot .loading-card h1.loading-title,
 #loading .loading-card h1.loading-title {
   margin: 0;
   padding: 0;
@@ -466,6 +478,7 @@
 
 /* ---- A start that failed --------------------------------------------------------- */
 
+#boot.is-failed .loading-card,
 #loading.is-failed .loading-card {
   justify-content: center;
   max-width: var(--ui-measure, 640px);
@@ -477,13 +490,81 @@
   overflow-wrap: break-word;
 }
 
+/* ---- The boot screen ------------------------------------------------------------ */
+
+/* #boot (js/bootscreen.js) from the page's first paint until the start menu
+   is ready. Over the menu screens and the loading screen (a game that starts
+   during the boot begins under it, and this screen fades over it); under the
+   account dialogs, the toast and the tooltips. */
+#boot {
+  --boot-late: 20s;
+  z-index: 84;
+}
+
+/* No least showing time: the bar has no reveal and the fade no hold, the
+   menu shows as soon as it is ready. */
+#boot .loading-bar {
+  animation: none;
+}
+
+/* The menu screens wait behind the boot screen: hidden, from the keyboard
+   and screen readers too, but laid out, so they can measure themselves. */
+.is-booting #menu,
+.is-booting #online-root,
+.is-booting #campaign-root,
+.is-booting #friends-root {
+  visibility: hidden;
+}
+
+/* A step that could not run: the lobby says why once the menu shows. */
+.loading-step[data-state='failed'] {
+  color: var(--ui-text-2);
+}
+
+.loading-step[data-state='failed']::before {
+  background: var(--ui-bad);
+  border-color: var(--ui-bad);
+}
+
+/* After --boot-late (js/bootscreen.js BOOT_LATE_MS) a line with a reload
+   link shows, by CSS alone, so a boot that never ends is never a dead end,
+   also without scripts. Not motion: the line appears in one step, also with
+   "Reduce motion". */
+.boot-late {
+  margin: 0;
+  color: var(--ui-text-2);
+  visibility: hidden;
+  animation: boot-late 1ms var(--boot-late) both;
+}
+
+.boot-late a {
+  color: var(--ui-accent-hi);
+}
+
+.boot-late a:hover {
+  color: var(--ui-accent-hover);
+}
+
+.boot-hint {
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+@keyframes boot-late {
+  to {
+    visibility: visible;
+  }
+}
+
 /* ---- Phones ------------------------------------------------------------------- */
 
 @media (max-width: 600px) {
+  #boot,
   #loading {
     padding: 20px 16px;
   }
 
+  #boot .loading-card,
   #loading .loading-card {
     gap: 18px;
   }
@@ -505,6 +586,9 @@
 
 /* "Reduce motion" (the setting: .is-still; or the browser's): nothing moves,
    the bar shows the steps done at once, the screen closes without a fade. */
+#boot.is-still::before,
+#boot.is-still *:not(.boot-late),
+#boot.is-still *::before,
 #loading.is-still::before,
 #loading.is-still *,
 #loading.is-still *::before {
@@ -512,19 +596,26 @@
   transition: none !important;
 }
 
+#boot.is-still::before,
 #loading.is-still::before {
   display: none;
 }
 
+/* The browser's setting: the boot screen follows it from its first paint
+   (the game's own "Reduce motion" is known only once the settings load). */
 @media (prefers-reduced-motion: reduce) {
+  #boot::before,
   #loading::before {
     display: none;
   }
 
+  #boot.is-closing,
   #loading.is-closing {
     transition: none;
   }
 
+  #boot *:not(.boot-late),
+  #boot *::before,
   #loading *,
   #loading *::before {
     animation: none !important;
@@ -548,6 +639,11 @@
 
   .loading-step[data-state='done']::before {
     background: CanvasText;
+  }
+
+  .loading-step[data-state='failed']::before {
+    background: Canvas;
+    border-style: dashed;
   }
 
   .loading-tip,

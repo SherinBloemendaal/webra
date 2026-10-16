@@ -101,6 +101,18 @@ export class AccountSession {
     return () => this.listeners.delete(fn);
   }
 
+  /** Resolves once `refresh` has answered: the site settings, who is signed in, and their settings pulled by the sync. */
+  whenReady() {
+    if (this.ready) return Promise.resolve(this);
+    return new Promise((resolve) => {
+      const off = this.onChange(() => {
+        if (!this.ready) return;
+        off();
+        resolve(this);
+      });
+    });
+  }
+
   changed() {
     for (const fn of [...this.listeners]) {
       try {

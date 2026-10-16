@@ -111,6 +111,7 @@ import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
 import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
+import { bootScreen } from './bootscreen.js';
 import { LoadingBoard, boundKeyText, colorCss, describeStart } from './loadingboard.js';
 import { GameSession, GameStart } from './gamesession.js';
 
@@ -186,11 +187,13 @@ function motionIsReduced() {
 }
 
 async function boot() {
+  // The boot screen (index.html #boot, js/bootscreen.js): the files are here, the steps below follow.
+  bootScreen.started({ reducedMotion: motionIsReduced });
   // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
   connectRegistry(defaultRegistry());
   let gpuError = null;
   try {
-    wasm = await loadEngine();
+    wasm = await bootScreen.track('engine', loadEngine());
   } catch (err) {
     gpuError = `Could not load the game engine: ${err.message}`;
   }
@@ -200,6 +203,8 @@ async function boot() {
   // The loading screen follows the spans of each game's start (js/perfcapture.js).
   loader = new LoadingScreen($('loading'), {
     reducedMotion: motionIsReduced,
+    // A game that starts during the boot (a restart record, an online rejoin): the boot screen fades over it.
+    onBegin: () => bootScreen.handOver(),
     // The board around the steps (js/loadingboard.js): the tips go on where the last start left them (guide.lastTip).
     board: new LoadingBoard({
       tips: { get: () => defaultRegistry().get('guide', 'lastTip'), set: (i) => defaultRegistry().set('guide', 'lastTip', i) },
@@ -210,11 +215,14 @@ async function boot() {
   perfTrace.onSpan = (name) => loader.span(name);
   setupAudio();
   setupAccount();
+  bootScreen.track('account', account?.whenReady());
   setupContent();
+  bootScreen.track('content', content?.load());
   if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content });
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   // Generated maps for the lobby previews, made in a worker (js/mappreview.js).
   previews = wasm ? new GeneratedPreviews({ backend: previewBackend({ Game, module: wasmModule }) }) : null;
+  bootScreen.begin('menu');
   const lobby = (mainLobby = new Lobby($('skirmish'), {
     colors: TEAM_COLORS.slice(0, LOBBY_COLOR_COUNT),
     colorNames: COLOR_NAMES,
@@ -262,7 +270,7 @@ async function boot() {
   });
   if (!gpuError) {
     try {
-      renderer = await Renderer.create($('view'));
+      renderer = await bootScreen.track('graphics', Renderer.create($('view')));
     } catch (err) {
       gpuError = `${err.message} WebRA needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`;
     }
@@ -270,7 +278,7 @@ async function boot() {
   setTags({ renderer: renderer ? 'webgpu' : 'unavailable' });
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
-  setupOnline(lobby, gpuError);
+  const onlineOpen = setupOnline(lobby, gpuError);
   setupCampaign(lobby, gpuError);
   // A js/restart.js record: the campaign screen after leaving a mission, or the
   // game a restart reloaded the page for (when it could not restart in place).
@@ -278,7 +286,11 @@ async function boot() {
   if (again?.kind === 'campaign') campaign?.open(again.id);
   else if (again?.kind === 'mission' && !gpuError && renderer) startMissionById(again.id, again.options, again.gameSpeed, lobby);
   else if (again?.kind === 'skirmish' && !gpuError && renderer) startSkirmish(again.options, lobby);
-  else offerLinkedMap(lobby);
+  else await offerLinkedMap(lobby);
+  // An invite or a rejoin opened the online screen: it is the menu.
+  await onlineOpen;
+  // The start menu is ready: the boot screen goes (after the account and installed content, BOOT_WAIT_MS at most).
+  bootScreen.ready();
   // Once per new version: what changed since this browser last played.
   releaseNotes.showWhatsNewOnce();
 }
@@ -764,7 +776,8 @@ function setupOnline(lobby, gpuError) {
   // Invite links (?join=<session id>, also #join=) open the online screen
   // directly, and so does a reload during an online game (it rejoins).
   // Invite codes too (/join/<code> leads to ?invite=<code>, js/invites.js).
-  if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash) || /[?&]invite=[^&]+/.test(location.search) || hasRejoinRecord()) open();
+  if (/[?&]join=[0-9a-f]{64}(&|$)/.test(location.search) || /^#join=[0-9a-f]{64}$/.test(location.hash) || /[?&]invite=[^&]+/.test(location.search) || hasRejoinRecord()) return open();
+  return null;
 }
 
 /**
@@ -3153,7 +3166,11 @@ function updateHud(state, fps, simMs, stress, units, paused, compact, mode = nul
   if ($('hud').textContent !== text) $('hud').textContent = text;
 }
 
-boot();
+// A boot that throws shows its error on the boot screen (Reload), and is still reported (js/telemetry).
+boot().catch((err) => {
+  bootScreen.fail(err);
+  throw err;
+});
 
 /** Short message over the battlefield (for example when fullscreen is refused). */
 function showToast(text) {
