@@ -1677,11 +1677,11 @@ impl Game {
         // missing and its build time with the player's factories (before the
         // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
         let factories = w.factories(player);
-        let reach = w.reachable_tokens(player);
+        let reach = w.reach(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
             .filter(|&t| w.listed_with(player, t as u16, &reach))
             .map(|t| {
-                let reqs = w.requirements(player, t as u16);
+                let reqs = w.requirements_with(player, t as u16, &reach);
                 json!({
                     "id": w.rules.actors[t].id,
                     "enabled": w.can_produce(player, t as u16),
