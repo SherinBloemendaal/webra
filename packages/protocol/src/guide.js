@@ -7,7 +7,11 @@
 // (tests compare the two) without any game code, so the server can use it.
 //
 // The reset epoch (guide.resetAt, Unix milliseconds, 0: never reset): a
-// reset, a restart of the tour or an admin action sets it to a newer value.
+// reset of the whole progress (the player's, or an admin's reset or
+// complete) sets it to a newer value. Restarting the tour does not: the
+// set merge already removes the tour's steps where a device has a base, and
+// a newer epoch would drop the passive and outside steps other devices
+// ticked meanwhile.
 // The settings sync (apps/game/js/account/sync.js) normally merges guide.done
 // as a set, so a step done on any device stays done; when two sides have
 // different epochs, the side with the newer one gives done, tourInGames and
@@ -158,12 +162,14 @@ export function nextGuideEpoch(current, now) {
  *   again (the player starts over as a new player; guide.seen stays, so no
  *   step shows as "New" that the player has already seen);
  * - `restartTour`: the tour's steps start over (passive and outside steps keep
- *   their ticks), the switch on: Take the tour again of the Guide page;
+ *   their ticks), the switch on: Take the tour again of the Guide page. The
+ *   epoch stays: the sync's set merge removes the tour's steps on the other
+ *   devices and keeps the steps they ticked meanwhile;
  * - `complete`: every step done and the quick tips question counted as asked,
  *   so no tour card shows at all; the switch stays as it is (finishing the
  *   tour never changes it either, so tour steps a later version adds show
  *   while it is on).
- * Each sets a newer reset epoch (`now`).
+ * `reset` and `complete` set a newer reset epoch (`now`).
  */
 export function applyGuideAction(guide, action, now, outline = GUIDE_OUTLINE) {
   const ix = guideIndex(outline);
@@ -176,7 +182,7 @@ export function applyGuideAction(guide, action, now, outline = GUIDE_OUTLINE) {
       return { ...g, done: {}, tourInGames: true, quickTipsAsked: false, resetAt };
     case 'restartTour': {
       for (const id of ix.tourIds) delete kept[id];
-      return { ...g, done: kept, tourInGames: true, resetAt };
+      return { ...g, done: kept, tourInGames: true };
     }
     case 'complete': {
       for (const id of ix.stepIds) kept[id] = true;

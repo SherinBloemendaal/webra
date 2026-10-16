@@ -415,6 +415,37 @@ test('sync: a reset of the guide on one device wins on another that still has it
   assert.deepEqual(doneIds(b.registry), []);
 });
 
+test('sync: Take the tour again on one device clears the tour on another without dropping the steps that device ticked meanwhile', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  asUser(server, user);
+  const a = device(server, user);
+  const tour = new GuideProgress(a.registry).content.tourIds;
+  a.registry.patch('guide', { done: Object.fromEntries(tour.map((id) => [id, true])) });
+  await a.sync.start(user);
+  const b = device(server, user);
+  await b.sync.start(user);
+  // B ticks passive and outside steps offline; A takes the tour again online.
+  server.offline = true;
+  b.registry.patch('guide', { done: { ...b.registry.get('guide', 'done'), 'power.low': true, 'team.chat': true } });
+  await b.timers.fire();
+  server.offline = false;
+  new GuideProgress(a.registry).restartTour();
+  await a.timers.fire();
+  assert.equal(a.registry.get('guide', 'resetAt'), 0, 'no new epoch');
+  // B comes back: the set merge drops the tour's steps (A removed them) and keeps B's new ones.
+  await b.sync.flush();
+  assert.deepEqual(doneIds(b.registry), ['power.low', 'team.chat']);
+  assert.deepEqual(Object.keys(server.settingsDocs.get(user.id).settings.guide.done).sort(), ['power.low', 'team.chat']);
+  assert.equal(b.conflicts.length, 0);
+  await a.sync.pull();
+  assert.deepEqual(doneIds(a.registry), ['power.low', 'team.chat']);
+  assert.equal(new GuideProgress(a.registry).tourComplete(), false, 'the tour runs again on both');
+  // An admin's Restart tour keeps the epoch the same way.
+  adminGuide(server, user, 'restartTour');
+  assert.equal(server.settingsDocs.get(user.id).settings.guide.resetAt ?? 0, 0);
+});
+
 test('merge: one-sided changes win, both-sided different values conflict, no base means every difference', () => {
   const base = normalizeValues({}).values;
   const local = normalizeValues({ audio: { master: 0.1, music: 0.3 } }).values;

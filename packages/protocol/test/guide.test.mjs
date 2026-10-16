@@ -84,7 +84,7 @@ test('actions: reset, restart the tour, complete; other guide settings kept; the
   assert.deepEqual(restart.done, { 'a.low': true, 'b.net': true, old: true }, 'passive and outside steps keep their ticks');
   assert.equal(restart.tourInGames, true);
   assert.equal(restart.quickTipsAsked, true);
-  assert.equal(restart.resetAt, 51);
+  assert.equal(restart.resetAt, 50, 'restarting the tour keeps the epoch: the set merge carries it');
   const complete = applyGuideAction(guide, 'complete', 200, SMALL);
   assert.deepEqual(Object.keys(complete.done).sort(), ['a.low', 'a.one', 'a.side', 'a.two', 'b.net', 'b.one', 'old']);
   assert.equal(complete.quickTipsAsked, true);

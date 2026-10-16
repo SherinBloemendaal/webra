@@ -68,8 +68,8 @@ export const NEWEST_MERGE = Object.freeze(new Set(['guide.seen']));
 
 /**
  * The guide progress after a reset (packages/protocol/src/guide.js): a reset
- * of the guide (the player's own, Take the tour again, or an admin action)
- * sets guide.resetAt to a newer epoch. When the two sides have different
+ * of the guide (the player's own, or an admin's reset or complete; not Take
+ * the tour again) sets guide.resetAt to a newer epoch. When the two sides have different
  * epochs, the side with the newer one gives these settings and the epoch as
  * they are, never a conflict: the set merge of guide.done would otherwise
  * bring back the steps the other side still has from before the reset. Steps

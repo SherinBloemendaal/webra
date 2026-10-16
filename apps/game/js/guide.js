@@ -51,7 +51,7 @@ import { EV, STRIDE } from './audio/director.js';
 import { boundKey } from './hotkeys.js';
 import { compareVersions, newestVersion } from './releasenotes.js';
 import { setQuickTips } from './quicktips.js';
-import { applyGuideAction, nextGuideEpoch } from '../protocol/guide.js';
+import { applyGuideAction } from '../protocol/guide.js';
 
 /**
  * The order the tour walks the chapters in; GUIDE (js/help.js) has the same
@@ -447,14 +447,14 @@ export class GuideProgress {
 
   /**
    * Take the tour again: its steps start over (passive and outside ones keep
-   * their ticks) and the switch goes on. A new reset epoch (guide.resetAt) so
-   * the account sync does not bring the tour's steps back from another
-   * device (js/account/sync.js EPOCH_MERGE).
+   * their ticks) and the switch goes on. No new reset epoch: the account
+   * sync's set merge removes the tour's steps on the other devices and keeps
+   * the steps they ticked meanwhile (js/account/sync.js KEYED_MERGE).
    */
-  restartTour(now = Date.now()) {
+  restartTour() {
     const done = this.done;
     for (const id of this.content.tourIds) delete done[id];
-    this.registry.patch('guide', { done, tourInGames: true, resetAt: nextGuideEpoch(this.registry.get('guide', 'resetAt'), now) });
+    this.registry.patch('guide', { done, tourInGames: true });
   }
 
   /** Whether anything of the progress can be reset: a step done, the tour switched off, or the quick tips question asked. */

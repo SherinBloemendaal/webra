@@ -900,11 +900,13 @@ test('reset: Reset guide progress starts every step over, the tour on, the quick
   assert.equal(registry.get('guide', 'resetAt'), 5_000);
   assert.equal(tourRuns({ kind: 'skirmish' }, progress), true);
   assert.equal(progress.tourStep(), 'base.mcv');
-  // Every reset moves the epoch on, also with a clock that went back; Take the tour again too.
+  // Every reset moves the epoch on, also with a clock that went back.
   progress.resetProgress(1_000);
   assert.equal(registry.get('guide', 'resetAt'), 5_001);
-  progress.restartTour(9_000);
-  assert.equal(registry.get('guide', 'resetAt'), 9_000);
+  // Take the tour again keeps the epoch: the set merge carries it to other devices without dropping their steps.
+  progress.mark(TOUR_STEPS);
+  progress.restartTour();
+  assert.equal(registry.get('guide', 'resetAt'), 5_001);
   // The registry's document still passes the server.
   assert.doesNotThrow(() => validateSettingsDocument(registry.document()));
 });
@@ -976,7 +978,7 @@ test('outline: the protocol\'s guide outline and progress summary (the admin vie
   // The admin actions do what the Guide page does.
   registry.set('guide', 'done', { 'base.mcv': true, 'power.low': true });
   const restarted = applyGuideAction(registry.values().guide, 'restartTour', 10);
-  progress.restartTour(10);
+  progress.restartTour();
   assert.deepEqual(restarted, registry.values().guide);
   progress.mark(STEP_IDS);
   registry.set('guide', 'quickTipsAsked', true);
