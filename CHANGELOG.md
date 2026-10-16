@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.19.0](https://github.com/SherinBloemendaal/webra/compare/v0.18.0...v0.19.0) (2026-10-16)
+
+
+### Features
+
+* **editor:** show the game's boot screen while the map editor starts ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **editor:** show the game's boot screen while the map editor starts ([30c66c7](https://github.com/SherinBloemendaal/webra/commit/30c66c7a28abcf4f2361f7e03899534f5e9a8ff5))
+* **game:** add quick tips that say what a structure or unit does on hover ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** add quick tips that say what a structure or unit does on hover ([d0d9a3e](https://github.com/SherinBloemendaal/webra/commit/d0d9a3e57531ae26335283e26b840958d0e454e6))
+* **game:** ask at the end of the tour whether to keep the quick tips ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** declare game.quickTips and guide.quickTipsAsked ([f6caae8](https://github.com/SherinBloemendaal/webra/commit/f6caae85eb7de912343562719befadec6d23f85c))
+* **game:** walk the tour through every chapter in order, with an army beside the base and a power check before the radar ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** walk the tour through every chapter, in order, with also steps and a power check ([e78eef5](https://github.com/SherinBloemendaal/webra/commit/e78eef5a1dfa5d00a787ba07ecf7cf588782aee0))
+
+
+### Bug Fixes
+
+* **editor:** draw the first frame in a hidden tab so the boot finishes ([686e9f8](https://github.com/SherinBloemendaal/webra/commit/686e9f8e90de4cb83a39ef17bc29367a1603a6a7))
+* **editor:** keep live drags cheap and cancel them cleanly ([3cd1ecc](https://github.com/SherinBloemendaal/webra/commit/3cd1ecc6da461243cce713894fbe241109ebd19c))
+* **editor:** show every drag tool's edit while the pointer is down ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **editor:** show every drag tool's edit while the pointer is down ([82a4c7e](https://github.com/SherinBloemendaal/webra/commit/82a4c7e02960c209e3ddd1550ae043376f245a23))
+* **engine:** grant mission prop prerequisites and keep script-only items locked ([013d90c](https://github.com/SherinBloemendaal/webra/commit/013d90c586e939f4cc4028b80cd02e049fada11a))
+* **engine:** grant mission prop prerequisites so Intervention's base unlocks ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **engine:** hide the other side's and other countries' items in the build menu ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **engine:** hide the other side's and other countries' items in the build menu ([7a8da02](https://github.com/SherinBloemendaal/webra/commit/7a8da023b071b6e44904b470aadf8ca8905a4831))
+* **game:** announce the tour's low power line in its live region ([0039848](https://github.com/SherinBloemendaal/webra/commit/003984871f1a1cdb056e043a89f16791817841b2))
+* **game:** centre button labels on their capitals ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** centre the guide's chapter labels on their capitals ([c2e43f4](https://github.com/SherinBloemendaal/webra/commit/c2e43f4461453d4b4f4d7aac695422e308415a0e))
+* **game:** centre upper-case labels in buttons, tabs and badges ([08498aa](https://github.com/SherinBloemendaal/webra/commit/08498aa9d3f4a3c7d6c5feb40b6609bdb1c14f34))
+* **game:** count a built Radar Dome as the power check done ([b59f6c6](https://github.com/SherinBloemendaal/webra/commit/b59f6c69f3e3440ee34f41e969546c2514f667a6))
+* **game:** draw rain, snow and sand in the world instead of over the screen ([3f5d5e9](https://github.com/SherinBloemendaal/webra/commit/3f5d5e95390d7e767890273cf255978a4c2525ff))
+* **game:** draw rain, snow and sand in the world, in proportion to the zoom ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** keep the tour switch on when the quick tips question is closed ([0374ddf](https://github.com/SherinBloemendaal/webra/commit/0374ddf2d7a3f3614034896724a73205b9d70b87))
+* **game:** make the thief and wall quick tips match the rules ([6857215](https://github.com/SherinBloemendaal/webra/commit/685721524c876546e6b13d59aac959335a2c92dc))
+* **game:** nudge the remaining capital labels and find them by test ([5ab43bd](https://github.com/SherinBloemendaal/webra/commit/5ab43bd06dc9c4a60452e601fdd0247d6c10e1a9))
+* **game:** read OpenRA's multi-line descriptions ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** read OpenRA's multi-line descriptions and show them without quick tips ([3f99ec6](https://github.com/SherinBloemendaal/webra/commit/3f99ec6c5e67264e6b6d006a4c2edf2c2fd93bf0))
+* **game:** smooth weather resume and release HUD tooltips on teardown ([f8b36ce](https://github.com/SherinBloemendaal/webra/commit/f8b36cefe1ec37310103ea359e0f03a4d6266d7a))
+* **game:** tick guide steps in order, remembering what was done early ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** treat build items locked for the game as missing in the guide ([f6ece19](https://github.com/SherinBloemendaal/webra/commit/f6ece19fc9419c1ebf1ce2665ef52db3bdf895ba))
+* **game:** use the game's tooltip instead of native titles on the HUD ([e361c77](https://github.com/SherinBloemendaal/webra/commit/e361c77775591e67e2a5fd328cfba379411a1741))
+* **game:** use the game's tooltip instead of native titles on the HUD ([064ede0](https://github.com/SherinBloemendaal/webra/commit/064ede012ff0b37fc784309a2e6370db41851073))
+
 ## [0.18.0](https://github.com/SherinBloemendaal/webra/compare/v0.17.0...v0.18.0) (2026-10-16)
 
 
