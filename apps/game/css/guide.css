@@ -62,7 +62,7 @@
   width: 100%;
   min-height: max(var(--ctl-row), calc(40 * var(--ui-px)));
   margin: 0;
-  padding: 0 var(--ui-space-3);
+  padding: 0 var(--ui-space-3) calc(2 * var(--ui-cap-nudge));
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--ui-radius);

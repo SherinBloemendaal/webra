@@ -194,6 +194,7 @@ const CONTROLS = [
   ['apps/website/assets/site.css', '.segmented button'],
   ['apps/website/assets/site.css', '.badge'],
   ['apps/website/assets/site.css', '.hero-pause'],
+  ['apps/game/css/guide.css', '.guide-chapter'],
   ['apps/website/assets/account.css', '.btn-hazard > span'],
   ['apps/website/assets/account.css', '.tab'],
   ['apps/website/assets/account.css', '.account-nav-link'],
@@ -276,7 +277,6 @@ const NOT_CENTRED_CAPS = new Map([
   ['apps/game/editor/editor.css .editor table.slots .ui-select-plate', 'not a button: the plate in a table cell'],
   ['apps/game/editor/editor.css .editor .anchors button.anchor', 'no text: the anchor picker squares'],
   // Another branch owns guide.css; the coordinator applies the nudge there at merge.
-  ['apps/game/css/guide.css .guide-chapter', 'owned by another branch, nudged at merge'],
 ]);
 
 const isZero = (v) => /^0(px|em|rem)?$/.test(v);
