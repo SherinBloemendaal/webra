@@ -207,7 +207,10 @@ them (WebRA's own art and synthesized sounds).
   Close to the original, not hand-made. Rock (cliffs in OpenRA maps) is
   drawn as boulders, not cliff templates, and the small bridges are
   OpenRA's own templates that Red Alert never had, so they keep WebRA's
-  art.
+  art. Original content installed with WebRA 0.19 or older kept only the
+  plain road squares: add the theater archives (or ra-quickinstall.zip)
+  again, or use "Check for missing files" with the kept package, to get the
+  road pieces; the Original content dialog lists them as missing until then.
 
 ## Roadmap
 

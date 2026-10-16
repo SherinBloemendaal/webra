@@ -401,5 +401,20 @@ export async function contentSummary(store) {
   const names = meta.map((m) => m.name);
   // When the newest file came in (null for files from installs that did not record it).
   const installedAt = meta.reduce((t, m) => (Number.isFinite(m.at) && m.at > (t ?? 0) ? m.at : t), null);
-  return { total: meta.length, byCategory, bytes, theaters: theatersIn(names), palette: names.includes(ACTOR_PALETTE), installedAt };
+  return { total: meta.length, byCategory, bytes, theaters: theatersIn(names), roadsMissing: theatersWithoutRoads(names), palette: names.includes(ACTOR_PALETTE), installedAt };
+}
+
+/**
+ * The installed theaters (theatersIn) whose road templates are not among
+ * `names`: installs from before roads were fitted kept only the plain road
+ * squares (WebRA 0.19 and older), so their roads stay squares until the
+ * theater's archive is added again.
+ */
+export function theatersWithoutRoads(names) {
+  const have = new Set(names);
+  return theatersIn(names).filter((id) => {
+    const info = TERRAIN[id];
+    const pieces = info.templates.filter(([, w, h, role]) => role === 'road' && w * h > 1).map(([img]) => info.images[img]);
+    return pieces.length > 0 && !pieces.some((img) => have.has(img));
+  });
 }
