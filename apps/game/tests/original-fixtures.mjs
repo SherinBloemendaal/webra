@@ -2,7 +2,7 @@
 // name, each frame a 4x2 picture that spells its own file and frame number
 // (js/content/audit.js `identify` reads them back). No Electronic Arts file,
 // and nothing made from one, is in the repository.
-import { ACTOR_ART, ACTOR_PALETTE, CURSOR_ART, RESOURCES, SEQUENCES, SMUDGES, TERRAIN, TREES } from '../js/content/tables.js';
+import { ACTOR_ART, ACTOR_PALETTE, CURSOR_ART, PALETTES, RESOURCES, SEQUENCES, SMUDGES, TERRAIN, TREES } from '../js/content/tables.js';
 import { resolveSequence } from '../js/content/sequences.js';
 import { decodePalette, paletteLookup, ACTOR_SHADOW } from '../js/content/palette.js';
 import { buildShp, buildPal } from './content-fixtures.mjs';
@@ -38,9 +38,20 @@ export function neededFrames() {
   return need;
 }
 
-/** Palette indices that spell numbers: clear of 0 (transparent), the shadow and the 80..95 remap range. */
-const DIGIT = 100;
-const digit = (v) => DIGIT + v;
+/**
+ * Palette indices that spell numbers 0..99: clear of every palette's
+ * transparent and shadow indices, the 80..95 remap range and the indices an
+ * indexed palette shows other colours on (the civilians' clothes), so a
+ * frame reads the same in every palette the art is drawn with.
+ */
+const DIGITS = (() => {
+  const taken = new Set([...Array(16).keys()].map((i) => 80 + i));
+  for (const p of Object.values(PALETTES)) for (const i of [...(p.transparent ?? []), ...(p.shadow ?? []), ...(p.index ?? [])]) taken.add(i);
+  const out = [];
+  for (let i = 1; out.length < 100; i++) if (!taken.has(i)) out.push(i);
+  return out;
+})();
+const digit = (v) => DIGITS[v];
 
 /** The bridges' template files (ACTOR_ART bridge): tiles a cell big, as the theaters have them. */
 function bridgeFiles() {
@@ -88,7 +99,7 @@ export function syntheticFiles() {
 export function identifier(names, pal) {
   const lookup = paletteLookup(decodePalette(pal), { remap: true, shadow: ACTOR_SHADOW });
   const index = new Map();
-  for (let i = DIGIT; i < DIGIT + 100; i++) index.set(Array.from(lookup.color.subarray(i * 4, i * 4 + 3)).join(','), i - DIGIT);
+  DIGITS.forEach((i, v) => index.set(Array.from(lookup.color.subarray(i * 4, i * 4 + 3)).join(','), v));
   return (img) => {
     if (!img || img.width !== 4 || img.height !== 2) return null;
     const d = [0, 1, 2, 3].map((x) => index.get(Array.from(img.color.subarray(x * 4, x * 4 + 3)).join(',')));

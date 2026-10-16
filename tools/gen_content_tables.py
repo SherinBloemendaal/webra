@@ -10,7 +10,8 @@ Input (OpenRA mods/ra, GPL-3.0, copied into data/source, see data/CATALOG.md):
   ClassicTilesetSpecificSpriteSequence): file, start, length, facings, tick,
   offset, shadow start, tileset specific file names.
 - data/source/rules/*.yaml: RenderSprites Image overrides (fakes and variants
-  that borrow another actor's art).
+  that borrow another actor's art) and the palette of every render trait;
+  palettes.yaml: OpenRA's palettes (PALETTES, PLAYER_PALETTES).
 - data/source/tilesets/*.yaml: the terrain type of every tile of every
   template, used to pick templates for WebRA's terrain types.
 - data/source/bits.txt: the files OpenRA makes and ships itself (mods/ra/bits).
@@ -59,6 +60,7 @@ Run: python3 tools/gen_content_tables.py
 """
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -662,22 +664,310 @@ def trait(tree, name):
     return None
 
 
-# The palettes an actor's RenderSprites may name (OpenRA mods/ra/rules/palettes.yaml)
-# that the original art draws with (js/content/atlas.js ACTOR_PALETTES):
-# "player" (temperat.pal with the team remap, shadow index 4) is the default;
-# "effect" is temperat.pal without the remap (walls, crates); "terrain" is
-# the theater's own palette with shadow indices 3 and 4 (the ore mine);
-# "desert" is desert.pal without the remap (the desert village).
-SPRITE_PALETTES = {'player', 'effect', 'terrain', 'desert'}
+# ---- Palettes ----------------------------------------------------------------------------
+#
+# OpenRA draws every sprite with a named palette (mods/ra/rules/palettes.yaml,
+# copied into data/source/rules): PaletteFromFile (a .pal file, per tileset or
+# for all, with its transparent and shadow indices), PaletteFromRGBA (one
+# colour: the torpedo's underwater shadow), IndexedPalette (a base
+# palette with some indices showing other indices' colours: the civilians'
+# clothes) and PlayerColorPalette (a base palette with the owner's colours on
+# the remap indices, used when a trait's IsPlayerPalette is true or the actor
+# names no palette). A palette key here is the OpenRA name, plus OWNER when
+# the owner's colours apply: "player+owner" is OpenRA's default for actors.
+OWNER = '+owner'
+DEFAULT_PALETTE = 'player' + OWNER
+PALETTES_YAML = os.path.join(SRC, 'rules', 'palettes.yaml')
 
 
-def sprite_palette(aid, tree):
-    """The palette OpenRA draws an actor's sprites with (RenderSprites Palette, default player)."""
+def load_palettes():
+    """palettes.yaml: (files, indexed, owners) by palette name (owners by PlayerColorPalette BaseName)."""
+    with open(PALETTES_YAML) as f:
+        root = parse.parse_miniyaml(f.read())
+    files, indexed, owners = {}, {}, {}
+
+    def ints(ch, key, default):
+        text = ch.get(key, [default])[0]
+        return [int(x) for x in text.split(',')] if text.strip() else []
+
+    for key, (_v, ch) in root['^Palettes'][1].items():
+        kind = key.split('@')[0]
+        name = ch.get('Name', [None])[0]
+        if kind == 'PaletteFromFile':
+            # OpenRA PaletteFromFileInfo: TransparentIndex [0], ShadowIndex [] by default.
+            rec = {'transparent': ints(ch, 'TransparentIndex', '0'), 'shadow': ints(ch, 'ShadowIndex', '')}
+            spec = files.setdefault(name, {**rec, 'files': {}})
+            if {k: spec[k] for k in rec} != rec:
+                raise SystemExit(f'palette {name}: tilesets differ in transparent or shadow indices')
+            spec['files'][ch.get('Tileset', ['*'])[0]] = ch['Filename'][0].lower()
+        elif kind == 'PaletteFromRGBA':
+            # One colour for every index but the transparent one (OpenRA PaletteFromRGBAInfo defaults).
+            rgba = [int(ch.get(c, [d])[0]) for c, d in (('R', '0'), ('G', '0'), ('B', '0'), ('A', '255'))]
+            files[name] = {'rgba': rgba, 'transparent': [int(ch.get('TransparentIndex', ['0'])[0])], 'shadow': []}
+        elif kind == 'IndexedPalette':
+            index, replace = ints(ch, 'Index', ''), ints(ch, 'ReplaceIndex', '')
+            if len(index) != len(replace):
+                raise SystemExit(f'palette {name}: Index and ReplaceIndex differ in length')
+            indexed[name] = {'base': ch['BasePalette'][0], 'index': index, 'replace': replace}
+        elif kind == 'PlayerColorPalette':
+            owners[ch.get('BaseName', ['player'])[0]] = {'base': ch['BasePalette'][0], 'remap': ints(ch, 'RemapIndex', '')}
+    return files, indexed, owners
+
+
+PALETTE_FILES, PALETTE_INDEXED, PALETTE_OWNERS = load_palettes()
+# The palette keys the tables use (palette_tables writes them and their bases).
+USED_PALETTES = set()
+
+
+def palette_ref(name, owner, where):
+    """The palette key of OpenRA palette `name` (with the owner's colours when `owner`), checked against palettes.yaml."""
+    if owner:
+        rec = PALETTE_OWNERS.get(name)
+        if rec is None:
+            raise SystemExit(f'{where}: no player palette {name} in palettes.yaml')
+        if 'files' not in PALETTE_FILES.get(rec['base'], {}):
+            raise SystemExit(f'{where}: player palette {name} is not based on a palette file')
+        # WebRA tints Red Alert's remap range (js/content/palette.js REMAP_START, REMAP_END).
+        if rec['remap'] != list(range(80, 96)):
+            raise SystemExit(f'{where}: player palette {name} remaps {rec["remap"]}, WebRA tints 80 to 95')
+    elif name not in PALETTE_FILES:
+        rec = PALETTE_INDEXED.get(name)
+        if rec is None or 'files' not in PALETTE_FILES.get(rec['base'], {}):
+            raise SystemExit(f'{where}: palette {name} is not a palette file or indexed palette of palettes.yaml')
+    key = name + (OWNER if owner else '')
+    USED_PALETTES.add(key)
+    return key
+
+
+# Palette fields of OpenRA's render traits and effects (their C# defaults at
+# OPENRA_COMMIT): trait -> (palette field, owner field or None, default
+# palette or None for the actor's RenderSprites palette, default owner flag).
+# A trait whose palette is None draws with RenderSprites (RenderSprites.Add):
+# its Palette without the owner's colours, or else its PlayerPalette with them.
+TRAIT_PALETTES = {
+    **{t: ('Palette', 'IsPlayerPalette', None, False) for t in (
+        'WithSpriteBody', 'WithFacingSpriteBody', 'WithWallSpriteBody', 'WithResourceLevelSpriteBody',
+        'WithHarvesterSpriteBody', 'WithInfantryBody', 'WithDisguisingInfantryBody', 'WithSpriteTurret',
+        'WithIdleOverlay', 'WithDamageOverlay')},
+    # Traits without a palette of their own: the actor's (RenderSprites).
+    'WithCrateBody': (None, None, None, False),
+    'WithProductionDoorOverlay': (None, None, None, False),
+    'WithDeathAnimation': ('DeathSequencePalette', 'DeathPaletteIsPlayerPalette', 'player', True),
+    'WithDeathAnimation.crushed': ('CrushedSequencePalette', 'CrushedPaletteIsPlayerPalette', 'effect', False),
+    'WithBuildingBib': ('Palette', None, 'terrain', False),
+    'WithParachute': ('Palette', 'IsPlayerPalette', 'player', True),
+    'LeavesTrails': ('Palette', None, 'effect', False),
+    'WithDecoration': ('Palette', 'IsPlayerPalette', 'chrome', False),
+    'RallyPoint': ('Palette', 'IsPlayerPalette', 'player', True),
+    'NukePower': ('MissilePalette', 'IsPlayerPalette', 'effect', False),
+    'SmudgeLayer': ('SmokePalette', None, 'effect', False),
+    'CrateAction': ('Palette', None, 'effect', False),
+    'Armament': ('MuzzlePalette', None, 'effect', False),
+    # Projectiles and warheads (weapons).
+    'Bullet': ('Palette', 'IsPlayerPalette', 'effect', False),
+    'Missile': ('Palette', 'IsPlayerPalette', 'effect', False),
+    'GravityBomb': ('Palette', 'IsPlayerPalette', 'effect', False),
+    'TeslaZap': ('Palette', None, 'effect', False),
+    'CreateEffect': ('ExplosionPalette', 'UsePlayerPalette', 'effect', False),
+}
+
+
+def actor_palette(tree, where):
+    """The palette RenderSprites gives what names none (RenderSprites.Add with no palette)."""
     rs = trait(tree, 'RenderSprites') or {}
-    pal = rs.get('Palette', ['player'])[0] or 'player'
-    if pal not in SPRITE_PALETTES:
-        raise SystemExit(f'{aid}: RenderSprites palette {pal} is not one the original art draws with (SPRITE_PALETTES)')
-    return pal
+    pal = rs.get('Palette', [''])[0]
+    if pal:
+        return palette_ref(pal, False, where)
+    return palette_ref(rs.get('PlayerPalette', ['player'])[0] or 'player', True, where)
+
+
+def trait_palette(tree, kind, ch, where):
+    """The palette a trait instance (children `ch`) of TRAIT_PALETTES `kind` draws with."""
+    if kind not in TRAIT_PALETTES:
+        raise SystemExit(f'{where}: no palette rule for {kind} (TRAIT_PALETTES)')
+    field, owner_field, default, owner_default = TRAIT_PALETTES[kind]
+    ch = ch or {}
+    pal = ch.get(field, [''])[0] if field else ''
+    owner = owner_default
+    if pal and owner_field and owner_field in ch:
+        owner = ch[owner_field][0].lower() == 'true'
+    if not pal:
+        pal, owner = default, owner_default
+    if pal is None:
+        return actor_palette(tree, where)
+    return palette_ref(pal, owner, where)
+
+
+def palette_tables():
+    """(PALETTES, PLAYER_PALETTES) for the palette keys the tables use, with
+    the palettes they are built on; palette files only for WebRA's tilesets."""
+    names, owners = set(), {}
+    for key in USED_PALETTES:
+        name = key[:-len(OWNER)] if key.endswith(OWNER) else key
+        if key.endswith(OWNER):
+            owners[name] = PALETTE_OWNERS[name]
+            name = owners[name]['base']
+        names.add(name)
+        if name in PALETTE_INDEXED:
+            names.add(PALETTE_INDEXED[name]['base'])
+    out = {}
+    for name in sorted(names):
+        if name in PALETTE_INDEXED:
+            out[name] = PALETTE_INDEXED[name]
+            continue
+        rec = dict(PALETTE_FILES[name])
+        if 'files' in rec:
+            rec['files'] = {t: f for t, f in rec['files'].items() if t == '*' or t in TILESETS}
+        out[name] = rec
+    return out, dict(sorted(owners.items()))
+
+
+def requires(cond, word):
+    """Whether a RequiresCondition expression needs condition `word` (not its negation)."""
+    return any(not neg and name == word for neg, name in re.findall(r'(!?)\s*([A-Za-z_][\w-]*)', cond))
+
+
+def body_trait(tree, kind):
+    """(trait, children) of an actor's body: the infantry body without a
+    condition on a parachute, or the sprite body without one on reloading."""
+    names = ('WithInfantryBody', 'WithDisguisingInfantryBody') if kind == 'infantry' else (
+        'WithResourceLevelSpriteBody', 'WithWallSpriteBody', 'WithHarvesterSpriteBody', 'WithFacingSpriteBody',
+        'WithSpriteBody', 'WithCrateBody')
+    found = []
+    for k, (_v, ch) in tree.items():
+        base = k.split('@')[0]
+        cond = ch.get('RequiresCondition', [''])[0]
+        if base in names and not (requires(cond, 'parachute') or requires(cond, 'reloading')):
+            found.append((names.index(base), k != base, base, ch))
+    if not found:
+        return None, None
+    found.sort(key=lambda f: (f[1], f[0]))
+    return found[0][2], found[0][3]
+
+
+def instance(tree, key):
+    """(trait name, children) of a trait instance key (Trait@NAME)."""
+    return key.split('@')[0], tree[key][1]
+
+
+def muzzle_palette(tree, where):
+    """The palette of an actor's muzzle flashes (every Armament's MuzzlePalette; one for all)."""
+    pals = {trait_palette(tree, 'Armament', ch, where) for k, (_v, ch) in tree.items() if k == 'Armament' or k.startswith('Armament@')}
+    if len(pals) > 1:
+        raise SystemExit(f'{where}: armaments with different muzzle palettes {sorted(pals)}')
+    return pals.pop() if pals else None
+
+
+
+
+def load_world_rules():
+    """The World and Player actors (rules/world.yaml, player.yaml) resolved; parents
+    not copied into data/source (OpenRA's map generators) are left out."""
+    defs = parse.load('rules', ['palettes', 'world', 'player'])
+    for _name, (_v, ch) in defs.items():
+        for k in [k for k, (v, _c) in ch.items() if (k == 'Inherits' or k.startswith('Inherits@')) and v not in defs]:
+            del ch[k]
+    return parse.resolve_all(defs)
+
+
+WORLD_RULES = load_world_rules()
+
+
+def use_palettes(key, trait_names, match, rules=None):
+    """The palettes of every actor trait instance (base name in trait_names, or a
+    name ending in CrateAction for 'CrateAction') whose fields match `match`
+    ({field: (value, C# default)}), over the resolved actors (no templates)."""
+    out = set()
+    for name, tree in {**parse.rules, **WORLD_RULES}.items() if rules is None else rules.items():
+        if name.startswith('^'):
+            continue
+        for k, (_v, ch) in tree.items():
+            base = k.split('@')[0]
+            kind = 'CrateAction' if base.endswith('CrateAction') and 'CrateAction' in trait_names else base
+            if kind not in trait_names:
+                continue
+            if all((ch.get(f, [d])[0] or d or '').lower() == v.lower() for f, (v, d) in match.items()):
+                out.add(trait_palette(tree, kind, ch, f'{key} ({name} {k})'))
+    return out
+
+
+def projectile_palettes(key, image=None, projectile=None):
+    """The palettes of every weapon's projectile showing `image` (or of type `projectile`)."""
+    out = set()
+    for name, tree in parse.weapons.items():
+        if name.startswith('^') or 'Projectile' not in tree:
+            continue
+        kind, ch = tree['Projectile']
+        if (image and ch.get('Image', [''])[0].lower() == image) or (projectile and kind == projectile):
+            out.add(trait_palette(None, kind, ch, f'{key} ({name})'))
+    return out
+
+
+def explosion_palettes(key, explosion):
+    """The palettes of every CreateEffect warhead playing `explosion`."""
+    out = set()
+    for name, tree in parse.weapons.items():
+        if name.startswith('^'):
+            continue
+        for k, (kind, ch) in tree.items():
+            if (k == 'Warhead' or k.startswith('Warhead@')) and kind == 'CreateEffect' and explosion in tokens(ch.get('Explosions', [''])[0]):
+                out.add(trait_palette(None, 'CreateEffect', ch, f'{key} ({name} {k})'))
+    return out
+
+
+# Where OpenRA draws each special sprite of SPECIAL_ART (the users of its
+# image and sequence), for its palette: every user must agree.
+SPECIAL_USES = {
+    'bullet': ('projectile', '120mm'),
+    'shell': ('projectile', '120mm'),
+    'missile': ('projectile', 'dragon'),
+    'fx.3': ('projectile', 'missile'),
+    'naval.0': ('projectile', 'torpedo'),
+    'naval.1': ('projectile', 'bomb'),
+    'planes.1': ('projectile', 'parabomb'),
+    'fx.1': ('projectile-type', 'TeslaZap'),
+    'fx.2': ('projectile-type', 'TeslaZap'),
+    'rally': ('trait', ['RallyPoint'], {'Image': ('rallypoint', 'rallypoint')}),
+    'planes.0': ('trait', ['WithParachute'], {'Image': ('parach', None)}),
+    'planes.3': ('trait', ['LeavesTrails'], {'Image': ('smokey', None)}),
+    'helis.2': ('trait', ['LeavesTrails'], {'Image': ('smokey', None)}),
+    # No OpenRA trait shows powerdown.disabled: WebRA's power off sign stands
+    # in for OpenRA's WithDecoration@POWERDOWN (poweroff.shp, OpenRA's own).
+    'decorations.1': ('trait', ['WithDecoration'], {'Image': ('poweroff', None)}),
+    'decorations.2': ('trait', ['WithDamageOverlay'], {'Image': ('burn-s', 'smoke_m')}),
+    'decorations.3': ('trait', ['WithDecoration'], {'Image': ('pips', None), 'Sequence': ('medic', None)}),
+    'decorations.4': ('trait', ['WithDamageOverlay'], {'Image': ('burn-m', 'smoke_m')}),
+    'decorations.5': ('trait', ['WithDamageOverlay'], {'Image': ('burn-l', 'smoke_m')}),
+    'fx.0': ('trait', ['WithDamageOverlay'], {'Image': ('smoke_m', 'smoke_m')}),
+    'fx.4': ('trait', ['NukePower'], {'MissileImage': ('atomic', None)}),
+    'fx.5': ('trait', ['NukePower'], {'MissileImage': ('atomic', None)}),
+    'leftovers.0': ('trait', ['WithIdleOverlay'], {'Image': ('fire', None), 'Sequence': ('1', 'idle-overlay')}),
+    'leftovers.1': ('trait', ['SmudgeLayer'], {'SmokeImage': ('smoke_m', None)}),
+    'leftovers.2': ('trait', ['WithDecoration'], {'Image': ('pips', None), 'Sequence': ('tag-primary', None)}),
+    'leftovers.4': ('trait', ['CrateAction'], {'Image': ('crate-effects', 'crate-effects'), 'Sequence': ('heal', None)}),
+    'leftovers.5': ('trait', ['CrateAction'], {'Image': ('crate-effects', 'crate-effects'), 'Sequence': ('hide-map', None)}),
+    'leftovers.6': ('trait', ['CrateAction'], {'Image': ('crate-effects', 'crate-effects'), 'Sequence': ('reveal-map', None)}),
+    'leftovers.7': ('trait', ['CrateAction'], {'Image': ('crate-effects', 'crate-effects'), 'Sequence': ('invuln', None)}),
+}
+
+
+def special_palette(key, spec):
+    """The one palette OpenRA draws a special sprite with (SPECIAL_USES, or its explosion's warheads)."""
+    if spec[0] == 'explosion':
+        pals = explosion_palettes(key, spec[1])
+    else:
+        use = SPECIAL_USES.get(key)
+        if use is None:
+            raise SystemExit(f'special {key}: say where OpenRA draws it (SPECIAL_USES)')
+        if use[0] == 'projectile':
+            pals = projectile_palettes(key, image=use[1])
+        elif use[0] == 'projectile-type':
+            pals = projectile_palettes(key, projectile=use[1])
+        else:
+            pals = use_palettes(key, use[1], use[2])
+    if len(pals) != 1:
+        raise SystemExit(f'special {key}: OpenRA draws it with {sorted(pals) or "nothing"} (SPECIAL_USES)')
+    return pals.pop()
 
 
 # Bridge states (OpenRA BridgeInfo template fields) as ACTOR_ART bridge keys.
@@ -812,6 +1102,55 @@ MISSION_ART = [
 ]
 
 
+DEATH_POSES = {'die1', 'die2', 'die3', 'die4', 'die5', 'die6'}
+
+
+def pose_palettes(aid, kind, tree, entry, second_src):
+    """{"body.pose" | "second.pose" | "muzzle": palette key} where OpenRA's palette is not DEFAULT_PALETTE.
+
+    Body poses play on the body trait (stands, moves, make and working
+    animations, the storage level); deaths are WithDeathAnimation's (crushed
+    its CrushedSequencePalette); falling paratroopers the parachute body;
+    the V2's reloading body its own. Second-slot poses are the trait that
+    draws them (second_src); infantry lie down and panic with their body."""
+    body_kind, body_ch = body_trait(tree, kind)
+    body = trait_palette(tree, body_kind, body_ch, aid) if body_kind else actor_palette(tree, aid)
+    death = trait(tree, 'WithDeathAnimation')
+    out = {}
+
+    def special_body(cond_word):
+        for k, (_v, ch) in tree.items():
+            base = k.split('@')[0]
+            cond = ch.get('RequiresCondition', [''])[0]
+            if base in TRAIT_PALETTES and base.startswith('With') and 'Body' in base and requires(cond, cond_word):
+                return trait_palette(tree, base, ch, aid)
+        return body
+
+    for pose in entry.get('body', {}):
+        if pose in DEATH_POSES:
+            pal = trait_palette(tree, 'WithDeathAnimation', death, aid)
+        elif pose == 'crushed':
+            pal = trait_palette(tree, 'WithDeathAnimation.crushed', death, aid)
+        elif pose == 'parachute':
+            pal = special_body('parachute')
+        elif pose in ('active', 'damaged-active') and entry.get('activeMode') == 'loop' and kind != 'building':
+            pal = special_body('reloading')
+        else:
+            pal = body
+        out[f'body.{pose}'] = pal
+    for pose in entry.get('second', {}):
+        if kind == 'infantry':
+            pal = body
+        elif pose in second_src:
+            pal = trait_palette(tree, *second_src[pose], aid)
+        else:
+            raise SystemExit(f'{aid}: no trait known for second.{pose} (pose_palettes)')
+        out[f'second.{pose}'] = pal
+    if 'muzzle' in entry:
+        out['muzzle'] = muzzle_palette(tree, aid)
+    return {k: v for k, v in sorted(out.items()) if v != DEFAULT_PALETTE}
+
+
 def actor_art(actors, seqs):
     images = actor_images()
     used = {}
@@ -849,6 +1188,8 @@ def actor_art(actors, seqs):
             continue
         tree = rules_of(src)
         entry = {'image': image}
+        # The trait instance (name, children) that draws each second-slot pose, for its palette.
+        second_src = {}
         if kind == 'building':
             wall = a.get('_wall', False)
             level = trait(tree, 'WithResourceLevelSpriteBody')
@@ -862,6 +1203,8 @@ def actor_art(actors, seqs):
             if wall:
                 entry['wall'] = True
             entry['second'] = poses(image, {'idle': 'turret', 'damaged': 'damaged-turret'}) if a['turret'] else {}
+            if a['turret']:
+                second_src = {pose: ('WithSpriteTurret', trait(tree, 'WithSpriteTurret')) for pose in entry['second']}
             door = trait(tree, 'WithProductionDoorOverlay')
             if door is not None and not a['turret']:
                 seq = door.get('Sequence', ['build-top'])[0]
@@ -869,6 +1212,7 @@ def actor_art(actors, seqs):
                 if 'idle' in second:
                     entry['second'] = second
                     entry['overlay'] = 'door'
+                    second_src = {pose: ('WithProductionDoorOverlay', door) for pose in second}
             # Working animations (the engine's active pose, fx.rs): resupplying
             # (repeating), the Tesla charge, the silo launch and the yard's
             # placement animation (once each).
@@ -892,7 +1236,9 @@ def actor_art(actors, seqs):
                 seq = recoil.get('Sequence', [''])[0]
                 if seq:
                     # Turret recoil (OpenRA WithTurretAttackAnimation): once per shot.
-                    entry['second'].update(poses(image, {'active': seq, 'damaged-active': 'damaged-' + seq}))
+                    got = poses(image, {'active': seq, 'damaged-active': 'damaged-' + seq})
+                    entry['second'].update(got)
+                    second_src.update({pose: ('WithSpriteTurret', trait(tree, 'WithSpriteTurret')) for pose in got})
             bib = trait(tree, 'WithBuildingBib')
             if bib is not None and bib.get('HasMinibib', ['False'])[0].lower() != 'true':
                 got = use(image, bib.get('Sequence', ['bib'])[0])
@@ -912,10 +1258,12 @@ def actor_art(actors, seqs):
             spinner = [o for o in overlays_of(tree) if not o[2]]
             if spinner and not entry['second']:
                 entry['second'] = poses(image, {'idle': spinner[0][1]})
+                second_src = {'idle': instance(tree, spinner[0][0])}
         elif kind == 'crate':
             # The crate on land (body) and in water (second slot), OpenRA WithCrateBody.
             entry['body'] = poses(image, {'idle': 'land'})
             entry['second'] = poses(image, {'idle': 'water'})
+            second_src = {'idle': ('WithCrateBody', trait(tree, 'WithCrateBody'))}
         elif kind == 'husk':
             entry['body'] = poses(image, {'idle': 'idle'})
             entry['second'] = {}
@@ -932,9 +1280,11 @@ def actor_art(actors, seqs):
             entry['second'] = poses(image, {pose: prefix + seq for pose, seq in prone.items()})
             for k, (_v, ch) in tree.items():
                 cond = ch.get('RequiresCondition', [''])[0]
-                if k.startswith('WithInfantryBody') and 'parachute' in cond and not cond.startswith('!'):
-                    # Falling paratroopers (WithInfantryBody@PARACHUTE).
-                    entry['body'].update(poses(image, {'parachute': tokens(ch.get('StandSequences', ['parachute'])[0])[0]}))
+                if k.split('@')[0] in ('WithInfantryBody', 'WithDisguisingInfantryBody') and requires(cond, 'parachute'):
+                    # Falling paratroopers (WithInfantryBody@PARACHUTE, the spy's
+                    # WithDisguisingInfantryBody@PARACHUTE). StandSequences
+                    # defaults to stand: the dog and the spy fall standing.
+                    entry['body'].update(poses(image, {'parachute': tokens(ch.get('StandSequences', ['stand'])[0])[0]}))
             # Civilians never lie down; their second slot is the panic of
             # ScaredyCat (IRenderInfantrySequenceModifier: PanicSequencePrefix).
             scared = trait(tree, 'ScaredyCat')
@@ -977,6 +1327,8 @@ def actor_art(actors, seqs):
             if lead:
                 entry['lead'] = lead
             entry['second'] = poses(image, {'idle': 'turret'}) if a['turret'] else {}
+            if a['turret']:
+                second_src = {'idle': ('WithSpriteTurret', trait(tree, 'WithSpriteTurret'))}
             overlays = overlays_of(tree)
             rotors = [o for o in overlays if o[2] == 'airborne']
             if kind == 'aircraft' and rotors:
@@ -997,6 +1349,8 @@ def actor_art(actors, seqs):
                     names = ('idle', 'move') if n == 0 else ('aux-idle', 'aux-move')
                     got = poses(image, {names[0]: ground[0][1], names[1]: air_seq})
                     second.update(got)
+                    second_src[names[0]] = instance(tree, ground[0][0])
+                    second_src[names[1]] = instance(tree, _k)
                     for pose in got:
                         lift[pose] = lift_px(off[2])
                 entry['second'] = second
@@ -1011,6 +1365,7 @@ def actor_art(actors, seqs):
                     second = poses(image, {'idle': seq})
                     if second:
                         entry['second'] = second
+                        second_src = {'idle': instance(tree, _k)}
                         if off[2]:
                             entry['lift'] = {'idle': lift_px(off[2])}
                         if not a['turret']:
@@ -1040,15 +1395,18 @@ def actor_art(actors, seqs):
             # an original muzzle flash is kept (Red Alert's minigun and gunfire).
             if 'muzzle' in entry:
                 art[aid] = {'image': image, 'muzzle': entry['muzzle']}
+                pal = muzzle_palette(tree, aid)
+                if pal != DEFAULT_PALETTE:
+                    art[aid]['palettes'] = {'muzzle': pal}
             continue
         # Fakes (Buildable.Icon fake-icon): Red Alert's own fake cameo where it
         # has one (dome, construction yard, naval yard, sub pen, war factory);
         # OpenRA drew the others itself (NO_ORIGINAL), so those show the real
         # cameo with WebRA's FAKE mark over it (`fakeMark`, js/content/cameos.js).
-        # The palette of the body and second slot (RenderSprites Palette), when not the player's.
-        pal = sprite_palette(aid, tree)
-        if pal != 'player':
-            entry['palette'] = pal
+        # The palette of every pose, and of the muzzle flash, where not OpenRA's default (DEFAULT_PALETTE).
+        pals = pose_palettes(aid, kind, tree, entry, second_src)
+        if pals:
+            entry['palettes'] = pals
         fake = is_fake(tree)
         fake_icon = fake and use(image, 'fake-icon')
         cameo = 'fake-icon' if fake_icon else use(image, 'icon')
@@ -1079,13 +1437,24 @@ def special_art(seqs, used, explosions):
             used.setdefault(image, {})[name] = rec
         return {'image': image, 'sequences': names, 'mode': mode}
 
+    def with_palette(rec, pal):
+        # OpenRA's palette for it, where not DEFAULT_PALETTE.
+        if pal != DEFAULT_PALETTE:
+            rec['palette'] = pal
+        return rec
+
     out = {}
     for key, spec in SPECIAL_ART.items():
-        out[key] = None if spec is None else check(key, *spec)
+        if spec is None:
+            out[key] = None
+            continue
+        # The explosion image's sequences are what CreateEffect warheads play.
+        use = ('explosion', spec[1]) if spec[0] == 'explosion' else ('special',)
+        out[key] = with_palette(check(key, *spec), special_palette(key, use))
     boom = {}
     for name in explosions:
         if name in seqs.get('explosion', {}) and normalize('explosion', name, seqs['explosion'], strict=False) is not None:
-            boom[name] = check(f'explosion {name}', 'explosion', name, 'effect')
+            boom[name] = with_palette(check(f'explosion {name}', 'explosion', name, 'effect'), special_palette(f'explosion {name}', ('explosion', name)))
         else:
             boom[name] = None
     return out, boom
@@ -1111,12 +1480,19 @@ def render_facts(actors, seqs):
         out = []
         seen = set()
 
-        def add(role, img, seq):
+        def add(role, img, seq, pal=None):
             img = img.lower()
             if img not in seqs or seq not in seqs[img] or (role, img, seq) in seen:
                 return
             seen.add((role, img, seq))
-            out.append([role, img, seq, normalize(img, seq, seqs[img], strict=False) is not None])
+            out.append([role, img, seq, normalize(img, seq, seqs[img], strict=False) is not None, pal])
+
+        # The body's palette: the animations played on the body (make,
+        # working, harvest, dock, landing craft) show with it.
+        body_kind, body_ch = body_trait(tree, a['kind'])
+        body_pal = trait_palette(tree, body_kind, body_ch, aid) if body_kind else actor_palette(tree, aid)
+        turret = trait(tree, 'WithSpriteTurret')
+        turret_pal = trait_palette(tree, 'WithSpriteTurret', turret, aid) if turret is not None else body_pal
 
         def prefixed(img, prefix):
             return sorted(n for n in seqs.get(img.lower(), {}) if n.startswith(prefix) and n != 'Defaults')
@@ -1128,32 +1504,34 @@ def render_facts(actors, seqs):
                 return (ch.get(key, [default])[0] or default)
 
             cond = g('RequiresCondition', '')
+            pal = trait_palette(tree, name, ch, f'{aid} {k}') if name in TRAIT_PALETTES else None
             if name in ('WithSpriteBody', 'WithFacingSpriteBody', 'WithWallSpriteBody', 'WithHarvesterSpriteBody'):
                 seq = g('Sequence', 'idle')
-                role = 'reloading' if 'reloading' in cond and not cond.startswith('!') else 'body'
-                add(role, image, seq)
-                add(role + '-damaged', image, 'damaged-' + seq)
+                role = 'reloading' if requires(cond, 'reloading') else 'body'
+                add(role, image, seq, pal)
+                add(role + '-damaged', image, 'damaged-' + seq, pal)
             elif name == 'WithResourceLevelSpriteBody':
                 seq = g('Sequence', 'stages')
-                add('level', image, seq)
-                add('level-damaged', image, 'damaged-' + seq)
+                add('level', image, seq, pal)
+                add('level-damaged', image, 'damaged-' + seq, pal)
             elif name == 'WithMakeAnimation':
-                add('make', image, g('Sequence', 'make'))
+                add('make', image, g('Sequence', 'make'), body_pal)
             elif name == 'WithBuildingBib':
                 if g('HasMinibib', 'False').lower() != 'true':
-                    add('bib', image, g('Sequence', 'bib'))
+                    add('bib', image, g('Sequence', 'bib'), pal)
             elif name == 'WithSpriteTurret':
                 seq = g('Sequence', 'turret')
-                add('turret', image, seq)
-                add('turret-damaged', image, 'damaged-' + seq)
+                add('turret', image, seq, pal)
+                add('turret-damaged', image, 'damaged-' + seq, pal)
             elif name in ('WithInfantryBody', 'WithDisguisingInfantryBody'):
-                if 'parachute' in cond and not cond.startswith('!'):
-                    for st in tokens(g('StandSequences', 'parachute')):
-                        add('parachute-body', image, st)
+                if requires(cond, 'parachute'):
+                    for st in tokens(g('StandSequences', 'stand')):
+                        add('parachute-body', image, st, pal)
                     continue
                 for st in tokens(g('StandSequences', 'stand')):
-                    add('stand', image, st)
-                add('run', image, g('MoveSequence', 'run'))
+                    add('stand', image, st, pal)
+                # The dog's run toward its target (WithInfantryBody@RUN, condition run).
+                add('chase-run' if requires(cond, 'run') else 'run', image, g('MoveSequence', 'run'), pal)
                 # The primary armament's AttackSequences (one picked per shot), else DefaultAttackSequence.
                 attacks = ch.get('AttackSequences', ['', {}])[1]
                 shoots = tokens(attacks['primary'][0]) if 'primary' in attacks else [g('DefaultAttackSequence', 'shoot')]
@@ -1162,67 +1540,70 @@ def render_facts(actors, seqs):
                 if not any(k == 'Armament' or k.startswith('Armament@') for k in tree):
                     shoots = []
                 for shoot in shoots:
-                    add('shoot', image, shoot)
+                    add('shoot', image, shoot, pal)
                 for idle in tokens(g('IdleSequences', '')):
-                    add('idle-anim', image, idle)
+                    add('idle-anim', image, idle, pal)
                 if trait(tree, 'TakeCover') is not None:
                     prefix = trait(tree, 'TakeCover').get('ProneSequencePrefix', ['prone-'])[0]
                     for st in tokens(g('StandSequences', 'stand')):
-                        add('prone-stand', image, prefix + st)
-                    add('prone-run', image, prefix + g('MoveSequence', 'run'))
+                        add('prone-stand', image, prefix + st, pal)
+                    add('prone-run', image, prefix + g('MoveSequence', 'run'), pal)
                     for shoot in shoots:
-                        add('prone-shoot', image, prefix + shoot)
+                        add('prone-shoot', image, prefix + shoot, pal)
             elif name == 'WithDeathAnimation':
+                crushed = g('CrushedSequence', None) if 'CrushedSequence' in ch else None
                 for seq in prefixed(image, g('DeathSequence', 'die')):
-                    add('death', image, seq)
+                    # The crushed sequence (OpenRA plays it only when crushed) has its own palette.
+                    if seq != crushed:
+                        add('death', image, seq, pal)
                 if 'CrushedSequence' in ch:
-                    add('death', image, g('CrushedSequence', 'die-crushed'))
+                    add('death', image, g('CrushedSequence', 'die-crushed'), trait_palette(tree, 'WithDeathAnimation.crushed', ch, aid))
             elif name == 'WithIdleOverlay':
                 role = 'rotor-air' if cond == 'airborne' else 'rotor-ground' if cond == '!airborne' else 'overlay'
                 # The fire on husks (^Husk WithIdleOverlay@Burns).
                 if k == 'WithIdleOverlay@Burns':
                     role = 'burns'
-                add(role, g('Image', image), g('Sequence', 'idle'))
+                add(role, g('Image', image), g('Sequence', 'idle'), pal)
             elif name == 'WithCrateBody':
-                add('crate-land', image, g('LandSequence', 'land'))
-                add('crate-water', image, g('WaterSequence', 'water'))
+                add('crate-land', image, g('LandSequence', 'land'), pal)
+                add('crate-water', image, g('WaterSequence', 'water'), pal)
             elif name == 'WithProductionDoorOverlay':
                 seq = g('Sequence', 'build-top')
-                add('door', image, seq)
-                add('door-damaged', image, 'damaged-' + seq)
+                add('door', image, seq, pal)
+                add('door-damaged', image, 'damaged-' + seq, pal)
             elif name == 'WithHarvestAnimation':
-                add('harvest', image, g('HarvestSequence', 'harvest'))
+                add('harvest', image, g('HarvestSequence', 'harvest'), body_pal)
             elif name == 'WithDockingAnimation':
-                add('dock', image, g('DockSequence', 'dock'))
-                add('dock-loop', image, g('DockLoopSequence', 'dock-loop'))
+                add('dock', image, g('DockSequence', 'dock'), body_pal)
+                add('dock-loop', image, g('DockLoopSequence', 'dock-loop'), body_pal)
             elif name == 'WithMuzzleOverlay':
                 for seq in prefixed(image, 'muzzle'):
-                    add('muzzle', image, seq)
+                    add('muzzle', image, seq, muzzle_palette(tree, aid))
             elif name == 'WithDamageOverlay':
                 img = g('Image', 'smoke_m')
                 # Fires that only incendiary hits light (^Tree @SmallBurn,
                 # @MediumBurn, @LargeBurn: neutral.rs) are their own roles.
                 role = FIRE_ROLES.get(img, 'damage-smoke') if 'Incendiary' in tokens(g('DamageTypes', '')) else 'damage-smoke'
                 for key, default in [('StartSequence', 'start'), ('LoopSequence', 'loop'), ('EndSequence', 'end')]:
-                    add(role, img, g(key, default))
+                    add(role, img, g(key, default), pal)
             elif name in ('WithResupplyAnimation', 'WithSupportPowerActivationAnimation'):
-                add('active', image, g('Sequence', 'active'))
-                add('active', image, 'damaged-' + g('Sequence', 'active'))
+                add('active', image, g('Sequence', 'active'), body_pal)
+                add('active', image, 'damaged-' + g('Sequence', 'active'), body_pal)
             elif name == 'WithTeslaChargeAnimation':
-                add('active', image, g('ChargeSequence', 'active'))
-                add('active', image, 'damaged-' + g('ChargeSequence', 'active'))
+                add('active', image, g('ChargeSequence', 'active'), body_pal)
+                add('active', image, 'damaged-' + g('ChargeSequence', 'active'), body_pal)
             elif name == 'WithTurretAttackAnimation':
-                add('recoil', image, g('Sequence', 'recoil'))
+                add('recoil', image, g('Sequence', 'recoil'), turret_pal)
             elif name == 'WithBuildingPlacedAnimation':
-                add('placed', image, g('Sequence', 'build'))
+                add('placed', image, g('Sequence', 'build'), body_pal)
             elif name == 'WithParachute':
                 img = g('Image', 'parach')
-                add('parachute', img, g('OpeningSequence', 'open'))
-                add('parachute', img, g('Sequence', 'idle'))
+                add('parachute', img, g('OpeningSequence', 'open'), pal)
+                add('parachute', img, g('Sequence', 'idle'), pal)
             elif name == 'WithLandingCraftAnimation':
-                add('landing-open', image, g('OpenSequence', 'open'))
-                add('landing-unload', image, g('UnloadSequence', 'unload'))
-                add('landing-close', image, g('CloseSequence', 'close'))
+                add('landing-open', image, g('OpenSequence', 'open'), body_pal)
+                add('landing-unload', image, g('UnloadSequence', 'unload'), body_pal)
+                add('landing-close', image, g('CloseSequence', 'close'), body_pal)
             elif name == 'SpawnActorOnDeath':
                 # Husks: the husk actor's own image (husks.yaml), or
                 # OpenRA's "<unit>.destroyed" or "<unit>husk" naming.
@@ -1235,12 +1616,9 @@ def render_facts(actors, seqs):
             elif name == 'LeavesTrails':
                 img = g('Image', '')
                 for seq in tokens(g('Sequences', 'idle')):
-                    add('trail', img, seq)
+                    add('trail', img, seq, pal)
         add('icon', image, 'icon')
         facts[aid] = {'image': image, 'parts': out}
-        pal = sprite_palette(aid, tree) if tree else 'player'
-        if pal != 'player':
-            facts[aid]['palette'] = pal
     return facts
 
 
@@ -1495,7 +1873,7 @@ def main():
     # player's files have: then IN_RED_ALERT_TOO is incomplete).
     openra_made = {fn: set() for fn in BITS - IN_RED_ALERT_TOO}
     for f in facts.values():
-        for _role, img, seq, original in f['parts']:
+        for _role, img, seq, original, _pal in f['parts']:
             if not original:
                 for fn in sequence_files(seqs[img], seq):
                     if fn in openra_made:
@@ -1521,7 +1899,10 @@ def main():
         smudges[kind] = [normalize(image, n, seqs[image]) for n in names]
 
     cursors = cursor_tables()
+    palettes, player_palettes = palette_tables()
     files = {ACTOR_PALETTE}
+    for rec in palettes.values():
+        files.update(rec.get('files', {}).values())
     files.update(c['file'] for c in cursors.values())
     for info in terrain.values():
         files.add(info['palette'])
@@ -1564,6 +1945,20 @@ def main():
         '/** The palette actors are drawn with on every tileset (OpenRA "player"). */',
         f"export const ACTOR_PALETTE = '{ACTOR_PALETTE}';",
         '',
+        '/**',
+        ' * OpenRA\'s palettes the original art is drawn with (mods/ra/rules/palettes.yaml,',
+        ' * tools/gen_content_tables.py): by name, a palette file per tileset ("*" for',
+        ' * all) with its transparent and shadow indices, one colour (rgba), or a',
+        ' * base palette whose `index` entries show the colours of `replace`.',
+        ' * PLAYER_PALETTES: the palettes with the owner\'s colours on `remap`, by',
+        ' * name, over `base`. A palette key (ACTOR_ART palettes, SPECIAL_ART and',
+        ' * EXPLOSION_ART palette) is a name, plus "+owner" for the owner\'s colours;',
+        ' * DEFAULT_PALETTE where none is given.',
+        ' */',
+        f"export const DEFAULT_PALETTE = '{DEFAULT_PALETTE}';",
+        f'export const PALETTES = {js(palettes)};',
+        f'export const PLAYER_PALETTES = {js(player_palettes)};',
+        '',
         '/** Sequences per OpenRA image, only those WebRA uses (content/sequences.js SequenceDef). */',
         'export const SEQUENCES = {',
     ]
@@ -1577,9 +1972,9 @@ def main():
         ' * slot (aux-idle and aux-move: a second rotor), wall, level (the frame',
         ' * shows the storage level), lift (screen y offset in pixels of the second',
         ' * slot per pose, negative is up), unitOverlay (forward and side offset of an overlay drawn',
-        ' * over a unit without a turret), cameo, palette (OpenRA RenderSprites',
-        ' * Palette when not "player": effect, terrain or desert; js/content/atlas.js',
-        ' * ACTOR_PALETTES).',
+        ' * over a unit without a turret), cameo, palettes ("body.pose",',
+        ' * "second.pose" or "muzzle" -> palette key where OpenRA\'s is not',
+        ' * DEFAULT_PALETTE: the render trait\'s palette, PALETTES).',
         ' */',
         'export const ACTOR_ART = {',
     ]
@@ -1593,7 +1988,8 @@ def main():
         ' * SPECIAL_ART): key (apps/game/js/content/packs.js SPECIALS name, or art',
         ' * module "naval", "planes", "helis", "abilities", "veterancy",',
         ' * "decorations", "fx", "leftovers" and the index in its specials) -> { image,',
-        ' * sequences, mode } or null (WebRA art). Modes: loop, effect (the',
+        ' * sequences, mode, palette } or null (WebRA art); palette is OpenRA\'s for',
+        ' * it where not DEFAULT_PALETTE. Modes: loop, effect (the',
         ' * sequences once one after the other, then nothing), lead (the first once,',
         ' * then the second looping), index (the frame the engine names).',
         ' */',
@@ -1686,10 +2082,11 @@ def main():
         '//',
         '// What OpenRA draws for every WebRA actor, for the original art audit',
         '// (apps/game/js/content/audit.js): per actor its image and one',
-        '// [role, image, sequence, original] row per sequence its render traits',
-        '// use; `original` is false when the file is made by OpenRA (bits.txt)',
+        '// [role, image, sequence, original, palette] row per sequence its render',
+        '// traits use; `original` is false when the file is made by OpenRA (bits.txt)',
         '// and a player\'s copy of Red Alert has nothing for it; `palette` is the',
-        '// RenderSprites palette when not "player". These are OpenRA\'s',
+        '// key of the palette OpenRA draws it with (tables.js PALETTES), null where',
+        '// the audit does not compare it (cameos, husks). These are OpenRA\'s',
         '// facts, not WebRA\'s choices (those are content/tables.js ACTOR_ART).',
         '',
         'export const RENDER_FACTS = {',

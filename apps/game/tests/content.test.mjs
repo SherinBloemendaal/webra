@@ -301,7 +301,7 @@ test('the sequences table covers the engine actors and names only files it lists
     }
     if (entry.muzzle) assert.ok(seqs[entry.muzzle] && files.has(seqs[entry.muzzle].file), `${id} muzzle`);
     // Only a muzzle flash: OpenRA's own units (WebRA's pixel art draws the rest).
-    if (!entry.body) assert.deepEqual(Object.keys(entry).sort(), ['image', 'muzzle'], `${id} has a muzzle only`);
+    if (!entry.body) assert.deepEqual(Object.keys(entry).filter((k) => k !== 'palettes').sort(), ['image', 'muzzle'], `${id} has a muzzle only`);
     else assert.ok(entry.body.idle, `${id} has an idle sequence`);
   }
   assert.ok(files.has(ACTOR_PALETTE));
@@ -543,7 +543,7 @@ test('original slots: each actor in OpenRA\'s palette for it; the ore mine per t
   files.set('mine.sno', buildShp(24, 24, [mineFrame]));
   files.set('snow.pal', snowPal);
   const get = (n) => files.get(n) ?? null;
-  assert.equal(ACTOR_ART.MINE.palette, 'terrain', 'OpenRA draws the ore mine with the terrain palette (RenderSprites Palette)');
+  assert.deepEqual(ACTOR_ART.MINE.palettes, { 'body.idle': 'terrain' }, 'OpenRA draws the ore mine with the terrain palette (RenderSprites Palette)');
   assert.equal(ACTOR_ART.GMINE, undefined, 'gmine.* are OpenRA\'s own: no original art');
   for (const [tileset, pal] of [['TEMPERAT', files.get(ACTOR_PALETTE)], ['SNOW', snowPal]]) {
     const out = originalSlots(ACTORS, get, tileset);
@@ -681,8 +681,9 @@ test('tables: the original files only, never the files OpenRA makes itself (unle
   }
   assert.equal(ACTOR_ART.POWR.fakeMark, undefined);
   // OpenRA's own units have no original body (WebRA's own pixel art stays), only Red Alert's muzzle flashes.
-  assert.deepEqual(ACTOR_ART.FTRK, { image: 'ftrk', muzzle: 'muzzle' });
-  assert.deepEqual(ACTOR_ART.MH60, { image: 'mh60', muzzle: 'muzzle' });
+  // (Their flashes in OpenRA's effect palette, Armament MuzzlePalette.)
+  assert.deepEqual(ACTOR_ART.FTRK, { image: 'ftrk', muzzle: 'muzzle', palettes: { muzzle: 'effect' } });
+  assert.deepEqual(ACTOR_ART.MH60, { image: 'mh60', muzzle: 'muzzle', palettes: { muzzle: 'effect' } });
   assert.equal(SEQUENCES.ftrk.muzzle.file, 'gunfire.shp', 'OpenRA gunfire2.shp: Red Alert gunfire.shp');
   assert.equal(SEQUENCES.mh60.muzzle.file, 'minigun.shp');
 });
