@@ -62,8 +62,19 @@ const BASELINE = {
  * together with a measured render cost (BASELINE_COST still holds).
  */
 const BASELINE_SECONDS = 55.5;
-/** Render time of every effect (the BASELINE ids) against the thunder's in the same run, with the 0.16 set. */
-const BASELINE_COST = 0.89;
+/**
+ * CPU time of every effect (the BASELINE ids) against the thunder's in the
+ * same run (0.62 to 0.66 measured on the current set, which renders the 0.16
+ * set's sound budget; the wall time ratio this replaced was 0.89), and the margin the median of COST_RUNS runs
+ * may exceed it by. CPU time (process.cpuUsage) rather than wall time, both
+ * kinds rendered in every run in alternating order, and the median: other
+ * work on the machine (parallel test suites, builds) moves the ratio by a
+ * few percent at most, well within the margin, while a new sound that costs
+ * as much as a tenth of the set still fails.
+ */
+const BASELINE_COST = 0.65;
+const COST_MARGIN = 0.1;
+const COST_RUNS = 5;
 
 const SR = 48000;
 const dB = (x) => 20 * Math.log10(x);
@@ -121,30 +132,47 @@ test('every cue has a sound, and every sound has a cue', () => {
 });
 
 /** Render every variant of every sound `runs` times; the shortest run per group is its cost. */
+/** CPU milliseconds (user and system) of `fn`. */
+function cpuMs(fn) {
+  const t0 = process.cpuUsage();
+  const out = fn();
+  const d = process.cpuUsage(t0);
+  return { out, ms: (d.user + d.system) / 1000 };
+}
+
+const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+
+/**
+ * Every recipe rendered `runs` times (the order reversed every other run, so
+ * effects and thunder share whatever else the machine does): the sounds, and
+ * per run the CPU time of the effects and of the thunder. `effects`,
+ * `thunder` and `ratio` are the medians.
+ */
 function renderAll(runs) {
   const sounds = new Map();
-  let effects = Infinity;
-  let thunder = Infinity;
+  const ids = Object.keys(RECIPES);
+  const fxRuns = [];
+  const thRuns = [];
+  const ratios = [];
   for (let k = 0; k < runs; k++) {
     let fx = 0;
     let th = 0;
-    for (const id of Object.keys(RECIPES)) {
-      const t0 = performance.now();
-      const variants = Array.from({ length: VARIANTS }, (_, v) => render(id, SR, v));
-      const ms = performance.now() - t0;
+    for (const id of k % 2 ? [...ids].reverse() : ids) {
+      const { out: variants, ms } = cpuMs(() => Array.from({ length: VARIANTS }, (_, v) => render(id, SR, v)));
       if (id in BASELINE) fx += ms;
       if (id.startsWith('thunder')) th += ms;
       sounds.set(id, variants);
     }
-    effects = Math.min(effects, fx);
-    thunder = Math.min(thunder, th);
+    fxRuns.push(fx);
+    thRuns.push(th);
+    ratios.push(fx / th);
   }
-  return { sounds, effects, thunder };
+  return { sounds, effects: median(fxRuns), thunder: median(thRuns), ratio: median(ratios), ratios };
 }
 
 /** The rendered set and its cost, made once on first use (it takes a second or two). */
 let rendered = null;
-const renderedSet = () => (rendered ??= renderAll(3));
+const renderedSet = () => (rendered ??= renderAll(COST_RUNS));
 
 /** RMS of the 5 ms before normalize()'s 64 sample fade, against the peak: what is left when the sound stops. */
 function tailLevel(s, sr, peak) {
@@ -212,11 +240,14 @@ test('each effect is as loud as the one it replaced (within 3 dB), and the mix a
 });
 
 test('rendering costs no more than the 0.16 set', (t) => {
-  const { sounds, effects, thunder } = renderedSet();
+  const { sounds, effects, thunder, ratio, ratios } = renderedSet();
   let seconds = 0;
   for (const variants of sounds.values()) seconds += variants[0].length / SR;
   assert.ok(seconds <= BASELINE_SECONDS, `${seconds.toFixed(2)} s of sound per variant, at most ${BASELINE_SECONDS}`);
-  // Wall time depends on the machine: against the unchanged thunder, rendered in the same run.
-  t.diagnostic(`${seconds.toFixed(2)} s of sound (budget ${BASELINE_SECONDS}); effects ${effects.toFixed(0)} ms, thunder ${thunder.toFixed(0)} ms, ratio ${(effects / thunder).toFixed(2)} (at most ${BASELINE_COST})`);
-  assert.ok(effects / thunder <= BASELINE_COST, `effects take ${effects.toFixed(0)} ms, ${(effects / thunder).toFixed(2)} of the thunder's ${thunder.toFixed(0)} ms (at most ${BASELINE_COST})`);
+  // CPU time depends on the machine: against the unchanged thunder, rendered in the same runs.
+  const most = BASELINE_COST * (1 + COST_MARGIN);
+  t.diagnostic(
+    `${seconds.toFixed(2)} s of sound (budget ${BASELINE_SECONDS}); effects ${effects.toFixed(0)} ms CPU, thunder ${thunder.toFixed(0)} ms CPU, ratio ${ratio.toFixed(2)} (median of ${ratios.map((r) => r.toFixed(2)).join(', ')}; baseline ${BASELINE_COST}, at most ${most.toFixed(2)})`,
+  );
+  assert.ok(ratio <= most, `effects take ${effects.toFixed(0)} ms CPU, ${ratio.toFixed(2)} of the thunder's ${thunder.toFixed(0)} ms (median of ${COST_RUNS} runs; baseline ${BASELINE_COST}, at most ${most.toFixed(2)})`);
 });
