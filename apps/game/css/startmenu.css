@@ -129,6 +129,8 @@
   flex: none;
   width: 7px;
   height: 7px;
+  /* Level with the capitals, which the padding moved up (--ui-cap-nudge). */
+  margin-top: calc(2 * var(--ui-cap-nudge));
   background: var(--ui-led-off);
   border: 1px solid var(--ui-led-off-edge);
   border-radius: 50%;

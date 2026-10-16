@@ -115,6 +115,27 @@ test('the padding check accepts only a pure upward move', () => {
   assert.ok(!nudgedUp(`0 1.25em ${NUDGE}`));
 });
 
+/** Every stylesheet of the game, the editor and the website. */
+const SHEETS = [
+  ...readdirSync(root + 'apps/game/css')
+    .filter((f) => f.endsWith('.css'))
+    .map((f) => `apps/game/css/${f}`),
+  'apps/game/editor/editor.css',
+  'apps/website/assets/site.css',
+  'apps/website/assets/account.css',
+];
+
+/** Every top-level and @media/@container rule of a sheet: { rel, sel, decls }. */
+function allRules(rel) {
+  const out = [];
+  for (const m of stripComments(read(rel)).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const decls = {};
+    for (const d of m[2].matchAll(/([a-z-]+)\s*:\s*([^;]+);/g)) decls[d[1]] = d[2].trim().replace(/\s+/g, ' ');
+    out.push({ rel, sel: m[1].trim().replace(/\s+/g, ' '), decls });
+  }
+  return out;
+}
+
 /** Every control with a label in capitals, as [sheet, selector] (each rule of that selector that sets padding). */
 const CONTROLS = [
   // The design system.
@@ -162,6 +183,7 @@ const CONTROLS = [
   ['apps/game/css/friends.css', '.friends-menu-item'],
   ['apps/game/css/gamemenu.css', '.gm-keys-group'],
   ['apps/game/editor/editor.css', '.editor button:where(:not(.ui-sp-button, .ui-sp-close))'],
+  ['apps/game/editor/editor.css', '#side .tabs button'],
   // The website.
   ['apps/website/assets/site.css', '.btn'],
   ['apps/website/assets/site.css', '.btn-small'],
@@ -171,6 +193,7 @@ const CONTROLS = [
   ['apps/website/assets/site.css', '.beta-badge'],
   ['apps/website/assets/site.css', '.segmented button'],
   ['apps/website/assets/site.css', '.badge'],
+  ['apps/website/assets/site.css', '.hero-pause'],
   ['apps/website/assets/account.css', '.btn-hazard > span'],
   ['apps/website/assets/account.css', '.tab'],
   ['apps/website/assets/account.css', '.account-nav-link'],
@@ -203,6 +226,7 @@ test('the select plate centres its value, lamps beside capitals move down by the
   const [lamps] = rules('apps/game/css/controls.css', '.ui-btn > .ui-led, .ui-tab > .ui-led, .ui-badge > .ui-led, .ui-menubar-item > .ui-led, .ui-segmented > .ui-segment::before');
   assert.equal(lamps['margin-top'], `calc(2 * ${NUDGE})`);
   for (const [rel, selector] of [
+    ['apps/game/css/startmenu.css', '.start-item::before, #records-entry button::before'],
     ['apps/website/assets/site.css', '.beta-badge .lamp'],
     ['apps/website/assets/site.css', '.segmented button::before'],
     ['apps/website/assets/site.css', '.badge::before'],
@@ -213,15 +237,7 @@ test('the select plate centres its value, lamps beside capitals move down by the
 });
 
 test('the nudge is used only in the forms above', () => {
-  const sheets = [
-    ...readdirSync(root + 'apps/game/css')
-      .filter((f) => f.endsWith('.css'))
-      .map((f) => `apps/game/css/${f}`),
-    'apps/game/editor/editor.css',
-    'apps/website/assets/site.css',
-    'apps/website/assets/account.css',
-  ];
-  for (const rel of sheets) {
+  for (const rel of SHEETS) {
     for (const m of stripComments(read(rel)).matchAll(/([a-z-]+)\s*:\s*([^;{}]*var\(--ui-cap-nudge\)[^;{}]*);/g)) {
       const [, prop, value] = m;
       const v = value.trim().replace(/\s+/g, ' ');
@@ -231,4 +247,113 @@ test('the nudge is used only in the forms above', () => {
       else assert.fail(`${rel}: ${prop} uses the nudge`);
     }
   }
+});
+
+/**
+ * Rules the discovery below finds that rightly keep symmetric padding, each
+ * with the reason. A new entry needs one too.
+ */
+const NOT_CENTRED_CAPS = new Map([
+  // Inline tags and labels in running text or headers: their box hugs the text, nothing to centre against.
+  ['apps/game/css/endgame.css .stats-badge', 'inline tag beside a name'],
+  ['apps/game/css/releasenotes.css .rn-tag', 'inline tag in a release line'],
+  ['apps/game/css/loading.css .loading-tip-label', 'inline tag before a tip'],
+  ['apps/game/css/guide.css .tour-toast', 'a toast of running text, the label only its first words'],
+  ['apps/game/css/controls.css .ui-sp-group-label', 'a group heading in a list, aligned to the options below it'],
+  ['apps/game/css/sidebar.css #sidebar .sb-name', 'a name on a cameo, set at its top'],
+  // Table heads: they line up with the cells of their column, which are not capitals.
+  ['apps/game/css/patterns.css .ui-table th, .ui-table .ui-table-head > *', 'table head'],
+  ['apps/game/css/endgame.css .endgame-table thead th', 'table head'],
+  ['apps/game/css/endgame.css .endgame-team th', 'table head'],
+  // Buttons whose label is in a child that carries the nudge, or that hold only an icon.
+  ['apps/game/css/patterns.css .ui-btn-hazard', 'the word is on its span (.ui-btn-hazard > span)'],
+  ['apps/game/css/controls.css .ui-badge-hazard', 'the word is on its span (.ui-badge-hazard > .ui-badge-text)'],
+  ['apps/game/css/patterns.css .ui-btn-icon', 'an icon, no label'],
+  ['apps/game/css/records.css .replay-play.ui-btn', 'an icon, no label'],
+  ['apps/game/css/friends.css .friends-page .ui-btn-sm, .friends-menu-item', 'sets only min-height'],
+  ['apps/game/css/help.css #menu .lobby-slot.lobby-slot-head', 'table head'],
+  // A select plate is a .editor button left out of the editor's button look.
+  ['apps/game/editor/editor.css .editor table.slots .ui-select-plate', 'not a button: the plate in a table cell'],
+  ['apps/game/editor/editor.css .editor .anchors button.anchor', 'no text: the anchor picker squares'],
+  // Another branch owns guide.css; the coordinator applies the nudge there at merge.
+  ['apps/game/css/guide.css .guide-chapter', 'owned by another branch, nudged at merge'],
+]);
+
+const isZero = (v) => /^0(px|em|rem)?$/.test(v);
+
+/** The vertical padding a rule sets: { top, bottom } or null. */
+function verticalPadding(decls) {
+  if (decls.padding !== undefined) {
+    const { top, bottom } = paddingSides(decls.padding);
+    return { top, bottom, nudged: nudgedUp(decls.padding) };
+  }
+  if (decls['padding-block'] !== undefined) {
+    // Two values at most: block start, then block end (the "right" of a shorthand split).
+    const { top, right } = paddingSides(decls['padding-block']);
+    return { top, bottom: right, nudged: false };
+  }
+  return null;
+}
+
+/**
+ * The bases a label in capitals comes from: rules that set text-transform
+ * uppercase, and the two type-scoped bases (.menu-card button,
+ * .editor button) whose capitals reach buttons through every selector under
+ * them. A rule inherits a base when one of its selectors has the base's
+ * class (or, for the type-scoped ones, a button under that scope).
+ */
+function capsRules() {
+  const rules = SHEETS.flatMap(allRules);
+  const own = rules.filter((r) => r.decls['text-transform'] === 'uppercase');
+  // Class names whose rule sets capitals and centres its label with padding: the button bases.
+  // Selectors without the arguments of :not(), :where() and :is(), which name what a rule leaves out.
+  const selectors = (r) => r.sel.replace(/:(not|where|is)\((?:[^()]|\([^()]*\))*\)/g, '').split(',').map((x) => x.trim());
+  const subjectOf = (sel) => sel.split(/\s+|>/).filter(Boolean).at(-1) ?? '';
+  const classesOf = (sel) => [...subjectOf(sel).matchAll(/\.([a-z][a-z0-9-]*)/g)].map((c) => c[1]);
+  const baseClasses = new Set();
+  for (const r of own) if (r.decls.padding !== undefined) for (const sel of selectors(r)) for (const c of classesOf(sel)) baseClasses.add(c);
+  const editor = (r) => r.rel === 'apps/game/editor/editor.css';
+  const inherits = (r) =>
+    selectors(r).some((sel) => {
+      // The editor's buttons: a button under .editor or #side; a mixed-case rule there is a button by its context.
+      if (editor(r) && /^(\.editor|#side)\b/.test(sel) && (/\bbutton\b/.test(subjectOf(sel)) || r.decls['text-transform'] === 'none')) return true;
+      if (/\.menu-card\b.*\bbutton\b/.test(sel)) return true;
+      return classesOf(sel).some((c) => baseClasses.has(c));
+    });
+  return rules.filter((r) => r.decls['text-transform'] === 'uppercase' || (r.decls['text-transform'] !== 'none' && inherits(r)) || (r.decls['text-transform'] === 'none' && inherits(r)));
+}
+
+test('discovery: every rule that centres a label in capitals with padding takes the nudge', () => {
+  const missing = [];
+  for (const r of capsRules()) {
+    const key = `${r.rel} ${r.sel}`;
+    if (r.decls['text-transform'] === 'none') continue; // the next test
+    if (/::(before|after)$/.test(r.sel) || /mono/.test(`${r.decls.font ?? ''} ${r.decls['font-family'] ?? ''}`)) continue;
+    const v = verticalPadding(r.decls);
+    if (!v) continue;
+    // A box hugging its text with no vertical padding and no least height has nothing to centre in.
+    const centres = !(isZero(v.top) && isZero(v.bottom)) || r.decls['min-height'] !== undefined;
+    if (!centres || v.nudged) continue;
+    if (NOT_CENTRED_CAPS.has(key)) continue;
+    missing.push(`${key} { padding: ${r.decls.padding ?? r.decls['padding-block']} }`);
+  }
+  assert.deepEqual(missing, [], 'labels in capitals without --ui-cap-nudge (fix the padding, or add the rule to NOT_CENTRED_CAPS with a reason)');
+});
+
+test('discovery: a mixed-case button under a capitals base gives back symmetric padding', () => {
+  const missing = [];
+  for (const r of capsRules()) {
+    if (r.decls['text-transform'] !== 'none') continue;
+    const key = `${r.rel} ${r.sel}`;
+    if (NOT_CENTRED_CAPS.has(key)) continue;
+    const v = verticalPadding(r.decls);
+    if (v && !v.nudged && v.top === v.bottom) continue;
+    missing.push(key);
+  }
+  assert.deepEqual(missing, [], 'mixed-case labels that inherit the nudge (set symmetric padding or padding-block)');
+});
+
+test('discovery: every allow-listed rule still exists', () => {
+  const keys = new Set(SHEETS.flatMap(allRules).map((r) => `${r.rel} ${r.sel}`));
+  for (const key of NOT_CENTRED_CAPS.keys()) assert.ok(keys.has(key), `stale NOT_CENTRED_CAPS entry: ${key}`);
 });

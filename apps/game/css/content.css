@@ -309,6 +309,8 @@
   background: var(--ui-metal-0);
   border: 2px dashed var(--ui-line);
   box-shadow: none;
+  /* Mixed case: the cap nudge of .menu-card button does not apply. */
+  padding-block: calc(10 * var(--ui-px));
   text-transform: none;
   letter-spacing: 0;
 }
