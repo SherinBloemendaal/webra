@@ -60,7 +60,7 @@ const LOW_POWER_TARGETS = ['POWR'];
 
 /** The last card's question. */
 export const FINALE_TEXT =
-  'Quick tips show what a cameo does when you hover it in the build menu. Keep them on, or turn them off now that you know your way around? You can change this later under Settings, Game.';
+  'Quick tips say what a building or unit does when you hover it, in the build menu and on the battlefield. Keep them on, or turn them off now that you know your way around? You can change this later under Settings, Game.';
 
 function el(tag, className, text) {
   const e = document.createElement(tag);

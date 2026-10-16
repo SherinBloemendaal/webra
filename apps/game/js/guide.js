@@ -50,6 +50,7 @@ import { GUIDE } from './help.js';
 import { EV, STRIDE } from './audio/director.js';
 import { boundKey } from './hotkeys.js';
 import { compareVersions, newestVersion } from './releasenotes.js';
+import { setQuickTips } from './quicktips.js';
 
 /**
  * The order the tour walks the chapters in; GUIDE (js/help.js) has the same
@@ -503,7 +504,7 @@ export class GuideProgress {
    * ever: also not again after Take the tour again.
    */
   answerQuickTips(keep) {
-    if (keep !== null) this.registry.set('game', 'quickTips', !!keep);
+    if (keep !== null) setQuickTips(this.registry, keep);
     this.registry.set('guide', 'quickTipsAsked', true);
   }
 

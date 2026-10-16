@@ -182,13 +182,29 @@ def support_power_proxy(t):
                for k in t)
 
 
-def prop_info(t):
+def prop_info(name, t):
     reveal = t.get('RevealsShroud')
     image = t.get('RenderSprites', {}).get('Image') if isinstance(t.get('RenderSprites'), dict) else None
     shown = 'RenderSprites' in t
-    return {'reveal': gen_rules.wdist(reveal.get('Range')) if isinstance(reveal, dict) else 0,
+    info = {'reveal': gen_rules.wdist(reveal.get('Range')) if isinstance(reveal, dict) else 0,
             # Drawn in game (a flare), not only in the map editor (a camera).
             'image': (image or '').lower() if shown else None}
+    # ProvidesPrerequisite (intervention's `mainland`, negotiations' `ai.hard`):
+    # the owner holds the prerequisite while the prop exists. Without a
+    # Prerequisite it is the actor's name, as in OpenRA.
+    provides = []
+    for k, v in traits(t, 'ProvidesPrerequisite').items():
+        v = v if isinstance(v, dict) else {}
+        if v.get('Factions') or v.get('RequiresPrerequisites') or v.get('RequiresCondition'):
+            raise SystemExit(f'{name}: a prop ProvidesPrerequisite with Factions, RequiresPrerequisites or a condition is not supported')
+        provides.append((v.get('Prerequisite') or name).lower())
+    if provides:
+        info['provides'] = sorted(set(provides))
+        # The Tooltip name (a Fluent key, resolved with the mission's text in mission_file).
+        tip = t.get('Tooltip')
+        if isinstance(tip, dict) and tip.get('Name'):
+            info['name'] = tip['Name']
+    return info
 
 
 # Traits a condition can switch, and what the engine does with them (mission/conditions.rs).
@@ -274,7 +290,7 @@ def generate(mission, base_rules, base_defs, base_weapons, ids_lower_base, tmp):
     for name in sorted(wanted):
         t = parse.to_json(rules[name])
         if is_prop(t):
-            props[name.lower()] = prop_info(t)
+            props[name.lower()] = prop_info(name.lower(), t)
     exported = [n for n in sorted(wanted) if n.lower() not in props and n.lower() not in ids_lower_base]
 
     # Run gen_rules on the merged rules: buildables come from actors.json (written
@@ -665,7 +681,7 @@ def mission_file(mission, campaign, gen, base_actor_ids):
         'rules': gen['rules'],
         'death_spawns': gen['death_spawns'],
         'conditions': gen['conditions'],
-        'props': gen['props'],
+        'props': {k: ({**v, 'name': resolve(v['name'])} if 'name' in v else v) for k, v in gen['props'].items()},
         'art': gen['art'],
         'scripts': scripts,
         'messages': dict(sorted(used.items())),

@@ -2216,6 +2216,37 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   type in the queue is cancelled and refunded, one per tick, so the finished
   one goes once it is the last, and the queue says ProductionBlocked once
   (not for instant builds).
+- `player_json().buildable` lists what this player's build menu shows
+  (`World::listed`). OpenRA hides an item while one of its `~`
+  prerequisites is unmet (TechTree IsHidden, ProductionQueue.AllItems), so
+  a player never sees the other side's (`~structures.soviet`,
+  `~vehicles.allies`) or another country's (`~vehicles.england`,
+  `~infantry.russia`) items, nor those above the lobby tech level
+  (`~techlevel.*`). WebRA keeps showing, locked and with what is still
+  missing, what this player can get by building something, so it hides an
+  item only when a prerequisite can never be met: one it does not hold and
+  that nothing it can build provides (`reachable_tokens`: the tokens of its
+  structures now, then a fixed point from a Construction Yard with its
+  faction, as rules.rs `solve_obtainable`). For a plain (non-`~`)
+  prerequisite that holds only when some structure gives it to some faction
+  (`Rules::structure_token`), which hides items that need the other side's
+  tech center (the Longbow for Soviets, who build helipads in WebRA); a
+  plain prerequisite no structure gives (only a mission prop, or nothing)
+  leaves the item listed and locked like OpenRA's greyed items, its
+  `requires` naming the prop ("Reach the mainland") or else the token. A
+  `~!` prerequisite hides the item while held (as in OpenRA), when this
+  faction's Construction Yard gives it (`Rules::always_provided`: Ukraine
+  never sees the plain Airfield, also without a yard), or when the structure
+  that provides another missing prerequisite always brings it (England's
+  barracks gives `infantry.england`: England never sees the generic Spy). Held now always counts: a captured Construction Yard keeps
+  its faction (OpenRA FactionInit, no ResetOnOwnerChange), so an Allied
+  player who captures a Soviet one is offered the Soviet structures and
+  what they unlock, until it is lost. The debug menu's "all tech" lists
+  every item of the game (OpenRA AllTech). Before 0.19.0 the list held
+  every item of the game mode, the other side's marked `exclusive`
+  ("Soviet only"); `exclusive` stays for a prerequisite that can never be
+  met on an item that is still listed. Presentation only: the state hash
+  never sees it.
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`; under
   the `openra` factory loss rule likewise for units without a structure of
@@ -3630,7 +3661,7 @@ are not part of the state hash; they work the same in every mode.
 `Game.world_tooltip(view, x, y, ctrl, alt)` (world pixels; `view` a player,
 `observer_player()` or the combined spectator view) answers what OpenRA's
 ViewportControllerWidget puts in the WORLD_TOOLTIP, as JSON: `null` (off the
-map, nothing there), or `{ kind, label, id, owner, faction, extras }` with
+map, nothing there), or `{ kind, label, id, owner, faction, extras, type }` with
 `kind` `unexplored` (shroud: not explored, or hidden by an enemy gap
 generator; "Unrevealed Terrain"), `actor` (`id` its actor id), `frozen` (a
 remembered structure under the fog, with the type and owner it was seen
@@ -3648,7 +3679,11 @@ all but its owner's allies (DisguiseTooltip). `owner` is the owner row's
 player: null without ShowOwnerRow and for non-combatants (the neutral
 player). `extras` are the TooltipDescription lines (tech buildings:
 @ally for the owner and allies, @other for the rest, none for spectators).
-Rules: `actors[].tooltip` (`generic_name`, `generic_visibility` bits Ally 1,
+`type` is the actor type id the label names (`World::shown_type`, for the
+quick tips): the disguise's type for a disguised spy and, where the generic
+name applies, the type whose own name it is (an enemy's Fake Power Plant
+gives `POWR`, so its quick tip cannot tell it apart); null for shroud and
+resources. Rules: `actors[].tooltip` (`generic_name`, `generic_visibility` bits Ally 1,
 Neutral 2, Enemy 4, `generic_prefix`, `show_owner`; null: no tooltip) and
 `world.tooltips` (texts), from tools/gen_rules.py. The client
 (js/worldtooltip.js) shows it 200 ms after the mouse last moved over the
@@ -3680,6 +3715,49 @@ Width 1 line of the colour, at a fixed width on screen at every zoom
 (shaders/line.wgsl; the line width is a line instance's ninth float).
 WebRA's pillbox fires its garrison's weapon itself, so its circle is that
 weapon's range rather than its passengers'.
+
+### Quick tips (`apps/game/js/quicktips.js`)
+
+One line on what an actor does, in the game's English voice ("Builds
+vehicles.", "Shows the radar minimap. Needs power."), at most
+`QUICK_TIP_MAX` (80) characters, ending with a full stop, no dashes.
+`QUICK_TIPS` maps actor ids to the line for every actor the build menu can
+list (a production queue and no `~disabled` prerequisite in
+engine/rules.json) and the map-only `QUICK_TIP_MAP_ONLY` (the Construction
+Yard); `quickTip(id)` answers the line or null. Each claim follows WebRA's
+rules (abilities, weapons, support powers, cargo, crush classes, repair and
+rearm actors), not OpenRA's longer Buildable descriptions.
+
+- Setting: `game.quickTips` (registry GROUPS, boolean, default true; the
+  account's settings document accepts it, packages/protocol accounts.js).
+  It is on for every player, also those whose stored settings predate
+  0.19.0 (a missing key reads as its default). The game menu shows it on
+  the Settings Game tab ("Quick tips", with help; Reset this section turns
+  it back on). The tour's finale (js/tour.js, `GuideProgress.answerQuickTips`) asks
+  whether to keep it: `setQuickTips(registry, on)` writes it (`QUICK_TIPS_SETTING` names
+  the key).
+- Build menu: `productionTip(..., { tip })` puts the line under the name
+  (spec `tip`, css `.ui-tooltip-quick`), next to the cost, build time and
+  power; the sidebar passes `quickTip(id)` while the setting is on
+  (`callbacks.quickTips`). Never both lines: with a quick tip the cameo
+  tooltip leaves out the actor's OpenRA description (rules `description`,
+  Buildable.Description); with the setting off it shows that description
+  as before. The descriptions are OpenRA's rules.ftl text (GPL), read by
+  data/source/parse.py with Fluent's multi-line values (continuation lines
+  of any indentation, a value on the line after `key =`), kept as lines;
+  before 0.19.0 that reader dropped most of them and left AFLD.Ukraine's
+  raw key. It opens like every cameo tooltip: hover,
+  keyboard focus at once, a touch long press; the cameo's
+  aria-describedby points at the panel while it shows. No animation.
+- Battlefield: js/worldtooltip.js adds the line under the owner row
+  (`.world-tooltip-tip`) for `actor` and `frozen` answers by their `type`,
+  while the setting is on. The battlefield tooltip never shows the
+  Buildable description (its `extras` are TooltipDescription lines such as
+  a tech building's capture text, which stay).
+- A new actor: add its line to `QUICK_TIPS` (or to `QUICK_TIP_MAP_ONLY`
+  with the line when it is never built); apps/game/tests/quicktips.test.mjs
+  fails for a buildable actor without a tip and for a tip of an actor the
+  build menu never lists.
 
 ### Chat, system lines and the HUD (`apps/game/js/chatlog.js`, `chatpanel.js`, `gametimer.js`, `muteindicator.js`)
 
@@ -5257,7 +5335,7 @@ A mission file (`format: 1`, at most 4 MiB, checked by
 | `players` | map.yaml Players: name, faction, colour, playable, required, owns world, non-combatant, bot, allies, enemies |
 | `actors` | Every map actor with its inits (owner, location, facing, subcell, health, stance, free actor, tags), the map's bridges too |
 | `rules` | The mission's rules (OpenRA's merged with the map's, through `gen_rules.py`) as changes to `engine/rules.json`: actors, weapons, locomotors and armour types patched by key or added (`Rules::load_mission`) |
-| `props`, `art`, `conditions`, `death_spawns`, `bot_conditions`, `smudges` | Script-only actors (waypoints, cameras, flares), the art key each mission actor draws with, ExternalCondition effects, actors left on death, the conditions a bot gives, map smudges |
+| `props`, `art`, `conditions`, `death_spawns`, `bot_conditions`, `smudges` | Script-only actors (waypoints, cameras, flares; a prop's `provides` are the prerequisites its ProvidesPrerequisite gives its owner while it exists, `name` its Tooltip name: intervention's `mainland`, negotiations' `ai.hard`; their tokens are interned when the mission loads, so `Player.HasPrerequisites` knows them, and they change at once when a script creates, destroys or hands over the prop), the art key each mission actor draws with, ExternalCondition effects, actors left on death, the conditions a bot gives, map smudges |
 | `scripts`, `messages`, `options` | The Lua files in load order (`campaign.lua`, `utils.lua`, the map's), the Fluent strings, the lobby options (`difficulty` with its values and default) |
 | `starting_cash`, `tech_level`, `time_limit`, `start_notification`, `objectives` | World settings: MissionObjectives (`early_game_over`, `game_over_delay`, `cooperative`) |
 

@@ -300,6 +300,34 @@ test('tooltip specs: production cameo like OpenRA (name, key, cost, time, power,
   assert.equal(inf.requires, 'Soviet only');
   assert.match(tooltipText(inf), /Shift: 5 at a time/);
   assert.equal(formatPower(0), '0');
+  // The quick tip (js/quicktips.js): a line under the name, only when given (the setting is on).
+  assert.equal(spec.tip, '');
+  const tipped = productionTip(powr, { enabled: true, requires: [], buildTicks: 250 }, state, { tip: 'Provides power for your base.' });
+  assert.equal(tipped.tip, 'Provides power for your base.');
+  assert.equal(tooltipText(tipped).split('\n')[1], 'Provides power for your base.', 'right under the name');
+  // Never both lines: the quick tip replaces OpenRA's description, which shows again with the tips off.
+  const described = { ...powr, description: 'Provides power for other structures.' };
+  assert.equal(productionTip(described, null, state, { tip: 'Provides power for your base.' }).desc, '');
+  assert.equal(productionTip(described, null, state, { tip: null }).desc, 'Provides power for other structures.');
+});
+
+test('tooltip: the quick tip line, also for keyboard focus and a touch long press, described by the panel', () => {
+  const { doc, button } = setup();
+  try {
+    const t = clock();
+    attachTooltip(button, () => ({ title: 'War Factory', tip: 'Builds vehicles.', stats: [{ kind: 'cost', label: 'cost', text: '$2000' }] }), t);
+    button.dispatchEvent(ev('focus', { bubbles: false }));
+    const open = openTooltip(doc);
+    assert.equal(open.panel.querySelector('.ui-tooltip-quick')?.textContent, 'Builds vehicles.');
+    assert.equal(button.getAttribute('aria-describedby'), open.panel.id, 'screen readers read it with the cameo');
+    button.dispatchEvent(ev('blur', { bubbles: false }));
+    button.dispatchEvent(ev('pointerdown', { pointerType: 'touch', clientX: 5, clientY: 5 }));
+    t.advance(LONG_PRESS_MS);
+    assert.match(openTooltip(doc)?.text ?? '', /Builds vehicles\./, 'a long press shows it on touch screens');
+    button.dispatchEvent(ev('pointerup', { pointerType: 'touch' }));
+  } finally {
+    uninstallDom();
+  }
 });
 
 test('tooltip specs: support powers, production tabs and the HUD buttons', () => {

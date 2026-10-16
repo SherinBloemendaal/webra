@@ -49,6 +49,13 @@
   text-shadow: 1px 1px 0 #000;
 }
 
+/* The quick tip (js/quicktips.js): what the actor does, one line. */
+.world-tooltip-tip {
+  color: var(--ui-text);
+  font: 400 var(--ui-fs-m) / 1.35 var(--ui-font);
+  text-shadow: 1px 1px 0 #000;
+}
+
 .world-tooltip-extras {
   color: var(--ui-tip-text);
   font: 400 var(--ui-fs-m) / 1.35 var(--ui-font);

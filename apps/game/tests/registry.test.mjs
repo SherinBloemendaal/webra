@@ -235,12 +235,12 @@ test('registry: every old key migrates once, and the old keys are removed after 
   assert.deepEqual(r.migrated.sort(), [...LEGACY_KEYS].sort());
   const v = r.values();
   // Settings newer than every old key get their default too; the rest of the group is compared below.
-  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw, v.game.hideReplayChat, v.game.uiFeedbackNotifications, v.game.gameEventNotifications], [1, false, false, true, true]);
-  for (const key of ['zoomFactor', 'mouseCaptureRaw', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications']) delete v.game[key];
+  assert.deepEqual([v.game.zoomFactor, v.game.mouseCaptureRaw, v.game.hideReplayChat, v.game.uiFeedbackNotifications, v.game.gameEventNotifications, v.game.quickTips], [1, false, false, true, true, true]);
+  for (const key of ['zoomFactor', 'mouseCaptureRaw', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications', 'quickTips']) delete v.game[key];
 
   assert.deepEqual(
     v.game,
-    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, mouseCaptureNotice: 'always', pauseWhenHidden: false, attackMoveTipSeen: false, buildRightClick: 'openra', quickTips: true },
+    { edgeScrollSpeed: 2, keyScrollSpeed: 0.5, showUnitPaths: true, targetLines: 'automatic', pixelRatioCap: 1, lowQuality: true, reduceMotion: 'auto', uiScale: 'auto', gameScale: 'auto', healthBars: 'damaged', playerStanceColors: false, graphics: 'original', hotkeys: { stop: ['Z'] }, mouseCapture: 'fullscreen', mouseCaptureSpeed: 1, mouseCaptureEscMenu: true, mouseCaptureNotice: 'always', pauseWhenHidden: false, attackMoveTipSeen: false, buildRightClick: 'openra' },
     'settings the old key did not have get their default',
   );
   assert.deepEqual(v.audio, { enabled: false, master: 0.4, effects: 0.3, voices: 0.2, music: 0.1, speech: false, original: false, cashTicks: true, clickSounds: true, menuMusic: true, musicOn: true, musicShuffle: true, musicRepeat: 'all' });
@@ -399,6 +399,7 @@ test('registry: the protocol package (the server\'s validator) accepts its docum
     ['game', 'mouseCaptureRaw'],
     ['game', 'mouseCaptureNotice'],
     ['game', 'pauseWhenHidden'],
+    ['game', 'quickTips'],
     ['game', 'hideReplayChat'],
     ['game', 'gameEventNotifications'],
     ['audio', 'musicOn'],

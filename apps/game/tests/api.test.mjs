@@ -102,8 +102,12 @@ test('MCV start: deploy, build a power plant and place it', () => {
   assert.equal(state.powerGenerated, 100);
   const tent = state.buildable.find((b) => b.id === 'TENT');
   assert.equal(tent.enabled, true);
-  const barr = state.buildable.find((b) => b.id === 'BARR');
-  assert.equal(barr.exclusive, 'Soviet only');
+  // The other side's items are not listed at all (OpenRA hides `~structures.soviet` for the Allies).
+  for (const id of ['BARR', 'KENN', 'SPEN', 'STEK', '3TNK', 'DOG', 'MIG']) assert.equal(state.buildable.find((b) => b.id === id), undefined, id);
+  // What is merely missing stays listed, locked.
+  const weap = state.buildable.find((b) => b.id === 'WEAP');
+  assert.equal(weap.enabled, false);
+  assert.ok(weap.requires.includes('Ore Refinery'));
 });
 
 test('structures queue; without a Construction Yard they are cancelled and unavailable', () => {

@@ -653,7 +653,7 @@ test('finale: Keep or Turn them off sets game.quickTips once; a tour done elsewh
     assert.equal(finale.getAttribute('aria-labelledby'), 'tour-finale-title');
     assert.equal(root.querySelector('#tour-finale-title').textContent, 'Tour done');
     assert.equal(root.querySelector('#tour-finale-title').tagName.toLowerCase(), 'h2');
-    assert.match(textOf(finale), /Quick tips show what a cameo does when you hover it in the build menu/);
+    assert.match(textOf(finale), /Quick tips say what a building or unit does when you hover it, in the build menu and on the battlefield/);
     for (const b of [buttonOf('Keep quick tips'), buttonOf('Turn them off')]) assert.equal(b.getAttribute('aria-describedby'), 'tour-finale-text');
     assert.match(toast(), /Tour done\. Keep the quick tips\? Two buttons on the tour card\./);
     assert.equal(buttonOf('Skip step').hidden, true);

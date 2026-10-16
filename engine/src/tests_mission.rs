@@ -667,3 +667,38 @@ fn script_created_structures_are_built_and_map_structures_are_not() {
     assert_eq!(w.actors[p].make_until, 13, "created at tick 0: being built through tick 13");
     assert!(w.build_incomplete(p));
 }
+
+/// OpenRA ProvidesPrerequisite on a script prop (intervention's `mainland`,
+/// created when the MCV reaches the main island): the owner holds the
+/// prerequisite while the prop exists, scripts see it at once, and the build
+/// menu lists the items that need it, locked, naming the prop.
+#[test]
+fn a_script_prop_provides_its_prerequisite() {
+    let mut w = start("intervention", None);
+    let allies = 0u8;
+    let tent = w.rules.actor_index("TENT").unwrap() as u16;
+    let mainland = w.rules.token("mainland").expect("interned");
+    assert!(!w.players[allies as usize].tokens[mainland as usize]);
+    assert!(w.listed(allies, tent), "a prerequisite only a script grants: listed, locked (OpenRA greyed)");
+    let reqs = w.requirements(allies, tent);
+    assert!(reqs.iter().any(|r| r.label == "Reach the mainland" && !r.never), "{reqs:?}");
+    assert_eq!(lua_in(&mut w, "return tostring(Player.GetPlayer('Allies').HasPrerequisites({ 'mainland' }))"), "false");
+    let src = "local p = Actor.Create('mainland', true, { Owner = Player.GetPlayer('Allies') }); return tostring(Player.GetPlayer('Allies').HasPrerequisites({ 'mainland' }))";
+    assert_eq!(lua_in(&mut w, src), "true", "at once, in the same script");
+    w.step();
+    assert!(w.players[allies as usize].tokens[mainland as usize], "kept by the tick's refresh");
+    assert!(!w.requirements(allies, tent).iter().any(|r| r.label == "Reach the mainland"));
+}
+
+/// negotiations' `ai.hard` prop: a prerequisite no rule names, only the
+/// bot script asks for it (`HasPrerequisites`); destroying the prop takes it away.
+#[test]
+fn a_prerequisite_only_scripts_ask_for_comes_and_goes_with_its_prop() {
+    let mut w = start("negotiations", None);
+    let ask = "return tostring(Player.GetPlayer('BadGuy').HasPrerequisites({ 'ai.hard' }))";
+    assert_eq!(lua_in(&mut w, ask), "false");
+    lua_in(&mut w, "HardProp = Actor.Create('ai.hard', true, { Owner = Player.GetPlayer('BadGuy') })");
+    assert_eq!(lua_in(&mut w, ask), "true");
+    lua_in(&mut w, "HardProp.Destroy()");
+    assert_eq!(lua_in(&mut w, ask), "false");
+}

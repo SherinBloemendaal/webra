@@ -8,6 +8,7 @@ import { FakeEvent, installDom, uninstallDom } from './dom-fixtures.mjs';
 import { selectionGroup, selectionTypes, Sidebar } from '../js/sidebar.js';
 import { UNAVAILABLE } from '../js/fullscreen.js';
 import { openTooltip } from '../js/ui/tooltip.js';
+import { quickTip } from '../js/quicktips.js';
 
 const RULES = {
   lowPowerModifier: 100,
@@ -161,6 +162,21 @@ test('production tabs: a white lamp on the open tab, a gold one and a gold edge 
     // The signal bars' place next to the clock (js/netwarn.js fills it in online games).
     assert.ok(sidebar.netSlot.parentNode === root.querySelector('.sb-status-right'), 'next to the clock');
     assert.ok(root.querySelector('.sb-status-right .sb-clock-text')?.parentNode === sidebar.netSlot.parentNode, 'the clock beside it');
+  } finally {
+    sidebar.dispose();
+    uninstallDom();
+  }
+});
+
+test('cameo tooltips: the quick tip of the item while the Quick tips setting is on', () => {
+  let on = true;
+  const { sidebar } = make({ quickTips: () => on });
+  try {
+    sidebar.selectTab(2);
+    sidebar.update(state({ buildable: [{ id: 'E1', queue: 2, enabled: true, requires: [], buildTicks: 100 }] }));
+    assert.equal(sidebar.cardTip('E1').tip, quickTip('E1'));
+    on = false;
+    assert.equal(sidebar.cardTip('E1').tip, '', 'off: no line');
   } finally {
     sidebar.dispose();
     uninstallDom();

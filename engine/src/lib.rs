@@ -989,6 +989,8 @@ impl Game {
             "owner": t.owner,
             "faction": t.owner.and_then(|o| w.players.get(o as usize)).map(|p| w.rules.factions[p.faction].clone()),
             "extras": t.extras,
+            // The actor type the label names for this view (tooltip.rs `shown_type`): the quick tip's key.
+            "type": t.shown.map(|ty| &w.rules.actors[ty].id),
         })
         .to_string()
     }
@@ -1670,12 +1672,14 @@ impl Game {
                     .collect::<Vec<_>>()
             })
             .collect();
-        // Every item that can be built in this game mode, with what is still
+        // Every item this player's build menu lists (production.rs `listed`:
+        // never the other side's or another country's), with what is still
         // missing and its build time with the player's factories (before the
         // low power slowdown: the production tooltip, OpenRA ProductionTooltipLogic).
         let factories = w.factories(player);
+        let reach = w.reachable_tokens(player);
         let buildable: Vec<_> = (0..w.rules.actors.len())
-            .filter(|&t| w.in_game_mode(t as u16))
+            .filter(|&t| w.listed_with(player, t as u16, &reach))
             .map(|t| {
                 let reqs = w.requirements(player, t as u16);
                 json!({

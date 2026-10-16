@@ -7,6 +7,9 @@
 // under it the owner's flag and name in the owner's colour, then extra lines
 // (a tech building's capture text, the refund in sell mode); unexplored
 // cells read "Unrevealed Terrain", ore and gems "Valuable Minerals".
+// With the quick tips on (`game.quickTips`), a line under the owner says what
+// the actor does (js/quicktips.js), for the type the label names: a disguised
+// spy gets its disguise's tip, an enemy's fake the tip of what it imitates.
 //
 // What the viewer may know is the engine's (engine/src/tooltip.rs,
 // `Game.world_tooltip`): shroud, fog, cloak and disguises apply there, with
@@ -15,6 +18,8 @@
 //
 // DOM through createElement and textContent only (strict CSP); the position
 // is set through CSSOM properties.
+
+import { quickTip } from './quicktips.js';
 
 /** TooltipContainerWidget.TooltipDelayMilliseconds: the mouse rests this long first. */
 export const WORLD_TOOLTIP_DELAY_MS = 200;
@@ -43,20 +48,22 @@ export function worldTooltipPosition(mouse, size, viewport) {
  * show). `nameOf(owner)` and `colorOf(owner)` ([r, g, b] 0..1) name and
  * colour the owner row; `refund` is the money selling the actor would give
  * when the sell mode is on and it may be sold (OpenRA Sellable's tooltip
- * text, for the owner only; walls show $0), else -1.
- * @param {null | { kind: string, label: string, id?: number | null, owner?: number | null, faction?: string | null, extras?: string[] }} tip
+ * text, for the owner only; walls show $0), else -1. `quickTips` turns the
+ * quick tip line on: what the actor type the label names (`type`) does.
+ * @param {null | { kind: string, label: string, id?: number | null, owner?: number | null, faction?: string | null, extras?: string[], type?: string | null }} tip
  * `kind` is the answer's kind (the panel mutes "Unrevealed Terrain"); the
  * refund is a line of its own (in the money colour, Tooltips board).
- * @returns {null | { label: string, kind: string, owner: null | { name: string, color: string, faction: string }, extras: string[], refund: string | null }}
+ * @returns {null | { label: string, kind: string, owner: null | { name: string, color: string, faction: string }, tip: string | null, extras: string[], refund: string | null }}
  */
-export function worldTooltipContent(tip, { nameOf, colorOf, refund = -1 }) {
+export function worldTooltipContent(tip, { nameOf, colorOf, refund = -1, quickTips = false }) {
   if (!tip || !tip.label) return null;
   const owner =
     tip.owner === null || tip.owner === undefined
       ? null
       : { name: nameOf(tip.owner), color: cssColor(colorOf(tip.owner)), faction: tip.faction ?? '' };
   const extras = [...(tip.extras ?? [])];
-  return { label: tip.label, kind: tip.kind ?? 'actor', owner, extras, refund: tip.kind === 'actor' && refund >= 0 ? `Refund: $${refund}` : null };
+  const what = quickTips && (tip.kind === 'actor' || tip.kind === 'frozen') ? quickTip(tip.type) : null;
+  return { label: tip.label, kind: tip.kind ?? 'actor', owner, tip: what, extras, refund: tip.kind === 'actor' && refund >= 0 ? `Refund: $${refund}` : null };
 }
 
 function cssColor(c) {
@@ -108,9 +115,10 @@ export class WorldTooltip {
    * @param {(owner: number) => string} o.nameOf
    * @param {(owner: number) => number[]} o.colorOf
    * @param {() => boolean} [o.blocked] a menu or dialog covers the battlefield
+   * @param {() => boolean} [o.quickTips] the "Quick tips" setting: a line on what the actor does
    */
-  constructor({ input, game, view, player, nameOf, colorOf, blocked = () => false, doc = document }) {
-    Object.assign(this, { input, game, view, player, nameOf, colorOf, blocked, doc });
+  constructor({ input, game, view, player, nameOf, colorOf, blocked = () => false, quickTips = () => false, doc = document }) {
+    Object.assign(this, { input, game, view, player, nameOf, colorOf, blocked, quickTips, doc });
     this.timer = new TooltipTimer();
     this.key = null;
     const el = (tag, cls) => {
@@ -127,9 +135,10 @@ export class WorldTooltip {
     this.flagEl = el('span', 'world-tooltip-flag faction-flag');
     this.ownerName = el('span', 'world-tooltip-owner-name');
     this.ownerEl.append(this.flagEl, this.ownerName);
+    this.tipEl = el('div', 'world-tooltip-tip');
     this.extrasEl = el('div', 'world-tooltip-extras');
     this.refundEl = el('div', 'world-tooltip-refund');
-    this.el.append(this.labelEl, this.ownerEl, this.extrasEl, this.refundEl);
+    this.el.append(this.labelEl, this.ownerEl, this.tipEl, this.extrasEl, this.refundEl);
     doc.body.append(this.el);
   }
 
@@ -157,7 +166,7 @@ export class WorldTooltip {
     }
     // OpenRA Sellable: "Refund: $" for the owner while the sell order generator is active.
     const refund = inp.mode === 'sell' && tip?.kind === 'actor' && tip.id !== null && tip.id !== undefined ? this.game.sell_value(this.player, tip.id) : -1;
-    const content = worldTooltipContent(tip, { nameOf: this.nameOf, colorOf: this.colorOf, refund });
+    const content = worldTooltipContent(tip, { nameOf: this.nameOf, colorOf: this.colorOf, refund, quickTips: !!this.quickTips() });
     if (!content) {
       this.hide();
       return;
@@ -173,6 +182,8 @@ export class WorldTooltip {
         this.ownerName.textContent = content.owner.name;
         this.ownerName.style.color = content.owner.color;
       }
+      this.tipEl.hidden = !content.tip;
+      this.tipEl.textContent = content.tip ?? '';
       this.extrasEl.hidden = content.extras.length === 0;
       this.extrasEl.textContent = content.extras.join('\n');
       this.refundEl.hidden = !content.refund;

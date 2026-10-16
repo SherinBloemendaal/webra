@@ -79,7 +79,14 @@ impl World {
     /// `WorldLoaded` runs before this returns; a script error does not fail
     /// the call, it ends the mission (see `Mission::error`).
     pub fn from_mission(data: MissionData, seed: u64, chosen: &MissionOptions) -> Result<World, String> {
-        let rules = Rules::load_mission(&data.rules)?;
+        let mut rules = Rules::load_mission(&data.rules)?;
+        // What script props provide (OpenRA ProvidesPrerequisite): tokens for
+        // prerequisites only scripts ask for too (`Player.HasPrerequisites`).
+        for p in data.props.values() {
+            for t in &p.provides {
+                rules.intern_token(t);
+            }
+        }
         let map = data.map.to_map()?;
         let data = Arc::new(data);
         // The people playing come first (one in the campaign, the co-op

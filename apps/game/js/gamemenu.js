@@ -78,6 +78,7 @@ export const MENU_HELP_KEYS = Object.freeze([
   'perfCaptureStart',
   'mouseCaptureNotice',
   'pauseWhenHidden',
+  'quickTips',
   'errorReports',
   'cloudReplays',
 ]);
@@ -109,7 +110,7 @@ export const SETTINGS_TABS = Object.freeze([
  * player's call. The graphics choice stays (it can need installed content).
  */
 export const SECTION_SETTINGS = Object.freeze({
-  game: Object.freeze(['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'targetLines', 'healthBars', 'playerStanceColors', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications', 'pauseWhenHidden']),
+  game: Object.freeze(['edgeScrollSpeed', 'keyScrollSpeed', 'showUnitPaths', 'targetLines', 'healthBars', 'playerStanceColors', 'hideReplayChat', 'uiFeedbackNotifications', 'gameEventNotifications', 'pauseWhenHidden', 'quickTips']),
   graphics: Object.freeze(['uiScale', 'gameScale', 'zoomFactor', 'pixelRatioCap', 'lowQuality', 'reduceMotion']),
   controls: Object.freeze(['buildRightClick', 'mouseCapture', 'mouseCaptureSpeed', 'mouseCaptureRaw', 'mouseCaptureEscMenu', 'mouseCaptureNotice']),
   hotkeys: Object.freeze([]),
@@ -328,6 +329,7 @@ export const MENU_SETTINGS = Object.freeze([
   'mouseCaptureEscMenu',
   'mouseCaptureNotice',
   'pauseWhenHidden',
+  'quickTips',
 ]);
 
 /** What the Mouse capture section says. */
@@ -997,6 +999,8 @@ export class GameMenu {
       choice('targetLines', 'Target lines', SCHEMA.targetLines.labels),
       choiceRow(this.opts.settings, 'healthBars', 'Always show health bars', { off: 'Off', damaged: 'Damaged', all: 'All' }, 'Off shows them only for selected and hovered units. Damaged and All cover units and buildings.'),
       check('playerStanceColors', 'Relationship colours'),
+      // One line on what it does in the cameo and battlefield tooltips (js/quicktips.js).
+      check('quickTips', 'Quick tips'),
       // OpenRA's Display settings: js/chatlog.js, js/notifications.js.
       el('h2', 'gm-section-title', 'Chat and notifications'),
       check('hideReplayChat', 'Hide chat in replays'),

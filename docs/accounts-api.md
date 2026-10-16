@@ -814,6 +814,7 @@ Serialized size at most 32 KiB.
     "mouseCaptureEscMenu": true,   // true (default): Esc releases the mouse and opens the menu at once
     "mouseCaptureNotice": "always", // "always" | "first" (the first 3 captures) | "off": the "Mouse captured" notice
     "pauseWhenHidden": false,      // single player: true opens the menu (pauses) when the page is hidden
+    "quickTips": true,             // one line on what a structure or unit does in the cameo and battlefield tooltips
     "buildRightClick": "openra"    // "openra" (hold first) | "webra" (last queued first): right click on a sidebar cameo
   },
   "audio": {
