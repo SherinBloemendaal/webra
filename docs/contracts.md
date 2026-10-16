@@ -3887,7 +3887,11 @@ NetStats in code.
   not load or a module error before main.js runs (`watchGameFiles`), and a
   `boot()` that throws, call `fail()`: an alert and Reload. After
   `--boot-late` (`BOOT_LATE_MS`, 20 s) `.boot-late` shows a reload link by CSS
-  alone.
+  alone, and with scripts the polite status line says the same
+  (`BOOT_LATE_TEXT`). What's new opens from `ready()`'s promise, once the
+  screen is gone (never after a failed boot). A restart record's mission
+  waits for the mission index (`within(missionIndex(), BOOT_WAIT_MS)`), so its
+  loading screen begins under the boot screen instead of after the menu.
 - **End of game** (`js/endgame.js`): `EndGameDialog` takes `report()` (the
   parsed `observer_report`), `players`, `localPlayer` and `reducedMotion`;
   its `context()` adds `replay` (`saving`, `saved`, `failed` or null: main.js

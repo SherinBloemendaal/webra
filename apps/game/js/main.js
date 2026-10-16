@@ -111,7 +111,7 @@ import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
 import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
-import { bootScreen } from './bootscreen.js';
+import { BOOT_WAIT_MS, bootScreen } from './bootscreen.js';
 import { LoadingBoard, boundKeyText, colorCss, describeStart } from './loadingboard.js';
 import { GameSession, GameStart } from './gamesession.js';
 
@@ -284,15 +284,18 @@ async function boot() {
   // game a restart reloaded the page for (when it could not restart in place).
   const again = takeRestart(sessionStore());
   if (again?.kind === 'campaign') campaign?.open(again.id);
-  else if (again?.kind === 'mission' && !gpuError && renderer) startMissionById(again.id, again.options, again.gameSpeed, lobby);
+  else if (again?.kind === 'mission' && !gpuError && renderer) {
+    // The mission index first (BOOT_WAIT_MS at most), so the mission's loading screen begins under the boot screen.
+    await bootScreen.within(missionIndex(), BOOT_WAIT_MS);
+    startMissionById(again.id, again.options, again.gameSpeed, lobby);
+  }
   else if (again?.kind === 'skirmish' && !gpuError && renderer) startSkirmish(again.options, lobby);
   else await offerLinkedMap(lobby);
   // An invite or a rejoin opened the online screen: it is the menu.
   await onlineOpen;
   // The start menu is ready: the boot screen goes (after the account and installed content, BOOT_WAIT_MS at most).
-  bootScreen.ready();
-  // Once per new version: what changed since this browser last played.
-  releaseNotes.showWhatsNewOnce();
+  // Once per new version, what changed since this browser last played: once the boot screen is gone (never after a failed boot).
+  bootScreen.ready().then(() => releaseNotes.showWhatsNewOnce());
 }
 
 /**

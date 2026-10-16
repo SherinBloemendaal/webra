@@ -20,7 +20,8 @@
 // It never hangs: the game files that do not load (the main script's error
 // event, or an error before js/main.js ran) and a boot that throws show the
 // error with Reload (`fail`), and after a long wait a line with Reload shows
-// by CSS alone (.boot-late), also without scripts. Known boot problems (no
+// by CSS alone (.boot-late), also without scripts; with scripts the polite
+// status line says it too, so screen readers hear it. Known boot problems (no
 // engine, no WebGPU) are not failures here: the lobby shows them once the
 // screen is gone. While it shows the section is aria-busy, the step is a
 // polite status line and the bar a progressbar; an error is an alert.
@@ -43,8 +44,11 @@ export const BOOT_OPTIONAL = Object.freeze(['account', 'content']);
 /** How long `ready` waits for the optional steps (the account, installed content) once the menu is built. */
 export const BOOT_WAIT_MS = 5000;
 
-/** After how long css/loading.css shows the "taking longer" line with Reload (.boot-late, --boot-late). */
+/** After how long css/loading.css shows the "taking longer" line with Reload (.boot-late, --boot-late) and the status line says so. */
 export const BOOT_LATE_MS = 20000;
+
+/** What the status line says after BOOT_LATE_MS (the .boot-late line in index.html says the same). */
+export const BOOT_LATE_TEXT = 'This is taking longer than usual. Check your internet connection, or reload the page.';
 
 const DONE = new Set(['done', 'failed', 'skipped']);
 
@@ -90,6 +94,17 @@ export class BootScreen {
     }
     root.setAttribute('aria-busy', 'true');
     this.begin('files');
+    // The late line shows by CSS alone; a change of visibility is not reliably announced, so the status line says it.
+    this.lateTimer = this.timers.setTimeout(() => {
+      this.lateTimer = null;
+      if (this.state === 'booting' && this.status) this.status.textContent = BOOT_LATE_TEXT;
+    }, BOOT_LATE_MS);
+  }
+
+  stopLate() {
+    if (this.lateTimer === null || this.lateTimer === undefined) return;
+    this.timers.clearTimeout(this.lateTimer);
+    this.lateTimer = null;
   }
 
   /** Whether the screen still covers the page (booting or failed). */
@@ -181,10 +196,22 @@ export class BootScreen {
     });
   }
 
+  /** Resolves once `promise` settled (either way) or after `ms`: boot work the screen waits for, never forever. */
+  within(promise, ms) {
+    return new Promise((resolve) => {
+      const timer = this.timers.setTimeout(() => resolve(false), ms);
+      Promise.resolve(promise).then(
+        () => (this.timers.clearTimeout(timer), resolve(true)),
+        () => (this.timers.clearTimeout(timer), resolve(true)),
+      );
+    });
+  }
+
   /**
    * The start menu is built and usable: the menu step is done, the optional
    * steps get at most `waitMs` more, steps that never began are skipped, and
-   * the screen fades. Returns `closed`.
+   * the screen fades. Returns `closed`: what must not open under the
+   * screen (What's new) waits for it, and never opens after a failure.
    */
   async ready() {
     if (this.state !== 'booting') return this.closed;
@@ -205,6 +232,7 @@ export class BootScreen {
   /** The fade (the stylesheet's transition on `.is-closing`, none with "Reduce motion"); the page shows the menu behind it. */
   close() {
     const root = this.root;
+    this.stopLate();
     this.state = 'closing';
     root.setAttribute('aria-busy', 'false');
     this.doc.body?.classList.remove('is-booting');
@@ -250,6 +278,7 @@ export class BootScreen {
     const doc = this.doc;
     const active = BOOT_STEPS.find((s) => this.states.get(s.id) === 'active');
     if (active) this.set(active.id, 'failed');
+    this.stopLate();
     this.state = 'failed';
     const root = this.root;
     root.setAttribute('aria-busy', 'false');

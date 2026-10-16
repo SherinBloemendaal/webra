@@ -71,8 +71,9 @@
             <li class="loading-step" data-step="menu" data-state="pending">Opening the menu</li>
           </ol>
           <noscript><p class="loading-error">WebRA needs JavaScript. Turn it on for this site and reload the page.</p></noscript>
-          <!-- Shown by css/loading.css after a long wait (no script needed): a link to this page reloads it. -->
-          <p class="boot-late" aria-live="polite">This is taking longer than usual. Check your internet connection, or <a class="boot-reload" href="">reload the page</a>.</p>
+          <!-- Shown by css/loading.css after a long wait (no script needed): a link to this page reloads it.
+               With scripts the status line above says it too (js/bootscreen.js), so screen readers hear it. -->
+          <p class="boot-late">This is taking longer than usual. Check your internet connection, or <a class="boot-reload" href="">reload the page</a>.</p>
         </div>
       </div>
     </section>

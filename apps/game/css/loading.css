@@ -517,11 +517,11 @@
 }
 
 /* A step that could not run: the lobby says why once the menu shows. */
-.loading-step[data-state='failed'] {
+#boot .loading-step[data-state='failed'] {
   color: var(--ui-text-2);
 }
 
-.loading-step[data-state='failed']::before {
+#boot .loading-step[data-state='failed']::before {
   background: var(--ui-bad);
   border-color: var(--ui-bad);
 }
@@ -641,7 +641,7 @@
     background: CanvasText;
   }
 
-  .loading-step[data-state='failed']::before {
+  #boot .loading-step[data-state='failed']::before {
     background: Canvas;
     border-style: dashed;
   }

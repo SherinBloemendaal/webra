@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BOOT_LATE_MS, BOOT_OPTIONAL, BOOT_STEPS, BOOT_WAIT_MS, BootScreen, watchGameFiles } from '../js/bootscreen.js';
+import { BOOT_LATE_MS, BOOT_LATE_TEXT, BOOT_OPTIONAL, BOOT_STEPS, BOOT_WAIT_MS, BootScreen, watchGameFiles } from '../js/bootscreen.js';
 import { LOADING_FADE_MS, LoadingScreen, loadingPlan } from '../js/loadingscreen.js';
 import { AccountSession } from '../js/account/session.js';
 import { click, FakeEvent, installDom, textOf, uninstallDom } from './dom-fixtures.mjs';
@@ -134,11 +134,15 @@ test('index.html: the boot screen is static markup over the page, with the steps
     ['active', 'pending', 'pending', 'pending', 'pending', 'pending'],
   );
   assert.match(body, /<noscript>/);
-  assert.match(body, /<p class="boot-late" aria-live="polite">[^]*<a class="boot-reload" href="">/);
+  // The late line: no live region (a change of visibility is not reliably announced; the status line says it).
+  const late = /<p class="boot-late">([^]*?)<\/p>/.exec(body);
+  assert.ok(late, 'the late line');
+  assert.match(late[1], /<a class="boot-reload" href="">/);
+  assert.equal(late[1].replace(/<[^>]+>/g, ''), BOOT_LATE_TEXT, 'the late line and the status line say the same');
   // The scripts: error reports first, then the boot screen, then the game (which imports the same module).
   const at = (src) => HTML.indexOf(`<script type="module" src="${src}"></script>`);
   assert.ok(at('js/telemetry/boot.js') > 0 && at('js/telemetry/boot.js') < at('js/bootscreen.js') && at('js/bootscreen.js') < at('js/main.js'));
-  assert.match(readFileSync(new URL('../js/main.js', import.meta.url), 'utf8'), /import \{ bootScreen \} from '\.\/bootscreen\.js';/);
+  assert.match(readFileSync(new URL('../js/main.js', import.meta.url), 'utf8'), /import \{ BOOT_WAIT_MS, bootScreen \} from '\.\/bootscreen\.js';/);
 });
 
 test('css/loading.css: the boot screen is the loading screen, over it, without a least time, and its late line needs no script', () => {
@@ -152,7 +156,9 @@ test('css/loading.css: the boot screen is the loading screen, over it, without a
   assert.match(CSS, /\.boot-late \{[^}]*visibility: hidden;[^}]*animation: boot-late 1ms var\(--boot-late\) both;/s);
   // The browser's "Reduce motion" applies before the settings load; the late line still appears.
   assert.match(CSS, /@media \(prefers-reduced-motion: reduce\) \{[^@]*#boot \*:not\(\.boot-late\),/s);
-  assert.match(CSS, /@media \(forced-colors: active\) \{[^@]*\.loading-step\[data-state='failed'\]::before/s);
+  assert.match(CSS, /@media \(forced-colors: active\) \{[^@]*#boot \.loading-step\[data-state='failed'\]::before/s);
+  // The failed lamp is the boot screen's alone: the loading screen keeps its own steps.
+  assert.equal(/(^|\n)\s*\.loading-step\[data-state='failed'\]/.test(CSS), false);
 });
 
 // ---- Steps ---------------------------------------------------------------------------------
@@ -294,6 +300,68 @@ test('a game that starts during the boot: its loading screen begins and the boot
   }
   assert.equal(logged.length, 1);
   assert.equal(root.classList.contains('is-failed'), false);
+  uninstallDom();
+});
+
+test('after BOOT_LATE_MS the polite status line says the boot takes long (the visual line is CSS)', () => {
+  const { status, screen, timers } = setup();
+  screen.started();
+  timers.run(BOOT_LATE_MS);
+  assert.equal(status.textContent, BOOT_LATE_TEXT);
+  assert.equal(screen.state, 'booting');
+  uninstallDom();
+  // A boot that ends in time never says it.
+  const quick = setup({ closeMs: 0 });
+  quick.screen.started();
+  quick.screen.close();
+  assert.equal(quick.timers.size, 0, 'the late timer is cleared');
+  uninstallDom();
+});
+
+test("What's new waits for the boot screen to be gone, and never opens after a failed boot", async () => {
+  // main.js: the dialog opens from ready()'s promise, not right after calling it.
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /bootScreen\.ready\(\)\.then\(\(\) => releaseNotes\.showWhatsNewOnce\(\)\);/);
+  assert.equal((main.match(/showWhatsNewOnce\(/g) ?? []).length, 1);
+  const { root, screen } = setup();
+  screen.started();
+  screen.track('account', new Promise(() => {}));
+  screen.track('content', Promise.resolve());
+  let shown = false;
+  const ready = screen.ready().then(() => (shown = true));
+  await settle();
+  assert.equal(shown, false, 'waiting for the account: the screen still shows');
+  // Gone after the fade: then it opens.
+  screen.set('account', 'done');
+  await settle();
+  assert.equal(shown, false, 'fading');
+  root.dispatchEvent(new FakeEvent('transitionend'));
+  await ready;
+  assert.equal(shown, true);
+  uninstallDom();
+  // A failed boot: ready() never resolves, the dialog never opens over the error.
+  const failed = setup();
+  failed.screen.started();
+  failed.screen.fail(new Error('broke'));
+  let opened = false;
+  failed.screen.ready().then(() => (opened = true));
+  await settle();
+  failed.timers.run();
+  await settle();
+  assert.equal(opened, false);
+  uninstallDom();
+});
+
+test('within: boot work the screen waits for, until it settles or the time is up', async () => {
+  const { screen, timers } = setup();
+  assert.equal(await screen.within(Promise.resolve(1), 100), true);
+  assert.equal(await screen.within(Promise.reject(new Error('404')), 100), true, 'a failure ends the wait too');
+  const never = screen.within(new Promise(() => {}), BOOT_WAIT_MS);
+  timers.run(BOOT_WAIT_MS);
+  assert.equal(await never, false);
+  // A restart record's mission: main.js waits for the mission index (at most BOOT_WAIT_MS) before it starts the mission.
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /await bootScreen\.within\(missionIndex\(\), BOOT_WAIT_MS\);\n    startMissionById\(again\.id/);
   uninstallDom();
 });
 
