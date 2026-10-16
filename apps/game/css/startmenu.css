@@ -109,7 +109,7 @@
   gap: 8px;
   min-height: max(var(--ctl-row, 2.25rem), 48px);
   margin: 0;
-  padding: 0 16px;
+  padding: 0 16px calc(2 * var(--ui-cap-nudge));
   background: transparent;
   color: var(--ui-text-2);
   border: 0;
@@ -129,6 +129,8 @@
   flex: none;
   width: 7px;
   height: 7px;
+  /* Level with the capitals, which the padding moved up (--ui-cap-nudge). */
+  margin-top: calc(2 * var(--ui-cap-nudge));
   background: var(--ui-led-off);
   border: 1px solid var(--ui-led-off-edge);
   border-radius: 50%;
@@ -302,7 +304,7 @@
   .start-item,
   #records-entry button {
     justify-content: center;
-    padding: 0 8px;
+    padding: 0 8px calc(2 * var(--ui-cap-nudge));
     font-size: 14px;
   }
 

@@ -134,7 +134,7 @@ body.touch .hud-buttons .hud-chat {
 .chat-close,
 .chat-mute-button {
   min-width: 3.4em;
-  padding: calc(2 * var(--ui-px)) calc(8 * var(--ui-px));
+  padding: calc(2 * var(--ui-px) - var(--ui-cap-nudge)) calc(8 * var(--ui-px)) calc(2 * var(--ui-px) + var(--ui-cap-nudge));
   font: 700 calc(12 * var(--ui-px)) / 1.4 var(--ui-font-display, sans-serif);
   letter-spacing: var(--ui-track-button);
   text-transform: uppercase;

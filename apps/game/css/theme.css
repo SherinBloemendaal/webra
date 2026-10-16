@@ -134,6 +134,19 @@
   --ui-track-button: 0.12em;
   --ui-track-label: 0.14em;
   --ui-lh-body: 1.5;
+  /* Capitals in the middle of a control. Barlow and Barlow Condensed (every
+     weight in fonts/) have unitsPerEm 1000, ascender 1000, descender 200 and
+     cap height 700 (hhea and OS/2 typo metrics agree), so a label in upper
+     case, its line box centred in a button, tab or badge, sits
+     ((1000 - 700) - 200) / 2 / 1000 = 0.05 em below the middle, whatever
+     the line height. Such controls move their text up by this much: the top
+     padding is calc(P - nudge) and the bottom calc(P + nudge), or 0 and
+     2 x nudge when the box is centred by its min-height; lamps next to the
+     label move down by it again (margin-top: 2 x nudge). An em here is the
+     label's own size. tests/cap-centre.test.mjs recomputes it from the font
+     files. Not text-box-trim: it does not apply to flex containers, which
+     most controls are, and on the others it would change their height. */
+  --ui-cap-nudge: 0.05em;
 
   /* ---- Space and shape: steps of 4, radius 2 px everywhere ---- */
   --ui-space-1: 4px;

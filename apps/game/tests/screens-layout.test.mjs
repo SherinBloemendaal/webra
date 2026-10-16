@@ -218,7 +218,10 @@ test('corner parts: the online and campaign cards end above Sound and Original c
   const rule = (sel) => base(sel);
   const height = (d) => {
     // padding (top and bottom), one line of --ui-fs-s at line height 1.5, and the borders.
-    const pad = Number(/calc\((\d+) \* var\(--ui-px\)\)/.exec(d.padding)[1]);
+    // The top padding is calc(P * var(--ui-px) - var(--ui-cap-nudge)) and the bottom one adds
+    // the nudge back, so the two together are 2 P.
+    assert.match(d.padding, /^calc\((\d+) \* var\(--ui-px\) - var\(--ui-cap-nudge\)\) calc\(\d+ \* var\(--ui-px\)\) calc\(\1 \* var\(--ui-px\) \+ var\(--ui-cap-nudge\)\)$/);
+    const pad = Number(/calc\((\d+) \* var\(--ui-px\)/.exec(d.padding)[1]);
     return 2 * pad + 11 * 1.5 + 2;
   };
   const bottom = (d) => Number(/calc\((\d+) \* var\(--ui-px\)\)/.exec(d.bottom)[1]);

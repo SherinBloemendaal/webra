@@ -243,12 +243,12 @@
 .menu-card button.rn-close {
   width: auto;
   margin: 0;
-  padding: calc(8 * var(--ui-px)) calc(14 * var(--ui-px));
+  padding: calc(8 * var(--ui-px) - var(--ui-cap-nudge)) calc(14 * var(--ui-px)) calc(8 * var(--ui-px) + var(--ui-cap-nudge));
 }
 
 .menu-card button.rn-close {
   flex: none;
-  padding: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
+  padding: calc(6 * var(--ui-px) - var(--ui-cap-nudge)) calc(12 * var(--ui-px)) calc(6 * var(--ui-px) + var(--ui-cap-nudge));
 }
 
 @media (max-width: 480px) {

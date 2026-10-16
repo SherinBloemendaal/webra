@@ -269,7 +269,7 @@ body:not(.touch) #app:not([data-layout='portrait']):not([data-layout='landscape'
 .menu-card button.game-menu-mini {
   width: auto;
   margin: 0;
-  padding: calc(3 * var(--ui-px)) calc(8 * var(--ui-px));
+  padding: calc(3 * var(--ui-px) - var(--ui-cap-nudge)) calc(8 * var(--ui-px)) calc(3 * var(--ui-px) + var(--ui-cap-nudge));
   font-size: calc(11 * var(--ui-px));
   letter-spacing: 0.5px;
 }
@@ -441,7 +441,7 @@ body:not(.touch) #app:not([data-layout='portrait']):not([data-layout='landscape'
   position: absolute;
   right: calc(8 * var(--ui-px));
   top: calc(6 * var(--ui-px));
-  padding: calc(3 * var(--ui-px)) calc(10 * var(--ui-px));
+  padding: calc(3 * var(--ui-px) - var(--ui-cap-nudge)) calc(10 * var(--ui-px)) calc(3 * var(--ui-px) + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -558,7 +558,7 @@ body:not(.touch) #app:not([data-layout='portrait']):not([data-layout='landscape'
 .menu-card button {
   width: 100%;
   margin-top: calc(10 * var(--ui-px));
-  padding: calc(10 * var(--ui-px));
+  padding: calc(10 * var(--ui-px) - var(--ui-cap-nudge)) calc(10 * var(--ui-px)) calc(10 * var(--ui-px) + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);

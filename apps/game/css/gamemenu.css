@@ -169,7 +169,7 @@
 .gm-item {
   justify-content: space-between;
   min-height: max(var(--ctl-row), calc(38 * var(--ui-px)));
-  padding: 0 var(--ui-space-3);
+  padding: 0 var(--ui-space-3) calc(2 * var(--ui-cap-nudge));
   text-align: left;
 }
 
@@ -474,7 +474,7 @@
   gap: var(--ui-space-2);
   min-height: max(var(--ctl-row), calc(36 * var(--ui-px)));
   margin: 0;
-  padding: 0 var(--ui-space-3);
+  padding: 0 var(--ui-space-3) calc(2 * var(--ui-cap-nudge));
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--ui-radius);

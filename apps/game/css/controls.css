@@ -375,7 +375,7 @@ input.ui-check:indeterminate:disabled {
   min-width: 0;
   min-height: calc(var(--ctl-row) - 0.15em);
   margin: 0;
-  padding: 0.3em 1.15em;
+  padding: calc(0.3em - var(--ui-cap-nudge)) 1.15em calc(0.3em + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
   border-right-width: 0;
@@ -683,7 +683,7 @@ button.ui-mini {
   width: auto;
   min-width: 2.2em;
   margin: 0;
-  padding: 0.3em 0.7em;
+  padding: calc(0.3em - var(--ui-cap-nudge)) 0.7em calc(0.3em + var(--ui-cap-nudge));
   font-size: calc(var(--ctl-size) * 0.9);
   letter-spacing: 0.06em;
 }
@@ -744,7 +744,7 @@ button.ui-mini {
   align-items: center;
   gap: 0.45em;
   box-sizing: border-box;
-  padding: 0.22em 0.65em;
+  padding: calc(0.22em - var(--ui-cap-nudge)) 0.65em calc(0.22em + var(--ui-cap-nudge));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-metal-4);
   border-radius: var(--ui-radius);
@@ -758,6 +758,17 @@ button.ui-mini {
 .ui-badge > .ui-led {
   width: 0.55em;
   height: 0.55em;
+}
+
+/* A lamp beside a label in capitals stays level with the capitals: the
+   control's padding moved its content up by the nudge (theme.css,
+   --ui-cap-nudge), so the lamp moves down by it again. */
+.ui-btn > .ui-led,
+.ui-tab > .ui-led,
+.ui-badge > .ui-led,
+.ui-menubar-item > .ui-led,
+.ui-segmented > .ui-segment::before {
+  margin-top: calc(2 * var(--ui-cap-nudge));
 }
 
 .ui-badge-accent {
@@ -800,7 +811,7 @@ button.ui-mini {
 }
 
 .ui-badge-hazard > .ui-badge-text {
-  padding: 0.08em 0.45em;
+  padding: calc(0.08em - var(--ui-cap-nudge)) 0.45em calc(0.08em + var(--ui-cap-nudge));
   background: var(--ui-metal-0);
   color: var(--ui-warn);
 }
@@ -860,6 +871,8 @@ button.ui-mini {
 .ui-sp-value {
   min-width: 0;
   overflow: hidden;
+  /* The capitals in the middle of the plate, level with its lamp (theme.css, --ui-cap-nudge). */
+  padding-bottom: calc(2 * var(--ui-cap-nudge));
   font: 700 1.14em / 1.2 var(--ui-font-display);
   letter-spacing: var(--ui-track-section);
   text-overflow: ellipsis;
@@ -1259,7 +1272,7 @@ button.ui-mini {
   gap: 0.6em;
   min-height: max(var(--ctl-row), 2.85em);
   margin: 0 0 -1px;
-  padding: 0 1.3em;
+  padding: 0 1.3em calc(2 * var(--ui-cap-nudge));
   background: transparent;
   border: 1px solid transparent;
   border-bottom: 0;

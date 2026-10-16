@@ -35,7 +35,7 @@ body.editor {
   justify-content: center;
   gap: 0.4em;
   min-height: 2rem;
-  padding: 0.25em 0.8em;
+  padding: calc(0.25em - var(--ui-cap-nudge)) 0.8em calc(0.25em + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -590,7 +590,7 @@ body.editor {
 
 #side .tabs button {
   min-height: 2rem;
-  padding: 0.2em 0.4em;
+  padding: calc(0.2em - var(--ui-cap-nudge)) 0.4em calc(0.2em + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 0;
   border-radius: 0;
@@ -724,6 +724,8 @@ body.editor {
   justify-content: space-between;
   min-height: 1.8rem;
   margin-bottom: 0.15rem;
+  /* Mixed case: the base's cap nudge does not apply. */
+  padding-block: 0.25em;
   text-transform: none;
   letter-spacing: 0;
   font-weight: 600;
@@ -766,6 +768,7 @@ body.editor {
 .editor .stamp-use {
   flex: 1;
   justify-content: flex-start;
+  padding-block: 0.25em;
   text-transform: none;
 }
 
@@ -927,6 +930,7 @@ body.editor {
 
 .editor .key-bind {
   min-width: 7rem;
+  padding-block: 0.25em;
   text-transform: none;
   font-family: var(--ui-font-mono);
 }

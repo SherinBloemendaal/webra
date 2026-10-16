@@ -149,7 +149,7 @@
 }
 
 .online-btn {
-  padding: 7px 14px;
+  padding: calc(7px - var(--ui-cap-nudge)) 14px calc(7px + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -692,9 +692,12 @@
 
 .online-btn-small {
   margin-left: 6px;
-  padding: 0 6px;
+  padding: 0 6px calc(2 * var(--ui-cap-nudge));
   min-height: 0;
   font-size: 11px;
+  /* Its height is its line: Barlow's normal line height (1.2) less the
+     nudge below, so the capitals sit in the middle at the same height. */
+  line-height: calc(1.2em - 2 * var(--ui-cap-nudge));
 }
 
 /* ---- Rematch (in game) ---------------------------------------------------- */
@@ -719,7 +722,7 @@
 @media (pointer: coarse) {
   .online-btn-small {
     min-height: 44px;
-    padding: 0 12px;
+    padding: 0 12px calc(2 * var(--ui-cap-nudge));
   }
 }
 
@@ -902,7 +905,7 @@
 }
 
 .online-chip {
-  padding: 3px 8px;
+  padding: calc(3px - var(--ui-cap-nudge)) 8px calc(3px + var(--ui-cap-nudge));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-metal-4);
   color: var(--ui-muted);

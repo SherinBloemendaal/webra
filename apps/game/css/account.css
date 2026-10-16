@@ -30,7 +30,7 @@
 
 .account-row button,
 .account-signin {
-  padding: 4px 10px;
+  padding: calc(4px - var(--ui-cap-nudge)) 10px calc(4px + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
