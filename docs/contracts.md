@@ -1027,6 +1027,48 @@ by fords (or flood it, see above), and the land the bases reach holds at least 4
 Submarines alone do not keep a player in the game (OpenRA `^Submarine`
 has no `MustBeDestroyed`), nor do walls and mines.
 
+Weather on screen (presentation only: nothing here reaches the simulation
+or `state_hash`). js/weather-fx.js turns the sky into shader uniforms
+(shaders/common.wgsl `env`, `env2`, `wgrid`, `wcell`, `wphase`, `wfall`;
+js/renderer.js `packGlobals`) and shaders/weather.wgsl draws rain, snow and
+blowing sand in one instanced draw, made up on the GPU without per-particle
+CPU work. The particles live in the world: the ground under the view is cut
+into square cells (`KINDS`: 64 world px for rain, 60 for thunderstorms and
+snow, 56 for sand), each holding one particle per depth layer (far, mid,
+near: smaller, dimmer and slower to bigger, brighter and faster). A particle
+falls from its fall height (220 world px of rain, 240 of storm, 160 of snow,
+24 of sand; screen up is up in the air in the top-down view) onto its own
+spot of ground while the wind drifts it, then rain splashes in a ring and
+snow lies a moment and melts; sand blows along and fades. A light
+perspective pushes particles high in the air away from the view centre (up
+to 18 % of their height at the edge), so they drift slightly against the
+ground while the camera moves and land where they were going. Because
+spacing, sizes and speeds are world pixels, panning carries them with the
+map and zooming scales them like the sprites: zoomed out they get smaller
+and denser on screen. Their size is clamped to what it is at camera zooms
+0.75 and 2.4 (`particleScale`), and particles thinner than a device pixel
+are drawn one pixel wide and fainter. Zoomed out, a level of detail keeps
+one cell in four per level (the same randomly chosen particle at every
+level, the others fading out first) once the grid holds more than 520 cells
+on a 1920 x 1080 CSS px view (fewer on smaller views, half with Low
+quality), so about as many particles show however far out the camera goes
+and at most 8192 instances are drawn. The fall comes from a weather clock
+(`WeatherFx.advance`) that follows the simulation clock (js/simclock.js) at
+the page's frame pace, 0.1 s behind it (`CLOCK_LAG`): it stops exactly
+where the game stopped and goes on at once when it goes on, never runs
+ahead of the game or backwards, does not judder with the ticks'
+interpolation and only jumps over gaps of more than a second (catching up,
+a replay seeking); each layer's fall is a
+phase that wraps, so no large time reaches the GPU. Reduce motion (the
+setting, or the browser's with `auto`, also when the browser's changes
+mid game) makes them fall at 30 % speed, shows 60 % of them and drops
+splashes and the snow's sway; both settings apply at once. The battlefield canvas is the only place they are drawn, under the
+HUD and the sidebar. The sky pass (shaders/sky.wgsl) after them tints the
+view for rain, storms, snow, sand and heat, and flashes for lightning.
+Red Alert's view has no camera tilt: a 3D pack's `groundShear` leans that
+pack's own sprites only (section 8), so the fall stays straight down the
+screen with the wind's drift.
+
 Engine API: `Game.weather_json()` returns `{ biome, mode, weather, since,
 until, tick, sightPct, flash }` (`flash`: the latest lightning `[tick, x, y,
 kind]` in world pixels, or null); `Game.build_heat_fx(player, x0, y0, x1, y1)`
@@ -3472,7 +3514,8 @@ held, play at once. Sounds asked for while the installed originals load
 simulation's wait out a pause, the player's play when the load is done. Radar pings,
 floating texts, camera shake, the nuke flash, lightning, thunder, weather
 particles, water and building animations run on the simulation clock
-(js/simclock.js: tick and interpolation), so they stand still with the game.
+(js/simclock.js: tick and interpolation), so they stand still with the game
+(the weather particles through a smoothed clock that follows it, section 3).
 Interface timers (target lines, text lines, cursors, the radar's opening)
 keep the page clock, as OpenRA's widgets tick while paused. Online games
 have no pause (see section 4).
@@ -3756,6 +3799,17 @@ the rules below.
   and the map editor's dialogs keep their widths.
 
 ### The in-game HUD and its connection parts (`apps/game/js/sidebar.js`, `js/netwarn.js`, `css/netwarn.css`)
+
+Hover text on the HUD is always the shared tooltip (js/ui/tooltip.js, the
+Tooltips board: hover delay, keyboard focus, long press on touch,
+`aria-describedby` while it shows), never the browser's native `title`:
+besides the command bar, sidebar and support powers, the biome and weather
+badge (js/weatherbadge.js: the sky's name and every effect; the badge takes
+keyboard focus), the replay bar's play button and time, the observer
+panel's view buttons and player names, and the chat's mode (Shift+Tab) and
+mute buttons. Elements keep their own accessible names (text or
+`aria-label`); tests/hud-tooltips.test.mjs checks that none of them gets a
+native title again.
 
 The HUD follows the InGame, NetInGame and Tooltips boards. The logic of
 production (clicks, holds, cancels, queue counts, the red funds marker of

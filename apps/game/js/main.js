@@ -87,7 +87,8 @@ import { defaultRegistry } from './registry.js';
 import { cameoBacking, cameoPainter, powerIconArt, setCameoArt } from './cameo.js';
 import { RECIPES } from './audio/synth.js';
 import { allOriginalNames, TIME_LIMIT_LINES } from './audio/catalog.js';
-import { NO_EFFECT, WeatherFx, weatherInfo } from './weather-fx.js';
+import { WeatherFx, weatherInfo } from './weather-fx.js';
+import { WeatherBadge } from './weatherbadge.js';
 import { createSimHost } from './sim/host.js';
 import { DriverHandle, RecorderHandle, ReplayHandle } from './sim/proxy.js';
 import { actorInfo, askOf } from './sim/methods.js';
@@ -1744,9 +1745,15 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   }));
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
+  const weather = new WeatherFx({ reducedMotion: motionIsReduced(), lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
-  let weatherText = '';
+  // Reduce motion (the setting, and the browser's for 'auto') and Low quality apply at once.
+  scope.add(weather.watchReducedMotion(window, (prefers) => motionReduced(settings.get('reduceMotion'), prefers)));
+  scope.add(settings.subscribe('reduceMotion', () => (weather.reducedMotion = motionIsReduced())));
+  scope.add(settings.subscribe('lowQuality', (on) => (weather.lowQuality = !!on)));
+  // The biome and weather badge with its tooltip (js/weatherbadge.js).
+  const weatherBadge = new WeatherBadge($('weather'));
+  scope.add(() => weatherBadge.clear());
 
   let sidebar = null;
   let notices = null;
@@ -2864,7 +2871,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     const gpu = records ? { records, alpha: f.alpha, view: [v.x0, v.y0, v.x1, v.y1] } : null;
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
-    const fx = { ...weather.uniforms(simSeconds, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
+    weather.advance(simSeconds, dt / 1000);
+    // The view's CSS px² from the drawn size (no layout read per frame).
+    const ratio = renderer.pixelRatio();
+    const cssArea = (canvas.width * canvas.height) / (ratio * ratio);
+    const fx = { ...weather.uniforms(simSeconds, [v.x0, v.y0, v.x1, v.y1], input.camera.zoom, cssArea), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
     const fxTick = BattleFx.ticksAt(simSeconds);
     const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);
@@ -2949,7 +2960,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       });
       if (state) safe('hud', () => updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator || spectating ? 'Spectating' : null));
       // The sky of the newest frame: badge text (thunder and flashes follow in weather.update).
-      if (f.weather) safe('weather badge', () => (weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText)));
+      if (f.weather) safe('weather badge', () => weatherBadge.update(JSON.parse(f.weather)));
       safe('touch', () => touch.update());
       if (state) safe('debug state', () => debug.update(state));
       // The time limit clock (js/battlefx.js), for players and spectators alike.
@@ -3168,24 +3179,6 @@ function selectionInfo(game, ids, allied, groups, nameOf) {
 
 function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** The biome and weather badge: name of the sky, and what it does to the battle. */
-function updateWeatherBadge(sky, previous) {
-  const { label, detail } = weatherInfo(sky);
-  const key = `${label}|${detail}`;
-  if (key === previous) return previous;
-  const badge = $('weather');
-  badge.hidden = !label;
-  badge.textContent = label;
-  if (label && sky.mode === 'full' && detail !== NO_EFFECT) {
-    const line = document.createElement('span');
-    line.className = 'effects';
-    line.textContent = detail;
-    badge.append(line);
-  }
-  badge.title = detail;
-  return key;
 }
 
 function updateHud(state, fps, simMs, stress, units, paused, compact, mode = null) {

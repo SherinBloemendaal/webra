@@ -23,9 +23,27 @@
 
 import { CHAT_HOTKEYS, chatMode, completeName } from './chatkeys.js';
 import { CommandHistory, formatLineTime, OVERLAY_LINES, OVERLAY_MS } from './chatlog.js';
+import { attachTooltip } from './ui/tooltip.js';
 
 /** UnitOrders.ChatMessageMaxLength is 2500; the online protocol's CHAT_MAX is lower and wins there. */
 const DEFAULT_MAX_LENGTH = 2500;
+
+/** Tooltip of the chat mode button (its text: Team or All); Shift+Tab in the chat line switches too. */
+export function chatModeTip(mode, spectator = false) {
+  const team = mode === 'team';
+  return {
+    title: team ? (spectator ? 'Spectator chat' : 'Team chat') : 'Chat to all',
+    hotkey: 'Shift+Tab',
+    desc: team ? 'Click to talk to everyone in the game.' : `Click to talk to your ${spectator ? 'fellow spectators' : 'team'} only.`,
+  };
+}
+
+/** Tooltip of a mute toggle in the chat (its text: Mute or Unmute and the name). */
+export function muteTip(name, muted) {
+  return muted
+    ? { title: `Unmute ${name}`, desc: 'Their new chat lines show and sound again.' }
+    : { title: `Mute ${name}`, desc: 'Their new chat lines no longer show or sound, for you only.' };
+}
 
 function el(tag, className, text) {
   const e = document.createElement(tag);
@@ -98,7 +116,9 @@ export class ChatPanel {
     const row = el('div', 'chat-input-row');
     this.modeButton = el('button', 'chat-mode');
     this.modeButton.type = 'button';
-    this.modeButton.title = 'Toggle chat mode';
+    // The game's tooltip (js/ui/tooltip.js); the button's text (Team or All) is its name.
+    this.muteTips = [];
+    this.tips = [attachTooltip(this.modeButton, () => chatModeTip(this.mode, this.spectator), { side: 'top' })];
     this.modeButton.addEventListener('click', () => {
       this.toggleMode();
       this.focusLine();
@@ -301,6 +321,8 @@ export class ChatPanel {
   /** The mute toggles of the other people (GameInfoStatsLogic MUTE). */
   renderMutes() {
     const people = this.mutable() ?? [];
+    for (const tip of this.muteTips) tip.detach();
+    this.muteTips = [];
     this.muteBar.hidden = people.length === 0;
     if (!people.length) {
       this.muteBar.replaceChildren();
@@ -312,7 +334,8 @@ export class ChatPanel {
       b.type = 'button';
       b.dataset.client = String(client);
       b.setAttribute('aria-pressed', String(muted));
-      b.title = muted ? 'Unmute this player' : 'Mute this player';
+      // Its text says what it does; the tooltip says what muting means.
+      this.muteTips.push(attachTooltip(b, () => muteTip(name, muted), { side: 'top' }));
       b.addEventListener('click', () => {
         this.log.toggleMuted(client);
         this.focusLine();
@@ -323,6 +346,7 @@ export class ChatPanel {
   }
 
   dispose() {
+    for (const tip of [...this.tips, ...this.muteTips]) tip.detach();
     clearInterval(this.timer);
     this.win?.removeEventListener('keydown', this.onWindowKey, true);
     this.offLine?.();

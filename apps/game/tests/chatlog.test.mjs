@@ -22,6 +22,7 @@ import {
 } from '../js/chatlog.js';
 import { blinkOn, clockText, completeText, MAX_SPEED_TEXT, PAUSED_TEXT, replayStatus } from '../js/gametimer.js';
 import { CHAT_HOTKEYS } from '../js/chatkeys.js';
+import { openTooltip } from '../js/ui/tooltip.js';
 
 test('system lines carry the Battlefield Control prefix in yellow, chat lines the player colour', () => {
   let now = 1000;
@@ -407,9 +408,15 @@ test('the replay bar shows the blinking status and the completion tooltip', asyn
   const { ReplayBar } = await import('../js/records.js');
   let now = 0;
   const c = { ticks: 300, length: 1200, playing: true, speed: 4, ended: false, seeking: false, target: null, diverged: null, setSpeed() {}, togglePlay() {}, seek() {} };
-  const bar = new ReplayBar(document.createElement('div'), c, { now: () => now });
+  const field = document.createElement('div');
+  document.body.append(field);
+  const bar = new ReplayBar(field, c, { now: () => now });
   assert.equal(bar.status.textContent, '400% Speed');
-  assert.equal(bar.time.title, '25% complete');
+  // The game's tooltip (js/ui/tooltip.js), not a native title.
+  assert.equal(bar.time.getAttribute('title'), null);
+  bar.time.dispatchEvent(new FakeEvent('focus', { bubbles: false }));
+  assert.match(openTooltip(document)?.text ?? '', /^25% complete\n/);
+  bar.time.dispatchEvent(new FakeEvent('blur', { bubbles: false }));
   now = 1000;
   bar.update();
   assert.equal(bar.status.textContent, '', 'blinks off');

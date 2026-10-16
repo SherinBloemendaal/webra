@@ -14,11 +14,13 @@ const RECT_FLOATS = 8;
 const HEAT_FLOATS = 4;
 // Line instances: [x0, y0, x1, y1, r, g, b, a, width] (engine/src/paths.rs LINE_FLOATS).
 const LINE_FLOATS = 9;
-// shaders/common.wgsl Globals: 8 floats, 8 team colours, the animation clock, weather (env, env2), art.
-const GLOBALS_BYTES = 352;
+// shaders/common.wgsl Globals: 8 floats, 16 team colours, the animation clock, weather (env, env2), art,
+// and the weather particles' grid (wgrid, wcell, wphase, wfall).
+export const GLOBALS_BYTES = 416;
 const ANIM_OFFSET = 72;
 const ENV_OFFSET = 76;
 const ART_OFFSET = 84;
+export const WEATHER_OFFSET = 88;
 const STILL = { time: 0, enabled: false };
 
 export const TEAM_COLORS = [
@@ -51,6 +53,26 @@ async function loadShader(name, common) {
   const res = await fetch(`shaders/${name}.wgsl`);
   if (!res.ok) throw new Error(`failed to load shader ${name}`);
   return common + '\n' + (await res.text());
+}
+
+/**
+ * The Globals uniform of every shader (shaders/common.wgsl), as floats.
+ * `zoom` is in device px per world px; `fx` the weather's uniforms
+ * (js/weather-fx.js WeatherFx.uniforms), or null for clear skies.
+ */
+export function packGlobals({ width, height, camera, zoom, time, mapW, mapH, anim = STILL, fx = null, terrainFlags = 0 }) {
+  const g = new Float32Array(GLOBALS_BYTES / 4);
+  g.set([width, height, camera.x, camera.y, zoom, time, mapW, mapH], 0);
+  TEAM_COLORS.forEach((c, i) => g.set([c[0], c[1], c[2], 1], 8 + i * 4));
+  g.set([anim.time, anim.enabled ? 1 : 0, 0, 0], ANIM_OFFSET);
+  g.set(fx?.env ?? [0, 0, 0, 0], ENV_OFFSET);
+  g.set(fx?.env2 ?? [0, 0, 0, 1], ENV_OFFSET + 4);
+  g.set([terrainFlags, 0, 0, 0], ART_OFFSET);
+  g.set(fx?.wgrid ?? [0, 0, 0, 0], WEATHER_OFFSET);
+  g.set(fx?.wcell ?? [1, 1, 0, 1], WEATHER_OFFSET + 4);
+  g.set(fx?.wphase ?? [0, 0, 0, 0], WEATHER_OFFSET + 8);
+  g.set(fx?.wfall ?? [0, 0, 0, 0], WEATHER_OFFSET + 12);
+  return g;
 }
 
 export class Renderer {
@@ -405,20 +427,14 @@ export class Renderer {
    * @param gpu optional `{ records, alpha, view }`: draw the simulation's sprites and rects from tick-rate
    *   records with the GPU instance pass (`sprites` is then ignored and `rects` holds the UI rects only,
    *   drawn after the simulation's); `view` is the visible world rectangle [x0, y0, x1, y1]
-   * @param fx weather: `{ env, env2 }` (js/weather-fx.js uniforms) and heat
+   * @param fx weather: `{ env, env2, wgrid, wcell, wphase, wfall }` (js/weather-fx.js uniforms) and heat
    *   shimmer instances `heat` (Float32Array, 4 floats each) / `heatCount`
    */
   draw(camera, time, sprites, spriteCount, rects, rectCount, anim = STILL, lines = null, lineCount = 0, gpu = null, fx = null) {
     const d = this.device;
     const dpr = this.resize();
     const zoom = camera.zoom * dpr;
-    const g = new Float32Array(GLOBALS_BYTES / 4);
-    g.set([this.canvas.width, this.canvas.height, camera.x, camera.y, zoom, time, this.mapW, this.mapH], 0);
-    TEAM_COLORS.forEach((c, i) => g.set([c[0], c[1], c[2], 1], 8 + i * 4));
-    g.set([anim.time, anim.enabled ? 1 : 0, 0, 0], ANIM_OFFSET);
-    g.set(fx?.env ?? [0, 0, 0, 0], ENV_OFFSET);
-    g.set(fx?.env2 ?? [0, 0, 0, 1], ENV_OFFSET + 4);
-    g.set([this.terrainFlags, 0, 0, 0], ART_OFFSET);
+    const g = packGlobals({ width: this.canvas.width, height: this.canvas.height, camera, zoom, time, mapW: this.mapW, mapH: this.mapH, anim, fx, terrainFlags: this.terrainFlags });
     d.queue.writeBuffer(this.globals, 0, g);
     const particles = Math.floor(fx?.env2?.[2] ?? 0);
     const heatCount = fx?.heatCount ?? 0;
