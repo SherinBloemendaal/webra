@@ -444,7 +444,15 @@ function installedTerrain(bytes) {
   const pack = art.packTerrain(biome, bytes, doc.width, doc.height);
   if (pack) return pack;
   const theater = currentTheater(biome);
-  return theater ? installedTiles.tiles(theater, bytes, doc.width, doc.height) : null;
+  return theater ? installedTiles.tiles(theater, bytes, doc.width, doc.height, previewHints()) : null;
+}
+
+/** The engine preview's terrain hints (bridges, cells structures and trees stand on), read once per preview. */
+let hintsCache = { game: null, hints: null };
+function previewHints() {
+  const game = preview?.game ?? null;
+  if (hintsCache.game !== game) hintsCache = { game, hints: game && typeof game.terrain_hints_json === 'function' ? JSON.parse(game.terrain_hints_json()) : null };
+  return hintsCache.hints;
 }
 
 /**

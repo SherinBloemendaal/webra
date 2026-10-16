@@ -1716,7 +1716,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     if (!terrainTypes) return;
     const w = game.map_width();
     const h = game.map_height();
-    const tiles = perfTrace.span('terrain.tiles', () => content?.terrain(biome, terrainTypes, w, h) ?? null, (t) => ({ source: t?.source ?? 'webra', tiles: t?.report?.tiles }));
+    const hints = game.initial_terrain_hints?.() ?? null;
+    const tiles = perfTrace.span('terrain.tiles', () => content?.terrain(biome, terrainTypes, w, h, hints) ?? null, (t) => ({ source: t?.source ?? 'webra', tiles: t?.report?.tiles }));
     if (tiles) {
       renderer.setTerrainAtlas(tiles.atlas);
       renderer.uploadCells(tiles.cells);

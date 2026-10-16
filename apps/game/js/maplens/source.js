@@ -155,9 +155,9 @@ export class LensArt {
     return entry;
   }
 
-  /** Terrain tiles for the engine terrain bytes: installed ones, else WebRA's. */
-  tiles(biome, terrain, w, h) {
-    const installed = this.content?.terrain(biome, terrain, w, h) ?? null;
+  /** Terrain tiles for the engine terrain bytes (and its terrain hints, or null): installed ones, else WebRA's. */
+  tiles(biome, terrain, w, h, hints = null) {
+    const installed = this.content?.terrain(biome, terrain, w, h, hints) ?? null;
     if (installed) return { atlas: installed.atlas, cells: installed.cells, source: installed.source ?? 'installed' };
     let atlas = this.terrainAtlases.get(biome);
     if (!atlas) {
@@ -191,12 +191,13 @@ export class LensArt {
       yield share(2);
       applyGameArt(game, atlas, original);
       const terrain = new Uint8Array(this.memory().buffer, game.terrain_ptr(), game.terrain_len()).slice();
+      const hints = typeof game.terrain_hints_json === 'function' ? JSON.parse(game.terrain_hints_json()) : null;
       const n = game.build_render(OBSERVER_VIEW, 1, 0, 0, width * CELL_PX, height * CELL_PX);
       const sprites = new Float32Array(this.memory().buffer, game.sprite_ptr(), n * SPRITE_FLOATS).slice();
       game.free?.();
       game = null;
       yield share(3);
-      const tiles = this.tiles(b, terrain, width, height);
+      const tiles = this.tiles(b, terrain, width, height, hints);
       return {
         width,
         height,

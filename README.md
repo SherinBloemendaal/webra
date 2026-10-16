@@ -199,10 +199,15 @@ them (WebRA's own art and synthesized sounds).
   recorded itself ("Battle control online", "Unit stolen", the thief's
   lines): the announcer shows them as text. Drop those files from an OpenRA
   install (`mods/ra/bits`) on the game to hear them.
-- Generated maps store terrain types, not Red Alert templates, so the
-  original terrain is matched per cell (plain tiles inside an area, shore
-  and cliff tiles facing the right way at borders): close to the original,
-  not hand-made.
+- WebRA maps (generated, drawn in the editor or imported from OpenRA)
+  store terrain types, not Red Alert templates, so the original terrain is
+  matched per cell: plain tiles inside an area, beach tiles that fit the
+  coast, Red Alert's road pieces fitted along roads with their grass verges,
+  and the ground, roads and beaches around a bridge fitted to its template.
+  Close to the original, not hand-made. Rock (cliffs in OpenRA maps) is
+  drawn as boulders, not cliff templates, and the small bridges are
+  OpenRA's own templates that Red Alert never had, so they keep WebRA's
+  art.
 
 ## Roadmap
 

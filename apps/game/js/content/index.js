@@ -364,13 +364,14 @@ export class ContentSystem {
   /**
    * Terrain for a map: `{ atlas, cells, source }` for Renderer.setTerrainAtlas
    * and uploadCells, or null for WebRA's own tiles. `terrain` is the engine's
-   * terrain bytes.
+   * terrain bytes, `hints` its Game.terrain_hints_json (bridges and the cells
+   * structures stand on, which the original tiles fit the ground to) or null.
    */
-  terrain(biome, terrain, w, h) {
+  terrain(biome, terrain, w, h, hints = null) {
     const pack = this.packTerrain(biome, terrain, w, h);
     if (pack) return pack;
     if (this.originalActive) {
-      const r = originalTerrain((n) => this.getFile(n), TILESET_OF_BIOME[biome] ?? 'TEMPERAT', terrain, w, h);
+      const r = originalTerrain((n) => this.getFile(n), TILESET_OF_BIOME[biome] ?? 'TEMPERAT', terrain, w, h, hints);
       if (r) return { ...r, source: 'original' };
     }
     return null;
