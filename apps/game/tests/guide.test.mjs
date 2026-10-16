@@ -684,11 +684,16 @@ test('finale: Keep or Turn them off sets game.quickTips once; a tour done elsewh
     const { root } = tourCard(progress, next);
     assert.equal(root.querySelector('.tour-finale').hidden, false);
     assert.equal(root.querySelector('.tour-where').textContent, 'Tour · Done');
-    // Closing it answers nothing about the tips, turns the tour off and never asks again.
-    click(root.querySelector('.tour-close'));
+    // Closing it answers nothing about the tips and never asks again; the tour is done, not skipped: the switch stays on.
+    const close = root.querySelector('.tour-close');
+    assert.equal(close.getAttribute('aria-label'), 'Close');
+    click(close);
     assert.equal(progress.registry.get('game', 'quickTips'), true, 'unchanged');
     assert.equal(progress.quickTipsAsked, true);
-    assert.equal(progress.tourInGames, false);
+    assert.equal(progress.tourInGames, true, 'tour steps of later versions still come');
+    assert.equal(root.querySelector('.tour-card').hidden, true, 'the card goes');
+    assert.match(root.querySelector('.tour-toast').textContent, /Quick tips stay as they are/);
+    assert.equal(tourRuns({ kind: 'skirmish' }, progress), false);
   }
   // Skipped the tour: never asked.
   {

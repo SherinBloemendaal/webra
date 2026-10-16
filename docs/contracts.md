@@ -4169,7 +4169,7 @@ Debug and NetMenu.
   "Chapter done: ..." and "Tour done" with the number of steps that tick by
   themselves later. When the open counted steps left are all missing from
   this game, the card says so; its close button then only closes it for
-  this game. Otherwise the close button skips the tour (`tourInGames`
+  this game. On a step the close button skips the tour (`tourInGames`
   off). `tourInGames` is the player's choice only: finishing the tour
   leaves it on (0.17.0 switched it off; see below), so tour steps a later
   version adds show in the next skirmish, the open ones only. Players who
@@ -4186,8 +4186,9 @@ Debug and NetMenu.
   whether to keep the quick tips (`game.quickTips`): a `role="group"` panel
   labelled by its title, Keep quick tips and Turn them off (both described
   by the text). Either answer sets `game.quickTips` and
-  `guide.quickTipsAsked`; the close button sets only `quickTipsAsked` and
-  skips the tour. A tour finished without the card (a mission, an online
+  `guide.quickTipsAsked`; the close button sets only `quickTipsAsked`
+  and leaves `tourInGames` on (the tour is done, not skipped, so tour steps
+  of later versions still come). A tour finished without the card (a mission, an online
   game) shows the question in the next skirmish. It is asked once per
   player, ever: Take the tour again does not ask again, and players who
   skipped the tour are not asked.

@@ -262,8 +262,12 @@ export class TourCard {
     this.warn.textContent = m.warn ?? '';
     this.skip.hidden = m.finale || !!m.note;
     this.skip.textContent = m.read ? 'Got it' : 'Skip step';
-    this.close.setAttribute('aria-label', m.note ? 'Close' : 'Skip the tour');
-    this.close.title = m.note ? 'Close (the tour goes on in your next skirmish)' : 'Skip the tour (the Guide turns it on again)';
+    this.close.setAttribute('aria-label', m.note || m.finale ? 'Close' : 'Skip the tour');
+    this.close.title = m.note
+      ? 'Close (the tour goes on in your next skirmish)'
+      : m.finale
+        ? 'Close (the quick tips stay as they are)'
+        : 'Skip the tour (the Guide turns it on again)';
     this.guide.textContent = `Full guide (${key ? `${key} or Esc` : 'Esc'})`;
     this.dots.hidden = m.finale || !m.dots.length;
     this.dots.replaceChildren(
@@ -359,8 +363,13 @@ export class TourCard {
       this.render();
       return;
     }
-    // Closing the question is no answer to change a setting for: the quick tips stay as they are.
-    if (m?.finale) this.progress.answerQuickTips(null);
+    if (m?.finale) {
+      // Closing the question is no answer to change a setting for: the quick tips stay as they are.
+      // The tour is done, not skipped: the switch stays on, so tour steps of later versions still come.
+      this.progress.answerQuickTips(null);
+      this.say('Quick tips stay as they are. Settings, Game has them.');
+      return;
+    }
     this.progress.setTourInGames(false);
     this.say('Tour off. Esc, Guide turns it on again.');
   }
