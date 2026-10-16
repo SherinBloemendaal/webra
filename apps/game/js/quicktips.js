@@ -2,7 +2,8 @@
 // vehicle, ship and aircraft does, shown in the build menu's cameo tooltip
 // (js/production.js `productionTip`) and in the battlefield tooltip
 // (js/worldtooltip.js) while the `game.quickTips` setting is on (default on;
-// the guide's finale (work/guideflow) asks whether to keep it).
+// the guide's finale (work/guideflow) asks whether to keep it). While it is
+// on, the cameo tooltip shows the quick tip instead of OpenRA's description.
 //
 // Every actor type the build menu can list (engine/rules.json: a production
 // queue and no `~disabled` prerequisite) has a tip, and nothing else does

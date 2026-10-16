@@ -70,21 +70,50 @@ def load(folder, files):
         defs.update(parse_miniyaml(open(os.path.join(D, folder, f + '.yaml')).read()))
     return defs
 
-# Fluent strings
-ftl = {}
-cur = None; curattr = None
-for line in open(os.path.join(D, 'rules.ftl')):
-    line = line.rstrip('\n')
-    m = re.match(r'^([a-z0-9-]+)\s*=\s*(.*)$', line)
-    if m:
-        cur = m.group(1); curattr = None
-        if m.group(2): ftl[cur] = m.group(2)
-        continue
-    m = re.match(r'^\s+\.([a-z0-9-]+)\s*=\s*(.*)$', line)
-    if m and cur:
-        curattr = cur + '.' + m.group(1); ftl[curattr] = m.group(2); continue
-    if line.startswith('        ') and curattr:
-        ftl[curattr] = (ftl[curattr] + '\n' + line.strip()).strip()
+# Fluent strings (rules.ftl): messages (`key = value`) and attributes
+# (`    .attr = value`, stored as `key.attr`). A value may start on the next
+# line (`key =` then indented lines) and go on over indented continuation
+# lines; they are joined with newlines after removing their common
+# indentation, as Fluent does (OpenRA's descriptions are several lines).
+def parse_ftl(text):
+    out, cur, lines = {}, None, []
+
+    def flush():
+        if cur is None:
+            return
+        first, rest = lines[0], lines[1:]
+        indents = [len(x) - len(x.lstrip(' ')) for x in rest if x.strip()]
+        cut = min(indents) if indents else 0
+        body = [first.strip()] + [x[cut:].rstrip() if x.strip() else '' for x in rest]
+        while body and not body[0]:
+            body.pop(0)
+        while body and not body[-1]:
+            body.pop()
+        if body:
+            out[cur] = '\n'.join(body)
+
+    for line in text.splitlines():
+        if line.startswith('#'):
+            continue
+        m = re.match(r'^([a-z0-9-]+)\s*=(.*)$', line)
+        if m:
+            flush()
+            cur, lines = m.group(1), [m.group(2)]
+            continue
+        m = re.match(r'^\s+\.([a-z0-9-]+)\s*=(.*)$', line)
+        if m and cur:
+            flush()
+            cur, lines = cur.split('.')[0] + '.' + m.group(1), [m.group(2)]
+            continue
+        if cur is not None and (line.startswith(' ') or not line.strip()):
+            lines.append(line)
+            continue
+        flush()
+        cur, lines = None, []
+    flush()
+    return out
+
+ftl = parse_ftl(open(os.path.join(D, 'rules.ftl')).read())
 def tr(key):
     return ftl.get(key, key) if key else key
 

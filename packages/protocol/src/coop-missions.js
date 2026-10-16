@@ -15,7 +15,7 @@ export const COOP_MISSIONS = deepFreeze(
   {
     "id": "evacuation",
     "title": "Evacuation",
-    "hash": "17d9d1cce70487df490ec8ac1253a469479e8624b961d575926d479ef3ca00be",
+    "hash": "3d1ccc2a4189fea29fe7e168386e14a35d2605e2a751889f7bb6742c2dede7b2",
     "players": [
       "Allies1",
       "Allies2"
@@ -54,7 +54,7 @@ export const COOP_MISSIONS = deepFreeze(
   {
     "id": "infiltration",
     "title": "Infiltration",
-    "hash": "82c2bf4bea358a4ef87695316f84a34bfc3ae854d0d0f7ff5e79b8f747cf607d",
+    "hash": "f1bc64f5d4406a56181a17fa025eaa9799b75cc1b68bc0d480375ca1e01bd2bc",
     "players": [
       "Allies1",
       "Allies2"

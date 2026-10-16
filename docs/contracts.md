@@ -3636,12 +3636,21 @@ rearm actors), not OpenRA's longer Buildable descriptions.
 - Build menu: `productionTip(..., { tip })` puts the line under the name
   (spec `tip`, css `.ui-tooltip-quick`), next to the cost, build time and
   power; the sidebar passes `quickTip(id)` while the setting is on
-  (`callbacks.quickTips`). It opens like every cameo tooltip: hover,
+  (`callbacks.quickTips`). Never both lines: with a quick tip the cameo
+  tooltip leaves out the actor's OpenRA description (rules `description`,
+  Buildable.Description); with the setting off it shows that description
+  as before. The descriptions are OpenRA's rules.ftl text (GPL), read by
+  data/source/parse.py with Fluent's multi-line values (continuation lines
+  of any indentation, a value on the line after `key =`), kept as lines;
+  before 0.19.0 that reader dropped most of them and left AFLD.Ukraine's
+  raw key. It opens like every cameo tooltip: hover,
   keyboard focus at once, a touch long press; the cameo's
   aria-describedby points at the panel while it shows. No animation.
 - Battlefield: js/worldtooltip.js adds the line under the owner row
   (`.world-tooltip-tip`) for `actor` and `frozen` answers by their `type`,
-  while the setting is on.
+  while the setting is on. The battlefield tooltip never shows the
+  Buildable description (its `extras` are TooltipDescription lines such as
+  a tech building's capture text, which stay).
 - A new actor: add its line to `QUICK_TIPS` (or to `QUICK_TIP_MAP_ONLY`
   with the line when it is never built); apps/game/tests/quicktips.test.mjs
   fails for a buildable actor without a tip and for a tip of an actor the

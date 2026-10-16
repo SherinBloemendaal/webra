@@ -305,6 +305,10 @@ test('tooltip specs: production cameo like OpenRA (name, key, cost, time, power,
   const tipped = productionTip(powr, { enabled: true, requires: [], buildTicks: 250 }, state, { tip: 'Provides power for your base.' });
   assert.equal(tipped.tip, 'Provides power for your base.');
   assert.equal(tooltipText(tipped).split('\n')[1], 'Provides power for your base.', 'right under the name');
+  // Never both lines: the quick tip replaces OpenRA's description, which shows again with the tips off.
+  const described = { ...powr, description: 'Provides power for other structures.' };
+  assert.equal(productionTip(described, null, state, { tip: 'Provides power for your base.' }).desc, '');
+  assert.equal(productionTip(described, null, state, { tip: null }).desc, 'Provides power for other structures.');
 });
 
 test('tooltip: the quick tip line, also for keyboard focus and a touch long press, described by the panel', () => {

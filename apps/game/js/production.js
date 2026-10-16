@@ -213,7 +213,7 @@ export function formatPower(power) {
  * mods/common/chrome/tooltips.yaml PRODUCTION_TOOLTIP): the name and its
  * hotkey, what is still missing, cost, build time and power in a column, the
  * description, and how the mouse works on it; with the quick tips on, a line
- * under the name on what it does (js/quicktips.js). Cost turns red when the player
+ * under the name on what it does (js/quicktips.js) instead of the description. Cost turns red when the player
  * cannot afford it, the time red while low power slows production, the power
  * red when building it would overload the grid, like OpenRA.
  * @param {{ name: string, description?: string, cost: number, power?: number, kind?: string, queue: number }} actor rules_json actor
@@ -251,5 +251,6 @@ export function productionTip(actor, item, state, { hotkey = null, ticksPerSecon
   const notes = [];
   if (short > 0) notes.push({ text: `Not enough credits yet for ${short === 1 ? '1 queued item' : `${short} queued items`}: production waits until the money comes in.`, tone: 'warn' });
   notes.push({ text: hint, tone: 'hint' });
-  return { title: actor.name, hotkey, requires, tip: tip || '', stats, desc: actor.description || '', notes };
+  // Never both: the quick tip stands in for OpenRA's description while the setting is on.
+  return { title: actor.name, hotkey, requires, tip: tip || '', stats, desc: tip ? '' : actor.description || '', notes };
 }

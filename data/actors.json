@@ -2,7 +2,7 @@
   {
     "id": "POWR",
     "name": "Power Plant",
-    "description": "",
+    "description": "Provides power for other\nstructures.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -238,7 +238,7 @@
   {
     "id": "TENT",
     "name": "Allied Barracks",
-    "description": "",
+    "description": "Trains infantry.",
     "queue": "Building",
     "side": "Allies",
     "factions": [
@@ -542,7 +542,7 @@
   {
     "id": "BARR",
     "name": "Soviet Barracks",
-    "description": "",
+    "description": "Trains infantry units.",
     "queue": "Building",
     "side": "Soviet",
     "factions": [
@@ -837,7 +837,7 @@
   {
     "id": "SYRD",
     "name": "Naval Yard",
-    "description": "",
+    "description": "Produces and repairs ships and\ntransports.",
     "queue": "Building",
     "side": "Allies",
     "factions": [
@@ -1165,7 +1165,7 @@
   {
     "id": "SPEN",
     "name": "Sub Pen",
-    "description": "",
+    "description": "Produces and repairs submarines\nand transports.",
     "queue": "Building",
     "side": "Soviet",
     "factions": [
@@ -1511,7 +1511,7 @@
   {
     "id": "PROC",
     "name": "Ore Refinery",
-    "description": "",
+    "description": "Refines Ore and Gems into\ncredits.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -1787,7 +1787,7 @@
   {
     "id": "WEAP",
     "name": "War Factory",
-    "description": "",
+    "description": "Produces vehicles.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -2116,7 +2116,7 @@
   {
     "id": "DOME",
     "name": "Radar Dome",
-    "description": "",
+    "description": "Provides an overview of\nthe battlefield.\nRequires power to operate.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -2387,7 +2387,7 @@
   {
     "id": "FIX",
     "name": "Service Depot",
-    "description": "",
+    "description": "Repairs vehicles for credits.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -2625,7 +2625,7 @@
   {
     "id": "APWR",
     "name": "Advanced Power Plant",
-    "description": "",
+    "description": "Provides double the power of a standard\nPower Plant.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -2863,7 +2863,7 @@
   {
     "id": "HPAD",
     "name": "Helipad",
-    "description": "",
+    "description": "Produces and reloads helicopters.",
     "queue": "Building",
     "side": "Allies",
     "factions": [
@@ -3159,7 +3159,7 @@
   {
     "id": "AFLD",
     "name": "Airfield",
-    "description": "",
+    "description": "Produces and reloads aircraft.\n  Special Ability: Spy Plane\n  Special Ability: Paratroopers",
     "queue": "Building",
     "side": "Soviet",
     "factions": [
@@ -3538,7 +3538,7 @@
   {
     "id": "AFLD.Ukraine",
     "name": "Airfield",
-    "description": "actor-afld-ukraine-description",
+    "description": "Produces and reloads aircraft.\n  Special Ability: Spy Plane\n  Special Ability: Paratroopers\n  Special Ability: Parabombs",
     "queue": "Building",
     "side": "Soviet",
     "factions": [
@@ -3917,7 +3917,7 @@
   {
     "id": "ATEK",
     "name": "Allied Tech Center",
-    "description": "",
+    "description": "Provides advanced Allied technology.\n  Special Ability: GPS Satellite",
     "queue": "Building",
     "side": "Allies",
     "factions": [
@@ -4174,7 +4174,7 @@
   {
     "id": "STEK",
     "name": "Soviet Tech Center",
-    "description": "",
+    "description": "Provides advanced Soviet technology.",
     "queue": "Building",
     "side": "Soviet",
     "factions": [
@@ -4394,7 +4394,7 @@
   {
     "id": "KENN",
     "name": "Kennel",
-    "description": "",
+    "description": "Trains Attack Dogs.",
     "queue": "Building",
     "side": "Soviet",
     "factions": [
@@ -4673,7 +4673,7 @@
   {
     "id": "FACT",
     "name": "Construction Yard",
-    "description": "",
+    "description": "Produces structures.",
     "queue": "Building",
     "side": "Both",
     "factions": [
@@ -4986,7 +4986,7 @@
   {
     "id": "SBAG",
     "name": "Sandbag Wall",
-    "description": "",
+    "description": "Stops infantry and light vehicles.\n   Can be crushed by tanks.",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -5120,7 +5120,7 @@
   {
     "id": "FENC",
     "name": "Wire Fence",
-    "description": "",
+    "description": "Stops infantry and light vehicles.\n   Can be crushed by tanks.",
     "queue": "Defense",
     "side": "Soviet",
     "factions": [
@@ -5253,7 +5253,7 @@
   {
     "id": "BRIK",
     "name": "Concrete Wall",
-    "description": "",
+    "description": "Stops units and blocks enemy fire.",
     "queue": "Defense",
     "side": "Both",
     "factions": [
@@ -5390,7 +5390,7 @@
   {
     "id": "SILO",
     "name": "Silo",
-    "description": "",
+    "description": "Stores excess refined\nOre and Gems.",
     "queue": "Defense",
     "side": "Both",
     "factions": [
@@ -5613,7 +5613,7 @@
   {
     "id": "PBOX",
     "name": "Pillbox",
-    "description": "",
+    "description": "Static defense with a fireport for\na garrisoned soldier.\nCan detect cloaked units.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -5883,7 +5883,7 @@
   {
     "id": "HBOX",
     "name": "Camo Pillbox",
-    "description": "",
+    "description": "Camouflaged static defense with a fireport\nfor a garrisoned soldier.\nCan detect cloaked units.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -6148,7 +6148,7 @@
   {
     "id": "FTUR",
     "name": "Flame Tower",
-    "description": "",
+    "description": "Anti-Infantry base defense.\nCan detect cloaked units.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Defense",
     "side": "Soviet",
     "factions": [
@@ -6394,7 +6394,7 @@
   {
     "id": "GUN",
     "name": "Turret",
-    "description": "",
+    "description": "Anti-Armor base defense.\nCan detect cloaked units.\n  Strong vs Vehicles\n  Weak vs Infantry and Aircraft",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -6650,7 +6650,7 @@
   {
     "id": "TSLA",
     "name": "Tesla Coil",
-    "description": "",
+    "description": "Advanced base defense.\nRequires power to operate.\nCan detect cloaked units.\n  Strong vs Vehicles and Infantry\n  Weak vs Aircraft",
     "queue": "Defense",
     "side": "Soviet",
     "factions": [
@@ -6933,7 +6933,7 @@
   {
     "id": "AGUN",
     "name": "AA Gun",
-    "description": "",
+    "description": "Anti-Air base defense.\nRequires power to operate.\n  Strong vs Aircraft\n  Weak vs Ground units",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -7214,7 +7214,7 @@
   {
     "id": "SAM",
     "name": "SAM Site",
-    "description": "",
+    "description": "Anti-Air base defense.\nRequires power to operate.\n  Strong vs Aircraft\n  Weak vs Ground units",
     "queue": "Defense",
     "side": "Soviet",
     "factions": [
@@ -7493,7 +7493,7 @@
   {
     "id": "GAP",
     "name": "Gap Generator",
-    "description": "",
+    "description": "Obscures the enemy's view with shroud.\nRequires power to operate.",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -7752,7 +7752,7 @@
   {
     "id": "PDOX",
     "name": "Chronosphere",
-    "description": "",
+    "description": "Teleports a group of units across\nthe map for a short time.\nRequires power to operate.\nMaximum of one can be built.\n  Special Ability: Chronoshift",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -8086,7 +8086,7 @@
   {
     "id": "IRON",
     "name": "Iron Curtain",
-    "description": "",
+    "description": "Grants a group of units temporary\ninvulnerability.\nRequires power to operate.\nMaximum of one can be built.\n  Special Ability: Invulnerability",
     "queue": "Defense",
     "side": "Soviet",
     "factions": [
@@ -8379,7 +8379,7 @@
   {
     "id": "MSLO",
     "name": "Missile Silo",
-    "description": "",
+    "description": "Provides an atomic bomb.\nRequires power to operate.\nMaximum of one can be built.\n  Special Ability: Atom Bomb",
     "queue": "Defense",
     "side": "Both",
     "factions": [
@@ -8683,7 +8683,7 @@
   {
     "id": "E1",
     "name": "Rifle Infantry",
-    "description": "",
+    "description": "General-purpose infantry.\n  Strong vs Infantry\n  Weak vs Vehicles and Aircraft",
     "queue": "Infantry",
     "side": "Both",
     "factions": [
@@ -9120,7 +9120,7 @@
   {
     "id": "E3",
     "name": "Rocket Soldier",
-    "description": "",
+    "description": "Anti-tank/Anti-aircraft infantry.\n  Strong vs Vehicles and Aircraft\n  Weak vs Infantry",
     "queue": "Infantry",
     "side": "Both",
     "factions": [
@@ -9578,7 +9578,7 @@
   {
     "id": "E2",
     "name": "Grenadier",
-    "description": "",
+    "description": "Infantry with grenades.\n  Strong vs Buildings and Infantry\n  Weak vs Vehicles and Aircraft",
     "queue": "Infantry",
     "side": "Soviet",
     "factions": [
@@ -10018,7 +10018,7 @@
   {
     "id": "MEDI",
     "name": "Medic",
-    "description": "",
+    "description": "Heals nearby infantry.\n  Unarmed",
     "queue": "Infantry",
     "side": "Allies",
     "factions": [
@@ -10427,7 +10427,7 @@
   {
     "id": "DOG",
     "name": "Attack Dog",
-    "description": "",
+    "description": "Anti-infantry unit.\nCan detect spies.\n  Strong vs Infantry\n  Weak vs Vehicles and Aircraft",
     "queue": "Infantry",
     "side": "Soviet",
     "factions": [
@@ -10851,7 +10851,7 @@
   {
     "id": "E6",
     "name": "Engineer",
-    "description": "",
+    "description": "Infiltrates and captures\nenemy structures.\n  Unarmed",
     "queue": "Infantry",
     "side": "Both",
     "factions": [
@@ -11265,7 +11265,7 @@
   {
     "id": "E4",
     "name": "Flame Infantry",
-    "description": "",
+    "description": "Advanced anti-structure unit.\n  Strong vs Infantry and Buildings\n  Weak vs Vehicles and Aircraft",
     "queue": "Infantry",
     "side": "Soviet",
     "factions": [
@@ -11705,7 +11705,7 @@
   {
     "id": "SPY",
     "name": "Spy",
-    "description": "",
+    "description": "Infiltrates enemy structures for intel or\nsabotage. Exact effect depends on the\nbuilding infiltrated.\nLoses disguise when attacking.\nCan detect spies.\n  Strong vs Infantry\n  Weak vs Vehicles and Aircraft\n  Special Ability: Disguised",
     "queue": "Infantry",
     "side": "Allies",
     "factions": [
@@ -12144,7 +12144,7 @@
   {
     "id": "SPY.England",
     "name": "British Spy",
-    "description": "",
+    "description": "Infiltrates enemy structures for intel or\nsabotage. Exact effect depends on the\nbuilding infiltrated.\nLoses disguise when attacking.\nCan detect spies.\n  Strong vs Infantry\n  Weak vs Vehicles and Aircraft\n  Special Ability: Disguised",
     "queue": "Infantry",
     "side": "Allies",
     "factions": [
@@ -12584,7 +12584,7 @@
   {
     "id": "MECH",
     "name": "Mechanic",
-    "description": "",
+    "description": "Repairs nearby vehicles and restores husks to\nworking condition by capturing them.\n  Unarmed",
     "queue": "Infantry",
     "side": "Allies",
     "factions": [
@@ -13007,7 +13007,7 @@
   {
     "id": "THF",
     "name": "Thief",
-    "description": "",
+    "description": "Steals enemy credits.\nHijacks enemy vehicles.\n  Unarmed",
     "queue": "Infantry",
     "side": "Soviet",
     "factions": [
@@ -13411,7 +13411,7 @@
   {
     "id": "E7",
     "name": "Tanya",
-    "description": "",
+    "description": "Elite commando infantry, with dual pistols\nand C4.\nMaximum of one can be built.\n  Strong vs Infantry and Buildings\n  Weak vs Vehicles and Aircraft\n  Special Ability: Destroys buildings with C4",
     "queue": "Infantry",
     "side": "Allies",
     "factions": [
@@ -13865,7 +13865,7 @@
   {
     "id": "SHOK",
     "name": "Shock Trooper",
-    "description": "",
+    "description": "Elite infantry with portable Tesla coils.\n  Strong vs Infantry and Vehicles\n  Weak vs Aircraft",
     "queue": "Infantry",
     "side": "Soviet",
     "factions": [
@@ -14305,7 +14305,7 @@
   {
     "id": "Zombie",
     "name": "Zombie",
-    "description": "",
+    "description": "Slow-moving undead that attack in close combat.",
     "queue": "Infantry",
     "side": "Unavailable",
     "factions": [],
@@ -14709,7 +14709,7 @@
   {
     "id": "Ant",
     "name": "Giant Ant",
-    "description": "",
+    "description": "Irradiated insect that grew to an abnormally large size.",
     "queue": "Infantry",
     "side": "Unavailable",
     "factions": [],
@@ -15100,7 +15100,7 @@
   {
     "id": "FireAnt",
     "name": "Fire Ant",
-    "description": "",
+    "description": "Irradiated insect that grew to an abnormally large size.",
     "queue": "Infantry",
     "side": "Unavailable",
     "factions": [],
@@ -15491,7 +15491,7 @@
   {
     "id": "ScoutAnt",
     "name": "Scout Ant",
-    "description": "",
+    "description": "Irradiated insect that grew to an abnormally large size.",
     "queue": "Infantry",
     "side": "Unavailable",
     "factions": [],
@@ -15882,7 +15882,7 @@
   {
     "id": "WarriorAnt",
     "name": "Warrior Ant",
-    "description": "",
+    "description": "Irradiated insect that grew to an abnormally large size.",
     "queue": "Infantry",
     "side": "Unavailable",
     "factions": [],
@@ -16275,7 +16275,7 @@
   {
     "id": "HARV",
     "name": "Ore Truck",
-    "description": "",
+    "description": "Collects Ore and Gems for\nprocessing.\n  Unarmed",
     "queue": "Vehicle",
     "side": "Both",
     "factions": [
@@ -16508,7 +16508,7 @@
   {
     "id": "1TNK",
     "name": "Light Tank",
-    "description": "",
+    "description": "Fast tank; good for scouting.\n  Strong vs Light armor\n  Weak vs Infantry, Tanks and Aircraft",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -16867,7 +16867,7 @@
   {
     "id": "APC",
     "name": "Armored Personnel Carrier",
-    "description": "",
+    "description": "Tough infantry transport.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -17237,7 +17237,7 @@
   {
     "id": "JEEP",
     "name": "Ranger",
-    "description": "",
+    "description": "Fast scout and anti-infantry vehicle.\nCan carry just one infantry unit.\n  Strong vs Infantry\n  Weak vs Vehicles and Aircraft",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -17611,7 +17611,7 @@
   {
     "id": "FTRK",
     "name": "Mobile Flak",
-    "description": "",
+    "description": "Mobile unit with a Flak cannon.\n  Strong vs Infantry, Light armor and Aircraft\n  Weak vs Tanks",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -17981,7 +17981,7 @@
   {
     "id": "MCV",
     "name": "Mobile Construction Vehicle",
-    "description": "",
+    "description": "Deploys into a Construction Yard.\n  Unarmed",
     "queue": "Vehicle",
     "side": "Both",
     "factions": [
@@ -18191,7 +18191,7 @@
   {
     "id": "2TNK",
     "name": "Medium Tank",
-    "description": "",
+    "description": "Allied Main Battle Tank.\n  Strong vs Vehicles\n  Weak vs Infantry and Aircraft",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -18555,7 +18555,7 @@
   {
     "id": "3TNK",
     "name": "Heavy Tank",
-    "description": "",
+    "description": "Soviet Main Battle Tank with dual cannons.\n  Strong vs Vehicles\n  Weak vs Infantry and Aircraft",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -18918,7 +18918,7 @@
   {
     "id": "V2RL",
     "name": "V2 Rocket Launcher",
-    "description": "",
+    "description": "Long-range rocket artillery.\n  Strong vs Infantry and Buildings\n  Weak vs Vehicles and Aircraft",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -19283,7 +19283,7 @@
   {
     "id": "ARTY",
     "name": "Artillery",
-    "description": "",
+    "description": "Long-range artillery.\n  Strong vs Infantry and Buildings\n  Weak vs Vehicles and Aircraft",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -19642,7 +19642,7 @@
   {
     "id": "MNLY",
     "name": "Minelayer",
-    "description": "",
+    "description": "Lays mines to destroy\nunwary enemy units.\nCan detect mines.\n  Unarmed",
     "queue": "Vehicle",
     "side": "Both",
     "factions": [
@@ -19988,7 +19988,7 @@
   {
     "id": "4TNK",
     "name": "Mammoth Tank",
-    "description": "",
+    "description": "Large, slow tank with anti-air capabilities.\nCan crush concrete walls.\n  Strong vs Vehicles, Infantry and Aircraft\n  Weak vs Nothing",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -20371,7 +20371,7 @@
   {
     "id": "MRJ",
     "name": "Mobile Radar Jammer",
-    "description": "",
+    "description": "Jams nearby enemy Radar Domes\nand deflects incoming missiles.\n  Unarmed",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -20581,7 +20581,7 @@
   {
     "id": "MGG",
     "name": "Mobile Gap Generator",
-    "description": "",
+    "description": "Regenerates shroud to obscure nearby areas.\n  Unarmed",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -20785,7 +20785,7 @@
   {
     "id": "TTNK",
     "name": "Tesla Tank",
-    "description": "",
+    "description": "Tank with mounted Tesla coil.\n  Strong vs Infantry, Vehicles and Buildings\n  Weak vs Aircraft",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -21140,7 +21140,7 @@
   {
     "id": "DTRK",
     "name": "Demolition Truck",
-    "description": "",
+    "description": "Truck carrying armed nuclear explosives,\nwith very weak armor.",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -21348,7 +21348,7 @@
   {
     "id": "CTNK",
     "name": "Chrono Tank",
-    "description": "",
+    "description": "Armed with anti-ground missiles.\nTeleports to any area within range.\n  Strong vs Vehicles and Buildings\n  Weak vs Infantry and Aircraft\n  Special ability: Can teleport",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -21704,7 +21704,7 @@
   {
     "id": "STNK",
     "name": "Phase Transport",
-    "description": "",
+    "description": "Light armored infantry transport which can\ncloak. Armed with anti-ground missiles.\n  Strong vs Light armor\n  Weak vs Infantry, Tanks and Aircraft",
     "queue": "Vehicle",
     "side": "Allies",
     "factions": [
@@ -22086,7 +22086,7 @@
   {
     "id": "TRUK",
     "name": "Supply Truck",
-    "description": "",
+    "description": "Transports cash to other players.\n  Unarmed",
     "queue": "Vehicle",
     "side": "Both",
     "factions": [
@@ -22283,7 +22283,7 @@
   {
     "id": "QTNK",
     "name": "MAD Tank",
-    "description": "",
+    "description": "Deals seismic damage to nearby vehicles\nand structures.\n  Strong vs Vehicles and Buildings\n  Weak vs Infantry and Aircraft",
     "queue": "Vehicle",
     "side": "Soviet",
     "factions": [
@@ -22490,7 +22490,7 @@
   {
     "id": "TRAN",
     "name": "Chinook",
-    "description": "",
+    "description": "Fast infantry transport helicopter.\n  Unarmed",
     "queue": "Aircraft",
     "side": "Allies",
     "factions": [
@@ -22848,7 +22848,7 @@
   {
     "id": "HIND",
     "name": "Hind",
-    "description": "",
+    "description": "Helicopter gunship with dual chain guns.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Aircraft",
     "side": "Unavailable",
     "factions": [],
@@ -23243,7 +23243,7 @@
   {
     "id": "MH60",
     "name": "Black Hawk",
-    "description": "",
+    "description": "Helicopter gunship with dual chain guns.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Aircraft",
     "side": "Allies",
     "factions": [
@@ -23641,7 +23641,7 @@
   {
     "id": "YAK",
     "name": "Yak Attack Plane",
-    "description": "",
+    "description": "Attack Plane with dual machine guns.\n  Strong vs Infantry and Light armor\n  Weak vs Tanks and Aircraft",
     "queue": "Aircraft",
     "side": "Soviet",
     "factions": [
@@ -24024,7 +24024,7 @@
   {
     "id": "HELI",
     "name": "Longbow",
-    "description": "",
+    "description": "Helicopter gunship with multi-purpose missiles.\n  Strong vs Buildings, Vehicles and Aircraft\n  Weak vs Infantry",
     "queue": "Aircraft",
     "side": "Allies",
     "factions": [
@@ -24432,7 +24432,7 @@
   {
     "id": "MIG",
     "name": "MiG Attack Plane",
-    "description": "",
+    "description": "Fast Ground-Attack Plane.\n  Strong vs Buildings and Vehicles\n  Weak vs Infantry and Aircraft",
     "queue": "Aircraft",
     "side": "Soviet",
     "factions": [
@@ -24817,7 +24817,7 @@
   {
     "id": "LST",
     "name": "Transport",
-    "description": "",
+    "description": "General-purpose naval transport.\nCarries infantry and tanks\n  Unarmed",
     "queue": "Ship",
     "side": "Both",
     "factions": [
@@ -25127,7 +25127,7 @@
   {
     "id": "PT",
     "name": "Gunboat",
-    "description": "",
+    "description": "Light scout and support ship.\nCan detect submarines.\n  Strong vs Naval units\n  Weak vs Ground units and Aircraft",
     "queue": "Ship",
     "side": "Allies",
     "factions": [
@@ -25465,7 +25465,7 @@
   {
     "id": "SS",
     "name": "Submarine",
-    "description": "",
+    "description": "Submerged anti-ship unit with torpedoes.\nCan detect other submarines.\n  Strong vs Naval units\n  Weak vs Ground units and Aircraft\n  Special Ability: Submerge",
     "queue": "Ship",
     "side": "Soviet",
     "factions": [
@@ -25807,7 +25807,7 @@
   {
     "id": "DD",
     "name": "Destroyer",
-    "description": "",
+    "description": "Fast multi-role ship.\nCan detect submarines.\n  Strong vs Naval units, Vehicles and Aircraft\n  Weak vs Infantry",
     "queue": "Ship",
     "side": "Allies",
     "factions": [
@@ -26155,7 +26155,7 @@
   {
     "id": "CA",
     "name": "Cruiser",
-    "description": "",
+    "description": "Very slow long-range ship.\n  Strong vs Buildings and Ground units\n  Weak vs Naval units and Aircraft",
     "queue": "Ship",
     "side": "Allies",
     "factions": [
@@ -26511,7 +26511,7 @@
   {
     "id": "MSUB",
     "name": "Missile Submarine",
-    "description": "",
+    "description": "Submerged anti-ground siege unit with anti-air\ncapabilities.\nCan detect other submarines.\n  Strong vs Buildings, Ground units and Aircraft\n  Weak vs Naval units\n  Special Ability: Submerge",
     "queue": "Ship",
     "side": "Soviet",
     "factions": [
@@ -28865,7 +28865,7 @@
   {
     "id": "PDOF",
     "name": "Fake Chronosphere",
-    "description": "",
+    "description": "Looks like a Chronosphere.\nMaximum of one can be built.",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
@@ -29096,7 +29096,7 @@
   {
     "id": "MSLF",
     "name": "Fake Missile Silo",
-    "description": "",
+    "description": "Looks like a Missile Silo.\nMaximum of one can be built.",
     "queue": "Defense",
     "side": "Allies",
     "factions": [
