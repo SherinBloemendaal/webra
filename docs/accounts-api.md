@@ -882,6 +882,11 @@ Serialized size at most 32 KiB.
 - `guide.seen`: a version (the same rule as `releaseNotes.lastSeenVersion`).
   It only moves forward: when two devices differ, the game keeps the newer
   one (`NEWEST_MERGE` in `apps/game/js/account/sync.js`), never a conflict.
+  A 0.17 client does not know the key and leaves it out of the document it
+  uploads, so the account loses it until a 0.18 device uploads again (its
+  registry still has it, and the merge keeps the newer version). A fresh
+  0.18 device that syncs in between sees the player as a 0.17.0 player and
+  may show the "New" badges once more. That is accepted.
 - `lastOptions` and `extra`: JSON objects at most 4 levels deep, keys
   `/^[A-Za-z0-9_.-]{1,64}$/`, strings at most 500 characters, arrays at most
   64 entries, finite numbers only; `lastOptions` at most 4 KiB, `extra` at
