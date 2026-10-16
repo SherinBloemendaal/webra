@@ -10,13 +10,18 @@ on:
 permissions:
   contents: read
 
-# Never run two deploys at once; a newer push waits for the running deploy
-# instead of cancelling it halfway through migrations or an upload.
+# The CI halves of two pushes run side by side (ci.yml groups pushes per
+# commit); only the deploy job is serialized (its own concurrency group
+# below). A second run for the same commit, a manual one say, waits for the
+# first instead of running beside it.
 concurrency:
-  group: deploy-production
+  group: deploy-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
+  # The full CI. Jobs it skips (the engine and shader jobs on a release commit
+  # that only bumps versions, ci.yml "changes") leave it successful; a failed
+  # or cancelled job fails it, and then the deploy job does not run.
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
@@ -28,7 +33,15 @@ jobs:
     # to "true" once the secrets below exist (docs/deploy.md).
     # Production deploys only from main, also for a manual workflow_dispatch.
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
-    runs-on: large
+    # Never two deploys at once: a deploy waits for the running one instead
+    # of cancelling it halfway through migrations or an upload. GitHub keeps
+    # one waiting deploy per group, so a third push replaces (cancels) the
+    # second's waiting deploy job; the guard below covers the rest.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    # Builds nothing: the wasm comes from the CI web job of this run.
+    runs-on: small
     environment:
       name: production
       url: https://webra.sherin.dev
@@ -48,38 +61,55 @@ jobs:
       # deploy add the send_email binding. Unset, the Worker sends no email.
       EMAIL_FROM: ${{ vars.EMAIL_FROM }}
     steps:
-      # The self-hosted runner image is a minimal Ubuntu (see ci.yml).
+      # The self-hosted runner image is a minimal Ubuntu (see ci.yml). git
+      # for the checkout and build-dist.mjs (the commit in version.json).
       - name: Install system packages
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
 
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      # Pushes deploy in order: while this job waited for the previous deploy
+      # (or its CI ran), a newer commit may have reached main, and its own run
+      # deploys it. Deploying this one after it would roll production back,
+      # so every step below is skipped and the job still succeeds.
+      - name: Check that this commit is still the tip of main
+        id: tip
+        run: |
+          tip=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main is at $tip now, not $GITHUB_SHA: skipping this deploy, the newer commit's run deploys."
+          fi
 
-      - name: Install wasm-pack
-        run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+      # The engine as CI's web job built it (npm run build:wasm, release
+      # profile, WEBRA_GIT_HASH = this commit), from this run only.
+      - name: Download the wasm package
+        if: steps.tip.outputs.current == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: webra-pkg
+          path: apps/game/pkg
 
       - uses: actions/setup-node@v4
+        if: steps.tip.outputs.current == 'true'
         with:
           node-version: '22'
           cache: npm
 
-      - run: npm ci
+      - if: steps.tip.outputs.current == 'true'
+        run: npm ci
 
-      - name: Build the engine (WebAssembly)
-        run: npm run build:wasm
-        env:
-          WEBRA_GIT_HASH: ${{ github.sha }}
-
+      # Fails when apps/game/pkg/webra_sim_bg.wasm is missing.
       - name: Assemble dist/
+        if: steps.tip.outputs.current == 'true'
         run: npm run build
 
       - name: Check secrets and wrangler
+        if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
@@ -90,6 +120,7 @@ jobs:
           npx --no-install wrangler --version
 
       - name: Apply D1 migrations
+        if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
         run: |
           if [ -d migrations ]; then
@@ -105,6 +136,7 @@ jobs:
       # every later run it exists and nothing changes. The API token needs
       # "Workers R2 Storage: Edit" (docs/deploy.md).
       - name: Create the replays R2 bucket when missing
+        if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
         run: |
           bucket=webra-replays
@@ -125,6 +157,7 @@ jobs:
       # token (secret SENTRY_AUTH_TOKEN) and the variables SENTRY_ORG and
       # SENTRY_PROJECT; without the token these steps are skipped.
       - name: Create the Sentry release and upload the sources
+        if: steps.tip.outputs.current == 'true'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.vitrion.dev' }}
@@ -146,6 +179,7 @@ jobs:
           npx --yes @sentry/cli@3.8.0 sourcemaps upload --release "$release" --url-prefix '~/' dist
 
       - name: Deploy the Worker
+        if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
         # The SENTRY_* variables of the Worker (src/telemetry.js) come from the same configuration as the game's.
         # With EMAIL_FROM, email-config.mjs writes wrangler.deploy.jsonc (the binding) and selects it.
@@ -156,6 +190,7 @@ jobs:
           npx --no-install wrangler deploy $vars "${email_args[@]}"
 
       - name: Mark the Sentry release deployed
+        if: steps.tip.outputs.current == 'true'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.vitrion.dev' }}

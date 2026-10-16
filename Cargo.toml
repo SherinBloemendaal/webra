@@ -7,3 +7,12 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# CI's engine job (.github/workflows/ci.yml, docs/ci.md): the release
+# optimisations with panic = "unwind", which the test harness needs anyway, so
+# clippy, the tests and the examples share one build of the engine and its
+# dependencies instead of a second one with panic = "abort". The game's wasm
+# build (npm run build:wasm) and test:luastack keep using release.
+[profile.ci]
+inherits = "release"
+panic = "unwind"
