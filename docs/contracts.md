@@ -4161,8 +4161,9 @@ Debug and NetMenu.
   `.tour-target-also`). A step that only explains has Got it instead of
   Skip step. While the player is on low power (`player_json.lowPower`) the
   card shows "Low power: everything builds three times slower. Build a
-  Power Plant." (`.tour-warn`) and lights the Power Plant; `refresh(state)`
-  gets the state every 100 ms. Before the Radar Dome the base chapter asks
+  Power Plant." (`.tour-warn`), lights the Power Plant and says the line
+  once in the live region each time the power drops (not again while it
+  stays low); `refresh(state)` gets the state every 100 ms. Before the Radar Dome the base chapter asks
   for room for it ("Check your power before the radar": generated minus
   used power at least the dome's 40, from `rules.actors`, or a dome
   placed). The polite live region says "Step done", "(already done)",

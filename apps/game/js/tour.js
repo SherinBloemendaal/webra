@@ -167,6 +167,8 @@ export class TourCard {
     this.lit = [];
     this.state = null;
     this.shownKey = null;
+    // Whether the last state was on low power (the live region says it on the drop only).
+    this.wasLow = false;
     // The note "nothing more in this game" closed: hidden for this game, the tour stays on.
     this.dismissed = false;
     this.root = el('section', 'tour');
@@ -295,11 +297,19 @@ export class TourCard {
     }
   }
 
-  /** Every state refresh of the game (100 ms): the low power line, which steps this game has, and the cameos, which come and go with the sidebar's tabs. */
+  /**
+   * Every state refresh of the game (100 ms): the low power line, which steps
+   * this game has, and the cameos, which come and go with the sidebar's tabs.
+   * The live region says the low power line once each time the power drops,
+   * not again while it stays low.
+   */
   refresh(state = null) {
     if (this.disposed) return;
     this.state = state;
     this.render();
+    const low = state?.lowPower === true;
+    if (low && !this.wasLow && this.shown && !this.warn.hidden) this.say(LOW_POWER_WARNING);
+    this.wasLow = low;
   }
 
   /** Steps the game just ticked off (GuideTracker onDone, in the order they ticked): "Step done", "already done", "Chapter done", "Tour done". */

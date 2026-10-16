@@ -441,9 +441,19 @@ test('power: the low power line shows on the card with the Power Plant lit, and 
   assert.equal(warn.textContent, LOW_POWER_WARNING);
   assert.ok(cards.PROC.classList.contains(TARGET_CLASS), "the step's cameo");
   assert.ok(cards.POWR.classList.contains(TARGET_CLASS), 'and the Power Plant');
+  // Said once in the live region when the power drops, not on every refresh while it stays low.
+  const toast = root.querySelector('.tour-toast');
+  assert.equal(toast.textContent, LOW_POWER_WARNING);
+  toast.textContent = '';
+  card.refresh({ ...playerState({ gen: 100, used: 130, yard: true }) });
+  assert.equal(toast.textContent, '', 'still low: no repeat');
   card.refresh({ ...playerState({ gen: 200, used: 120, yard: true }) });
   assert.equal(warn.hidden, true);
   assert.ok(!cards.POWR.classList.contains(TARGET_CLASS));
+  assert.equal(toast.textContent, '');
+  // Low again: said again.
+  card.refresh({ ...playerState({ gen: 100, used: 120, yard: true }) });
+  assert.equal(toast.textContent, LOW_POWER_WARNING);
 });
 
 // ---- The tour through every chapter (design 1.3) -------------------------------------------
