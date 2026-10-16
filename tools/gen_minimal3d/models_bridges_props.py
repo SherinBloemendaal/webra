@@ -442,20 +442,54 @@ def tanktrap(b, n):
         hedgehog(0.7, 0.62, 0.8)
 
 
+# Mines (design canvas "Ertsmijn" and "Edelsteenmijn"; the 2D pack's art/world.js oreMine): ore and gem colours,
+# the dark shaft and its inner wall, the rim's rock.
+MINE_ORE = ('#c99a2e', '#e6c25a', '#7a6630')
+MINE_GEMS = ('#4a7ac4', '#c84a9a', '#9fd8ff', '#38322a')
+MINE_PIT = ('#14110d', '#3a3026')
+MINE_ROCK = ('#6b6457', '#8f877a')
+
+
 def mine(b, gems):
-    # A low mound with ore nuggets or crystals sticking out.
-    b.vdome(0.5, 0.52, 0.34, 0.22, '#6c5a44')
-    rng = Rng(17 if gems else 5)
-    cols = ('#5a8ae0', '#b03a9a', '#3ad0b0') if gems else ('#ffd34d', '#e2bd52')
-    for k in range(7):
-        x = 0.25 + rng.next() * 0.5
-        y = 0.3 + rng.next() * 0.45
-        z = 0.12 + rng.next() * 0.1
-        s = 0.07 + rng.next() * 0.03
-        if gems:
-            b.box(x, y, s, s, s * 1.3, cols[k % 3], z)
-        else:
-            b.cyl(x, y, s * 0.6, s, cols[k % 2], z, n=6)
+    # A crater as Red Alert draws its mines: a ring of rough rocks round a dark shaft, open to the south-west
+    # where the mine spills its ore (or pushes its crystals) onto an apron of bare ground.
+    import math
+    rng = Rng(11)
+    cx, cy = 0.48, 0.46
+
+    def ring(x, y, rx, ry, n=14, jag=0.0):
+        return [(x + math.cos(2 * math.pi * k / n) * rx * (1 + (rng.next() - 0.5) * jag),
+                 y + math.sin(2 * math.pi * k / n) * ry * (1 + (rng.next() - 0.5) * jag)) for k in range(n)]
+
+    b.flat(ring(cx, cy + 0.04, 0.47, 0.45, 16, 0.12), 0.004, MINE_GEMS[3] if gems else MINE_ORE[2])
+    b.flat(ring(cx + 0.01, cy + 0.01, 0.28, 0.24), 0.008, MINE_PIT[1])
+    b.flat(ring(cx - 0.02, cy - 0.02, 0.23, 0.19), 0.012, MINE_PIT[0])
+    # The rim: low angular rocks, taller at the back (north), none in the south-west gap.
+    for k in range(11):
+        a = 2 * math.pi * k / 11 + (rng.next() - 0.5) * 0.3
+        r = 0.07 + rng.next() * 0.03
+        h = (0.11 if math.sin(a) < 0 else 0.045) + rng.next() * 0.04
+        jag = [0.75 + rng.next() * 0.4 for _ in range(6)]
+        if math.cos(a - 2.3) > 0.82:
+            continue
+        x, y = cx + math.cos(a) * 0.33, cy + math.sin(a) * 0.29
+        pts = [(x + math.cos(math.pi * i / 3 + 0.3) * r * j, y + math.sin(math.pi * i / 3 + 0.3) * r * j) for i, j in enumerate(jag)]
+        b.prism(pts, h, MINE_ROCK[0])
+        b.flat([(x + (px - x) * 0.55 - 0.012, y + (py - y) * 0.55 - 0.012) for px, py in pts], h + 0.002, MINE_ROCK[1])
+    if gems:
+        # Crystals rising out of the shaft and lying on the apron, blue and magenta.
+        for x, y, rr, h, c in ((0.4, 0.5, 0.06, 0.42, 0), (0.55, 0.44, 0.065, 0.5, 1), (0.48, 0.55, 0.05, 0.3, 0),
+                               (0.27, 0.66, 0.045, 0.2, 1), (0.18, 0.78, 0.04, 0.16, 0), (0.36, 0.86, 0.04, 0.14, 1),
+                               (0.7, 0.84, 0.035, 0.12, 0), (0.86, 0.62, 0.035, 0.12, 1)):
+            b.pyramid(x, y, rr, rr * 0.8, h, MINE_GEMS[c], 0.01)
+            b.cyl(x - rr * 0.3, y - rr * 0.2, rr * 0.18, h * 0.7, MINE_GEMS[2], 0.01, n=4)
+    else:
+        # Ore heaped in the shaft and running out over the gap onto the apron.
+        for x, y, r in ((0.4, 0.52, 0.065), (0.52, 0.55, 0.06), (0.46, 0.44, 0.05), (0.3, 0.62, 0.055), (0.24, 0.7, 0.06),
+                        (0.15, 0.8, 0.05), (0.32, 0.84, 0.055), (0.12, 0.6, 0.045), (0.6, 0.88, 0.05), (0.82, 0.76, 0.045),
+                        (0.2, 0.3, 0.04)):
+            b.cyl(x, y, r, r * 0.9, MINE_ORE[0], 0.01, n=6)
+            b.cyl(x - r * 0.25, y - r * 0.25, r * 0.45, r * 0.25, MINE_ORE[1], 0.01 + r * 0.9, n=6)
 
 
 def cycl(b):

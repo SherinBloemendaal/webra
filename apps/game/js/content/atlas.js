@@ -36,14 +36,22 @@
 //   into their frames (ACTOR_ART `lift`);
 // - the storage silo shows its fill level (OpenRA WithResourceLevelSpriteBody):
 //   the engine names the stage in the age, MODE.INDEX;
+// - every pose, muzzle flash, special sprite and explosion is drawn with the
+//   palette OpenRA draws it with (ACTOR_ART `palettes`, SPECIAL_ART and
+//   EXPLOSION_ART `palette`, built from PALETTES by `paletteLookups`): the
+//   owner's colours by default; walls, crates and effects without them; the
+//   ore mine and trees in the theater's palette; the desert village in
+//   desert.pal; civilians in their fixed clothes palettes; falling
+//   paratroopers without the shadow index; an actor or special whose palette
+//   file is missing keeps WebRA's art;
 // - special sprites (projectiles, explosions, the rally flag, mines; SPECIAL_ART)
 //   after the actor slots: "effect" ones play once from the age the engine
 //   gives with the make pose and then show nothing, the rest loop.
 
-import { ACTOR_ART, ACTOR_PALETTE, EXPLOSION_ART, EXPLOSIONS, SEQUENCES, SPECIAL_ART, TERRAIN } from './tables.js';
+import { ACTOR_ART, ACTOR_PALETTE, DEFAULT_PALETTE, EXPLOSION_ART, EXPLOSIONS, PALETTES, PLAYER_PALETTES, SEQUENCES, SPECIAL_ART, TERRAIN } from './tables.js';
 import { SPECIALS } from './packs.js';
 import { decodeSprite, trimFrame } from './shp.js';
-import { ACTOR_SHADOW, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
+import { ACTOR_SHADOW, REMAP_END, REMAP_START, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
 import { MODE, POSE, POSE_COUNT, resolveSequence, sequenceFile } from './sequences.js';
 
 /** WebRA biome -> OpenRA tileset id. */
@@ -54,6 +62,98 @@ const SHADOW_INDEX = ACTOR_SHADOW[0];
 const CELL_PX = 24;
 /** Rows of the footprint a bib covers (OpenRA WithBuildingBib without a mini bib). */
 const BIB_ROWS = 2;
+
+/** The palette key's suffix for the owner's colours (tables.js PLAYER_PALETTES). */
+const OWNER = '+owner';
+
+/**
+ * Whether palette `key` on `tileset` is `file` with these shadow indices,
+ * index 0 transparent and (with `remap`) the owner's colours on WebRA's
+ * remap range: a lookup made that way may stand in for it. `palettes` and
+ * `players` replace PALETTES and PLAYER_PALETTES (tests).
+ */
+export function paletteMatches(key, tileset, { file, shadow, remap }, palettes = PALETTES, players = PLAYER_PALETTES) {
+  const same = (x, y) => !!x && x.length === y.length && x.every((v, i) => v === y[i]);
+  const owner = key.endsWith(OWNER);
+  const name = owner ? key.slice(0, -OWNER.length) : key;
+  const spec = owner ? palettes[players[name]?.base] : palettes[name];
+  if (owner !== remap) return false;
+  if (owner && !same(players[name].remap, Array.from({ length: REMAP_END - REMAP_START + 1 }, (_, i) => REMAP_START + i))) return false;
+  return (spec?.files?.[tileset] ?? spec?.files?.['*']) === file && same(spec.shadow, shadow) && same(spec.transparent, [0]);
+}
+
+/**
+ * Palette lookups by palette key (tables.js PALETTES, PLAYER_PALETTES:
+ * OpenRA's mods/ra/rules/palettes.yaml) on `tileset`, decoded once each:
+ * `lookupOf(key)` is the lookup, or null when its file is missing or broken
+ * (the reason goes to `problems`). `seed` maps keys to lookups already made.
+ */
+export function paletteLookups(getFile, tileset, problems, seed = []) {
+  const lookups = new Map(seed);
+  const rgbs = new Map();
+  const rgbOf = (name) => {
+    const spec = PALETTES[name];
+    const file = spec?.files?.[tileset] ?? spec?.files?.['*'];
+    if (!file) {
+      problems.push(`palette ${name}: none on ${tileset}`);
+      return null;
+    }
+    if (!rgbs.has(file)) {
+      const bytes = getFile(file);
+      let rgb = null;
+      if (!bytes) problems.push(`palette ${name}: ${file} is not installed`);
+      else {
+        try {
+          rgb = decodePalette(bytes);
+        } catch (err) {
+          problems.push(`${file}: ${err.message}`);
+        }
+      }
+      rgbs.set(file, rgb);
+    }
+    return rgbs.get(file);
+  };
+  const build = (key) => {
+    if (key.endsWith(OWNER)) {
+      // OpenRA PlayerColorPalette: the owner's colours on the remap range (WebRA's team mask).
+      const name = key.slice(0, -OWNER.length);
+      const owner = PLAYER_PALETTES[name];
+      const base = owner && PALETTES[owner.base];
+      if (!base?.files) {
+        problems.push(`palette ${key}: unknown`);
+        return null;
+      }
+      const rgb = rgbOf(owner.base);
+      return rgb && paletteLookup(rgb, { remap: true, shadow: base.shadow, transparent: base.transparent });
+    }
+    const spec = PALETTES[key];
+    if (!spec) {
+      problems.push(`palette ${key}: unknown`);
+      return null;
+    }
+    if (spec.files) {
+      const rgb = rgbOf(key);
+      return rgb && paletteLookup(rgb, { remap: false, shadow: spec.shadow, transparent: spec.transparent });
+    }
+    if (spec.rgba) {
+      // OpenRA PaletteFromRGBA: one colour for every index but the transparent one.
+      const color = new Uint8Array(256 * 4);
+      for (let i = 0; i < 256; i++) if (!spec.transparent.includes(i)) color.set(spec.rgba, i * 4);
+      return { color, mask: new Uint8Array(256) };
+    }
+    // OpenRA IndexedPalette: the base palette, `index` entries showing the colours of `replace`.
+    const base = lookupOf(spec.base);
+    if (!base) return null;
+    const color = base.color.slice();
+    spec.index.forEach((i, k) => color.set(base.color.subarray(spec.replace[k] * 4, spec.replace[k] * 4 + 4), i * 4));
+    return { color, mask: base.mask.slice() };
+  };
+  const lookupOf = (key) => {
+    if (!lookups.has(key)) lookups.set(key, build(key));
+    return lookups.get(key);
+  };
+  return lookupOf;
+}
 
 /** A cache of decoded sprite files over `getFile(name) -> Uint8Array | null`. */
 export function spriteFiles(getFile) {
@@ -445,7 +545,7 @@ function slotArt(image, mapping, opts) {
 
 /** slotArt before the art is checked. */
 function buildSlotArt(image, mapping, opts) {
-  const { files, tileset, lookup, offset, wall, under = null, door = false, level = false, lift = {}, effect = false, index = false } = opts;
+  const { files, tileset, lookup, offset, wall, under = null, door = false, level = false, lift = {}, effect = false, index = false, palettes = {} } = opts;
   const { lead = {}, reverseEnd = false, activeMode = 'loop' } = opts;
   const seqs = SEQUENCES[image] ?? {};
   const images = [];
@@ -474,12 +574,14 @@ function buildSlotArt(image, mapping, opts) {
       const shadowFrame = resolved.shadowFrames ? resolved.shadowFrames[k] : -1;
       const src = source.frames[f];
       const at = [seqOffset[0] + offset[0] + src.offset[0], seqOffset[1] + offset[1] + src.offset[1] + (lift[pose] ?? 0)];
-      const key = `${src.key}#${shadowFrame}#${at[0]},${at[1]}`;
+      // The pose's own palette (`palettes`: pose -> [key, lookup]), else `lookup`.
+      const [palKey, palLookup] = palettes[pose] ?? ['', lookup];
+      const key = `${src.key}#${shadowFrame}#${at[0]},${at[1]}#${palKey}`;
       if (!imageIndex.has(key)) {
         const frame = src.frame;
         const shadow = shadowFrame >= 0 ? source.frames[shadowFrame]?.frame : null;
         imageIndex.set(key, images.length);
-        const img = frame ? indexedImage(frame, shadow, lookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
+        const img = frame ? indexedImage(frame, shadow, palLookup, at) : { width: 0, height: 0, color: new Uint8ClampedArray(0), mask: null, offset: at, scale: 1 };
         if (src.scale !== 1) img.scale = src.scale;
         // OpenRA sequence Scale (the snow hut): drawn smaller, around its offset.
         if (def.scale && !def.parts) img.offset = [img.offset[0] * def.scale, img.offset[1] * def.scale];
@@ -573,6 +675,12 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       out.problems.push(`${terrainPalette}: ${err.message}`);
     }
   }
+  // Every palette decoded once: the player's and the theater's (bibs, bridges)
+  // are seeded where they are what PALETTES says (else built from PALETTES).
+  const seed = [];
+  if (lookup && paletteMatches(DEFAULT_PALETTE, tileset, { file: ACTOR_PALETTE, shadow: ACTOR_SHADOW, remap: true })) seed.push([DEFAULT_PALETTE, lookup]);
+  if (terrainLookup && paletteMatches('terrain', tileset, { file: terrainPalette, shadow: TERRAIN_SHADOW, remap: false })) seed.push(['terrain', terrainLookup]);
+  const lookupOf = paletteLookups(getFile, tileset, out.problems, seed);
   const bibs = new Map();
   const bibOf = (image, seqName, a) => {
     const key = `${image}|${seqName}|${a.width}x${a.height}`;
@@ -635,10 +743,18 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     }
     const offset = a.kind === 'building' ? (a.centerOffset ?? [0, 0]) : [0, 0];
     const bib = a.kind === 'building' && entry.bib ? bibOf(entry.image, entry.bib, a) : null;
+    // OpenRA's palette per pose; without one of them the actor keeps WebRA's art (no mixed look).
+    const paletteOf = (part, pose) => entry.palettes?.[`${part}.${pose}`] ?? DEFAULT_PALETTE;
+    const keys = [...Object.keys(entry.body ?? {}).map((p) => paletteOf('body', p)), ...Object.keys(entry.second ?? {}).map((p) => paletteOf('second', p))];
+    if (keys.some((k) => !lookupOf(k))) {
+      out.missing.push(a.id);
+      return;
+    }
     const ctx = { files, tileset, lookup, offset, wall: !!entry.wall };
     const make = (part, mapping) => {
       const lift = part === 'second' ? (entry.lift ?? {}) : {};
-      const key = `${entry.image}|${part}|${offset.join(',')}|${JSON.stringify(mapping)}|${JSON.stringify(lift)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
+      const palettes = Object.fromEntries(Object.keys(mapping).map((pose) => [pose, paletteOf(part, pose)]));
+      const key = `${entry.image}|${part}|${JSON.stringify(palettes)}|${offset.join(',')}|${JSON.stringify(mapping)}|${JSON.stringify(lift)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
       if (!shared.has(key)) {
         const partCtx = {
           ...ctx,
@@ -650,6 +766,7 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
           reverseEnd: part === 'body' && !!entry.reverseEnd,
           // Turret recoil plays once per shot.
           activeMode: part === 'body' ? (entry.activeMode ?? 'loop') : 'once',
+          palettes: Object.fromEntries(Object.entries(palettes).map(([pose, k]) => [pose, [k, lookupOf(k)]])),
         };
         const r = slotArt(entry.image, mapping, partCtx);
         out.problems.push(...r.problems);
@@ -680,7 +797,9 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       out.problems.push(`special ${key}: no such slot`);
       continue;
     }
-    const r = specialArt(spec, { files, tileset, lookup });
+    const special = lookupOf(spec.palette ?? DEFAULT_PALETTE);
+    if (!special) continue;
+    const r = specialArt(spec, { files, tileset, lookup: special });
     out.problems.push(...r.problems);
     if (r.art) {
       out.slots.set(slot, r.art);
@@ -697,7 +816,9 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
   actors.forEach((a, t) => {
     const entry = ACTOR_ART[a.id];
     if (!entry?.muzzle) return;
-    const r = specialArt({ image: entry.image, sequences: [entry.muzzle], mode: 'effect' }, { files, tileset, lookup });
+    const muzzle = lookupOf(entry.palettes?.muzzle ?? DEFAULT_PALETTE);
+    if (!muzzle) return;
+    const r = specialArt({ image: entry.image, sequences: [entry.muzzle], mode: 'effect' }, { files, tileset, lookup: muzzle });
     out.problems.push(...r.problems);
     if (r.art) out.slots.set(muzzleSlot(t, actors.length), r.art);
   });
@@ -705,7 +826,9 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
   EXPLOSIONS.forEach((name, k) => {
     const spec = EXPLOSION_ART[name];
     if (!spec) return;
-    const r = specialArt(spec, { files, tileset, lookup });
+    const boom = lookupOf(spec.palette ?? DEFAULT_PALETTE);
+    if (!boom) return;
+    const r = specialArt(spec, { files, tileset, lookup: boom });
     out.problems.push(...r.problems);
     if (r.art) {
       out.slots.set(explosionSlot(k, actors.length), r.art);

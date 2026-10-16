@@ -564,22 +564,110 @@ function tankTrap(ctx, P, seed) {
   }
 }
 
+/**
+ * Mine colours (design canvas "Ertsmijn", "Edelsteenmijn" and "Erts"): the
+ * ore's base and lit tones; the gems' blue and magenta crystals with their
+ * pale glint.
+ */
+export const MINE_ORE = Object.freeze({ base: '#c99a2e', lit: '#e6c25a' });
+export const MINE_GEMS = Object.freeze({ blue: '#4a7ac4', magenta: '#c84a9a', glint: '#9fd8ff' });
+/** The pit of a mine: its dark shaft and the lit inner wall facing the light. */
+const PIT = { deep: '#14110d', wall: '#3a3026' };
+/** The rocky rim per biome: shade, face and lit tones (and snow on the lit tops). */
+const MINE_ROCK = {
+  temperate: ['#3e3a33', '#6b6457', '#958c7c'],
+  snow: ['#474c54', '#7b828a', '#aab2ba'],
+  desert: ['#5a4630', '#8a6e4a', '#b89a6c'],
+};
+
+/** An ore nugget at (x, y): a dark foot to the lower right, the base and a lit spot at the top left. */
+function nugget(ctx, P, x, y, r) {
+  disc(ctx, P.c('rgba(0,0,0,0.35)'), x + r * 0.35, y + r * 0.4, r);
+  disc(ctx, P.c(MINE_ORE.base), x, y, r);
+  disc(ctx, P.c(MINE_ORE.lit), x - r * 0.3, y - r * 0.32, r * 0.5);
+}
+
+/** A crystal standing at (x, y), `h` high, leaning by `lean`: a lit and a shaded facet and a glint. */
+function crystal(ctx, P, x, y, h, w, lean, hue) {
+  const tip = [x + lean, y - h];
+  quad(ctx, P.c('rgba(0,0,0,0.35)'), [x - w * 0.4, y, x + w, y + 0.4, x + w + h * 0.45, y + h * 0.3, x + h * 0.3, y + h * 0.25]);
+  quad(ctx, P.c(tone(hue, -0.35)), [x, y + 0.8, x + w, y, tip[0], tip[1]]);
+  quad(ctx, P.c(hue), [x - w, y, x, y + 0.8, tip[0], tip[1]]);
+  stroke(ctx, P.c(MINE_GEMS.glint), 0.5, x - w * 0.45, y - 0.2, tip[0] - w * 0.1, tip[1] + h * 0.25);
+}
+
+/**
+ * Design canvas "Ertsmijn" and "Edelsteenmijn": a mine as Red Alert draws
+ * it, a crater of rough rocks round a dark shaft, lit from the top left
+ * with a hard shadow to the lower right. Ore spills from the shaft over the
+ * rim onto an ochre apron (it seeds the fields around it); the gem mine
+ * pushes blue and magenta crystals out of the shaft over bare dark ground.
+ */
 function oreMine(ctx, P, gems) {
-  // Design canvas "Ertsmijn" and "Edelsteenmijn": a dark mound studded with
-  // gold nuggets, or with blue and magenta crystals.
-  castShadows(ctx, P, [{ cx: 12, cy: 13, r: 8, z: 6 }]);
-  dome(ctx, P, 12, 13, 8.5, K('#44433e'));
-  const r = rng(gems ? 17 : 5);
-  for (let k = 0; k < 9; k++) {
-    const [x, y] = at(5 + r() * 14, 7 + r() * 10, 2 + r() * 5);
-    if (gems) {
-      poly(ctx, P.c(k % 2 ? '#c84a9a' : '#4a7ac4'), [x, y - 2.6, x + 1.4, y, x, y + 1.4, x - 1.4, y]);
-      disc(ctx, P.c('#9fd8ff'), x - 0.4, y - 0.8, 0.45);
-    } else {
-      const rr = 1.2 + r() * 0.6;
-      disc(ctx, P.c(C.ore), x, y, rr);
-      disc(ctx, P.c('#e6c25a'), x - rr * 0.3, y - rr * 0.3, rr * 0.5);
+  const [shade, face, lit] = MINE_ROCK[biomeOf(P)] ?? MINE_ROCK.temperate;
+  const r = rng(11);
+  const [cx, cy] = [11.5, 11];
+  // The rim: angular rocks round the shaft, higher at the back, open at the
+  // lower left where the mine spills.
+  const rocks = [];
+  for (let k = 0; k < 11; k++) {
+    const a = (k / 11) * Math.PI * 2 + (r() - 0.5) * 0.3;
+    const rr = 1.9 + r() * 0.9;
+    const jag = Array.from({ length: 6 }, () => 0.75 + r() * 0.4);
+    if (Math.cos(a - 2.3) > 0.82) continue;
+    const back = Math.sin(a) < 0;
+    rocks.push({ x: cx + Math.cos(a) * 7.4, y: cy + Math.sin(a) * 6.4, r: rr, z: back ? 3.5 + r() * 1.5 : 1.8 + r(), back, jag });
+  }
+  // Hard shadow of the rim to the lower right, under everything.
+  castShadows(ctx, P, rocks.map((k) => ({ cx: k.x, cy: k.y, r: k.r * 0.9, z: k.z })));
+  // The apron: what the mine spilled, reaching furthest to the lower left.
+  // Translucent like the fields' ground, so the biome shows through: the
+  // ore's dark ochre #7a6630, or the gems' bare dark ground.
+  const ground = gems ? 'rgba(56,50,42,0.6)' : 'rgba(122,102,48,0.75)';
+  const apron = [];
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const d = 9.2 + r() * 1.3 + Math.max(0, Math.cos(a - 2.3)) * 2;
+    apron.push(Math.max(0.5, Math.min(23.5, cx + Math.cos(a) * d)), Math.max(0.5, Math.min(23.5, cy + 1 + Math.sin(a) * d * 0.95)));
+  }
+  poly(ctx, P.c(ground), apron);
+  // The shaft: a dark hole, its inner wall lit on the far (lower right) side.
+  oval(ctx, P.c(PIT.wall), cx + 0.3, cy + 0.2, 6, 5);
+  oval(ctx, P.c(PIT.deep), cx - 0.5, cy - 0.5, 5, 4.1);
+  // What fills the shaft: ore heaped in it and running out over the open lip.
+  if (!gems) {
+    for (const [x, y, s] of [[cx - 2.2, cy + 1.2, 1.5], [cx + 0.4, cy + 1.6, 1.3], [cx - 0.6, cy - 0.2, 1.1], [cx - 4.2, cy + 3.2, 1.3], [cx + 2.2, cy + 0.2, 0.9]]) nugget(ctx, P, x, y, s);
+  }
+  // An angular rock: its shaded foot, the face lifted by its height, the lit facets toward the top left.
+  const rock = (k) => {
+    const [tx, ty] = at(k.x, k.y, k.z * 0.45);
+    const ring = (ox, oy, sc) => k.jag.flatMap((j, i) => {
+      const a = (i / 6) * Math.PI * 2 + 0.3;
+      return [ox + Math.cos(a) * k.r * j * sc, oy + Math.sin(a) * k.r * j * sc * 0.9];
+    });
+    poly(ctx, P.c(shade), ring(k.x + 0.3, k.y + 0.3, 1));
+    poly(ctx, P.c(face), ring(tx, ty, 0.88));
+    // Lit facets: the corners toward the top left, drawn to the rock's crown.
+    const pts = ring(tx, ty, 0.88);
+    poly(ctx, P.c(lit), [tx - k.r * 0.1, ty - k.r * 0.05, pts[6], pts[7], pts[8], pts[9], pts[10], pts[11]]);
+    if (biomeOf(P) === 'snow') poly(ctx, P.c('#eef3f7'), [tx - k.r * 0.1, ty - k.r * 0.2, pts[8], pts[9], pts[10], pts[11]]);
+  };
+  for (const k of rocks) if (k.back) rock(k);
+  if (gems) {
+    // Crystals pushing up out of the shaft, blue and magenta.
+    crystal(ctx, P, cx - 2.2, cy + 1, 6.5, 1.6, -1.2, MINE_GEMS.blue);
+    crystal(ctx, P, cx + 1.4, cy + 0.4, 8, 1.8, 0.8, MINE_GEMS.magenta);
+    crystal(ctx, P, cx - 0.2, cy + 2, 5, 1.5, 0.2, MINE_GEMS.blue);
+    crystal(ctx, P, cx - 4.2, cy + 3.4, 3.4, 1.2, -0.6, MINE_GEMS.magenta);
+  }
+  for (const k of rocks) if (!k.back) rock(k);
+  // Spilled out over the rim and onto the apron, more toward the lower left.
+  if (gems) {
+    for (const [x, y, h, hue] of [[4.5, 19, 3.6, MINE_GEMS.magenta], [8.5, 21, 3, MINE_GEMS.blue], [3, 14, 2.8, MINE_GEMS.blue], [15.5, 20.5, 2.6, MINE_GEMS.magenta], [19.5, 15.5, 2.4, MINE_GEMS.blue]]) {
+      crystal(ctx, P, x, y, h, 1.1, 0.3, hue);
     }
+  } else {
+    for (const [x, y, s] of [[5.5, 16.5, 1.4], [3.5, 19.5, 1.3], [7.5, 20.5, 1.5], [10.5, 19, 1.1], [2.5, 13, 1.1], [14.5, 21, 1.2], [19, 18.5, 1], [4.5, 7, 0.9]]) nugget(ctx, P, x, y, s);
   }
 }
 
