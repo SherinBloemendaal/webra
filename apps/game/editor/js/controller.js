@@ -2,6 +2,13 @@
 // per-frame scene the editor draws over the engine's picture of the map:
 // spawns, placement and paste ghosts, the grid, the region, selections, the
 // layers (passability, zones, rush paths) and the cursor.
+//
+// A gesture changes the map as it goes, inside one transaction from its
+// press to its release (one undo step; Esc rolls it back), so the editor
+// draws its result live (js/live.js). Strokes add cells with every move;
+// shapes and moved regions are made again from the start (doc.revert) when
+// their corner, offset or the tool settings changed, at most once a frame
+// (`flush`).
 
 import { TEAM_COLORS } from '../../js/renderer.js';
 import { TERRAIN, catalogEntry } from './mapformat.js';
@@ -144,14 +151,16 @@ export class Controller {
       case 'brush':
       case 'eraser': {
         doc.begin(s.tool === 'eraser' ? 'Erase' : `Paint ${this.paintName(right)}`);
-        this.gesture = { kind: 'stroke', right, last: [x, y], painted: [] };
+        this.gesture = { kind: 'stroke', right, last: [x, y], tx: doc.tx };
         this.stroke([[x, y]], right);
         break;
       }
       case 'line':
       case 'rect':
       case 'ellipse':
-        this.gesture = { kind: 'shape', shape: s.tool, right, x0: x, y0: y, x1: x, y1: y };
+        doc.begin(`${s.tool === 'line' ? 'Line' : s.tool === 'rect' ? 'Rectangle' : 'Ellipse'} of ${this.paintName(right)}`);
+        this.gesture = { kind: 'shape', shape: s.tool, right, x0: x, y0: y, x1: x, y1: y, tx: doc.tx, made: null };
+        this.flush();
         break;
       case 'fill':
         if (!doc.inside(x, y)) return;
@@ -200,7 +209,7 @@ export class Controller {
           return;
         }
         doc.begin(`Place ${this.info(s.actorType)?.name ?? s.actorType}`);
-        this.gesture = { kind: 'place', last: null };
+        this.gesture = { kind: 'place', last: null, tx: doc.tx };
         this.placeAt(x, y);
         break;
       }
@@ -213,8 +222,8 @@ export class Controller {
           // Drag the region's contents to a new place.
           doc.begin('Move region');
           const clip = copyRegion(doc, this.catalog, r.x0, r.y0, r.x1, r.y1);
-          clearRegion(doc, this.catalog, r.x0, r.y0, r.x1, r.y1);
-          this.gesture = { kind: 'moveRegion', clip, x0: x, y0: y, dx: 0, dy: 0, from: r };
+          this.gesture = { kind: 'moveRegion', clip, x0: x, y0: y, dx: 0, dy: 0, from: r, tx: doc.tx, made: null, result: null };
+          this.flush();
           return;
         }
         if (right) {
@@ -241,9 +250,9 @@ export class Controller {
   }
 
   move(cell) {
-    const g = this.gesture;
     const { x, y } = cell;
     this.hooks.hover(cell);
+    const g = this.live();
     if (!g) return;
     if (g.kind === 'stroke') {
       if (g.last[0] === x && g.last[1] === y) return;
@@ -265,14 +274,19 @@ export class Controller {
   }
 
   up(cell) {
-    const g = this.gesture;
+    const g = this.live();
     if (!g) return;
-    this.gesture = null;
     const doc = this.doc;
     if (g.kind === 'shape') {
-      const cells = this.shapeCells(g.shape, g.x0, g.y0, cell.x, cell.y);
-      doc.begin(`${g.shape === 'line' ? 'Line' : g.shape === 'rect' ? 'Rectangle' : 'Ellipse'} of ${this.paintName(g.right)}`);
-      this.paintCells(cells, g.right);
+      // The shape as it ends: its corner where the pointer lets go.
+      g.x1 = cell.x;
+      g.y1 = cell.y;
+      this.flush();
+    } else if (g.kind === 'moveRegion') {
+      this.flush();
+    }
+    this.gesture = null;
+    if (g.kind === 'shape') {
       doc.commit();
     } else if (g.kind === 'box') {
       const hits = actorsInRect(doc, this.catalog, g.x0, g.y0, g.x1, g.y1);
@@ -286,7 +300,7 @@ export class Controller {
     } else if (g.kind === 'moveRegion') {
       const nx = g.from.x0 + g.dx;
       const ny = g.from.y0 + g.dy;
-      const r = pasteRegion(doc, this.catalog, g.clip, nx, ny, 'none');
+      const r = g.result;
       doc.commit();
       const clamp = (v, max) => Math.max(0, Math.min(max - 1, v));
       this.setRegion({ x0: clamp(nx, doc.width), y0: clamp(ny, doc.height), x1: clamp(nx + g.clip.w - 1, doc.width), y1: clamp(ny + g.clip.h - 1, doc.height) });
@@ -300,12 +314,52 @@ export class Controller {
     this.hooks.hover(null);
   }
 
-  /** Abort the gesture in progress (Escape). */
+  /** Abort the gesture in progress (Escape): what it changed so far is rolled back. */
   cancel() {
     if (!this.gesture) return false;
-    if (this.doc.inTransaction) this.doc.rollback();
+    const g = this.gesture;
     this.gesture = null;
+    if (g.tx && this.doc.tx === g.tx) this.doc.rollback();
     return true;
+  }
+
+  /**
+   * The gesture in progress, or null. A gesture with a transaction ends
+   * when something else closed that transaction (an undo pressed while
+   * dragging): it changes nothing after that.
+   */
+  live() {
+    const g = this.gesture;
+    if (g?.tx && this.doc.tx !== g.tx) this.gesture = null;
+    return this.gesture;
+  }
+
+  /**
+   * Make a shape or a moved region again when its corner, its offset or
+   * the tool settings changed since it was last made: what it made so far
+   * is reverted (still one transaction, one undo step) and it is made
+   * anew. The frame calls this once per frame, so many moves in one frame
+   * make it once; the press and the release call it too.
+   */
+  flush() {
+    const g = this.live();
+    if (!g || (g.kind !== 'shape' && g.kind !== 'moveRegion')) return;
+    const s = this.state;
+    const key =
+      g.kind === 'shape'
+        ? [g.x0, g.y0, g.x1, g.y1, g.right, s.size, s.shapeFill, s.symmetry, s.paint, s.material, s.ore, s.gems, s.autoShore].join(',')
+        : `${g.dx},${g.dy}`;
+    if (key === g.made) return;
+    g.made = key;
+    const doc = this.doc;
+    doc.revert();
+    if (g.kind === 'shape') {
+      this.paintCells(this.shapeCells(g.shape, g.x0, g.y0, g.x1, g.y1), g.right);
+    } else {
+      const r = g.from;
+      clearRegion(doc, this.catalog, r.x0, r.y0, r.x1, r.y1);
+      g.result = pasteRegion(doc, this.catalog, g.clip, r.x0 + g.dx, r.y0 + g.dy, 'none');
+    }
   }
 
   // ---- Painting ---------------------------------------------------------------------
@@ -434,7 +488,7 @@ export class Controller {
     doc.touchObjects();
     this.selectedSpawn = k;
     const [sx, sy] = doc.spawns[k];
-    this.gesture = { kind: 'spawn', k, dx: x - sx, dy: y - sy, partners: spawnPartners(doc, k, this.state.symmetry) };
+    this.gesture = { kind: 'spawn', k, dx: x - sx, dy: y - sy, partners: spawnPartners(doc, k, this.state.symmetry), tx: doc.tx };
     this.hooks.selectionChanged();
   }
 
@@ -442,6 +496,8 @@ export class Controller {
     const g = this.gesture;
     const doc = this.doc;
     const [nx, ny] = clampSpawn(doc, x - g.dx, y - g.dy);
+    if (doc.spawns[g.k][0] === nx && doc.spawns[g.k][1] === ny) return;
+    doc.touchObjects();
     doc.spawns[g.k] = [nx, ny];
     for (const p of g.partners) {
       doc.spawns[p.k] = clampSpawn(doc, ...applyTransform(p.t, nx, ny, doc.width, doc.height, SPAWN_W, SPAWN_H));
@@ -464,7 +520,7 @@ export class Controller {
       if (!this.selection.has(a)) return;
       doc.begin('Move actors');
       doc.touchObjects();
-      this.gesture = { kind: 'move', x0: x, y0: y, origin: new Map([...this.selection].map((s) => [s, [s.x, s.y]])), dx: 0, dy: 0 };
+      this.gesture = { kind: 'move', x0: x, y0: y, origin: new Map([...this.selection].map((s) => [s, [s.x, s.y]])), dx: 0, dy: 0, tx: doc.tx };
       return;
     }
     const k = spawnAt(doc, x, y);
@@ -486,6 +542,7 @@ export class Controller {
     const others = new Occupancy(this.doc, this.catalog, this.selection);
     const ok = [...g.origin].every(([a, [ox, oy]]) => !others.problem(a.type, ox + dx, oy + dy));
     if (!ok) return;
+    this.doc.touchObjects();
     for (const [a, [ox, oy]] of g.origin) {
       a.x = ox + dx;
       a.y = oy + dy;
@@ -742,7 +799,8 @@ export class Controller {
       return;
     }
     if (g?.kind === 'moveRegion') {
-      this.clipScene(rect, outline, sprite, g.clip, g.from.x0 + g.dx, g.from.y0 + g.dy, false);
+      // Its box: the cells and actors themselves are on the map already (live).
+      this.clipScene(rect, outline, sprite, g.clip, g.from.x0 + g.dx, g.from.y0 + g.dy, true);
       return;
     }
     if (!h) return;
@@ -833,13 +891,13 @@ export class Controller {
 
   /**
    * A clipboard region at (x, y): its box, the cells it changes tinted, its
-   * actors as ghosts. Mirrored copies show the box only (they are mirrored
-   * when pasted).
+   * actors as ghosts. `boxOnly`: the box alone (mirrored copies are
+   * mirrored when pasted; a region being moved is on the map already).
    */
-  clipScene(rect, outline, sprite, clip, x, y, mirrored) {
+  clipScene(rect, outline, sprite, clip, x, y, boxOnly) {
     outline(x * CELL, y * CELL, clip.w * CELL, clip.h * CELL, [0.4, 0.75, 1, 0.95]);
     rect(x * CELL, y * CELL, clip.w * CELL, clip.h * CELL, [0.4, 0.75, 1, 0.1]);
-    if (mirrored) return;
+    if (boxOnly) return;
     for (const a of clip.actors) {
       const info = this.info(a.type);
       if (!info) continue;

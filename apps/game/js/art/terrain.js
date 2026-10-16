@@ -596,16 +596,34 @@ export function terrainSeed(terrain) {
 /** Which neighbours have kind bit `k`: north 1, east 2, south 4, west 8. */
 const sides = (k, north, east, south, west) => (north & k ? 1 : 0) | (east & k ? 2 : 0) | (south & k ? 4 : 0) | (west & k ? 8 : 0);
 
+/** How far water depth looks for land: depth counts up to this many cells (cellTiles). */
+export const DEPTH_STEPS = 4;
+
 /**
  * Per-cell tile layer for the shader, RGBA per cell: R tile index, G decal
  * (0 none, 1 + decal index), B water depth (0 at the shore to 255 four or more
  * cells out), A shadow bits (rock to the north, west, north-west). `terrain`
  * is the engine's terrain bytes (Game.terrain_ptr: R terrain type, G ore, B
  * gems, A 255). Decals follow `seed`, so every player sees the same map.
+ *
+ * `area` ({ x0, y0, x1, y1 }, inclusive) tiles only those cells, into `out`
+ * (the whole map's layer, kept elsewhere): the map editor redoes the cells
+ * around an edit. A cell's tile depends on the cells up to DEPTH_STEPS away,
+ * so only that window around the area is read.
  */
-export function cellTiles(terrain, w, h, seed = 0) {
-  const n = w * h;
-  const out = new Uint8Array(n * 4);
+export function cellTiles(terrain, w, h, seed = 0, area = null, out = null) {
+  out ??= new Uint8Array(w * h * 4);
+  const ax0 = area ? Math.max(0, area.x0) : 0;
+  const ay0 = area ? Math.max(0, area.y0) : 0;
+  const ax1 = area ? Math.min(w - 1, area.x1) : w - 1;
+  const ay1 = area ? Math.min(h - 1, area.y1) : h - 1;
+  if (ax0 > ax1 || ay0 > ay1) return out;
+  // The window the area's tiles read (the whole map without an area), in its own coordinates.
+  const wx0 = Math.max(0, ax0 - DEPTH_STEPS);
+  const wy0 = Math.max(0, ay0 - DEPTH_STEPS);
+  const ww = Math.min(w - 1, ax1 + DEPTH_STEPS) - wx0 + 1;
+  const wh = Math.min(h - 1, ay1 + DEPTH_STEPS) - wy0 + 1;
+  const n = ww * wh;
   // What a terrain type counts as for its neighbours. Rivers look like water,
   // and so does the river under a bridge's deck (the bridge actor draws the
   // deck, art/world.js); walls of the tilesets like rock. Off the map counts
@@ -619,8 +637,10 @@ export function cellTiles(terrain, w, h, seed = 0) {
   for (const t of [T.ROCK, T.WALL]) kind[t] |= ROCKY;
   for (const t of [T.ROAD, T.BRIDGE]) kind[t] |= ROADY;
   const kinds = new Uint8Array(n);
-  for (let i = 0; i < n; i++) kinds[i] = kind[terrain[i * 4]];
-  // Water depth: steps to the nearest land cell (breadth first), capped at 4.
+  for (let y = 0; y < wh; y++) {
+    for (let x = 0; x < ww; x++) kinds[y * ww + x] = kind[terrain[((wy0 + y) * w + wx0 + x) * 4]];
+  }
+  // Water depth: steps to the nearest land cell (breadth first), capped at DEPTH_STEPS.
   const depth = new Uint8Array(n).fill(255);
   const queue = new Int32Array(n);
   let tail = 0;
@@ -633,11 +653,11 @@ export function cellTiles(terrain, w, h, seed = 0) {
   for (let q = 0; q < tail; q++) {
     const i = queue[q];
     const d = depth[i] + 1;
-    if (d > 4) continue;
-    const x = i % w;
-    const y = (i - x) / w;
+    if (d > DEPTH_STEPS) continue;
+    const x = i % ww;
+    const y = (i - x) / ww;
     // East, west, south, north.
-    if (x + 1 < w && depth[i + 1] > d) {
+    if (x + 1 < ww && depth[i + 1] > d) {
       depth[i + 1] = d;
       queue[tail++] = i + 1;
     }
@@ -645,23 +665,25 @@ export function cellTiles(terrain, w, h, seed = 0) {
       depth[i - 1] = d;
       queue[tail++] = i - 1;
     }
-    if (y + 1 < h && depth[i + w] > d) {
-      depth[i + w] = d;
-      queue[tail++] = i + w;
+    if (y + 1 < wh && depth[i + ww] > d) {
+      depth[i + ww] = d;
+      queue[tail++] = i + ww;
     }
-    if (y > 0 && depth[i - w] > d) {
-      depth[i - w] = d;
-      queue[tail++] = i - w;
+    if (y > 0 && depth[i - ww] > d) {
+      depth[i - ww] = d;
+      queue[tail++] = i - ww;
     }
   }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
+  for (let y = ay0; y <= ay1; y++) {
+    for (let x = ax0; x <= ax1; x++) {
       const i = y * w + x;
+      // The cell in the window (its neighbours on the map are in it too).
+      const j = (y - wy0) * ww + (x - wx0);
       const t = terrain[i * 4];
-      const north = y > 0 ? kinds[i - w] : OFF;
-      const east = x + 1 < w ? kinds[i + 1] : OFF;
-      const south = y + 1 < h ? kinds[i + w] : OFF;
-      const west = x > 0 ? kinds[i - 1] : OFF;
+      const north = y > 0 ? kinds[j - ww] : OFF;
+      const east = x + 1 < w ? kinds[j + 1] : OFF;
+      const south = y + 1 < h ? kinds[j + ww] : OFF;
+      const west = x > 0 ? kinds[j - 1] : OFF;
       const n4 = (k) => sides(k, north, east, south, west);
       const v = Math.floor(hash3(x, y, seed) * 4);
       let tile;
@@ -704,10 +726,10 @@ export function cellTiles(terrain, w, h, seed = 0) {
       }
       // Rock (or a wall) to the north, west and north-west casts a shadow; rock itself takes none.
       const shadowBits =
-        t === T.ROCK ? 0 : (y > 0 && north & ROCKY ? SHADOW.N : 0) | (x > 0 && west & ROCKY ? SHADOW.W : 0) | (x > 0 && y > 0 && kinds[i - w - 1] & ROCKY ? SHADOW.NW : 0);
+        t === T.ROCK ? 0 : (y > 0 && north & ROCKY ? SHADOW.N : 0) | (x > 0 && west & ROCKY ? SHADOW.W : 0) | (x > 0 && y > 0 && kinds[j - ww - 1] & ROCKY ? SHADOW.NW : 0);
       out[i * 4] = tile;
       out[i * 4 + 1] = decalIndex;
-      out[i * 4 + 2] = kinds[i] & WET ? Math.min(255, depth[i] * 64) : 0;
+      out[i * 4 + 2] = kinds[j] & WET ? Math.min(255, depth[j] * 64) : 0;
       out[i * 4 + 3] = shadowBits;
     }
   }

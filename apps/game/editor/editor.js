@@ -307,18 +307,30 @@ let shownFog = 'clear';
 /** Layers that need the engine's cell checks. */
 const ANALYSIS_LAYERS = ['passability', 'buildable', 'zones', 'rush', 'reach'];
 
+/**
+ * An edit in progress that changes actors or trees (the preview's actors)
+ * builds the preview again at most this often; its cells show every frame
+ * (js/live.js).
+ */
+const LIVE_PREVIEW_MS = 100;
+let livePreviewAt = -Infinity;
+let livePreviewWanted = false;
+
 function frame(now) {
   updatePanels();
   const dt = Math.min(0.25, (now - last) / 1000);
   animClock.advance(now - last, false);
   last = now;
   view.update(dt);
+  // A shape or a moved region follows the pointer once per frame.
+  ctl.flush();
   if (previewDirty) {
     previewDirty = false;
-    if (preview.update(doc.snapshot().json)) previewBuilds++;
-    if (preview.error) console.warn('Map preview:', preview.error);
+    livePreviewWanted = false;
+    buildPreview();
     view.terrainDirty = true;
-    analysisDirty = true;
+  } else if (doc.inTransaction) {
+    liveFrame(now);
   }
   if (analysisDirty && preview.game && (ANALYSIS_LAYERS.some((k) => state.layers[k]) || activeTab === 'check')) {
     analysisDirty = false;
@@ -332,7 +344,11 @@ function frame(now) {
     shownFog = fogKey;
     view.uploadFog(fogKey === 'clear' ? null : preview.game.editor_fog(state.fogSpawn));
   }
-  if (view.terrainDirty) view.updateTerrain(doc, preview.terrain(), installedTerrain);
+  if (view.terrainDirty) {
+    // During an edit the picture as patched so far (the preview is the map before it).
+    const live = view.live.bytes;
+    view.updateTerrain(doc, doc.inTransaction && live?.length === doc.width * doc.height * 4 ? live : preview.terrain(), installedTerrain);
+  }
   const scene = ctl.scene();
   const actors = state.layers.actors ? preview.sprites(view.viewRect()) : new Float32Array(0);
   view.draw(animClock.uniform(), actors, scene);
@@ -342,6 +358,40 @@ function frame(now) {
     minimap.draw(doc, catalog, view.viewRect());
   }
   requestAnimationFrame(frame);
+}
+
+/** Build the engine preview of the map as it is now (js/world.js); the live view patches from it. */
+function buildPreview() {
+  if (preview.update(doc.snapshot().json)) previewBuilds++;
+  if (preview.error) console.warn('Map preview:', preview.error);
+  view.live.setBase(doc, preview.error ? null : preview.terrain());
+  analysisDirty = true;
+}
+
+/**
+ * The frame of an edit in progress (a transaction is open): the cells it
+ * changed since the last frame go into the drawn terrain and the minimap
+ * (only those, js/live.js); actors and trees it changed come with a new
+ * preview, at most every LIVE_PREVIEW_MS.
+ */
+function liveFrame(now) {
+  const { cells, objects } = doc.takeLive();
+  if (cells.length) {
+    if (view.live.mark(doc, cells)) livePreviewWanted = true;
+    minimap.patch(doc, cells);
+  }
+  if (objects) {
+    livePreviewWanted = true;
+    minimap.invalidate();
+  }
+  if (livePreviewWanted && now - livePreviewAt >= LIVE_PREVIEW_MS) {
+    livePreviewWanted = false;
+    livePreviewAt = now;
+    buildPreview();
+    // The cells patched from the document take the new preview's bytes (a tree cell is clear ground under its tree there).
+    view.live.remark(doc);
+  }
+  view.flushLive();
 }
 
 /**

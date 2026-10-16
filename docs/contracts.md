@@ -666,6 +666,31 @@ guards it by counting reads, not by the clock.
 - The shape preview (line, rectangle, ellipse while dragging) is made when
   its corners, the brush, the fill or the symmetry change, as runs of cells
   along each row (the same pixels as a rect per cell), not every frame.
+- Live edits (`editor/js/live.js`, `controller.js`, `doc.js`): every drag
+  tool changes the map while the pointer is down, inside one transaction
+  from press to release (one undo step; Esc rolls it back with
+  `MapDoc.rollback`, and the closed transaction rebuilds the picture).
+  Strokes add cells with each move; a shape or a moved region is made again
+  from the start (`MapDoc.revert`, which keeps the transaction open) when its
+  corner, offset or the tool settings changed, at most once a frame
+  (`Controller.flush`). `MapDoc.takeLive()` hands the frame the cells changed
+  since the last frame and whether spawns or actors changed (`touchObjects`
+  on every object change). The frame patches the uploaded picture instead of
+  rebuilding the engine preview: the changed cells' terrain bytes (the
+  preview's where the document still matches the preview, else the
+  document's, as `terrain_bytes` makes them), WebRA's tiles of the 16 x 16
+  chunks within four cells of them (`cellTiles` with an `area`, the decal
+  seed of the last full upload; exactly the full tiling's), or for installed
+  tiles the type's most common tile, then only those chunks go up
+  (`Renderer.uploadTerrainRect`). The minimap redraws the changed cells only
+  (`Minimap.patch`). Actors and the trees of tree terrain are the preview's:
+  a gesture that changes actors, spawns or tree cells builds the preview
+  again at most every 100 ms (`LIVE_PREVIEW_MS`); a tree cell shows the tree
+  tile until then. The commit builds the preview and the full picture as
+  before, with the new decal seed (the decals follow the whole map's terrain,
+  as in a game). The canvas captures the tool's pointer from press to
+  release; a capture lost without a release ends the gesture where the
+  pointer last was, and a second pointer starts no gesture.
 - After a burst of edits the editor runs, once and when the browser is idle
   (`js/idle.js`): the checks (engine `validate_map`, the editor's checks and
   quick fixes; 300 ms after the last change) and the draft save (800 ms).

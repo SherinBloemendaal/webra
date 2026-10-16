@@ -10,18 +10,24 @@ const CELL = 24;
 const css = (rgb, a = 1) => `rgba(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)},${a})`;
 const teamColor = (owner) => (owner >= 0 ? TEAM_COLORS[Math.min(owner, 7)] : [0.85, 0.85, 0.85]);
 
-/** One pixel per cell: terrain, ore, gems, actor footprints. */
-export function terrainImage(doc, catalog) {
+/** The pixel of cell `i` without actors (terrain, ore or gems) into `d`. */
+function cellPixel(doc, i, d, colors) {
+  const rgb = doc.gems[i] > 0 ? PREVIEW_GEMS : doc.ore[i] > 0 ? PREVIEW_ORE : colors[doc.terrain[i]] ?? [0, 0, 0];
+  d[i * 4] = rgb[0];
+  d[i * 4 + 1] = rgb[1];
+  d[i * 4 + 2] = rgb[2];
+  d[i * 4 + 3] = 255;
+}
+
+/**
+ * One pixel per cell: terrain, ore, gems, actor footprints. `covered`
+ * (one byte per cell) is set where an actor's colour hides the cell.
+ */
+export function terrainImage(doc, catalog, covered = null) {
   const img = new ImageData(doc.width, doc.height);
   const d = img.data;
   const colors = BIOME_PREVIEW_COLORS[doc.meta?.biome] ?? PREVIEW_COLORS;
-  for (let i = 0; i < doc.width * doc.height; i++) {
-    const rgb = doc.gems[i] > 0 ? PREVIEW_GEMS : doc.ore[i] > 0 ? PREVIEW_ORE : colors[doc.terrain[i]] ?? [0, 0, 0];
-    d[i * 4] = rgb[0];
-    d[i * 4 + 1] = rgb[1];
-    d[i * 4 + 2] = rgb[2];
-    d[i * 4 + 3] = 255;
-  }
+  for (let i = 0; i < doc.width * doc.height; i++) cellPixel(doc, i, d, colors);
   for (const a of doc.actors) {
     const c = teamColor(a.owner).map((v) => Math.round(v * 255));
     for (const [x, y, kind] of actorCells(a, catalog)) {
@@ -30,6 +36,7 @@ export function terrainImage(doc, catalog) {
       d[i] = c[0];
       d[i + 1] = c[1];
       d[i + 2] = c[2];
+      if (covered) covered[i / 4] = 1;
     }
   }
   return img;
@@ -83,6 +90,9 @@ export class Minimap {
     this.base = document.createElement('canvas');
     this.dirty = true;
     this.doc = null;
+    /** The base picture's pixels and the cells actors cover in it (`patch` redoes single cells). */
+    this.image = null;
+    this.covered = null;
     // Any button (left, right, middle; a finger) moves the view there and a
     // drag keeps moving it: the editor gives no orders, so every button
     // only moves the view. One pointer at a time; other buttons (back,
@@ -141,6 +151,31 @@ export class Minimap {
     this.dirty = true;
   }
 
+  /**
+   * Cells `list` of `doc` changed (an edit in progress): their pixels
+   * only, not the whole picture. Cells under an actor keep its colour.
+   */
+  patch(doc, list) {
+    const img = this.image;
+    if (this.dirty || !img || img.width !== doc.width || img.height !== doc.height || !list.length) return;
+    const colors = BIOME_PREVIEW_COLORS[doc.meta?.biome] ?? PREVIEW_COLORS;
+    let x0 = doc.width;
+    let y0 = doc.height;
+    let x1 = -1;
+    let y1 = -1;
+    for (const i of list) {
+      if (this.covered[i]) continue;
+      cellPixel(doc, i, img.data, colors);
+      const x = i % doc.width;
+      const y = (i - x) / doc.width;
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+    if (x1 >= 0) this.base.getContext('2d').putImageData(img, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  }
+
   /** Redraw (terrain only when invalidated) with the current view rectangle. */
   draw(doc, catalog, view) {
     this.doc = doc;
@@ -154,7 +189,9 @@ export class Minimap {
     if (this.dirty) {
       this.base.width = doc.width;
       this.base.height = doc.height;
-      this.base.getContext('2d').putImageData(terrainImage(doc, catalog), 0, 0);
+      this.covered = new Uint8Array(doc.width * doc.height);
+      this.image = terrainImage(doc, catalog, this.covered);
+      this.base.getContext('2d').putImageData(this.image, 0, 0);
       this.dirty = false;
     }
     const ctx = this.canvas.getContext('2d');

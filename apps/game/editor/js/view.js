@@ -4,16 +4,17 @@
 // clear ground under tree actors there, as in a game), or, without one, in
 // the same RGBA layout from the document (R type, G ore and B gems scaled to
 // 255 at their maximum density, A 255). Tiles are WebRA's for the biome or
-// installed ones (js/art.js). The fog layer is uploaded fully visible.
+// installed ones (js/art.js). The fog layer is uploaded fully visible. An
+// edit in progress is patched into the uploaded picture as it goes
+// (js/live.js).
 
 import { buildTerrainAtlas, cellTiles, terrainSeed } from '../../js/art/terrain.js';
+import { LiveTerrain, docCellBytes } from './live.js';
 
 const CELL = 24; // world pixels per cell (render.rs PX_PER_CELL)
 const PAN_SPEED = 900; // CSS px per second at zoom 1
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 4;
-const ORE_MAX = 12;
-const GEM_MAX = 3;
 /** Team slot of neutral actors (engine world.rs EDITOR_SLOTS, js/world.js PREVIEW_NEUTRAL). */
 const NEUTRAL_TEAM = 8;
 
@@ -38,6 +39,10 @@ export class EditorView {
     this.terrainBytes = null;
     this.terrainDirty = true;
     this.hover = null;
+    /** The edit in progress drawn into the uploaded terrain (js/live.js). */
+    this.live = new LiveTerrain();
+    /** The pointer the tool follows (captured from its press to its release). */
+    this.toolPointer = null;
     this.bindInput();
   }
 
@@ -73,12 +78,7 @@ export class EditorView {
   /** The document's terrain in the engine's RGBA layout (without a preview). */
   docTerrain(doc) {
     const b = this.terrainBytes;
-    for (let i = 0, n = doc.width * doc.height; i < n; i++) {
-      b[i * 4] = doc.terrain[i];
-      b[i * 4 + 1] = Math.min(255, Math.floor((doc.ore[i] * 255) / ORE_MAX));
-      b[i * 4 + 2] = Math.min(255, Math.floor((doc.gems[i] * 255) / GEM_MAX));
-      b[i * 4 + 3] = 255;
-    }
+    for (let i = 0, n = doc.width * doc.height; i < n; i++) docCellBytes(doc, i, b);
     return b;
   }
 
@@ -98,13 +98,23 @@ export class EditorView {
       this.tileAtlas = tiles.atlas;
       this.renderer.uploadCells(tiles.cells);
       this.tiled = true;
+      this.live.reset(b, tiles.cells, doc.width, doc.height, { installed: true });
     } else {
       if (this.tiled) this.renderer.setTerrainAtlas(buildTerrainAtlas(this.biome ?? 'temperate'));
       this.tiled = false;
       this.tileAtlas = null;
-      this.renderer.uploadCells(cellTiles(b, doc.width, doc.height, terrainSeed(b)));
+      const seed = terrainSeed(b);
+      const cells = cellTiles(b, doc.width, doc.height, seed);
+      this.renderer.uploadCells(cells);
+      this.live.reset(b, cells, doc.width, doc.height, { seed });
     }
     this.terrainDirty = false;
+  }
+
+  /** Upload what the edit in progress changed (js/live.js): the changed chunks of terrain and tiles only. */
+  flushLive() {
+    const live = this.live;
+    return live.flush((x, y, w, h) => this.renderer.uploadTerrainRect(live.bytes, live.cells, x, y, w, h));
   }
 
   // ---- Camera ---------------------------------------------------------------------
@@ -233,8 +243,10 @@ export class EditorView {
         c.classList.add('panning');
         return;
       }
-      if (e.button === 0 || e.button === 2) {
+      if ((e.button === 0 || e.button === 2) && this.toolPointer === null) {
+        // Captured: the gesture follows the pointer off the canvas and ends where it lets go.
         c.setPointerCapture(e.pointerId);
+        this.toolPointer = e.pointerId;
         this.handlers.down(this.cellAt(p.x, p.y), e);
       }
     });
@@ -257,11 +269,20 @@ export class EditorView {
         c.classList.remove('panning');
         return;
       }
+      if (e.pointerId !== this.toolPointer) return;
+      this.toolPointer = null;
       const p = local(e);
       this.handlers.up(this.cellAt(p.x, p.y), e);
     };
     c.addEventListener('pointerup', up);
     c.addEventListener('pointercancel', up);
+    // The capture went without a release (the window lost the pointer): the gesture ends where the pointer was last.
+    c.addEventListener('lostpointercapture', (e) => {
+      if (e.pointerId !== this.toolPointer) return;
+      this.toolPointer = null;
+      if (this.hover) this.handlers.up(this.hover, e);
+      else this.handlers.cancel?.();
+    });
     c.addEventListener('pointerleave', () => {
       this.hover = null;
       this.handlers.leave();
