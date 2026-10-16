@@ -1,8 +1,8 @@
 name: CI
 
+# Pushes to main run this file through deploy.yml (workflow_call), so CI runs
+# once per push; pull requests and manual runs use it directly.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_call:
   workflow_dispatch:
@@ -15,8 +15,8 @@ permissions:
 # Ubuntu and the runners are ephemeral: every job installs the system packages
 # and toolchains it needs and caches through actions/cache.
 
-# github.workflow is the caller's name when deploy.yml runs this file, so the
-# push run of CI and the CI inside a deploy never cancel each other.
+# github.workflow is the caller's name when deploy.yml runs this file, so a
+# pull request's CI and the CI inside a deploy never cancel each other.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
