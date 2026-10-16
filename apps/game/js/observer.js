@@ -10,6 +10,7 @@
 // ObserverStatsLogic TEAM_TEMPLATE and FLAG).
 
 import { armyIcons, armyIconTip, IconStrip, powerIcons, powerIconTip, productionIcons, productionIconTip } from './observer-icons.js';
+import { attachTooltip } from './ui/tooltip.js';
 
 export const OBSERVER_VIEW = 255;
 /** Income is the money earned over the last minute of game time. */
@@ -164,6 +165,11 @@ export class History {
  * whole map without shroud, or one player's view with that player's fog),
  * the statistics panel picker and the statistics.
  */
+/** Tooltip of an observer view button: the view's name and what it shows (a player's view: what they see). */
+export function viewTip(label, desc = '') {
+  return { title: label, desc: desc || `What ${label} sees.` };
+}
+
 export class ObserverPanel {
   /**
    * @param {HTMLElement} parent
@@ -207,10 +213,11 @@ export class ObserverPanel {
     head.setAttribute('role', 'group');
     head.setAttribute('aria-label', 'View');
     this.viewButtons = [];
-    const addView = (label, value, color, title) => {
+    const addView = (label, value, color, desc) => {
       const b = el('button', 'observer-view', label);
       b.type = 'button';
-      if (title) b.title = title;
+      // The game's tooltip (js/ui/tooltip.js) says what the view shows; the label stays the button's name.
+      attachTooltip(b, () => viewTip(label, desc), { side: 'bottom' });
       if (color) b.style.setProperty('--player-color', rgbCss(color));
       b.addEventListener('click', () => this.setView(value));
       head.append(b);
@@ -362,7 +369,8 @@ export class ObserverPanel {
         flag.dataset.faction = s.faction ?? '';
         flag.setAttribute('aria-hidden', 'true');
         name.append(flag, el('span', 'observer-player', p.name));
-        name.title = p.name;
+        // The whole name when the column cuts it short (the row's text already has it for screen readers).
+        attachTooltip(name, () => ({ title: p.name }), { side: 'right' });
         row.append(name);
         const rec = { el: row, defeated: false, cells: [], texts: [], strip: null, data: null };
         if (panel.columns) {

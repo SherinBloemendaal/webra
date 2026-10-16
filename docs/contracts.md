@@ -3798,6 +3798,17 @@ the rules below.
 
 ### The in-game HUD and its connection parts (`apps/game/js/sidebar.js`, `js/netwarn.js`, `css/netwarn.css`)
 
+Hover text on the HUD is always the shared tooltip (js/ui/tooltip.js, the
+Tooltips board: hover delay, keyboard focus, long press on touch,
+`aria-describedby` while it shows), never the browser's native `title`:
+besides the command bar, sidebar and support powers, the biome and weather
+badge (js/weatherbadge.js: the sky's name and every effect; the badge takes
+keyboard focus), the replay bar's play button and time, the observer
+panel's view buttons and player names, and the chat's mode (Shift+Tab) and
+mute buttons. Elements keep their own accessible names (text or
+`aria-label`); tests/hud-tooltips.test.mjs checks that none of them gets a
+native title again.
+
 The HUD follows the InGame, NetInGame and Tooltips boards. The logic of
 production (clicks, holds, cancels, queue counts, the red funds marker of
 `shortOfFunds`) is unchanged; the sidebar adds:

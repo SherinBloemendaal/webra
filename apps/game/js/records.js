@@ -20,6 +20,7 @@ import { blinkOn, completeText, replayStatus } from './gametimer.js';
 import { durationText, MODE_LABELS, playersText, replayFacts, replayMeta, usageShare, usageText } from './account/replays.js';
 import { MARK_KINDS, ReplayMarks } from './replaymarks.js';
 import { controlOwnsKey } from './ownkeys.js';
+import { attachTooltip } from './ui/tooltip.js';
 
 export { ObserverPanel, OBSERVER_VIEW, viewOnly } from './observer.js';
 
@@ -711,6 +712,18 @@ function playState(c) {
   return c.ended ? 'restart' : c.playing ? 'pause' : 'play';
 }
 const PLAY_LABELS = { play: 'Play', pause: 'Pause', restart: 'Restart' };
+const PLAY_HELP = { play: 'Go on watching the replay.', pause: 'Stop the replay here.', restart: 'Watch the replay again from the start.' };
+
+/** Tooltip of the replay bar's play button in state `state` (playState). */
+export function playTip(state) {
+  return { title: PLAY_LABELS[state] ?? PLAY_LABELS.play, desc: PLAY_HELP[state] ?? PLAY_HELP.play };
+}
+
+/** Tooltip of the replay bar's time (OpenRA label-replay-complete): how much of the replay is watched. */
+export function replayTimeTip(ticks, length) {
+  const complete = completeText(ticks, length);
+  return complete ? { title: complete, desc: `${formatTicks(Math.max(0, Math.min(ticks, length)))} of ${formatTicks(length)} watched.` } : null;
+}
 
 /**
  * Replay viewer controls (the Replay board's transport bar): play / pause,
@@ -796,12 +809,18 @@ export class ReplayBar {
     if (onExit) end.append(button('Exit', 'ui-btn ui-btn-sm ui-btn-ghost replay-exit', () => onExit()));
     this.root.append(this.play, speeds, seekBox, ...(onDownload || onExit ? [end] : []), this.note);
     parent.append(this.root);
+    // The game's tooltips (js/ui/tooltip.js), not the browser's title.
+    this.tips = [
+      attachTooltip(this.play, () => playTip(this.play.dataset.state), { side: 'top' }),
+      attachTooltip(this.time, () => replayTimeTip(this.c.ticks, this.c.length), { side: 'top' }),
+    ];
     this.dragging = false;
     this.update();
   }
 
   /** The viewer is going: the controls leave the battlefield. */
   dispose() {
+    for (const tip of this.tips) tip.detach();
     this.root.remove();
   }
 
@@ -856,7 +875,7 @@ export class ReplayBar {
       this.play.dataset.state = state;
       this.playIcon.dataset.icon = state;
       this.play.setAttribute('aria-label', PLAY_LABELS[state]);
-      this.play.title = PLAY_LABELS[state];
+      this.tips[0].refresh();
     }
     for (const [s, b] of this.speeds) {
       const on = s === c.speed;
@@ -870,9 +889,12 @@ export class ReplayBar {
       syncSliderFill(this.seek);
       this.showTime(c.ticks);
     }
-    // The observer timer's tooltip (OpenRA label-replay-complete).
+    // The observer timer's tooltip (OpenRA label-replay-complete) follows the replay while it shows.
     const complete = completeText(c.ticks, c.length);
-    if (complete && this.time.title !== complete) this.time.title = complete;
+    if (complete !== this.complete) {
+      this.complete = complete;
+      this.tips[1].refresh();
+    }
     const status = c.ended ? null : replayStatus({ playing: c.playing, speed: c.speed, maxSpeed: REPLAY_SPEEDS[REPLAY_SPEEDS.length - 1] });
     const shown = status && blinkOn(this.now(), this.start) ? status : '';
     if (this.status.textContent !== shown) this.status.textContent = shown;
