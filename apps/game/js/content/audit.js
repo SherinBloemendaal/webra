@@ -17,7 +17,8 @@
 //              files, the pose table holds its frames in OpenRA's order)
 //   fallback   WebRA should draw it from the original art but shows its own
 //   wrong      WebRA maps it to another sequence, or the frames, facings,
-//              mode or offset in the pose table differ from OpenRA's, an
+//              mode or offset in the pose table differ from OpenRA's, it
+//              is drawn with another palette than OpenRA's, an
 //              effect lasts longer than the engine draws it, or the audit
 //              has no rule for the role yet
 //   gap        OpenRA draws it, the engine has nothing that shows it (the
@@ -417,6 +418,12 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
         row({ actor: a.id, role: 'body', openra: null, status: 'webra-only', note: 'not an OpenRA actor' });
       }
       continue;
+    }
+    // OpenRA's palette for the actor's sprites (RENDER_FACTS palette, RenderSprites
+    // Palette): WebRA draws them with the same one (ACTOR_ART palette).
+    if (entry && !entry.bridge && (entry.palette ?? 'player') !== (facts.palette ?? 'player')) {
+      const want = facts.palette ?? 'player';
+      row({ actor: a.id, role: 'palette', openra: want, webra: entry.palette ?? 'player', where: 'palette', status: 'wrong', note: `OpenRA draws it with the ${want} palette` });
     }
     const rotors = rotorPairs(facts.parts);
     const kind = a.kind === 'aircraft' && rotors.length ? 'helicopter' : a.kind;

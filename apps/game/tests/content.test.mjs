@@ -526,6 +526,56 @@ test('original slots without the palette fall back to WebRA art entirely', () =>
   assert.equal(out.missing.length, ACTORS.length);
 });
 
+test('original slots: each actor in OpenRA\'s palette for it; the ore mine per theater, the gem mine WebRA\'s', () => {
+  const t = (id) => ACTORS.findIndex((a) => a.id === id);
+  // A mine frame like Red Alert's: ore in the remap range (80..95 of the
+  // theater palette is gold there), terrain shadow index 3, rock.
+  const mineFrame = new Uint8Array(24 * 24).map((_, i) => (i < 144 ? 85 : i < 288 ? 3 : 30));
+  const snowPal = buildPal((i) => [63 - (i % 64), (i * 5) % 64, 12]);
+  const rgb = (pal, i) => [...decodePalette(pal).subarray(i * 3, i * 3 + 3)];
+  const pixels = (img) => {
+    const out = [];
+    for (let i = 0; i < img.width * img.height; i++) out.push([...img.color.subarray(i * 4, i * 4 + 4)].join());
+    return new Set(out);
+  };
+  const files = syntheticGraphics();
+  files.set('mine.tem', buildShp(24, 24, [mineFrame]));
+  files.set('mine.sno', buildShp(24, 24, [mineFrame]));
+  files.set('snow.pal', snowPal);
+  const get = (n) => files.get(n) ?? null;
+  assert.equal(ACTOR_ART.MINE.palette, 'terrain', 'OpenRA draws the ore mine with the terrain palette (RenderSprites Palette)');
+  assert.equal(ACTOR_ART.GMINE, undefined, 'gmine.* are OpenRA\'s own: no original art');
+  for (const [tileset, pal] of [['TEMPERAT', files.get(ACTOR_PALETTE)], ['SNOW', snowPal]]) {
+    const out = originalSlots(ACTORS, get, tileset);
+    assert.ok(out.actors.includes('MINE'), tileset);
+    assert.ok(out.missing.includes('GMINE'), `${tileset}: the gem mine keeps WebRA art`);
+    const art = out.slots.get(2 * t('MINE'));
+    assert.equal(art.poses[POSE.IDLE].length, 1);
+    const img = art.images[0];
+    assert.deepEqual([img.width, img.height], [24, 24], `${tileset}: one cell, the whole frame`);
+    assert.deepEqual(img.offset, [0, 0], `${tileset}: centred on its cell`);
+    assert.equal(img.mask, null, `${tileset}: the ore is not team coloured`);
+    const px = pixels(img);
+    assert.ok(px.has([...rgb(pal, 85), 255].join()), `${tileset}: the ore in the theater's own colour`);
+    assert.ok(px.has([0, 0, 0, SHADOW_ALPHA].join()), `${tileset}: index 3 is a terrain shadow`);
+    assert.ok(px.has([...rgb(pal, 30), 255].join()), `${tileset}: rock in the theater's own colour`);
+  }
+  // Red Alert has no desert or interior mine (OpenRA drew them): WebRA's art there.
+  const desert = syntheticGraphics();
+  desert.set('desert.pal', buildPal());
+  const outDesert = originalSlots(ACTORS, (n) => desert.get(n) ?? null, 'DESERT');
+  assert.ok(outDesert.missing.includes('MINE') && outDesert.missing.includes('GMINE'));
+  // Without the theater's palette the mine keeps WebRA's art too, and says why.
+  files.delete('snow.pal');
+  const noPal = originalSlots(ACTORS, get, 'SNOW');
+  assert.ok(noPal.missing.includes('MINE'));
+  assert.ok(noPal.problems.some((p) => /palette terrain: snow\.pal/.test(p)), noPal.problems.join('; '));
+  // Walls are drawn without the team remap (OpenRA's effect palette); units keep it.
+  const walls = originalSlots(ACTORS, (n) => syntheticGraphics().get(n) ?? null, 'TEMPERAT');
+  assert.ok(walls.slots.get(2 * t('SBAG')).images.every((img) => img.mask === null), 'sandbags are not team coloured');
+  assert.ok(walls.slots.get(2 * t('1TNK')).images.some((img) => img.mask), 'tanks are');
+});
+
 test('the atlas holds pose tables: head, descriptors and facing frames where the shader looks', () => {
   const files = syntheticGraphics();
   const out = originalSlots(ACTORS, (n) => files.get(n) ?? null);

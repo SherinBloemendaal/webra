@@ -36,6 +36,11 @@
 //   into their frames (ACTOR_ART `lift`);
 // - the storage silo shows its fill level (OpenRA WithResourceLevelSpriteBody):
 //   the engine names the stage in the age, MODE.INDEX;
+// - each actor is drawn with OpenRA's palette for it (ACTOR_ART `palette`,
+//   ACTOR_PALETTES): the player's with the team remap by default, walls and
+//   crates without the remap, the ore mine and trees in the theater's
+//   terrain palette, the desert village in desert.pal; an actor whose
+//   palette file is missing keeps WebRA's art;
 // - special sprites (projectiles, explosions, the rally flag, mines; SPECIAL_ART)
 //   after the actor slots: "effect" ones play once from the age the engine
 //   gives with the make pose and then show nothing, the rest loop.
@@ -54,6 +59,21 @@ const SHADOW_INDEX = ACTOR_SHADOW[0];
 const CELL_PX = 24;
 /** Rows of the footprint a bib covers (OpenRA WithBuildingBib without a mini bib). */
 const BIB_ROWS = 2;
+
+/**
+ * The palettes actors are drawn with besides the player's (ACTOR_ART
+ * `palette`, OpenRA RenderSprites Palette; mods/ra/rules/palettes.yaml):
+ * the file per tileset, whether the team remap applies and the shadow
+ * indices. "player" (ACTOR_PALETTE with the remap, shadow 4) is the default.
+ */
+export const ACTOR_PALETTES = Object.freeze({
+  // Walls and crates: temperat.pal without the team remap.
+  effect: Object.freeze({ file: () => ACTOR_PALETTE, shadow: ACTOR_SHADOW }),
+  // The theater's own palette (the ore mine, trees): shadow indices 3 and 4.
+  terrain: Object.freeze({ file: (tileset) => TERRAIN[tileset]?.palette ?? null, shadow: TERRAIN_SHADOW }),
+  // The desert village and rocks (Tiberian Dawn's desert.pal).
+  desert: Object.freeze({ file: () => 'desert.pal', shadow: ACTOR_SHADOW }),
+});
 
 /** A cache of decoded sprite files over `getFile(name) -> Uint8Array | null`. */
 export function spriteFiles(getFile) {
@@ -573,6 +593,27 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       out.problems.push(`${terrainPalette}: ${err.message}`);
     }
   }
+  // Lookups per palette name (ACTOR_PALETTES), null when its file is missing or broken.
+  const lookups = new Map([['player', lookup]]);
+  const lookupOf = (name) => {
+    if (!lookups.has(name)) {
+      const spec = ACTOR_PALETTES[name];
+      const file = spec?.file(tileset);
+      const bytes = file ? getFile(file) : null;
+      let got = null;
+      if (!spec) out.problems.push(`palette ${name}: unknown`);
+      else if (!bytes) out.problems.push(`palette ${name}: ${file ?? 'none'} on ${tileset} is not installed`);
+      else {
+        try {
+          got = paletteLookup(decodePalette(bytes), { remap: false, shadow: spec.shadow });
+        } catch (err) {
+          out.problems.push(`${file}: ${err.message}`);
+        }
+      }
+      lookups.set(name, got);
+    }
+    return lookups.get(name);
+  };
   const bibs = new Map();
   const bibOf = (image, seqName, a) => {
     const key = `${image}|${seqName}|${a.width}x${a.height}`;
@@ -635,10 +676,17 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
     }
     const offset = a.kind === 'building' ? (a.centerOffset ?? [0, 0]) : [0, 0];
     const bib = a.kind === 'building' && entry.bib ? bibOf(entry.image, entry.bib, a) : null;
-    const ctx = { files, tileset, lookup, offset, wall: !!entry.wall };
+    // OpenRA's palette for this actor; without it the actor keeps WebRA's art.
+    const palette = entry.palette ?? 'player';
+    const actorLookup = lookupOf(palette);
+    if (!actorLookup) {
+      out.missing.push(a.id);
+      return;
+    }
+    const ctx = { files, tileset, lookup: actorLookup, offset, wall: !!entry.wall };
     const make = (part, mapping) => {
       const lift = part === 'second' ? (entry.lift ?? {}) : {};
-      const key = `${entry.image}|${part}|${offset.join(',')}|${JSON.stringify(mapping)}|${JSON.stringify(lift)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
+      const key = `${entry.image}|${part}|${palette}|${offset.join(',')}|${JSON.stringify(mapping)}|${JSON.stringify(lift)}|${bib ? entry.bib : ''}|${a.width}x${a.height}`;
       if (!shared.has(key)) {
         const partCtx = {
           ...ctx,

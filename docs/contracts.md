@@ -5152,6 +5152,22 @@ from an original file has no `ACTOR_ART` entry. `apps/game/tests/art-audit.test.
 files whose frames spell their own file and frame number, so a missing
 mapping or a frame out of OpenRA's order fails CI.
 
+Palettes of the original actor art: every actor is drawn with the palette
+OpenRA's RenderSprites names for it (mods/ra/rules/palettes.yaml;
+`ACTOR_ART` `palette`, `js/content/atlas.js` `ACTOR_PALETTES`): by default
+"player" (temperat.pal, the team remap on indices 80 to 95, shadow index 4);
+"effect" for walls and crates (temperat.pal without the remap); "terrain"
+for the ore mine (`MINE`) and trees (the theater's palette, shadow indices
+3 and 4: Red Alert's mine draws its gold ore with indices 80 to 95, which
+the player palette would turn into team colour); "desert" for the desert
+village and rocks (desert.pal without the remap). An actor whose palette
+file is not installed keeps WebRA's art. The ore mine is Red Alert's
+mine.tem and mine.sno (one 24 x 24 frame on its cell); OpenRA drew the
+desert and interior mine and every gem mine (`GMINE`: gmine.tem, .sno,
+.des, `OPENRA_MADE_FILES`), so those keep WebRA's own mine art. The audit
+reports an actor drawn with another palette than OpenRA's
+(`render-facts.js` `palette`) as wrong.
+
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA (its pixel art, then its vector art).
 

@@ -662,6 +662,24 @@ def trait(tree, name):
     return None
 
 
+# The palettes an actor's RenderSprites may name (OpenRA mods/ra/rules/palettes.yaml)
+# that the original art draws with (js/content/atlas.js ACTOR_PALETTES):
+# "player" (temperat.pal with the team remap, shadow index 4) is the default;
+# "effect" is temperat.pal without the remap (walls, crates); "terrain" is
+# the theater's own palette with shadow indices 3 and 4 (the ore mine);
+# "desert" is desert.pal without the remap (the desert village).
+SPRITE_PALETTES = {'player', 'effect', 'terrain', 'desert'}
+
+
+def sprite_palette(aid, tree):
+    """The palette OpenRA draws an actor's sprites with (RenderSprites Palette, default player)."""
+    rs = trait(tree, 'RenderSprites') or {}
+    pal = rs.get('Palette', ['player'])[0] or 'player'
+    if pal not in SPRITE_PALETTES:
+        raise SystemExit(f'{aid}: RenderSprites palette {pal} is not one the original art draws with (SPRITE_PALETTES)')
+    return pal
+
+
 # Bridge states (OpenRA BridgeInfo template fields) as ACTOR_ART bridge keys.
 BRIDGE_STATES = [('healthy', 'Template'), ('damaged', 'DamagedTemplate'), ('destroyed', 'DestroyedTemplate'),
                  ('destroyed_north', 'DestroyedPlusNorthTemplate'), ('destroyed_south', 'DestroyedPlusSouthTemplate'),
@@ -1027,6 +1045,10 @@ def actor_art(actors, seqs):
         # has one (dome, construction yard, naval yard, sub pen, war factory);
         # OpenRA drew the others itself (NO_ORIGINAL), so those show the real
         # cameo with WebRA's FAKE mark over it (`fakeMark`, js/content/cameos.js).
+        # The palette of the body and second slot (RenderSprites Palette), when not the player's.
+        pal = sprite_palette(aid, tree)
+        if pal != 'player':
+            entry['palette'] = pal
         fake = is_fake(tree)
         fake_icon = fake and use(image, 'fake-icon')
         cameo = 'fake-icon' if fake_icon else use(image, 'icon')
@@ -1216,6 +1238,9 @@ def render_facts(actors, seqs):
                     add('trail', img, seq)
         add('icon', image, 'icon')
         facts[aid] = {'image': image, 'parts': out}
+        pal = sprite_palette(aid, tree) if tree else 'player'
+        if pal != 'player':
+            facts[aid]['palette'] = pal
     return facts
 
 
@@ -1552,7 +1577,9 @@ def main():
         ' * slot (aux-idle and aux-move: a second rotor), wall, level (the frame',
         ' * shows the storage level), lift (screen y offset in pixels of the second',
         ' * slot per pose, negative is up), unitOverlay (forward and side offset of an overlay drawn',
-        ' * over a unit without a turret), cameo.',
+        ' * over a unit without a turret), cameo, palette (OpenRA RenderSprites',
+        ' * Palette when not "player": effect, terrain or desert; js/content/atlas.js',
+        ' * ACTOR_PALETTES).',
         ' */',
         'export const ACTOR_ART = {',
     ]
@@ -1661,7 +1688,8 @@ def main():
         '// (apps/game/js/content/audit.js): per actor its image and one',
         '// [role, image, sequence, original] row per sequence its render traits',
         '// use; `original` is false when the file is made by OpenRA (bits.txt)',
-        '// and a player\'s copy of Red Alert has nothing for it. These are OpenRA\'s',
+        '// and a player\'s copy of Red Alert has nothing for it; `palette` is the',
+        '// RenderSprites palette when not "player". These are OpenRA\'s',
         '// facts, not WebRA\'s choices (those are content/tables.js ACTOR_ART).',
         '',
         'export const RENDER_FACTS = {',

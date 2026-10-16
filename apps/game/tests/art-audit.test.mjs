@@ -140,6 +140,22 @@ test('art audit: a wrong mapping, missing files and shifted frames are caught', 
   assert.match(formatAudit(r2, { only: ['fallback'] }), /HELI\s+rotor-air/);
 });
 
+test('art audit: the ore mine is Red Alert\'s on temperate and snow in the terrain palette, WebRA\'s elsewhere; a wrong palette fails', () => {
+  assert.equal(RENDER_FACTS.MINE.palette, 'terrain');
+  assert.equal(RENDER_FACTS.GMINE.palette, undefined, 'the gem mine is drawn with the player palette in OpenRA');
+  for (const [tileset, want] of [['TEMPERAT', 'ok'], ['SNOW', 'ok'], ['DESERT', 'webra-only']]) {
+    const { rows } = auditOriginalArt(AUDITED, getFile, { tileset, identify });
+    const mine = rows.filter((r) => r.actor === 'MINE');
+    assert.deepEqual(mine.map((r) => [r.role, r.status]), [['body', want]], `${tileset}: ${formatAudit({ rows: mine, problems: [], counts: {} })}`);
+    assert.deepEqual(rows.filter((r) => r.actor === 'GMINE').map((r) => r.status), ['webra-only'], tileset);
+  }
+  // Drawn with the player's palette (the old mapping: team coloured ore) the audit says so.
+  const actorArt = { ...ACTOR_ART, MINE: { ...ACTOR_ART.MINE, palette: undefined }, SBAG: { ...ACTOR_ART.SBAG, palette: 'desert' } };
+  const { rows } = auditOriginalArt(AUDITED, getFile, { identify, actorArt });
+  const bad = rows.filter((r) => r.role === 'palette');
+  assert.deepEqual(bad.map((r) => [r.actor, r.status, r.openra, r.webra]), [['SBAG', 'wrong', 'effect', 'desert'], ['MINE', 'wrong', 'terrain', 'player']]);
+});
+
 test('art audit: an actor OpenRA draws from Red Alert files without an original mapping fails', () => {
   // The campaign's characters are checked like the rules actors: Einstein and
   // Chan are Red Alert's (hires.mix), their whole body is the original's.
