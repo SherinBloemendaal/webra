@@ -324,7 +324,7 @@ test('tour card in the game: every tour step the game ticks off says Step done w
       ['base.radar', [[EV.BUILDING_PLACED, T.DOME, 0]], /Tour done/],
     ];
     for (const [id, list, said] of frames) {
-      // A throw here leaves js/main.js frameBody before it asks for the next animation frame: the game stands still.
+      // A throw here stopped the 0.17.0 game loop (js/main.js frameBody); js/frameloop.js now keeps the loop going, but the step's toast must still work.
       assert.doesNotThrow(() => tracker.onEvents(events(...list)), id);
       assert.ok(progress.isDone(id), id);
       assert.match(toast(), said, id);
