@@ -1,214 +1,111 @@
-// Unit materials of the 2D minimal pack, after the design canvas "WebRA
-// texturen" (page Top-down, boards "Materialen en kleuren" and "Units"): every
-// surface is one plain colour with one seam or pattern layer, as in 1996.
+// The flat block kit of the 2D minimal units (design board "Retexture 2D en 3D:
+// minder detail", 0.21.0): every unit is two to four flat shapes in the colours
+// the 2D and 3D minimal art share (./shared-palette.js), one team coloured area
+// (the turret, the cargo bed, the uniform or the superstructure) and one hard
+// shadow offset to the bottom right, under the whole sprite.
 //
-// Team plates keep their pattern in darker team greys, so the team mask stays
-// whole and the player's colour stays readable under it. Patterns are cut to
-// their rectangle here instead of with a canvas clip, so the drawings need no
-// save/restore and work in every recording context the tests use.
+// A sprite is declared as data: a list of parts, each one fill (a material
+// colour or the team) over one or more geometries (a shape and its mirror or
+// its repeats, such as a pair of treads or a row of wheels), plus the shadow's
+// geometry. The parts stay readable for the tests (shape counts, extents)
+// and for the preview sheets.
 //
-// Used by the unit art modules (vehicles, infantry, naval, planes, helis);
-// shapes and the base palette come from ./kit.js.
+// Ground units fill their box like the original sprites fill theirs: the shapes
+// span the box up to the shadow offset at the right and bottom, the shadow
+// reaches the edge. Aircraft carry no shadow (the engine draws one under them,
+// engine/src/render.rs), so they fill the whole box.
 
 import { rect, rrect, circle, poly } from './kit.js';
+import { SHARED_PALETTE } from './shared-palette.js';
 
-/** Unit material colours (board "Materialen en kleuren"; the Units board's swatches). */
-export const U = {
-  steel: '#70747a',
-  steelSeam: '#7b8086',
-  steelLight: '#98a0a8',
-  steelDark: '#3f4247',
-  hull: '#55585c',
-  hullDark: '#35373a',
-  deck: '#1e3440',
-  deckSeam: '#2a4554',
-  glass: '#5f93ad',
-  glassLight: '#bfe3f2',
-  glassDark: '#23363f',
-  copper: '#b0703a',
-  copperDark: '#8c5528',
-  copperLight: '#cc8a4e',
-  canvas: '#8a8a5a',
-  canvasDark: '#6a6a42',
-  track: '#2b2b28',
-  trackLight: '#4a4a44',
-  yellow: '#d9b23a',
-  ore: '#c99a2e',
-  oreLight: '#e6c25a',
-  helmet: '#5d6b3a',
-  skin: '#d8b48a',
-  ant: '#6a2a1e',
-  antDark: '#4a1c14',
-};
+/** The shared material colours (shared-palette.js). */
+export const M = SHARED_PALETTE.materials;
 
-/** Team panel lines: this much darker than the plate's grey (the board's 18 % shade). */
-export const PANEL_SHADE = 0.82;
+/** World pixels per cell. */
+const CELL = 24;
 
-// ---- Pattern geometry (pure) -------------------------------------------------------
+/** The hard shadow: offset to the bottom right by this many pixels, in SHADOW_FILL. */
+export const SHADOW_OFFSET = SHARED_PALETTE.shadow.offset * CELL;
+export const SHADOW_FILL = `rgba(0,0,0,${SHARED_PALETTE.shadow.alpha})`;
 
-/**
- * Stripes `width` wide every `period` along [from, to), the first one starting
- * at `from + phase`: a list of [start, size], each cut to the range.
- */
-export function bands(from, to, period, width, phase = 0) {
-  const out = [];
-  if (!(period > 0) || !(width > 0) || !(to > from)) return out;
-  let s = from + phase;
-  while (s + width <= from) s += period;
-  for (; s < to; s += period) {
-    const a = Math.max(from, s);
-    const b = Math.min(to, s + width);
-    if (b > a) out.push([a, b - a]);
-  }
-  return out;
+/** The fill of the team area. */
+export const TEAM = 'team';
+/** The team grey the area is painted in (the shader tints it with the owner's colour). */
+export const TEAM_LEVEL = 0.85;
+
+// ---- Geometry ------------------------------------------------------------------------------
+
+/** A (rounded) rectangle. */
+export const box = (x, y, w, h, r = 0) => ['r', x, y, w, h, r];
+/** A disc. */
+export const disc = (cx, cy, r) => ['c', cx, cy, r];
+/** A polygon through [x0, y0, x1, y1, ...]. */
+export const shape = (...pts) => ['p', ...pts];
+
+/** The bounding box [x0, y0, x1, y1] of a geometry. */
+export function geomBounds(g) {
+  if (g[0] === 'r') return [g[1], g[2], g[1] + g[3], g[2] + g[4]];
+  if (g[0] === 'c') return [g[1] - g[3], g[2] - g[3], g[1] + g[3], g[2] + g[3]];
+  const xs = g.filter((_, i) => i > 0 && i % 2 === 1);
+  const ys = g.filter((_, i) => i > 0 && i % 2 === 0);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
+/** A geometry moved by (dx, dy). */
+function moved(g, dx, dy) {
+  if (g[0] === 'p') return g.map((v, i) => (i === 0 ? v : v + (i % 2 ? dx : dy)));
+  return [g[0], g[1] + dx, g[2] + dy, ...g.slice(3)];
+}
+
+function paint(ctx, style, g) {
+  if (g[0] === 'r') {
+    if (g[5] > 0) rrect(ctx, style, g[1], g[2], g[3], g[4], Math.min(g[5], g[3] / 2, g[4] / 2));
+    else rect(ctx, style, g[1], g[2], g[3], g[4]);
+  } else if (g[0] === 'c') {
+    circle(ctx, style, g[1], g[2], g[3]);
+  } else {
+    poly(ctx, style, g.slice(1));
+  }
+}
+
+/** One thin blade from (cx, cy) at angle `a` (0 north, clockwise), `len` long and `width` wide. */
+export function blade(cx, cy, a, len, width) {
+  const [s, c] = [Math.sin(a), -Math.cos(a)];
+  const [nx, ny] = [-c * (width / 2), s * (width / 2)];
+  return shape(cx + nx, cy + ny, cx + s * len + nx, cy + c * len + ny, cx + s * len - nx, cy + c * len - ny, cx - nx, cy - ny);
+}
+
+// ---- Sprites -------------------------------------------------------------------------------
+
 /**
- * A convex polygon [x0, y0, x1, y1, ...] cut to the rectangle x0..x1, y0..y1
- * (Sutherland-Hodgman). Returns the cut polygon in the same form, or [] when
- * nothing of it lies inside.
+ * A sprite [w, h, draw] from its parts ([fill, ...geometries], drawn in order)
+ * and its shadow geometry (or null). The draw function carries `parts` and
+ * `shadow` for the tests and the previews.
  */
-export function clipToRect(pts, x0, y0, x1, y1) {
-  let poly2 = [];
-  for (let i = 0; i < pts.length; i += 2) poly2.push([pts[i], pts[i + 1]]);
-  const edges = [
-    (p) => p[0] >= x0, (a, b) => cut(a, b, 0, x0),
-    (p) => p[0] <= x1, (a, b) => cut(a, b, 0, x1),
-    (p) => p[1] >= y0, (a, b) => cut(a, b, 1, y0),
-    (p) => p[1] <= y1, (a, b) => cut(a, b, 1, y1),
-  ];
-  for (let e = 0; e < edges.length && poly2.length; e += 2) {
-    const inside = edges[e];
-    const meet = edges[e + 1];
-    const next = [];
-    for (let i = 0; i < poly2.length; i++) {
-      const cur = poly2[i];
-      const prev = poly2[(i + poly2.length - 1) % poly2.length];
-      if (inside(cur)) {
-        if (!inside(prev)) next.push(meet(prev, cur));
-        next.push(cur);
-      } else if (inside(prev)) {
-        next.push(meet(prev, cur));
-      }
+export function sprite(w, h, parts, shadowGeom = null) {
+  const draw = (ctx, P) => {
+    if (shadowGeom) paint(ctx, P.c(SHADOW_FILL), moved(shadowGeom, SHADOW_OFFSET, SHADOW_OFFSET));
+    for (const [fill, ...geoms] of parts) {
+      const style = fill === TEAM ? P.team(TEAM_LEVEL) : P.c(fill);
+      for (const g of geoms) paint(ctx, style, g);
     }
-    poly2 = next;
-  }
-  if (poly2.length < 3) return [];
-  return poly2.flat();
+  };
+  draw.parts = parts;
+  draw.shadow = shadowGeom;
+  return [w, h, draw];
 }
 
-/** Where segment a-b crosses the line `axis` = v. */
-function cut(a, b, axis, v) {
-  const t = (v - a[axis]) / (b[axis] - a[axis]);
-  return axis === 0 ? [v, a[1] + (b[1] - a[1]) * t] : [a[0] + (b[0] - a[0]) * t, v];
+/** The box a ground unit's shapes fill: the sprite box less the shadow offset. */
+export function inner(w, h) {
+  return [w - SHADOW_OFFSET, h - SHADOW_OFFSET];
 }
 
-/**
- * 45 degree stripes rising to the right ("/"), `width` wide with `gap` between
- * them, cut to the rectangle: a list of polygons for poly().
- */
-export function diagonals(x, y, w, h, width, gap) {
-  const out = [];
-  if (!(width > 0) || !(w > 0) || !(h > 0)) return out;
-  const step = width + Math.max(0, gap);
-  for (let s = -h; s < w; s += step) {
-    const p = clipToRect([x + s, y + h, x + s + width, y + h, x + s + width + h, y, x + s + h, y], x, y, x + w, y + h);
-    if (p.length) out.push(p);
-  }
-  return out;
+/** Wheels on both flanks of a `W` wide body, one pair per y in `ys`. */
+export function wheels(W, ys, tw = 3, th = 5) {
+  return ys.flatMap((y) => [box(0, y, tw, th, 1), box(W - tw, y, tw, th, 1)]);
 }
 
-// ---- Materials -------------------------------------------------------------------------
-
-/**
- * Team plating: a plate in team grey `level` with darker panel lines across it
- * every `period` px, kept clear of rounded corners.
- */
-export function plate(ctx, P, x, y, w, h, level, r = 0, period = 4) {
-  rrect(ctx, P.team(level), x, y, w, h, r);
-  const m = Math.max(r, 1);
-  for (const [sy, sh] of bands(y + m, y + h - m, period, 0.5, period - m)) rect(ctx, P.team(level * PANEL_SHADE), x + 0.5, sy, w - 1, sh);
-}
-
-/** Steel: plain steel with lighter seams every 3 px, running along y (`vertical`) or along x. */
-export function steel(ctx, P, x, y, w, h, r = 0, vertical = true) {
-  rrect(ctx, P.c(U.steel), x, y, w, h, r);
-  const m = Math.max(r * 0.6, 0.5);
-  if (vertical) for (const [sx, sw] of bands(x + m, x + w - m, 3, 0.5, 2)) rect(ctx, P.c(U.steelSeam), sx, y + m, sw, h - 2 * m);
-  else for (const [sy, sh] of bands(y + m, y + h - m, 3, 0.5, 2)) rect(ctx, P.c(U.steelSeam), x + m, sy, w - 2 * m, sh);
-}
-
-/** Running gear: a dark tread with lighter links every 2.5 px. */
-export function treads(ctx, P, x, y, w, h) {
-  rrect(ctx, P.c(U.track), x, y, w, h, Math.min(1.5, w / 3));
-  for (const [ty, th] of bands(y + 1, y + h - 1, 2.5, 1, 0.5)) rect(ctx, P.c(U.trackLight), x + 0.5, ty, w - 1, th);
-}
-
-/** Tyres seen from above on both flanks of a w-wide vehicle, one pair per entry in ys. */
-export function tyres(ctx, P, w, ys, tw = 3, th = 5) {
-  for (const y of ys) {
-    for (const x of [0.5, w - tw - 0.5]) {
-      rrect(ctx, P.c(U.track), x, y, tw, th, 1);
-      for (const [ty, tt] of bands(y + 0.8, y + th - 0.8, 1.6, 0.6)) rect(ctx, P.c(U.trackLight), x + 0.5, ty, tw - 1, tt);
-    }
-  }
-}
-
-/** A glazed window: dark frame, glass, a diagonal glint at the top left. */
-export function glass(ctx, P, x, y, w, h, r = 0) {
-  rrect(ctx, P.c(U.glassDark), x, y, w, h, r);
-  const i = Math.min(0.4, w / 4, h / 4);
-  rrect(ctx, P.c(U.glass), x + i, y + i, w - 2 * i, h - 2 * i, Math.max(0, r - i));
-  const g = Math.max(0.5, Math.min(w, h) * 0.3);
-  const glint = clipToRect([x + i, y + i + g * 1.6, x + i + g * 1.6, y + i, x + i + g * 2.4, y + i, x + i, y + i + g * 2.4], x + i, y + i, x + w - i, y + h - i);
-  if (glint.length) poly(ctx, P.c(U.glassLight), glint);
-}
-
-/** A glass bubble (canopy, dome) with a glint. */
-export function bubble(ctx, P, cx, cy, r) {
-  circle(ctx, P.c(U.glassDark), cx, cy, r);
-  circle(ctx, P.c(U.glass), cx, cy, r * 0.8);
-  circle(ctx, P.c(U.glassLight), cx - r * 0.3, cy - r * 0.3, r * 0.28);
-}
-
-/** Copper windings: copper with dark turns every 3 px across `vertical` (rings along y) or along x. */
-export function copper(ctx, P, x, y, w, h, r = 0, vertical = true) {
-  rrect(ctx, P.c(U.copper), x, y, w, h, r);
-  const m = Math.max(r * 0.6, 0.3);
-  if (vertical) for (const [sy, sh] of bands(y + m, y + h - m, 3, 1, 1)) rect(ctx, P.c(U.copperDark), x + m, sy, w - 2 * m, sh);
-  else for (const [sx, sw] of bands(x + m, x + w - m, 3, 1, 1)) rect(ctx, P.c(U.copperDark), sx, y + m, sw, h - 2 * m);
-  rect(ctx, P.c(U.copperLight), x + m, y + m, w - 2 * m, Math.min(0.6, h / 4));
-}
-
-/** Canvas tarp: canvas with a dark diagonal weave. */
-export function tarp(ctx, P, x, y, w, h) {
-  rect(ctx, P.c(U.canvas), x, y, w, h);
-  for (const p of diagonals(x, y, w, h, 0.8, 1.6)) poly(ctx, P.c(U.canvasDark), p);
-}
-
-/** Hazard stripes (yellow and black, 45 degrees) without a canvas clip. */
-export function stripes(ctx, P, x, y, w, h, width = 2) {
-  rect(ctx, P.c(U.yellow), x, y, w, h);
-  for (const p of diagonals(x, y, w, h, width, width)) poly(ctx, P.c(U.track), p);
-}
-
-/** Hull plating: hull grey with dark weld bands every 3.5 px across it. */
-export function hullPlates(ctx, P, x, y, w, h) {
-  rect(ctx, P.c(U.hull), x, y, w, h);
-  for (const [sy, sh] of bands(y, y + h, 3.5, 0.6, 2.9)) rect(ctx, P.c(U.hullDark), x, sy, w, sh);
-}
-
-/** A ship's deck: dark blue planking with seams every 2 px along it. */
-export function deck(ctx, P, x, y, w, h) {
-  rect(ctx, P.c(U.deck), x, y, w, h);
-  for (const [sx, sw] of bands(x, x + w, 2, 0.4, 1.8)) rect(ctx, P.c(U.deckSeam), sx, y, sw, h);
-}
-
-/** A load of ore: ore with bright nuggets on a 3 px grid. */
-export function oreLoad(ctx, P, x, y, w, h) {
-  rect(ctx, P.c(U.ore), x, y, w, h);
-  for (const [sy] of bands(y + 0.6, y + h - 1.4, 3, 1, 0.4)) {
-    const odd = Math.round((sy - y) / 3) % 2;
-    for (const [sx] of bands(x + 0.6, x + w - 1.4, 3, 1, odd ? 1.5 : 0.4)) circle(ctx, P.c(U.oreLight), sx + 0.6, sy + 0.6, 0.7);
-  }
+/** A pair of treads `tw` wide on both flanks of a `W` wide body, from y to y + h. */
+export function treads(W, y, h, tw) {
+  return [box(0, y, tw, h, 1), box(W - tw, y, tw, h, 1)];
 }
