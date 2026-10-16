@@ -1744,8 +1744,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   }));
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const weather = new WeatherFx({ reducedMotion, lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
+  const weather = new WeatherFx({ reducedMotion: motionIsReduced(), lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
+  // Reduce motion and Low quality apply at once.
+  scope.add(settings.subscribe('reduceMotion', () => (weather.reducedMotion = motionIsReduced())));
+  scope.add(settings.subscribe('lowQuality', (on) => (weather.lowQuality = !!on)));
   let weatherText = '';
 
   let sidebar = null;
@@ -2864,7 +2867,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     const gpu = records ? { records, alpha: f.alpha, view: [v.x0, v.y0, v.x1, v.y1] } : null;
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
-    const fx = { ...weather.uniforms(simSeconds, canvas.width, canvas.height), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
+    weather.advance(simSeconds, dt / 1000);
+    const fx = { ...weather.uniforms(simSeconds, [v.x0, v.y0, v.x1, v.y1], input.camera.zoom, canvas.clientWidth * canvas.clientHeight), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
     const fxTick = BattleFx.ticksAt(simSeconds);
     const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);

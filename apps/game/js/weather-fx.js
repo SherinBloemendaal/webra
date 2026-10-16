@@ -10,9 +10,103 @@ export const WEATHER_IDS = Object.freeze({ clear: 0, rain: 1, thunderstorm: 2, s
 const LABELS = { clear: 'Clear', rain: 'Rain', thunderstorm: 'Thunderstorm', snowfall: 'Snowfall', sandstorm: 'Sandstorm', heatwave: 'Heat wave' };
 const BIOME_LABELS = { temperate: 'Temperate', snow: 'Snow', desert: 'Desert' };
 
-/** Particles per weather at full intensity on a 1920 x 1080 view. */
-const PARTICLES = { rain: 900, thunderstorm: 1300, snowfall: 700, sandstorm: 900 };
-export const MAX_PARTICLES = 1600;
+/**
+ * Rain, snow and sand are particles in the world (shaders/weather.wgsl): the
+ * ground under the view is cut into square cells of `cell` world pixels, and
+ * every cell holds one particle on each of the three depth layers (far, mid,
+ * near). A particle lands on its own spot of ground: it falls `height` world
+ * pixels (screen up is up in the air in Red Alert's top-down view) while the
+ * wind carries it `wind` world pixels per second, over `periods[layer]`
+ * seconds, then splashes (rain) or settles (snow) where it landed, and starts
+ * again. Sizes, spacing and speeds are world pixels, so they follow the
+ * camera's zoom like the sprites do. Only this table, the grid and the clock
+ * come from here; the looks (sizes, colours, splashes) live in the shader.
+ */
+export const KINDS = Object.freeze({
+  rain: Object.freeze({ cell: 64, height: 220, wind: 60, periods: Object.freeze([0.62, 0.5, 0.42]) }),
+  thunderstorm: Object.freeze({ cell: 60, height: 240, wind: 190, periods: Object.freeze([0.5, 0.4, 0.33]) }),
+  snowfall: Object.freeze({ cell: 60, height: 160, wind: 30, periods: Object.freeze([6.5, 5.2, 4.2]) }),
+  sandstorm: Object.freeze({ cell: 56, height: 24, wind: 480, periods: Object.freeze([0.9, 0.75, 0.6]) }),
+});
+/** Depth layers per cell (shaders/weather.wgsl LAYERS). */
+export const LAYERS = 3;
+/** Snowflakes sway sideways once per this many seconds. */
+export const SWAY_PERIOD = 2.6;
+/**
+ * Level of detail: zoomed out, the grid keeps one cell in four (picked at
+ * random within each block of 2 x 2, the rest fading out first) whenever it
+ * holds more than this many cells on a 1920 x 1080 CSS pixel view (scaled
+ * down for smaller views), so the count on screen stays about the same however far
+ * the camera zooms out. MAX_PARTICLES is the hard cap on instances.
+ */
+export const TARGET_CELLS = 520;
+export const MAX_PARTICLES = 8192;
+/**
+ * Particles keep the size they have at these camera zooms (CSS pixels per
+ * world pixel) when the camera goes further: no specks thinner than a pixel
+ * far out, no blobs close in. Speeds and spacing are not clamped.
+ */
+export const SIZE_ZOOM_MIN = 0.75;
+export const SIZE_ZOOM_MAX = 2.4;
+/** Fine cell indices are offset by this many cells so they stay positive left of and above the map. */
+export const CELL_OFFSET = 4096;
+/** How far ahead of the simulation the weather clock may be before it jumps (a seek, catching up). */
+export const CLOCK_SNAP = 1;
+/** Reduced motion: the particles fall this much slower (and fewer of them fall, density()). */
+export const REDUCED_SPEED = 0.3;
+
+/**
+ * How much the particles' world sizes are scaled at camera zoom `zoom` (CSS
+ * px per world px): 1 between SIZE_ZOOM_MIN and SIZE_ZOOM_MAX, else what
+ * keeps them at the size they have at that limit.
+ */
+export function particleScale(zoom) {
+  if (!(zoom > 0)) return 1;
+  return Math.min(SIZE_ZOOM_MAX, Math.max(SIZE_ZOOM_MIN, zoom)) / zoom;
+}
+
+/**
+ * The cells a weather draws for the view `[x0, y0, x1, y1]` (world px) of
+ * `cssArea` CSS px², with `budget` the share of TARGET_CELLS (quality).
+ * Returns `{ bx, by, cols, rows, block, fade, count }`: the first block
+ * (in blocks of `block` fine cells, CELL_OFFSET included), the grid size in
+ * blocks, how far (0..1) the cells the next level of detail drops have
+ * faded out, and the instance count. The ground covered reaches past the view
+ * by where particles over it can be: the fall height below, the wind's drift
+ * sideways and a block of slack all round.
+ */
+export function weatherGrid(kind, view, cssArea, budget = 1) {
+  const k = KINDS[kind];
+  if (!k || !view) return { bx: 0, by: 0, cols: 0, rows: 0, block: 1, fade: 0, count: 0 };
+  const drift = k.wind * Math.max(...k.periods);
+  const pad = k.cell;
+  const x0 = view[0] - pad - Math.max(0, -drift);
+  const x1 = view[2] + pad + Math.max(0, drift);
+  const y0 = view[1] - pad;
+  // A particle is at most its fall height above its ground (perspective only pushes it further out).
+  const y1 = view[3] + pad + k.height;
+  const cells = Math.max(0, ((x1 - x0) * (y1 - y0)) / (k.cell * k.cell));
+  const target = TARGET_CELLS * Math.max(0.2, Math.min(1, cssArea / (1920 * 1080))) * Math.max(0.05, budget);
+  const lod = cells > target ? Math.log(cells / target) / Math.log(4) : 0;
+  let level = Math.floor(lod);
+  // The three cells in four the next level drops fade so that what shows
+  // (a quarter at full strength, the rest at 1 - fade) is 4^-(lod - level):
+  // the same as the target at every zoom, and exactly the next level at its start.
+  const fade = (4 - 4 ** (1 - (lod - level))) / 3;
+  const grid = (lv) => {
+    const size = k.cell * 2 ** lv;
+    const bx = Math.floor(x0 / size + CELL_OFFSET / 2 ** lv);
+    const by = Math.floor(y0 / size + CELL_OFFSET / 2 ** lv);
+    const cols = Math.floor(x1 / size + CELL_OFFSET / 2 ** lv) - bx + 1;
+    const rows = Math.floor(y1 / size + CELL_OFFSET / 2 ** lv) - by + 1;
+    return { bx, by, cols, rows, block: 2 ** lv, count: cols * rows * LAYERS };
+  };
+  let g = grid(level);
+  // Never more than the cap (only a view far larger than any screen gets here).
+  while (g.count > MAX_PARTICLES && level < 12) g = grid(++level);
+  return { ...g, fade: g.block === 2 ** Math.floor(lod) ? fade : 0 };
+}
+
 /**
  * Seconds the weather takes to build up and die down (engine/src/weather.rs
  * RAMP_SECONDS). The engine throws no lightning in a thunderstorm's last
@@ -57,8 +151,9 @@ export function heatText(info) {
 
 /**
  * Follows the engine's sky and produces what the renderer and the HUD need.
- * `reducedMotion`: prefers-reduced-motion (no flicker, soft flashes, slow
- * particles); `lowQuality`: fewer particles.
+ * `reducedMotion`: the Reduce motion setting (no flicker, soft flashes, slow
+ * and fewer particles, no splashes); `lowQuality`: half the particle grid. Both may
+ * change while the game runs.
  */
 export class WeatherFx {
   constructor({ reducedMotion = false, lowQuality = false, onThunder = null } = {}) {
@@ -71,6 +166,13 @@ export class WeatherFx {
     this.thunderAt = -1;
     /** The strike whose thunder is on its way: { x, y, kind } (world pixels). */
     this.strike = null;
+    /** The weather's own clock (seconds, see advance) and the simulated time it last followed. */
+    this.clock = null;
+    this.lastSim = 0;
+    this.still = 0;
+    /** Where each depth layer is in its fall (0..1, wrapping), and the snow's sway. */
+    this.phases = [0, 0, 0];
+    this.sway = 0;
   }
 
   /**
@@ -121,27 +223,83 @@ export class WeatherFx {
     return Math.max(pulse(0, 0.12, 0.85), pulse(0.18, 0.2, 0.6));
   }
 
-  /** Particles to draw for a view of `w` x `h` device pixels. */
-  particles(w, h) {
-    const s = this.state;
-    const per = s ? PARTICLES[s.weather] : 0;
-    if (!per) return 0;
-    const area = Math.max(0.25, Math.min(2, (w * h) / (1920 * 1080)));
-    const quality = this.lowQuality ? 0.4 : 1;
-    const motion = this.reducedMotion ? 0.5 : 1;
-    return Math.min(MAX_PARTICLES, Math.round(per * area * quality * motion * this.intensity()));
+  /**
+   * Run the weather's clock for a frame: `sim` the simulated time of the
+   * frame (js/simclock.js, seconds), `dt` the page time since the last frame
+   * (seconds). The particles stand still with the game, but the clock does
+   * not step with the simulation's ticks: it runs at the page's pace and
+   * leans toward the simulated time (a little faster when behind, slower when
+   * ahead, still once the simulation stood still a quarter of a second), so
+   * the falling never judders when a frame's tick interpolation does, and it
+   * never runs backwards. Only a gap over CLOCK_SNAP seconds (catching up,
+   * a replay seeking) makes it jump. The fall of each layer is kept as a
+   * phase that wraps, so no large time reaches the GPU.
+   */
+  advance(sim, dt) {
+    if (!Number.isFinite(sim)) return;
+    const step = Math.max(0, Math.min(0.1, Number.isFinite(dt) ? dt : 0));
+    const before = this.clock;
+    if (before === null || Math.abs(sim - before) > CLOCK_SNAP) {
+      this.clock = sim;
+      this.lastSim = sim;
+      this.still = 0;
+      if (before === null) return;
+    } else {
+      if (sim > this.lastSim) {
+        this.lastSim = sim;
+        this.still = 0;
+      } else {
+        this.still += step;
+      }
+      const lead = sim - before;
+      const rate = this.still < 0.25 ? 1 + 2 * lead : 2 * lead;
+      this.clock = before + Math.max(0, Math.min(3, rate)) * step;
+    }
+    const moved = this.clock - before;
+    const kind = KINDS[this.state?.weather] ?? KINDS.rain;
+    const motion = this.reducedMotion ? REDUCED_SPEED : 1;
+    const wrap = (v) => v - Math.floor(v);
+    this.phases = this.phases.map((p, i) => wrap(p + (moved * motion) / kind.periods[i]));
+    this.sway = wrap(this.sway + (moved * motion) / SWAY_PERIOD);
   }
 
-  /** Renderer uniforms: `env` [biome, weather, intensity, flash] and `env2` [wind x, wind y, particles, motion]. */
-  uniforms(now, w = 1920, h = 1080) {
+  /**
+   * Share of each grid's particles shown: fewer with reduced motion. Low
+   * quality halves the grid itself instead (weatherGrid's budget), so it
+   * also draws fewer instances.
+   */
+  density() {
+    return this.reducedMotion ? 0.6 : 1;
+  }
+
+  /**
+   * Renderer uniforms (shaders/common.wgsl Globals):
+   * - `env` [biome, weather, intensity, flash];
+   * - `env2` [wind x (world px/s), particle density 0..1, instances, motion (0 reduced)];
+   * - `wgrid` [first block x, first block y, columns, rows] (weatherGrid);
+   * - `wcell` [cell size, block size in cells, level of detail fade, size scale];
+   * - `wphase` [far, mid and near layer phase, snow sway phase];
+   * - `wfall` [fall height, wind drift over the far, mid and near layer's fall] (world px).
+   * `view` is the visible world rectangle [x0, y0, x1, y1], `zoom` the
+   * camera's CSS px per world px and `cssArea` the view's CSS px².
+   */
+  uniforms(now, view = null, zoom = 1, cssArea = 1920 * 1080) {
     const s = this.state;
     const biome = BIOME_IDS[s?.biome] ?? 0;
     const off = !s || s.mode === 'off';
     const weather = off ? 0 : (WEATHER_IDS[s.weather] ?? 0);
-    const wind = weather === WEATHER_IDS.sandstorm ? 420 : weather === WEATHER_IDS.thunderstorm ? 120 : 60;
+    const kind = off ? null : KINDS[s.weather];
+    const intensity = off ? 0 : this.intensity();
+    const density = this.density();
+    const grid = kind && intensity > 0 ? weatherGrid(s.weather, view, cssArea, this.lowQuality ? 0.5 : 1) : weatherGrid(null);
+    const wind = kind?.wind ?? 0;
     return {
-      env: [biome, weather, off ? 0 : this.intensity(), off ? 0 : this.flash(now)],
-      env2: [wind, 0, off ? 0 : this.particles(w, h), this.reducedMotion ? 0 : 1],
+      env: [biome, weather, intensity, off ? 0 : this.flash(now)],
+      env2: [wind, density, grid.count, this.reducedMotion ? 0 : 1],
+      wgrid: [grid.bx, grid.by, grid.cols, grid.rows],
+      wcell: [kind?.cell ?? 1, grid.block, grid.fade, particleScale(zoom)],
+      wphase: [...this.phases, this.sway],
+      wfall: [kind?.height ?? 0, ...(kind?.periods ?? [0, 0, 0]).map((p) => wind * p)],
     };
   }
 }

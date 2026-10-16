@@ -12,13 +12,23 @@ struct Globals {
     // 2 desert), weather (0 clear, 1 rain, 2 thunderstorm, 3 snowfall,
     // 4 sandstorm, 5 heat wave), intensity 0..1, lightning flash 0..1.
     env: vec4f,
-    // Wind (world pixels per second, x and y), particle count, motion (0
-    // when the player prefers reduced motion, else 1).
+    // Wind (world pixels per second), particle density 0..1 (quality and
+    // reduced motion), particle instances, motion (0 when the player prefers
+    // reduced motion, else 1).
     env2: vec4f,
     // Art (js/content): x terrain flags (1 tile terrain: original graphics or
     // a texture pack, 2 ore tiles, 4 gem tiles, 8 rotating water colours),
     // yzw unused.
     art: vec4f,
+    // Weather particles in the world (js/weather-fx.js weatherGrid, shaders/weather.wgsl):
+    // first block x and y (in blocks, offset by CELL_OFFSET cells), columns, rows;
+    wgrid: vec4f,
+    // cell size (world px), block size (cells), level of detail fade 0..1, size scale;
+    wcell: vec4f,
+    // fall phase of the far, mid and near layer (0..1), snow sway phase;
+    wphase: vec4f,
+    // fall height and the wind's drift over the far, mid and near layer's fall (world px).
+    wfall: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
