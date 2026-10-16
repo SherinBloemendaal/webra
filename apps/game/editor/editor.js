@@ -18,7 +18,7 @@ import { importOramap, isOramapFile, ORAMAP_MAX_BYTES } from '../js/oramap/index
 import { renderReport } from '../js/oramap/report.js';
 import { EditorArt } from './js/art.js';
 import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
-import { InstalledTiles, TileWorker } from './js/tiles.js';
+import { InstalledTiles } from './js/tiles.js';
 import { planInWorker } from '../js/terraintiles.js';
 import { LivePreview } from './js/live.js';
 import { idleTask } from './js/idle.js';
@@ -171,8 +171,8 @@ function boot() {
         TEAM_COLORS[PREVIEW_NEUTRAL] = NEUTRAL_COLOR.slice();
         animClock.watchReducedMotion();
         preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
-        const tileWorker = new TileWorker();
-        installedTiles = new InstalledTiles({ plan: (job) => tileWorker.plan(job), ready: () => view && (view.terrainDirty = true) });
+        // One tile worker for the page: the map's tiles and the map lens share it (js/terraintiles.js).
+        installedTiles = new InstalledTiles({ plan: (job) => planInWorker(job), ready: () => view && (view.terrainDirty = true) });
         thumbLens = new MapLens({
           art: new LensArt({ Game, memory: () => wasm.memory, content: art.content, planner: planInWorker }),
           gameScale: () => gameScaleFor(settings, window),

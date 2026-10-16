@@ -12,10 +12,14 @@ import { TileWorker } from '../editor/js/tiles.js';
 
 let worker = null;
 
-/** Plan a tile job (ContentSystem.terrainJob) in the page's shared tile worker: a promise of originalTerrain's result or null. */
-export function planInWorker(job) {
+/**
+ * Plan a tile job (ContentSystem.terrainJob) in the page's shared tile
+ * worker (the game, the map lens and the map editor share it): a promise of
+ * originalTerrain's result or null. `signal` gives the plan up (null then).
+ */
+export function planInWorker(job, { signal = null } = {}) {
   worker ??= new TileWorker();
-  return worker.plan(job);
+  return worker.plan(job, { signal });
 }
 
 /** Let the shared worker go (tests). */
@@ -29,16 +33,39 @@ export function disposeTileWorker() {
  * draw now: a texture pack's `{ atlas, cells, source }`, or null for
  * WebRA's own tiles. `plan` is a promise of the original graphics' tiles
  * (`{ atlas, cells, report, source: 'original' }`, or null when the theater
- * cannot tile the map), planned by `planner(job)`, or null when there is
- * none to plan. `hints` are the engine's terrain hints (or null).
+ * cannot tile the map), planned by `planner(job, { signal })`, or null when
+ * there is none to plan. `hints` are the engine's terrain hints (or null);
+ * `signal` (an AbortSignal) gives the plan up.
  */
-export function mapTerrain(content, biome, terrain, w, h, hints = null, planner = planInWorker) {
+export function mapTerrain(content, biome, terrain, w, h, hints = null, planner = planInWorker, { signal = null } = {}) {
   const pack = content?.packTerrain?.(biome, terrain, w, h) ?? null;
   if (pack) return { tiles: pack, plan: null };
   const job = content?.terrainJob?.(biome, terrain, w, h, hints) ?? null;
   if (!job) return { tiles: null, plan: null };
   const plan = Promise.resolve()
-    .then(() => planner(job))
+    .then(() => planner(job, { signal }))
     .then((r) => (r ? { ...r, source: 'original' } : null));
   return { tiles: null, plan };
+}
+
+/**
+ * How long a game's loading screen waits for the original graphics' tiles
+ * (ms). A big map plans in about a second; a slow device or a worker in
+ * trouble must not hold the start (an online game holds every player until
+ * all are in), so after this the game starts with WebRA's tiles and takes
+ * the plan when it comes (the worker's own deadline, editor/js/tiles.js
+ * tileDeadline, makes sure it does: on the main thread if need be).
+ */
+export const START_TILES_WAIT_MS = 10_000;
+
+/** Resolves with true once `plan` settles, or with false after `ms` without it. */
+export function startWait(plan, ms = START_TILES_WAIT_MS, timers = globalThis) {
+  return new Promise((resolve) => {
+    const timer = timers.setTimeout(() => resolve(false), ms);
+    const settled = () => {
+      timers.clearTimeout(timer);
+      resolve(true);
+    };
+    plan.then(settled, settled);
+  });
 }

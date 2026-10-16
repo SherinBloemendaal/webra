@@ -101,7 +101,7 @@ import { netStatsData } from './netstats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
 import { CampaignMenu } from './campaign/menu.js';
 import { LensArt } from './maplens/source.js';
-import { mapTerrain, planInWorker } from './terraintiles.js';
+import { mapTerrain, planInWorker, startWait } from './terraintiles.js';
 import { MapLens } from './maplens/lens.js';
 import { connectRegistry, reportError, setTags } from './telemetry/index.js';
 import { UiGuard, createFrameLoop } from './frameloop.js';
@@ -1713,8 +1713,12 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // game started with; without it, from the first terrain upload. The
   // original graphics' tiles are planned in the tile worker
   // (js/terraintiles.js): WebRA's tiles stand in meanwhile, and the loading
-  // screen stays (on its battlefield step) until the plan is in.
+  // screen stays (on its battlefield step) until the plan is in, for up to
+  // START_TILES_WAIT_MS: then the game starts with WebRA's tiles and the
+  // plan replaces them when it comes.
   let cellsReady = false;
+  /** The game is taken down or left (or failed to start): a plan that comes in now is dropped. */
+  let stopped = false;
   let terrainTypes = null;
   /** Each applyTerrain is a round: a plan that comes in after a newer round started is dropped. */
   let terrainRound = 0;
@@ -1744,21 +1748,25 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     return perfTrace
       .spanAsync('terrain.plan', () => plan, detail)
       .then((planned) => {
-        if (round !== terrainRound || !planned) return;
+        if (stopped || round !== terrainRound || !planned) return;
         renderer.setTerrainAtlas(planned.atlas);
         renderer.uploadCells(planned.cells);
       })
       .catch((err) => console.warn('Planning terrain tiles failed:', err));
   };
   const initialTerrain = game.initial_terrain();
-  let terrainPlan = null;
+  /** What the start waits for: the start's plan, or START_TILES_WAIT_MS (js/terraintiles.js startWait); null when nothing is planned. */
+  let terrainStart = null;
   if (initialTerrain) {
     renderer.uploadTerrain(initialTerrain);
     terrainTypes = initialTerrain;
-    terrainPlan = applyTerrain();
-    if (terrainPlan) {
+    const plan = applyTerrain();
+    if (plan) {
       terrainReady = false;
-      terrainPlan.then(() => (terrainReady = true));
+      terrainStart = startWait(plan).then((inTime) => {
+        if (!inTime) console.warn('The original terrain tiles are not planned yet: the game starts with WebRA tiles until they are.');
+        terrainReady = true;
+      });
     }
     cellsReady = true;
   } else {
@@ -2588,7 +2596,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // The frame loop (started at the end of the setup) and the loading screen
   // until its first drawn frame (js/loadingscreen.js): a game that stops
   // before that fails the screen instead of loading forever.
-  let stopped = false;
   let rafId = 0;
   const firstFrame = new FirstFrameGuard({
     screen: loader,
@@ -3107,7 +3114,10 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     cancelAnimationFrame(rafId);
   });
   // The original graphics' tiles first (the battlefield step goes on while they are planned).
-  if (terrainPlan) terrainPlan.then(() => loader.step('frame'));
+  if (terrainStart)
+    terrainStart.then(() => {
+      if (!stopped) loader.step('frame');
+    });
   else loader.step('frame');
   rafId = requestAnimationFrame(frame);
 

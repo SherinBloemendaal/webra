@@ -28,7 +28,7 @@ import {
   requestOptions,
 } from './passkeys.js';
 import { publicSite } from './site.js';
-import { closeUserSockets, notify, publishAdmin, publishToUsers, revoke } from '../realtime/publish.js';
+import { closeUserSockets, isStaffRole, notify, publishAdmin, publishToUsers, revoke } from '../realtime/publish.js';
 import { reauthUntil, sessionToken, signOutCookies } from './sessions.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByEmail, userById, userByUsername } from './users.js';
 import { assertionIds, rpIdFor, verifyAuthentication, verifyRegistration, WebAuthnError } from './webauthn.js';
@@ -271,7 +271,7 @@ async function logout(ctx) {
         .first()
     : null;
   // This browser's other tabs hear that it signed out (the dashboard's object only for staff).
-  if (ended) revoke(ctx, (env) => closeUserSockets(env, ended.user_id, { sids: [ended.public_id], staff: ended.role !== 'user' }));
+  if (ended) revoke(ctx, (env) => closeUserSockets(env, ended.user_id, { sids: [ended.public_id], staff: isStaffRole(ended.role) }));
   ctx.cookies.push(...signOutCookies(ctx.request));
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }
@@ -324,7 +324,7 @@ async function reset(ctx) {
     ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = 'reset'").bind(row.id),
   ]);
   // Every sign-in session ended (the new one starts below, after these sockets are told).
-  revoke(ctx, (env) => closeUserSockets(env, row.id, { staff: row.role !== 'user' }));
+  revoke(ctx, (env) => closeUserSockets(env, row.id, { staff: isStaffRole(row.role) }));
   if (status !== row.status) notify(ctx, (env) => publishAdmin(env, { kind: 'user_updated', data: { userId: row.id } }));
   const ban = banOf(row);
   if (ban) throw bannedError(ban);

@@ -1260,6 +1260,50 @@ test('the lens waits for a step that waits (the tile worker) without queueing ta
   assert.ok(lens.map, 'read');
 });
 
+test('a read given up while its tiles are planned gives the plan up: the lens cancels the step, the steps abort the planner\'s signal', async () => {
+  // The lens: another map while a step waits calls that step's cancel.
+  const p = page({ idleCallbacks: true });
+  const { lens } = lensOn(p);
+  let cancelled = 0;
+  function* source() {
+    yield 0.3;
+    yield { share: 0.7, wait: new Promise(() => {}), cancel: () => cancelled++, sync: () => {} };
+    return syntheticMap();
+  }
+  lens.setSource('w', () => source(), { width: 20, height: 12 });
+  p.runIdle();
+  p.runIdle();
+  assert.equal(cancelled, 0, 'waiting');
+  lens.setSource('other', () => syntheticMap(), { width: 20, height: 12 });
+  assert.equal(cancelled, 1, 'the waiting step was cancelled');
+  // LensArt: abandoning the steps (the lens's steps.return()) aborts the signal the planner got.
+  globalThis.document = pixelDocument();
+  const files = new Map([...syntheticGraphics(), ...syntheticTheater()]);
+  const { content: originals } = await content(files, 'original');
+  const signals = [];
+  const art = new LensArt({ Game, memory: () => wasm.memory, content: originals, planner: (job, { signal }) => (signals.push(signal), new Promise(() => {})) });
+  const steps = art.mapSteps(mapJson());
+  let r = steps.next();
+  while (!r.value?.wait) r = steps.next();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(signals.length, 1, 'the plan was asked for');
+  assert.equal(signals[0].aborted, false);
+  assert.equal(typeof r.value.cancel, 'function');
+  steps.return();
+  assert.equal(signals[0].aborted, true, 'given up with the read');
+  // A read that finishes leaves its (answered) plan alone.
+  const done = new LensArt({ Game, memory: () => wasm.memory, content: originals, planner: (job, { signal }) => (signals.push(signal), Promise.resolve(planTiles(job, job.bytes, job.w, job.h, job.hints))) });
+  const it = done.mapSteps(mapJson());
+  let d = it.next();
+  while (!d.done) {
+    if (d.value?.wait) await d.value.wait;
+    d = it.next();
+  }
+  assert.equal(d.value.terrainSource, 'original');
+  assert.equal(signals[1].aborted, false);
+});
+
 test('a 128 x 128 map: reading it and drawing a tile, measured', async (t) => {
   globalThis.document = pixelDocument();
   const art = new LensArt({ Game, memory: () => wasm.memory, content: null });
