@@ -12,7 +12,7 @@ import { decodePalette, SHADOW_ALPHA } from '../js/content/palette.js';
 import { decodeShp } from '../js/content/shp.js';
 import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS, WEBRA_ACTORS } from '../js/content/render-facts.js';
 import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS, withMissionActors } from '../js/content/audit.js';
-import { paletteLookups, originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
+import { paletteLookups, paletteMatches, originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
 import { POSE, POSE_COUNT, sequenceFile } from '../js/content/sequences.js';
 import { SPECIALS } from '../js/content/packs.js';
 import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
@@ -198,6 +198,23 @@ test('palettes: OpenRA\'s civilian, no-shadow, effect, chrome and one-colour pal
   assert.ok(problems.some((p) => /desert\.pal/.test(p)), problems.join('; '));
 });
 
+test('palette seeds: the player and theater lookups stand in only for what PALETTES says', () => {
+  const player = { file: 'temperat.pal', shadow: [4], remap: true };
+  const terrain = (tileset) => ({ file: { TEMPERAT: 'temperat.pal', SNOW: 'snow.pal', DESERT: 'desert.pal' }[tileset], shadow: [3, 4], remap: false });
+  for (const tileset of ['TEMPERAT', 'SNOW', 'DESERT']) {
+    assert.ok(paletteMatches('player+owner', tileset, player), tileset);
+    assert.ok(paletteMatches('terrain', tileset, terrain(tileset)), tileset);
+  }
+  // A palettes.yaml that changed: the seed no longer fits, the lookup is built from PALETTES.
+  const changed = (over) => ({ ...PALETTES, player: { ...PALETTES.player, ...over } });
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, changed({ shadow: [3, 4] })));
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, changed({ transparent: [0, 4] })));
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, changed({ files: { '*': 'snow.pal' } })));
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, PALETTES, { ...PLAYER_PALETTES, player: { ...PLAYER_PALETTES.player, remap: [80, 81] } }));
+  assert.ok(!paletteMatches('player', 'TEMPERAT', player), 'without the owner\'s colours it is another palette');
+  assert.ok(!paletteMatches('terrain', 'SNOW', terrain('TEMPERAT')));
+});
+
 test('original slots: every pose, special and muzzle in OpenRA\'s palette for it', () => {
   // Frames of index 7 (a civilian clothes index), 85 (owner colours) and 4 (the shadow).
   const files = new Map(SYNTH.files);
@@ -244,19 +261,15 @@ test('original slots: every pose, special and muzzle in OpenRA\'s palette for it
 });
 
 test('art audit: a special or muzzle drawn in another palette than OpenRA\'s is wrong', () => {
-  const smoke = SPECIAL_ART['fx.0'];
   const art = { ...ACTOR_ART, '1TNK': { ...ACTOR_ART['1TNK'], palettes: { ...ACTOR_ART['1TNK'].palettes, muzzle: 'chrome' } } };
-  SPECIAL_ART['fx.0'] = { ...smoke, palette: 'effect' };
-  try {
-    const { rows } = auditOriginalArt(AUDITED, getFile, { identify, actorArt: art });
-    const bad = rows.filter((r) => /palette/.test(r.note));
-    assert.ok(bad.length > 10 && bad.filter((r) => r.where === 'special fx.0').length === bad.length - 1, formatAudit({ rows: bad, problems: [], counts: {} }));
-    assert.ok(bad.every((r) => r.status === 'wrong'));
-    assert.deepEqual(bad.find((r) => r.where === 'muzzle'), { actor: '1TNK', role: 'muzzle', openra: '1tnk.muzzle', where: 'muzzle', webra: '1tnk.muzzle', status: 'wrong', note: 'drawn with the chrome palette, OpenRA uses effect' });
-    assert.ok(bad.some((r) => r.where === 'special fx.0' && r.note === 'drawn with the effect palette, OpenRA uses player+owner'));
-  } finally {
-    SPECIAL_ART['fx.0'] = smoke;
-  }
+  const specialArt = { ...SPECIAL_ART, 'fx.0': { ...SPECIAL_ART['fx.0'], palette: 'effect' } };
+  const { rows } = auditOriginalArt(AUDITED, getFile, { identify, actorArt: art, specialArt });
+  const bad = rows.filter((r) => /palette/.test(r.note));
+  assert.ok(bad.length > 10 && bad.filter((r) => r.where === 'special fx.0').length === bad.length - 1, formatAudit({ rows: bad, problems: [], counts: {} }));
+  assert.ok(bad.every((r) => r.status === 'wrong'));
+  assert.deepEqual(bad.find((r) => r.where === 'muzzle'), { actor: '1TNK', role: 'muzzle', openra: '1tnk.muzzle', where: 'muzzle', webra: '1tnk.muzzle', status: 'wrong', note: 'drawn with the chrome palette, OpenRA uses effect' });
+  assert.ok(bad.some((r) => r.where === 'special fx.0' && r.note === 'drawn with the effect palette, OpenRA uses player+owner'));
+  assert.equal(SPECIAL_ART['fx.0'].palette, undefined, 'the tables are left alone');
   // As generated, every palette agrees.
   assert.deepEqual(auditOriginalArt(AUDITED, getFile, { identify }).rows.filter((r) => /palette/.test(r.note)), []);
 });

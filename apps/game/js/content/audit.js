@@ -356,10 +356,11 @@ const specialDefs = (spec) => spec.sequences.map((n) => SEQUENCES[spec.image]?.[
  * Audit the original art for `actors` (rules_json actors, as the game hands
  * them to originalSlots; withMissionActors adds the campaign's) with the
  * files `getFile` has. `identify(image)` (optional) names the `{ file,
- * frame }` an atlas image was cut from. `actorArt` replaces ACTOR_ART (tests).
+ * frame }` an atlas image was cut from. `actorArt` and `specialArt` replace
+ * ACTOR_ART and SPECIAL_ART for the rows (tests; the art stays built from the tables).
  * Returns `{ rows, problems, counts }`.
  */
-export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identify = null, actorArt = ACTOR_ART } = {}) {
+export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identify = null, actorArt = ACTOR_ART, specialArt = SPECIAL_ART } = {}) {
   const built = originalSlots(actors, getFile, tileset);
   const files = fileCache(getFile);
   const rows = [];
@@ -370,7 +371,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
     if (part) return actorArt[actor]?.palettes?.[`${part[1]}.${part[2]}`] ?? DEFAULT_PALETTE;
     if (where === 'muzzle') return actorArt[actor]?.palettes?.muzzle ?? DEFAULT_PALETTE;
     const special = /^special (.+)$/.exec(where);
-    if (special) return SPECIAL_ART[special[1]]?.palette ?? DEFAULT_PALETTE;
+    if (special) return specialArt[special[1]]?.palette ?? DEFAULT_PALETTE;
     if (where === 'bib') return 'terrain';
     return null;
   };
@@ -388,7 +389,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
 
   // A special sprite (SPECIAL_ART key) built from the files, checked as its mode plays.
   const specialRow = (base, key) => {
-    const spec = SPECIAL_ART[key];
+    const spec = specialArt[key];
     const where = `special ${key}`;
     if (!spec) {
       row({ ...base, where, status: 'webra-only', note: SPECIAL_NOTES[key] ?? 'Red Alert has no sprite for it (WebRA art)' });
@@ -494,7 +495,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
           row({ ...base, status: 'n/a', note: `WebRA never drops ${kind} actors by parachute (only paratroopers)` });
           continue;
         }
-        const s = SPECIAL_ART[key];
+        const s = specialArt[key];
         if (s && !(s.image === image && s.sequences.includes(seq))) {
           row({ ...base, webra: `${s.image}.${s.sequences.join('+')}`, where: `special ${key}`, status: 'wrong' });
           continue;
@@ -603,8 +604,8 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
   }
 
   // Special sprites: what the engine draws besides the actors.
-  for (const key of Object.keys(SPECIAL_ART)) {
-    const spec = SPECIAL_ART[key];
+  for (const key of Object.keys(specialArt)) {
+    const spec = specialArt[key];
     specialRow({ actor: '(special)', role: key, openra: spec ? `${spec.image}.${spec.sequences.join('+')}` : null }, key);
   }
 

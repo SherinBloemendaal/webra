@@ -787,13 +787,12 @@ def trait_palette(tree, kind, ch, where):
         raise SystemExit(f'{where}: no palette rule for {kind} (TRAIT_PALETTES)')
     field, owner_field, default, owner_default = TRAIT_PALETTES[kind]
     ch = ch or {}
-    pal = ch.get(field, [''])[0] if field else ''
-    owner = owner_default
-    if pal and owner_field and owner_field in ch:
-        owner = ch[owner_field][0].lower() == 'true'
-    if not pal:
-        pal, owner = default, owner_default
+    pal = (ch.get(field, [''])[0] if field else '') or default
+    # The owner flag is a field of its own: set, it counts also for the
+    # default palette (DeathPaletteIsPlayerPalette: false over "player").
+    owner = ch[owner_field][0].lower() == 'true' if owner_field and owner_field in ch else owner_default
     if pal is None:
+        # No palette: RenderSprites' (RenderSprites.Add ignores the flag then).
         return actor_palette(tree, where)
     return palette_ref(pal, owner, where)
 

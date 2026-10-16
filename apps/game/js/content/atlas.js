@@ -51,7 +51,7 @@
 import { ACTOR_ART, ACTOR_PALETTE, DEFAULT_PALETTE, EXPLOSION_ART, EXPLOSIONS, PALETTES, PLAYER_PALETTES, SEQUENCES, SPECIAL_ART, TERRAIN } from './tables.js';
 import { SPECIALS } from './packs.js';
 import { decodeSprite, trimFrame } from './shp.js';
-import { ACTOR_SHADOW, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
+import { ACTOR_SHADOW, REMAP_END, REMAP_START, TERRAIN_SHADOW, decodePalette, paletteLookup } from './palette.js';
 import { MODE, POSE, POSE_COUNT, resolveSequence, sequenceFile } from './sequences.js';
 
 /** WebRA biome -> OpenRA tileset id. */
@@ -65,6 +65,22 @@ const BIB_ROWS = 2;
 
 /** The palette key's suffix for the owner's colours (tables.js PLAYER_PALETTES). */
 const OWNER = '+owner';
+
+/**
+ * Whether palette `key` on `tileset` is `file` with these shadow indices,
+ * index 0 transparent and (with `remap`) the owner's colours on WebRA's
+ * remap range: a lookup made that way may stand in for it. `palettes` and
+ * `players` replace PALETTES and PLAYER_PALETTES (tests).
+ */
+export function paletteMatches(key, tileset, { file, shadow, remap }, palettes = PALETTES, players = PLAYER_PALETTES) {
+  const same = (x, y) => !!x && x.length === y.length && x.every((v, i) => v === y[i]);
+  const owner = key.endsWith(OWNER);
+  const name = owner ? key.slice(0, -OWNER.length) : key;
+  const spec = owner ? palettes[players[name]?.base] : palettes[name];
+  if (owner !== remap) return false;
+  if (owner && !same(players[name].remap, Array.from({ length: REMAP_END - REMAP_START + 1 }, (_, i) => REMAP_START + i))) return false;
+  return (spec?.files?.[tileset] ?? spec?.files?.['*']) === file && same(spec.shadow, shadow) && same(spec.transparent, [0]);
+}
 
 /**
  * Palette lookups by palette key (tables.js PALETTES, PLAYER_PALETTES:
@@ -659,13 +675,11 @@ export function originalSlots(actors, getFile, tileset = 'TEMPERAT') {
       out.problems.push(`${terrainPalette}: ${err.message}`);
     }
   }
-  // Every palette decoded once: the player's and the theater's (bibs, bridges) are seeded.
-  const seed = [[DEFAULT_PALETTE, lookup]];
-  const terrainSpec = PALETTES.terrain;
-  const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
-  if (terrainLookup && terrainSpec?.files?.[tileset] === terrainPalette && same(terrainSpec.shadow, TERRAIN_SHADOW) && same(terrainSpec.transparent, [0])) {
-    seed.push(['terrain', terrainLookup]);
-  }
+  // Every palette decoded once: the player's and the theater's (bibs, bridges)
+  // are seeded where they are what PALETTES says (else built from PALETTES).
+  const seed = [];
+  if (lookup && paletteMatches(DEFAULT_PALETTE, tileset, { file: ACTOR_PALETTE, shadow: ACTOR_SHADOW, remap: true })) seed.push([DEFAULT_PALETTE, lookup]);
+  if (terrainLookup && paletteMatches('terrain', tileset, { file: terrainPalette, shadow: TERRAIN_SHADOW, remap: false })) seed.push(['terrain', terrainLookup]);
   const lookupOf = paletteLookups(getFile, tileset, out.problems, seed);
   const bibs = new Map();
   const bibOf = (image, seqName, a) => {
