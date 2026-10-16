@@ -702,19 +702,20 @@ test('finale: Keep or Turn them off sets game.quickTips once; a tour done elsewh
 
 // ---- Migration (design 4) ------------------------------------------------------------------
 
-test('migration: base.production carries over to the Barracks and War Factory steps; the 0.19.0 steps are New to a 0.18.0 player', () => {
+test('migration: base.production carries over to the Barracks and War Factory steps, a radar done to the power check; the 0.19.0 steps are New to a 0.18.0 player', () => {
   const registry = createRegistry({ storage: memoryStorage() });
   const old = ['base.mcv', 'base.power', 'base.refinery', 'base.production', 'base.radar', 'ore.gems'];
   registry.patch('guide', { seen: '0.18.0', done: Object.fromEntries(old.map((id) => [id, true])) });
   const progress = new GuideProgress(registry);
-  assert.deepEqual(CARRIED, { 'base.barracks': ['base.production'], 'base.factory': ['base.production'] });
+  assert.deepEqual(CARRIED, { 'base.barracks': ['base.production'], 'base.factory': ['base.production'], 'base.morePower': ['base.radar'] });
   progress.reconcile();
   assert.ok(progress.isDone('base.barracks') && progress.isDone('base.factory'));
+  assert.ok(progress.isDone('base.morePower'), 'the dome is built: no power check before it');
   assert.ok(registry.get('guide', 'done')['base.production'], 'the retired id stays as stored');
-  assert.deepEqual(progress.newSteps(), ['army.infantry', 'army.vehicle', 'base.morePower']);
-  // The tour of a 0.18.0 finisher: the power check, Train infantry beside it.
-  assert.equal(progress.tourStep(), 'base.morePower');
-  assert.equal(progress.tourAlso(), 'army.infantry');
+  assert.deepEqual(progress.newSteps(), ['army.infantry', 'army.vehicle']);
+  // The tour of a 0.18.0 finisher: Train infantry, Build a vehicle beside it.
+  assert.equal(progress.tourStep(), 'army.infantry');
+  assert.equal(progress.tourAlso(), 'army.vehicle');
   assert.equal(tourRuns({ kind: 'skirmish' }, progress), true);
   // Without base.production done the two new ids are New as well, and nothing carries over.
   const r2 = createRegistry({ storage: memoryStorage() });

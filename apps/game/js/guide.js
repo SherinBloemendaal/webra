@@ -65,14 +65,18 @@ export const TOUR_ORDER = Object.freeze(['base', 'units', 'ore', 'power', 'weath
 export const GUIDE_BASELINE = '0.17.0';
 
 /**
- * Steps whose meaning changed get a new id; a player who had done every
- * step on the right keeps the credit for the step on the left
- * (GuideProgress.reconcile). 0.19.0 split "Build Barracks and a War
- * Factory" (base.production) into two steps.
+ * Credit carried over at every game start (GuideProgress.reconcile): a
+ * player who has done every step on the right has the step on the left done
+ * too. Steps whose meaning changed get a new id: 0.19.0 split "Build
+ * Barracks and a War Factory" (base.production) into two steps. A step that
+ * a later one implies: a Radar Dome placed is room made for it
+ * (base.morePower ticks on a dome placed anyway), so a player with the
+ * radar done never gets the power check before it.
  */
 export const CARRIED = Object.freeze({
   'base.barracks': Object.freeze(['base.production']),
   'base.factory': Object.freeze(['base.production']),
+  'base.morePower': Object.freeze(['base.radar']),
 });
 
 /** Whether version `a` is newer than `b`; null `b` (nothing seen) is older than every version. */
@@ -524,7 +528,7 @@ export class GuideProgress {
 
   /**
    * Bring a player's stored progress up to this game's guide, at the start
-   * of each game (js/main.js). Every time: a step whose old ids (CARRIED)
+   * of each game (js/main.js). Every time: a step whose sources (CARRIED)
    * are all done is done too. Once per player, the first time (guide.seen
    * not set yet):
    * - a new player (no step done, the tour not switched off) has seen

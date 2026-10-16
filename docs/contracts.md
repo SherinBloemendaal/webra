@@ -4195,9 +4195,12 @@ Debug and NetMenu.
   `since`, the version that brought it (0.17.0 for the first guide,
   `GUIDE_BASELINE`); a step added to an existing chapter later has its own
   `since`. `js/guide.js` `GuideProgress.reconcile()` runs at the start of
-  each game. Every time, it carries credit over from retired ids
-  (`CARRIED`: 0.19.0 split `base.production`, "Barracks and a War Factory
-  in one game", into `base.barracks` and `base.factory`). The first time
+  each game. Every time, it carries credit over (`CARRIED`): from retired
+  ids (0.19.0 split `base.production`, "Barracks and a War Factory in one
+  game", into `base.barracks` and `base.factory`) and to a step a later one
+  implies (`base.radar` done makes `base.morePower` done: the dome is
+  built, so a player who finished 0.18.0 never gets the power check before
+  it). The first time
   (`guide.seen` not set), a player without history (no step done, the tour
   not switched off) has seen everything (`guide.seen` = the newest
   `since`: no badges), and a player of 0.17.0 has seen `GUIDE_BASELINE`.
