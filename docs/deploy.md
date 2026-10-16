@@ -69,11 +69,21 @@ deploy can never ship a game without its engine.
 `.github/workflows/deploy.yml` runs on every push to `main` and on manual
 dispatch (Actions, Deploy, Run workflow):
 
-1. `ci`: the full CI (`ci.yml`, called as a reusable workflow). Nothing deploys
-   unless engine tests, rules sync, shader checks and web checks pass.
-2. `deploy` (GitHub environment `production`): installs Rust with the
-   `wasm32-unknown-unknown` target, wasm-pack and Node 22, then `npm ci`,
-   `npm run build:wasm` (with `WEBRA_GIT_HASH` set to the commit),
+1. `ci`: the full CI (`ci.yml`, called as a reusable workflow, see
+   [ci.md](ci.md)). Nothing deploys unless engine tests, rules sync, shader
+   checks and web checks pass. On a release commit that only bumps versions
+   the engine and shader jobs are skipped (they passed on the commit before);
+   skipped jobs do not block the deploy, failed or cancelled ones do. CI's web
+   job builds the engine (`npm run build:wasm`, with `WEBRA_GIT_HASH` set to
+   the commit) and uploads `apps/game/pkg` as the artifact `webra-pkg` of
+   the run.
+2. `deploy` (GitHub environment `production`, a `small` runner): first checks
+   that the commit is still the tip of `main` (`git ls-remote`; when that
+   fails, the deploy fails, it never skips silently); when a newer
+   commit has arrived meanwhile, every further step is skipped, the job
+   succeeds and the newer commit's own run deploys. Otherwise it downloads
+   `webra-pkg` of this run into `apps/game/pkg` (no Rust, no second wasm
+   build), installs Node 22, runs `npm ci` and
    `npm run build` (with `WEBRA_ENV=production` and the error report
    variables, see Error reports),
    and from `apps/server`:
@@ -91,9 +101,16 @@ dispatch (Actions, Deploy, Run workflow):
    - with `SENTRY_AUTH_TOKEN`: finalize the release and record the deploy in
      Sentry (skipped without it)
 
-Deploys share the concurrency group `deploy-production` without cancelling:
-a newer push waits until the running deploy is done, so two deploys never
-overlap. Wrangler runs with `--no-install`, so it must be a pinned dependency
+The CI of two pushes runs side by side; only the deploy job has the
+concurrency group `deploy-production`, without cancelling: a newer push's
+deploy job waits until the running deploy is done, so two deploys never
+overlap. GitHub keeps one waiting job per group, so with three pushes in quick
+succession the second one's waiting deploy job is cancelled (its run shows as
+cancelled) and the third deploys; with the tip check above an older commit
+never deploys after a newer one. Two manual runs of Deploy on `main` share
+CI's concurrency group `ci-Deploy-refs/heads/main` (only pushes are grouped
+per commit), so the second cancels the first one's CI and with it that run's
+deploy; the second run deploys. Wrangler runs with `--no-install`, so it must be a pinned dependency
 in the lockfile (a `devDependency` of `apps/server`), never a fresh download.
 
 ### Required GitHub secrets

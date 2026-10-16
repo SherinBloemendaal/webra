@@ -297,7 +297,7 @@ You need a Rust toolchain, `wasm-pack` and Python 3 (only for the static file se
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install wasm-pack
+cargo install wasm-pack --version 0.13.1 --locked   # the version CI builds the game with
 npm install
 npm run build:wasm
 python3 -m http.server 8080 --directory apps/game

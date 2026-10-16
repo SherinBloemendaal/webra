@@ -1495,7 +1495,16 @@ impl Rules {
         if let Some(rules) = cached {
             return Ok(rules);
         }
-        let mut base: serde_json::Value = serde_json::from_str(RULES_JSON).expect("rules.json is valid JSON");
+        let base: serde_json::Value = serde_json::from_str(RULES_JSON).expect("rules.json is valid JSON");
+        let rules = Rules::load_over(base, overrides)?;
+        LAST_LOADED.with(|last| *last.borrow_mut() = Some((key, rules.clone())));
+        Ok(rules)
+    }
+
+    /// `load_with` without its cache, from `base`, the parsed rules.json:
+    /// for callers that load many different overrides and parse rules.json
+    /// once (the rules fuzz in tests_security.rs).
+    pub(crate) fn load_over(mut base: serde_json::Value, overrides: Option<&serde_json::Value>) -> Result<Rules, String> {
         if let Some(o) = overrides {
             apply_overrides(&mut base, o)?;
         }
@@ -1503,7 +1512,6 @@ impl Rules {
         let rules = Rules::from_raw(raw)?;
         // Custom maps come from strangers: every value must be safe to simulate.
         rules.validate()?;
-        LAST_LOADED.with(|last| *last.borrow_mut() = Some((key, rules.clone())));
         Ok(rules)
     }
 
