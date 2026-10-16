@@ -29,6 +29,13 @@ export const REALTIME_PING_MS = 30_000;
 /** Reconnect backoff: from 1 s, doubling, with full jitter, at most this long. */
 export const REALTIME_BACKOFF_MIN_MS = 1_000;
 export const REALTIME_BACKOFF_MAX_MS = 60_000;
+/**
+ * A channel counts as live while its hello or a hint arrived within this
+ * time: only then do screens use their slow safety poll (a socket kept open
+ * after the site setting was switched off hears nothing, so its pages go
+ * back to the normal poll within this time).
+ */
+export const REALTIME_FRESH_MS = 10 * 60_000;
 /** Events of one topic within this time cost one reload. */
 export const REALTIME_REFETCH_DEBOUNCE_MS = 300;
 /** The largest message either side sends. */
