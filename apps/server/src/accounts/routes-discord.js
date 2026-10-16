@@ -13,6 +13,7 @@ import { banOf, initialStatus, insertUser, uniqueViolation, userByDiscord, userB
 import { createSession, hasRecentReauth } from './sessions.js';
 import { LIMITS, methodDisabled } from './routes-auth.js';
 import { logError } from '../telemetry.js';
+import { notify, publishAdmin } from '../realtime/publish.js';
 
 const MODES = ['login', 'signup', 'link', 'reauth'];
 const DEFAULT_RETURN = '/account/';
@@ -212,6 +213,7 @@ async function callback(ctx) {
     }
     // A typed address is confirmed like any other signup's (the answer does not wait for the mail).
     if (!verifiedEmail && eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
+    notify(ctx, (env) => publishAdmin(env, { kind: 'user_created', data: { userId: id } }));
     user = await userById(ctx.db, id, ctx.now);
   }
   const s = await createSession(ctx.env, ctx.request, ctx.ip, user.id, ctx.now);

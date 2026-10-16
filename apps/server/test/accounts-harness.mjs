@@ -89,7 +89,64 @@ export class FakeSessions {
   }
 }
 
-export function makeEnv({ email = true, discord = false, replays = true, vars = {} } = {}) {
+/**
+ * Realtime hub namespace stand-in (src/userhub.js): records publish,
+ * closeSessions and fetch (upgrades) calls by object name (`user:<id>` or
+ * `topic:admin`). `fail`: every call throws (failure isolation);
+ * `onPublish(name, event)`: called as each publish arrives.
+ */
+export class FakeUserHubs {
+  constructor() {
+    this.publishes = [];
+    this.closes = [];
+    this.fetches = [];
+    this.fail = false;
+    this.onPublish = null;
+  }
+
+  idFromName(name) {
+    return { name, toString: () => name };
+  }
+
+  get(id) {
+    const name = id.name;
+    const failing = () => {
+      if (this.fail) throw new Error('hub unavailable');
+    };
+    return {
+      publish: async (event) => {
+        failing();
+        const e = { topic: event.topic, kind: event.kind, data: event.data ?? null, origin: event.origin ?? null };
+        this.onPublish?.(name, e);
+        this.publishes.push({ name, ...e });
+        return 1;
+      },
+      closeSessions: async (what) => {
+        failing();
+        this.closes.push({ name, sids: what.sids ?? null, except: what.except ?? null, userId: what.userId ?? null });
+        return 1;
+      },
+      fetch: async (request) => {
+        failing();
+        this.fetches.push({ name, request });
+        return new Response('upgraded', { status: 200 });
+      },
+    };
+  }
+
+  /** The events published to one object (`user:<id>` or `topic:admin`), without its name. */
+  to(name) {
+    return this.publishes.filter((p) => p.name === name).map(({ name: _n, ...e }) => e);
+  }
+
+  clear() {
+    this.publishes.length = 0;
+    this.closes.length = 0;
+    this.fetches.length = 0;
+  }
+}
+
+export function makeEnv({ email = true, discord = false, replays = true, realtime = true, vars = {} } = {}) {
   return {
     DB: new FakeD1(),
     // Replays in accounts (src/accounts/replays.js): an in-memory bucket.
@@ -97,6 +154,8 @@ export function makeEnv({ email = true, discord = false, replays = true, vars = 
     EMAIL: email ? new FakeEmail() : undefined,
     ...(email ? { EMAIL_FROM: 'noreply@webra.sherin.dev' } : {}),
     SESSION: new FakeSessions(),
+    // The realtime hubs (src/userhub.js): recorded, never connected.
+    ...(realtime ? { USER_HUB: new FakeUserHubs() } : {}),
     ASSETS: { fetch: async () => new Response('asset') },
     IP_HASH_SALT: 'test-ip-hash-salt-not-a-real-secret',
     ...(discord ? { DISCORD_CLIENT_ID: '123456789', DISCORD_CLIENT_SECRET: 'test-secret-not-real' } : {}),

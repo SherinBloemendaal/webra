@@ -329,7 +329,7 @@ test('audit log filters and stats', async () => {
   assert.equal(stats.body.users.byStatus.banned, 1);
   assert.equal(stats.body.users.byStatus.active, 3);
   assert.equal(stats.body.bans.accounts, 1);
-  assert.deepEqual(stats.body.services, { email: false, discord: false, replays: true });
+  assert.deepEqual(stats.body.services, { email: false, discord: false, replays: true, realtime: true });
   assert.ok(stats.body.sessions.active >= 3);
   assert.deepEqual(stats.body.games, { lobbies: 0, running: 0 });
 });

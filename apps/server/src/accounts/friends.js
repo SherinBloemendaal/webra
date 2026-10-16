@@ -14,7 +14,11 @@
 // - blocking works both ways for requests and invites and ends the
 //   friendship; a blocked sender cannot tell (its request just waits), and
 //   session joins are refused by the session object (session.js);
-// - requests, invites and blocks are rate limited per account.
+// - requests, invites and blocks are rate limited per account;
+// - realtime hints (src/realtime/publish.js) go out after each write and
+//   tell the other side only what its own list will show: a hidden
+//   request, an ignore, or a block of a player who was no friend sends
+//   nothing to that player.
 
 import { FRIEND_REQUEST_TTL_MS, FRIENDS_MAX, FRIEND_REQUESTS_IN_MAX, FRIEND_REQUESTS_OUT_MAX, BLOCKS_MAX, PRESENCE_ONLINE_MS, SOCIAL_SETTING_DEFAULTS, usernameKey } from '@webra/protocol';
 import { HttpError, json } from '../http.js';
@@ -22,6 +26,7 @@ import { invalid } from './context.js';
 import { HOUR } from './routes-auth.js';
 import { LISTING_TTL_MS, parseMapJson } from '../directory.js';
 import { liveInviteCode } from '../invites.js';
+import { notify, originOf, publishToFriendsOf, publishToUsers } from '../realtime/publish.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 
@@ -40,6 +45,20 @@ const notFound = () => new HttpError(404, 'not_found', 'No player with this name
 
 /** The SQL pair (smaller id first) of two accounts. */
 const pair = (a, b) => (a < b ? [a, b] : [b, a]);
+
+/**
+ * After the answer: `friends/<kind>` to each `[userId, username]` of
+ * `targets` (`username`: the other party, for the page's message; null for
+ * the player's own other tabs and devices, which show no message).
+ */
+function hint(ctx, kind, targets, extra = {}) {
+  notify(ctx, async (env) => {
+    const origin = await originOf(ctx);
+    await Promise.all(
+      targets.map(([id, username]) => publishToUsers(env, [id], { topic: 'friends', kind, data: username === null ? null : { username, ...extra }, origin })),
+    );
+  });
+}
 
 /** The active account named `username` (folded like signup), or null. */
 async function accountByName(db, username) {
@@ -272,6 +291,10 @@ async function sendRequest(ctx) {
   const reverse = await ctx.db.prepare('SELECT 1 AS r FROM friend_requests WHERE from_user = ?1 AND to_user = ?2').bind(other.id, user.id).first();
   if (reverse && !(await blocks(ctx.db, other.id, user.id))) {
     await befriend(ctx, user, other);
+    hint(ctx, 'accept', [
+      [other.id, user.username],
+      [user.id, other.username],
+    ]);
     return json({ friend: await friendView(ctx, user.id, other.username) });
   }
   if ((await count(ctx.db, 'SELECT COUNT(*) AS n FROM friend_requests WHERE from_user = ?1', user.id)) >= FRIEND_REQUESTS_OUT_MAX) {
@@ -285,6 +308,8 @@ async function sendRequest(ctx) {
     .bind(user.id, other.id, ctx.now, hidden ? 1 : 0)
     .run();
   if (r.meta.changes !== 1) throw new HttpError(409, 'conflict', 'You already asked this player.');
+  // A hidden request (blocked, or too many waiting) must look like any other to the sender and stay unseen.
+  hint(ctx, 'request', hidden ? [[user.id, null]] : [[other.id, user.username], [user.id, null]]);
   return json({ request: { username: other.username, displayName: other.display_name, avatarColor: other.avatar_color, createdAt: ctx.now } }, 201);
 }
 
@@ -304,6 +329,10 @@ async function acceptRequest(ctx, { username }) {
     throw new HttpError(409, 'blocked', 'You blocked this player. Unblock them first.');
   }
   await befriend(ctx, user, other);
+  hint(ctx, 'accept', [
+    [other.id, user.username],
+    [user.id, other.username],
+  ]);
   return json({ friend: await friendView(ctx, user.id, other.username) });
 }
 
@@ -311,14 +340,18 @@ async function ignoreRequest(ctx, { username }) {
   const user = await me(ctx);
   const other = await incomingFrom(ctx, user, username);
   await ctx.db.prepare('UPDATE friend_requests SET ignored = 1 WHERE from_user = ?1 AND to_user = ?2').bind(other.id, user.id).run();
+  // Ignoring is invisible to the sender: only this player's other tabs hear of it.
+  hint(ctx, 'ignore', [[user.id, null]]);
   return noContent();
 }
 
 async function withdrawRequest(ctx, { username }) {
   const user = await me(ctx);
   const other = await accountByName(ctx.db, username);
-  const r = other ? await ctx.db.prepare('DELETE FROM friend_requests WHERE from_user = ?1 AND to_user = ?2').bind(user.id, other.id).run() : null;
-  if (!r || r.meta.changes !== 1) throw new HttpError(404, 'not_found', 'No request to this player.');
+  const row = other ? await ctx.db.prepare('DELETE FROM friend_requests WHERE from_user = ?1 AND to_user = ?2 RETURNING ignored').bind(user.id, other.id).first() : null;
+  if (!row) throw new HttpError(404, 'not_found', 'No request to this player.');
+  // The receiver hears only of a request it could see (not an ignored or hidden one).
+  hint(ctx, 'withdraw', row.ignored === 0 ? [[other.id, user.username], [user.id, null]] : [[user.id, null]]);
   return noContent();
 }
 
@@ -330,6 +363,10 @@ async function removeFriend(ctx, { username }) {
   await ctx.db.batch([
     ctx.db.prepare('DELETE FROM friendships WHERE user_a = ?1 AND user_b = ?2').bind(a, b),
     ctx.db.prepare('DELETE FROM friend_invites WHERE (from_user = ?1 AND to_user = ?2) OR (from_user = ?2 AND to_user = ?1)').bind(user.id, other.id),
+  ]);
+  hint(ctx, 'remove', [
+    [other.id, user.username],
+    [user.id, null],
   ]);
   return noContent();
 }
@@ -343,6 +380,8 @@ async function block(ctx) {
   if ((await count(ctx.db, 'SELECT COUNT(*) AS n FROM user_blocks WHERE user_id = ?1', user.id)) >= BLOCKS_MAX) {
     throw new HttpError(409, 'limit', `At most ${BLOCKS_MAX} blocked players.`);
   }
+  // A blocked friend sees the friendship end, like a removal; anyone else hears nothing.
+  const wereFriends = await areFriends(ctx.db, user.id, other.id);
   const [a, b] = pair(user.id, other.id);
   await ctx.db.batch([
     ctx.db.prepare('INSERT OR IGNORE INTO user_blocks (user_id, blocked_id, created_at) VALUES (?1, ?2, ?3)').bind(user.id, other.id, ctx.now),
@@ -350,6 +389,8 @@ async function block(ctx) {
     ctx.db.prepare('DELETE FROM friend_requests WHERE (from_user = ?1 AND to_user = ?2) OR (from_user = ?2 AND to_user = ?1)').bind(user.id, other.id),
     ctx.db.prepare('DELETE FROM friend_invites WHERE (from_user = ?1 AND to_user = ?2) OR (from_user = ?2 AND to_user = ?1)').bind(user.id, other.id),
   ]);
+  hint(ctx, 'block', [[user.id, null]]);
+  if (wereFriends) hint(ctx, 'remove', [[other.id, user.username]]);
   return noContent();
 }
 
@@ -358,6 +399,7 @@ async function unblock(ctx, { username }) {
   const other = await accountByName(ctx.db, username);
   const r = other ? await ctx.db.prepare('DELETE FROM user_blocks WHERE user_id = ?1 AND blocked_id = ?2').bind(user.id, other.id).run() : null;
   if (!r || r.meta.changes !== 1) throw new HttpError(404, 'not_found', 'You did not block this player.');
+  hint(ctx, 'unblock', [[user.id, null]]);
   return noContent();
 }
 
@@ -386,6 +428,8 @@ async function invite(ctx) {
     )
     .bind(user.id, other.id, body.session, code.code, ctx.now, code.expiresAt)
     .run();
+  hint(ctx, 'invite', [[other.id, user.username]], { session: body.session });
+  hint(ctx, 'invite', [[user.id, null]]);
   return json({ invite: { username: other.username, session: body.session, code: code.code, createdAt: ctx.now, expiresAt: code.expiresAt } }, 201);
 }
 
@@ -401,6 +445,10 @@ async function dismissInvite(ctx, { username }) {
         .run()
     : null;
   if (!r || r.meta.changes !== 1) throw new HttpError(404, 'not_found', 'No such invite.');
+  hint(ctx, 'invite_dismiss', [
+    [other.id, user.username],
+    [user.id, null],
+  ]);
   return noContent();
 }
 
@@ -420,7 +468,8 @@ async function presence(ctx) {
   const user = await me(ctx);
   await ctx.burst('presence', [120, HOUR]);
   const away = body.away ? 1 : 0;
-  await ctx.db
+  const before = presenceState(await ctx.db.prepare('SELECT seen_at, away_since FROM user_presence WHERE user_id = ?1').bind(user.id).first(), ctx.now);
+  const r = await ctx.db
     .prepare(
       `INSERT INTO user_presence (user_id, seen_at, away_since) VALUES (?1, ?2, CASE WHEN ?3 = 1 THEN ?4 ELSE NULL END)
        ON CONFLICT(user_id) DO UPDATE SET seen_at = excluded.seen_at,
@@ -429,7 +478,19 @@ async function presence(ctx) {
     )
     .bind(user.id, ctx.now, away, ctx.now - idle, ctx.now - PRESENCE_WRITE_MS, ctx.now - PRESENCE_CHANGE_MS)
     .run();
+  // Friends hear of a change (offline, online, away), not of every heartbeat. A hint for a
+  // player who hides their status says nothing: the friends' list still shows offline.
+  const after = r.meta.changes > 0 ? (away ? 'away' : 'online') : before;
+  if (after !== before) {
+    notify(ctx, (env) => publishToFriendsOf(env, ctx.db, user.id, { topic: 'friends', kind: 'presence', data: { username: user.username } }));
+  }
   return noContent();
+}
+
+/** What a heartbeat row says (the list's rule, friendsDocument): offline, online or away. */
+function presenceState(row, now) {
+  if (!row || row.seen_at === null || row.seen_at <= now - PRESENCE_ONLINE_MS) return 'offline';
+  return row.away_since !== null ? 'away' : 'online';
 }
 
 /** The account's friends data for the data export (docs/accounts-api.md 5.9). */

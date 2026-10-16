@@ -28,6 +28,7 @@ import {
   requestOptions,
 } from './passkeys.js';
 import { publicSite } from './site.js';
+import { closeUserSockets, notify, publishAdmin, publishToUsers, revoke } from '../realtime/publish.js';
 import { reauthUntil, sessionToken, signOutCookies } from './sessions.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByEmail, userById, userByUsername } from './users.js';
 import { assertionIds, rpIdFor, verifyAuthentication, verifyRegistration, WebAuthnError } from './webauthn.js';
@@ -212,6 +213,8 @@ async function signup(ctx) {
   }
   // The link (or, when another account verified the address, a notice) goes out after the answer.
   if (eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
+  // A new account shows up on the admin dashboard (waiting for approval, usually).
+  notify(ctx, (env) => publishAdmin(env, { kind: 'user_created', data: { userId: id } }));
   return signIn(ctx, id, 201);
 }
 
@@ -261,7 +264,9 @@ async function login(ctx) {
 
 async function logout(ctx) {
   const token = sessionToken(ctx.request);
-  if (token) await ctx.db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1').bind(await sha256Hex(token)).run();
+  const ended = token ? await ctx.db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1 RETURNING user_id, public_id').bind(await sha256Hex(token)).first() : null;
+  // This browser's other tabs hear that it signed out (the role is not loaded here: both hubs are asked).
+  if (ended) revoke(ctx, (env) => closeUserSockets(env, ended.user_id, { sids: [ended.public_id] }));
   ctx.cookies.push(...signOutCookies(ctx.request));
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }
@@ -313,6 +318,9 @@ async function reset(ctx) {
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id),
     ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = 'reset'").bind(row.id),
   ]);
+  // Every sign-in session ended (the new one starts below, after these sockets are told).
+  revoke(ctx, (env) => closeUserSockets(env, row.id, { staff: row.role !== 'user' }));
+  if (status !== row.status) notify(ctx, (env) => publishAdmin(env, { kind: 'user_updated', data: { userId: row.id } }));
   const ban = banOf(row);
   if (ban) throw bannedError(ban);
   return signIn(ctx, row.id);
@@ -349,6 +357,11 @@ async function verifyEmail(ctx) {
   }
   // D1 counts the rows its triggers change too (migration 0007 has one on status): "none" is what matters.
   if (!(r.meta.changes > 0)) throw invalidLink();
+  // The account's open pages (a player waiting in another tab) and the admin dashboard look again.
+  notify(ctx, async (env) => {
+    await publishToUsers(env, [row.id], status !== row.status ? { topic: 'account', kind: 'status', data: { status } } : { topic: 'account', kind: 'profile' });
+    await publishAdmin(env, { kind: 'user_updated', data: { userId: row.id } });
+  });
   const { user } = await ctx.auth();
   return json({ user: user && user.id === row.id ? await selfView(ctx, row.id) : null });
 }

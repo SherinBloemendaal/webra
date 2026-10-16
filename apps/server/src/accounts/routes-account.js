@@ -38,9 +38,16 @@ import { MAIL_LIMITS, queueAddressMail } from './verification.js';
 import { networkOf } from './ip.js';
 import { deleteAccountReplaysStatement, drainReplayTrash, listReplayRows, replayView } from './replays.js';
 import { friendsCleanupStatements, friendsExport } from './friends.js';
+import { closeUserSockets, friendIds, notify, originOf, publishAdmin, publishToFriendsOf, publishToUsers, revoke } from '../realtime/publish.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const lastMethod = () => new HttpError(409, 'conflict', 'Keep at least one way to sign in.');
+const isStaff = (user) => user.role !== 'user';
+
+/** After the answer: `account/<kind>` to the account's other tabs and devices (realtime/publish.js). */
+function accountHint(ctx, user, kind = 'profile') {
+  notify(ctx, async (env) => publishToUsers(env, [user.id], { topic: 'account', kind, origin: await originOf(ctx) }));
+}
 
 async function me(ctx) {
   const user = await ctx.requireUser();
@@ -63,8 +70,9 @@ async function patchAccount(ctx) {
   };
   if (body.displayName !== undefined) add('display_name', check(() => validDisplayName(body.displayName)));
   if (body.avatarColor !== undefined) add('avatar_color', check(() => validAvatarColor(body.avatarColor)));
+  let username = user.username;
   if (body.username !== undefined) {
-    const username = check(() => validUsername(body.username));
+    username = check(() => validUsername(body.username));
     if (username !== user.username) {
       if (user.username_changed_at !== null && user.username_changed_at + USERNAME_CHANGE_MS > ctx.now) {
         throw new HttpError(403, 'forbidden', 'You can change your username once every 30 days.', {}, { field: 'username' });
@@ -84,6 +92,9 @@ async function patchAccount(ctx) {
       if (uniqueViolation(err) === 'username') throw new HttpError(409, 'conflict', 'This username is taken.', {}, { field: 'username' });
       throw err;
     }
+    accountHint(ctx, user);
+    // Names and colours show in the friends' lists.
+    notify(ctx, (env) => publishToFriendsOf(env, ctx.db, user.id, { topic: 'friends', kind: 'presence', data: { username } }));
   }
   return json({ user: await selfView(ctx, user.id) });
 }
@@ -107,6 +118,7 @@ async function changePassword(ctx) {
     .run();
   const { session } = await ctx.auth();
   await revokeAllSessions(ctx.db, user.id, { except: session.id_hash });
+  revoke(ctx, (env) => closeUserSockets(env, user.id, { except: session.public_id, staff: isStaff(user) }));
   await rotate(ctx, { reauth: true });
   return json({ user: await selfView(ctx, user.id) });
 }
@@ -130,6 +142,7 @@ async function removePassword(ctx) {
     .bind(user.id, ctx.now)
     .run();
   if (r.meta.changes !== 1) throw lastMethod();
+  accountHint(ctx, user);
   await rotate(ctx);
   return json({ user: await selfView(ctx, user.id) });
 }
@@ -162,6 +175,7 @@ async function changeEmail(ctx) {
     ctx.db.prepare("DELETE FROM email_tokens WHERE user_id = ?1 AND purpose IN ('verify', 'change')").bind(user.id),
   ]);
   if (eff.login.email) queueAddressMail(ctx, { userId: user.id, username: user.username, email, purpose: 'verify' });
+  accountHint(ctx, user);
   return json({ user: await selfView(ctx, user.id) });
 }
 
@@ -224,6 +238,7 @@ async function addPasskey(ctx) {
     if (duplicatePasskey(err)) throw passkeyConflict();
     throw err;
   }
+  accountHint(ctx, user);
   await rotate(ctx);
   const row = await ctx.db.prepare('SELECT * FROM passkeys WHERE id = ?1').bind(reg.credentialId).first();
   return json({ passkey: passkeyView(row) }, 201);
@@ -257,6 +272,7 @@ async function deletePasskey(ctx, { id }) {
     .bind(id, user.id)
     .run();
   if (r.meta.changes !== 1) throw lastMethod();
+  accountHint(ctx, user);
   await rotate(ctx);
   return noContent();
 }
@@ -270,6 +286,7 @@ async function unlinkDiscord(ctx) {
     .bind(user.id)
     .run();
   if (r.meta.changes !== 1) throw lastMethod();
+  accountHint(ctx, user);
   await rotate(ctx);
   return json({ user: await selfView(ctx, user.id) });
 }
@@ -303,6 +320,7 @@ async function revokeSession(ctx, { id }) {
   const user = await ctx.requireUser();
   const row = await ownSession(ctx, user, id);
   await ctx.db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1').bind(row.id_hash).run();
+  revoke(ctx, (env) => closeUserSockets(env, user.id, { sids: [row.public_id], staff: isStaff(user) }));
   const { session } = await ctx.auth();
   if (row.id_hash === session.id_hash) ctx.cookies.push(...signOutCookies(ctx.request));
   return noContent();
@@ -312,6 +330,7 @@ async function revokeOtherSessions(ctx) {
   const user = await ctx.requireUser();
   const { session } = await ctx.auth();
   await revokeAllSessions(ctx.db, user.id, { except: session.id_hash });
+  revoke(ctx, (env) => closeUserSockets(env, user.id, { except: session.public_id, staff: isStaff(user) }));
   return noContent();
 }
 
@@ -327,7 +346,10 @@ async function putSettings(ctx) {
   const expected = ifMatchVersion(ctx.request);
   const settings = await readSettingsBody(ctx.request);
   await ctx.limit('settings', user.id, 120, HOUR);
-  return settingsResponse(await putSettingsDoc(ctx.db, user.id, expected, settings, user.id, ctx.now));
+  const doc = await putSettingsDoc(ctx.db, user.id, expected, settings, user.id, ctx.now);
+  // The device that saved has the new version already; the others load it.
+  notify(ctx, async (env) => publishToUsers(env, [user.id], { topic: 'settings', kind: 'updated', data: { version: doc.version }, origin: await originOf(ctx) }));
+  return settingsResponse(doc);
 }
 
 // ---- Export and deletion ---------------------------------------------------------------------------
@@ -409,6 +431,8 @@ async function deleteAccount(ctx) {
     const others = await ctx.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND status = 'active' AND id != ?1").bind(user.id).first();
     if (others.n === 0) throw new HttpError(409, 'conflict', 'You are the last admin. Make someone else an admin first.');
   }
+  // The friends rows go with the account: who to tell is read first.
+  const friends = await friendIds(ctx.db, user.id);
   await ctx.db.batch([
     softDeleteStatement(ctx.db, user.id, ctx.now),
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(user.id),
@@ -420,6 +444,11 @@ async function deleteAccount(ctx) {
   ]);
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
   ctx.cookies.push(...signOutCookies(ctx.request));
+  revoke(ctx, (env) => closeUserSockets(env, user.id, { staff: isStaff(user) }));
+  notify(ctx, async (env) => {
+    await publishToUsers(env, friends, { topic: 'friends', kind: 'remove', data: { username: user.username } });
+    await publishAdmin(env, { kind: 'user_deleted', data: { userId: user.id } });
+  });
   await evictFromGames(ctx.env, { userIds: [user.id] }, ctx.now);
   return noContent();
 }

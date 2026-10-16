@@ -133,6 +133,22 @@ test('upload, list, download and delete: the owner gets the same file back, stor
   assert.deepEqual((await b.get('/api/account/replays')).body.replays, []);
 });
 
+test('realtime: an upload or a deletion tells the account\'s other open lists (not the device that did it)', async () => {
+  const env = makeEnv({ email: false });
+  const b = await player(env, 'Tanya');
+  const sid = (await b.get('/api/auth/me', { csrf: false })).body.session.id;
+  env.USER_HUB.clear();
+  const up = await upload(b, text(replay(7)));
+  assert.equal(up.status, 201);
+  const id = up.body.replay.id;
+  assert.deepEqual(env.USER_HUB.to(`user:${b.user.id}`), [{ topic: 'replays', kind: 'added', data: { id }, origin: sid }]);
+  env.USER_HUB.clear();
+  assert.equal((await upload(b, text(replay(7)))).body.duplicate, true);
+  assert.deepEqual(env.USER_HUB.publishes, [], 'a duplicate stores nothing new');
+  assert.equal((await b.del(`/api/account/replays/${id}`)).status, 204);
+  assert.deepEqual(env.USER_HUB.to(`user:${b.user.id}`), [{ topic: 'replays', kind: 'removed', data: { id }, origin: sid }]);
+});
+
 test('signed in, active, same origin and the CSRF header; only the owner sees, downloads or deletes', async () => {
   const env = makeEnv({ email: false });
   const owner = await player(env, 'Owner');

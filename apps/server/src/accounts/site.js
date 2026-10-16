@@ -33,7 +33,8 @@ export function emailSender(env) {
 /**
  * Which configured services exist (independent of the settings). Email
  * needs both the Email Sending binding EMAIL and a sender address; replays
- * in accounts the R2 bucket REPLAYS.
+ * in accounts the R2 bucket REPLAYS; the realtime channel the Durable
+ * Object binding USER_HUB (src/userhub.js).
  */
 export function services(env) {
   const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -41,6 +42,7 @@ export function services(env) {
     email: Boolean(env?.EMAIL) && typeof env.EMAIL.send === 'function' && emailSender(env) !== null,
     discord: nonEmpty(env?.DISCORD_CLIENT_ID) && nonEmpty(env?.DISCORD_CLIENT_SECRET),
     replays: Boolean(env?.REPLAYS) && typeof env.REPLAYS.put === 'function',
+    realtime: Boolean(env?.USER_HUB) && typeof env.USER_HUB.idFromName === 'function',
   };
 }
 
@@ -117,6 +119,8 @@ export function effective(settings, env) {
     onlineRequiresAccount: settings.onlineRequiresAccount,
     gameRequiresAccount: settings.gameRequiresAccount,
     contentRelay: settings.contentRelay,
+    // The realtime channel: switched on and the binding there (pages poll otherwise).
+    realtime: settings.realtime && svc.realtime,
   };
 }
 
@@ -130,7 +134,8 @@ export function publicSite(request, env, settings) {
       emailVerificationRequired: eff.emailVerificationRequired,
     },
     login: eff.login,
-    services: eff.services,
+    // `realtime`: whether pages open the realtime channel (the setting and the binding).
+    services: { ...eff.services, realtime: eff.realtime },
     onlineRequiresAccount: settings.onlineRequiresAccount,
     gameRequiresAccount: settings.gameRequiresAccount,
     contentRelay: settings.contentRelay,
