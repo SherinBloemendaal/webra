@@ -189,6 +189,22 @@ test('4001 stops the channel and asks who is signed in; allow() starts it again;
   assert.equal(client.state, 'unavailable', 'two sign-out closes within seconds: something is off, poll instead');
 });
 
+test('an account/signed_out event acts at once, before the close frame arrives', () => {
+  const { client, last } = makeClient();
+  const auth = [];
+  client.on('auth', (code) => auth.push(code));
+  client.subscribe('account', () => {});
+  client.allow();
+  const ws = last();
+  ws.hello(0);
+  ws.event(1, 'account', 'signed_out');
+  assert.deepEqual(auth, [4001]);
+  assert.equal(client.state, 'stopped');
+  assert.deepEqual(ws.closed, { code: 1000, reason: 'signed_out' });
+  ws.drop(4001);
+  assert.deepEqual(auth, [4001], 'the late close frame changes nothing');
+});
+
 test('a hidden tab: hints wait, no ping, a reconnect waits for the tab to show', () => {
   const { client, timers, doc, last } = makeClient();
   const calls = [];

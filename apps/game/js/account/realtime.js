@@ -265,6 +265,12 @@ export class RealtimeClient extends Emitter {
     if (msg.t === 'event') {
       if (msg.seq <= this.lastSeq) return;
       this.lastSeq = msg.seq;
+      // The hub ends this sign-in (its close frame may take a while to arrive): act on it now.
+      if (msg.topic === 'account' && msg.kind === 'signed_out') {
+        this.closeSocket(1000, 'signed_out');
+        this.closed(REALTIME_CLOSE.SIGNED_OUT);
+        return;
+      }
       if (this.subs.has(msg.topic)) this.queue(msg.topic, msg);
     }
   }
