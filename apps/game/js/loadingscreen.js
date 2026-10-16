@@ -152,10 +152,12 @@ export class LoadingScreen {
    *   timers?: { setTimeout: Function, clearTimeout: Function } }} [o]
    *   `reducedMotion`: "Reduce motion" now (the setting or the browser's);
    *   `closeMs`: how long the close transition takes (default: the stylesheet's, closeDuration);
-   *   `timers`: for the close's fallback timer (tests pass their own)
+   *   `timers`: for the close's fallback timer (tests pass their own);
+   *   `onBegin`: a start shows (js/main.js: the boot screen, js/bootscreen.js, hands over)
    */
-  constructor(root, { reducedMotion = () => false, doc = globalThis.document, board = null, now = () => globalThis.performance?.now() ?? Date.now(), closeMs = closeDuration, timers = null } = {}) {
+  constructor(root, { reducedMotion = () => false, doc = globalThis.document, board = null, now = () => globalThis.performance?.now() ?? Date.now(), closeMs = closeDuration, timers = null, onBegin = null } = {}) {
     this.root = root;
+    this.onBegin = onBegin;
     this.doc = doc;
     this.reducedMotion = reducedMotion;
     /** The board around the steps (js/loadingboard.js), or null. */
@@ -277,6 +279,7 @@ export class LoadingScreen {
     this.root.hidden = false;
     this.cover();
     this.card.focus?.({ preventScroll: true });
+    this.onBegin?.();
     this.step(this.steps[0]?.id);
   }
 
