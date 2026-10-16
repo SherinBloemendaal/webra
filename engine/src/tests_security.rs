@@ -609,8 +609,11 @@ fn nested_fuzz() -> &'static NestedFuzz {
         // Accepted edits share games, one edit per actor or weapon per game.
         let base = base_rules();
         let ids: Vec<String> = base["actors"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap().to_string()).collect();
+        // The edits, in order. They draw from one Rng in sequence, so they
+        // are made here one by one; loading them is the slow part (over
+        // 50,000 rule sets), done below on every core.
         let mut r = Rng::new(0x0dd5);
-        let (mut accepted, mut rejected) = (Vec::new(), 0);
+        let mut edits = Vec::new();
         for (section, key) in [("actors", "id"), ("weapons", "name")] {
             for entry in base[section].as_array().unwrap() {
                 let id = entry[key].as_str().unwrap();
@@ -619,15 +622,42 @@ fn nested_fuzz() -> &'static NestedFuzz {
                         let mut changed = entry.clone();
                         mutate_slot(&mut changed, &mut k.clone(), true, big, &mut r, &ids);
                         let Some(patch) = diff(entry, &changed) else { continue };
-                        let over = serde_json::json!({ section: { id: patch.clone() } });
-                        match crate::rules::Rules::load_with(Some(&over)) {
-                            Ok(_) => accepted.push((section, id.to_string(), patch)),
-                            Err(_) => rejected += 1,
-                        }
+                        edits.push((section, id.to_string(), patch));
                     }
                 }
             }
         }
+        // Each edit loaded on its own over a copy of the rules.json parsed
+        // above (Rules::load_over: no re-parse, no cache). Threads take the
+        // next edit in turn and the results go back in edit order, so the
+        // games below are the same for any number of threads. As many
+        // threads as the test harness runs (RUST_TEST_THREADS, else the cores).
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let threads = std::env::var("RUST_TEST_THREADS")
+            .ok()
+            .and_then(|n| n.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+        let mut loads: Vec<(usize, bool)> = std::thread::scope(|s| {
+            let workers: Vec<_> = (0..threads)
+                .map(|_| {
+                    s.spawn(|| {
+                        let mut out = Vec::new();
+                        loop {
+                            let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some((section, id, patch)) = edits.get(i) else { break out };
+                            let over = serde_json::json!({ *section: { id: patch.clone() } });
+                            out.push((i, crate::rules::Rules::load_over(base.clone(), Some(&over)).is_ok()));
+                        }
+                    })
+                })
+                .collect();
+            workers.into_iter().flat_map(|w| w.join().unwrap()).collect()
+        });
+        loads.sort_unstable();
+        assert_eq!(loads.len(), edits.len());
+        let rejected = loads.iter().filter(|(_, ok)| !ok).count();
+        let mut accepted: Vec<_> = edits.into_iter().zip(loads).filter(|(_, (_, ok))| *ok).map(|(edit, _)| edit).collect();
         let mut games = Vec::new();
         while !accepted.is_empty() {
             let mut batch = serde_json::json!({});
