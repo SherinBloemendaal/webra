@@ -10,6 +10,7 @@ import { Browser, Clock, makeEnv, ORIGIN, PASSWORD, promote, setSite, signup } f
 import { PRESENCE_ONLINE_MS } from '@webra/protocol';
 
 const { readHubAuth } = await import('../src/userhub.js'); // after the harness's module hooks
+const { isStaffRole } = await import('../src/realtime/publish.js');
 
 const clock = new Clock();
 test.after(() => clock.restore());
@@ -293,6 +294,29 @@ test('a sign-in that replaces this browser\'s session closes the replaced sessio
   const fresh = new Browser(env, { ip: '198.51.100.77' });
   assert.equal((await fresh.post('/api/auth/login', { login: 'Alpha', password: PASSWORD })).status, 200);
   assert.deepEqual(hubs(env).closes, []);
+});
+
+test('staff is moderators and admins only: a replaced staff session closes its dashboard socket, an unknown role does not wake the dashboard', async () => {
+  assert.deepEqual(['admin', 'moderator', 'user', null, undefined, 'owner', ''].map(isStaffRole), [true, true, false, false, false, false, false]);
+  const env = makeEnv({ email: false });
+  const mod = await player(env, 'Warden');
+  promote(env, mod.user.id, 'moderator');
+  const before = await sidOf(mod);
+  hubs(env).clear();
+  assert.equal((await mod.post('/api/auth/login', { login: 'Warden', password: PASSWORD })).status, 200);
+  assert.deepEqual(hubs(env).closes, [
+    { name: userHub(mod), sids: [before], except: null, userId: null },
+    { name: 'topic:admin', sids: [before], except: null, userId: mod.user.id },
+  ]);
+  // A session whose account row is gone signs out with no role (null): its own hub only.
+  const ghost = await player(env, 'Ghost');
+  const sidGhost = await sidOf(ghost);
+  env.DB.sqlite.exec('PRAGMA foreign_keys = OFF');
+  env.DB.sqlite.prepare('DELETE FROM users WHERE id = ?').run(ghost.user.id);
+  env.DB.sqlite.exec('PRAGMA foreign_keys = ON');
+  hubs(env).clear();
+  assert.equal((await ghost.post('/api/auth/logout')).status, 204);
+  assert.deepEqual(hubs(env).closes, [{ name: userHub(ghost), sids: [sidGhost], except: null, userId: null }]);
 });
 
 test('account deletion: every socket closes, former friends and the dashboard hear it', async () => {

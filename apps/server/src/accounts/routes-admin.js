@@ -39,7 +39,7 @@ import { adminUser, banOf, hasPassword, softDeleteStatement, uniqueViolation, us
 import { statusAfterVerification } from './common.js';
 import { sendAddressMail } from './verification.js';
 import { deleteAccountReplaysStatement, drainReplayTrash } from './replays.js';
-import { closeUserSockets, notify, originOf, publishAdmin, publishToFriendsOf, publishToUsers, revoke } from '../realtime/publish.js';
+import { closeUserSockets, isStaffRole, notify, originOf, publishAdmin, publishToFriendsOf, publishToUsers, revoke } from '../realtime/publish.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const notFound = (what = 'user') => new HttpError(404, 'not_found', `No such ${what}.`);
@@ -63,7 +63,7 @@ function adminHints(ctx, userId, { account = null, friends = false, admin = null
 }
 
 /** After the answer: close every realtime socket of the account (its sign-in sessions ended). */
-const closeAll = (ctx, row, staff = row.role !== 'user') => revoke(ctx, (env) => closeUserSockets(env, row.id, { staff }));
+const closeAll = (ctx, row, staff = isStaffRole(row.role)) => revoke(ctx, (env) => closeUserSockets(env, row.id, { staff }));
 
 function page(url) {
   const p = Number(url.searchParams.get('page') ?? '1');
@@ -482,7 +482,7 @@ async function revokeUserSession(ctx, { id, sessionId }) {
   if (!/^[0-9a-f]{16}$/.test(sessionId)) throw notFound('session');
   const r = await ctx.db.prepare('DELETE FROM auth_sessions WHERE public_id = ?1 AND user_id = ?2').bind(sessionId, row.id).run();
   if (r.meta.changes !== 1) throw notFound('session');
-  revoke(ctx, (env) => closeUserSockets(env, row.id, { sids: [sessionId], staff: row.role !== 'user' }));
+  revoke(ctx, (env) => closeUserSockets(env, row.id, { sids: [sessionId], staff: isStaffRole(row.role) }));
   adminHints(ctx, row.id, { admin: 'user_updated' });
   await audit(ctx.db, { actor, action: 'user.session_revoke', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { session: sessionId } }, ctx.now);
   return noContent();

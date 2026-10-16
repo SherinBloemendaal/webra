@@ -38,11 +38,11 @@ import { MAIL_LIMITS, queueAddressMail } from './verification.js';
 import { networkOf } from './ip.js';
 import { deleteAccountReplaysStatement, drainReplayTrash, listReplayRows, replayView } from './replays.js';
 import { friendsCleanupStatements, friendsExport } from './friends.js';
-import { closeUserSockets, friendIds, notify, originOf, publishAdmin, publishToFriendsOf, publishToUsers, revoke } from '../realtime/publish.js';
+import { closeUserSockets, friendIds, isStaffRole, notify, originOf, publishAdmin, publishToFriendsOf, publishToUsers, revoke } from '../realtime/publish.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const lastMethod = () => new HttpError(409, 'conflict', 'Keep at least one way to sign in.');
-const isStaff = (user) => user.role !== 'user';
+const isStaff = (user) => isStaffRole(user.role);
 
 /** After the answer: `account/<kind>` to the account's other tabs and devices (realtime/publish.js). */
 function accountHint(ctx, user, kind = 'profile') {

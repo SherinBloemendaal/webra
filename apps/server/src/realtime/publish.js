@@ -74,6 +74,16 @@ export async function publishAdmin(env, { kind, data = null, origin = null, admi
 }
 
 /**
+ * Whether an account of `role` is staff (moderator or admin), whose sockets
+ * may be on the admin dashboard's hub. Only those two roles: a role that is
+ * not known (null: the account is gone) is not staff, as for
+ * AuthContext.requireRole.
+ */
+export function isStaffRole(role) {
+  return role === 'admin' || role === 'moderator';
+}
+
+/**
  * Close the sockets of ended sign-in sessions of `userId` (4001: the pages
  * ask who is signed in). `sids`: those sessions' public ids, or null for
  * all; `except`: one that stays. `staff`: the account is (or was) a
