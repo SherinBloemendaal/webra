@@ -48,7 +48,9 @@ export class FriendsClient {
  * The friends list while a screen shows it. With a realtime client
  * (js/account/realtime.js) it follows the `friends` topic: every hint loads
  * the list again (the hints of a burst once), and the poll runs every
- * `slowPollMs` while the channel is open and every `pollMs` while it is not.
+ * `slowPollMs` while hints arrive (the channel is open and its hello or a
+ * hint came within REALTIME_FRESH_MS, 10 minutes) and every `pollMs`
+ * otherwise.
  * A hidden tab skips its polls (the hints wait for it to show). Events:
  * `change` (the document), `hint` (the realtime event that made it load:
  * `kind`, `data.username`, `batch`), `error` (an AccountError; polling goes
@@ -98,9 +100,9 @@ export class FriendsStore extends Emitter {
     this.timer = null;
   }
 
-  /** The poll interval now: slow while realtime hints arrive. */
+  /** The poll interval now: slow while realtime hints arrive (a hello or hint within REALTIME_FRESH_MS). */
   interval() {
-    return this.realtime?.state === 'open' ? this.slowPollMs : this.pollMs;
+    return this.realtime?.live?.() ? this.slowPollMs : this.pollMs;
   }
 
   /** Arm the next poll (replacing the one armed). */

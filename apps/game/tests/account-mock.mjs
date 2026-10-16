@@ -857,6 +857,18 @@ class MockRealtimeClient extends Emitter {
     this.allow();
   }
 
+  /** Delivered hints keep it live (RealtimeClient.live). */
+  live() {
+    return this.state === 'open';
+  }
+
+  reconnect() {
+    if (!this.allowed) return;
+    this.reconnects = (this.reconnects ?? 0) + 1;
+    this.state = 'idle';
+    this.sync();
+  }
+
   stop() {
     this.allowed = false;
     this.userId = null;

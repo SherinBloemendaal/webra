@@ -12,7 +12,7 @@ import { AccountSession } from '../js/account/session.js';
 import { SettingsSync } from '../js/account/sync.js';
 import { AccountApi } from '../js/account/api.js';
 import { createRegistry } from '../js/registry.js';
-import { FRIENDS_POLL_MS, FRIENDS_POLL_SLOW_MS, REALTIME_PING, REALTIME_PING_MS, REALTIME_REFETCH_DEBOUNCE_MS } from '../js/protocol.js';
+import { FRIENDS_POLL_MS, FRIENDS_POLL_SLOW_MS, REALTIME_FRESH_MS, REALTIME_PING, REALTIME_PING_MS, REALTIME_REFETCH_DEBOUNCE_MS } from '../js/protocol.js';
 import { FakeTimers } from './fake-timers.mjs';
 import { MockAccountServer } from './account-mock.mjs';
 import { memoryStorage } from './dom-fixtures.mjs';
@@ -416,4 +416,60 @@ test('AccountSession: a settings hint reaches the sync; the catch-up right after
   now += 60_000;
   for (const fn of realtime.subs.get('settings')) fn({ t: 'event', kind: 'resync', topic: 'settings', data: null, batch: [] });
   assert.deepEqual(seen, [9, undefined], 'a later reconnect catches up');
+});
+
+test('live(): hints within REALTIME_FRESH_MS; a quiet open socket stops counting and FriendsStore polls fast again', async () => {
+  const { client: realtime, timers, last } = makeClient();
+  let lists = 0;
+  const store = new FriendsStore({ client: { list: async () => ({ n: ++lists }) }, timers, realtime, doc: null });
+  realtime.allow();
+  store.start();
+  last().hello(0);
+  assert.equal(realtime.live(), true);
+  assert.equal(store.interval(), FRIENDS_POLL_SLOW_MS);
+  timers.advance(REALTIME_FRESH_MS - 1);
+  last().event(1, 'account', 'profile');
+  timers.advance(REALTIME_FRESH_MS - 1);
+  assert.equal(realtime.live(), true, 'a hint keeps it live');
+  timers.advance(1);
+  assert.equal(realtime.state, 'open');
+  assert.equal(realtime.live(), false, 'open but quiet (the setting was switched off): not live');
+  assert.equal(store.interval(), FRIENDS_POLL_MS);
+  store.stop();
+});
+
+test('reconnect(): a new socket at once (new topics after an approval); nothing while not allowed', () => {
+  const { client, last } = makeClient();
+  client.subscribe('account', () => {});
+  client.reconnect();
+  assert.equal(FakeSocket.made.length, 0, 'not allowed');
+  client.allow();
+  const first = last();
+  first.hello(0, ['account', 'settings']);
+  client.reconnect();
+  assert.deepEqual(first.closed, { code: 1000, reason: 'reconnect' });
+  assert.notEqual(last(), first);
+  assert.equal(client.state, 'connecting');
+  last().hello(1);
+  assert.equal(client.state, 'open');
+});
+
+test('AccountSession: an approval or a new role reconnects the channel (the hub fixes topics at connect)', async () => {
+  const server = new MockAccountServer();
+  server.services.realtime = true;
+  const api = new AccountApi({ fetchImpl: server.fetch });
+  const realtime = server.realtime.client();
+  const session = new AccountSession({ api, realtime });
+  const tanya = server.addUser({ username: 'Tanya', password: 'a long passphrase', status: 'pending_approval' });
+  server.signIn(tanya);
+  await session.refresh();
+  await session.refresh();
+  assert.equal(realtime.reconnects ?? 0, 0, 'nothing changed: the same socket');
+  tanya.status = 'active';
+  server.realtime.emit(tanya.id, { topic: 'account', kind: 'status', data: { status: 'active' } });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(realtime.reconnects, 1, 'approved: connect again for the friends topic');
+  tanya.role = 'moderator';
+  await session.refresh();
+  assert.equal(realtime.reconnects, 2, 'a new role');
 });

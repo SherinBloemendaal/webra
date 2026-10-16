@@ -90,6 +90,8 @@ export class AccountSession {
     /** When `refresh` last answered (a reconnect right after it needs no second load). */
     this.refreshedAt = -Infinity;
     this.refreshing = null;
+    /** Account id, status and role the realtime channel was opened for (its topics depend on them). */
+    this.realtimeKey = null;
     this.listeners = new Set();
     this.signOutListeners = new Set();
     this.syncStatus = { status: 'idle', detail: '' };
@@ -205,8 +207,17 @@ export class AccountSession {
     if (!this.realtime) return;
     const user = this.user;
     const live = !!user && user.status !== 'banned' && user.status !== 'deleted' && this.site?.services?.realtime === true;
-    if (live) this.realtime.allow();
-    else this.realtime.stop();
+    if (!live) {
+      this.realtimeKey = null;
+      this.realtime.stop();
+      return;
+    }
+    const key = `${user.id}|${user.status}|${user.role}`;
+    const changed = this.realtimeKey !== null && this.realtimeKey !== key;
+    this.realtimeKey = key;
+    this.realtime.allow();
+    // Approved (or a new role): the hub gives the topics at connect, so connect again for the new ones.
+    if (changed) this.realtime.reconnect();
   }
 
   /** `fn(userId)` runs when the player signs out here (not when a session ends by itself). */

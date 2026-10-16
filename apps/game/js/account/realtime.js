@@ -20,6 +20,7 @@ import {
   REALTIME_BACKOFF_MAX_MS,
   REALTIME_BACKOFF_MIN_MS,
   REALTIME_CLOSE,
+  REALTIME_FRESH_MS,
   REALTIME_PING,
   REALTIME_PING_MS,
   REALTIME_REFETCH_DEBOUNCE_MS,
@@ -84,6 +85,8 @@ export class RealtimeClient extends Emitter {
     this.reconnectOnShow = false;
     this.onVisibility = () => this.visibilityChanged();
     this.listening = false;
+    /** When the last hello or hint arrived (live(): the screens may poll slowly). */
+    this.lastHeardAt = -Infinity;
     /** When the last 4001 or 4003 came (a loop guard). */
     this.lastAuthClose = -Infinity;
     this.now = now;
@@ -140,6 +143,31 @@ export class RealtimeClient extends Emitter {
     this.allowed = true;
     if (this._state === 'stopped') this.setState('idle');
     this.listen(true);
+    this.sync();
+  }
+
+  /**
+   * Whether hints are arriving: the socket is open and its hello or a hint
+   * came within `windowMs` (REALTIME_FRESH_MS). A socket the server keeps
+   * open but quiet (the site setting switched off meanwhile) stops counting.
+   */
+  live(windowMs = REALTIME_FRESH_MS) {
+    return this._state === 'open' && this.now() - this.lastHeardAt < windowMs;
+  }
+
+  /**
+   * Connect again now (the hub fixes the topics at connect: an account that
+   * was approved, or whose role changed, gets its new ones). Does nothing
+   * unless allowed; a channel that is unavailable stays so until its pause ends.
+   */
+  reconnect() {
+    if (!this.allowed || this._state === 'unavailable' || this._state === 'stopped') return;
+    this.closeSocket(1000, 'reconnect');
+    if (this.backoffTimer !== null) this.timers.clearTimeout(this.backoffTimer);
+    this.backoffTimer = null;
+    this.attempt = 0;
+    this.failures = 0;
+    this.setState('idle');
     this.sync();
   }
 
@@ -255,6 +283,7 @@ export class RealtimeClient extends Emitter {
       this.attempt = 0;
       this.failures = 0;
       this.lastSeq = msg.seq;
+      this.lastHeardAt = this.now();
       this.setState('open');
       this.startPing();
       this.emit('open', msg);
@@ -265,6 +294,7 @@ export class RealtimeClient extends Emitter {
     if (msg.t === 'event') {
       if (msg.seq <= this.lastSeq) return;
       this.lastSeq = msg.seq;
+      this.lastHeardAt = this.now();
       // The hub ends this sign-in (its close frame may take a while to arrive): act on it now.
       if (msg.topic === 'account' && msg.kind === 'signed_out') {
         this.closeSocket(1000, 'signed_out');
