@@ -316,7 +316,8 @@ test('installed tiles say when they stand in for most of the map while a plan ru
   const { InstalledTiles } = await import('../editor/js/tiles.js');
   let finish;
   const plans = [];
-  const tiles = new InstalledTiles({ plan: (job) => (plans.push(job), new Promise((r) => (finish = r))) });
+  // Plans start at once here (`defer`); the editor waits PLAN_DELAY_MS so changes that come together plan once.
+  const tiles = new InstalledTiles({ plan: (job) => (plans.push(job), new Promise((r) => (finish = r))), defer: (fn) => fn() });
   const theater = { key: 'a', tileset: 'TEMPERAT', files: new Map() };
   const w = 20;
   const h = 20;

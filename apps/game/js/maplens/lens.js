@@ -544,7 +544,21 @@ export class MapLens {
       if (job.steps) {
         const r = job.steps.next();
         if (r.done) map = r.value;
-        else job.progress = Math.max(job.progress, Math.min(1, Number(r.value) || 0));
+        else {
+          const share = typeof r.value === 'object' && r.value ? r.value.share : r.value;
+          job.progress = Math.max(job.progress, Math.min(1, Number(share) || 0));
+          // A step that waits (the terrain tiles planned in the tile worker): the next one once it is in.
+          if (typeof r.value?.wait?.then === 'function') {
+            job.timer = { cancel: () => {} };
+            r.value.wait.then(() => {
+              if (this.job !== job) return;
+              job.timer = null;
+              this.schedule(this.visible);
+            });
+            if (this.visible) this.requestFrame();
+            return;
+          }
+        }
       }
       if (map) {
         this.job = null;

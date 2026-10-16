@@ -17,13 +17,18 @@
 //   `generatedSteps` and `missionSteps` are generators that do one part per
 //   step and yield the share done (0..1) in between; the lens runs one step
 //   per idle task (js/maplens/lens.js), so no single task holds the page up
-//   for all of it. `fromMap` and friends run every step at once.
+//   for all of it. `fromMap` and friends run every step at once. With a
+//   `planner` (js/terraintiles.js planInWorker) the original graphics' tiles
+//   are planned in the tile worker: that step yields `{ share, wait, sync }`,
+//   the lens waits for `wait` before the next step, and `runSteps` plans on
+//   the spot (`sync`).
 
 import { applyGameArt, artActors, buildGameAtlas } from '../gameart.js';
 import { buildTerrainAtlas, cellTiles, terrainSeed } from '../art/terrain.js';
 import { NEUTRAL_COLOR, TEAM_PALETTE } from '../renderer.js';
 import { OBSERVER_VIEW } from '../observer.js';
 import { CELL_PX, SPRITE_FLOATS, TerrainRaster } from './raster.js';
+import { mapTerrain } from '../terraintiles.js';
 
 /** Team slot of the neutral player in an editor preview (engine world.rs EDITOR_SLOTS). */
 export const PREVIEW_NEUTRAL = 8;
@@ -40,11 +45,12 @@ export function hexColor(text) {
   return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
 }
 
-/** Run a step generator (`mapSteps` and friends) to its end; returns its map. */
+/** Run a step generator (`mapSteps` and friends) to its end, waiting for nothing (a step to wait for is done on the spot); returns its map. */
 export function runSteps(steps) {
   for (;;) {
     const r = steps.next();
     if (r.done) return r.value;
+    r.value?.sync?.();
   }
 }
 
@@ -62,11 +68,13 @@ export class LensArt {
    * @param {() => WebAssembly.Memory} o.memory the engine's memory
    * @param {import('../content/index.js').ContentSystem | null} [o.content] installed content (null: WebRA art)
    * @param {number} [o.atlases] sprite atlases kept (one per rule set and biome)
+   * @param {((job: object) => Promise<object | null>) | null} [o.planner] plans the original graphics' tiles off the main thread (js/terraintiles.js planInWorker); null: on the spot
    */
-  constructor({ Game, memory, content = null, atlases = 2 }) {
+  constructor({ Game, memory, content = null, atlases = 2, planner = null }) {
     this.Game = Game;
     this.memory = memory;
     this.content = content;
+    this.planner = planner;
     this.maxAtlases = Math.max(1, atlases);
     /** Sprite atlases by rule set and biome, oldest first. */
     this.atlases = new Map();
@@ -159,6 +167,11 @@ export class LensArt {
   tiles(biome, terrain, w, h, hints = null) {
     const installed = this.content?.terrain(biome, terrain, w, h, hints) ?? null;
     if (installed) return { atlas: installed.atlas, cells: installed.cells, source: installed.source ?? 'installed' };
+    return this.webraTiles(biome, terrain, w, h);
+  }
+
+  /** WebRA's own terrain tiles for the engine terrain bytes. */
+  webraTiles(biome, terrain, w, h) {
     let atlas = this.terrainAtlases.get(biome);
     if (!atlas) {
       atlas = buildTerrainAtlas(biome);
@@ -197,7 +210,25 @@ export class LensArt {
       game.free?.();
       game = null;
       yield share(3);
-      const tiles = this.tiles(b, terrain, width, height, hints);
+      let tiles;
+      const planned = this.planner ? mapTerrain(this.content, b, terrain, width, height, hints, this.planner) : null;
+      if (planned?.plan) {
+        // The original graphics' tiles in the tile worker: the lens waits for them (or plans them now, `sync`).
+        const box = { done: false, value: null };
+        const settle = (value) => {
+          if (box.done) return;
+          box.done = true;
+          box.value = value;
+        };
+        const wait = planned.plan.then(settle, (err) => {
+          console.warn('Map lens: planning the terrain tiles failed:', err);
+          settle(null);
+        });
+        yield { share: share(3.5), wait, sync: () => settle(this.content?.terrain(b, terrain, width, height, hints) ?? null) };
+        tiles = box.value ? { atlas: box.value.atlas, cells: box.value.cells, source: box.value.source } : this.webraTiles(b, terrain, width, height);
+      } else {
+        tiles = planned?.tiles ? { atlas: planned.tiles.atlas, cells: planned.tiles.cells, source: planned.tiles.source ?? 'installed' } : planned ? this.webraTiles(b, terrain, width, height) : this.tiles(b, terrain, width, height, hints);
+      }
       return {
         width,
         height,

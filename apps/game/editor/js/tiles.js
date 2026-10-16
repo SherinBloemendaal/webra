@@ -98,6 +98,9 @@ export class TileWorker {
  */
 export const STAND_IN_SHARE = 0.25;
 
+/** How long a plan waits before it starts (ms): changes that come in meanwhile join it. */
+export const PLAN_DELAY_MS = 40;
+
 /** The terrain type (R) of every cell of engine terrain bytes. */
 function typesOf(bytes) {
   const out = new Uint8Array(bytes.length / 4);
@@ -111,9 +114,17 @@ function typesOf(bytes) {
  * comes in, so the editor uploads the tiles again.
  */
 export class InstalledTiles {
-  constructor({ plan, ready = () => {} }) {
+  /**
+   * `defer(fn)` runs a plan's start a moment later (PLAN_DELAY_MS): what
+   * changes together in consecutive frames (a tree stroke's terrain types,
+   * then its preview's terrain hints) is planned once, with the newest.
+   */
+  constructor({ plan, ready = () => {}, defer = (fn) => setTimeout(fn, PLAN_DELAY_MS) }) {
     this.plan = plan;
     this.ready = ready;
+    this.defer = defer;
+    /** The plan about to start (the newest request while `defer` waits), or null. */
+    this.queued = null;
     this.key = null;
     /** The last plan: `{ types, hints, w, h, atlas, cells, common }` (`atlas` null when the theater cannot tile; `hints` the JSON of its terrain hints). */
     this.done = null;
@@ -155,7 +166,18 @@ export class InstalledTiles {
     const done = this.done;
     const sameTypes = done && done.w === w && done.h === h && done.types.every((t, i) => t === types[i]);
     const same = sameTypes && done.hints === hintsKey;
-    if (!same && !this.busy) this.start(theater, bytes, types, w, h, hints, hintsKey);
+    if (!same && this.queued) {
+      // Not started yet: it plans the newest.
+      Object.assign(this.queued, { theater, bytes: bytes.slice(), types, w, h, hints, hintsKey });
+    } else if (!same && !this.busy) {
+      this.busy = true;
+      this.queued = { theater, bytes: bytes.slice(), types, w, h, hints, hintsKey };
+      this.defer(() => {
+        const q = this.queued;
+        this.queued = null;
+        this.start(q.theater, q.bytes, q.types, q.w, q.h, q.hints, q.hintsKey);
+      });
+    }
     if (!done || done.w !== w || done.h !== h || !done.atlas) {
       this.standIn = this.busy;
       return null;
@@ -184,7 +206,7 @@ export class InstalledTiles {
     this.busy = true;
     const key = theater.key;
     this.plans++;
-    this.plan({ key, tileset: theater.tileset, files: theater.files, bytes: bytes.slice(), w, h, hints })
+    this.plan({ key, tileset: theater.tileset, files: theater.files, bytes, w, h, hints })
       .catch((err) => {
         console.warn('Planning terrain tiles failed:', err);
         return null;

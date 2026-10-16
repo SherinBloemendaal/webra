@@ -5153,7 +5153,15 @@ game is (one message for a whole selection instead of one per actor).
 The map editor plans the original graphics' terrain tiles
 (`js/content/terrain.js` `originalTerrain`) in a module worker
 (`editor/js/tiles.js` `TileWorker`); without module workers, or when the
-worker fails, the plans run on the main thread.
+worker fails, the plans run on the main thread. A game and the map lens
+plan theirs in the same kind of worker (`js/terraintiles.js`, one shared
+worker per page; jobs from `ContentSystem.terrainJob`): a game draws
+WebRA's tiles meanwhile and keeps its loading screen (on the battlefield
+step) until the plan is in, and the lens waits for it between its read
+steps (a step yields `{ share, wait, sync }`; `runSteps` plans on the spot).
+The editor starts a plan `PLAN_DELAY_MS` (40 ms) after the change that
+needs it, so changes that come together (a tree stroke's terrain types,
+then its preview's terrain hints) are planned once.
 
 | Direction | Message | Meaning |
 |-----------|---------|---------|

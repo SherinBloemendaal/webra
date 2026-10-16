@@ -19,6 +19,7 @@ import { renderReport } from '../js/oramap/report.js';
 import { EditorArt } from './js/art.js';
 import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
 import { InstalledTiles, TileWorker } from './js/tiles.js';
+import { planInWorker } from '../js/terraintiles.js';
 import { LivePreview } from './js/live.js';
 import { idleTask } from './js/idle.js';
 import { MapDoc } from './js/doc.js';
@@ -173,7 +174,7 @@ function boot() {
         const tileWorker = new TileWorker();
         installedTiles = new InstalledTiles({ plan: (job) => tileWorker.plan(job), ready: () => view && (view.terrainDirty = true) });
         thumbLens = new MapLens({
-          art: new LensArt({ Game, memory: () => wasm.memory, content: art.content }),
+          art: new LensArt({ Game, memory: () => wasm.memory, content: art.content, planner: planInWorker }),
           gameScale: () => gameScaleFor(settings, window),
         });
       },

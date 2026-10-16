@@ -101,6 +101,7 @@ import { netStatsData } from './netstats.js';
 import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart } from './restart.js';
 import { CampaignMenu } from './campaign/menu.js';
 import { LensArt } from './maplens/source.js';
+import { mapTerrain, planInWorker } from './terraintiles.js';
 import { MapLens } from './maplens/lens.js';
 import { connectRegistry, reportError, setTags } from './telemetry/index.js';
 import { UiGuard, createFrameLoop } from './frameloop.js';
@@ -220,7 +221,7 @@ async function boot() {
   bootScreen.track('account', account?.whenReady());
   setupContent();
   bootScreen.track('content', content?.load());
-  if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content });
+  if (wasm) lensArt = new LensArt({ Game, memory: () => wasm.memory, content, planner: planInWorker });
   releaseNotes = mountReleaseNotes($('release-notes'), { version: wasm ? version() : null });
   // Generated maps for the lobby previews, made in a worker (js/mappreview.js).
   previews = wasm ? new GeneratedPreviews({ backend: previewBackend({ Game, module: wasmModule }) }) : null;
@@ -1708,16 +1709,17 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // Terrain art of the map's biome (js/art/terrain.js), or tile terrain from
   // installed content (js/content/terrain.js), with the cell layer built from
   // the terrain types (they never change). Made here, from the terrain the
-  // game started with, so the first frames do not wait for it (tile terrain
-  // of a large map takes a while); without it, from the first terrain upload.
+  // game started with; without it, from the first terrain upload. The
+  // original graphics' tiles are planned in the tile worker
+  // (js/terraintiles.js): WebRA's tiles stand in meanwhile, and the loading
+  // screen stays (on its battlefield step) until the plan is in.
   let cellsReady = false;
   let terrainTypes = null;
-  const applyTerrain = () => {
-    if (!terrainTypes) return;
-    const w = game.map_width();
-    const h = game.map_height();
-    const hints = game.initial_terrain_hints?.() ?? null;
-    const tiles = perfTrace.span('terrain.tiles', () => content?.terrain(biome, terrainTypes, w, h, hints) ?? null, (t) => ({ source: t?.source ?? 'webra', tiles: t?.report?.tiles }));
+  /** Each applyTerrain is a round: a plan that comes in after a newer round started is dropped. */
+  let terrainRound = 0;
+  /** The first frame (and with it the end of the loading screen) waits for the start's plan. */
+  let terrainReady = true;
+  const showTiles = (tiles, w, h) => {
     if (tiles) {
       renderer.setTerrainAtlas(tiles.atlas);
       renderer.uploadCells(tiles.cells);
@@ -1727,11 +1729,36 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       renderer.uploadCells(perfTrace.span('terrain.cells', () => cellTiles(terrainTypes, w, h, terrainSeed(terrainTypes))));
     }
   };
+  /** Draw the terrain's tiles; returns the promise of the plan in the worker, or null when none runs. */
+  const applyTerrain = () => {
+    if (!terrainTypes) return null;
+    const round = ++terrainRound;
+    const w = game.map_width();
+    const h = game.map_height();
+    const hints = game.initial_terrain_hints?.() ?? null;
+    const detail = (t) => ({ source: t?.source ?? 'webra', tiles: t?.report?.tiles });
+    const { tiles, plan } = perfTrace.span('terrain.tiles', () => mapTerrain(content, biome, terrainTypes, w, h, hints), (r) => (r.plan ? { source: 'worker' } : detail(r.tiles)));
+    showTiles(tiles, w, h);
+    if (!plan) return null;
+    return perfTrace
+      .spanAsync('terrain.plan', () => plan, detail)
+      .then((planned) => {
+        if (round !== terrainRound || !planned) return;
+        renderer.setTerrainAtlas(planned.atlas);
+        renderer.uploadCells(planned.cells);
+      })
+      .catch((err) => console.warn('Planning terrain tiles failed:', err));
+  };
   const initialTerrain = game.initial_terrain();
+  let terrainPlan = null;
   if (initialTerrain) {
     renderer.uploadTerrain(initialTerrain);
     terrainTypes = initialTerrain;
-    applyTerrain();
+    terrainPlan = applyTerrain();
+    if (terrainPlan) {
+      terrainReady = false;
+      terrainPlan.then(() => (terrainReady = true));
+    }
     cellsReady = true;
   } else {
     renderer.setTerrainAtlas(perfTrace.span('atlas.terrain', () => buildTerrainAtlas(biome)));
@@ -2896,7 +2923,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     renderer.measure = null;
     // The game's start trace ends with its first drawn frame (js/perfcapture.js startup);
     // the game itself starts once the loading screen it closes is gone.
-    if (!firstFrame.drawn) {
+    if (!firstFrame.drawn && terrainReady) {
       perfTrace.endStartup();
       firstFrame.firstFrame().then(() => {
         if (!stopped) gameStart.begin(performance.now());
@@ -3078,7 +3105,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     stopped = true;
     cancelAnimationFrame(rafId);
   });
-  loader.step('frame');
+  // The original graphics' tiles first (the battlefield step goes on while they are planned).
+  if (terrainPlan) terrainPlan.then(() => loader.step('frame'));
+  else loader.step('frame');
   rafId = requestAnimationFrame(frame);
 
   /**

@@ -27,6 +27,7 @@ import { CELL_PX, TerrainRaster, frameQuad, hash2, oreColor, resourceTile, sprit
 import { HOLD_CLICK_MS, HOLD_MS, LENS_MAX_VIEW_CELLS, LENS_MIN_ZOOM, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensHint, lensPlacement, lensZoomLimits, magnifyHeld, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
 import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, runSteps, teamColors } from '../js/maplens/source.js';
 import { createMap, encodeBase64, TERRAIN } from '../editor/js/mapformat.js';
+import { planTiles } from '../editor/js/tiles.js';
 
 const wasm = await init({ module_or_path: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 const realDocument = globalThis.document;
@@ -1191,6 +1192,72 @@ test('LensArt draws with the original graphics when installed and chosen, WebRA 
   const plain = new LensArt({ Game, memory: () => wasm.memory, content: none }).fromMap(mapJson());
   assert.equal(plain.terrainSource, 'webra');
   assert.equal(plain.spriteSource, 'webra');
+});
+
+test('LensArt with a planner: the original tiles are planned in the tile worker, the read waits for them, runSteps plans on the spot', async () => {
+  globalThis.document = pixelDocument();
+  const files = new Map([...syntheticGraphics(), ...syntheticTheater()]);
+  const { content: originals } = await content(files, 'original');
+  const jobs = [];
+  const planner = (job) => {
+    jobs.push(job);
+    return Promise.resolve(planTiles(job, job.bytes, job.w, job.h, job.hints));
+  };
+  const art = new LensArt({ Game, memory: () => wasm.memory, content: originals, planner });
+  const steps = art.mapSteps(mapJson());
+  let r = steps.next();
+  let waits = 0;
+  while (!r.done) {
+    if (r.value?.wait) {
+      waits++;
+      assert.ok(r.value.share > 0 && r.value.share < 1);
+      await r.value.wait;
+    }
+    r = steps.next();
+  }
+  assert.equal(waits, 1, 'one step waits: the plan');
+  assert.equal(jobs.length, 1, 'the planner (the tile worker) planned the tiles');
+  assert.equal(jobs[0].tileset, 'TEMPERAT');
+  assert.ok(jobs[0].hints && Array.isArray(jobs[0].hints.bridges), 'with the preview\'s terrain hints');
+  assert.equal(r.value.terrainSource, 'original');
+  // The same tiles on the spot (runSteps, `sync`) as from the worker.
+  const direct = new LensArt({ Game, memory: () => wasm.memory, content: originals }).fromMap(mapJson());
+  assert.deepEqual(r.value.terrain.cells, direct.terrain.cells);
+  const spot = runSteps(art.mapSteps(mapJson()));
+  assert.deepEqual(spot.terrain.cells, direct.terrain.cells);
+  // A planner that fails: WebRA's tiles, the read still ends.
+  const broken = new LensArt({ Game, memory: () => wasm.memory, content: originals, planner: () => Promise.reject(new Error('no worker')) });
+  const it = broken.mapSteps(mapJson());
+  let b = it.next();
+  while (!b.done) {
+    if (b.value?.wait) await b.value.wait;
+    b = it.next();
+  }
+  assert.equal(b.value.terrainSource, 'webra');
+});
+
+test('the lens waits for a step that waits (the tile worker) without queueing tasks, then goes on', async () => {
+  const p = page({ idleCallbacks: true });
+  const { lens } = lensOn(p);
+  let release;
+  const wait = new Promise((resolve) => (release = resolve));
+  function* source() {
+    yield 0.3;
+    yield { share: 0.7, wait, sync: () => {} };
+    return syntheticMap();
+  }
+  lens.setSource('w', () => source(), { width: 20, height: 12 });
+  p.runIdle();
+  p.runIdle();
+  assert.equal(p.idle.length, 0, 'nothing queued while the plan runs');
+  assert.equal(lens.map, null);
+  assert.ok(lens.job.progress >= 0.7);
+  release();
+  await wait;
+  await Promise.resolve();
+  assert.equal(p.idle.length, 1, 'the next step is queued once the plan is in');
+  p.runIdle();
+  assert.ok(lens.map, 'read');
 });
 
 test('a 128 x 128 map: reading it and drawing a tile, measured', async (t) => {
