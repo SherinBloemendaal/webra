@@ -216,13 +216,13 @@ pub(crate) fn surplus_structure(w: &World, player: u8) -> Option<usize> {
     let info = |b: usize| &w.rules.actors[w.actors[b].ty as usize];
     let has_units = |kind: Kind| w.actors.iter().any(|a| a.alive && a.owner == player && a.kind == kind);
     let produces = |b: usize, q: QueueType| info(b).building.as_ref().is_some_and(|x| x.produces.contains(&q));
-    // Keep the first producer of each of these queues (lowest index: deterministic).
-    let mut kept: Vec<usize> = Vec::new();
-    for q in [QueueType::Building, QueueType::Infantry, QueueType::Vehicle] {
-        if let Some(&b) = buildings.iter().find(|&&b| produces(b, q)) {
-            kept.push(b);
-        }
-    }
+    // Keep the producer each of these queues uses (production.rs
+    // `most_likely_producer`: the primary one, else the newest), so the yard
+    // that gives placed structures their faction stays.
+    let kept: Vec<usize> = [QueueType::Building, QueueType::Infantry, QueueType::Vehicle]
+        .into_iter()
+        .filter_map(|q| w.most_likely_producer(player, q))
+        .collect();
     let ore = reachable_resources(w, player) > 0;
     // Rank: lower sells first. Defences and walls are never sold.
     let rank = |b: usize| -> Option<u32> {

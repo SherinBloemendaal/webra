@@ -2850,7 +2850,10 @@ engine's rules:
 - No refineries while no ore is in reach; while broke and earning nothing
   (`ai_economy.rs`) only the power, the first refinery and a factory the
   army needs, unit production below ProductionMinCashRequirement, and
-  surplus structures sold for an army or a refinery.
+  surplus structures sold for an army or a refinery (never the producer a
+  Building, Infantry or Vehicle queue uses, `most_likely_producer`: the
+  primary one, else the newest, so the yard that gives placed structures
+  their faction stays).
 - Placement: structures spiral out from the base centre (mirrored for bases
   in the right half), refineries go where the dock is nearest to ore,
   defences use OpenRA's ordering toward the nearest enemy with mirrored
@@ -2889,7 +2892,9 @@ engine's rules:
   structure or ship (within its sight after the weather, less a cell, when
   the target is out of sight: units only fire at what their owner sees),
   put the yard's rally
-  point on that water and make that yard primary; keep one naval squad per
+  point on that water and make that yard primary when ships would
+  otherwise leave a yard on other water (they leave the primary yard, else
+  the newest: `World::launch_order`); keep one naval squad per
   body of water; scan around the target itself; send each ship to a point
   from which it sees the target and order ships to attack a target they see
   directly (bots' Missile Submarines are on ReturnFire, and attack moves

@@ -855,16 +855,28 @@ impl World {
         if producers.is_empty() {
             return None;
         }
+        let producers = self.in_launch_order(producers);
+        Some(producers.into_iter().any(|b| self.produce_at(b, player, ty).is_some()))
+    }
+
+    /// `player`'s structures that make `ty`, in the order a finished one
+    /// tries them (`spawn_produced`): the AI asks where its next unit leaves.
+    pub(crate) fn launch_order(&self, player: u8, ty: u16) -> Vec<usize> {
+        self.in_launch_order(self.producers_of(player, ty))
+    }
+
+    /// `producers` without those being captured (their exits are shut), sorted by `sort_producers`.
+    fn in_launch_order(&self, producers: Vec<usize>) -> Vec<usize> {
         let mut producers: Vec<usize> = producers.into_iter().filter(|&b| !self.being_captured(b)).collect();
         self.sort_producers(&mut producers);
-        Some(producers.into_iter().any(|b| self.produce_at(b, player, ty).is_some()))
+        producers
     }
 
     /// OpenRA's producer order (ClassicProductionQueue.BuildUnit and
     /// MostLikelyProducer): the primary structure first, then the newest
     /// (`OrderByDescending(IsPrimaryBuilding).ThenByDescending(ActorID)`).
     /// Serials are unique, so the order is total and the same on every client.
-    fn sort_producers(&self, producers: &mut [usize]) {
+    pub(crate) fn sort_producers(&self, producers: &mut [usize]) {
         producers.sort_by_key(|&b| (std::cmp::Reverse(self.actors[b].primary), std::cmp::Reverse(self.actors[b].serial)));
     }
 

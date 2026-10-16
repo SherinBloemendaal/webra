@@ -1265,3 +1265,18 @@ fn country_items_stay_apart_without_a_construction_yard() {
         assert_lists(&w, 0, &[own], &[other]);
     }
 }
+
+#[test]
+fn the_state_hash_sees_an_actors_faction_and_serial() {
+    // Faction (infantry.rs `hash_infantry_actor`) and serial (world.rs
+    // `state_hash`) decide what production makes: a desync in either shows.
+    let a = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    let mut b = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    assert_eq!(a.state_hash(), b.state_hash());
+    let fact = find(&b, 0, "FACT");
+    b.actors[fact].faction = b.rules.faction_index("soviet").unwrap() as u8;
+    assert_ne!(a.state_hash(), b.state_hash(), "the faction is hashed");
+    let mut c = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    c.actors[fact].serial += 1000;
+    assert_ne!(a.state_hash(), c.state_hash(), "the serial is hashed");
+}

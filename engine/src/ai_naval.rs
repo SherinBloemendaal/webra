@@ -142,16 +142,11 @@ pub(crate) fn reaching(w: &mut World, player: u8, cfg: &BotConfig, types: &[u16]
     comps.iter().copied().filter(|&c| types.iter().any(|&ty| in_reach(w, player, cfg, ty, c))).collect()
 }
 
-/// The player's structures that build actor type `ty` (production.rs
-/// `producers_of`), the one new units leave first: the primary one, else
-/// the first (production.rs `spawn_produced`).
+/// The player's structures that build actor type `ty`, in the order new
+/// units try them: the primary one, then the newest (production.rs
+/// `launch_order`, as `spawn_produced` launches them).
 fn producers(w: &World, player: u8, ty: u16) -> Vec<usize> {
-    let mut out = w.producers_of(player, ty);
-    if let Some(k) = out.iter().position(|&b| w.actors[b].primary) {
-        let p = out.remove(k);
-        out.insert(0, p);
-    }
-    out
+    w.launch_order(player, ty)
 }
 
 /// Whether a warship of type `ty` launched from yard `b` (onto the water

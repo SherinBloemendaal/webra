@@ -201,27 +201,42 @@ fn a_yard_between_two_waters_launches_onto_the_one_that_reaches() {
     assert!(built.iter().all(|&s| water_of(&w, s) == sea), "launched onto the sea");
 }
 
-/// Of two yards, the one on water that leads to an enemy becomes primary,
-/// so warships are built where they can fight.
+/// Of two yards, warships leave the primary one, else the newest (OpenRA
+/// ClassicProductionQueue.BuildUnit, production.rs `launch_order`). When the
+/// newer one stands on a pond, the bot makes the older one on water that
+/// leads to an enemy primary, so warships are built where they can fight;
+/// when the newer one is on that water already, it changes nothing.
 #[test]
 fn the_yard_on_useful_water_becomes_primary() {
-    let mut w = naval_arena();
-    flood(&mut w, 2, 20, 12, 30);
-    flood(&mut w, 20, 20, 40, 63);
-    harbour_base(&mut w);
-    let pond_yard = w.spawn_building(ty(&w, "SYRD"), 0, 4, 22).expect("pond yard");
-    let sea_yard = w.spawn_building(ty(&w, "SYRD"), 0, 25, 22).expect("sea yard");
-    assert!(pond_yard < sea_yard, "the pond yard comes first");
-    put(&mut w, "POWR", 1, 42, 40);
-    w.refresh_tokens();
-    w.update_power();
-    w.step();
-    run(&mut w, 25 * 120);
-    assert!(w.actors[sea_yard].primary && !w.actors[pond_yard].primary);
-    let built = ships(&w, 0);
-    assert!(!built.is_empty());
-    let sea = water(&w, 30, 40);
-    assert!(built.iter().all(|&s| water_of(&w, s) == sea), "{:?}", built.iter().map(|&s| water_of(&w, s)).collect::<Vec<_>>());
+    for sea_first in [true, false] {
+        let mut w = naval_arena();
+        flood(&mut w, 2, 20, 12, 30);
+        flood(&mut w, 20, 20, 40, 63);
+        harbour_base(&mut w);
+        let (pond_yard, sea_yard) = if sea_first {
+            let sea = w.spawn_building(ty(&w, "SYRD"), 0, 25, 22).expect("sea yard");
+            (w.spawn_building(ty(&w, "SYRD"), 0, 4, 22).expect("pond yard"), sea)
+        } else {
+            let pond = w.spawn_building(ty(&w, "SYRD"), 0, 4, 22).expect("pond yard");
+            (pond, w.spawn_building(ty(&w, "SYRD"), 0, 25, 22).expect("sea yard"))
+        };
+        assert_eq!(w.actors[sea_yard].serial < w.actors[pond_yard].serial, sea_first);
+        let pt = ty(&w, "PT");
+        let newest = if sea_first { pond_yard } else { sea_yard };
+        assert_eq!(w.launch_order(0, pt).first(), Some(&newest), "the newer yard launches without a primary one");
+        put(&mut w, "POWR", 1, 42, 40);
+        w.refresh_tokens();
+        w.update_power();
+        w.step();
+        run(&mut w, 25 * 120);
+        assert_eq!(w.actors[sea_yard].primary, sea_first, "primary only when the pond yard is newer");
+        assert!(!w.actors[pond_yard].primary);
+        assert_eq!(w.launch_order(0, pt).first(), Some(&sea_yard));
+        let built = ships(&w, 0);
+        assert!(!built.is_empty());
+        let sea = water(&w, 30, 40);
+        assert!(built.iter().all(|&s| water_of(&w, s) == sea), "{:?}", built.iter().map(|&s| water_of(&w, s)).collect::<Vec<_>>());
+    }
 }
 
 /// Ships on separate bodies of water form separate naval squads (OpenRA
