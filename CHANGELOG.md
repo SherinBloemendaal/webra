@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.18.0](https://github.com/SherinBloemendaal/webra/compare/v0.17.0...v0.18.0) (2026-10-16)
+
+
+### Features
+
+* **game:** show a boot screen on /play until the start menu is ready ([8a425b0](https://github.com/SherinBloemendaal/webra/commit/8a425b04e68c915a0f499b5ad536da8151f3b234))
+* **game:** show a boot screen on /play until the start menu is ready ([ed69e31](https://github.com/SherinBloemendaal/webra/commit/ed69e315e2f24504ee952c26371f59e37ae506cf))
+* **game:** show guide steps of later versions to existing players ([8a425b0](https://github.com/SherinBloemendaal/webra/commit/8a425b04e68c915a0f499b5ad536da8151f3b234))
+* **game:** show guide steps of later versions to existing players ([5041271](https://github.com/SherinBloemendaal/webra/commit/5041271d26f808f5eb00a8c0ba5392a4bc1cb14a))
+
+
+### Bug Fixes
+
+* **game:** keep the frame loop going when a part of the screen throws ([3bbd0d6](https://github.com/SherinBloemendaal/webra/commit/3bbd0d60c66f2645b9d85a548bd6cbbb9ba63eff))
+* **game:** keep the frame loop going when a part of the screen throws, and stop a game whose every frame fails ([8a425b0](https://github.com/SherinBloemendaal/webra/commit/8a425b04e68c915a0f499b5ad536da8151f3b234))
+* **game:** keep the game running when a tour step ticks off ([8a425b0](https://github.com/SherinBloemendaal/webra/commit/8a425b04e68c915a0f499b5ad536da8151f3b234))
+* **game:** keep the game running when a tour step ticks off ([bbb7f9b](https://github.com/SherinBloemendaal/webra/commit/bbb7f9b12b3e2acb93c856239dcd09e706cbd04c))
+* **game:** keep the tour card above the command bar on touch and narrow screens ([8a425b0](https://github.com/SherinBloemendaal/webra/commit/8a425b04e68c915a0f499b5ad536da8151f3b234))
+* **game:** keep the tour switch of 0.17.0 players as stored ([8418682](https://github.com/SherinBloemendaal/webra/commit/841868264815af4b132400117cc20157696f87ac))
+* **game:** keep What's new and a resumed mission behind the boot screen ([3c6bcfc](https://github.com/SherinBloemendaal/webra/commit/3c6bcfcdffd1044640a1d0cb173d914b4c6ccfd9))
+* **game:** stop a game whose every frame throws, and name each guarded part ([4cb9dd7](https://github.com/SherinBloemendaal/webra/commit/4cb9dd7c93c36ef84bd240dc48b7dc3882ad96eb))
+
 ## [0.17.0](https://github.com/SherinBloemendaal/webra/compare/v0.16.0...v0.17.0) (2026-10-15)
 
 

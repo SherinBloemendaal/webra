@@ -1,6 +1,6 @@
 {
   "name": "webra",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "description": "WebRA monorepo: Red Alert in the browser (engine, game client, website, multiplayer server)",
   "license": "GPL-3.0-or-later",
