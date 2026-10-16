@@ -5,7 +5,8 @@
 // loads this module on its own ahead of editor/editor.js, which imports it
 // and goes on with the steps (`bootEditor`).
 //
-// It goes once the first frame of the map is drawn; installed terrain tiles
+// It goes once the first frame of the map is drawn (at once in a hidden tab,
+// `requestFirstFrame`); installed terrain tiles
 // planned in a worker (js/tiles.js) get at most BOOT_WAIT_MS more, so the
 // map does not change its look right after the screen goes. It never hangs:
 // a step that fails shows its error with Reload, the editor files that do
@@ -61,6 +62,29 @@ export async function bootEditor(screen, work, { reducedMotion = null } = {}) {
   else screen.set('tiles', 'done');
   await screen.ready();
   return true;
+}
+
+/**
+ * Ask for the editor's first frame: the next animation frame, or at once
+ * (a timer) while the page is hidden, where animation frames wait for the
+ * tab to show. A boot in a background tab then finishes (the steps, the
+ * screen's close) instead of waiting, and the late line never says a
+ * hidden tab's wait is a slow connection. `frame(now)` runs once.
+ */
+export function requestFirstFrame(frame, { doc = globalThis.document, raf = (fn) => requestAnimationFrame(fn), later = (fn) => setTimeout(fn, 0), now = () => performance.now() } = {}) {
+  let done = false;
+  const run = (t) => {
+    if (done) return;
+    done = true;
+    doc?.removeEventListener?.('visibilitychange', onHide);
+    frame(t ?? now());
+  };
+  const onHide = () => {
+    if (doc.hidden) later(() => run(now()));
+  };
+  doc?.addEventListener?.('visibilitychange', onHide);
+  raf(run);
+  if (doc?.hidden) later(() => run(now()));
 }
 
 /** The page's boot screen (editor/index.html #boot): editor/editor.js reports its steps here. */

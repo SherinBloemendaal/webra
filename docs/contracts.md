@@ -736,7 +736,9 @@ guards it by counting reads, not by the clock.
   game's `bootScreen` leaves it alone; `editor/js/boot.js` loads ahead of
   editor.js and watches `editor/editor.js` (`watchGameFiles` `main`).
   `bootEditor` runs the steps in order; `editor` resolves once the first
-  frame of the map is drawn (a throw there fails it), `tiles` waits at most
+  frame of the map is drawn (a throw there fails it; in a hidden tab the
+  first frame is drawn from a timer, `requestFirstFrame`, since animation
+  frames wait for the tab to show), `tiles` waits at most
   `BOOT_WAIT_MS` for the installed tiles' first plan (`InstalledTiles.idle`),
   then the screen fades. A failing step shows "The map editor could not
   start" with Reload; the late line's link goes to `editor/` (the page's base

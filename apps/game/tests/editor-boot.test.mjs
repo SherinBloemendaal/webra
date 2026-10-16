@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { BOOT_LATE_TEXT, BOOT_WAIT_MS } from '../js/bootscreen.js';
-import { EDITOR_BOOT_OPTIONAL, EDITOR_BOOT_STEPS, bootEditor, editorBootScreen } from '../editor/js/boot.js';
+import { EDITOR_BOOT_OPTIONAL, EDITOR_BOOT_STEPS, bootEditor, editorBootScreen, requestFirstFrame } from '../editor/js/boot.js';
 import { FakeEvent, installDom, textOf, uninstallDom } from './dom-fixtures.mjs';
 import { TERRAIN } from '../editor/js/mapformat.js';
 
@@ -121,7 +121,7 @@ test('editor/index.html: the boot screen is static markup with the editor\'s tit
   // Error reports first, then the boot screen, then the editor (which imports the same module).
   const at = (src) => HTML.indexOf(`<script type="module" src="${src}"></script>`);
   assert.ok(at('js/telemetry/boot.js') > 0 && at('js/telemetry/boot.js') < at('editor/js/boot.js') && at('editor/js/boot.js') < at('editor/editor.js'));
-  assert.match(EDITOR_JS, /import \{ bootEditor, editorBoot \} from '\.\/js\/boot\.js';/);
+  assert.match(EDITOR_JS, /import \{ bootEditor, editorBoot, requestFirstFrame \} from '\.\/js\/boot\.js';/);
   // The old boot line is gone; the busy line for tile plans has no inline style.
   assert.doesNotMatch(HTML, /class="boot"/);
   assert.match(HTML, /<p id="busy" class="busy" hidden><span class="loading-spinner" aria-hidden="true"><\/span><span class="busy-text" role="status" aria-live="polite"><\/span><\/p>/);
@@ -202,6 +202,49 @@ test('without installed tiles to plan the screen goes with the first frame; a sl
     assert.equal(lamps(root).tiles, 'active');
     uninstallDom();
   }
+});
+
+test('the first frame: the next animation frame, or at once in a hidden tab (no wait that looks like a slow connection)', () => {
+  const page = () => {
+    const listeners = new Map();
+    return {
+      hidden: false,
+      addEventListener: (t, fn) => listeners.set(t, fn),
+      removeEventListener: (t) => listeners.delete(t),
+      fire: (t) => listeners.get(t)?.(),
+      listeners,
+    };
+  };
+  const run = (doc) => {
+    const frames = [];
+    const rafs = [];
+    const timers = [];
+    requestFirstFrame((t) => frames.push(t), { doc, raf: (fn) => rafs.push(fn), later: (fn) => timers.push(fn), now: () => 7 });
+    return { frames, rafs, timers };
+  };
+  // Shown: the animation frame draws it.
+  let doc = page();
+  let r = run(doc);
+  assert.equal(r.timers.length, 0);
+  r.rafs[0](16);
+  assert.deepEqual(r.frames, [16]);
+  assert.equal(doc.listeners.size, 0);
+  // Hidden from the start: a timer draws it; the animation frame later does not draw it again.
+  doc = page();
+  doc.hidden = true;
+  r = run(doc);
+  r.timers[0]();
+  r.rafs[0](99);
+  assert.deepEqual(r.frames, [7]);
+  // Hidden while waiting: the timer takes over.
+  doc = page();
+  r = run(doc);
+  doc.hidden = true;
+  doc.fire('visibilitychange');
+  r.timers[0]();
+  assert.deepEqual(r.frames, [7]);
+  r.rafs[0](50);
+  assert.deepEqual(r.frames, [7], 'once');
 });
 
 // ---- Errors -----------------------------------------------------------------------------------------

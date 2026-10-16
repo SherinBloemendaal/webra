@@ -41,7 +41,7 @@ import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, i
 import { applyFix, openMapFile } from './js/upgrade.js';
 import { mapThumbnail } from '../js/protocol.js';
 import { motionReduced } from '../js/battlefx.js';
-import { bootEditor, editorBoot } from './js/boot.js';
+import { bootEditor, editorBoot, requestFirstFrame } from './js/boot.js';
 import { LensArt } from '../js/maplens/source.js';
 import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
@@ -252,7 +252,7 @@ function start({ note, first }) {
     autosave();
     saveRecovery();
   });
-  requestAnimationFrame(frame);
+  requestFirstFrame(frame);
   return drawn;
 }
 
