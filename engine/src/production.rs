@@ -173,6 +173,87 @@ impl World {
         Availability { visible, enabled: visible && enabled }
     }
 
+    /// Whether `player`'s build menu lists `ty` at all. OpenRA hides an item
+    /// while one of its `~` prerequisites is unmet (TechTree IsHidden), so a
+    /// player never sees the other side's or another country's items. WebRA
+    /// also lists, locked and with what is missing, the items this player can
+    /// still get by building something (`reachable_tokens`), and hides the
+    /// ones it can never get:
+    /// - a prerequisite (`~` or not) that is not held and that nothing this
+    ///   player can build provides: the other side, another country, a
+    ///   higher lobby tech level, the other side's tech center;
+    /// - `~!token` while held (as in OpenRA), or when it is sure to come with
+    ///   what the item still needs: every structure of this faction that
+    ///   provides another missing prerequisite also provides it (England's
+    ///   barracks gives `infantry.england`, so England never sees the Spy).
+    ///
+    /// The debug menu's "all tech" lists everything of this game (OpenRA
+    /// AllTech, ProductionQueue.AllItems).
+    pub fn listed(&self, player: u8, ty: u16) -> bool {
+        self.listed_with(player, ty, &self.reachable_tokens(player))
+    }
+
+    /// `listed` with `player`'s `reachable_tokens` worked out once.
+    pub(crate) fn listed_with(&self, player: u8, ty: u16, reach: &[bool]) -> bool {
+        if !self.in_game_mode(ty) {
+            return false;
+        }
+        let p = &self.players[player as usize];
+        if p.dev.all_tech {
+            return true;
+        }
+        let prereqs = &self.rules.actors[ty as usize].prerequisites;
+        if prereqs.iter().any(|pr| !pr.negate && !reach[pr.token as usize]) {
+            return false;
+        }
+        let held = |t: u16| p.tokens[t as usize];
+        prereqs.iter().filter(|pr| pr.negate && pr.hidden).all(|pr| {
+            if held(pr.token) {
+                return false;
+            }
+            !prereqs.iter().filter(|o| !o.negate && !held(o.token)).any(|o| {
+                let givers = self.provider_types(p.faction, o.token);
+                !givers.is_empty() && givers.iter().all(|&g| self.provides(g, p.faction, pr.token))
+            })
+        })
+    }
+
+    /// Prerequisite tokens `player` holds now or can still get: those of its
+    /// structures now (a captured one keeps its own faction, OpenRA
+    /// FactionInit) and of every structure it could add with its faction, from
+    /// a Construction Yard on (the fixed point of rules.rs `solve_obtainable`,
+    /// started from what the player holds).
+    pub(crate) fn reachable_tokens(&self, player: u8) -> Vec<bool> {
+        let p = &self.players[player as usize];
+        let mut have = p.tokens.clone();
+        let mut built = vec![false; self.rules.actors.len()];
+        let fact = self.rules.actor_index("FACT");
+        loop {
+            let mut changed = false;
+            for (i, a) in self.rules.actors.iter().enumerate() {
+                if built[i] || a.kind == Kind::Proxy {
+                    continue;
+                }
+                let Some(b) = &a.building else { continue };
+                // Every game starts from a Construction Yard (an MCV).
+                let can = Some(i) == fact
+                    || (self.in_game_mode(i as u16) && a.prerequisites.iter().all(|pr| pr.negate || have[pr.token as usize]));
+                if !can {
+                    continue;
+                }
+                built[i] = true;
+                changed = true;
+                for &t in &b.provides[p.faction] {
+                    have[t as usize] = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        have
+    }
+
     /// Unmet prerequisites of `ty` for `player`, as labels for the sidebar:
     /// the buildings that would provide each missing token, or the side or
     /// country an item is exclusive to when this faction can never get it.
@@ -221,14 +302,23 @@ impl World {
     /// Names of buildings that give `token` to `faction` and that the faction can build.
     fn providers(&self, faction: usize, token: u16) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for a in &self.rules.actors {
-            let Some(b) = &a.building else { continue };
-            let idx = self.rules.actor_index(&a.id).unwrap();
-            if self.rules.obtainable[faction][idx] && b.provides[faction].contains(&token) && !names.contains(&a.name) {
+        for idx in self.provider_types(faction, token) {
+            let a = &self.rules.actors[idx];
+            if !names.contains(&a.name) {
                 names.push(a.name.clone());
             }
         }
         names
+    }
+
+    /// Actor types of the buildings that give `token` to `faction` and that the faction can build.
+    fn provider_types(&self, faction: usize, token: u16) -> Vec<usize> {
+        (0..self.rules.actors.len()).filter(|&idx| self.rules.obtainable[faction][idx] && self.provides(idx, faction, token)).collect()
+    }
+
+    /// Whether a building of type `idx` with `faction` gives `token`.
+    fn provides(&self, idx: usize, faction: usize, token: u16) -> bool {
+        self.rules.actors[idx].building.as_ref().is_some_and(|b| b.provides[faction].contains(&token))
     }
 
     /// Names of the buildings that produce queue `q` and that `faction` can

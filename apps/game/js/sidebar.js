@@ -761,8 +761,10 @@ export class Sidebar {
       if (t.btn.getAttribute('aria-label') !== label) t.btn.setAttribute('aria-label', label);
     });
 
-    // Every item of the active tab: what this faction can get first (palette
-    // order), then the other side's items, each with what is still missing.
+    // Every item of the active tab that this player can get (player_json
+    // lists none of the other side's or another country's: engine
+    // production.rs `listed`), in palette order, each with what is still
+    // missing; anything it can never get (`exclusive`) goes last.
     const enabled = new Map();
     const info = new Map();
     this.buildable = new Map(state.buildable.map((b) => [b.id, b]));

@@ -965,3 +965,106 @@ fn a_queue_holds_at_most_queue_cap_items_even_with_all_tech() {
     });
     assert_eq!(after, expected);
 }
+
+// ---- What the build menu lists (production.rs `listed`) ----------------------
+
+/// Every actor type `player`'s build menu lists (player_json `buildable`).
+fn listed(w: &World, player: u8) -> Vec<String> {
+    (0..w.rules.actors.len()).filter(|&t| w.listed(player, t as u16)).map(|t| w.rules.actors[t].id.clone()).collect()
+}
+
+fn assert_lists(w: &World, player: u8, shown: &[&str], hidden: &[&str]) {
+    let ids = listed(w, player);
+    let faction = &w.rules.factions[w.players[player as usize].faction];
+    for id in shown {
+        assert!(ids.iter().any(|i| i == id), "{faction} lists {id}");
+    }
+    for id in hidden {
+        assert!(!ids.iter().any(|i| i == id), "{faction} does not list {id}");
+    }
+}
+
+const ALLIED_ONLY: [&str; 19] = [
+    "TENT", "SYRD", "ATEK", "GAP", "PDOX", "SBAG", "PBOX", "HBOX", "GUN", "AGUN", "JEEP", "1TNK", "2TNK", "ARTY", "MRJ", "MEDI", "E7",
+    "PT", "MH60",
+];
+const SOVIET_ONLY: [&str; 25] = [
+    "BARR", "KENN", "SPEN", "STEK", "IRON", "FENC", "FTUR", "TSLA", "SAM", "E2", "E4", "DOG", "THF", "APC", "FTRK", "3TNK", "4TNK", "V2RL",
+    "QTNK", "SS", "MSUB", "HIND", "YAK", "MIG", "AFLD",
+];
+const SHARED: [&str; 16] =
+    ["POWR", "APWR", "PROC", "SILO", "WEAP", "FIX", "DOME", "HPAD", "MSLO", "BRIK", "E1", "E3", "E6", "HARV", "MCV", "TRAN"];
+
+#[test]
+fn the_build_menu_never_lists_the_other_sides_items() {
+    let w = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    let allied: Vec<&str> = SHARED.iter().chain(&ALLIED_ONLY).chain(&["SPY", "DD", "CA", "HELI", "LST"]).copied().collect();
+    let soviet: Vec<&str> = SHARED.iter().chain(&SOVIET_ONLY).chain(&["LST"]).copied().collect();
+    // Nothing of the other side, also not what needs the other side's tech
+    // center (the Longbow for Soviets: they build helipads in WebRA).
+    let allied_hidden: Vec<&str> = SOVIET_ONLY.iter().chain(&["AFLD.Ukraine", "SHOK", "TTNK", "DTRK"]).copied().collect();
+    let soviet_hidden: Vec<&str> =
+        ALLIED_ONLY.iter().chain(&["SPY", "SPY.England", "DD", "CA", "HELI", "MGG", "CTNK", "STNK", "FPWR"]).copied().collect();
+    assert_lists(&w, 0, &allied, &allied_hidden);
+    assert_lists(&w, 1, &soviet, &soviet_hidden);
+    // What is merely missing stays listed, locked, with what it needs.
+    let t2 = ty(&w, "2TNK");
+    assert!(!w.availability(0, t2).enabled);
+    assert!(w.requirements(0, t2).iter().all(|r| !r.never), "{:?}", w.requirements(0, t2));
+}
+
+#[test]
+fn country_items_are_listed_only_for_their_country() {
+    let fakes = ["FPWR", "TENF", "SYRF", "WEAF", "DOMF", "FIXF", "FAPW", "ATEF", "PDOF", "MSLF", "FACF"];
+    let country: [(&str, &[&str]); 7] = [
+        ("allies", &["SPY"]),
+        ("england", &["MGG", "SPY.England"]),
+        ("france", &["STNK", "SPY", "FPWR", "TENF", "SYRF", "WEAF", "DOMF", "FIXF", "FAPW", "ATEF", "PDOF", "MSLF", "FACF"]),
+        ("germany", &["CTNK", "SPY"]),
+        ("soviet", &["AFLD"]),
+        ("russia", &["TTNK", "SHOK", "AFLD"]),
+        ("ukraine", &["DTRK", "AFLD.Ukraine"]),
+    ];
+    let specific: Vec<&str> = ["MGG", "SPY.England", "SPY", "STNK", "CTNK", "TTNK", "SHOK", "DTRK", "AFLD", "AFLD.Ukraine"]
+        .iter()
+        .chain(&fakes)
+        .copied()
+        .collect();
+    for (faction, own) in country {
+        // Only the Construction Yard: England sees the British Spy before its barracks, never the generic one.
+        let w = World::new(1, 64, &[(faction, false), ("allies", false)]);
+        let others: Vec<&str> = specific.iter().filter(|id| !own.contains(id)).copied().collect();
+        assert_lists(&w, 0, own, &others);
+    }
+}
+
+#[test]
+fn a_captured_construction_yard_lists_the_other_sides_structures() {
+    let mut w = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    w.refresh_tokens();
+    assert_lists(&w, 0, &["TENT"], &["BARR", "STEK", "IRON", "SAM", "E2"]);
+    // An engineer takes the Soviet Construction Yard: it keeps its faction
+    // (OpenRA FactionInit), so it gives structures.soviet to the Allies.
+    let fact = find(&w, 1, "FACT");
+    w.capture(fact, 0, None);
+    w.refresh_tokens();
+    // So are the units of the structures it builds (a sub pen's `spen`), but
+    // not those that need a Soviet war factory: what it builds is Allied.
+    assert_lists(&w, 0, &["TENT", "BARR", "KENN", "SPEN", "STEK", "IRON", "SAM", "E2", "DOG", "HIND", "SS"], &["3TNK", "APC"]);
+    let barr = ty(&w, "BARR");
+    assert!(w.requirements(0, barr).iter().all(|r| !r.never), "Soviet Barracks only needs power now");
+    // Losing it takes them away again.
+    destroy(&mut w, fact);
+    assert_lists(&w, 0, &["TENT"], &["BARR", "STEK", "IRON"]);
+}
+
+#[test]
+fn the_lobby_tech_level_and_all_tech_set_what_is_listed() {
+    let mut w = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    w.options.tech_level = 1; // low
+    w.refresh_tokens();
+    assert_lists(&w, 0, &["POWR", "TENT", "WEAP", "1TNK"], &["DOME", "ATEK", "2TNK", "PDOX"]);
+    // The debug menu's all tech lists everything of the game, both sides (OpenRA AllTech).
+    w.players[0].dev.all_tech = true;
+    assert_lists(&w, 0, &["ATEK", "BARR", "3TNK", "MGG", "DTRK"], &["FACT"]);
+}

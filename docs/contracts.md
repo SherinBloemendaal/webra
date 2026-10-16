@@ -2114,6 +2114,31 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   type in the queue is cancelled and refunded, one per tick, so the finished
   one goes once it is the last, and the queue says ProductionBlocked once
   (not for instant builds).
+- `player_json().buildable` lists what this player's build menu shows
+  (`World::listed`). OpenRA hides an item while one of its `~`
+  prerequisites is unmet (TechTree IsHidden, ProductionQueue.AllItems), so
+  a player never sees the other side's (`~structures.soviet`,
+  `~vehicles.allies`) or another country's (`~vehicles.england`,
+  `~infantry.russia`) items, nor those above the lobby tech level
+  (`~techlevel.*`). WebRA keeps showing, locked and with what is still
+  missing, what this player can get by building something, so it hides an
+  item only when a prerequisite can never be met: one it does not hold and
+  that nothing it can build provides (`reachable_tokens`: the tokens of its
+  structures now, then a fixed point from a Construction Yard with its
+  faction, as rules.rs `solve_obtainable`), which also hides items that need
+  the other side's tech center (the Longbow for Soviets, who build helipads
+  in WebRA); a `~!` prerequisite while held (as in OpenRA) or when the
+  structure that provides another missing prerequisite always brings it
+  (England's barracks gives `infantry.england`: England never sees the
+  generic Spy). Held now always counts: a captured Construction Yard keeps
+  its faction (OpenRA FactionInit, no ResetOnOwnerChange), so an Allied
+  player who captures a Soviet one is offered the Soviet structures and
+  what they unlock, until it is lost. The debug menu's "all tech" lists
+  every item of the game (OpenRA AllTech). Before 0.19.0 the list held
+  every item of the game mode, the other side's marked `exclusive`
+  ("Soviet only"); `exclusive` stays for a prerequisite that can never be
+  met on an item that is still listed. Presentation only: the state hash
+  never sees it.
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`; under
   the `openra` factory loss rule likewise for units without a structure of
