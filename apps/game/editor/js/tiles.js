@@ -89,6 +89,13 @@ export class TileWorker {
   }
 }
 
+/**
+ * The share of a map's cells that may show stand-in tiles (their type's
+ * most common one) while a plan runs before the editor says it is busy
+ * laying tiles: a map opened, resized or turned to another biome.
+ */
+export const STAND_IN_SHARE = 0.25;
+
 /** The terrain type (R) of every cell of engine terrain bytes. */
 function typesOf(bytes) {
   const out = new Uint8Array(bytes.length / 4);
@@ -110,6 +117,20 @@ export class InstalledTiles {
     this.done = null;
     this.busy = false;
     this.plans = 0;
+    /**
+     * Whether the tiles last handed out stand in for most of the map
+     * (none planned for it yet, or more than STAND_IN_SHARE of its cells
+     * changed type since the plan) while the next plan runs.
+     */
+    this.standIn = false;
+    /** Resolved when no plan runs (`idle`). */
+    this.waiters = [];
+  }
+
+  /** Resolves once no plan runs (at once when none does). */
+  idle() {
+    if (!this.busy) return Promise.resolve();
+    return new Promise((resolve) => this.waiters.push(resolve));
   }
 
   /**
@@ -130,17 +151,26 @@ export class InstalledTiles {
     const done = this.done;
     const same = done && done.w === w && done.h === h && done.types.every((t, i) => t === types[i]);
     if (!same && !this.busy) this.start(theater, bytes, types, w, h);
-    if (!done || done.w !== w || done.h !== h || !done.atlas) return null;
-    if (same) return { atlas: done.atlas, cells: done.cells };
+    if (!done || done.w !== w || done.h !== h || !done.atlas) {
+      this.standIn = this.busy;
+      return null;
+    }
+    if (same) {
+      this.standIn = false;
+      return { atlas: done.atlas, cells: done.cells };
+    }
     const cells = done.cells.slice();
+    let changed = 0;
     for (let i = 0; i < types.length; i++) {
       if (types[i] === done.types[i]) continue;
+      changed++;
       const k = done.common[types[i]] ?? done.common.fallback;
       cells[i * 4] = k & 255;
       cells[i * 4 + 1] = k >> 8;
       cells[i * 4 + 2] = 0;
       cells[i * 4 + 3] = 255;
     }
+    this.standIn = this.busy && changed > types.length * STAND_IN_SHARE;
     return { atlas: done.atlas, cells };
   }
 
@@ -155,12 +185,11 @@ export class InstalledTiles {
       })
       .then((result) => {
         this.busy = false;
-        if (key !== this.key) {
-          this.ready();
-          return;
+        if (key === this.key) {
+          this.done = result ? { types, w, h, atlas: result.atlas, cells: result.cells, common: commonTiles(types, result.cells) } : { types, w, h, atlas: null };
         }
-        this.done = result ? { types, w, h, atlas: result.atlas, cells: result.cells, common: commonTiles(types, result.cells) } : { types, w, h, atlas: null };
         this.ready();
+        for (const resolve of this.waiters.splice(0)) resolve();
       });
   }
 }

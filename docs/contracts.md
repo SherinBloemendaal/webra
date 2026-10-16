@@ -709,7 +709,28 @@ guards it by counting reads, not by the clock.
   cells whose type changed since in the tile most cells of that type have in
   it, and WebRA's tiles until the first plan is in. The finished picture is
   the one a game on the map draws. Texture packs tile cell by cell on the
-  main thread.
+  main thread. While a plan runs and more than `STAND_IN_SHARE` (a quarter)
+  of the map shows stand-in tiles (a map opened, resized or turned to another
+  biome), a polite busy line over the map (`#busy`, after 300 ms) says
+  "Laying the terrain tiles". It is a line, not a loading screen: the editor
+  stays usable meanwhile, and the work that blocks (building the preview and
+  the atlas) is done within a frame or two.
+- Boot screen (`editor/index.html #boot`, `editor/js/boot.js`): the game's
+  boot screen (`js/bootscreen.js`, `css/loading.css`, section 5 "Start,
+  loading, end of game and statistics screens") with the title "Map editor"
+  and the steps `files`, `engine`, `rules`, `graphics`, `content`, `map`,
+  `tiles` and `editor` (`EDITOR_BOOT_STEPS`; `BootScreen` takes `steps`,
+  `optional` and `app`). The section carries `data-boot="editor"`, so the
+  game's `bootScreen` leaves it alone; `editor/js/boot.js` loads ahead of
+  editor.js and watches `editor/editor.js` (`watchGameFiles` `main`).
+  `bootEditor` runs the steps in order; `editor` resolves once the first
+  frame of the map is drawn (a throw there fails it), `tiles` waits at most
+  `BOOT_WAIT_MS` for the installed tiles' first plan (`InstalledTiles.idle`),
+  then the screen fades. A failing step shows "The map editor could not
+  start" with Reload; the late line's link goes to `editor/` (the page's base
+  is `/play/`). `body.is-booting` hides `#topbar` and `#workspace`. The CSP of
+  `/play/*` (apps/website/_headers, apps/server/src/static-headers.js) covers
+  the page: no inline scripts or styles.
 
 ## 3. Game options (lobby to engine)
 

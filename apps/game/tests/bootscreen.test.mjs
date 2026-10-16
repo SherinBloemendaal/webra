@@ -109,6 +109,10 @@ test('index.html: no inline scripts, styles or handlers (the CSP: script-src and
       assert.equal(m[2].trim(), '', `${page}: a script with inline code`);
     }
     assert.equal(/javascript:/i.test(html), false, `${page}: a javascript: URL`);
+    // Both pages show the boot screen from the first paint: static markup styled by css/loading.css.
+    assert.match(html, /<link rel="stylesheet" href="css\/loading\.css" \/>/, `${page}: the loading sheet`);
+    assert.match(html, /<section id="boot" class="loading-screen"[^>]* aria-busy="true" aria-labelledby="boot-title">/, `${page}: the boot screen`);
+    assert.match(html, /<body class="[^"]*\bis-booting\b[^"]*">/, `${page}: the page waits behind it`);
   }
 });
 

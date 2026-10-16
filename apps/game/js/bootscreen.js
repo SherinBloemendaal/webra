@@ -25,6 +25,10 @@
 // engine, no WebGPU) are not failures here: the lobby shows them once the
 // screen is gone. While it shows the section is aria-busy, the step is a
 // polite status line and the bar a progressbar; an error is an alert.
+//
+// The map editor (editor/index.html) has the same screen with steps of its
+// own (editor/js/boot.js): its #boot carries `data-boot`, so the game's
+// `bootScreen` below leaves it alone.
 
 import { CLOSE_GRACE_MS, closeDuration } from './loadingscreen.js';
 
@@ -58,10 +62,18 @@ export class BootScreen {
    * @param {{ doc?: Document, reload?: () => void, closeMs?: (root: HTMLElement) => number,
    *   timers?: { setTimeout: Function, clearTimeout: Function }, waitMs?: number }} [o]
    *   `reload`: what Reload does (the page reloads); `closeMs`: how long the close transition
-   *   takes (default: the stylesheet's); `timers`: for the waits (tests pass their own)
+   *   takes (default: the stylesheet's); `timers`: for the waits (tests pass their own);
+   *   `steps`, `optional` and `app`: the page's steps (the last is done at `ready`), the ones
+   *   `ready` waits for at most `waitMs`, and its name in an error (the game's by default)
    */
-  constructor(root, { doc = globalThis.document, reload = () => globalThis.location?.reload(), closeMs = closeDuration, timers = null, waitMs = BOOT_WAIT_MS } = {}) {
+  constructor(
+    root,
+    { doc = globalThis.document, reload = () => globalThis.location?.reload(), closeMs = closeDuration, timers = null, waitMs = BOOT_WAIT_MS, steps = BOOT_STEPS, optional = BOOT_OPTIONAL, app = 'WebRA' } = {},
+  ) {
     this.root = root;
+    this.steps = steps;
+    this.optional = optional;
+    this.app = app;
     this.doc = doc;
     this.reload = reload;
     this.closeMs = closeMs;
@@ -73,7 +85,7 @@ export class BootScreen {
     this.running = false;
     this.reducedMotion = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     /** Step id to its state: 'pending', 'active', 'done', 'failed' or 'skipped'. */
-    this.states = new Map(BOOT_STEPS.map((s) => [s.id, 'pending']));
+    this.states = new Map(steps.map((s) => [s.id, 'pending']));
     /** Listeners for step changes (`ready` waits on them). */
     this.watchers = new Set();
     let resolve;
@@ -159,9 +171,9 @@ export class BootScreen {
   }
 
   render() {
-    const total = BOOT_STEPS.length;
+    const total = this.steps.length;
     let finished = 0;
-    for (const { id, label } of BOOT_STEPS) {
+    for (const { id, label } of this.steps) {
       const state = this.states.get(id);
       if (DONE.has(state)) finished++;
       const li = this.items.get(id);
@@ -173,7 +185,7 @@ export class BootScreen {
       else li.removeAttribute('aria-current');
     }
     // The status line names the first step still running, in screen order.
-    const current = BOOT_STEPS.find((s) => this.states.get(s.id) === 'active');
+    const current = this.steps.find((s) => this.states.get(s.id) === 'active');
     if (this.status && current) this.status.textContent = `${current.label}...`;
     const pct = Math.round((finished / total) * 100);
     this.fill?.style.setProperty('--fill', String(finished / total));
@@ -208,17 +220,17 @@ export class BootScreen {
   }
 
   /**
-   * The start menu is built and usable: the menu step is done, the optional
+   * The start menu is built and usable: the menu step (the last) is done, the optional
    * steps get at most `waitMs` more, steps that never began are skipped, and
    * the screen fades. Returns `closed`: what must not open under the
    * screen (What's new) waits for it, and never opens after a failure.
    */
   async ready() {
     if (this.state !== 'booting') return this.closed;
-    this.set('menu', 'done');
-    await this.settled(BOOT_OPTIONAL, this.waitMs);
+    this.set(this.steps.at(-1).id, 'done');
+    await this.settled(this.optional, this.waitMs);
     if (this.state !== 'booting') return this.closed;
-    for (const { id } of BOOT_STEPS) if (this.states.get(id) === 'pending') this.set(id, 'skipped');
+    for (const { id } of this.steps) if (this.states.get(id) === 'pending') this.set(id, 'skipped');
     if (this.status) this.status.textContent = 'Ready';
     return this.close();
   }
@@ -276,7 +288,7 @@ export class BootScreen {
       return;
     }
     const doc = this.doc;
-    const active = BOOT_STEPS.find((s) => this.states.get(s.id) === 'active');
+    const active = this.steps.find((s) => this.states.get(s.id) === 'active');
     if (active) this.set(active.id, 'failed');
     this.stopLate();
     this.state = 'failed';
@@ -291,7 +303,7 @@ export class BootScreen {
     const text = doc.createElement('p');
     text.className = 'loading-error';
     text.setAttribute('role', 'alert');
-    text.textContent = `WebRA could not start: ${message}`;
+    text.textContent = `${this.app} could not start: ${message}`;
     const hint = doc.createElement('p');
     hint.className = 'boot-hint';
     hint.textContent = 'Check your internet connection and reload the page. If it keeps happening, try another browser or clear the data of this site.';
@@ -309,19 +321,22 @@ export class BootScreen {
  * Before js/main.js runs, a failure to load the game files is the boot's
  * failure: the main script's error event (a file that did not arrive) and an
  * error thrown while its modules load or run (a script error event on the
- * window). Once main.js runs, its boot reports its own failures.
+ * window). Once main.js runs, its boot reports its own failures. `main` and
+ * `files`: the page's main script and what its files are called (the map
+ * editor's: editor/editor.js, "the editor files").
  */
-export function watchGameFiles(screen, { doc = globalThis.document, win = globalThis.window } = {}) {
+export function watchGameFiles(screen, { doc = globalThis.document, win = globalThis.window, main = 'js/main.js', files = 'the game files' } = {}) {
   if (!screen.root) return;
-  const main = doc.querySelector?.('script[type="module"][src="js/main.js"]');
-  main?.addEventListener('error', () => {
-    if (!screen.running) screen.fail(new Error('the game files did not load.'));
+  const script = doc.querySelector?.(`script[type="module"][src="${main}"]`);
+  script?.addEventListener('error', () => {
+    if (!screen.running) screen.fail(new Error(`${files} did not load.`));
   });
   win?.addEventListener?.('error', (e) => {
-    if (!screen.running) screen.fail(e?.error ?? e?.message ?? 'a script error while the game files loaded.');
+    if (!screen.running) screen.fail(e?.error ?? e?.message ?? `a script error while ${files} loaded.`);
   });
 }
 
-/** The page's boot screen (index.html #boot): js/main.js reports its steps here. */
-export const bootScreen = new BootScreen(globalThis.document?.getElementById?.('boot') ?? null);
+/** The page's boot screen (index.html #boot): js/main.js reports its steps here. A #boot with `data-boot` has its own (the map editor's). */
+const pageBoot = globalThis.document?.getElementById?.('boot') ?? null;
+export const bootScreen = new BootScreen(pageBoot?.dataset?.boot ? null : pageBoot);
 watchGameFiles(bootScreen);
