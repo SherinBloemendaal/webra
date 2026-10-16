@@ -117,8 +117,9 @@ export class UserHub extends DurableObject {
   }
 
   /**
-   * RPC: close the sockets of ended sign-in sessions with 4001 `signed_out`
-   * (the page asks who is signed in and finds out). `sids`: those sessions,
+   * RPC: close the sockets of ended sign-in sessions with 4001 `signed_out`,
+   * after an `account/signed_out` event that says the same at once (the page
+   * asks who is signed in and finds out). `sids`: those sessions,
    * or null for all; `except`: a session that stays (the one that changed
    * the password); `userId`: only that account's sockets (on the admin
    * object, which several accounts share). Returns how many it closed.
@@ -127,15 +128,20 @@ export class UserHub extends DurableObject {
     if (sids !== null && (!Array.isArray(sids) || !sids.every((s) => typeof s === 'string' && SID_RE.test(s)))) throw new TypeError('sids must be session ids or null');
     const pool = userId === null ? this.ctx.getWebSockets() : USER_ID_RE.test(userId) ? this.ctx.getWebSockets(`user:${userId}`) : [];
     const wanted = sids === null ? null : new Set(sids);
-    let closed = 0;
-    for (const ws of pool) {
+    const targets = pool.filter((ws) => {
       const sid = ws.deserializeAttachment()?.sid ?? null;
-      if (sid !== null && sid === except) continue;
-      if (wanted !== null && !wanted.has(sid)) continue;
+      return !(sid !== null && sid === except) && (wanted === null || wanted.has(sid));
+    });
+    if (targets.length === 0) return 0;
+    // Said first as an event: a close frame can take seconds to reach the page (the TCP close waits).
+    const seq = ((await this.ctx.storage.get('seq')) ?? 0) + 1;
+    await this.ctx.storage.put('seq', seq);
+    const text = encodeRealtimeEvent({ seq, topic: 'account', kind: 'signed_out', at: Date.now(), data: null });
+    for (const ws of targets) {
+      this.sendRaw(ws, text);
       this.close(ws, REALTIME_CLOSE.SIGNED_OUT, 'signed_out');
-      closed++;
     }
-    return closed;
+    return targets.length;
   }
 
   /** RPC: open sockets (tests and diagnostics). */

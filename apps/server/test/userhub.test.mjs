@@ -121,8 +121,11 @@ test('closeSessions: the named sign-in sessions, all, all but one, or one accoun
   const a = await connect(h, { sid: SID });
   const b = await connect(h, { sid: SID2 });
   const c = await connect(h, { sid: '3'.repeat(16) });
+  for (const ws of [a, b, c]) ws.take('hello');
   assert.equal(await h.hub.closeSessions({ sids: [SID2] }), 1);
   assert.deepEqual(b.closed, { code: 4001, reason: 'signed_out' });
+  assert.deepEqual(b.take('event').map((e) => [e.topic, e.kind]), [['account', 'signed_out']], 'said first, the close frame can be slow');
+  assert.deepEqual(a.take('event'), []);
   assert.equal(a.closed, null);
   assert.equal(await h.hub.closeSessions({ except: SID }), 1, 'everything but the session that changed the password');
   assert.deepEqual(c.closed, { code: 4001, reason: 'signed_out' });
