@@ -3,7 +3,7 @@
 // with what ticks each off ("Watching: ..."), Skip this step for the open
 // one, the chapter's tip, Previous and Next chapter, the progress and the
 // "Tour in my games" switch (js/guide.js GuideProgress), with Take the tour
-// again once it is done. Showing a chapter ticks off its steps that only
+// again once it is done, and Reset guide progress (the menu asks first). Showing a chapter ticks off its steps that only
 // explain, in order: one waits for the steps before it. Steps a later version added since the player last opened the
 // Guide carry a "New" badge, their chapters the count (js/gamemenu.js takes
 // them when the page opens and marks them seen). Texts: js/help.js GUIDE.
@@ -44,11 +44,12 @@ export function newBadge(n = 1) {
 /**
  * Draw the Guide page into `c` with chapter `chapterId` open; returns the
  * chapter shown. `o.onChapter(id)` switches chapters, `o.onBack()` goes back
- * to the menu, `o.fresh` holds the step ids shown as new. The caller draws
+ * to the menu, `o.onReset()` asks to reset the progress, `o.fresh` holds the
+ * step ids shown as new. The caller draws
  * the page again when the progress changes.
  * @param {HTMLElement} c
  * @param {{ progress: import('./guide.js').GuideProgress, hotkeys?: object, chapter?: string,
- *   fresh?: Set<string>, onChapter(id: string): void, onBack(): void }} o
+ *   fresh?: Set<string>, onChapter(id: string): void, onBack(): void, onReset?(): void }} o
  */
 export function renderGuide(c, o) {
   const { progress } = o;
@@ -83,6 +84,8 @@ export function renderGuide(c, o) {
   });
   side.append(count, tour.row);
   if (finished) side.append(button('Take the tour again', 'ui-btn ui-btn-sm ui-btn-ghost guide-tour-again', () => progress.restartTour()));
+  // Everything over again, after the menu's confirm step (o.onReset): only when there is progress to lose.
+  if (o.onReset && progress.started) side.append(button('Reset guide progress', 'ui-btn ui-btn-sm ui-btn-ghost guide-reset', () => o.onReset()));
   head.append(title, side);
 
   const body = el('div', 'guide-body');
