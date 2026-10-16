@@ -503,13 +503,20 @@ test('tour: goes on through every chapter by itself, says Chapter done, ends wit
 test('tour: steps this game cannot build are passed; nothing left in this game shows a note; the next game with them goes on', () => {
   const { tracker, progress, registry } = setup({ tour: true });
   const { root, card, buttonOf } = tourCard(progress, tracker);
-  const lowTech = ALL_BUILDABLE.filter(({ id }) => id !== 'DOME' && id !== 'WEAP');
+  // A Low tech level: the engine lists every item of the game mode, the locked ones with `exclusive` (lib.rs).
+  const lowTech = ALL_BUILDABLE.map((b) => (b.id === 'DOME' ? { id: 'DOME', exclusive: 'Tech level Medium' } : b.id === 'WEAP' ? { id: 'WEAP', exclusive: 'Tech level Low' } : b));
   tracker.onState(playerState({ yard: true, buildable: lowTech }));
   tracker.onEvents(placed('POWR', 'PROC', 'TENT'));
   tracker.onEvents(produced('E1'));
   const ctx = tracker.ctx();
   for (const id of ['base.factory', 'army.vehicle', 'base.morePower', 'base.radar']) assert.equal(ctx.available(id), false, id);
   assert.equal(gameSteps(undefined).available('base.radar'), true, 'before the first state every step is in the game');
+  // A side's items: Soviets have Barracks (BARR), the Allied TENT is the other side's; the step stays.
+  const soviet = gameSteps(ALL_BUILDABLE.map((b) => (b.id === 'TENT' || b.id === 'E1' ? { ...b, exclusive: 'Allies' } : b)));
+  assert.equal(soviet.available('base.barracks'), true, 'BARR is there');
+  assert.equal(soviet.available('army.infantry'), true);
+  const neither = gameSteps(ALL_BUILDABLE.map((b) => (b.id === 'TENT' || b.id === 'BARR' ? { ...b, exclusive: 'Allies' } : b)));
+  assert.equal(neither.available('base.barracks'), false);
   // The base chapter has nothing more here: the tour goes on with Commanding units.
   assert.equal(progress.tourChapter(ctx).id, 'units');
   card.refresh(playerState({ yard: true, buildable: lowTech }));

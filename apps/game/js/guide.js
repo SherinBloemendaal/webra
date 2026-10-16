@@ -293,11 +293,14 @@ export const EVERY_STEP = Object.freeze({ available: () => true });
 /**
  * Which steps a game has (`ctx.available(id)`), from the player state's
  * `buildable` (every item of the game mode): a step whose `builds` or
- * `needs` are all missing is not in this game. Without a list, every step is.
+ * `needs` are all missing or locked for good is not in this game. An item
+ * with `exclusive` (engine lib.rs: the tech level, the other side's items)
+ * can never be built in it, like js/sidebar.js shows it locked. Without a
+ * list, every step is.
  */
 export function gameSteps(buildable, content = CONTENT) {
   if (!Array.isArray(buildable)) return EVERY_STEP;
-  const ids = new Set(buildable.map((b) => b?.id));
+  const ids = new Set(buildable.filter((b) => b && !b.exclusive).map((b) => b.id));
   const has = (list) => !list?.length || list.some((id) => ids.has(id));
   return Object.freeze({
     available(id) {
