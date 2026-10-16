@@ -24,6 +24,7 @@ Coordinates of a model
 - Colours are '#rrggbb' strings or 'T' (the owner's colour: rendered as grey
   into the sheet and set in the team mask; the game tints it).
 """
+import json
 import math
 import os
 import struct
@@ -56,18 +57,22 @@ _L = (-0.55, 0.4, 0.75)
 _LN = math.sqrt(sum(v * v for v in _L))
 LIGHT = tuple(v / _LN for v in _L)
 
-# Named colours: the palette of the design boards (project/buildings3d).
-P = {
-    'concrete': '#bdb7a6', 'wall': '#ddd6c4', 'roof': '#ece6d6', 'steel': '#7d8a96', 'steel2': '#aab7c3',
-    'dark': '#4a5560', 'darker': '#2e3238', 'yellow': '#ffc93c', 'glass': '#6ec6e6', 'orange': '#f2b632',
-    'gold': '#ffd34d', 'glow': '#fff0a0', 'molten': '#ff9a2a', 'copper': '#d07a3a', 'brick': '#c0573e',
-    'wood': '#b0793f', 'paint': '#f4f1e8', 'steam': '#f2f6f8', 'grass': '#6abe4a', 'water': '#3aa0d8',
-    'tiles': '#a8402e', 'asphalt': '#5a5d63', 'canvas': '#a3a55f', 'sand': '#d6c48a', 'red': '#e84a3a',
-    'green': '#5ef08a', 'blue': '#6ab0ff', 'ice': '#7fe0ff', 'ice2': '#e0f8ff', 'dome': '#e4ebf0',
-    'radar': '#4fd067', 'dirt': '#9a8458', 'camo': '#4f8a3a', 'camo2': '#7ab84e', 'field': '#ff5a3a',
-    'shroud': '#1a2a3a', 'rust': '#9a5a3a', 'olive': '#6b7a3c', 'sandy': '#c9ad6a', 'black': '#141414',
-    'skin': '#e8b98c',
-}
+# Named colours: the palette the 2D minimal art and this pack share (apps/game/js/art/shared-palette.js, read as
+# JSON). SHARED holds the whole table (team, shadow, terrain per biome); P the materials by name.
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SHARED_PALETTE_PATH = os.path.join(ROOT, 'apps', 'game', 'js', 'art', 'shared-palette.js')
+
+
+def load_shared_palette(path=SHARED_PALETTE_PATH):
+    """The object literal after `SHARED_PALETTE =` in the shared palette module, parsed as JSON."""
+    with open(path) as f:
+        text = f.read()
+    body = text[text.index('{', text.index('export const SHARED_PALETTE =')):]
+    return json.JSONDecoder().raw_decode(body)[0]
+
+
+SHARED = load_shared_palette()
+P = dict(SHARED['materials'])
 
 
 def hex_rgb(h):
