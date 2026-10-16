@@ -290,9 +290,9 @@ documents saved before it existed).
 - `realtime` [true]: the realtime channel (5.12) is on: open pages hear at
   once about friend requests, approvals, settings saved elsewhere and admin
   changes. Off: the upgrade routes answer 503 and routes publish nothing;
-  pages poll as before. Pages that already hold a socket keep it (quiet,
-  with their slow safety poll) until they reload or reconnect; sign-outs
-  still close it.
+  pages poll as before. Pages that already hold a socket keep it (quiet)
+  until they reload or reconnect, and go back to their normal polls once no
+  hint arrived for 10 minutes (5.12, docs/deploy.md); sign-outs still close it.
 - `motd` [""]: message of the day, 0 to 500 characters, plain text with line
   breaks; clients show it with `textContent`.
 
@@ -1209,7 +1209,8 @@ code is valid.
   player's state (offline, online, away) sends the friends a realtime hint
   (5.12); a heartbeat that changes nothing sends none. Screens load the list
   on every hint and poll it every `FRIENDS_POLL_SLOW_MS` (5 minutes) while
-  the channel is open, every `FRIENDS_POLL_MS` (30 s) while it is not.
+  the channel is live (a hello or hint within the last 10 minutes), every
+  `FRIENDS_POLL_MS` (30 s) otherwise.
 
 **Retention.** The daily job deletes requests older than 30 days, invites
 whose code ended, heartbeats older than a day, and every friends row of an
@@ -1218,7 +1219,8 @@ once). Purging an account removes what is left (foreign keys).
 
 **Client.** `apps/game/js/account/friends.js`: `FriendsClient` (these
 routes), `FriendsStore` (follows the `friends` topic of the realtime channel
-and polls as a safety net while started, refreshes after every action, skips
+and polls as a safety net while started (every 5 minutes while the channel
+is live, every 30 s otherwise), refreshes after every action, skips
 its polls while the tab is hidden; events `change`, `hint` and `error`),
 `PresenceTracker` (the heartbeat and the away detection). The account page's
 friends section uses the same store.
@@ -1259,11 +1261,11 @@ bytes, strictly parsed):
 
 | Topic | Kinds | `data` |
 |-------|-------|--------|
-| `friends` | `request`, `accept`, `ignore`, `withdraw`, `remove`, `block`, `unblock`, `invite`, `invite_dismiss`, `presence` | `{ username }` of the other player (public already), `session` for an invite; null on the player's own other tabs |
+| `friends` | `request`, `accept`, `ignore`, `withdraw`, `remove`, `block`, `unblock`, `invite`, `invite_dismiss`, `presence` | `{ username }` of the other player (public already), `session` for an invite; null on the player's own other tabs and for every `presence` |
 | `account` | `status`, `profile`, `signed_out` | `{ status }` for `status` |
 | `settings` | `updated` | `{ version }` |
 | `replays` | `added`, `removed` | `{ id }` |
-| `admin` | `user_created`, `user_updated`, `user_approved`, `user_rejected`, `user_banned`, `user_unbanned`, `user_deleted`, `user_restored`, `user_purged` | `{ userId }` |
+| `admin` | `user_created`, `user_updated`, `user_approved`, `user_rejected`, `user_banned`, `user_unbanned`, `user_deleted`, `user_restored`, `user_purged` | `{ userId }`; a change of the settings document or the guide (8.7, 8.11) reaches only admins' dashboards (moderators do not see guide progress) |
 
 `seq` grows per hub object; a client drops an event whose `seq` it has seen.
 Unknown fields are dropped; another version, an unknown topic or kind is
@@ -1278,22 +1280,25 @@ of 5.11 hold: a hidden request (the receiver blocked the sender, or has too
 many waiting), an ignore, the withdrawal of an ignored or hidden request,
 and a block of a player who was no friend send **nothing** to the other
 player; blocking a friend looks like a removal to them. A `presence` hint
-says only "look again": the list still hides a player whose `showOnline` is
-off. Presence hints come from the heartbeat (a change of state), from the
+carries no data and says only "look again": the list still hides a player
+whose `showOnline` is off. Presence hints come from the heartbeat (a change of state), from the
 online session object (a signed-in member joins or leaves, the lobby changes,
 the game starts or the session ends; a replaced invite code dismisses the
 friend invites that named the old one) and from profile changes and admin
 actions that change what the friends' lists show. An admin's settings write
 or guide action (8.7, 8.11) sends `settings/updated` to every device of the
-player and `admin/user_updated` to the other dashboards.
+player and `admin/user_updated` to the other admins' dashboards.
 
 **Ending sign-ins.** Every path that ends a sign-in session sends its
 sockets an `account/signed_out` event (acted on at once: a close frame can
-take seconds to arrive) and closes them with 4001 `signed_out`: sign-out, revoking one or all other
-sessions, a password change or reset, deletion, rejection, a ban, an admin's
+take seconds to arrive) and closes them with 4001 `signed_out`: sign-out, a
+new sign-in in the same browser (it replaces that browser's session),
+revoking one or all other sessions, a password change or reset, deletion, rejection, a ban, an admin's
 forced sign-out or session revocation, a role change or deactivation (also
 while the setting is off). The page then asks `GET /api/auth/me` and shows
-what it finds; it does not reconnect until someone is signed in again. IP
+what it finds; it does not reconnect until someone is signed in again. A
+session that simply expires closes nothing: its socket hears hints whose
+reloads answer 401 until the page notices (accepted, hints only). IP
 bans end no sign-in (requests from the range are refused, 6), so they close
 nothing: such a socket hears hints whose reloads answer 403.
 
@@ -1306,17 +1311,23 @@ make one call (with `batch`); every `hello` (connect and reconnect) makes
 every topic load again (`kind: "resync"`). A hidden tab loads nothing and
 pings nothing until it shows. Reconnects back off from 1 s, doubling to
 60 s with full jitter; three failed connects in a row make the channel
-`unavailable` for 10 minutes (the screens poll at their normal rate).
+`unavailable` for 10 minutes (the screens poll at their normal rate). The
+hub gives the topics at connect, so `AccountSession` connects again when the
+account's status or role changes (an approved account then gets `friends`).
+A channel counts as live (`RealtimeClient.live()`) while its hello or a hint
+came within `REALTIME_FRESH_MS` (10 minutes); only then do screens use their
+slow safety poll, so a socket kept open but quiet (the site setting switched
+off meanwhile) sends its pages back to the normal poll.
 Screens: the game's Friends board and online screens (`FriendsStore`; a
 request or invite while the board is closed shows a toast; a `presence`
 hint refreshes the server browser), the access dialog and the account
-page's waiting card (an approval goes on at once; without the channel the
-card checks every minute while visible), the settings sync (`settings`:
+page's waiting card (an approval goes on at once; the card also checks every
+minute while visible, open channel or not), the settings sync (`settings`:
 `SettingsSync.remoteChanged` syncs unless it has that version), the replays
 screen and the account page's replays, and the admin dashboard (`admin`:
 the users table and the open user's detail reload, 1 s debounce, page and
-filters kept; without the channel a list filtered to waiting accounts
-reloads every minute).
+filters kept; a list filtered to waiting accounts also reloads every minute
+while visible, open channel or not).
 
 ## 6. Bans
 

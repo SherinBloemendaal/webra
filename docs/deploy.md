@@ -193,7 +193,12 @@ A rollback across the Durable Object migration `v2` (the realtime hub
 `UserHub`, docs/accounts-api.md 5.12) is fine: the class stays defined, the
 hub stores only an event counter, and pages fall back to polling when the
 upgrade fails. To switch the realtime channel off without a deploy, turn off
-"Live updates" in the admin site settings.
+"Live updates" in the admin site settings. New page loads poll at once; pages
+that already hold a socket keep it but hear nothing, and fall back to their
+normal polls once no hint has arrived for `REALTIME_FRESH_MS` (10 minutes):
+the friends lists poll every 30 s again within 15 minutes at most (one
+5 minute safety poll may still be armed); the waiting card and the admin
+waiting list check every minute regardless.
 
 ## Local development
 

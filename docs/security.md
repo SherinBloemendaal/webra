@@ -1221,9 +1221,11 @@ docs/accounts-api.md 5.11).
   lists friends, requests, blocks, invites and the heartbeat.
 - **Realtime hints leak nothing.** The realtime channel
   (docs/accounts-api.md 5.12) carries hints, not data: a topic, a kind and
-  at most the other player's username (public already), a session id for an
-  invite, a settings version, a replay id or, on the admin topic, an account
-  id. No private field leaves the hub; the receiving page loads its list
+  at most the other player's username (public already; never for presence,
+  whose hints carry nothing), a session id for an invite, a settings
+  version, a replay id or, on the admin topic, an account id. Changes only
+  admins may see (settings documents and guide progress) reach only admins'
+  dashboards, not moderators'. No private field leaves the hub; the receiving page loads its list
   through the same route and rules as before. A hidden request, an ignore,
   the withdrawal of an ignored or hidden request, and a block of a player
   who was no friend publish **nothing** to the other player (the timing of a
@@ -1239,11 +1241,15 @@ docs/accounts-api.md 5.11).
   any client copy; the cookie is not forwarded. One object per account, one
   for the admin dashboard (moderators and admins only). Topics follow the
   account state: a pending account hears only about itself.
-- **Ended sign-ins close sockets.** Sign-out, revocation (one, all others,
-  by an admin), password change or reset, deletion, rejection, bans, role
-  changes and deactivation close the affected sockets with 4001, also while
-  the feature is switched off. The worst case of a missed close is a hint
-  whose reload answers 401.
+- **Ended sign-ins close sockets.** Sign-out, a new sign-in replacing the
+  browser's session, revocation (one, all others, by an admin), password
+  change or reset, deletion, rejection, bans, role changes and deactivation
+  close the affected sockets with 4001, also while the feature is switched
+  off. The worst case of a missed close is a hint whose reload answers 401.
+- **Accepted: expiry and IP bans.** A sign-in session that expires (idle or
+  absolute lifetime) and an IP ban (which ends no sign-in) close no socket:
+  such a socket keeps hearing hints of its own account, which carry no
+  private data, and every reload they cause is refused (401 or 403).
 - **Cost and abuse.** Connects are burst limited per address, 16 sockets per
   object; the client sends only a ping (answered by the runtime without
   waking the object); anything else is limited to 10 a minute per socket,
