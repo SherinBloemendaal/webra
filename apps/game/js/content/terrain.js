@@ -527,10 +527,15 @@ class SeamCache {
 }
 
 /**
- * The best of `list` for a cell (fitScore against `want` and `seams`, reading
- * `key`), or `incumbent` (scored first) when none beats it by more than TIE:
- * `{ tile, fitted }`, `fitted` true when a tile of `list` won. Tiles within
- * TIE of the best are equally good; the cell's hash picks among them.
+ * A tile of `list` for a cell (fitScore against `want` and `seams`, reading
+ * `key`), or `incumbent`: `{ tile, fitted }`, `fitted` true when a tile of
+ * `list` was taken. The incumbent's score (scored first) sets the bar but
+ * the incumbent is no candidate: every tile of `list` within TIE of the
+ * best score, the incumbent's included, counts as equally good, and the
+ * cell's hash picks among them. So a tile of `list` up to TIE worse than
+ * the incumbent still replaces it (the way beach tiles were always chosen:
+ * a beach tile as good as plain ground goes on the coast), and the
+ * incumbent stays only when every tile of `list` is worse by more than TIE.
  */
 function bestFit(list, incumbent, want, seams, cache, key, x, y, repeat = 0) {
   let best = incumbent ? fitScore(incumbent, want, seams, Infinity, null, 0, key) : Infinity;
