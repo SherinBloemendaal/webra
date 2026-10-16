@@ -23,7 +23,8 @@ import { FRAME_FLOATS } from '../js/sprites.js';
 import { buildTerrainAtlas, cellTiles, terrainSeed, TILES } from '../js/art/terrain.js';
 import { MODE, POSE, packSprite } from '../js/content/sequences.js';
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, baseZoom, gameScaleFor, zoomLimits } from '../js/scale.js';
-import { CELL_PX, TerrainRaster, frameQuad, hash2, oreColor, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
+import { SHARED_PALETTE } from '../js/art/shared-palette.js';
+import { CELL_PX, TerrainRaster, frameQuad, gemColor, hash2, oreColor, resourceTile, spriteFrame, tintPixels, vnoise } from '../js/maplens/raster.js';
 import { HOLD_CLICK_MS, HOLD_MS, LENS_MAX_VIEW_CELLS, LENS_MIN_ZOOM, LENS_START_FACTOR, LruCache, MapLens, TILE_CELLS, TOUCH_GAP, cellAt, contentBox, lensHint, lensPlacement, lensZoomLimits, magnifyHeld, playerColors, spriteList, tilesFor, wheelZoom } from '../js/maplens/lens.js';
 import { LensArt, PREVIEW_COLORS, PREVIEW_NEUTRAL, hexColor, runSteps, teamColors } from '../js/maplens/source.js';
 import { createMap, encodeBase64, TERRAIN } from '../editor/js/mapformat.js';
@@ -196,7 +197,7 @@ test('tile terrain (installed art): the tile as it is, rotating water at its fir
   assert.equal(out[(2 * w * 24) * 4 + 3], 255, 'row 2 drawn');
 });
 
-test('WebRA terrain: the shader math for water depth, rock shadows, ore specks and gems', () => {
+test('WebRA terrain: the shader math for water depth, rock shadows, ore blocks and gems', () => {
   const w = 12;
   const h = 12;
   // Open water on the right half, a rock column at x = 2, ore at (4, 8), gems at (5, 8).
@@ -229,7 +230,7 @@ test('WebRA terrain: the shader math for water depth, rock shadows, ore specks a
       if (rr > 0.6 && gg > 0.44 && bb < 0.31 && rr > bb * 2) gold++;
     }
   }
-  assert.ok(gold > 24 * 24 * 0.3, `ore specks (${gold})`);
+  assert.ok(gold > 24 * 24 * 0.12, `ore blocks (${gold})`);
   // Gems: crystals in the gem hues somewhere in the cell.
   let crystal = 0;
   for (let y = 0; y < 24; y++) {
@@ -1523,24 +1524,48 @@ test('campaign: the lens reads the chosen mission once its file is here, and let
   assert.deepEqual(lens.calls.slice(-2).map((c) => c[0]), ['detach', 'clear']);
 });
 
-test('WebRA ore: round nuggets, more of them and bigger with more ore, lit at the top left', () => {
-  const gold = (ore) => {
+test('WebRA ore and gems: two blocks per cell, bigger with more, mirrored in every other cell', () => {
+  const ground = [0.2, 0.3, 0.15];
+  const isGold = ([r, g, b]) => r > 0.6 && g > 0.44 && r > b * 2;
+  /** Gold samples of cell (cx, cy) on a 48 x 48 grid, and the columns that have any. */
+  const scan = (cx, cy, ore, colour = oreColor) => {
     let n = 0;
-    let light = 0;
-    for (let y = 0; y < 96; y++) {
-      for (let x = 0; x < 96; x++) {
-        const [r, g, b] = oreColor([0.2, 0.3, 0.15], x + 0.5, y + 0.5, ore);
-        if (r > 0.6 && g > 0.44 && r > b * 2) n++;
-        if (b > 0.33 && r > 0.85) light++;
+    const cols = new Set();
+    for (let y = 0; y < 48; y++) {
+      for (let x = 0; x < 48; x++) {
+        const c = colour([...ground], cx, cy, (x + 0.5) / 48, (y + 0.5) / 48, ore);
+        if (colour === oreColor ? isGold(c) : Math.max(c[0], c[2]) > c[1] * 1.5) {
+          n++;
+          cols.add(x);
+        }
       }
     }
-    return { n, light };
+    return { n, cols };
   };
-  const stages = [0.1, 0.4, 0.7, 1].map(gold);
-  for (let k = 1; k < stages.length; k++) assert.ok(stages[k].n > stages[k - 1].n, `density stage ${k}: ${stages[k].n} > ${stages[k - 1].n}`);
-  assert.ok(stages[3].n > 96 * 96 * 0.3, `full ore is mostly nuggets (${stages[3].n})`);
-  assert.ok(stages[3].light > 0 && stages[3].light < stages[3].n / 2, 'a small lit spot on each nugget');
-  assert.deepEqual(oreColor([0.2, 0.3, 0.15], 10.5, 7.5, 0.5), oreColor([0.2, 0.3, 0.15], 10.5, 7.5, 0.5), 'deterministic');
+  const stages = [0.1, 0.4, 0.7, 1].map((ore) => scan(0, 0, ore).n);
+  for (let k = 1; k < stages.length; k++) assert.ok(stages[k] > stages[k - 1], `density stage ${k}: ${stages[k]} > ${stages[k - 1]}`);
+  assert.ok(stages[3] > 48 * 48 * 0.15 && stages[3] < 48 * 48 * 0.4, `full ore: two big blocks, ground between (${stages[3]})`);
+  // Two blocks: the gold columns fall in two runs that overlap only a little.
+  const { cols } = scan(0, 0, 1);
+  const sorted = [...cols].sort((a, b) => a - b);
+  assert.ok(sorted[0] > 2 && sorted.at(-1) < 46, 'the blocks stay inside the cell');
+  // Every other cell is the mirror image: the leftmost gold column of one is the rightmost of the next, mirrored.
+  const mirrored = [...scan(1, 0, 1).cols].sort((a, b) => a - b);
+  assert.equal(mirrored[0], 47 - sorted.at(-1));
+  assert.deepEqual(oreColor([...ground], 3, 4, 0.3, 0.3, 0.5), oreColor([...ground], 3, 4, 0.3, 0.3, 0.5), 'deterministic');
+  // A lit top and a darker front face on each block.
+  const top = oreColor([...ground], 0, 0, 0.37, 0.3, 1);
+  const face = oreColor([...ground], 0, 0, 0.37, 0.47, 1);
+  assert.ok(top[2] > face[2] && top[1] > face[1], 'the front face is darker than the top');
+  // The shadow: ground just past a block's lower right corner is darker than open ground.
+  const open = oreColor([...ground], 0, 0, 0.05, 0.95, 1);
+  const shade = oreColor([...ground], 0, 0, 0.37 + 0.34 / 2 + 0.04, 0.35 + 0.3 / 2 + 0.04, 1);
+  assert.ok(shade[0] < open[0], 'a hard shadow to the lower right');
+  // Gems: the same two blocks, one blue and one magenta, swapped in the mirrored cell.
+  assert.ok(scan(0, 0, 1, gemColor).n > 48 * 48 * 0.15, 'gem blocks');
+  const a = gemColor([...ground], 0, 0, 0.4, 0.33, 1);
+  const b = gemColor([...ground], 1, 0, 1 - 0.4, 0.33, 1);
+  assert.ok(a[2] > a[0] && b[0] > b[2], `blue in one cell, magenta in its mirror: ${a} / ${b}`);
 });
 
 test('WebRA ore and gems: the CPU copy uses the same constants and formulas as the terrain shader', () => {
@@ -1548,7 +1573,7 @@ test('WebRA ore and gems: the CPU copy uses the same constants and formulas as t
   const js = readFileSync(fileURLToPath(new URL('../js/maplens/raster.js', import.meta.url)), 'utf8');
   const nums = (text) => text.split(',').map(Number);
   const shaderConst = (name) => {
-    const m = wgsl.match(new RegExp(`const ${name}: (?:f32|vec3f) = (?:vec3f\\(([^)]*)\\)|([\\d.]+));`));
+    const m = wgsl.match(new RegExp(`const ${name}: (?:f32|vec3f|vec4f) = (?:vec[34]f\\(([^)]*)\\)|([\\d.]+));`));
     assert.ok(m, `terrain.wgsl declares ${name}`);
     return nums(m[1] ?? m[2]);
   };
@@ -1557,24 +1582,43 @@ test('WebRA ore and gems: the CPU copy uses the same constants and formulas as t
     assert.ok(m, `raster.js declares ${name}`);
     return nums(m[1] ?? m[2]);
   };
-  for (const name of ['ORE_STEP', 'ORE_LIGHT', 'ORE_BASE', 'ORE_GROUND', 'GEM_GLINT']) assert.deepEqual(jsConst(name), shaderConst(name), name);
+  for (const name of ['ORE_LIGHT', 'ORE_BASE', 'ORE_GROUND', 'GEM_GLINT', 'GEM_GROUND', 'RES_BLOCK_A', 'RES_BLOCK_B', 'RES_SHADOW', 'RES_SHADE']) assert.deepEqual(jsConst(name), shaderConst(name), name);
   const hues = js.match(/const GEM_HUES = \[\s*\[([^\]]*)\],\s*\[([^\]]*)\],?\s*\];/);
   assert.ok(hues, 'raster.js declares GEM_HUES');
   assert.deepEqual(nums(hues[1]), shaderConst('GEM_BLUE'), 'GEM_HUES[0] is GEM_BLUE');
   assert.deepEqual(nums(hues[2]), shaderConst('GEM_MAGENTA'), 'GEM_HUES[1] is GEM_MAGENTA');
-  // The function bodies: nugget chance, radius, jitter, lit spot, shadow offset and darkening.
+  // The colours are the shared 2D/3D palette's (js/art/shared-palette.js).
+  const rgb = (hex) => [1, 3, 5].map((i) => Number((parseInt(hex.slice(i, i + 2), 16) / 255).toFixed(3)));
+  const t = SHARED_PALETTE.terrain.temperate;
+  assert.deepEqual(rgb(t.ore), shaderConst('ORE_LIGHT').map((v) => Number(v.toFixed(3))), 'ore');
+  assert.deepEqual(rgb(t.oreDark), shaderConst('ORE_BASE'), 'oreDark');
+  assert.deepEqual(rgb(t.gems[0]), shaderConst('GEM_BLUE'), 'gems[0]');
+  assert.deepEqual(rgb(t.gems[1]), shaderConst('GEM_MAGENTA'), 'gems[1]');
+  assert.deepEqual(rgb(SHARED_PALETTE.materials.ice2), shaderConst('GEM_GLINT'), 'glint');
+  assert.equal(shaderConst('RES_SHADOW')[0], SHARED_PALETTE.shadow.offset, 'shadow offset');
+  assert.equal(shaderConst('RES_SHADE')[0], 1 - SHARED_PALETTE.shadow.alpha, 'shadow alpha');
+  // The function bodies: block size, mirror, shadow, face and glint.
   const body = (text, start) => {
     const i = text.indexOf(start);
     assert.ok(i >= 0, start);
     return text.slice(i, text.indexOf('\n}', i));
   };
-  const shaderOre = body(wgsl, 'fn ore_color(');
-  const jsOre = body(js, 'export function oreColor(');
-  const shared = ['0.15 + ore * 0.55', '1.3 + 0.5 * ore', 'ore * 0.5', '- 0.5) * 0.4', 'r * 0.35', '< r * 0.5', '0.6)', '* 0.6'];
-  for (const s of shared) {
-    assert.ok(shaderOre.replaceAll(' ', '').includes(s.replaceAll(' ', '')) || (s === '- 0.5) * 0.4' && shaderOre.includes('jitter * 0.4')), `terrain.wgsl ore_color has ${s}`);
-    assert.ok(jsOre.includes(s), `raster.js oreColor has ${s}`);
+  const flat = (t) => t.replaceAll(' ', '');
+  const pairs = [
+    ['fn res_scale(', 'const resScale', ['0.55 + 0.45 * density']],
+    ['fn in_res_block(', 'function inResBlock(', ['1.0 - c.x|1 - b[0]', '* s * 0.5']],
+    ['fn res_face(', 'const resFace', ['* s * 0.2']],
+    ['fn res_glint(', 'function resGlint(', ['* s * 0.5', '* s * 0.3']],
+    ['fn ore_color(', 'export function oreColor(', ['ore * 0.5', '& 1) == 1|& 1) === 1']],
+    ['fn gem_color(', 'export function gemColor(', ['0.35', '* 0.7', '& 1) == 1|& 1) === 1']],
+  ];
+  for (const [w, j, parts] of pairs) {
+    const sw = flat(body(wgsl, w));
+    const sj = flat(j.startsWith('const') ? js.slice(js.indexOf(j), js.indexOf('\n', js.indexOf(j))) : body(js, j));
+    for (const part of parts) {
+      const [pw, pj = pw] = part.split('|');
+      assert.ok(sw.includes(flat(pw)), `terrain.wgsl ${w} has ${pw}`);
+      assert.ok(sj.includes(flat(pj)), `raster.js ${j} has ${pj}`);
+    }
   }
-  assert.ok(/h3 >= 0\.5/.test(body(wgsl, 'fn gem_color(')) && /h3 >= 0\.5/.test(body(js, 'export function gemColor(')), 'gem hue pick');
-  assert.ok(/GEM_GLINT, 0\.5/.test(wgsl) && /GEM_GLINT\[0\], 0\.5/.test(js), 'gem glint mix');
 });

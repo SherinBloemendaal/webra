@@ -10,7 +10,7 @@ import { actorSprites, buildAtlas, animationPlan, workingPlan, spriteList, drawC
 import { MODE, POSE, POSE_COUNT, onceTicks, packSprite } from '../js/content/sequences.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from '../js/art/animated.js';
-import { worldDraw } from '../js/art/world.js';
+import { worldBox, worldDraw } from '../js/art/world.js';
 import { pixelSlots } from '../js/art/pixel.js';
 import init, { Game } from '../pkg/webra_sim.js';
 
@@ -169,8 +169,10 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
         assert.ok(frames[i * 2 * FRAME_FLOATS + 13] > 0, `${a.id} pose table`);
         return;
       }
-      assert.equal(frames[i * 2 * FRAME_FLOATS + 4], a.width * 24, `${a.id} sprite width`);
-      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], a.height * 24, `${a.id} sprite height`);
+      // The footprint, or the box grown around it for a world structure whose original sprite stands taller (art/world.js worldBox).
+      const [w, h] = (isWorld(a) && worldBox(a)) || [a.width * 24, a.height * 24];
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 4], w, `${a.id} sprite width`);
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], h, `${a.id} sprite height`);
     });
   } finally {
     delete globalThis.document;

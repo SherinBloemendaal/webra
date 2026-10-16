@@ -3,22 +3,32 @@
 // tech buildings (hospital, bio lab, communications center, forward command
 // post; the oil derrick is pixel art, art/pixel.js), barrels and ammo boxes,
 // crates, ice floes, rocks, poles and tank traps, ore and gem mines, the
-// map-only walls, bridges and the civilians. Same camera, light and helpers as buildings.js (volume.js).
+// map-only walls, bridges and the civilians.
 //
-// Structures draw into their footprint box (cells times 24 world pixels).
-// Trees and the like draw only over their occupied cells (OpenRA footprints
-// such as `__ x_`: the trunk stands on the occupied cell, the crown leans into
-// the empty ones above). Civilians are not team coloured: OpenRA draws them
-// with fixed civilian palettes. Trees, ice and huts look like the map's biome
-// (`P.biome`: temperate, snow or desert; js/sprites.js buildAtlas passes it).
+// The minimal look of the design board "Retexture 2D en 3D" (0.21.0): seen
+// straight from above, every object is three to six flat blocks in the
+// colours the 3D minimal pack uses too (art/shared-palette.js), with one hard
+// shadow to the lower right, and keeps the one or two things that make it
+// recognisable (the hospital's red cross, the church's steeple, the
+// windmill's sails, the mine's shaft). Captured tech buildings show their
+// owner as one strip along the front. Civilians are not team coloured: OpenRA
+// draws them with fixed civilian palettes. Trees, huts, rocks and mines look
+// like the map's biome (`P.biome`: temperate, snow or desert;
+// js/sprites.js buildAtlas passes it).
 //
-// Colours and materials follow the design canvas board "Wereldobjecten" (flat
-// tones, one seam or pattern layer: leaf spots, plank seams, roof tiles, crop
-// rows), named per object where it is drawn.
+// Structures fill their footprint box (cells times 24 world pixels) as the
+// original sprites do; the few whose original sprite reaches past the
+// footprint (the lighthouse and the windmill stand tall) draw into the box
+// worldBox gives, grown evenly around the footprint's centre. Trees and the
+// like draw only over their occupied cells (OpenRA footprints such as
+// `__ x_`: the trunk stands on the occupied cell, the crown leans into the
+// empty ones above).
 
-import { C, rect, circle, poly, polyline, ring, hazard } from './kit.js';
+import { C, rect, rrect, circle, poly } from './kit.js';
 import { pixelDraw } from './pixel.js';
-import { K, KY, tone, quad, disc, oval, stroke, at, castShadows, box, patch, mark, cylinder, dome, gable, prism } from './volume.js';
+import { tone, oval } from './volume.js';
+import { SHARED_PALETTE } from './shared-palette.js';
+import { ORIGINAL_BOUNDS } from '../content/render-facts.js';
 
 /** Seeded pseudo random numbers in [0, 1). */
 function rng(seed) {
@@ -38,116 +48,85 @@ function seedOf(id) {
 
 const biomeOf = (P) => P.biome ?? 'temperate';
 
+// ---- Colours and blocks -------------------------------------------------------------------
+
+/** The shared materials and the terrain colours of the map's biome. */
+const M = SHARED_PALETTE.materials;
+const ground = (P) => SHARED_PALETTE.terrain[biomeOf(P)] ?? SHARED_PALETTE.terrain.temperate;
+/** The one hard shadow: black at the shared alpha, offset by the shared fraction of a cell. */
+const SHADOW = `rgba(0,0,0,${SHARED_PALETTE.shadow.alpha})`;
+const SHADOW_OFFSET = SHARED_PALETTE.shadow.offset * 24;
+
+/** A flat block, square or with rounded corners (`r`). */
+function flat(ctx, P, fill, x, y, w, h, r = 0) {
+  if (r > 0) rrect(ctx, P.c(fill), x, y, w, h, Math.min(r, w / 2, h / 2));
+  else rect(ctx, P.c(fill), x, y, w, h);
+}
+
+/** A block with its hard shadow to the lower right. */
+function slab(ctx, P, fill, x, y, w, h, r = 0) {
+  flat(ctx, P, SHADOW, x + SHADOW_OFFSET, y + SHADOW_OFFSET, w, h, r);
+  flat(ctx, P, fill, x, y, w, h, r);
+}
+
+/** The owner's strip along the front of a tech building (captured buildings show their owner). */
+function teamStrip(ctx, P, x, y, w, h) {
+  rect(ctx, P.team(0.9), x, y, w, h);
+}
+
+/** A thin block from (x0, y0) to (x1, y1), `w` wide: a blade, a bar or a beam that is not upright. */
+function bar(ctx, fill, x0, y0, x1, y1, w) {
+  const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+  const nx = (-(y1 - y0) / len) * (w / 2);
+  const ny = ((x1 - x0) / len) * (w / 2);
+  poly(ctx, fill, [x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny]);
+}
+
+// ---- The original extent --------------------------------------------------------------------
+
+/**
+ * How big the original sprite of world actor `a` (rules_json record) looks,
+ * in world pixels around the footprint's centre: [x0, y0, x1, y1]. OpenRA's
+ * DecorationBounds, else its Bounds (content/render-facts.js
+ * ORIGINAL_BOUNDS, around the actor's centre: the footprint's centre plus
+ * `centerOffset`), else the footprint itself (the original frames of
+ * structures without bounds are their footprint).
+ */
+export function originalExtent(a) {
+  const b = ORIGINAL_BOUNDS[a.id] ?? ORIGINAL_BOUNDS[String(a.id).toUpperCase()];
+  const rec = b?.decoration ?? b?.bounds;
+  const [cw, ch] = [(a.width ?? 1) * 12, (a.height ?? 1) * 12];
+  if (!rec) return [-cw, -ch, cw, ch];
+  const k = 24 / 1024;
+  const [ox, oy] = a.centerOffset ?? [0, 0];
+  const cx = ox + rec[2] * k;
+  const cy = oy + rec[3] * k;
+  return [cx - (rec[0] * k) / 2, cy - (rec[1] * k) / 2, cx + (rec[0] * k) / 2, cy + (rec[1] * k) / 2];
+}
+
+/**
+ * The box [w, h] (world pixels) a world structure draws into when its
+ * original sprite reaches past its footprint (the lighthouse, the windmill):
+ * the footprint grown evenly around its centre so it holds originalExtent,
+ * like art/pixel.js pixelBox. Null when the footprint holds it.
+ */
+export function worldBox(a) {
+  if (!worldDraw(a) || a.world?.bridge) return null;
+  const [x0, y0, x1, y1] = originalExtent(a);
+  const half = (cells, lo, hi) => Math.max(cells * 12, Math.ceil(-lo - 0.01), Math.ceil(hi - 0.01));
+  const w = 2 * half(a.width ?? 1, x0, x1);
+  const h = 2 * half(a.height ?? 1, y0, y1);
+  return w === (a.width ?? 1) * 24 && h === (a.height ?? 1) * 24 ? null : [w, h];
+}
+
+/** Where originalExtent lies in the box of `a` (worldBox or the footprint): [x0, y0, x1, y1]. */
+function extentInBox(a) {
+  const [w, h] = worldBox(a) ?? [(a.width ?? 1) * 24, (a.height ?? 1) * 24];
+  const [x0, y0, x1, y1] = originalExtent(a);
+  return [x0 + w / 2, y0 + h / 2, x1 + w / 2, y1 + h / 2];
+}
+
 // ---- Trees ------------------------------------------------------------------------------
-
-/**
- * Crown colours (shade, leaf, lit) per biome: flat tones as on the design
- * canvas ("Wereldobjecten", Loofboom), the snow and desert ones in kind.
- */
-const LEAVES = {
-  temperate: ['#163414', '#344e24', '#609240'],
-  snow: ['#12281f', '#24443a', '#4a7262'],
-  desert: ['#34481a', '#4f6a24', '#8aa046'],
-};
-/** Trunks, conifers, palms and cacti (design canvas: Loofboom, Den, Palm, Cactus). */
-const BARK = '#46321f';
-const PINE = { dark: '#16342c', light: '#2c5442', trunk: '#403024' };
-const PALM = { trunk: '#704e2e', ring: '#5a3e24', dark: '#3a6830', light: '#56a03e' };
-const CACTUS = { body: '#34682e', rib: '#568c3e', spine: '#e8e2ce' };
-
-/** A leafy crown of overlapping lumps around (cx, cy): flat shade, leaf and lit tones, light from the top left. */
-function crown(ctx, P, cx, cy, r, seed) {
-  const [shade, leaf, lit] = LEAVES[biomeOf(P)] ?? LEAVES.temperate;
-  const rnd = rng(seed);
-  oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + r * 0.45, cy + r * 0.75, r, r * 0.6);
-  const lumps = [];
-  for (let k = 0; k < 7; k++) {
-    const a = (k / 7) * Math.PI * 2 + rnd() * 0.6;
-    const d = r * (0.42 + rnd() * 0.22);
-    lumps.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.85, r * (0.48 + rnd() * 0.14)]);
-  }
-  lumps.push([cx, cy, r * 0.62]);
-  for (const [x, y, rr] of lumps) disc(ctx, P.c(shade), x + 0.6, y + 0.8, rr);
-  for (const [x, y, rr] of lumps) disc(ctx, P.c(leaf), x, y, rr * 0.92);
-  // The lit side: a spot on each lump toward the top left (the board's dots).
-  for (const [x, y, rr] of lumps) disc(ctx, P.c(lit), x - rr * 0.32, y - rr * 0.36, rr * 0.38);
-  if (biomeOf(P) === 'snow') {
-    for (const [x, y, rr] of lumps.slice(0, 5)) oval(ctx, P.c('rgba(236,242,248,0.85)'), x - rr * 0.25, y - rr * 0.35, rr * 0.55, rr * 0.3);
-  }
-}
-
-/** A conifer: stacked tiers over (cx, base), `h` high. */
-function pine(ctx, P, cx, base, h, w) {
-  const snow = biomeOf(P) === 'snow';
-  oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + w * 0.55, base - 1, w * 0.8, w * 0.35);
-  rect(ctx, P.c(PINE.trunk), cx - 0.8, base - 4, 1.6, 4);
-  for (let k = 0; k < 4; k++) {
-    const y1 = base - 3 - k * (h / 5);
-    const y0 = y1 - h * 0.42;
-    const hw = w * (1 - k * 0.2);
-    poly(ctx, P.c(PINE.dark), [cx - hw, y1, cx + hw, y1, cx + 0.6, y0]);
-    poly(ctx, P.c(PINE.light), [cx - hw + 0.8, y1 - 0.8, cx, y1 - 0.8, cx, y0 + 1]);
-    if (snow) poly(ctx, P.c('rgba(236,242,248,0.9)'), [cx - hw * 0.5, y1 - h * 0.21, cx + hw * 0.35, y1 - h * 0.21, cx + 0.3, y0 + 0.6]);
-  }
-}
-
-/**
- * A palm: a leaning trunk and drooping fronds. Its head stands up to 19
- * pixels above `base`, lower near the top of the box so the fronds stay inside.
- */
-function palm(ctx, P, cx, base) {
-  const H = Math.min(19, base - 5);
-  const sk = H / 19;
-  oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + 7, base - 1, 9, 3);
-  polyline(ctx, P.c(PALM.trunk), 2.2, [cx, base, cx + 1.5, base - 9 * sk, cx + 3.5, base - 18 * sk]);
-  // Ring seams up the trunk (the board's wood pattern).
-  for (let k = 1; k < 6; k++) {
-    const t = k / 6;
-    const x = t < 0.5 ? cx + 3 * t : cx + 1.5 + (t - 0.5) * 4;
-    stroke(ctx, P.c(PALM.ring), 0.6, x - 1.1, base - 18 * sk * t, x + 1.1, base - 18 * sk * t);
-  }
-  const [hx, hy] = [cx + 3.5, base - H];
-  for (let k = 0; k < 7; k++) {
-    const a = -Math.PI / 2 + (k - 3) * 0.55;
-    const tip = [hx + Math.cos(a) * 10, hy + Math.sin(a) * 5 + 4];
-    polyline(ctx, P.c(PALM.dark), 1.8, [hx, hy, (hx + tip[0]) / 2, hy + Math.sin(a) * 4 - 1, tip[0], tip[1]]);
-    polyline(ctx, P.c(PALM.light), 0.7, [hx, hy - 0.4, (hx + tip[0]) / 2, hy + Math.sin(a) * 4 - 1.4, tip[0], tip[1] - 0.4]);
-  }
-  disc(ctx, P.c(PALM.ring), hx, hy, 1.4);
-}
-
-/** A saguaro-like cactus. */
-function cactus(ctx, P, cx, base) {
-  oval(ctx, P.c('rgba(0,0,0,0.28)'), cx + 4, base - 1, 5, 2);
-  const arm = (pts) => {
-    polyline(ctx, P.c(CACTUS.body), 3, pts);
-    polyline(ctx, P.c(CACTUS.rib), 1, pts.map((v, i) => (i % 2 ? v : v - 0.6)));
-  };
-  arm([cx, base, cx, base - 15]);
-  arm([cx, base - 6, cx - 4, base - 6, cx - 4, base - 11]);
-  arm([cx, base - 9, cx + 4, base - 9, cx + 4, base - 13]);
-  // Spines: pale dots along the stem.
-  for (const [x, y] of [[cx + 1.4, base - 13], [cx - 1.4, base - 9], [cx + 1.4, base - 4], [cx - 5.2, base - 10], [cx + 5.2, base - 12]]) disc(ctx, P.c(CACTUS.spine), x, y, 0.35);
-}
-
-/** A burnt stump on the cell centred at (cx, cy). */
-function stump(ctx, P, cx, cy, seed) {
-  const rnd = rng(seed);
-  oval(ctx, P.c('rgba(20,16,12,0.55)'), cx, cy + 3, 9, 5);
-  for (let k = 0; k < 5; k++) disc(ctx, P.c('rgba(40,36,30,0.6)'), cx - 6 + rnd() * 12, cy + rnd() * 6, 1.4 + rnd());
-  // Design canvas "Stronk": bark sides, the cut top in growth rings, charred.
-  const z = 4 + rnd() * 3;
-  cylinder(ctx, P, cx, cy + 2, 2.6, z, K('#46321f'), K('#7a5838'));
-  const [tx, ty] = at(cx, cy + 2, z);
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(tx, ty, 1.5, 0.75, 0, 0, Math.PI * 2);
-  ctx.strokeStyle = P.c('#5a3e24');
-  ctx.lineWidth = 0.5;
-  ctx.stroke();
-  ctx.restore();
-  stroke(ctx, P.c('#2a1c12'), 1, cx + 1, cy - 2, cx + 4, cy - 6);
-}
 
 /** Centre of footprint cell (dx, dy). */
 const cellCentre = (dx, dy) => [dx * 24 + 12, dy * 24 + 12];
@@ -165,33 +144,32 @@ const TREE_KIND = {
 };
 
 /**
- * One tree standing on the cell centred at (cx, cy). Trees on the top row of
- * their footprint (no empty cell above for the crown) grow smaller, so the
- * drawing stays inside the footprint box.
+ * One tree standing on the cell centred at (cx, cy): two blocks, the trunk
+ * and the crown over it (a lit top and a darker front face, snow on the top
+ * in the snow biome), as on the terrain's tree cells. The crown leans into the cells above and
+ * stays inside the footprint box (`boxWidth` wide).
  */
 function treeAt(ctx, P, kind, cx, cy, seed, boxWidth = 24) {
+  const g = ground(P);
   // Snow and desert maps get their own kinds of tree.
   if (biomeOf(P) === 'desert' && (kind === 'round' || kind === 'pine')) kind = seed % 3 === 0 ? 'cactus' : 'palm';
-  // A full-size round crown reaches 22 pixels above the cell centre and 17 to
-  // either side: smaller on the top row and at the sides of the box.
-  const s = Math.min(1, (cy + 1) / 22, (boxWidth + 1 - cx) / 17, (cx + 1) / 17);
-  switch (kind) {
-    case 'pine':
-      pine(ctx, P, cx, cy + 8, Math.min(26, (cy + 5) / 1.02), 9);
-      break;
-    case 'palm':
-      palm(ctx, P, cx - 2, cy + 8);
-      break;
-    case 'cactus':
-      cactus(ctx, P, cx, cy + 8);
-      break;
-    case 'bush':
-      crown(ctx, P, cx, cy, 8, seed);
-      break;
-    default:
-      rect(ctx, P.c(BARK), cx - 1, cy - 2, 2.2, 10);
-      crown(ctx, P, cx + 1, cy - 8 * s, 12 * s, seed);
+  if (kind === 'cactus') {
+    slab(ctx, P, g.treeDark, cx - 2.5, Math.max(1, cy - 14), 5, Math.min(22, cy + 8 - 1));
+    slab(ctx, P, g.treeDark, cx - 7, cy - 6, 14, 4, 1);
+    return;
   }
+  // The crown's size by kind: [half width, reach above the centre, reach below].
+  const [hw, up, down] = { pine: [9, 24, 4], palm: [13, 16, 0], bush: [9, 8, 6] }[kind] ?? [13, 22, 4];
+  const x0 = Math.max(1, cx - hw + (seed % 3) - 1);
+  const x1 = Math.min(boxWidth - 2, cx + hw + (seed % 3) - 1);
+  const y0 = Math.max(1, cy - up);
+  const y1 = cy + down;
+  if (kind !== 'bush') slab(ctx, P, g.trunk, cx - 2, y1 - 2, 4, cy + 9 - y1);
+  // The crown: its darker body and the lit top over most of it (a conifer is darker and narrower).
+  const [body, lit] = kind === 'pine' ? [tone(g.treeDark, -0.2), g.treeDark] : [g.treeDark, g.tree];
+  const r = kind === 'pine' ? 1 : 3;
+  slab(ctx, P, body, x0, y0, x1 - x0, y1 - y0, r);
+  flat(ctx, P, biomeOf(P) === 'snow' ? M.steam : lit, x0, y0, x1 - x0, (y1 - y0) * 0.62, r);
 }
 
 function treeDraw(id, a) {
@@ -208,457 +186,311 @@ function treeDraw(id, a) {
   };
 }
 
+/** A burnt stump on each occupied cell: a charred patch, the stump and its cut top. */
 function stumpDraw(id, a) {
   const cells = occupied(a);
   return (ctx, P) => {
-    cells.forEach(([dx, dy], k) => {
+    cells.forEach(([dx, dy]) => {
       const [cx, cy] = cellCentre(dx, dy);
-      stump(ctx, P, cx, cy, seedOf(id) + k);
+      flat(ctx, P, 'rgba(20,16,12,0.5)', cx - 9, cy - 4, 18, 12, 4);
+      slab(ctx, P, M.char, cx - 3, cy - 2, 6, 6, 1);
+      flat(ctx, P, M.ash, cx - 2, cy - 1, 4, 2.5);
     });
   };
 }
 
 // ---- Civilian buildings ---------------------------------------------------------------------
 
-/** Design canvas "Wereldobjecten": Cottage plaster and roof tiles (red or slate), Adobe. */
-const PLASTER = ['#cfc3a4', '#d8cfb8', '#c6b48e'];
-const TILES = ['#8a3a2a', '#7a3226', '#5b5f63'];
-const ADOBE = ['#c9a676', '#d4b486', '#bf9a68'];
+/** House walls and roofs (design board "Wereldobjecten" in the shared materials). */
+const WALLS = [M.wall, M.paint, M.sand];
+const ROOFS = [M.tiles, M.brick, M.dark];
 
-/** A cottage: walls, a pitched roof, windows, a door and maybe a chimney. */
-function cottage(ctx, P, x, y, w, d, z, seed, o = {}) {
+/**
+ * A cottage filling (x, y, w, d): walls, a roof over most of it with a
+ * darker ridge, a door in the front wall and maybe a chimney.
+ */
+function cottage(ctx, P, x, y, w, d, seed, o = {}) {
   const r = rng(seed);
-  const wall = K(o.wall ?? PLASTER[Math.floor(r() * PLASTER.length)]);
-  const roof = K(o.roof ?? TILES[Math.floor(r() * TILES.length)]);
-  castShadows(ctx, P, [{ x, y, w, d, z: z + 5 }]);
-  const H = box(ctx, P, x, y, w, d, z, wall, wall);
-  // windows and a door on the south face
-  const n = Math.max(1, Math.floor(w / 7));
-  for (let k = 0; k < n; k++) {
-    const u = ((k + 0.5) * w) / n - 1.4;
-    if (k === Math.floor(n / 2) && o.door !== false) {
-      patch(ctx, P.c('#4a3524'), H, 'front', u, 0, u + 3, Math.min(z - 1, 5));
-    } else {
-      patch(ctx, P.c('#2c3a44'), H, 'front', u, z * 0.45, u + 2.8, z * 0.45 + 2.4);
-      patch(ctx, P.c('#9bc0d0'), H, 'front', u + 0.4, z * 0.45 + 1.4, u + 1.4, z * 0.45 + 2.2);
-    }
-  }
-  gable(ctx, P, H, o.rise ?? Math.min(6, d * 0.4), roof, { axis: o.axis ?? (w >= d ? 'x' : 'y'), overhang: 1, seams: Math.round(w / 3) });
-  if (o.chimney ?? r() < 0.6) {
-    // On the front slope, just clearing the ridge, and never above the footprint box.
-    const cx = x + w * (0.25 + r() * 0.5);
-    const cy = y + d * 0.55;
-    cylinder(ctx, P, cx, cy, 1.4, Math.min(z + (o.rise ?? 5) + 1.5, (cy - 1.6) / KY), K('#6b5a4c'), K('#3a302a'));
-  }
-  return H;
+  const wall = o.wall ?? WALLS[Math.floor(r() * WALLS.length)];
+  const roof = o.roof ?? (biomeOf(P) === 'snow' ? M.steam : ROOFS[Math.floor(r() * ROOFS.length)]);
+  const roofD = d * 0.68;
+  slab(ctx, P, wall, x, y, w, d);
+  flat(ctx, P, roof, x, y, w, roofD);
+  if (w >= d) flat(ctx, P, tone(roof, -0.22), x, y + roofD / 2 - 0.75, w, 1.5);
+  else flat(ctx, P, tone(roof, -0.22), x + w / 2 - 0.75, y, 1.5, roofD);
+  flat(ctx, P, M.darker, x + w / 2 - 2, y + d - Math.min(6, d * 0.3), 4, Math.min(6, d * 0.3));
+  if (o.chimney ?? r() < 0.5) flat(ctx, P, M.dark, x + w * (0.2 + r() * 0.5), y + roofD * 0.15, 3, 3);
 }
 
-/** A flat-roofed adobe house with a parapet (desert). */
-function adobe(ctx, P, x, y, w, d, z, seed, o = {}) {
-  const r = rng(seed);
-  const wall = K(ADOBE[Math.floor(r() * ADOBE.length)]);
-  castShadows(ctx, P, [{ x, y, w, d, z }]);
-  // Lit flat roof over darker walls (the board's #d4b486 roof, #a8865a wall).
-  const H = box(ctx, P, x, y, w, d, z, K(tone(wall.c, -0.14)), K(tone(wall.c, 0.06)));
-  patch(ctx, P.c(tone(wall.c, -0.06)), H, 'roof', 1.2, 1.2, w - 1.2, d - 1.2);
-  const n = Math.max(1, Math.floor(w / 6));
-  for (let k = 0; k < n; k++) {
-    const u = ((k + 0.5) * w) / n - 1.2;
-    patch(ctx, P.c('#3a2c20'), H, 'front', u, z * 0.35, u + 2.4, z * 0.35 + (k === 0 ? 4.2 : 2.4));
-  }
-  if (o.dome) {
-    const [cx, cy] = [x + w * 0.5, y + d * 0.5];
-    dome(ctx, P, cx, cy, Math.min(w, d) * 0.32, K('#e2d6b8'), { z0: z });
-  }
-  // A tower at the front corner (one at the back would reach above the footprint box).
-  if (o.tower) cylinder(ctx, P, x + w - 6, y + d - 3, 2.4, Math.min(z + 9, (y + d - 6) / KY), wall, K('#e2d6b8'));
-  return H;
+/** A flat-roofed adobe house filling (x, y, w, d): walls, a lighter roof inside its parapet, a door, maybe a dome. */
+function adobe(ctx, P, x, y, w, d, seed, o = {}) {
+  slab(ctx, P, M.sandy, x, y, w, d);
+  flat(ctx, P, M.sand, x + 2, y + 2, w - 4, d - 6);
+  flat(ctx, P, M.darker, x + w * 0.3, y + d - 4, 4, 4);
+  if (o.dome) slab(ctx, P, M.paint, x + w / 2 - d * 0.22, y + d * 0.2, d * 0.44, d * 0.44, d * 0.22);
+  if (o.tower) slab(ctx, P, tone(M.sandy, -0.1), x + w - 8, y + 2, 6, 6);
+  if (seed % 2) flat(ctx, P, tone(M.sand, -0.1), x + 4, y + 4, 5, 5);
 }
 
-/** A church: nave with a steeple (temperate) or a domed one (desert). */
+/** A church: a nave and the steeple with its gold cross (temperate), or a domed one (desert). */
 function church(ctx, P, desert) {
   if (desert) {
-    castShadows(ctx, P, [{ x: 6, y: 18, w: 34, d: 24, z: 9 }, { cx: 36, cy: 22, r: 3, z: 19 }]);
-    const H = box(ctx, P, 6, 18, 34, 24, 9, K('#c9a676'), K('#d4b486'));
-    patch(ctx, P.c('#3a2c20'), H, 'front', 14, 0, 19, 6);
-    dome(ctx, P, 21, 30, 9, K('#e9e2cf'), { z0: 9 });
-    cylinder(ctx, P, 36, 22, 2.6, 19, K('#c9a676'), K('#e9e2cf'));
-    disc(ctx, P.c('#ffd98a'), ...at(21, 30, 18), 1);
+    slab(ctx, P, M.sandy, 1, 1, 45, 45);
+    flat(ctx, P, M.sand, 3, 3, 41, 37);
+    slab(ctx, P, M.paint, 12, 12, 20, 20, 10);
+    slab(ctx, P, tone(M.sandy, -0.1), 35, 4, 9, 9);
+    flat(ctx, P, M.darker, 19, 40, 6, 6);
     return;
   }
-  // The steeple stands behind the nave; both stay inside the 2x2 footprint box.
-  castShadows(ctx, P, [{ x: 8, y: 22, w: 30, d: 20, z: 14 }, { x: 10, y: 12, w: 9, d: 9, z: 15 }]);
-  // Design canvas "Kerk": pale stone, slate roofs, a gold cross.
-  const S = box(ctx, P, 10, 12, 9, 9, 11, K('#c8bfa8'), K('#d8cfb8'));
-  patch(ctx, P.c('#2c2c2c'), S, 'front', 3.2, 6.5, 5.8, 9.5);
-  const [sx, sy] = at(14.5, 16.5, 11);
-  poly(ctx, P.c('#3f4247'), [sx - 5, sy + 1.5, sx + 5, sy + 1.5, sx + 0.4, sy - 5]);
-  poly(ctx, P.c('#5b5f63'), [sx - 5, sy + 1.5, sx + 0.4, sy + 1.5, sx + 0.4, sy - 5]);
-  stroke(ctx, P.c('#ffd98a'), 0.8, sx + 0.4, sy - 5, sx + 0.4, sy - 7.4);
-  stroke(ctx, P.c('#ffd98a'), 0.8, sx - 1.1, sy - 6.4, sx + 1.9, sy - 6.4);
-  const N = box(ctx, P, 8, 22, 30, 20, 9, K('#c8bfa8'), K('#d8cfb8'));
-  for (const u of [5, 13, 21]) patch(ctx, P.c('#2e3d55'), N, 'front', u, 2.5, u + 3, 7);
-  gable(ctx, P, N, 7, K('#5b5f63'), { axis: 'y', overhang: 1, seams: 6 });
+  slab(ctx, P, M.wall, 1, 14, 45, 32);
+  flat(ctx, P, M.dark, 1, 14, 45, 22);
+  slab(ctx, P, M.wall, 6, 1, 14, 16);
+  flat(ctx, P, M.dark, 8, 3, 10, 10);
+  flat(ctx, P, M.gold, 12, 4, 2, 7);
+  flat(ctx, P, M.gold, 10, 6, 6, 2);
 }
 
-/** A field: rows of a crop on tilled soil. */
-function field(ctx, P, w, h, seed, crop) {
-  // Design canvas "Akker": soil with rows of the crop running north to south.
-  const r = rng(seed);
-  const soil = biomeOf(P) === 'snow' ? '#b9bfc6' : '#6a5c3e';
-  const c = crop === 'rice' ? '#7caa48' : crop === 'wheat' ? '#d9b23a' : '#8e9a46';
-  rect(ctx, P.c(soil), 1, 1, w - 2, h - 2);
-  for (let x = 2.5; x < w - 3; x += 3.5) {
-    rect(ctx, P.c(tone(soil, -0.25)), x + 2.2, 2, 0.8, h - 4);
-    // A row of plants, broken where a few are missing.
-    for (let y = 2; y < h - 3; y += 2) if (r() > 0.12) rect(ctx, P.c(c), x, y, 2, 1.6);
-    if (crop === 'wheat') for (let y = 2.5; y < h - 3; y += 4) rect(ctx, P.c(tone(c, 0.2)), x + 0.4, y, 1, 0.8);
-  }
-  if (crop === 'rice') {
-    ctx.save();
-    ctx.globalAlpha = 0.35;
-    rect(ctx, P.c('#5f93ad'), 1, 1, w - 2, h - 2);
-    ctx.restore();
-  }
+/** A field: tilled soil with three rows of a crop. */
+function field(ctx, P, crop) {
+  const soil = crop === 'rice' ? ground(P).ford : biomeOf(P) === 'snow' ? SHARED_PALETTE.terrain.snow.rough : M.dirt;
+  const plant = crop === 'wheat' ? M.yellow : M.camo2;
+  flat(ctx, P, soil, 0.5, 0.5, 23, 23);
+  for (const x of [3, 10, 17]) flat(ctx, P, plant, x, 2, 4, 20);
 }
 
-/** Haystack (or an igloo on snow maps: OpenRA's Tooltip@WINTER). */
-function haystack(ctx, P, seed) {
+/** A haystack: a rounded straw heap with a lighter top (or an igloo on snow maps: OpenRA's Tooltip@WINTER). */
+function haystack(ctx, P) {
   if (biomeOf(P) === 'snow') {
-    castShadows(ctx, P, [{ cx: 12, cy: 13, r: 8, z: 7 }]);
-    dome(ctx, P, 12, 13, 8, K('#e9eef3'));
-    for (const h of [2.4, 4.6]) {
-      const [lx, ly] = at(12, 13, h);
-      ctx.save();
-      ctx.beginPath();
-      ctx.ellipse(lx, ly, 7.6 - h * 0.6, 3, 0, 0, Math.PI);
-      ctx.strokeStyle = P.c('#b8c4d0');
-      ctx.lineWidth = 0.5;
-      ctx.stroke();
-      ctx.restore();
-    }
-    patch(ctx, P.c('#3a4450'), box(ctx, P, 10, 19, 4, 3, 3, K('#dfe6ec')), 'front', 0.8, 0, 3.2, 2.4);
+    slab(ctx, P, M.steam, 2, 2, 19, 19, 9);
+    flat(ctx, P, M.dome, 5, 5, 9, 6, 3);
+    flat(ctx, P, M.dark, 9, 16, 5, 5, 1);
     return;
   }
-  const r = rng(seed);
-  // Design canvas "Hooiberg": straw dome, light straw strokes, a dark trodden base.
-  castShadows(ctx, P, [{ cx: 12, cy: 14, r: 7.5, z: 9 }]);
-  oval(ctx, P.c('#8a6a3a'), 12, 14.6, 8.6, 4.2);
-  dome(ctx, P, 12, 14, 8, K('#c9a64a'));
-  for (let k = 0; k < 14; k++) {
-    const [lx, ly] = at(6 + r() * 12, 9 + r() * 9, 3 + r() * 6);
-    stroke(ctx, P.c('#e0c06a'), 0.5, lx, ly, lx + 1, ly + 1.7);
-  }
+  slab(ctx, P, M.sandy, 2, 2, 19, 19, 7);
+  flat(ctx, P, M.sand, 5, 5, 10, 8, 4);
 }
 
-/** Oil pump (V19): a pumpjack on a pad. */
+/** Oil pump (V19): a pad, the pump's base, its beam and the yellow head; burnt, all charred. */
 function pumpjack(ctx, P, burnt = false) {
-  // Design canvas "Oliebron": a pad with a hazard edge, steel works.
-  if (burnt) rect(ctx, P.c('#2a2620'), 2, 6, 20, 15);
-  else hazard(ctx, P, 2, 6, 20, 15, 2);
-  rect(ctx, P.c(burnt ? '#3a342c' : C.concrete), 3.5, 7.5, 17, 12);
-  const steel = burnt ? K('#2e2a26') : K('#55585c');
-  castShadows(ctx, P, [{ x: 5, y: 10, w: 14, d: 5, z: 10 }]);
-  box(ctx, P, 9, 11, 3, 4, 8, steel, steel);
-  const [ax, ay] = at(10.5, 13, 8.5);
-  stroke(ctx, P.c(burnt ? '#1c1a18' : '#33363a'), 2, ax - 8, ay + 2, ax + 7, ay - 1);
-  disc(ctx, P.c(burnt ? '#1c1a18' : '#d9b23a'), ax - 8, ay + 3, 2.4);
-  if (!burnt) disc(ctx, P.c('#2b2b28'), ax - 8, ay + 3, 1);
-  box(ctx, P, 16, 13, 3, 3, 3, steel, steel);
+  slab(ctx, P, burnt ? M.char2 : M.concrete, 1, 2, 21, 20);
+  slab(ctx, P, burnt ? M.char : M.dark, 10, 7, 5, 11);
+  slab(ctx, P, burnt ? M.char2 : M.darker, 3, 9, 18, 3);
+  flat(ctx, P, burnt ? M.ash : M.yellow, 2, 7, 5, 7, 1);
 }
 
 // ---- Tech buildings ----------------------------------------------------------------------------
 
+/** Hospital (OpenRA HOSP): a white roof with the red cross, the owner's strip in front. */
 function hospital(ctx, P) {
-  castShadows(ctx, P, [{ x: 4, y: 12, w: 40, d: 30, z: 13 }]);
-  // Design canvas "Ziekenhuis": concrete walls, a white roof with the red cross.
-  const H = box(ctx, P, 4, 12, 40, 30, 11, K('#a4a193'), K('#e8e6dc'), { panel: 8 });
-  for (let k = 0; k < 4; k++) patch(ctx, P.c('#3b5566'), H, 'front', 3 + k * 9.5, 4.5, 8 + k * 9.5, 8);
-  patch(ctx, P.c('#3a3a3a'), H, 'front', 17, 0, 23, 4);
-  // red cross on the roof (OpenRA HOSP: the Red Cross)
-  const cross = (u0, t0, u1, t1) => patch(ctx, P.c('#c8281e'), H, 'roof', u0, t0, u1, t1);
-  patch(ctx, P.c('#f4f2ec'), H, 'roof', 11, 5, 29, 25);
-  cross(18, 7, 22, 23);
-  cross(13, 13, 27, 17);
-  stroke(ctx, P.team(0.9), 1, 4, 44, 44, 44);
+  slab(ctx, P, M.wall, 1, 1, 45, 45);
+  flat(ctx, P, M.paint, 4, 4, 39, 34);
+  flat(ctx, P, M.red, 19, 8, 9, 26);
+  flat(ctx, P, M.red, 10, 16.5, 27, 9);
+  teamStrip(ctx, P, 1, 42, 45, 4);
 }
 
+/** Bio lab: concrete with a green glass roof and the round glowing sample tank. */
 function bioLab(ctx, P) {
-  castShadows(ctx, P, [{ x: 4, y: 14, w: 26, d: 28, z: 10 }, { cx: 36, cy: 20, r: 7, z: 10 }, { cx: 36, cy: 38, r: 5, z: 7 }]);
-  // Design canvas "Biolab": concrete, green glass and a glowing green sample tank.
-  const H = box(ctx, P, 4, 14, 26, 28, 9, K('#a4a193'), K('#b8b5a7'), { panel: 6 });
-  for (const u of [3, 10, 17]) patch(ctx, P.c('#4a7a34'), H, 'front', u, 3.5, u + 4, 6.5);
-  patch(ctx, P.c('#4a7a34'), H, 'roof', 3.4, 3.4, 22.6, 24.6);
-  patch(ctx, P.c('#9adf6a'), H, 'roof', 4, 4, 22, 24);
-  const [tx, ty] = H.roof(13, 14);
-  ctx.save();
-  ctx.fillStyle = P.c('#1c1c1c');
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI * 2 - Math.PI / 2;
-    ctx.beginPath();
-    ctx.arc(tx + Math.cos(a) * 3.4, ty + Math.sin(a) * 3.4, 2.6, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-  disc(ctx, P.c('#9adf6a'), tx, ty, 1.4);
-  dome(ctx, P, 36, 20, 7, K('#4a7a34'), { z0: 2 });
-  const [gx, gy] = at(34, 18, 7);
-  disc(ctx, P.c('#9adf6a'), gx, gy, 2);
-  cylinder(ctx, P, 36, 38, 4.6, 7, K('#8a877a'), K('#a4a193'));
-  stroke(ctx, P.c('#4a7a34'), 1.2, 30, 26, 32, 22);
+  slab(ctx, P, M.concrete, 1, 1, 45, 45);
+  flat(ctx, P, M.radar, 4, 4, 22, 34);
+  slab(ctx, P, M.camo, 29, 6, 15, 15, 7.5);
+  flat(ctx, P, M.green, 33, 10, 7, 7, 3.5);
+  teamStrip(ctx, P, 1, 42, 45, 4);
 }
 
+/** Communications center (MISS): the building over its two back rows, a glass band, the big dish; the pad in front. */
 function commCenter(ctx, P) {
-  // bib in front (=== row), building behind
-  rect(ctx, P.c(C.concreteDark), 0, 48, 72, 24);
-  rect(ctx, P.c(C.concrete), 1, 49, 70, 22);
-  for (let x = 12; x < 72; x += 12) rect(ctx, P.c(C.seam), x, 49, 1, 22);
-  castShadows(ctx, P, [{ x: 4, y: 10, w: 64, d: 36, z: 12 }]);
-  // Design canvas "Comm. center": concrete roof, a band of glass with dark mullions, a pale dish.
-  const H = box(ctx, P, 4, 10, 64, 36, 11, K('#a4a193'), K('#b8b5a7'), { panel: 8 });
-  patch(ctx, P.c('#23363f'), H, 'front', 3, 4, 61, 8.5);
-  for (let k = 0; k < 6; k++) patch(ctx, P.c('#5f93ad'), H, 'front', 4 + k * 10, 4.5, 11 + k * 10, 8);
-  patch(ctx, P.c('#3a3a3a'), H, 'front', 28, 0, 36, 5);
-  // antennas and a dish on the roof
-  const [dx, dy] = H.roof(18, 16);
-  disc(ctx, P.c('#55585c'), dx, dy, 8);
-  disc(ctx, P.c('#c4c7cb'), dx, dy, 7);
-  disc(ctx, P.c('#dfe2e5'), dx - 2, dy - 2, 3.4);
-  disc(ctx, P.c('#3a3d42'), dx + 1, dy + 1, 1.4);
-  for (const [u, t, h] of [[44, 14, 12], [52, 22, 10], [58, 12, 12]]) {
-    const [bx, by] = H.roof(u, t);
-    stroke(ctx, P.c('#3f4247'), 1, bx, by, bx + h * 0.28, by - h * 0.92);
-    for (let k = 1; k < 4; k++) stroke(ctx, P.c('#6c7076'), 0.6, bx + k * 1.4 - 2, by - k * h * 0.22, bx + k * 1.4 + 2, by - k * h * 0.22);
-    disc(ctx, P.c('#ff4a3a'), bx + h * 0.28, by - h * 0.92, 0.8);
-  }
+  flat(ctx, P, M.concrete, 0, 48, 72, 24);
+  slab(ctx, P, M.wall, 1, 1, 69, 45);
+  flat(ctx, P, M.glass, 5, 32, 61, 6);
+  slab(ctx, P, M.dome, 8, 5, 22, 22, 11);
+  teamStrip(ctx, P, 1, 42, 69, 4);
 }
 
+/** Forward command post (FCOM): canvas over its two back rows, a seam, the radar dish; the pad in front. */
 function commandPost(ctx, P) {
-  rect(ctx, P.c(C.concreteDark), 0, 48, 48, 24);
-  rect(ctx, P.c(C.concrete), 1, 49, 46, 22);
-  rect(ctx, P.c(C.seam), 24, 49, 1, 22);
-  castShadows(ctx, P, [{ x: 4, y: 12, w: 40, d: 34, z: 9 }]);
-  // Design canvas "Commandopost": canvas over steel, seams across the roof.
-  const H = box(ctx, P, 4, 12, 40, 34, 8, K('#6a6a42'), K('#8a8a5a'), { panel: 10 });
-  for (let t = 4; t < 34; t += 5) mark(ctx, P.c('#6a6a42'), 0.6, H, 'roof', 1, t, 39, t);
-  // sandbags along the front
-  for (let x = 4; x < 44; x += 5) oval(ctx, P.c('#a09a70'), x + 2.5, 46, 2.8, 1.8);
-  patch(ctx, P.c('#2c2c22'), H, 'front', 17, 0, 23, 5);
-  for (const u of [6, 30]) patch(ctx, P.c('#1f2a22'), H, 'front', u, 4, u + 4, 6);
-  // radar on a mast and a flag in the owner's colour
-  const [rx, ry] = H.roof(28, 12);
-  stroke(ctx, P.c('#55585c'), 1.2, rx, ry, rx + 2.5, ry - 9);
-  oval(ctx, P.c('#c8ccd0'), rx + 2.5, ry - 10, 5, 2);
-  const [fx, fy] = H.roof(9, 8);
-  stroke(ctx, P.c('#3f4247'), 0.8, fx, fy, fx + 3, fy - 13);
-  poly(ctx, P.team(0.9), [fx + 3, fy - 13, fx + 10, fy - 11, fx + 3, fy - 8.5]);
+  flat(ctx, P, M.concrete, 0, 48, 48, 24);
+  slab(ctx, P, M.canvas, 1, 1, 45, 45);
+  flat(ctx, P, tone(M.canvas, -0.18), 1, 20, 45, 2);
+  slab(ctx, P, M.steel2, 26, 5, 14, 11, 5.5);
+  teamStrip(ctx, P, 1, 42, 45, 4);
 }
 
-// ---- Barrels, boxes and other decorations ------------------------------------------------------
-
-/** Design canvas "Olievat": a red drum with darker hoops and a yellow band. */
-function oilBarrel(ctx, P, cx, cy, tint = '#a8321e') {
-  const hoop = K(tone(tint, -0.3));
-  cylinder(ctx, P, cx, cy, 3.6, 7, K(tint), K(tone(tint, 0.15)), { bands: [[1.6, 2.2, hoop], [3.2, 4.2, K('#d9b23a')], [5.2, 5.8, hoop]] });
+/** Lighthouse (LHUS): a rock plinth, the white tower with a red band and the lamp, as tall as the original. */
+function lighthouse(a) {
+  return (ctx, P) => {
+    const [x0, y0, x1, y1] = extentInBox(a);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    slab(ctx, P, ground(P).rock, x0 + 1, y1 - h * 0.25, w - 3, h * 0.25 - 1, 2);
+    slab(ctx, P, M.paint, x0 + w * 0.25, y0 + h * 0.12, w * 0.5, h * 0.66);
+    flat(ctx, P, M.red, x0 + w * 0.25, y0 + h * 0.36, w * 0.5, h * 0.1);
+    flat(ctx, P, M.dark, x0 + w * 0.2, y0 + 1, w * 0.6, h * 0.13);
+    flat(ctx, P, M.glow, x0 + w * 0.32, y0 + 2, w * 0.36, h * 0.08);
+  };
 }
 
-/** Design canvas "Kratten": wood with dark plank seams and a lit edge. */
-const WOOD = { plank: '#8a6a3a', seam: '#5e4624', lit: '#b08e58' };
+/** Windmill: a tower with its cap and the four sails crossed in front, as big as the original. */
+function windmill(a) {
+  return (ctx, P) => {
+    const [x0, y0, x1, y1] = extentInBox(a);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    const [hx, hy] = [x0 + w / 2, y0 + h * 0.4];
+    slab(ctx, P, M.sand, hx - w * 0.17, y0 + h * 0.3, w * 0.34, h * 0.7 - 1);
+    flat(ctx, P, M.tiles, hx - w * 0.2, y0 + h * 0.24, w * 0.4, h * 0.14);
+    bar(ctx, P.c(M.paint), x0 + 2, y0 + 2, x1 - 2, y0 + h * 0.8 - 2, 3.5);
+    bar(ctx, P.c(M.paint), x1 - 2, y0 + 2, x0 + 2, y0 + h * 0.8 - 2, 3.5);
+    circle(ctx, P.c(M.darker), hx, hy, 2);
+  };
+}
 
-function crateBox(ctx, P, x, y, s, z, wood = WOOD.plank, seed = 1) {
-  const r = rng(seed);
-  const V = box(ctx, P, x, y, s, s, z, K(wood), K(tone(wood, 0.12)));
-  mark(ctx, P.c(WOOD.seam), 0.5, V, 'front', 0, 0, s, z);
-  mark(ctx, P.c(WOOD.seam), 0.5, V, 'front', s, 0, 0, z);
-  for (let u = 2.5; u < s; u += 2.5) mark(ctx, P.c(WOOD.seam), 0.35, V, 'roof', u + r() * 0.3, 0, u, s);
-  mark(ctx, P.c(WOOD.lit), 0.6, V, 'roof', 0, 0.3, s, 0.3);
-  return V;
+/** A hut (RUSHOUSE, SNOWHUT, ASIANHUT): a cottage filling its footprint. */
+const hut = (o, seed) => (a) => (ctx, P) => cottage(ctx, P, 1, 1, (a.width ?? 1) * 24 - 3, (a.height ?? 1) * 24 - 3, seed, o);
+
+/** The mine railway (RAILMINE): a track bed with two rails running into the mine's wooden mouth. */
+function railMine(ctx, P) {
+  flat(ctx, P, M.dirt, 0, 3, 48, 19);
+  flat(ctx, P, M.steel, 0, 8, 48, 1.5);
+  flat(ctx, P, M.steel, 0, 15, 48, 1.5);
+  slab(ctx, P, M.wood, 30, 2, 16, 18);
+  flat(ctx, P, M.darker, 34, 10, 8, 10);
+}
+
+// ---- Barrels, boxes and other props ------------------------------------------------------
+
+/** A red oil drum seen from above: the drum, its yellow band and the lit lid. */
+function drum(ctx, P, x, y, s, tint = M.red) {
+  slab(ctx, P, tint, x, y, s, s, s / 2);
+  flat(ctx, P, M.yellow, x, y + s * 0.42, s, s * 0.18);
+}
+
+/** A wooden crate: the box and one dark seam across it. */
+function crateBox(ctx, P, x, y, s, wood = M.wood) {
+  slab(ctx, P, wood, x, y, s, s);
+  flat(ctx, P, tone(wood, -0.3), x, y + s / 2 - 0.6, s, 1.2);
 }
 
 function boxes(ctx, P, seed) {
   const r = rng(seed);
   const n = 1 + Math.floor(r() * 3);
   const items = [];
-  for (let k = 0; k < n; k++) items.push({ x: 3 + r() * 8, y: 7 + r() * 6, s: 6 + r() * 4, z: 5 + r() * 3 });
-  castShadows(ctx, P, items.map((b) => ({ x: b.x, y: b.y, w: b.s, d: b.s, z: b.z })));
+  for (let k = 0; k < n; k++) items.push({ x: 2 + r() * 9, y: 3 + r() * 9, s: 7 + r() * 4 });
   items.sort((a, b) => a.y - b.y);
-  items.forEach((b, k) => crateBox(ctx, P, b.x, b.y, b.s, b.z, k % 2 ? tone(WOOD.plank, -0.08) : WOOD.plank, seed + k));
+  items.forEach((b, k) => crateBox(ctx, P, b.x, b.y, b.s, k % 2 ? tone(M.wood, -0.1) : M.wood));
 }
 
+/** Ammo boxes: olive, two dark straps and a yellow stencil. */
 function ammoBox(ctx, P, seed) {
-  const r = rng(seed);
-  castShadows(ctx, P, [{ x: 3, y: 7, w: 18, d: 11, z: 6 }]);
-  // Design canvas "Munitiekist": olive boxes, dark straps, a yellow stencil.
-  const V = box(ctx, P, 3, 7, 18, 11, 6, K('#4e5a30'), K('#5d6b3a'));
-  for (const u of [4, 13]) patch(ctx, P.c('#3e4826'), V, 'front', u, 1, u + 2, 5);
-  for (const u of [4, 13]) patch(ctx, P.c('#3e4826'), V, 'roof', u, 0, u + 2, 11);
-  patch(ctx, P.c('#d9b23a'), V, 'roof', 7 + r() * 1.5, 4, 11 + r() * 1.5, 7);
+  const y = 6 + (seed % 3);
+  slab(ctx, P, M.olive, 3, y, 18, 11);
+  flat(ctx, P, tone(M.olive, -0.25), 6, y, 2, 11);
+  flat(ctx, P, tone(M.olive, -0.25), 15, y, 2, 11);
+  flat(ctx, P, M.yellow, 10, y + 4, 4, 3);
 }
 
+/** Ice floes: a white slab with a pale blue rim on each occupied cell. */
 function iceFloe(ctx, P, a, seed) {
   const r = rng(seed);
   for (const [dx, dy] of occupied(a)) {
-    const [cx, cy] = cellCentre(dx, dy);
-    const pts = [];
-    for (let k = 0; k < 8; k++) {
-      const ang = (k / 8) * Math.PI * 2;
-      const rr = 9 + r() * 3;
-      pts.push(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr * 0.9);
-    }
-    // Design canvas "IJsschots": a dark waterline, a blue-white rim, a white top.
-    poly(ctx, P.c('#466e8c'), pts.map((v, i) => v + (i % 2 ? 1.5 : 1)));
-    poly(ctx, P.c('#b4d6ec'), pts);
-    poly(ctx, P.c('#f4f8ff'), pts.map((v, i) => (i % 2 ? cy + (v - cy) * 0.75 - 1 : cx + (v - cx) * 0.75 - 1)));
+    const [x, y] = [dx * 24 + 1 + r() * 2, dy * 24 + 1 + r() * 2];
+    slab(ctx, P, M.ice, x, y, 20, 19, 6);
+    flat(ctx, P, M.ice2, x + 1.5, y + 1.5, 15, 13, 5);
   }
 }
 
+/** Rocks: a boulder with its lit top on each occupied cell, in the biome's rock tones. */
 function rocks(ctx, P, a, seed) {
   const r = rng(seed);
-  const cells = occupied(a);
-  castShadows(ctx, P, cells.map(([dx, dy]) => ({ cx: dx * 24 + 12, cy: dy * 24 + 13, r: 9, z: 6 })));
-  // Design canvas "Rotsen": grey boulders in three flat tones, a lit top
-  // facet, the body and a dark lower-right side.
-  for (const [dx, dy] of cells) {
-    const [cx, cy] = cellCentre(dx, dy);
-    const stones = [];
-    for (let k = 0; k < 3; k++) stones.push([cx - 5 + r() * 10, cy - 3 + r() * 7, 4 + r() * 4, r()]);
-    stones.sort((s, t) => s[1] - t[1]);
-    for (const [x, y, rr, j] of stones) {
-      const pts = [];
-      for (let k = 0; k < 7; k++) {
-        const ang = (k / 7) * Math.PI * 2 + j;
-        const f = 0.82 + ((k * 37 + Math.floor(j * 97)) % 7) * 0.03;
-        pts.push(x + Math.cos(ang) * rr * f, y + Math.sin(ang) * rr * f * 0.8);
-      }
-      poly(ctx, P.c('#484034'), pts.map((v, i) => v + (i % 2 ? 1 : 0.6)));
-      poly(ctx, P.c('#76705e'), pts);
-      poly(ctx, P.c('#968c78'), pts.map((v, i) => (i % 2 ? y + (v - y) * 0.55 - rr * 0.25 : x + (v - x) * 0.6 - rr * 0.18)));
-    }
+  const g = ground(P);
+  for (const [dx, dy] of occupied(a)) {
+    const [x, y] = [dx * 24 + 2 + r() * 3, dy * 24 + 3 + r() * 3];
+    slab(ctx, P, g.rockDark, x, y, 17, 14, 3);
+    flat(ctx, P, g.rockLight, x, y, 17, 7, 3);
   }
 }
 
+/** A utility pole seen from above: the pole and its crossbar (no wires). */
 function utilityPole(ctx, P, seed) {
-  const [bx, by] = [11, 20];
-  const top = at(bx, by, 20);
-  stroke(ctx, P.c('rgba(0,0,0,0.3)'), 1.4, bx, by, bx + 11, by + 4);
-  stroke(ctx, P.c('#4a3420'), 1.8, bx, by, top[0], top[1]);
-  stroke(ctx, P.c('#7a5a38'), 0.6, bx - 0.5, by, top[0] - 0.5, top[1]);
-  stroke(ctx, P.c('#4a3420'), 1.2, top[0] - 7, top[1] + 2, top[0] + 7, top[1] + 2);
-  for (const dx of [-6, 0, 6]) disc(ctx, P.c('#cfd4d8'), top[0] + dx, top[1] + 1.4, 0.7);
-  if (seed % 2) {
-    polyline(ctx, P.c('#2b2b28'), 0.4, [0, top[1] + 5, top[0] - 6, top[1] + 1.6, 24, top[1] + 4]);
-  } else {
-    polyline(ctx, P.c('#2b2b28'), 0.4, [top[0] - 6, top[1] + 1.6, top[0] - 4, 24]);
-  }
+  const x = 10 + (seed % 2) * 2;
+  slab(ctx, P, M.wood, x, 3, 2.5, 18);
+  slab(ctx, P, tone(M.wood, -0.2), x - 7, 6, 16.5, 2.2);
 }
 
+/** Tank traps: steel hedgehogs, two crossed beams each. */
 function tankTrap(ctx, P, seed) {
   const r = rng(seed);
   for (let k = 0; k < (seed % 2 ? 1 : 2); k++) {
-    const [cx, cy] = [8 + k * 8 + r() * 3, 12 + r() * 5];
-    oval(ctx, P.c('rgba(0,0,0,0.3)'), cx + 3, cy + 3, 6, 2.5);
-    for (const [dx, dy] of [[-5, 4], [5, -4], [-4, -4], [4, 4], [0, 6], [0, -6]]) {
-      stroke(ctx, P.c('#4a4c50'), 1.6, cx - dx * 0.5, cy - dy * 0.5 + 2, cx + dx * 0.5, cy + dy * 0.5 - 2);
-      stroke(ctx, P.c('#8a8e93'), 0.5, cx - dx * 0.5 - 0.4, cy - dy * 0.5 + 1.6, cx + dx * 0.5 - 0.4, cy + dy * 0.5 - 2.4);
-    }
+    const [cx, cy] = [seed % 2 ? 12 : 7 + k * 10, 9 + r() * 6];
+    bar(ctx, P.c(SHADOW), cx - 5 + SHADOW_OFFSET, cy - 5 + SHADOW_OFFSET, cx + 5 + SHADOW_OFFSET, cy + 5 + SHADOW_OFFSET, 2.6);
+    bar(ctx, P.c(M.dark), cx - 5, cy - 5, cx + 5, cy + 5, 2.6);
+    bar(ctx, P.c(M.steel), cx + 5, cy - 5, cx - 5, cy + 5, 2.6);
   }
 }
 
+/**
+ * Mine colours (the shared palette's ore, oreDark and gems, materials.ice2
+ * for the gems' glint): the ore's base and lit tones; the gems' blue and
+ * magenta crystals with their pale glint.
+ */
+export const MINE_ORE = Object.freeze({ base: SHARED_PALETTE.terrain.temperate.oreDark, lit: SHARED_PALETTE.terrain.temperate.ore });
+export const MINE_GEMS = Object.freeze({ blue: SHARED_PALETTE.terrain.temperate.gems[0], magenta: SHARED_PALETTE.terrain.temperate.gems[1], glint: M.ice2 });
+/** The pit of a mine: its dark shaft and the lit inner wall facing the light. */
+const PIT = { deep: '#14110d', wall: '#3a3026' };
+
+/**
+ * An ore or gem mine: a crater of the biome's rock round a dark shaft (its
+ * lit inner wall on the far side), with two blocks of ore or two crystals,
+ * one in the shaft and one spilled over the rim at the lower left, where the
+ * fields around it start.
+ */
 function oreMine(ctx, P, gems) {
-  // Design canvas "Ertsmijn" and "Edelsteenmijn": a dark mound studded with
-  // gold nuggets, or with blue and magenta crystals.
-  castShadows(ctx, P, [{ cx: 12, cy: 13, r: 8, z: 6 }]);
-  dome(ctx, P, 12, 13, 8.5, K('#44433e'));
-  const r = rng(gems ? 17 : 5);
-  for (let k = 0; k < 9; k++) {
-    const [x, y] = at(5 + r() * 14, 7 + r() * 10, 2 + r() * 5);
-    if (gems) {
-      poly(ctx, P.c(k % 2 ? '#c84a9a' : '#4a7ac4'), [x, y - 2.6, x + 1.4, y, x, y + 1.4, x - 1.4, y]);
-      disc(ctx, P.c('#9fd8ff'), x - 0.4, y - 0.8, 0.45);
-    } else {
-      const rr = 1.2 + r() * 0.6;
-      disc(ctx, P.c(C.ore), x, y, rr);
-      disc(ctx, P.c('#e6c25a'), x - rr * 0.3, y - rr * 0.3, rr * 0.5);
-    }
+  const g = ground(P);
+  slab(ctx, P, g.rock, 1, 1, 22, 21, 7);
+  flat(ctx, P, g.rockLight, 3, 2, 18, 5, 2.5);
+  flat(ctx, P, PIT.wall, 5, 5, 15, 12, 5);
+  flat(ctx, P, PIT.deep, 6, 5.5, 11, 9, 4);
+  const block = (x, y, w, h, lit, base) => {
+    slab(ctx, P, base, x, y, w, h);
+    flat(ctx, P, lit, x, y, w, h * 0.6);
+  };
+  if (gems) {
+    block(9, 6, 5, 6, MINE_GEMS.blue, tone(MINE_GEMS.blue, -0.3));
+    block(2, 14, 6, 7, MINE_GEMS.magenta, tone(MINE_GEMS.magenta, -0.3));
+    flat(ctx, P, MINE_GEMS.glint, 2, 14, 2, 2);
+  } else {
+    block(9, 7, 6, 5, MINE_ORE.lit, MINE_ORE.base);
+    block(2, 15, 7, 6, MINE_ORE.lit, MINE_ORE.base);
   }
 }
 
+/** The capture-the-flag flag: a footing, the pole and the owner's flag. */
 function flag(ctx, P) {
-  oval(ctx, P.c('rgba(0,0,0,0.3)'), 12, 20, 5, 2);
-  rect(ctx, P.c(C.concreteDark), 7, 17, 6, 4);
-  const top = at(10, 19, 18);
-  stroke(ctx, P.c('#cfd4d8'), 1, 10, 19, top[0], top[1]);
-  poly(ctx, P.team(0.9), [top[0], top[1], top[0] + 7.5, top[1] + 2.5, top[0], top[1] + 5.5]);
-  poly(ctx, P.team(0.6), [top[0], top[1] + 3, top[0] + 7.5, top[1] + 2.5, top[0], top[1] + 5.5]);
+  slab(ctx, P, M.concrete, 7, 16, 8, 5);
+  flat(ctx, P, M.steel2, 9.6, 3, 1.4, 15);
+  rect(ctx, P.team(0.9), 11, 3, 8, 5.5);
 }
 
 /** Map-only walls (tile sideways like buildings.js FENC): chain-link, barbed wire, wood. */
 function chainLink(ctx, P) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, 24, 24);
-  ctx.clip();
-  quad(ctx, P.c('rgba(0,0,0,0.24)'), [0, 13, 24, 13, 29, 17, 5, 17]);
-  const [lx, ly] = at(0, 0, 9);
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(0, 13);
-  ctx.lineTo(24, 13);
-  ctx.lineTo(24 + lx, 13 + ly);
-  ctx.lineTo(lx, 13 + ly);
-  ctx.closePath();
-  ctx.clip();
-  ctx.strokeStyle = P.c('#8a8e93');
-  ctx.lineWidth = 0.45;
-  for (let d = -30; d < 60; d += 2.4) {
-    ctx.beginPath();
-    ctx.moveTo(d, 0);
-    ctx.lineTo(d + 30, 30);
-    ctx.moveTo(d + 30, 0);
-    ctx.lineTo(d, 30);
-    ctx.stroke();
-  }
-  ctx.restore();
-  for (const x of [2, 22]) {
-    const p = at(x, 13, 10);
-    stroke(ctx, P.c('#55585c'), 1.4, x, 13, p[0], p[1]);
-  }
-  stroke(ctx, P.c('#cfd4d8'), 0.7, lx, 13 + ly, 24 + lx, 13 + ly);
-  ctx.restore();
+  flat(ctx, P, SHADOW, 0, 10 + SHADOW_OFFSET, 24, 4);
+  flat(ctx, P, 'rgba(170,183,195,0.55)', 0, 9, 24, 5);
+  flat(ctx, P, M.steel2, 0, 8, 24, 1.5);
+  slab(ctx, P, M.steel, 2, 6, 2.5, 10);
+  slab(ctx, P, M.steel, 19.5, 6, 2.5, 10);
 }
 
 function barbedWire(ctx, P) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, 24, 24);
-  ctx.clip();
-  oval(ctx, P.c('rgba(0,0,0,0.22)'), 14, 16, 14, 3);
-  for (let x = -4; x < 28; x += 4) ring(ctx, P.c('#55585c'), x, 11, 4, 0.6);
-  for (let x = -2; x < 28; x += 4) ring(ctx, P.c('#8a8e93'), x, 10.4, 3.6, 0.4);
-  for (const x of [4, 20]) {
-    const p = at(x, 15, 9);
-    stroke(ctx, P.c('#6a4a34'), 1.2, x, 15, p[0], p[1]);
-  }
-  ctx.restore();
+  slab(ctx, P, M.dark, 0, 8, 24, 7, 3.5);
+  flat(ctx, P, M.steel2, 0, 10.5, 24, 1.5);
+  slab(ctx, P, M.wood, 4, 6, 2.5, 11);
+  slab(ctx, P, M.wood, 18, 6, 2.5, 11);
 }
 
 function woodFence(ctx, P) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, 24, 24);
-  ctx.clip();
-  quad(ctx, P.c('rgba(0,0,0,0.24)'), [0, 15, 24, 15, 28, 18, 4, 18]);
-  for (const h of [3, 7]) {
-    const a = at(0, 14, h);
-    const b = at(24, 14, h);
-    stroke(ctx, P.c('#6a4a34'), 1.4, a[0], a[1], b[0], b[1]);
-    stroke(ctx, P.c('#8e6c50'), 0.5, a[0], a[1] - 0.6, b[0], b[1] - 0.6);
-  }
-  for (const x of [3, 12, 21]) {
-    const p = at(x, 14, 9);
-    stroke(ctx, P.c('#4e3424'), 1.6, x, 14, p[0], p[1]);
-  }
-  ctx.restore();
+  slab(ctx, P, M.wood, 0, 9, 24, 2);
+  slab(ctx, P, M.wood, 0, 14, 24, 2);
+  for (const x of [3, 11, 19]) slab(ctx, P, tone(M.wood, -0.25), x, 6, 2.5, 13);
 }
 
 // ---- Bridges ---------------------------------------------------------------------------------
@@ -670,12 +502,14 @@ function bridgeTemplate(a, P) {
 }
 
 const letterAt = (rows, x, y) => (rows[y] ?? '')[x] ?? '.';
+const DECK = tone(M.wood, -0.2);
+const RAIL = tone(M.wood, -0.5);
 
 /**
- * A bridge over its template's cells: a plank deck on the bridge cells
- * (railings where the deck ends), stone abutments on the bank cells; with
- * `destroyed` the broken stubs, rubble and a gap. The terrain under the deck
- * (bridge cells) is drawn as river by the terrain art.
+ * A bridge over its template's cells: a flat wooden deck on the bridge
+ * cells (railings where the deck ends), concrete abutments on the bank
+ * cells; with `destroyed` the broken stubs, a little debris and a gap. The
+ * terrain under the deck (bridge cells) is drawn as river by the terrain art.
  */
 function bridgeDraw(a, destroyed) {
   return (ctx, P) => {
@@ -689,39 +523,25 @@ function bridgeDraw(a, destroyed) {
         const c = letterAt(deck, x, y);
         const [px, py] = [x * 24, y * 24];
         if (c === 'k' || c === 'l') {
-          // abutment
-          // Concrete abutments (design canvas "Brug").
-          const V = box(ctx, P, px + 2, py + 4, 20, 18, destroyed ? 3 : 5, K(C.concreteDark), K(C.concrete));
-          if (destroyed) for (let k = 0; k < 4; k++) disc(ctx, P.c(C.seam), px + 6 + k * 4, py + 18 - (k % 2) * 4, 1.6);
-          else mark(ctx, P.c(C.seam), 0.5, V, 'front', 0, 2.5, 20, 2.5);
+          slab(ctx, P, M.concrete, px + 1, py + 2, 21, destroyed ? 12 : 20);
           continue;
         }
         if (c !== 'g') continue;
         if (destroyed) {
           // a stub of deck where the bank holds it, debris in the water elsewhere
           const bank = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => 'kl'.includes(letterAt(deck, x + dx, y + dy)));
-          if (bank) {
-            rect(ctx, P.c('#5e5240'), px + 4, py + 6, 10, 12);
-            polyline(ctx, P.c('#2e281e'), 0.8, [px + 14, py + 6, px + 16, py + 10, px + 13, py + 13, px + 16, py + 18]);
-          } else {
-            for (let k = 0; k < 3; k++) rect(ctx, P.c('rgba(78,68,52,0.85)'), px + 4 + k * 6, py + 9 + (k % 2) * 6, 5, 1.6);
-          }
+          if (bank) slab(ctx, P, DECK, px + 4, py + 6, 10, 12);
+          else slab(ctx, P, M.char, px + 6, py + 9, 10, 4);
           continue;
         }
-        rect(ctx, P.c('rgba(0,0,0,0.3)'), px + 2, py + 3, 24, 24);
-        // Planks of weathered wood with dark seams (design canvas "Brug").
-        rect(ctx, P.c('#4e4434'), px, py, 24, 24);
+        flat(ctx, P, SHADOW, px + 2, py + 2, 22, 22);
+        flat(ctx, P, DECK, px, py, 24, 24);
         const vertical = isDeck(x, y - 1) || isDeck(x, y + 1);
-        for (let k = 0; k < 24; k += 3) {
-          const plank = P.c(k % 6 ? '#7a6a52' : '#706048');
-          if (vertical) rect(ctx, plank, px + 1, py + k, 22, 2.4);
-          else rect(ctx, plank, px + k, py + 1, 2.4, 22);
-        }
         // railings where the deck does not continue
-        if (!isDeck(x - 1, y) && vertical) rect(ctx, P.c('#4e4434'), px, py, 2, 24);
-        if (!isDeck(x + 1, y) && vertical) rect(ctx, P.c('#4e4434'), px + 22, py, 2, 24);
-        if (!isDeck(x, y - 1) && !vertical) rect(ctx, P.c('#4e4434'), px, py, 24, 2);
-        if (!isDeck(x, y + 1) && !vertical) rect(ctx, P.c('#4e4434'), px, py + 22, 24, 2);
+        if (!isDeck(x - 1, y) && vertical) flat(ctx, P, RAIL, px, py, 2, 24);
+        if (!isDeck(x + 1, y) && vertical) flat(ctx, P, RAIL, px + 22, py, 2, 24);
+        if (!isDeck(x, y - 1) && !vertical) flat(ctx, P, RAIL, px, py, 24, 2);
+        if (!isDeck(x, y + 1) && !vertical) flat(ctx, P, RAIL, px, py + 22, 24, 2);
       }
     }
   };
@@ -798,56 +618,28 @@ const STRUCTURES = {
   OILB: (a) => pixelDraw(a),
   V01: () => (ctx, P) => church(ctx, P, false),
   V25: () => (ctx, P) => church(ctx, P, true),
-  V12: () => (ctx, P) => haystack(ctx, P, 12),
-  V13: () => (ctx, P) => haystack(ctx, P, 13),
-  V14: () => (ctx, P) => field(ctx, P, 24, 24, 14, 'veg'),
-  V15: () => (ctx, P) => field(ctx, P, 24, 24, 15, 'wheat'),
-  V16: () => (ctx, P) => field(ctx, P, 24, 24, 16, 'veg'),
-  V17: () => (ctx, P) => field(ctx, P, 24, 24, 17, 'wheat'),
-  V18: () => (ctx, P) => field(ctx, P, 24, 24, 18, 'veg'),
-  RICE: () => (ctx, P) => field(ctx, P, 24, 24, 19, 'rice'),
+  V12: () => haystack,
+  V13: () => haystack,
+  V14: () => (ctx, P) => field(ctx, P, 'veg'),
+  V15: () => (ctx, P) => field(ctx, P, 'wheat'),
+  V16: () => (ctx, P) => field(ctx, P, 'veg'),
+  V17: () => (ctx, P) => field(ctx, P, 'wheat'),
+  V18: () => (ctx, P) => field(ctx, P, 'veg'),
+  RICE: () => (ctx, P) => field(ctx, P, 'rice'),
   V19: () => (ctx, P) => pumpjack(ctx, P, false),
   'V19.HUSK': () => (ctx, P) => pumpjack(ctx, P, true),
-  LHUS: () => (ctx, P) => {
-    castShadows(ctx, P, [{ cx: 11, cy: 17, r: 4, z: 14 }]);
-    cylinder(ctx, P, 11, 17, 4, 13, K('#e8e4dc'), K('#c8281e'), { bands: [[4, 5.5, K('#c8281e')], [8.5, 10, K('#c8281e')]] });
-    const [lx, ly] = at(11, 17, 14);
-    disc(ctx, P.c('rgba(255,230,140,0.5)'), lx, ly, 4);
-    disc(ctx, P.c('#fff2b0'), lx, ly, 2);
-  },
-  WINDMILL: () => (ctx, P) => {
-    castShadows(ctx, P, [{ cx: 11, cy: 16, r: 6, z: 14 }]);
-    prism(ctx, P, 11, 16, 6, 8, 12, K('#b8a888'), K('#8a3a2a'));
-    const [hx, hy] = at(11, 21, 10);
-    for (let k = 0; k < 4; k++) {
-      const a = Math.PI / 4 + (k * Math.PI) / 2;
-      const tip = [hx + Math.cos(a) * 8, hy + Math.sin(a) * 8];
-      stroke(ctx, P.c('#4a3420'), 1.2, hx, hy, tip[0], tip[1]);
-      quad(ctx, P.c('rgba(230,224,206,0.9)'), [hx + Math.cos(a) * 3, hy + Math.sin(a) * 3, tip[0], tip[1], tip[0] + Math.cos(a + 1.6) * 3, tip[1] + Math.sin(a + 1.6) * 3, hx + Math.cos(a + 0.5) * 3, hy + Math.sin(a + 0.5) * 3]);
-    }
-    disc(ctx, P.c('#3a2c20'), hx, hy, 1.4);
-  },
-  RUSHOUSE: () => (ctx, P) => cottage(ctx, P, 2, 15, 19, 29, 9, 31, { wall: '#7a5a3a', roof: '#4d4438', axis: 'y' }),
-  SNOWHUT: () => (ctx, P) => cottage(ctx, P, 2, 13, 19.5, 31, 8, 37, { wall: '#8a6a4a', roof: '#e8eef4', axis: 'y' }),
-  ASIANHUT: () => (ctx, P) => cottage(ctx, P, 2, 6, 18, 15, 6, 41, { wall: '#b9a27a', roof: '#c9a83e', chimney: false }),
-  RAILMINE: () => (ctx, P) => {
-    rect(ctx, P.c('#5a4a3a'), 0, 4, 48, 18);
-    for (let x = 2; x < 48; x += 4) rect(ctx, P.c('#4a3420'), x, 12, 2, 8);
-    for (const y of [13, 18]) rect(ctx, P.c('#8a8e93'), 0, y, 48, 1);
-    castShadows(ctx, P, [{ x: 30, y: 8, w: 16, d: 10, z: 8 }]);
-    const V = box(ctx, P, 30, 8, 16, 10, 8, K('#6b5a44'), K('#7a6850'));
-    patch(ctx, P.c('#1a1410'), V, 'front', 4, 0, 12, 6);
-  },
+  LHUS: (a) => lighthouse(a),
+  WINDMILL: (a) => windmill(a),
+  RUSHOUSE: hut({ wall: M.wood, roof: M.dark }, 31),
+  SNOWHUT: hut({ wall: M.wood, roof: M.steam }, 37),
+  ASIANHUT: hut({ wall: M.sandy, roof: M.orange, chimney: false }, 41),
+  RAILMINE: () => railMine,
   CTFLAG: () => flag,
-  BARL: () => (ctx, P) => {
-    castShadows(ctx, P, [{ cx: 12, cy: 14, r: 3.6, z: 7 }]);
-    oilBarrel(ctx, P, 12, 14);
-  },
+  BARL: () => (ctx, P) => drum(ctx, P, 6, 6, 11),
   BRL3: () => (ctx, P) => {
-    castShadows(ctx, P, [{ cx: 8, cy: 11, r: 3.6, z: 7 }, { cx: 16, cy: 11, r: 3.6, z: 7 }, { cx: 12, cy: 17, r: 3.6, z: 7 }]);
-    oilBarrel(ctx, P, 8, 11);
-    oilBarrel(ctx, P, 16, 11, '#7a2214');
-    oilBarrel(ctx, P, 12, 17);
+    drum(ctx, P, 2, 3, 9);
+    drum(ctx, P, 12, 3, 9, M.brick);
+    drum(ctx, P, 7, 12, 9);
   },
   AMMOBOX1: () => (ctx, P) => ammoBox(ctx, P, 1),
   AMMOBOX2: () => (ctx, P) => ammoBox(ctx, P, 2),
@@ -865,7 +657,7 @@ const STRUCTURES = {
   'BRIDGEHUT.SMALL': () => () => {},
 };
 
-/** Houses by id: [kind, seed]; temperate cottages and desert adobes in their footprint box. */
+/** Houses by id: temperate cottages and desert adobes filling their footprint box. */
 function houseDraw(id, a) {
   const w = (a.width ?? 1) * 24;
   const h = (a.height ?? 1) * 24;
@@ -874,20 +666,20 @@ function houseDraw(id, a) {
   const cells = occupied(a);
   return (ctx, P) => {
     if (cells.length && cells.length < (a.width ?? 1) * (a.height ?? 1) && id === 'V37') {
-      // An irregular footprint (V37): a building on each pair of occupied cells.
+      // An irregular footprint (V37): a walled yard over the whole frame, as the original fills it, and one
+      // building over the occupied cells.
+      flat(ctx, P, tone(M.sandy, -0.12), 0.5, 0.5, w - 1, h - 1);
+      flat(ctx, P, M.dirt, 2.5, 2.5, w - 5, h - 5);
       const xs = cells.map((c) => c[0]);
       const ys = cells.map((c) => c[1]);
       const x0 = Math.min(...xs);
       const y0 = Math.min(...ys);
-      adobe(ctx, P, x0 * 24 + 2, y0 * 24 + 8, (Math.max(...xs) - x0 + 1) * 24 - 4, (Math.max(...ys) - y0 + 1) * 24 - 12, 9, seed, { tower: true });
+      adobe(ctx, P, x0 * 24 + 1, y0 * 24 + 1, (Math.max(...xs) - x0 + 1) * 24 - 3, (Math.max(...ys) - y0 + 1) * 24 - 3, seed, { tower: true });
       return;
     }
     const big = w >= 48 && h >= 48;
-    if (desert) {
-      adobe(ctx, P, 2, big ? 10 : 7, w - 5, h - (big ? 14 : 10), big ? 11 : 8, seed, { dome: seed % 3 === 0, tower: big && seed % 2 === 0 });
-    } else {
-      cottage(ctx, P, 2, big ? 10 : 7, w - 7, h - (big ? 16 : 10), big ? 10 : 7, seed);
-    }
+    if (desert) adobe(ctx, P, 1, 1, w - 3, h - 3, seed, { dome: big && seed % 3 === 0, tower: big && seed % 2 === 0 });
+    else cottage(ctx, P, 1, 1, w - 3, h - 3, seed);
   };
 }
 

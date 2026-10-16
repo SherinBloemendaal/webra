@@ -46,15 +46,24 @@ const NO_SMUDGE: u32 = 255u;
 const WATER_ALPHA: u32 = 248u;
 const WATER_COLORS: u32 = 7u;
 const WATER_STEPS_PER_SECOND: f32 = 6.25;
-// WebRA's ore and gems (design canvas "Materialen en kleuren": Erts, and
-// "Wereldobjecten": Edelsteenmijn).
-const ORE_STEP: f32 = 4.0;
-const ORE_LIGHT: vec3f = vec3f(0.902, 0.761, 0.353); // #e6c25a
-const ORE_BASE: vec3f = vec3f(0.788, 0.604, 0.180); // #c99a2e
+// WebRA's ore and gems, as two blocks per cell (design board "Retexture 2D
+// en 3D", 0.21.0), in the colours of the shared 2D/3D palette
+// (js/art/shared-palette.js terrain: ore, oreDark, gems; materials.ice2 for
+// the glint). Each block has a lit top and a darker front face along its
+// lower edge, and one hard shadow to the lower right.
+const ORE_LIGHT: vec3f = vec3f(1.0, 0.827, 0.302); // #ffd34d
+const ORE_BASE: vec3f = vec3f(0.851, 0.588, 0.165); // #d9962a
 const ORE_GROUND: vec3f = vec3f(0.478, 0.400, 0.188); // #7a6630
-const GEM_BLUE: vec3f = vec3f(0.290, 0.478, 0.769); // #4a7ac4
-const GEM_MAGENTA: vec3f = vec3f(0.784, 0.290, 0.604); // #c84a9a
-const GEM_GLINT: vec3f = vec3f(0.624, 0.847, 1.0); // #9fd8ff
+const GEM_BLUE: vec3f = vec3f(0.29, 0.549, 0.941); // #4a8cf0
+const GEM_MAGENTA: vec3f = vec3f(0.91, 0.29, 0.69); // #e84ab0
+const GEM_GLINT: vec3f = vec3f(0.878, 0.973, 1.0); // #e0f8ff
+const GEM_GROUND: vec3f = vec3f(0.22, 0.2, 0.16);
+// The two blocks of a resource cell: centre x, y and width, height in cells.
+const RES_BLOCK_A: vec4f = vec4f(0.37, 0.35, 0.34, 0.3);
+const RES_BLOCK_B: vec4f = vec4f(0.69, 0.68, 0.28, 0.26);
+// The shadow: offset in cells (shared palette shadow.offset) and what it leaves of the ground (1 - shadow.alpha).
+const RES_SHADOW: f32 = 0.08;
+const RES_SHADE: f32 = 0.75;
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> FullscreenOut {
@@ -222,73 +231,82 @@ fn soft_ground(col: vec3f, t: u32, c: vec2i, local: vec2f, w: vec2f) -> vec3f {
     return out;
 }
 
-/// WebRA's ore (design canvas "Erts"): nuggets on a lattice of ORE_STEP world
-/// pixels, a dark ochre ground between them. A lattice cell holds a nugget
-/// with the same chance the old specks had (0.15 + 0.55 per density), its
-/// radius grows with the density; each is lit at the top left (ORE_LIGHT) and
-/// drops a shadow to the lower right.
-fn ore_color(ground: vec3f, w: vec2f, ore: f32) -> vec3f {
-    let lc = floor(w / ORE_STEP);
-    if (hash2(lc + vec2f(7.0, 3.0)) >= 0.15 + ore * 0.55) {
-        return mix(ground, ORE_GROUND, ore * 0.5);
-    }
-    let jitter = vec2f(hash2(lc + vec2f(1.7, 9.2)), hash2(lc + vec2f(5.1, 2.6))) - 0.5;
-    let centre = (lc + 0.5 + jitter * 0.4) * ORE_STEP;
-    let r = 1.3 + 0.5 * ore;
-    let d = w - centre;
-    if (length(d) < r) {
-        if (length(d + vec2f(r * 0.35)) < r * 0.5) {
-            return ORE_LIGHT;
-        }
-        return ORE_BASE;
-    }
-    let base = mix(ground, ORE_GROUND, ore * 0.5);
-    if (length(d - vec2f(0.6)) < r) {
-        return base * 0.6;
-    }
-    return base;
+/// The size of a resource cell's blocks for a density (0..1): bigger with more.
+fn res_scale(density: f32) -> f32 {
+    return 0.55 + 0.45 * density;
 }
 
+/// Whether cell-local point `p` lies in block `b` (centre, size) scaled by
+/// `s`; `flip` mirrors the block's place left to right (every other cell).
+fn in_res_block(p: vec2f, b: vec4f, s: f32, flip: bool) -> bool {
+    var c = b.xy;
+    if (flip) {
+        c.x = 1.0 - c.x;
+    }
+    let d = abs(p - c);
+    return d.x < b.z * s * 0.5 && d.y < b.w * s * 0.5;
+}
+
+/// The front face of block `b` scaled by `s`: its lower 30 %.
+fn res_face(p: vec2f, b: vec4f, s: f32) -> bool {
+    return p.y > b.y + b.w * s * 0.2;
+}
+
+/// Whether `p` lies in the lit top-left corner of block `b` (the gems' glint).
+fn res_glint(p: vec2f, b: vec4f, s: f32, flip: bool) -> bool {
+    var c = b.xy;
+    if (flip) {
+        c.x = 1.0 - c.x;
+    }
+    let corner = p - (c - vec2f(b.z, b.w) * s * 0.5);
+    return corner.x < b.z * s * 0.3 && corner.y < b.w * s * 0.3;
+}
+
+/// WebRA's ore: two gold blocks per cell on a dark ochre ground, mirrored in
+/// every other cell, bigger with more ore.
+fn ore_color(ground: vec3f, c: vec2i, local: vec2f, ore: f32) -> vec3f {
+    let base = mix(ground, ORE_GROUND, ore * 0.5);
+    let s = res_scale(ore);
+    let flip = ((c.x + c.y) & 1) == 1;
+    let sh = local - vec2f(RES_SHADOW);
+    var out = base;
+    if (in_res_block(sh, RES_BLOCK_A, s, flip) || in_res_block(sh, RES_BLOCK_B, s, flip)) {
+        out = base * RES_SHADE;
+    }
+    if (in_res_block(local, RES_BLOCK_A, s, flip)) {
+        out = select(ORE_LIGHT, ORE_BASE, res_face(local, RES_BLOCK_A, s));
+    } else if (in_res_block(local, RES_BLOCK_B, s, flip)) {
+        out = select(ORE_LIGHT, ORE_BASE, res_face(local, RES_BLOCK_B, s));
+    }
+    return out;
+}
+
+/// WebRA's gems: two crystal blocks per cell, one blue and one magenta, over
+/// bare darker ground, a pale glint in each block's lit corner.
 fn gem_color(ground: vec3f, c: vec2i, local: vec2f, gems: f32) -> vec3f {
-    let cf = vec2f(c);
-    let count = u32(gems * 3.0 + 0.5) + 1u; // 2 to 4 crystals
-    var out = mix(ground, vec3f(0.22, 0.20, 0.16), 0.35); // bare, darker ground
-    for (var k = 0u; k < 4u; k++) {
-        if (k >= count) {
-            break;
+    let base = mix(ground, GEM_GROUND, 0.35);
+    let s = res_scale(gems);
+    let flip = ((c.x + c.y) & 1) == 1;
+    let sh = local - vec2f(RES_SHADOW);
+    var out = base;
+    if (in_res_block(sh, RES_BLOCK_A, s, flip) || in_res_block(sh, RES_BLOCK_B, s, flip)) {
+        out = base * RES_SHADE;
+    }
+    var hue_a = GEM_BLUE;
+    var hue_b = GEM_MAGENTA;
+    if (flip) {
+        hue_a = GEM_MAGENTA;
+        hue_b = GEM_BLUE;
+    }
+    if (in_res_block(local, RES_BLOCK_A, s, flip)) {
+        out = select(hue_a, hue_a * 0.7, res_face(local, RES_BLOCK_A, s));
+        if (res_glint(local, RES_BLOCK_A, s, flip)) {
+            out = GEM_GLINT;
         }
-        let kf = f32(k);
-        let h1 = hash2(cf + vec2f(kf * 3.1, 1.7));
-        let h2 = hash2(cf + vec2f(5.3, kf * 2.3));
-        let h3 = hash2(cf + vec2f(kf * 7.7, 9.1));
-        let centre = vec2f(0.2 + 0.6 * h1, 0.25 + 0.55 * h2);
-        let size = vec2f(0.11 + 0.05 * h3, 0.17 + 0.07 * h3);
-        let d = (local - centre) / size;
-        if (abs(d.x) + abs(d.y) < 1.0) {
-            var hue = GEM_BLUE;
-            if (h3 >= 0.5) {
-                hue = GEM_MAGENTA;
-            }
-            // Facets: lit from the upper left, a bright vertical ridge.
-            var shade = 0.75;
-            if (d.x < 0.0 && d.y < 0.0) {
-                shade = 1.25;
-            } else if (d.x >= 0.0 && d.y >= 0.0) {
-                shade = 0.5;
-            } else if (d.x < 0.0) {
-                shade = 0.9;
-            }
-            var crystal = hue * shade;
-            if (abs(d.x) < 0.08) {
-                crystal = mix(crystal, GEM_GLINT, 0.5);
-            }
-            let twinkle = sin(g.time * (1.3 + h1) + h2 * 40.0);
-            if (twinkle > 0.96 && length(d + vec2f(0.3, 0.4)) < 0.35) {
-                crystal = vec3f(1.0);
-            }
-            out = crystal;
-        } else if (abs(d.x - 0.35) + abs(d.y - 0.35) < 1.0) {
-            out = out * 0.7; // shadow to the lower right
+    } else if (in_res_block(local, RES_BLOCK_B, s, flip)) {
+        out = select(hue_b, hue_b * 0.7, res_face(local, RES_BLOCK_B, s));
+        if (res_glint(local, RES_BLOCK_B, s, flip)) {
+            out = GEM_GLINT;
         }
     }
     return out;
@@ -327,15 +345,13 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
         col = mix(col, d.rgb, d.a);
     }
     if (wet) {
-        // Deeper water further from the shore; waves and glints drift with time.
+        // Deeper water further from the shore; a gentle wave drifts over it with time (flat, no glints:
+        // the minimal look).
         if (t == 3u || t == 9u) {
             col = col * (1.0 - water_depth(cf) * 0.35);
         }
         let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
-        col = col * (0.94 + 0.08 * wave);
-        if (wave > 0.82 && hash2(floor(w * 0.5)) > 0.6) {
-            col = mix(col, vec3f(0.85, 0.92, 0.95), 0.35);
-        }
+        col = col * (0.97 + 0.04 * wave);
     }
     // Rock casts its shadow down and to the right.
     var s = 1.0;
@@ -349,10 +365,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
         s = s * (1.0 - 0.35 * max(0.0, 1.0 - length(local) / 0.4));
     }
     col = col * s;
-    // Ore: round golden nuggets, more and bigger with more ore.
+    // Ore and gems: two blocks per cell, bigger with more.
     let res = textureLoad(terrain_tex, c, 0);
     if (res.g > 0.0) {
-        col = ore_color(col, w, res.g);
+        col = ore_color(col, c, local, res.g);
     }
     if (res.b > 0.0) {
         col = gem_color(col, c, local, res.b);

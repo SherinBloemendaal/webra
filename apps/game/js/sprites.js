@@ -15,7 +15,7 @@ import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { DECORATION_SPECIALS } from './art/decorations.js';
-import { CIVILIAN_DRAW, worldDraw, worldSecond } from './art/world.js';
+import { CIVILIAN_DRAW, worldBox, worldDraw, worldSecond } from './art/world.js';
 import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry.js';
 import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
 import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
@@ -205,8 +205,9 @@ export function actorSprites(a) {
     const anim = buildingAnim(key);
     const turret = BUILDING_TURRET[key] ?? null;
     const second = turret ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null);
-    // The footprint; WebRA's pixel art that reaches past it (a mast) draws into a box grown around it.
-    const [w, h] = pixelBox({ ...a, id: key }) ?? [a.width * 24, a.height * 24];
+    // The footprint; WebRA's pixel art that reaches past it (a mast) and world structures whose original
+    // sprite stands taller (the lighthouse, the windmill) draw into a box grown around it.
+    const [w, h] = pixelBox({ ...a, id: key }) ?? (BUILDING_DRAW[key] ? null : worldBox(a)) ?? [a.width * 24, a.height * 24];
     return { body: [w, h, draw], second, turret: !!turret };
   }
   if (a.kind === 'crate') {

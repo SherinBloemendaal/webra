@@ -227,15 +227,10 @@ export class TerrainRaster {
         b *= k;
       }
       const wave = Math.sin(wx * 0.35 + wy * 0.22) * Math.sin(wy * 0.31);
-      const k = 0.94 + 0.08 * wave;
+      const k = 0.97 + 0.04 * wave;
       r *= k;
       g *= k;
       b *= k;
-      if (wave > 0.82 && hash2(Math.floor(wx * 0.5), Math.floor(wy * 0.5)) > 0.6) {
-        r = mix(r, 0.85, 0.35);
-        g = mix(g, 0.92, 0.35);
-        b = mix(b, 0.95, 0.35);
-      }
     }
     // Rock casts its shadow down and to the right.
     let sh = 1;
@@ -249,7 +244,7 @@ export class TerrainRaster {
     out[1] = g;
     out[2] = b;
     const ore = this.terrain[i + 1] / 255;
-    if (ore > 0) oreColor(out, wx, wy, ore);
+    if (ore > 0) oreColor(out, cx, cy, lx, ly, ore);
     const gems = this.terrain[i + 2] / 255;
     if (gems > 0) gemColor(out, cx, cy, lx, ly, gems);
     const smudge = this.terrain[i + 3];
@@ -346,72 +341,75 @@ export function resourceTile(base, levels, variants, density, cx, cy) {
   return base + variant * levels + level;
 }
 
-// Formula parity with shaders/terrain.wgsl ore_color and gem_color, not bit parity: hash2 is chaotic under f32 versus f64, so nugget placement agrees only statistically.
-const ORE_STEP = 4;
-const ORE_LIGHT = [0.902, 0.761, 0.353];
-const ORE_BASE = [0.788, 0.604, 0.18];
+// Parity with shaders/terrain.wgsl ore_color and gem_color: the same constants and formulas, and the same
+// blocks (cell-local, so placement agrees exactly).
+const ORE_LIGHT = [1, 0.827, 0.302];
+const ORE_BASE = [0.851, 0.588, 0.165];
 const ORE_GROUND = [0.478, 0.4, 0.188];
 const GEM_HUES = [
-  [0.29, 0.478, 0.769],
-  [0.784, 0.29, 0.604],
+  [0.29, 0.549, 0.941],
+  [0.91, 0.29, 0.69],
 ];
-const GEM_GLINT = [0.624, 0.847, 1];
+const GEM_GLINT = [0.878, 0.973, 1];
+const GEM_GROUND = [0.22, 0.2, 0.16];
+const RES_BLOCK_A = [0.37, 0.35, 0.34, 0.3];
+const RES_BLOCK_B = [0.69, 0.68, 0.28, 0.26];
+const RES_SHADOW = 0.08;
+const RES_SHADE = 0.75;
 
-/** shaders/terrain.wgsl ore_color: WebRA's ore nuggets on a dark ochre ground. */
-export function oreColor(out, wx, wy, ore) {
-  const lx = Math.floor(wx / ORE_STEP);
-  const ly = Math.floor(wy / ORE_STEP);
+/** shaders/terrain.wgsl res_scale: the size of a resource cell's blocks for a density (0..1). */
+const resScale = (density) => 0.55 + 0.45 * density;
+
+/** shaders/terrain.wgsl in_res_block: (lx, ly) in block `b` scaled by `s`, mirrored left to right with `flip`. */
+function inResBlock(lx, ly, b, s, flip) {
+  const cx = flip ? 1 - b[0] : b[0];
+  return Math.abs(lx - cx) < b[2] * s * 0.5 && Math.abs(ly - b[1]) < b[3] * s * 0.5;
+}
+
+/** shaders/terrain.wgsl res_face: the lower 30 % of the block, its front face. */
+const resFace = (ly, b, s) => ly > b[1] + b[3] * s * 0.2;
+
+/** shaders/terrain.wgsl res_glint: the lit top-left corner of the block. */
+function resGlint(lx, ly, b, s, flip) {
+  const cx = flip ? 1 - b[0] : b[0];
+  return lx - (cx - b[2] * s * 0.5) < b[2] * s * 0.3 && ly - (b[1] - b[3] * s * 0.5) < b[3] * s * 0.3;
+}
+
+/** The ground under a resource cell's blocks: `base`, darkened where a block casts its shadow. */
+function resGround(base, lx, ly, s, flip) {
+  const shaded = inResBlock(lx - RES_SHADOW, ly - RES_SHADOW, RES_BLOCK_A, s, flip) || inResBlock(lx - RES_SHADOW, ly - RES_SHADOW, RES_BLOCK_B, s, flip);
+  return shaded ? base.map((v) => v * RES_SHADE) : base;
+}
+
+/** shaders/terrain.wgsl ore_color: two gold blocks per cell on a dark ochre ground, mirrored in every other cell. */
+export function oreColor(out, cx, cy, lx, ly, ore) {
   const k = ore * 0.5;
-  const ground = [mix(out[0], ORE_GROUND[0], k), mix(out[1], ORE_GROUND[1], k), mix(out[2], ORE_GROUND[2], k)];
-  let c = ground;
-  if (hash2(lx + 7, ly + 3) < 0.15 + ore * 0.55) {
-    const mx = (lx + 0.5 + (hash2(lx + 1.7, ly + 9.2) - 0.5) * 0.4) * ORE_STEP;
-    const my = (ly + 0.5 + (hash2(lx + 5.1, ly + 2.6) - 0.5) * 0.4) * ORE_STEP;
-    const r = 1.3 + 0.5 * ore;
-    const dx = wx - mx;
-    const dy = wy - my;
-    if (Math.hypot(dx, dy) < r) c = Math.hypot(dx + r * 0.35, dy + r * 0.35) < r * 0.5 ? ORE_LIGHT : ORE_BASE;
-    else if (Math.hypot(dx - 0.6, dy - 0.6) < r) c = ground.map((v) => v * 0.6);
-  }
+  const s = resScale(ore);
+  const flip = ((cx + cy) & 1) === 1;
+  let c = resGround([mix(out[0], ORE_GROUND[0], k), mix(out[1], ORE_GROUND[1], k), mix(out[2], ORE_GROUND[2], k)], lx, ly, s, flip);
+  if (inResBlock(lx, ly, RES_BLOCK_A, s, flip)) c = resFace(ly, RES_BLOCK_A, s) ? ORE_BASE : ORE_LIGHT;
+  else if (inResBlock(lx, ly, RES_BLOCK_B, s, flip)) c = resFace(ly, RES_BLOCK_B, s) ? ORE_BASE : ORE_LIGHT;
   out[0] = c[0];
   out[1] = c[1];
   out[2] = c[2];
   return out;
 }
 
-/** shaders/terrain.wgsl gem_color: WebRA's crystals over darker ground, at render time 0. */
+/** shaders/terrain.wgsl gem_color: a blue and a magenta block per cell over darker ground, a glint in each lit corner. */
 export function gemColor(out, cx, cy, lx, ly, gems) {
-  const count = Math.floor(gems * 3 + 0.5) + 1;
-  let r = mix(out[0], 0.22, 0.35);
-  let g = mix(out[1], 0.2, 0.35);
-  let b = mix(out[2], 0.16, 0.35);
-  for (let k = 0; k < 4 && k < count; k++) {
-    const h1 = hash2(cx + k * 3.1, cy + 1.7);
-    const h2 = hash2(cx + 5.3, cy + k * 2.3);
-    const h3 = hash2(cx + k * 7.7, cy + 9.1);
-    const dx = (lx - (0.2 + 0.6 * h1)) / (0.11 + 0.05 * h3);
-    const dy = (ly - (0.25 + 0.55 * h2)) / (0.17 + 0.07 * h3);
-    if (Math.abs(dx) + Math.abs(dy) < 1) {
-      const hue = GEM_HUES[h3 >= 0.5 ? 1 : 0];
-      const shade = dx < 0 && dy < 0 ? 1.25 : dx >= 0 && dy >= 0 ? 0.5 : dx < 0 ? 0.9 : 0.75;
-      r = hue[0] * shade;
-      g = hue[1] * shade;
-      b = hue[2] * shade;
-      if (Math.abs(dx) < 0.08) {
-        r = mix(r, GEM_GLINT[0], 0.5);
-        g = mix(g, GEM_GLINT[1], 0.5);
-        b = mix(b, GEM_GLINT[2], 0.5);
-      }
-      if (Math.sin(h2 * 40) > 0.96 && Math.hypot(dx + 0.3, dy + 0.4) < 0.35) r = g = b = 1;
-    } else if (Math.abs(dx - 0.35) + Math.abs(dy - 0.35) < 1) {
-      r *= 0.7;
-      g *= 0.7;
-      b *= 0.7;
-    }
+  const s = resScale(gems);
+  const flip = ((cx + cy) & 1) === 1;
+  let c = resGround([mix(out[0], GEM_GROUND[0], 0.35), mix(out[1], GEM_GROUND[1], 0.35), mix(out[2], GEM_GROUND[2], 0.35)], lx, ly, s, flip);
+  const [hueA, hueB] = flip ? [GEM_HUES[1], GEM_HUES[0]] : GEM_HUES;
+  for (const [b, hue] of [[RES_BLOCK_A, hueA], [RES_BLOCK_B, hueB]]) {
+    if (!inResBlock(lx, ly, b, s, flip)) continue;
+    c = resFace(ly, b, s) ? hue.map((v) => v * 0.7) : hue;
+    if (resGlint(lx, ly, b, s, flip)) c = GEM_GLINT;
+    break;
   }
-  out[0] = r;
-  out[1] = g;
-  out[2] = b;
+  out[0] = c[0];
+  out[1] = c[1];
+  out[2] = c[2];
   return out;
 }
 
