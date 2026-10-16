@@ -30,6 +30,7 @@ import {
   viewHash,
 } from '/lib/js/account/admin-state.js';
 import { buildSettingsForm } from '/lib/js/account/admin-forms.js';
+import { RealtimeClient } from '/lib/js/account/realtime.js';
 import { checkDocument } from '/lib/js/registry.js';
 import { BAN_REASON_MAX, DISPLAY_NAME_MAX, EMAIL_MAX, MOTD_MAX, USERNAME_MAX } from '/lib/protocol/accounts.js';
 import { el, field, selectField, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, present } from './ui.js';
@@ -42,12 +43,19 @@ const TABS = [
   ['audit', 'Audit log', 'audit'],
 ];
 
+/** Admin hints within this time reload the table once. */
+const LIVE_DEBOUNCE_MS = 1_000;
+/** Without the realtime channel, a list of waiting accounts is checked this often while the tab shows. */
+const LIVE_POLL_MS = 60_000;
+
 const statusBadge = (status) => el('span', { class: `badge badge-status badge-${status}`, text: STATUS_LABELS[status] ?? status });
 
 /**
  * Build the dashboard into `root`.
  * @param {HTMLElement} root
- * @param {{ api?: AccountApi, location?: Location, history?: History, now?: () => number }} [deps]
+ * `realtime` replaces the dashboard's realtime channel (tests pass a
+ * stand-in or null), `timers` the timers of its reloads.
+ * @param {{ api?: AccountApi, location?: Location, history?: History, now?: () => number, realtime?: object | null, timers?: object }} [deps]
  */
 export async function mountAdmin(root, deps = {}) {
   const api = deps.api ?? new AccountApi();
@@ -89,6 +97,51 @@ export async function mountAdmin(root, deps = {}) {
     const h = viewHash({ tab: view.tab, user: view.user, query: table.query, audit });
     if (loc.hash !== h) hist.replaceState(null, '', `${loc.pathname}${loc.search}${h}`);
   };
+
+  // ---- Live updates --------------------------------------------------------------------------
+  /**
+   * The dashboard's realtime channel (js/account/realtime.js, topic `admin`,
+   * docs/accounts-api.md 5.12): a sign-up, an approval or another admin's
+   * change reloads the users table (same page, filters and selection) and
+   * the open user detail when it is that user (not while a field in it has
+   * the focus). Without the channel, a list filtered to accounts waiting
+   * for approval is checked every minute while the tab shows.
+   */
+  const timers = deps.timers ?? globalThis;
+  let site = null;
+  try {
+    site = deps.realtime === undefined ? await api.site() : null;
+  } catch {
+    site = null;
+  }
+  const realtime = deps.realtime !== undefined ? deps.realtime : site?.services?.realtime === true ? new RealtimeClient({ path: '/api/admin/realtime' }) : null;
+  /** The open user detail: { id, reload }. */
+  let drawerFill = null;
+  const touched = new Set();
+  let liveTimer = null;
+  const typingInDrawer = () => {
+    const active = globalThis.document?.activeElement;
+    return !!drawer && !!active && drawer.contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName ?? '');
+  };
+  const reloadLive = () => {
+    reloadUsers?.();
+    if (drawerFill && (touched.has(drawerFill.id) || touched.has('*')) && !typingInDrawer()) drawerFill.reload();
+    touched.clear();
+  };
+  realtime?.subscribe('admin', (event) => {
+    for (const e of event.batch ?? [event]) touched.add(e.data?.userId ?? '*');
+    liveTimer ??= timers.setTimeout(() => {
+      liveTimer = null;
+      reloadLive();
+    }, LIVE_DEBOUNCE_MS);
+  });
+  realtime?.start();
+  const livePoll = () =>
+    timers.setTimeout(() => {
+      if (globalThis.document?.visibilityState !== 'hidden' && realtime?.state !== 'open' && table.query.status === 'pending_approval') reloadUsers?.();
+      livePoll();
+    }, LIVE_POLL_MS);
+  livePoll();
 
   function show(tab, { focus = false } = {}) {
     if (!tabs.some(([k]) => k === tab)) tab = tabs[0][0];
@@ -328,6 +381,7 @@ export async function mountAdmin(root, deps = {}) {
     const shut = () => {
       aside.remove();
       drawer = null;
+      drawerFill = null;
       view.user = null;
       setHash();
       if (opener?.isConnected) opener.focus?.();
@@ -337,6 +391,7 @@ export async function mountAdmin(root, deps = {}) {
       if (e.key === 'Escape') shut();
     });
     drawer = aside;
+    drawerFill = { id, reload: () => fillUser(id, body, aside.querySelector(`#${titleId}`)) };
     root.append(aside);
     close.focus();
     await fillUser(id, body, aside.querySelector(`#${titleId}`));
@@ -897,6 +952,7 @@ export async function mountAdmin(root, deps = {}) {
     );
     const online = toggle('Online play needs an account', s.onlineRequiresAccount, 'Off: anonymous players can host and join (IP bans still apply).');
     const relay = toggle('One-click content relay', s.contentRelay, 'Only for accounts with the one-click flag, and admins.');
+    const live = toggle('Live updates', s.realtime !== false, 'Open pages show friend requests, approvals and settings changes at once. Off: they pick changes up on their next check.', unavailable(s.realtime !== false, svc.realtime, 'Unavailable: the realtime hub is not bound'));
     const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: String(MOTD_MAX) }), { help: `Plain text, shown on the start screen and the account page. At most ${MOTD_MAX} characters.` });
     motd.input.value = s.motd ?? '';
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Save site settings' });
@@ -905,7 +961,7 @@ export async function mountAdmin(root, deps = {}) {
       { class: 'form-stack', novalidate: true },
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Registration' }), open.row, approval.row, verify.row),
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Sign-in methods' }), loginPw.row, loginEmail.row, loginDiscord.row, loginPasskey.row),
-      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, relay.row),
+      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, relay.row, live.row),
       motd.row,
       el('div', { class: 'form-actions' }, save),
     );
@@ -918,6 +974,7 @@ export async function mountAdmin(root, deps = {}) {
         gameRequiresAccount: game.input.checked,
         onlineRequiresAccount: online.input.checked,
         contentRelay: relay.input.checked,
+        realtime: live.input.checked,
         motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, MOTD_MAX),
       };
       if (!patch.login.password && !patch.login.passkey && !(patch.login.discord && svc.discord)) {
@@ -1000,7 +1057,7 @@ export async function mountAdmin(root, deps = {}) {
   }
 
   show(view.user ? 'users' : view.tab);
-  return { table, show, openUser };
+  return { table, show, openUser, realtime };
 }
 
 const root = globalThis.document?.getElementById?.('admin-root');

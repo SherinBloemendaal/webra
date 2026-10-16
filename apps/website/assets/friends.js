@@ -1,11 +1,12 @@
 // Friends on the account page (docs/accounts-api.md 5.11): the words for
-// each friend's status and the list's groups. No DOM. The API client is
-// the game's (js/account/friends.js FriendsClient), the poll interval and
-// socialSettings the protocol's friends.js, and the privacy defaults
+// each friend's status and the list's groups. No DOM. The API client and
+// the store that follows the realtime hints are the game's
+// (js/account/friends.js FriendsClient, FriendsStore), the poll intervals
+// and socialSettings the protocol's friends.js, and the privacy defaults
 // (SOCIAL_SETTING_DEFAULTS) the protocol's accounts.js, all from /lib/.
 
-export { FriendsClient } from '/lib/js/account/friends.js';
-export { FRIENDS_POLL_MS, socialSettings } from '/lib/protocol/friends.js';
+export { FriendsClient, FriendsStore } from '/lib/js/account/friends.js';
+export { FRIENDS_POLL_MS, FRIENDS_POLL_SLOW_MS, socialSettings } from '/lib/protocol/friends.js';
 export { SOCIAL_SETTING_DEFAULTS } from '/lib/protocol/accounts.js';
 
 const MINUTE = 60_000;
