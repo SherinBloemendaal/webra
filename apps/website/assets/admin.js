@@ -108,8 +108,8 @@ export async function mountAdmin(root, deps = {}) {
    * docs/accounts-api.md 5.12): a sign-up, an approval or another admin's
    * change reloads the users table (same page, filters and selection) and
    * the open user detail when it is that user (not while a field in it has
-   * the focus). Without the channel, a list filtered to accounts waiting
-   * for approval is checked every minute while the tab shows.
+   * the focus). A list filtered to accounts waiting for approval is also
+   * checked every minute while the tab shows (the channel may be quiet).
    */
   const timers = deps.timers ?? globalThis;
   let site = null;
@@ -142,7 +142,7 @@ export async function mountAdmin(root, deps = {}) {
   realtime?.start();
   const livePoll = () =>
     timers.setTimeout(() => {
-      if (globalThis.document?.visibilityState !== 'hidden' && realtime?.state !== 'open' && table.query.status === 'pending_approval') reloadUsers?.();
+      if (globalThis.document?.visibilityState !== 'hidden' && table.query.status === 'pending_approval') reloadUsers?.();
       livePoll();
     }, LIVE_POLL_MS);
   livePoll();

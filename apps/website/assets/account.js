@@ -713,14 +713,14 @@ export async function mountAccountPage(root, deps = {}) {
       };
       again.addEventListener('click', () => busy(again, s, () => check(), errorText));
       actions.append(again);
-      // The approval (or the verified address) lands without a click: a realtime hint, else a
-      // check every minute while the tab shows and the channel is not open.
+      // The approval (or the verified address) lands without a click: a realtime hint, and a
+      // check every minute while the tab shows (also with the channel open: it may be quiet).
       const quietly = () => check(true).catch(() => {});
       if (session.realtime) follows.push(session.realtime.subscribe('account', (e) => e.kind !== 'resync' && quietly()));
       let timer = null;
       const poll = () => {
         timer = timers.setTimeout(() => {
-          if (globalThis.document?.visibilityState !== 'hidden' && session.realtime?.state !== 'open') quietly();
+          if (globalThis.document?.visibilityState !== 'hidden') quietly();
           poll();
         }, PENDING_POLL_MS);
       };
