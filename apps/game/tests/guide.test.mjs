@@ -13,7 +13,24 @@ import { createSettings } from '../js/settings.js';
 import { HotkeyRegistry } from '../js/hotkeys.js';
 import { GUIDE, HELP } from '../js/help.js';
 import { EV, STRIDE } from '../js/audio/director.js';
-import { GuideProgress, GuideTracker, STEP_IDS, TOUR_STEPS, TRIGGERS, guideFollows, guideText, readSteps, stepStatus, tourRuns, withGuide } from '../js/guide.js';
+import {
+  CONTENT,
+  GUIDE_BASELINE,
+  GuideProgress,
+  GuideTracker,
+  STEP_IDS,
+  TOUR_STEPS,
+  TRIGGERS,
+  guideContent,
+  guideFollows,
+  guideText,
+  newerThan,
+  readSteps,
+  stepStatus,
+  tourRuns,
+  withGuide,
+} from '../js/guide.js';
+import { compareVersions, newestVersion } from '../js/releasenotes.js';
 import { TourCard, TARGET_CLASS, tourModel } from '../js/tour.js';
 import { GameMenu } from '../js/gamemenu.js';
 import { SETTINGS_GUIDE_DONE_MAX_BYTES } from '../protocol/accounts.js';
@@ -161,7 +178,7 @@ test('progress: kept in the declared guide.done setting; unknown ids are left al
   assert.equal(stepStatus('base.power', { done: true, active: false }), 'Done: Power Plant placed');
 });
 
-test('tour: only in the player\'s own skirmish games, while the switch is on and a step is open; done turns it off; on again starts over', () => {
+test('tour: only in the player\'s own skirmish games, while the switch is on and a step is open; done leaves the switch on; again starts over', () => {
   const { registry, progress } = setup();
   assert.equal(registry.get('guide', 'tourInGames'), true, 'on by default');
   const skirmish = { kind: 'skirmish', watching: false };
@@ -180,16 +197,22 @@ test('tour: only in the player\'s own skirmish games, while the switch is on and
   assert.match(main, /editorTestPlay \? 'editor' : 'skirmish'/, 'and its games are not skirmish games for the guide');
   progress.mark(TOUR_STEPS);
   assert.equal(progress.tourComplete(), true);
-  assert.equal(progress.tourInGames, false, 'finished: the switch goes off');
+  // Finished is not skipped: the switch stays on (tour steps of a later version still show), the tour does not run.
+  assert.equal(progress.tourInGames, true, 'finished: the switch stays on');
   assert.equal(tourRuns(skirmish, progress), false);
-  // The rest of the guide keeps its ticks when the tour starts over.
+  // Take the tour again: the rest of the guide keeps its ticks.
   progress.mark(['ore.gems']);
-  progress.setTourInGames(true);
+  progress.restartTour();
   assert.equal(progress.count(TOUR_STEPS), 0);
   assert.ok(progress.isDone('ore.gems'));
   assert.equal(tourRuns(skirmish, progress), true);
   progress.setTourInGames(false);
   assert.equal(tourRuns(skirmish, progress), false, 'skipped');
+  // On again after everything was done (played without the tour): it starts over.
+  progress.mark(TOUR_STEPS);
+  progress.setTourInGames(true);
+  assert.equal(progress.count(TOUR_STEPS), 0);
+  assert.equal(tourRuns(skirmish, progress), true);
 });
 
 test('tour card: the open step, its dots and lit cameo; Step done; Skip step; Skip the tour', () => {
@@ -243,6 +266,81 @@ test('tour card: the open step, its dots and lit cameo; Step done; Skip step; Sk
   assert.equal(root.querySelector('.tour-toast').textContent, '');
   card.dispose();
   assert.equal(field.querySelector('.tour'), null);
+});
+
+/**
+ * Timers that behave like a browser's: window.setTimeout and clearTimeout are
+ * WebIDL operations that throw "Illegal invocation" when called on anything
+ * but the window (or with no receiver), for example as a method of another
+ * object. Node's own timers do not care, which is how the tour card shipped
+ * calling them as `this.timers.set(...)`. Returns the pending callbacks and a
+ * restore function.
+ */
+function browserTimers() {
+  const saved = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  const pending = new Map();
+  let next = 1;
+  const guard = (self, name) => {
+    if (self !== undefined && self !== null && self !== globalThis && self !== globalThis.window) {
+      throw new TypeError(`Failed to execute '${name}' on 'Window': Illegal invocation`);
+    }
+  };
+  globalThis.setTimeout = function setTimeout(fn) {
+    guard(this, 'setTimeout');
+    pending.set(next, fn);
+    return next++;
+  };
+  globalThis.clearTimeout = function clearTimeout(id) {
+    guard(this, 'clearTimeout');
+    pending.delete(id);
+  };
+  return {
+    pending,
+    run() {
+      const fns = [...pending.values()];
+      pending.clear();
+      fns.forEach((fn) => fn());
+    },
+    restore: () => Object.assign(globalThis, saved),
+  };
+}
+
+test('tour card in the game: every tour step the game ticks off says Step done without throwing (browser timers)', () => {
+  const timers = browserTimers();
+  try {
+    const { progress, tracker } = setup();
+    const field = doc.createElement('div');
+    doc.body.append(field);
+    // As js/main.js builds it: no timers of its own, so the page's setTimeout.
+    const card = new TourCard(field, { progress, onGuide: () => {} });
+    tracker.onDone = (ids) => card.stepsDone(ids);
+    const toast = () => field.querySelector('.tour-toast').textContent;
+    // What the engine reports for each tour step (js/guide.js TRIGGERS), in a frame of its own.
+    const frames = [
+      ['base.mcv', [[EV.TRANSFORMED, T.MCV, 0, T.FACT]], /Step done: MCV deployed/],
+      ['base.power', [[EV.BUILDING_PLACED, T.POWR, 0]], /Step done: Power Plant placed/],
+      ['base.refinery', [[EV.BUILDING_PLACED, T.PROC, 0]], /Step done: Ore Refinery placed/],
+      ['base.production', [[EV.BUILDING_PLACED, T.TENT, 0], [EV.BUILDING_PLACED, T.WEAP, 0]], /Step done: Barracks and War Factory/],
+      ['base.radar', [[EV.BUILDING_PLACED, T.DOME, 0]], /Tour done/],
+    ];
+    for (const [id, list, said] of frames) {
+      // A throw here stopped the 0.17.0 game loop (js/main.js frameBody); js/frameloop.js now keeps the loop going, but the step's toast must still work.
+      assert.doesNotThrow(() => tracker.onEvents(events(...list)), id);
+      assert.ok(progress.isDone(id), id);
+      assert.match(toast(), said, id);
+      assert.equal(timers.pending.size, 1, `${id}: one toast timer, the last one cleared`);
+    }
+    timers.run();
+    assert.equal(toast(), '', 'the toast goes after TOAST_MS');
+    // The buttons say things too: Skip the tour.
+    progress.setTourInGames(true);
+    assert.doesNotThrow(() => click(field.querySelector('.tour-close')));
+    assert.match(toast(), /Tour off/);
+    assert.doesNotThrow(() => card.dispose());
+    assert.equal(timers.pending.size, 0, 'dispose clears the toast timer');
+  } finally {
+    timers.restore();
+  }
 });
 
 test('Guide page: chapters with lamps, the steps with Watching and Done, Skip this step, read steps, the tour switch', async () => {
@@ -305,4 +403,169 @@ test('tracker: a frame with many events reads the progress a fixed number of tim
   const many = Array.from({ length: 500 }, () => [EV.FIRE, T.E1, 1]);
   tracker.onEvents(events(...many));
   assert.ok(reads <= 4, `${reads} reads for 500 events`);
+});
+
+// ---- Guide content of later versions (docs/contracts.md, "The guide and the tour") ----------
+
+/**
+ * The guide as a later release might grow it: a 0.18.0 step in the tour's
+ * chapter, one in another chapter and a new chapter. Synthetic: the real
+ * guide has no 0.18.0 content.
+ */
+const LATER = guideContent([
+  {
+    ...GUIDE[0],
+    steps: [...GUIDE[0].steps, { id: 'base.silo', since: '0.18.0', title: 'Store the ore', text: 'Silos keep what the refinery cannot.', watch: 'Silo placed', tour: 'Build a Silo.' }],
+  },
+  { ...GUIDE[1], steps: [...GUIDE[1].steps, { id: 'ore.derrick', since: '0.18.0', title: 'Oil Derricks', text: 'Capture one with an engineer.', watch: 'Chapter read' }] },
+  ...GUIDE.slice(2),
+  { id: 'navy', since: '0.18.0', title: 'The navy', intro: 'Ships.', tip: 'Subs.', steps: [{ id: 'navy.yard', title: 'Build a Naval Yard', text: 'On the coast.', watch: 'Naval Yard placed' }] },
+]);
+const NEW_IDS = ['base.silo', 'ore.derrick', 'navy.yard'];
+const BASELINE_DONE = Object.fromEntries([...TOUR_STEPS, 'ore.deliver', 'power.bar'].map((id) => [id, true]));
+
+/** A game menu over `progress`, as the in-game menu builds it. */
+function guideMenu(progress, registry) {
+  const settings = createSettings(registry);
+  const root = doc.createElement('section');
+  doc.body.append(root);
+  const menu = new GameMenu(root, {
+    online: false,
+    hotkeys: new HotkeyRegistry(settings),
+    settings,
+    fullscreen: { available: () => false, active: () => false, toggle: async () => ({ ok: true }) },
+    onChange() {},
+    onLeave() {},
+    onExit() {},
+    guide: progress,
+  });
+  const guideButton = () => [...root.querySelectorAll('button')].find((b) => b.textContent.startsWith('Guide'));
+  return { menu, root, guideButton };
+}
+
+test('guide versions: since per chapter and step, compared as versions; the real guide is the 0.17.0 baseline', () => {
+  assert.equal(newerThan('0.18.0', '0.17.0'), true);
+  assert.equal(newerThan('0.17.0', '0.17.0'), false);
+  assert.equal(newerThan('0.10.0', '0.9.0'), true, 'numbers, not text');
+  assert.equal(newerThan('0.18.0-rc.1', '0.18.0'), false, 'a pre-release is older than its release');
+  assert.equal(newerThan('0.17.0', null), true, 'nothing seen: everything is newer');
+  assert.equal(newestVersion('0.9.0', '0.10.0'), '0.10.0');
+  assert.equal(newestVersion(null, '0.18.0'), '0.18.0');
+  assert.equal(newestVersion('v0.18.0', null), '0.18.0');
+  assert.equal(newestVersion(null, null), null);
+  // A step without its own since is its chapter's; the content's version is the newest since.
+  assert.equal(LATER.version, '0.18.0');
+  assert.equal(LATER.steps.get('base.mcv').since, '0.17.0');
+  assert.equal(LATER.steps.get('base.silo').since, '0.18.0');
+  assert.equal(LATER.steps.get('navy.yard').since, '0.18.0');
+  assert.deepEqual(LATER.tourSteps, [...TOUR_STEPS, 'base.silo']);
+  // The guide this game ships: every chapter says its version, no step is older than its chapter.
+  for (const c of GUIDE) {
+    assert.ok(compareVersions(c.since, '0.0.1') > 0 && /^\d+\.\d+\.\d+$/.test(c.since), `${c.id} since`);
+    for (const st of c.steps) if (st.since) assert.ok(compareVersions(st.since, c.since) >= 0, `${st.id} is not older than its chapter`);
+  }
+  assert.equal(CONTENT.version, GUIDE_BASELINE, '0.17.0 content is the baseline');
+});
+
+test('guide updates: a 0.17.0 player whose tour is done gets the new steps as New; the switch stays as stored; turned on, the tour shows the new step only', () => {
+  const registry = createRegistry({ storage: memoryStorage() });
+  // As 0.17.0 left it: every tour step done and the switch off (finished or skipped: 0.17.0 cannot tell), no guide.seen.
+  registry.patch('guide', { tourInGames: false, done: BASELINE_DONE });
+  const progress = new GuideProgress(registry, LATER);
+  progress.reconcile();
+  assert.equal(registry.get('guide', 'seen'), GUIDE_BASELINE);
+  assert.equal(progress.tourInGames, false, 'the switch stays as stored');
+  assert.equal(tourRuns({ kind: 'skirmish' }, progress), false);
+  assert.deepEqual(progress.newSteps(), NEW_IDS);
+  // What was done stays done.
+  for (const id of Object.keys(BASELINE_DONE)) assert.ok(progress.isDone(id), id);
+
+  // The game menu: the Guide button carries "3 new" until the Guide is opened.
+  const { menu, root, guideButton } = guideMenu(progress, registry);
+  menu.open();
+  assert.match(textOf(guideButton()), /3 new/);
+  assert.ok(guideButton().querySelector('.ui-badge'));
+  click(guideButton());
+  // The Guide's switch is off (the tour is not finished: a new tour step is open), so no Take the tour again.
+  assert.equal(root.querySelector('#guide-tour-in-games').checked, false);
+  // The Guide opens at the first chapter with a new step; its steps and chapters say New for this visit.
+  assert.equal(root.querySelector('.guide-chapter[aria-current="step"]').id, 'guide-chapter-base');
+  assert.match(textOf(root.querySelector('[data-step="base.silo"]')), /New/);
+  assert.doesNotMatch(textOf(root.querySelector('[data-step="base.mcv"]')), /New/);
+  assert.match(textOf(root.querySelector('#guide-chapter-navy')), /New/);
+  assert.match(textOf(root.querySelector('#guide-chapter-ore')), /New/);
+  assert.doesNotMatch(textOf(root.querySelector('#guide-chapter-power')), /New/);
+  assert.equal(registry.get('guide', 'seen'), '0.18.0', 'opening the Guide marks it seen');
+  assert.deepEqual(progress.newSteps(), []);
+  // Another chapter in the same visit still shows what was new.
+  click(root.querySelector('#guide-chapter-ore'));
+  assert.match(textOf(root.querySelector('[data-step="ore.derrick"]')), /New/);
+  // The player turns the tour on: the next skirmish shows the new tour step only, the old ones done.
+  check(root.querySelector('#guide-tour-in-games'), true);
+  assert.equal(tourRuns({ kind: 'skirmish' }, progress), true);
+  assert.equal(progress.tourStep(), 'base.silo');
+  const model = tourModel(progress);
+  assert.match(model.where, /6 of 6/);
+  assert.deepEqual(model.dots, ['done', 'done', 'done', 'done', 'done', 'active']);
+  // The next time the menu opens, nothing is new any more.
+  menu.close();
+  menu.open();
+  assert.doesNotMatch(textOf(guideButton()), /new/);
+  assert.equal(guideButton().querySelector('.ui-badge'), null);
+  click(guideButton());
+  assert.equal(root.querySelectorAll('.guide-step .ui-badge, .guide-chapter .ui-badge').length, 0);
+  menu.dispose();
+});
+
+test('guide updates: a 0.17.0 player who skipped the tour gets the New badges, never the tour back, also with every tour step done', () => {
+  // Skipped early, and skipped then played on: 0.17.0's tracker ticked every tour step anyway.
+  for (const done of [{ 'base.mcv': true }, { ...BASELINE_DONE }]) {
+    const registry = createRegistry({ storage: memoryStorage() });
+    registry.patch('guide', { tourInGames: false, done });
+    const progress = new GuideProgress(registry, LATER);
+    progress.reconcile();
+    assert.equal(registry.get('guide', 'seen'), GUIDE_BASELINE);
+    assert.equal(progress.tourInGames, false, 'skipped stays skipped');
+    assert.equal(tourRuns({ kind: 'skirmish' }, progress), false);
+    assert.ok(progress.newSteps().includes('base.silo'));
+    // The next start changes nothing.
+    progress.reconcile();
+    assert.equal(progress.tourInGames, false);
+    const { menu, guideButton } = guideMenu(progress, registry);
+    menu.open();
+    assert.match(textOf(guideButton()), /\d new/);
+    menu.dispose();
+  }
+});
+
+test('guide updates: a player since 0.18.0 who finished the tour gets a later tour step; a new player sees no New badges', () => {
+  // Finished in 0.18.0: the switch stayed on, so a 0.19.0 tour step runs without any reconcile.
+  const registry = createRegistry({ storage: memoryStorage() });
+  const progress = new GuideProgress(registry, LATER);
+  progress.reconcile();
+  progress.mark(LATER.tourSteps);
+  assert.equal(progress.tourInGames, true);
+  const later = guideContent([{ ...GUIDE[0], steps: [...LATER.chapters[0].steps, { id: 'base.repair', since: '0.19.0', title: 'Repair', text: 'Wrench.', watch: 'Repaired', tour: 'Repair it.' }] }]);
+  const next = new GuideProgress(registry, later);
+  next.reconcile();
+  assert.equal(tourRuns({ kind: 'skirmish' }, next), true);
+  assert.equal(next.tourStep(), 'base.repair');
+  assert.deepEqual(next.newSteps(), ['base.repair']);
+
+  // A brand-new player: everything is the guide as it is, nothing "New", the tour from its first step.
+  const fresh = createRegistry({ storage: memoryStorage() });
+  fresh.set('guide', 'lastTip', 0); // the loading screen of the first game ran first
+  const p = new GuideProgress(fresh, LATER);
+  p.reconcile();
+  assert.equal(fresh.get('guide', 'seen'), '0.18.0');
+  assert.deepEqual(p.newSteps(), []);
+  assert.equal(tourRuns({ kind: 'skirmish' }, p), true);
+  assert.equal(p.tourStep(), 'base.mcv');
+  const { menu, root, guideButton } = guideMenu(p, fresh);
+  menu.open();
+  assert.equal(guideButton().querySelector('.ui-badge'), null);
+  assert.match(textOf(guideButton()), /New: how to play/);
+  click(guideButton());
+  assert.equal(root.querySelectorAll('.guide-step .ui-badge, .guide-chapter .ui-badge').length, 0);
+  menu.dispose();
 });

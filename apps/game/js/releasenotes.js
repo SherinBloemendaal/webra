@@ -139,6 +139,15 @@ export function compareVersions(a, b) {
   return 0;
 }
 
+/** The newer of two versions, normalized; null when neither is one (js/guide.js guide.seen, its sync merge). */
+export function newestVersion(a, b) {
+  const x = normalizeVersion(a);
+  const y = normalizeVersion(b);
+  if (x === null) return y;
+  if (y === null) return x;
+  return compareVersions(x, y) >= 0 ? x : y;
+}
+
 /**
  * Check the shape of a release-notes.json document and drop anything that is
  * not as expected, so the UI never renders half-broken data. Returns

@@ -101,7 +101,8 @@ import { campaignRecord, missionRecord, restartRecord, saveRestart, takeRestart 
 import { CampaignMenu } from './campaign/menu.js';
 import { LensArt } from './maplens/source.js';
 import { MapLens } from './maplens/lens.js';
-import { connectRegistry, setTags } from './telemetry/index.js';
+import { connectRegistry, reportError, setTags } from './telemetry/index.js';
+import { UiGuard, createFrameLoop } from './frameloop.js';
 import { CampaignProgress, findMission, nextMission } from './campaign/progress.js';
 import { MissionView } from './campaign/view.js';
 import { createMoviePlayer } from './content/movies.js';
@@ -1640,6 +1641,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     watching: !!viewer || !!online?.spectator,
   };
   const guide = new GuideProgress(settings.registry);
+  // The player's stored progress meets this version's guide: which steps are new to them (js/guide.js reconcile).
+  guide.reconcile();
   let tour = null;
   const guideTracker = guideFollows(guideGame) ? new GuideTracker({ progress: guide, actors: rules.actors, player, onDone: (ids) => tour?.stepsDone(ids) }) : null;
   if (guideTracker) scope.add(() => guideTracker.dispose());
@@ -2700,11 +2703,27 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   let over = false;
   let drawn = 0;
 
-  function frame(now) {
-    if (stopped) return;
-    // Until the first frame is drawn, an error here ends the start on the loading screen (FirstFrameGuard).
-    firstFrame.run(() => frameBody(now));
-  }
+  // The loop (js/frameloop.js): the next frame is asked for whatever this
+  // one did. Until the first frame is drawn, an error ends the start on the
+  // loading screen (FirstFrameGuard, which stops the loop).
+  const frame = createFrameLoop({
+    run: (now) => firstFrame.run(() => frameBody(now)),
+    request: (fn) => requestAnimationFrame(fn),
+    stopped: () => stopped,
+    onRequest: (id) => (rafId = id),
+    // Every frame threw for about a second (FAILING_FRAMES): the game cannot go on. It stops,
+    // the error is reported once, and the player is told, as for a simulation that failed (host 'failed').
+    onFailing: (err) => {
+      leaving = true;
+      stopped = true;
+      cancelAnimationFrame(rafId);
+      reportError(err, { source: 'frame' });
+      showToast(`The game stopped: ${err?.message ?? err}`);
+    },
+  });
+  // The screen's parts in the frame: one that throws is reported once and the game goes on without it.
+  const uiGuard = new UiGuard({ report: (err, name) => reportError(err, { source: `frame:${name}` }), strict: () => !firstFrame.drawn });
+  const safe = (name, fn) => uiGuard.run(name, fn);
 
   function frameBody(now) {
     const frameStart = performance.now();
@@ -2745,10 +2764,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     });
     // Main thread time the simulation took this frame (in a worker: posting the step).
     const simFrameMs = performance.now() - t0;
-    if (!f) {
-      rafId = requestAnimationFrame(frame);
-      return;
-    }
+    if (!f) return;
     // Simulated time of this frame, and the time the world's presentation moved since the last one.
     const simBefore = simClock.ms;
     const simNow = simClock.update(f.tick, f.alpha);
@@ -2793,28 +2809,30 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       uploadedFog = f.instances === 'gpu' ? fog : null;
       instanceInfo = { path: f.instances, reason: f.instances === choice.path ? choice.reason : 'switching', buildMs: f.buildMs, bytes: f.renderBytes };
     }
-    progressOverlay?.show(busy() ? progressText() : null);
+    safe('progress', () => progressOverlay?.show(busy() ? progressText() : null));
     // Sounds of what happened, heard from the camera (fog hides enemy sounds),
     // and radar pings. Fast-forwarding (loading, rejoining, seeking) stays
     // silent: the simulation drops the events.
     const events = game.take_audio_events();
-    guideTracker?.onEvents(events);
-    pings.onEvents(events, simNow, now);
-    battle.onEvents(events, BattleFx.ticksAt(simSeconds), (x, y) => {
-      // In sight now: the frame's fog (255 visible) of the cell.
-      const cx = Math.floor(x / rules.pxPerCell);
-      const cy = Math.floor(y / rules.pxPerCell);
-      const fog = f.fog();
-      return !!viewer || (cx >= 0 && cy >= 0 && cx < mapW && cy < mapH && fog[cy * mapW + cx] === 255);
-    });
-    audio?.frame(v, () => f.fog(), events);
+    safe('guide events', () => guideTracker?.onEvents(events));
+    safe('pings', () => pings.onEvents(events, simNow, now));
+    safe('effects events', () =>
+      battle.onEvents(events, BattleFx.ticksAt(simSeconds), (x, y) => {
+        // In sight now: the frame's fog (255 visible) of the cell.
+        const cx = Math.floor(x / rules.pxPerCell);
+        const cy = Math.floor(y / rules.pxPerCell);
+        const fog = f.fog();
+        return !!viewer || (cx >= 0 && cy >= 0 && cx < mapW && cy < mapH && fog[cy * mapW + cx] === 255);
+      }),
+    );
+    safe('sound frame', () => audio?.frame(v, () => f.fog(), events));
 
     // UI rects may call into wasm (placement preview, main thread mode), which
     // may grow its memory, so the frame's views are made after them.
     const renderStart = performance.now();
     const uiRects = input.uiRects();
-    commandBar.frame();
-    worldTip.frame(now);
+    safe('command bar frame', () => commandBar.frame());
+    safe('tooltip', () => worldTip.frame(now));
     // The structure being placed shows its range circles (engine range_circles.rs).
     const placing = input.placementState();
     ui.set_placing(placing?.actor ?? '', placing?.cx ?? 0, placing?.cy ?? 0);
@@ -2854,7 +2872,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         if (!stopped) gameStart.begin(performance.now());
       });
     }
-    battle.frame(fxTick, drawCamera);
+    safe('effects frame', () => battle.frame(fxTick, drawCamera));
     // Read the canvas in the same task as the draw, before it is presented.
     if (screenshotPending) {
       screenshotPending = false;
@@ -2863,9 +2881,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Shared memory: count a frame the worker wrote over while it was read (js/sim/framebuffer.js).
     f.valid();
     // After drawing: the debug views call into wasm, which may detach the views above.
-    debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps });
-    minimap?.frame(now, simNow);
-    missionView?.frame();
+    safe('debug frame', () => debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps }));
+    safe('radar', () => minimap?.frame(now, simNow));
+    safe('mission', () => missionView?.frame());
 
     fpsFrames++;
     if (now - fpsTime >= 500) {
@@ -2880,44 +2898,53 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       const json = game.player_json(player);
       const state = json ? JSON.parse(json) : null;
       if (state && !watching()) {
-        // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game stands still.
-        sidebar.setPaused(paused);
-        sidebar.update(state);
-        powerBar.update(state.powers ?? []);
-        powerTimers.update(
-          timerLines(JSON.parse(game.power_timers_json(player)), {
-            tick: state.tick,
-            tickMs,
-            nameOf: (owner) => players[owner]?.name ?? `Player ${owner + 1}`,
-            colorOf: (owner) => TEAM_COLORS[owner],
-          }),
+        safe('sidebar state', () => {
+          // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game stands still.
+          sidebar.setPaused(paused);
+          sidebar.update(state);
+        });
+        safe('power bar', () => powerBar.update(state.powers ?? []));
+        safe('power timers', () =>
+          powerTimers.update(
+            timerLines(JSON.parse(game.power_timers_json(player)), {
+              tick: state.tick,
+              tickMs,
+              nameOf: (owner) => players[owner]?.name ?? `Player ${owner + 1}`,
+              colorOf: (owner) => TEAM_COLORS[owner],
+            }),
+          ),
         );
-        commandBar.update();
-        audio?.playerState(state);
-        guideTracker?.onState(state, { weather: sky?.weather ?? null });
-        tour?.refresh();
-        sidebar.setSelection(selectionInfo(game, input.selection, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
-        sidebar.setDeployState(input.deployState());
+        safe('command bar state', () => commandBar.update());
+        safe('sound state', () => audio?.playerState(state));
+        safe('guide state', () => guideTracker?.onState(state, { weather: sky?.weather ?? null }));
+        safe('tour', () => tour?.refresh());
+        safe('sidebar selection', () => {
+          sidebar.setSelection(selectionInfo(game, input.selection, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
+          sidebar.setDeployState(input.deployState());
+        });
       }
       const statsText = watching() ? game.observer_stats() : null;
       const stats = statsText ? JSON.parse(statsText) : null;
-      if (stats && observer) observer.update(stats, game.tick_count(), observerExtra(observer.needs()));
+      if (stats && observer) safe('observer', () => observer.update(stats, game.tick_count(), observerExtra(observer.needs())));
       // The replay's seek bar marks what happened (js/replaymarks.js).
-      if (stats) replayBar?.observe(stats, game.tick_count());
-      replayBar?.update();
-      if (state) updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator || spectating ? 'Spectating' : null);
+      safe('replay bar', () => {
+        if (stats) replayBar?.observe(stats, game.tick_count());
+        replayBar?.update();
+      });
+      if (state) safe('hud', () => updateHud(state, fps, simMs, stress, status.actorCount ?? 0, paused, layout.compact, replay ? 'Replay' : online?.spectator || spectating ? 'Spectating' : null));
       // The sky of the newest frame: badge text (thunder and flashes follow in weather.update).
-      if (f.weather) weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText);
-      touch.update();
-      if (state) debug.update(state);
+      if (f.weather) safe('weather badge', () => (weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText)));
+      safe('touch', () => touch.update());
+      if (state) safe('debug state', () => debug.update(state));
       // The time limit clock (js/battlefx.js), for players and spectators alike.
-      if (state) battle.timeLimit(state);
+      if (state) safe('time limit', () => battle.timeLimit(state));
       if (state && !stress) {
         winner = state.winner ?? null;
         const event = flow.update(state, { ended: !!replay?.ended });
         // The announcer: "Mission failed" on the defeat, "Mission accomplished" on a win (also an ally's, after a defeat).
-        if (event === 'defeat') audio?.gameOver(false);
-        else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
+        // A sound that fails must not skip what follows (missionWon).
+        if (event === 'defeat') safe('sound defeat', () => audio?.gameOver(false));
+        else if (event === 'victory' || (event === 'over' && !viewer && state.won)) safe('sound victory', () => audio?.gameOver(true));
         if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
         // The whole game ended (or this player won): its replay goes to the account, in the background.
@@ -2970,7 +2997,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       );
       if (measure) measure.index = index;
     }
-    rafId = requestAnimationFrame(frame);
   }
   // The setup above, until the game loop starts (the first frame ends the start's trace).
   perfTrace.mark('game.setup', performance.now() - setupStart);

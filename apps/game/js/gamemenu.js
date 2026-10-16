@@ -34,7 +34,7 @@ import { boundKey, comboFromEvent, formatCombo, GROUP_ORDER, isMac, substituteFo
 import { OPENRA_HOTKEYS } from './openra-hotkeys.js';
 import { SCHEMA } from './settings.js';
 import { touchControls } from './touch.js';
-import { led, segmented, slider as createSlider, switchInput, tabs as tabBar, toggle as createToggle } from './ui/controls.js';
+import { badge, led, segmented, slider as createSlider, switchInput, tabs as tabBar, toggle as createToggle } from './ui/controls.js';
 import { GAME_SCALE_LIMITS, UI_SCALE_LIMITS, ZOOM_FACTOR_LIMITS, percent, resolveGameScale, screenOf, snapGameScale, crispGameScales, roundStep } from './scale.js';
 import { mountAudioSettings } from './audio/panel.js';
 import { mountMusicPlayer } from './audio/musicplayer.js';
@@ -355,9 +355,15 @@ function button(text, className, onClick) {
 }
 
 /** A menu list button: its label and a quieter hint on the right. */
-function item(label, hint, onClick, { accent = false } = {}) {
+function item(label, hint, onClick, { accent = false, badge = null } = {}) {
   const b = button(label, `ui-btn gm-item${accent ? ' gm-item-accent' : ''}`, onClick);
-  if (hint) b.append(el('span', 'gm-item-hint', hint));
+  if (badge) {
+    // The badge beside the hint, at the right end of the row.
+    const side = el('span', 'gm-item-side');
+    side.append(badge);
+    if (hint) side.append(el('span', 'gm-item-hint', hint));
+    b.append(side);
+  } else if (hint) b.append(el('span', 'gm-item-hint', hint));
   return b;
 }
 
@@ -430,6 +436,7 @@ export class GameMenu {
     this.infoTab = 'objectives'; // the game info's open tab
     this.settingsTab = 'game';
     this.guideChapter = null;
+    this.guideFresh = null; // the Guide's new steps while it shows (renderGuidePage)
     this.keyGroup = null; // the Hotkeys tab's group (null: the first)
     this.keyQuery = '';
     this.card = el('div', 'ui-dialog game-menu-card');
@@ -513,6 +520,7 @@ export class GameMenu {
     this.root.hidden = !open;
     if (open) this.render();
     else {
+      this.guideFresh = null;
       this.unmountPage();
       if (this.root.contains(document.activeElement)) document.activeElement.blur();
     }
@@ -609,6 +617,8 @@ export class GameMenu {
     this.unmountPage();
     c.replaceChildren();
     c.className = `ui-dialog game-menu-card gm-view-${this.view}`;
+    // The Guide's "New" steps of this visit end when another page shows.
+    if (this.view !== 'guide') this.guideFresh = null;
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'guide' && this.opts.guide) this.renderGuidePage(c);
@@ -653,7 +663,7 @@ export class GameMenu {
     const guide = this.opts.guide;
     const list = el('div', 'gm-list');
     list.append(
-      ...(guide ? [item('Guide', guideHint(guide), () => this.show('guide'), { accent: guide.count() < guide.total })] : []),
+      ...(guide ? [guideItem(guide, () => this.show('guide'))] : []),
       ...(stats ? [item('Statistics', '', () => this.opts.onStats())] : []),
       ...(this.opts.actions ?? []).map((a) => item(a.label, '', () => this.runAction(a))),
       item('Settings', '', () => this.show('settings')),
@@ -826,10 +836,18 @@ export class GameMenu {
 
   renderGuidePage(c) {
     const progress = this.opts.guide;
+    // Opening the Guide shows what is new since the last time, then counts it
+    // as seen: the badges stay for this visit (redraws included), not the next.
+    if (!this.guideFresh) {
+      this.guideFresh = new Set(progress.newSteps());
+      progress.markSeen();
+      if (this.guideFresh.size) this.guideChapter = null;
+    }
     this.guideChapter = renderGuide(c, {
       progress,
       hotkeys: this.opts.hotkeys,
       chapter: this.guideChapter,
+      fresh: this.guideFresh,
       onChapter: (id) => {
         this.guideChapter = id;
         this.render();
@@ -1392,6 +1410,13 @@ function keyTable(rows) {
     table.append(row);
   }
   return table;
+}
+
+/** The Guide button: its hint, the accent while steps are open, and a badge with the steps added since the player last opened it. */
+function guideItem(progress, onClick) {
+  const fresh = progress.newSteps().length;
+  const tag = fresh ? badge('info', `${fresh} new`, { title: `${fresh} guide ${fresh === 1 ? 'step' : 'steps'} added since you last opened the guide` }) : null;
+  return item('Guide', guideHint(progress), onClick, { accent: progress.count() < progress.total, badge: tag });
 }
 
 /** The Guide button's hint: new, or how far the player got. */

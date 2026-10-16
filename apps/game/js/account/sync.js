@@ -17,6 +17,7 @@
 //   on the next start.
 
 import { checkValue, diffValues, GROUPS, normalizeValues } from '../registry.js';
+import { newestVersion } from '../releasenotes.js';
 import { AccountError } from './api.js';
 
 /** localStorage key of the sync state: `{ userId, version, base, dirty }`. */
@@ -53,6 +54,14 @@ function mergeKeyed(b, l, r) {
   return out;
 }
 
+/**
+ * Version settings that only move forward: guide.seen (the newest guide
+ * content the player was shown, js/guide.js). Two devices that differ keep
+ * the newer version, never a conflict: on the device with the older one the
+ * steps between are no longer "New".
+ */
+export const NEWEST_MERGE = Object.freeze(new Set(['guide.seen']));
+
 export function mergeSettings({ base, local, remote }) {
   const merged = clone(remote);
   const conflicts = [];
@@ -62,6 +71,13 @@ export function mergeSettings({ base, local, remote }) {
     for (const key of Object.keys(GROUPS[group].settings)) {
       const l = local?.[group]?.[key];
       const r = remote?.[group]?.[key];
+      if (NEWEST_MERGE.has(`${group}.${key}`) && !same(l, r)) {
+        const b = base?.[group]?.[key];
+        if (base && !same(l, b)) localChanges++;
+        if (base && !same(r, b)) remoteChanges++;
+        merged[group][key] = newestVersion(l, r);
+        continue;
+      }
       if (KEYED_MERGE.has(`${group}.${key}`) && !same(l, r)) {
         const b = base?.[group]?.[key];
         const lc = !base || !same(l, b);

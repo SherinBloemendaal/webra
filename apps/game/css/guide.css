@@ -93,6 +93,14 @@
   color: var(--ui-muted);
 }
 
+/* "New" and "N new" (js/guideview.js newBadge): steps a later version added. */
+.guide-chapter-title .ui-badge,
+.guide-step-title .ui-badge {
+  margin-left: var(--ui-space-1);
+  font-size: var(--ui-fs-s);
+  vertical-align: middle;
+}
+
 .guide-chapter-body {
   display: flex;
   flex-direction: column;
@@ -255,7 +263,9 @@
 .tour {
   position: absolute;
   left: calc(8 * var(--ui-px));
-  bottom: calc(var(--cb-bottom, calc(52 * var(--ui-px))) + calc(44 * var(--ui-px)));
+  /* Above the command bar wherever it is (js/commandbar.js place() sets both on #field):
+     moved up by the touch action bar, or two rows tall on a narrow screen. */
+  bottom: calc(var(--cb-bottom, calc(52 * var(--ui-px))) + var(--cb-height, calc(39 * var(--ui-px))) + calc(5 * var(--ui-px)));
   z-index: 7;
   display: flex;
   flex-direction: column;

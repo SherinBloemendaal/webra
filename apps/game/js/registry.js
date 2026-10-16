@@ -359,10 +359,13 @@ export const GROUPS = deepFreeze({
         type: 'boolean',
         default: true,
         label: 'Tour in my games',
-        help: 'The tour starts by itself in your skirmish games (not in missions, online games or replays) until its steps are done or you skip it.',
+        help: 'The tour starts by itself in your skirmish games (not in missions, online games or replays) until its steps are done or you skip it. Tour steps that later versions add show too while this is on.',
       },
       // Step id -> true for every guide and tour step done (js/guide, the 0.17 guide work).
       done: { type: 'json', default: {}, maxBytes: SETTINGS_GUIDE_DONE_MAX_BYTES, label: 'Guide steps done', help: 'The steps of the guide and the tour you have done.' },
+      // The newest guide content the player was shown (js/guide.js: steps with a newer `since` are "New").
+      // Null until the first game of 0.18.0 or later sets it. Synced as the newer of two devices.
+      seen: { type: 'string', default: null, nullable: true, maxLength: 64, version: true, label: 'Guide content seen' },
       // The loading screen shows the tips in turn: the index of the last one shown, -1 before the first.
       lastTip: { type: 'integer', default: -1, min: -1, max: LOADING_TIP_INDEX_MAX, label: 'Last loading tip shown' },
     },

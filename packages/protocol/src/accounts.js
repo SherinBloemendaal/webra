@@ -476,7 +476,16 @@ const SETTINGS_SECTIONS = {
   // Friends (privacy): shown as online, friends may join the lobby without an invite, friends may spectate.
   social: { showOnline: boolean, friendsJoin: boolean, allowSpectate: boolean },
   // The guide and the tour: the tour in the player's own skirmish games, the steps done, the last loading tip.
-  guide: { tourInGames: boolean, done: freeObject(SETTINGS_GUIDE_DONE_MAX_BYTES), lastTip: integer(-1, LOADING_TIP_INDEX_MAX) },
+  // seen: the newest guide content the player was shown, a version such as 0.18.0.
+  guide: {
+    tourInGames: boolean,
+    done: freeObject(SETTINGS_GUIDE_DONE_MAX_BYTES),
+    seen: (v, f) => {
+      if (typeof v !== 'string' || !VERSION_RE.test(v)) bad(f, 'Must be a version.');
+      return v;
+    },
+    lastTip: integer(-1, LOADING_TIP_INDEX_MAX),
+  },
 };
 
 /**

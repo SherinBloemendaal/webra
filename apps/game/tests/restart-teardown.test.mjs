@@ -270,7 +270,8 @@ test('js/main.js: the game setup puts what outlives a game into its scope, and R
   assert.doesNotMatch(next, /location\.reload\(\)/);
   // A game that stops before its first frame fails the loading screen instead of leaving it up (FirstFrameGuard).
   assert.match(body, /host\.on\('failed', \(message\) => \{[^}]*firstFrame\.fail\(/);
-  assert.match(body, /function frame\(now\) \{\s*if \(stopped\) return;[^}]*firstFrame\.run\(\(\) => frameBody\(now\)\);/);
+  // The loop (js/frameloop.js) runs each frame through the guard and ends when the game stops.
+  assert.match(body, /const frame = createFrameLoop\(\{\s*run: \(now\) => firstFrame\.run\(\(\) => frameBody\(now\)\),[^}]*stopped: \(\) => stopped,/);
   // The first frame closes the screen; the game starts once it is gone (docs/contracts.md section 8, "Start").
   assert.match(body, /firstFrame\.firstFrame\(\)\.then\(\(\) => \{\s*if \(!stopped\) gameStart\.begin\(performance\.now\(\)\);/);
   assert.match(body, /const \{ raw: rawDt, dt \} = gameStart\.frame\(now\);/);
