@@ -189,6 +189,12 @@ npx wrangler rollback <version-id>
 A rollback restores the Worker code and its assets, but not the D1 schema:
 write migrations so that the previous Worker version still works with them.
 
+A rollback across the Durable Object migration `v2` (the realtime hub
+`UserHub`, docs/accounts-api.md 5.12) is fine: the class stays defined, the
+hub stores only an event counter, and pages fall back to polling when the
+upgrade fails. To switch the realtime channel off without a deploy, turn off
+"Live updates" in the admin site settings.
+
 ## Local development
 
 - Site and game without the API: `npm run build`, then
