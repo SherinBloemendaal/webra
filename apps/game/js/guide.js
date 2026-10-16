@@ -51,6 +51,7 @@ import { EV, STRIDE } from './audio/director.js';
 import { boundKey } from './hotkeys.js';
 import { compareVersions, newestVersion } from './releasenotes.js';
 import { setQuickTips } from './quicktips.js';
+import { applyGuideAction } from '../protocol/guide.js';
 
 /**
  * The order the tour walks the chapters in; GUIDE (js/help.js) has the same
@@ -444,12 +445,33 @@ export class GuideProgress {
     return this.registry.set('guide', 'tourInGames', !!on);
   }
 
-  /** Take the tour again: its steps start over (passive and outside ones keep their ticks) and the switch goes on. */
+  /**
+   * Take the tour again: its steps start over (passive and outside ones keep
+   * their ticks) and the switch goes on. No new reset epoch: the account
+   * sync's set merge removes the tour's steps on the other devices and keeps
+   * the steps they ticked meanwhile (js/account/sync.js KEYED_MERGE).
+   */
   restartTour() {
     const done = this.done;
     for (const id of this.content.tourIds) delete done[id];
-    this.registry.set('guide', 'done', done);
-    this.registry.set('guide', 'tourInGames', true);
+    this.registry.patch('guide', { done, tourInGames: true });
+  }
+
+  /** Whether anything of the progress can be reset: a step done, the tour switched off, or the quick tips question asked. */
+  get started() {
+    return Object.keys(this.done).length > 0 || !this.tourInGames || this.quickTipsAsked;
+  }
+
+  /**
+   * Reset guide progress (the Guide page, after a confirm step): no step
+   * done, the tour on again, the quick tips question asked again at its end,
+   * and a new reset epoch so other devices take this over in the account
+   * sync. guide.seen stays: what the player was shown stays shown, so the
+   * Guide does not mark every step "New" (it holds no progress).
+   */
+  resetProgress(now = Date.now()) {
+    const g = applyGuideAction(this.registry.values().guide, 'reset', now);
+    this.registry.patch('guide', { done: g.done, tourInGames: g.tourInGames, quickTipsAsked: g.quickTipsAsked, resetAt: g.resetAt });
   }
 
   /** Every step the tour counts is done, in every chapter. */

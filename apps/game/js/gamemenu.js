@@ -624,6 +624,7 @@ export class GameMenu {
     if (this.view === 'settings') this.renderSettings(c);
     else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'guide' && this.opts.guide) this.renderGuidePage(c);
+    else if (this.view === 'guideReset' && this.opts.guide) this.renderGuideReset(c);
     else if (this.view === 'network' && this.net) this.renderNetwork(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
@@ -738,14 +739,14 @@ export class GameMenu {
     if (this.isOpen) this.render();
   }
 
-  /** A confirm step: title, text, the main action and Back. */
-  confirm(c, title, text, action, actionLabel, backLabel = 'Back') {
+  /** A confirm step: title, text, the main action and Back (to the menu, or `back`). */
+  confirm(c, title, text, action, actionLabel, backLabel = 'Back', back = () => this.show('main')) {
     c.append(pageHead(title, null));
     const body = el('div', 'gm-confirm');
     body.append(el('p', 'gm-text', text));
     const row = el('div', 'ui-dialog-actions');
     const main = button(actionLabel, 'ui-btn ui-btn-primary', action);
-    row.append(button(backLabel, 'ui-btn ui-btn-ghost', () => this.show('main')), main);
+    row.append(button(backLabel, 'ui-btn ui-btn-ghost', back), main);
     body.append(row);
     c.append(body);
     return c;
@@ -856,6 +857,7 @@ export class GameMenu {
         this.card.querySelector(`#guide-chapter-${id}`)?.focus({ preventScroll: true });
       },
       onBack: () => this.show('main'),
+      onReset: () => this.show('guideReset'),
     });
     // Steps ticked off meanwhile (the game, Skip, another tab, the account) show at once.
     let queued = false;
@@ -868,6 +870,26 @@ export class GameMenu {
           if (this.isOpen && this.view === 'guide') this.render();
         });
       }),
+    );
+  }
+
+  /** Reset guide progress, asked first: every step starts over (GuideProgress.resetProgress). Back returns to the Guide. */
+  renderGuideReset(c) {
+    const signedIn = this.opts.syncStatus?.()?.signedIn === true;
+    this.confirm(
+      c,
+      'Reset guide progress',
+      `Start the guide over? Every step is open again, the tour starts in your next skirmish game, and its last card asks about quick tips again.${signedIn ? ' Your account takes this over, so your other devices start over too.' : ''}`,
+      () => {
+        this.opts.guide.resetProgress();
+        this.guideChapter = null;
+        this.view = 'guide';
+        this.message = 'Guide progress reset.';
+        this.render();
+      },
+      'Reset progress',
+      'Back',
+      () => this.show('guide'),
     );
   }
 

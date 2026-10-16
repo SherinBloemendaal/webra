@@ -1,7 +1,8 @@
 // The admin dashboard (/admin.html): overview, users (search, filters,
 // sorting, pages, bulk approve and reject, a detail drawer with profile,
-// status, role, flags, login methods, sessions, IP history, bans and the
-// settings document), IP bans, site settings and the audit log
+// status, role, flags, login methods, sessions, IP history, bans, the guide
+// progress with its actions and the settings document), IP bans, site
+// settings and the audit log
 // (docs/accounts-api.md 8). Moderators see only what their role allows.
 // The server checks every action again.
 
@@ -11,6 +12,7 @@ import {
   AUDIT_ACTIONS,
   BAN_PRESETS,
   FLAGS,
+  GUIDE_FILTERS,
   ROLES,
   SETTABLE_STATUSES,
   SORTS,
@@ -22,6 +24,8 @@ import {
   auditParams,
   banExpiry,
   canBan,
+  guideFacts,
+  guideLine,
   localInputValue,
   looksLikeCidr,
   parseView,
@@ -237,6 +241,7 @@ export async function mountAdmin(root, deps = {}) {
     const st = select('Status', STATUSES.map((s) => [s, STATUS_LABELS[s]]), table.query.status, (v) => (table.filter({ status: v }), load()));
     const role = select('Role', ROLES.map((r) => [r, r]), table.query.role, (v) => (table.filter({ role: v }), load()));
     const flag = select('Flag', Object.entries(FLAGS), table.query.flag, (v) => (table.filter({ flag: v }), load()));
+    const guide = can.guide ? select('Guide', Object.entries(GUIDE_FILTERS), table.query.guide, (v) => (table.filter({ guide: v }), load())) : null;
     const limit = select('Per page', [10, 25, 50, 100].map((n) => [String(n), String(n)]), String(table.query.limit), (v) => (table.filter({ limit: Number(v) }), load()), null);
     let timer = null;
     q.input.addEventListener('input', () => {
@@ -296,6 +301,7 @@ export async function mountAdmin(root, deps = {}) {
       el('th', { scope: 'col', text: 'Email' }),
       sortButton('created', SORTS.created),
       sortButton('lastSeen', SORTS.lastSeen),
+      can.guide ? sortButton('guide', SORTS.guide) : null,
       el('th', { scope: 'col', text: 'Actions' }),
     );
     const range = el('span', { class: 'form-help', 'aria-live': 'polite' });
@@ -330,11 +336,12 @@ export async function mountAdmin(root, deps = {}) {
             el('td', { class: 'col-email', text: u.email ?? '' }),
             el('td', { text: formatDateTime(u.createdAt) }),
             el('td', { text: formatDateTime(u.lastSeenAt) }),
+            can.guide ? el('td', { class: 'col-guide', text: guideLine(u.guide) }) : null,
             actions,
           );
         }),
       );
-      if (!table.users.length) tbody.append(el('tr', {}, el('td', { colspan: '8', class: 'form-help', text: 'No users match.' })));
+      if (!table.users.length) tbody.append(el('tr', {}, el('td', { colspan: String(can.guide ? 9 : 8), class: 'form-help', text: 'No users match.' })));
       all.checked = table.users.length > 0 && table.users.every((u) => table.selected.has(u.id));
       range.textContent = table.rangeText();
       prev.disabled = table.query.page <= 1;
@@ -358,7 +365,7 @@ export async function mountAdmin(root, deps = {}) {
 
     reloadUsers = load;
     panel.replaceChildren(
-      el('div', { class: 'controls admin-filters' }, el('div', { class: 'field-grow' }, q.row), st.row, role.row, flag.row, limit.row),
+      el('div', { class: 'controls admin-filters' }, el('div', { class: 'field-grow' }, q.row), st.row, role.row, flag.row, guide?.row ?? null, limit.row),
       status.node,
       bulk,
       el('div', { class: 'table-wrap' }, el('table', { class: 'data-table' }, el('caption', { class: 'visually-hidden', text: 'Users' }), el('thead', {}, head), tbody)),
@@ -553,6 +560,7 @@ export async function mountAdmin(root, deps = {}) {
       parts.push(detailsBlock(`Passkeys (${d.passkeys.length})`, el('ul', { class: 'item-list' }, ...d.passkeys.map((p) => el('li', { class: 'item', text: `${p.name}, added ${formatDateTime(p.createdAt)}, last used ${formatDateTime(p.lastUsedAt)}${p.counterError ? ' (counter error: may be cloned)' : ''}` })))));
     }
     if (can.relayQuota && d.relay) parts.push(relayBlock(u, d.relay, status, reload));
+    if (can.guide && d.guide) parts.push(guideBlock(u, d.guide, status, reload));
     if (can.settings) parts.push(settingsEditor(u));
     body.replaceChildren(...present(parts));
   }
@@ -596,6 +604,36 @@ export async function mountAdmin(root, deps = {}) {
         : [el('p', { class: 'form-help', text: 'No networks seen in the last day.' })]),
       el('div', { class: 'form-actions' }, reset),
     );
+  }
+
+  /**
+   * The guide progress (docs/accounts-api.md 8.11) with Complete guide,
+   * Reset guide and Restart tour, each asked first. The player's game takes
+   * the change at its next sync.
+   */
+  function guideBlock(u, g, status, reload) {
+    const facts = el('dl', { class: 'detail-facts' }, ...guideFacts(g, formatDateTime).flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]));
+    const actions = el('div', { class: 'form-actions' });
+    const note = 'Their game takes it over at its next sync (the next start or settings change), on every device. This is audit logged.';
+    const run = [
+      ['complete', 'Complete guide', `Mark every guide step done for ${u.username}? The tour ends and its quick tips question counts as asked, so no tour card shows. ${note}`, 'The guide is complete.'],
+      ['reset', 'Reset guide', `Start the guide over for ${u.username}? No step stays done, the tour starts in their next skirmish game and asks the quick tips question again at its end. ${note}`, 'The guide is reset.'],
+      ['restartTour', 'Restart tour', `Start the tour over for ${u.username}? Only the tour's steps start over; the other guide steps stay done. ${note}`, 'The tour starts over.'],
+    ];
+    for (const [action, label, question, done] of run) {
+      const b = el('button', { type: 'button', class: action === 'reset' ? 'btn btn-small btn-danger' : 'btn btn-small', text: label });
+      b.disabled = !g.stored;
+      b.addEventListener('click', async () => {
+        if (!(await confirmDialog(label, question, { confirmText: label, danger: action === 'reset' }))) return;
+        await busy(b, status, async () => {
+          await api.guideAction(u.id, action);
+          await reload(done);
+          refreshTable();
+        }, errorText);
+      });
+      actions.append(b);
+    }
+    return detailsBlock(`Guide progress (${guideLine(g)})`, facts, actions);
   }
 
   function detailsBlock(title, ...content) {

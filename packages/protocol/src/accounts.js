@@ -9,6 +9,7 @@
 import { COLOR_COUNT, FACTIONS, NAME_MAX, VERSION_RE } from './constants.js';
 import { isPlainObject, ProtocolError, text } from './check.js';
 import { validateSavedPresets } from './presets.js';
+import { GUIDE_RESET_AT_MAX } from './guide.js';
 
 // ---- Value sets ------------------------------------------------------------------
 
@@ -488,6 +489,9 @@ const SETTINGS_SECTIONS = {
     lastTip: integer(-1, LOADING_TIP_INDEX_MAX),
     // quickTipsAsked: the tour's last card asked about game.quickTips.
     quickTipsAsked: boolean,
+    // resetAt: the reset epoch (Unix milliseconds, 0: never reset). A newer one wins the merge of the
+    // progress settings (packages/protocol/src/guide.js GUIDE_EPOCH_KEYS, docs/accounts-api.md 5.8).
+    resetAt: integer(0, GUIDE_RESET_AT_MAX),
   },
 };
 

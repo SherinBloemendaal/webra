@@ -8,6 +8,8 @@ import { toBase64url, fromBase64url, creationOptions, requestOptions, credential
 import { SettingsSync, keepGraphicsFromOldClients, mergeSettings, resolveConflicts, SYNC_KEY } from '../js/account/sync.js';
 import { createRegistry, normalizeValues, checkDocument } from '../js/registry.js';
 import { MockAccountServer } from './account-mock.mjs';
+import { applyGuideAction } from '../protocol/guide.js';
+import { GuideProgress } from '../js/guide.js';
 import { memoryStorage } from './dom-fixtures.mjs';
 
 function setup() {
@@ -310,6 +312,138 @@ test('sync: another account on this device starts clean (its document wins, noth
   assert.equal(b.registry.get('audio', 'master'), 0.4);
   assert.equal(server.settingsDocs.get(two.id).version, 4);
   assert.equal(b.conflicts.length, 0);
+});
+
+/** An admin guide action as the server does it (POST /api/admin/users/:id/guide): the action on the stored document, a new version. */
+function adminGuide(server, user, action) {
+  const cur = server.settingsDocs.get(user.id);
+  server.now += 60_000;
+  server.settingsDocs.set(user.id, { version: cur.version + 1, updatedAt: server.now, settings: { ...cur.settings, guide: applyGuideAction(cur.settings.guide, action, server.now) } });
+}
+
+const doneIds = (registry) => Object.keys(registry.get('guide', 'done')).sort();
+
+test('sync: an admin reset of the guide wins on the next sync; the steps this device still has do not come back', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  asUser(server, user);
+  const a = device(server, user);
+  a.registry.patch('guide', { done: { 'base.mcv': true, 'base.power': true }, tourInGames: false, quickTipsAsked: true });
+  await a.sync.start(user);
+  assert.deepEqual(Object.keys(server.settingsDocs.get(user.id).settings.guide.done).sort(), ['base.mcv', 'base.power']);
+
+  // Synced and idle: the next sync takes the reset as it is.
+  adminGuide(server, user, 'reset');
+  await a.sync.pull();
+  assert.deepEqual(doneIds(a.registry), []);
+  assert.equal(a.registry.get('guide', 'tourInGames'), true);
+  assert.equal(a.registry.get('guide', 'quickTipsAsked'), false);
+  assert.equal(a.registry.get('guide', 'resetAt'), server.settingsDocs.get(user.id).settings.guide.resetAt);
+  // A step done afterwards goes up alone.
+  a.registry.patch('guide', { done: { 'base.mcv': true } });
+  await a.timers.fire();
+  assert.deepEqual(Object.keys(server.settingsDocs.get(user.id).settings.guide.done), ['base.mcv']);
+
+  // Offline with more steps and another setting change; the admin resets meanwhile; back online.
+  server.offline = true;
+  a.registry.patch('guide', { done: { 'base.mcv': true, 'base.power': true, 'base.refinery': true } });
+  a.registry.set('audio', 'master', 0.35);
+  await a.timers.fire();
+  assert.equal(a.statuses.at(-1), 'offline');
+  server.offline = false;
+  adminGuide(server, user, 'reset');
+  const version = server.settingsDocs.get(user.id).version;
+  await a.sync.flush();
+  const doc = server.settingsDocs.get(user.id);
+  assert.equal(doc.version, version + 1, 'merged and uploaded');
+  assert.deepEqual(doc.settings.guide.done, {}, 'the reset stays a reset on the server');
+  assert.deepEqual(doneIds(a.registry), [], 'and on this device');
+  assert.equal(doc.settings.audio.master, 0.35, 'the other change went up');
+  assert.equal(a.conflicts.length, 0, 'no conflict question');
+
+  // Restart tour and Complete guide reach the device the same way.
+  adminGuide(server, user, 'complete');
+  await a.sync.pull();
+  assert.equal(new GuideProgress(a.registry).tourComplete(), true);
+  assert.equal(a.registry.get('guide', 'quickTipsAsked'), true);
+  adminGuide(server, user, 'restartTour');
+  await a.sync.pull();
+  const progress = new GuideProgress(a.registry);
+  assert.equal(progress.count(progress.content.tourIds), 0);
+  assert.ok(progress.count() > 0, 'the steps outside the tour stay done');
+});
+
+test('sync: a reset of the guide on one device wins on another that still has its steps, both ways round', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  asUser(server, user);
+  const a = device(server, user);
+  a.registry.patch('guide', { done: { 'base.mcv': true, 'base.power': true } });
+  await a.sync.start(user);
+  const b = device(server, user);
+  await b.sync.start(user);
+  assert.deepEqual(doneIds(b.registry), ['base.mcv', 'base.power']);
+
+  // B ticks a step offline; A resets the guide (the Guide page) and uploads it.
+  server.offline = true;
+  b.registry.patch('guide', { done: { 'base.mcv': true, 'base.power': true, 'base.refinery': true } });
+  await b.timers.fire();
+  server.offline = false;
+  new GuideProgress(a.registry).resetProgress(server.now);
+  await a.timers.fire();
+  assert.deepEqual(server.settingsDocs.get(user.id).settings.guide.done, {});
+  // B comes back: its upload meets the newer version (412), the merge takes the reset.
+  await b.sync.flush();
+  assert.deepEqual(doneIds(b.registry), []);
+  assert.deepEqual(server.settingsDocs.get(user.id).settings.guide.done, {});
+  assert.equal(b.conflicts.length, 0);
+
+  // Now the other way: A resets offline (later), B ticks a step online first.
+  b.registry.patch('guide', { done: { 'base.mcv': true } });
+  await b.timers.fire();
+  await a.sync.pull();
+  assert.deepEqual(doneIds(a.registry), ['base.mcv']);
+  server.offline = true;
+  new GuideProgress(a.registry).resetProgress(server.now + 120_000);
+  await a.timers.fire();
+  server.offline = false;
+  b.registry.patch('guide', { done: { 'base.mcv': true, 'base.power': true } });
+  await b.timers.fire();
+  await a.sync.flush();
+  assert.deepEqual(server.settingsDocs.get(user.id).settings.guide.done, {}, 'the later reset wins');
+  await b.sync.pull();
+  assert.deepEqual(doneIds(b.registry), []);
+});
+
+test('sync: Take the tour again on one device clears the tour on another without dropping the steps that device ticked meanwhile', async () => {
+  const server = new MockAccountServer();
+  const user = server.addUser({ username: 'Tanya', password: 'a long passphrase' });
+  asUser(server, user);
+  const a = device(server, user);
+  const tour = new GuideProgress(a.registry).content.tourIds;
+  a.registry.patch('guide', { done: Object.fromEntries(tour.map((id) => [id, true])) });
+  await a.sync.start(user);
+  const b = device(server, user);
+  await b.sync.start(user);
+  // B ticks passive and outside steps offline; A takes the tour again online.
+  server.offline = true;
+  b.registry.patch('guide', { done: { ...b.registry.get('guide', 'done'), 'power.low': true, 'team.chat': true } });
+  await b.timers.fire();
+  server.offline = false;
+  new GuideProgress(a.registry).restartTour();
+  await a.timers.fire();
+  assert.equal(a.registry.get('guide', 'resetAt'), 0, 'no new epoch');
+  // B comes back: the set merge drops the tour's steps (A removed them) and keeps B's new ones.
+  await b.sync.flush();
+  assert.deepEqual(doneIds(b.registry), ['power.low', 'team.chat']);
+  assert.deepEqual(Object.keys(server.settingsDocs.get(user.id).settings.guide.done).sort(), ['power.low', 'team.chat']);
+  assert.equal(b.conflicts.length, 0);
+  await a.sync.pull();
+  assert.deepEqual(doneIds(a.registry), ['power.low', 'team.chat']);
+  assert.equal(new GuideProgress(a.registry).tourComplete(), false, 'the tour runs again on both');
+  // An admin's Restart tour keeps the epoch the same way.
+  adminGuide(server, user, 'restartTour');
+  assert.equal(server.settingsDocs.get(user.id).settings.guide.resetAt ?? 0, 0);
 });
 
 test('merge: one-sided changes win, both-sided different values conflict, no base means every difference', () => {

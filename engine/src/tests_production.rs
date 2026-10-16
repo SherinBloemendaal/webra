@@ -1048,14 +1048,198 @@ fn a_captured_construction_yard_lists_the_other_sides_structures() {
     let fact = find(&w, 1, "FACT");
     w.capture(fact, 0, None);
     w.refresh_tokens();
-    // So are the units of the structures it builds (a sub pen's `spen`), but
-    // not those that need a Soviet war factory: what it builds is Allied.
-    assert_lists(&w, 0, &["TENT", "BARR", "KENN", "SPEN", "STEK", "IRON", "SAM", "E2", "DOG", "HIND", "SS"], &["3TNK", "APC"]);
+    // So are the units of the structures it builds (a sub pen's `spen`), and
+    // those of a Soviet war factory: what it places is Soviet (OpenRA
+    // PlaceBuilding gives the producer's faction).
+    assert_lists(&w, 0, &["TENT", "BARR", "KENN", "SPEN", "STEK", "IRON", "SAM", "E2", "DOG", "HIND", "SS", "3TNK", "APC"], &[]);
     let barr = ty(&w, "BARR");
     assert!(w.requirements(0, barr).iter().all(|r| !r.never), "Soviet Barracks only needs power now");
+    let tnk = ty(&w, "3TNK");
+    assert!(w.requirements(0, tnk).iter().all(|r| !r.never), "{:?}", w.requirements(0, tnk));
     // Losing it takes them away again.
     destroy(&mut w, fact);
-    assert_lists(&w, 0, &["TENT"], &["BARR", "STEK", "IRON"]);
+    assert_lists(&w, 0, &["TENT"], &["BARR", "STEK", "IRON", "3TNK", "APC"]);
+}
+
+// ---- Factions of placed structures and produced units (OpenRA FactionInit) ----
+
+fn faction_of(w: &World, i: usize) -> &str {
+    &w.rules.factions[w.actors[i].faction as usize]
+}
+
+/// The newest live actor of `id` that `owner` has.
+fn newest(w: &World, owner: u8, id: &str) -> usize {
+    let t = ty(w, id);
+    (0..w.actors.len())
+        .filter(|&i| w.actors[i].alive && w.actors[i].owner == owner && w.actors[i].ty == t)
+        .max_by_key(|&i| w.actors[i].serial)
+        .unwrap()
+}
+
+/// Build `id` in queue `q` and place it at the first free spot.
+fn place_new(w: &mut World, player: u8, id: &str, q: usize) -> usize {
+    let t = ty(w, id);
+    let before = count(w, player, id);
+    w.queue_order(Order::StartProduction { player, ty: t, count: 1 });
+    run(w, 1);
+    run_until_done(w, player, q);
+    let (x, y) = spot(w, player, id);
+    w.queue_order(Order::Place { player, ty: t, cx: x, cy: y });
+    run(w, 2);
+    assert_eq!(count(w, player, id), before + 1, "{id} placed");
+    newest(w, player, id)
+}
+
+/// Queue one `id` and run until it has left its factory.
+fn produce(w: &mut World, player: u8, id: &str) -> usize {
+    let before = count(w, player, id);
+    w.queue_order(Order::StartProduction { player, ty: ty(w, id), count: 1 });
+    for _ in 0..6000 {
+        w.step();
+        if count(w, player, id) > before {
+            return newest(w, player, id);
+        }
+    }
+    panic!("{id} was never produced");
+}
+
+/// Allies (player 0) with power and a refinery and the Soviet Construction
+/// Yard taken by an engineer. The Soviet yard was made after the Allied one,
+/// so it is the newer of the two.
+fn allies_with_captured_soviet_yard() -> (World, usize, usize) {
+    let mut w = World::new(1, 80, &[("allies", false), ("soviet", false)]);
+    let (own, soviet) = (find(&w, 0, "FACT"), find(&w, 1, "FACT"));
+    assert!(w.actors[soviet].serial > w.actors[own].serial);
+    w.capture(soviet, 0, None);
+    for id in ["APWR", "PROC"] {
+        let (x, y) = spot(&w, 0, id);
+        w.spawn_building(ty(&w, id), 0, x, y).unwrap();
+    }
+    w.players[0].cash = 100_000;
+    w.refresh_tokens();
+    w.update_power();
+    (w, own, soviet)
+}
+
+#[test]
+fn a_captured_soviet_yard_places_soviet_structures_that_make_soviet_units() {
+    let (mut w, _, soviet) = allies_with_captured_soviet_yard();
+    assert_eq!(faction_of(&w, soviet), "soviet", "a captured yard keeps its faction");
+    assert_eq!(w.placement_faction(0, ty(&w, "WEAP")), w.rules.faction_index("soviet").unwrap());
+    // OpenRA PlaceBuilding: FactionInit of queue.MostLikelyProducer(), the newest yard.
+    let weap = place_new(&mut w, 0, "WEAP", BQ);
+    assert_eq!(faction_of(&w, weap), "soviet");
+    let token = |w: &World, name: &str| w.players[0].tokens[w.rules.token(name).unwrap() as usize];
+    assert!(token(&w, "vehicles.soviet"), "a Soviet war factory gives the Soviet vehicles");
+    assert!(!token(&w, "vehicles.allies"), "and not the Allied ones");
+    assert!(w.can_produce(0, ty(&w, "APC")));
+    assert!(!w.can_produce(0, ty(&w, "1TNK")));
+    let fix = place_new(&mut w, 0, "FIX", BQ);
+    assert_eq!(faction_of(&w, fix), "soviet");
+    // Wall pieces a placed piece fills in get its faction too (PlaceBuilding's LineBuild branch).
+    let fenc = ty(&w, "FENC");
+    let (sx, sy) = w.players[0].start;
+    let (x, y) = (-12..14)
+        .flat_map(|dy| (-12..14).map(move |dx| (sx + dx, sy + dy)))
+        .find(|&(x, y)| (0..4).all(|k| w.can_place(0, fenc, x + k, y)))
+        .expect("room for a wall");
+    for cx in [x, x + 3] {
+        w.queue_order(Order::StartProduction { player: 0, ty: fenc, count: 1 });
+        run(&mut w, 1);
+        run_until_done(&mut w, 0, DQ);
+        w.queue_order(Order::Place { player: 0, ty: fenc, cx, cy: y });
+        run(&mut w, 2);
+    }
+    let pieces: Vec<usize> = (0..w.actors.len()).filter(|&i| w.actors[i].alive && w.actors[i].ty == fenc).collect();
+    assert_eq!(pieces.len(), 4, "two placed, two filled in");
+    assert!(pieces.iter().all(|&i| faction_of(&w, i) == "soviet"));
+    // OpenRA ClassicProductionQueue.BuildUnit: FactionInit of the factory's Production.Faction.
+    let tnk = produce(&mut w, 0, "3TNK");
+    assert_eq!(faction_of(&w, tnk), "soviet");
+    let mcv = produce(&mut w, 0, "MCV");
+    assert_eq!(faction_of(&w, mcv), "soviet", "an MCV of a Soviet war factory is Soviet");
+}
+
+#[test]
+fn structures_keep_their_faction_when_the_captured_yard_is_lost() {
+    let (mut w, own, soviet) = allies_with_captured_soviet_yard();
+    let weap = place_new(&mut w, 0, "WEAP", BQ);
+    destroy(&mut w, soviet);
+    // OpenRA: FactionInit is set once; ProvidesPrerequisite.ResetOnOwnerChange
+    // and Production.UpdateFactionOnOwnerChange are off in Red Alert.
+    assert_eq!(faction_of(&w, weap), "soviet");
+    assert!(w.can_produce(0, ty(&w, "APC")), "the Soviet war factory still makes Soviet vehicles");
+    // Its MCV would be Soviet again (`reach`), so Soviet structures stay within reach.
+    assert_lists(&w, 0, &["APC", "TENT", "MCV", "BARR"], &[]);
+    // The Allied yard places again: Allied structures.
+    assert_eq!(faction_of(&w, own), "allies");
+    let tent = place_new(&mut w, 0, "TENT", BQ);
+    assert_eq!(faction_of(&w, tent), "allies");
+    let apc = produce(&mut w, 0, "APC");
+    assert_eq!(faction_of(&w, apc), "soviet");
+}
+
+#[test]
+fn the_most_likely_producer_is_the_primary_one_then_the_newest() {
+    let (mut w, own, soviet) = allies_with_captured_soviet_yard();
+    assert_eq!(w.most_likely_producer(0, QueueType::Building), Some(soviet), "the newer yard");
+    assert_eq!(w.most_likely_producer(0, QueueType::Defense), Some(soviet));
+    // A new Allied yard (an MCV deploying) is newer still.
+    let (x, y) = spot(&w, 0, "FACT");
+    let mcv = w.spawn_unit(ty(&w, "MCV"), 0, cell_center(x + 1), cell_center(y + 1), 384);
+    assert!(w.deploy(mcv), "the MCV deploys");
+    let fresh = newest(&w, 0, "FACT");
+    assert!(fresh != own && fresh != soviet);
+    assert_eq!(faction_of(&w, fresh), "allies");
+    assert_eq!(w.most_likely_producer(0, QueueType::Building), Some(fresh));
+    let sbag = place_new(&mut w, 0, "SBAG", DQ);
+    assert_eq!(faction_of(&w, sbag), "allies");
+    // An MCV keeps its faction when it deploys (OpenRA Transforms' FactionInit).
+    let (x, y) = spot(&w, 0, "FACT");
+    let mcv = w.spawn_unit(ty(&w, "MCV"), 0, cell_center(x + 1), cell_center(y + 1), 384);
+    w.actors[mcv].faction = w.rules.faction_index("soviet").unwrap() as u8;
+    assert!(w.deploy(mcv));
+    let redeployed = newest(&w, 0, "FACT");
+    assert_eq!(faction_of(&w, redeployed), "soviet");
+    assert_eq!(w.most_likely_producer(0, QueueType::Building), Some(redeployed));
+    // Two war factories: the primary one makes the units and gives them its
+    // faction, else the newest.
+    let weap = place_new(&mut w, 0, "WEAP", BQ);
+    assert_eq!(faction_of(&w, weap), "soviet");
+    let allied_weap = {
+        let (x, y) = spot(&w, 0, "WEAP");
+        w.spawn_building(ty(&w, "WEAP"), 0, x, y).unwrap()
+    };
+    w.refresh_tokens();
+    assert_eq!(faction_of(&w, allied_weap), "allies");
+    assert_eq!(w.most_likely_producer(0, QueueType::Vehicle), Some(allied_weap), "the newer one");
+    assert!(w.toggle_primary(weap));
+    assert_eq!(w.most_likely_producer(0, QueueType::Vehicle), Some(weap), "the primary one");
+    let harv = produce(&mut w, 0, "HARV");
+    assert_eq!(faction_of(&w, harv), "soviet", "out of the primary Soviet war factory");
+    assert!(w.toggle_primary(weap));
+    let harv = produce(&mut w, 0, "HARV");
+    assert_eq!(faction_of(&w, harv), "allies", "out of the newest one");
+}
+
+#[test]
+fn a_captured_soviet_war_factory_lists_soviet_structures_through_its_mcv() {
+    // No Soviet yard, only a Soviet war factory: its MCV would be Soviet, and
+    // a Soviet yard places Soviet structures (`reach`).
+    let mut w = World::new(1, 80, &[("allies", false), ("soviet", false)]);
+    w.refresh_tokens();
+    assert_lists(&w, 0, &["TENT", "1TNK"], &["BARR", "STEK", "APC", "3TNK"]);
+    let (x, y) = spot(&w, 1, "WEAP");
+    let weap = w.spawn_building(ty(&w, "WEAP"), 1, x, y).unwrap();
+    w.capture(weap, 0, None);
+    w.refresh_tokens();
+    // Its units, and through the service depot the Allied yard can add and
+    // the MCV it then makes, the Soviet structures.
+    assert_lists(&w, 0, &["APC", "3TNK", "MCV", "TENT", "BARR", "STEK"], &[]);
+    let barr = ty(&w, "BARR");
+    assert!(w.requirements(0, barr).iter().all(|r| !r.never), "{:?}", w.requirements(0, barr));
+    destroy(&mut w, weap);
+    assert_lists(&w, 0, &["TENT"], &["BARR", "STEK", "APC", "3TNK"]);
 }
 
 #[test]
@@ -1080,4 +1264,19 @@ fn country_items_stay_apart_without_a_construction_yard() {
         assert!(!w.players[0].tokens.iter().enumerate().any(|(t, &h)| h && w.rules.tokens[t].starts_with("structures.")));
         assert_lists(&w, 0, &[own], &[other]);
     }
+}
+
+#[test]
+fn the_state_hash_sees_an_actors_faction_and_serial() {
+    // Faction (infantry.rs `hash_infantry_actor`) and serial (world.rs
+    // `state_hash`) decide what production makes: a desync in either shows.
+    let a = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    let mut b = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    assert_eq!(a.state_hash(), b.state_hash());
+    let fact = find(&b, 0, "FACT");
+    b.actors[fact].faction = b.rules.faction_index("soviet").unwrap() as u8;
+    assert_ne!(a.state_hash(), b.state_hash(), "the faction is hashed");
+    let mut c = World::new(1, 64, &[("allies", false), ("soviet", false)]);
+    c.actors[fact].serial += 1000;
+    assert_ne!(a.state_hash(), c.state_hash(), "the serial is hashed");
 }

@@ -38,7 +38,8 @@ import {
 import { compareVersions, newestVersion } from '../js/releasenotes.js';
 import { ALSO_CLASS, LOW_POWER_WARNING, TourCard, TARGET_CLASS, TOUR_TARGETS, tourModel } from '../js/tour.js';
 import { GameMenu } from '../js/gamemenu.js';
-import { SETTINGS_GUIDE_DONE_MAX_BYTES } from '../protocol/accounts.js';
+import { SETTINGS_GUIDE_DONE_MAX_BYTES, validateSettingsDocument } from '../protocol/accounts.js';
+import { GUIDE_OUTLINE, applyGuideAction, guideSummary } from '../protocol/guide.js';
 
 let doc;
 beforeEach(() => {
@@ -876,6 +877,117 @@ test('Guide page: chapters with lamps, the steps with Watching and Done, Skip th
   click([...root.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Back to the game menu'));
   assert.ok([...root.querySelectorAll('button')].find((b) => b.textContent === 'Resume'));
   menu.dispose();
+});
+
+test('reset: Reset guide progress starts every step over, the tour on, the quick tips question again; guide.seen stays; a newer reset epoch', () => {
+  const { registry, progress } = setup();
+  progress.reconcile();
+  const seen = registry.get('guide', 'seen');
+  assert.equal(progress.started, false, 'a new player has nothing to reset');
+  progress.mark([...TOUR_STEPS, 'power.low', 'team.chat']);
+  progress.answerQuickTips(false);
+  progress.setTourInGames(false);
+  registry.set('guide', 'lastTip', 7);
+  assert.equal(progress.started, true);
+  progress.resetProgress(5_000);
+  assert.deepEqual(registry.get('guide', 'done'), {});
+  assert.equal(progress.tourInGames, true);
+  assert.equal(progress.quickTipsAsked, false);
+  assert.equal(registry.get('guide', 'seen'), seen, 'what was seen stays seen: no flood of New badges');
+  assert.deepEqual(progress.newSteps(), []);
+  assert.equal(registry.get('guide', 'lastTip'), 7, 'the loading tips go on where they were');
+  assert.equal(registry.get('game', 'quickTips'), false, 'the quick tips choice itself stays until asked again');
+  assert.equal(registry.get('guide', 'resetAt'), 5_000);
+  assert.equal(tourRuns({ kind: 'skirmish' }, progress), true);
+  assert.equal(progress.tourStep(), 'base.mcv');
+  // Every reset moves the epoch on, also with a clock that went back.
+  progress.resetProgress(1_000);
+  assert.equal(registry.get('guide', 'resetAt'), 5_001);
+  // Take the tour again keeps the epoch: the set merge carries it to other devices without dropping their steps.
+  progress.mark(TOUR_STEPS);
+  progress.restartTour();
+  assert.equal(registry.get('guide', 'resetAt'), 5_001);
+  // The registry's document still passes the server.
+  assert.doesNotThrow(() => validateSettingsDocument(registry.document()));
+});
+
+test('Guide page: Reset guide progress asks first; Back keeps everything; Reset starts the guide over; Take the tour again stays', () => {
+  const registry = createRegistry({ storage: memoryStorage() });
+  const progress = new GuideProgress(registry);
+  progress.reconcile();
+  const { menu, root, guideButton } = guideMenu(progress, registry);
+  menu.open();
+  click(guideButton());
+  const resetButton = () => [...root.querySelectorAll('button')].find((b) => b.textContent === 'Reset guide progress');
+  assert.equal(resetButton(), undefined, 'nothing to reset yet');
+  menu.close();
+  progress.mark(TOUR_STEPS);
+  progress.answerQuickTips(true);
+  menu.open();
+  click(guideButton());
+  assert.ok([...root.querySelectorAll('button')].find((b) => b.textContent === 'Take the tour again'), 'Take the tour again is still offered');
+  click(resetButton());
+  // The menu's confirm step.
+  assert.equal(root.querySelector('h1').textContent, 'Reset guide progress');
+  assert.match(textOf(root.querySelector('.gm-confirm')), /Every step is open again/);
+  const confirmButton = (label) => [...root.querySelectorAll('.gm-confirm button')].find((b) => b.textContent === label);
+  click(confirmButton('Back'));
+  assert.equal(root.querySelector('h1').textContent, 'Guide', 'Back returns to the Guide');
+  assert.equal(progress.count(TOUR_STEPS), TOUR_STEPS.length, 'nothing changed');
+  click(resetButton());
+  click(confirmButton('Reset progress'));
+  assert.equal(root.querySelector('h1').textContent, 'Guide');
+  assert.match(textOf(root.querySelector('.gm-message')), /Guide progress reset/);
+  assert.equal(progress.count(), 0);
+  assert.equal(progress.quickTipsAsked, false);
+  assert.equal(root.querySelector('#guide-tour-in-games').checked, true);
+  assert.equal(resetButton(), undefined, 'nothing left to reset');
+  assert.match(textOf(root), /0 of 32 steps done/);
+  menu.dispose();
+});
+
+test('outline: the protocol\'s guide outline and progress summary (the admin view) follow GuideProgress', () => {
+  // The generated outline (tools/gen-guide-outline.mjs) is this guide.
+  assert.deepEqual(GUIDE_OUTLINE.chapters.map((c) => c.steps.map((st) => st.id)), CONTENT.chapters.map((c) => c.steps.map((st) => st.id)));
+  assert.equal(GUIDE_OUTLINE.version, CONTENT.version);
+  const empty = guideSummary({});
+  assert.deepEqual([empty.steps.total, empty.tour.total], [STEP_IDS.length, TOUR_STEPS.length]);
+  assert.deepEqual([STEP_IDS.length, TOUR_STEPS.length], [32, 26]);
+  // Where the tour is, for many sets of done steps: the same chapter and step as the game.
+  const registry = createRegistry({ storage: memoryStorage() });
+  const progress = new GuideProgress(registry);
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let i = 0; i < 300; i++) {
+    const p = i % 3 === 0 ? 0.9 : rand();
+    const done = Object.fromEntries(STEP_IDS.filter(() => rand() < p).map((id) => [id, true]));
+    registry.set('guide', 'done', done);
+    const sum = guideSummary(registry.values().guide);
+    assert.equal(sum.steps.done, progress.count(), `steps of set ${i}`);
+    assert.equal(sum.tour.done, progress.count(TOUR_STEPS));
+    assert.equal(sum.tour.chapter, progress.tourChapter()?.id ?? null, `chapter of set ${i}`);
+    assert.equal(sum.tour.step, progress.tourStep(), `step of set ${i}`);
+  }
+  // The tour's states.
+  const g = (o) => guideSummary({ done: Object.fromEntries(TOUR_STEPS.map((id) => [id, true])), ...o }).tour.state;
+  assert.equal(guideSummary({}).tour.state, 'running');
+  assert.equal(guideSummary({ tourInGames: false }).tour.state, 'off');
+  assert.equal(g({}), 'finale');
+  assert.equal(g({ quickTipsAsked: true }), 'finished');
+  assert.equal(g({ tourInGames: false }), 'finished');
+  // The admin actions do what the Guide page does.
+  registry.set('guide', 'done', { 'base.mcv': true, 'power.low': true });
+  const restarted = applyGuideAction(registry.values().guide, 'restartTour', 10);
+  progress.restartTour();
+  assert.deepEqual(restarted, registry.values().guide);
+  progress.mark(STEP_IDS);
+  registry.set('guide', 'quickTipsAsked', true);
+  const reset = applyGuideAction(registry.values().guide, 'reset', 20);
+  progress.resetProgress(20);
+  assert.deepEqual(reset, registry.values().guide);
+  const complete = guideSummary(applyGuideAction(registry.values().guide, 'complete', 30));
+  assert.equal(complete.steps.done, STEP_IDS.length);
+  assert.equal(complete.tour.state, 'finished');
 });
 
 test('tracker: a frame with many events reads the progress a fixed number of times', () => {

@@ -187,7 +187,7 @@ export class AccountApi {
 
   // ---- Admin (8) ----------------------------------------------------------------------------
   stats = () => this.get('/api/admin/stats');
-  /** @param {{ q?, status?, role?, flag?, sort?, order?, page?, limit? }} query */
+  /** @param {{ q?, status?, role?, flag?, guide?, sort?, order?, page?, limit? }} query */
   users = (query = {}) => this.get(`/api/admin/users${queryString(query)}`);
   user = (id) => this.get(`/api/admin/users/${enc(id)}`);
   updateUser = (id, input) => this.patch(`/api/admin/users/${enc(id)}`, input);
@@ -212,6 +212,8 @@ export class AccountApi {
     return { ...body, version: body.version ?? versionOfEtag(etag) ?? 0 };
   }
   putUserSettings = async (id, version, settings) => (await this.send('PUT', `/api/admin/users/${enc(id)}/settings`, { body: { settings }, ifMatch: version })).body;
+  /** A guide action (`complete`, `reset`, `restartTour`) on the account's settings document: `{ version, updatedAt, settings, guide }`. */
+  guideAction = (id, action) => this.post(`/api/admin/users/${enc(id)}/guide`, { action });
   ipBans = (query = {}) => this.get(`/api/admin/ip-bans${queryString(query)}`);
   createIpBan = (input) => this.post('/api/admin/ip-bans', input);
   updateIpBan = (id, input) => this.patch(`/api/admin/ip-bans/${enc(id)}`, input);

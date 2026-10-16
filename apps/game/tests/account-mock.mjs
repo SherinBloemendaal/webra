@@ -14,6 +14,8 @@
 
 import { Emitter } from '../js/netquality.js';
 
+import { applyGuideAction, GUIDE_ACTIONS, guideSummary } from '../protocol/guide.js';
+
 const hex = (n) => Array.from({ length: n }, (_, i) => ((i * 7 + n) % 16).toString(16)).join('');
 let seq = 0;
 const newId = (n = 32) => (hex(n - 8) + (++seq).toString(16).padStart(8, '0')).slice(-n);
@@ -219,6 +221,12 @@ export class MockAccountServer {
       if (out.methods.discord) delete out.methods.discord.id;
     }
     return out;
+  }
+
+  /** The guide progress of a user detail and list row (docs/accounts-api.md 8.11, admins only). */
+  guideOf(id) {
+    const doc = this.settingsDocs.get(id) ?? { version: 0, updatedAt: null, settings: {} };
+    return { ...guideSummary(doc.settings?.guide), stored: doc.version > 0, updatedAt: doc.updatedAt ?? null };
   }
 
   log(actor, action, target, before = null, after = null, reason = null) {
@@ -587,11 +595,21 @@ export class MockAccountServer {
         if (q.get('flag')) list = list.filter((x) => x.flags.includes(q.get('flag')));
         const sort = q.get('sort') ?? 'created';
         const field = { created: 'createdAt', lastSeen: 'lastSeenAt', username: 'username' }[sort];
-        list.sort((a, b) => (a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0));
-        if ((q.get('order') ?? 'desc') === 'desc') list.reverse();
+        if (field) list.sort((a, b) => (a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0));
         const page = Number(q.get('page') ?? 1);
         const limit = Number(q.get('limit') ?? 25);
-        return reply(200, { users: list.slice((page - 1) * limit, page * limit).map((x) => this.adminUser(x, me)), total: list.length, page, limit });
+        if ((q.get('guide') || q.get('sort') === 'guide') && !admin) return adminOnly();
+        const guideFilter = q.get('guide');
+        if (guideFilter) {
+          list = list.filter((x) => {
+            const g = this.guideOf(x.id).steps;
+            return guideFilter === 'none' ? g.done === 0 : guideFilter === 'done' ? g.done === g.total : g.done > 0 && g.done < g.total;
+          });
+        }
+        if (sort === 'guide') list.sort((a, b) => this.guideOf(a.id).steps.done - this.guideOf(b.id).steps.done);
+        if ((q.get('order') ?? 'desc') === 'desc') list.reverse();
+        const rows = list.slice((page - 1) * limit, page * limit).map((x) => (admin ? { ...this.adminUser(x, me), guide: this.guideOf(x.id) } : this.adminUser(x, me)));
+        return reply(200, { users: rows, total: list.length, page, limit });
       }
       const em = /^\/api\/admin\/users\/([0-9a-f]+)\/email\/(verify|resend)$/.exec(path);
       if (em && method === 'POST') {
@@ -626,6 +644,7 @@ export class MockAccountServer {
             out.sessions = [...this.sessions.values()].filter((s) => s.userId === target.id).map(({ reauthUntil: _r, userId: _u, ...s }) => s);
             out.ips = target.ips;
             out.settings = this.settingsDocs.get(target.id) ?? { version: 0, updatedAt: 0, settings: {} };
+            out.guide = this.guideOf(target.id);
             out.relay = this.relayOf(target.id);
             out.emailLink = target.emailLink;
             out.emailSending = sitePublic.login.email;
@@ -709,6 +728,16 @@ export class MockAccountServer {
           return reply(200, doc, { ETag: `"v${doc.version}"` });
         }
         if (action === 'settings' && method === 'PUT') return this.putSettings(target, body, headers, { reply, fail });
+        if (action === 'guide' && method === 'POST') {
+          if (!GUIDE_ACTIONS.includes(body.action)) return fail(400, 'invalid', 'Unknown guide action.', { field: 'action' });
+          const doc = this.settingsDocs.get(target.id);
+          if (!doc?.version) return fail(409, 'conflict', 'This player has no settings in the account yet.');
+          const before = { version: doc.version, guide: doc.settings.guide ?? {} };
+          const next = { version: doc.version + 1, updatedAt: this.now, settings: { ...doc.settings, guide: applyGuideAction(doc.settings.guide, body.action, this.now) } };
+          this.settingsDocs.set(target.id, next);
+          this.log(me, 'user.guide_update', { type: 'user', id: target.id, label: target.username }, before, { action: body.action, version: next.version, guide: next.settings.guide });
+          return reply(200, { ...next, guide: this.guideOf(target.id) }, { ETag: `"v${next.version}"` });
+        }
         return fail(404, 'not_found', 'No such endpoint.');
       }
       if (!admin) return adminOnly();

@@ -7,6 +7,9 @@
 //   merge against the last synced document (`base`). A setting changed on
 //   both sides to different values is a conflict: the player chooses
 //   (`onConflict`): keep this device's values or take the account's.
+// - The guide progress merges step by step (KEYED_MERGE) unless one side
+//   reset it later than the other (guide.resetAt, EPOCH_MERGE): then that
+//   side's progress wins whole, also against a device without a base.
 // - An account without a document yet gets this device's settings.
 // - Changes the player makes are uploaded after a short pause (debounced),
 //   with the document's version (If-Match). A newer version on the server
@@ -17,6 +20,7 @@
 //   on the next start.
 
 import { checkValue, diffValues, GROUPS, normalizeValues } from '../registry.js';
+import { GUIDE_EPOCH_KEYS } from '../../protocol/guide.js';
 import { newestVersion } from '../releasenotes.js';
 import { AccountError } from './api.js';
 
@@ -62,15 +66,43 @@ function mergeKeyed(b, l, r) {
  */
 export const NEWEST_MERGE = Object.freeze(new Set(['guide.seen']));
 
+/**
+ * The guide progress after a reset (packages/protocol/src/guide.js): a reset
+ * of the guide (the player's own, or an admin's reset or complete; not Take
+ * the tour again) sets guide.resetAt to a newer epoch. When the two sides have different
+ * epochs, the side with the newer one gives these settings and the epoch as
+ * they are, never a conflict: the set merge of guide.done would otherwise
+ * bring back the steps the other side still has from before the reset. Steps
+ * a device ticked off before it learned of the reset are lost with them (the
+ * reset counts as later). Equal epochs merge as usual.
+ */
+export const EPOCH_MERGE = Object.freeze(new Set([...GUIDE_EPOCH_KEYS.map((k) => `guide.${k}`), 'guide.resetAt']));
+
+const epochOf = (values) => {
+  const e = values?.guide?.resetAt;
+  return Number.isSafeInteger(e) && e > 0 ? e : 0;
+};
+
 export function mergeSettings({ base, local, remote }) {
   const merged = clone(remote);
   const conflicts = [];
   let localChanges = 0;
   let remoteChanges = 0;
+  const le = epochOf(local);
+  const re = epochOf(remote);
+  // The side whose guide progress was reset last, or null when both have the same epoch.
+  const newer = le > re ? local : re > le ? remote : null;
   for (const group of Object.keys(GROUPS)) {
     for (const key of Object.keys(GROUPS[group].settings)) {
       const l = local?.[group]?.[key];
       const r = remote?.[group]?.[key];
+      if (newer && EPOCH_MERGE.has(`${group}.${key}`)) {
+        const b = base?.[group]?.[key];
+        if (base && !same(l, b)) localChanges++;
+        if (base && !same(r, b)) remoteChanges++;
+        merged[group][key] = clone(newer[group][key]);
+        continue;
+      }
       if (NEWEST_MERGE.has(`${group}.${key}`) && !same(l, r)) {
         const b = base?.[group]?.[key];
         if (base && !same(l, b)) localChanges++;

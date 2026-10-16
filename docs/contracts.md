@@ -2225,28 +2225,54 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   (`~techlevel.*`). WebRA keeps showing, locked and with what is still
   missing, what this player can get by building something, so it hides an
   item only when a prerequisite can never be met: one it does not hold and
-  that nothing it can build provides (`reachable_tokens`: the tokens of its
-  structures now, then a fixed point from a Construction Yard with its
-  faction, as rules.rs `solve_obtainable`). For a plain (non-`~`)
+  that nothing it can build provides (`World::reach`: the tokens of its
+  structures now, then a fixed point from a Construction Yard of every
+  faction it can place structures with, as rules.rs `solve_obtainable`). For a plain (non-`~`)
   prerequisite that holds only when some structure gives it to some faction
   (`Rules::structure_token`), which hides items that need the other side's
   tech center (the Longbow for Soviets, who build helipads in WebRA); a
   plain prerequisite no structure gives (only a mission prop, or nothing)
   leaves the item listed and locked like OpenRA's greyed items, its
   `requires` naming the prop ("Reach the mainland") or else the token. A
-  `~!` prerequisite hides the item while held (as in OpenRA), when this
-  faction's Construction Yard gives it (`Rules::always_provided`: Ukraine
-  never sees the plain Airfield, also without a yard), or when the structure
-  that provides another missing prerequisite always brings it (England's
-  barracks gives `infantry.england`: England never sees the generic Spy). Held now always counts: a captured Construction Yard keeps
-  its faction (OpenRA FactionInit, no ResetOnOwnerChange), so an Allied
-  player who captures a Soviet one is offered the Soviet structures and
-  what they unlock, until it is lost. The debug menu's "all tech" lists
-  every item of the game (OpenRA AllTech). Before 0.19.0 the list held
+  `~!` prerequisite hides the item while held (as in OpenRA), when the
+  Construction Yard of every faction it can place structures with gives it
+  (`Rules::always_provided`: Ukraine never sees the plain Airfield, also
+  without a yard), or when every structure that provides another missing
+  prerequisite always brings it (England's barracks gives
+  `infantry.england`: England never sees the generic Spy). Held now always
+  counts: a captured Construction Yard keeps its faction (OpenRA
+  FactionInit, no ResetOnOwnerChange), so an Allied player who captures a
+  Soviet one is offered the Soviet structures and what they unlock. The
+  debug menu's "all tech" lists every item of the game (OpenRA AllTech).
+  Before 0.19.0 the list held
   every item of the game mode, the other side's marked `exclusive`
   ("Soviet only"); `exclusive` stays for a prerequisite that can never be
   met on an item that is still listed. Presentation only: the state hash
   never sees it.
+- Factions of new actors (`Actor::faction`, OpenRA FactionInit; part of the
+  state hash). A placed structure, and the wall pieces it fills in, gets
+  the faction of its queue's most likely producer (`World::placement_faction`,
+  OpenRA PlaceBuilding with ClassicProductionQueue.MostLikelyProducer): of
+  the player's structures that produce the queue, the primary one, then
+  the newest (highest `Actor::serial`, OpenRA ActorID, given in creation
+  order). No Red Alert Construction Yard can be primary, so it is the
+  newest yard, own or captured; the player's own faction only without
+  one. A produced unit gets its factory's faction (OpenRA BuildUnit's
+  FactionInit of Production.Faction; Buildable.ForceFaction would override
+  both, no Red Alert actor sets it), and an MCV or Construction Yard keeps
+  its faction when it deploys or packs up (OpenRA Transforms). So an Allied
+  player whose newest yard is a captured Soviet one places Soviet
+  structures: its war factory gives `vehicles.soviet` (not
+  `vehicles.allies`) and makes Soviet units, and an MCV from it deploys
+  into a Soviet yard. A structure keeps its faction for good: losing the
+  captured yard leaves the Soviet war factory Soviet (Red Alert sets
+  neither ProvidesPrerequisite.ResetOnOwnerChange nor
+  Production.UpdateFactionOnOwnerChange; only the unported allies-07
+  mission map sets ResetOnOwnerChange). `reach` therefore counts a faction
+  when the player has a yard or MCV of it, or a structure of it that makes
+  (or can make) an MCV; which yard places next is not the player's choice
+  beyond which yards it keeps, so every one counts. Up to 0.19.0 placed
+  structures and produced units always got the owner's faction.
 - `player_json().buildable[].enabled` is false for structures without a
   Construction Yard, and their `requires` lists `Construction Yard`; under
   the `openra` factory loss rule likewise for units without a structure of
@@ -2262,8 +2288,9 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   the queue's type; under the debug menu's "all tech" the queue's type, so
   a submarine comes out of a naval yard and a dog out of barracks then).
   The structures whose Production types hold that type make it; a finished
-  unit tries the primary one, then the others (OpenRA: the newest first;
-  WebRA: in actor order). The build time still counts the structures by
+  unit tries the primary one, then the others newest first (OpenRA
+  ActorID, WebRA `Actor::serial`), and gets the faction of the one it
+  leaves. The build time still counts the structures by
   `build_at` (OpenRA GetBuildTime). A structure's exits are those whose
   `exit_types` (OpenRA ExitInfo.ProductionTypes, empty for any) hold the
   type the unit is built as. The sub pen has four Submarine exits, (-1, 2)
@@ -2823,7 +2850,10 @@ engine's rules:
 - No refineries while no ore is in reach; while broke and earning nothing
   (`ai_economy.rs`) only the power, the first refinery and a factory the
   army needs, unit production below ProductionMinCashRequirement, and
-  surplus structures sold for an army or a refinery.
+  surplus structures sold for an army or a refinery (never the producer a
+  Building, Infantry or Vehicle queue uses, `most_likely_producer`: the
+  primary one, else the newest, so the yard that gives placed structures
+  their faction stays).
 - Placement: structures spiral out from the base centre (mirrored for bases
   in the right half), refineries go where the dock is nearest to ore,
   defences use OpenRA's ordering toward the nearest enemy with mirrored
@@ -2862,7 +2892,9 @@ engine's rules:
   structure or ship (within its sight after the weather, less a cell, when
   the target is out of sight: units only fire at what their owner sees),
   put the yard's rally
-  point on that water and make that yard primary; keep one naval squad per
+  point on that water and make that yard primary when ships would
+  otherwise leave a yard on other water (they leave the primary yard, else
+  the newest: `World::launch_order`); keep one naval squad per
   body of water; scan around the target itself; send each ship to a point
   from which it sees the target and order ships to attack a target they see
   directly (bots' Missile Submarines are on ReturnFire, and attack moves
@@ -4389,6 +4421,36 @@ Debug and NetMenu.
   game) shows the question in the next skirmish. It is asked once per
   player, ever: Take the tour again does not ask again, and players who
   skipped the tour are not asked.
+- **Reset guide progress** (the Guide page, shown while there is progress:
+  a step done, the tour switched off or the quick tips question asked):
+  the game menu's confirm step (Back returns to the Guide), then
+  `GuideProgress.resetProgress()`: no step done, `tourInGames` on,
+  `quickTipsAsked` false (the last card asks again), and a new reset epoch
+  `guide.resetAt`. `guide.seen` stays: it holds what the player was shown,
+  not progress, and setting it back would mark every step "New". Take the
+  tour again stays as it is (only the tour's counted steps) and keeps the
+  epoch: the set merge removes the tour's steps on the other devices and
+  keeps the passive and outside steps they ticked meanwhile. The epoch makes
+  a reset win the account sync on every device (docs/accounts-api.md 5.8,
+  the epoch rule): the side of a merge with the newer epoch gives
+  `guide.done`, `tourInGames` and `quickTipsAsked` whole instead of the set
+  merge, which would bring back steps another device still had. Device
+  clocks order two resets: when device A (clock ahead) resets and device B
+  resets later while it has not synced A's reset, B's reset is absorbed by
+  A's newer epoch at B's next sync (steps B ticked after its reset are
+  dropped). Clients before 0.20.0 leave `guide.resetAt` out of what they
+  upload, so during a rolling upgrade a current device uploads its progress
+  whole and the steps a 0.19 client ticked since its last sync can be
+  overwritten. Admins can complete, reset or restart a player's guide from
+  the dashboard (docs/accounts-api.md 8.11); the game takes it the same way.
+- **Guide outline for the server**: `packages/protocol/src/guide-outline.js`
+  is the guide's structure without texts (chapters, step ids, `since`,
+  `after`, `parallel`, `passive`, `outside`, the tour order), generated from
+  `GUIDE` by `node tools/gen-guide-outline.mjs`; CI and
+  `tools/gen-guide-outline.test.mjs` fail when it is out of date. The
+  protocol package's `src/guide.js` computes the admin's progress view and
+  the admin actions from it with the rules of `GuideProgress`
+  (`apps/game/tests/guide.test.mjs` compares the two).
 - **Guide content in later versions**: every chapter of `GUIDE` has
   `since`, the version that brought it (0.17.0 for the first guide,
   `GUIDE_BASELINE`); a step added to an existing chapter later has its own
@@ -4423,6 +4485,7 @@ Debug and NetMenu.
      open the Guide; a new tour step runs in the next skirmish for players
      whose tour is on (finished since 0.18.0 included), never for those
      whose switch is off (skipped, or finished on 0.17.0).
+  5. Regenerate the server's outline: `node tools/gen-guide-outline.mjs`.
 - **Sound and Music dialogs**: `.ui-dialog` cards with `.ui-btn` buttons;
   the music player's tracks carry a lamp.
 - **Debug menu** (`js/debug.js`): the panel on the right with a hazard

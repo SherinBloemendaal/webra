@@ -6,8 +6,8 @@
 //! click on the selected structure) makes it the primary one, or not any
 //! more; making one primary drops that mark from the owner's other
 //! structures that produce any of its production types. New units leave
-//! the primary structure (production.rs `spawn_produced`), else the first
-//! other one that can make them and has a free exit. The client hears it
+//! the primary structure (production.rs `spawn_produced`), else the newest
+//! other one that can make them and has a free exit, and get its faction. The client hears it
 //! as the "Primary building selected" notification
 //! (`SoundEventKind::PrimaryBuildingSelected`) and draws the PRIMARY tag
 //! over the selected structure.

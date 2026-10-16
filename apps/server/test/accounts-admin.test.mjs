@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Browser, Clock, makeEnv, PASSWORD, promote, signup } from './accounts-harness.mjs';
 import { takeQuota } from '../src/quota.js';
+import { GUIDE_OUTLINE, guideIndex } from '@webra/protocol';
 import { CONTENT_ACCOUNT_LIMIT, CONTENT_NET_LIMIT } from '../src/content.js';
 
 const clock = new Clock();
@@ -45,6 +46,7 @@ test('permission matrix: users get nothing, moderators a subset, admins everythi
     ['GET', `/api/admin/users/${t}/settings`, undefined, 'admin'],
     ['DELETE', `/api/admin/users/${t}/relay-quota`, undefined, 'admin'],
     ['PUT', `/api/admin/users/${t}/settings`, { settings: {} }, 'admin', ifMatch],
+    ['POST', `/api/admin/users/${t}/guide`, { action: 'reset' }, 'admin'],
     ['GET', '/api/admin/ip-bans', undefined, 'admin'],
     ['POST', '/api/admin/ip-bans', { cidr: '192.0.2.0/24', reason: 'spam' }, 'admin'],
     ['GET', '/api/admin/site', undefined, 'admin'],
@@ -364,4 +366,134 @@ test('relay budgets: admins see what an account and its recent networks used, an
   assert.deepEqual(entry.before, { account: { content: 2, music: 40, contentAttempts: 0, musicAttempts: 0, movies: 0, moviesAttempts: 0 }, networks: [{ content: 3, contentAttempts: 1, music: 0, movies: 0 }] });
   assert.ok(!JSON.stringify(entry).includes('198.51.100.4'), 'no address in the audit log');
   assert.equal((await mod.req('DELETE', `/api/admin/users/${id}/relay-quota`)).status, 403);
+});
+
+test('guide progress: admins see it per user, filter and sort by it, and complete, reset or restart it with an audit entry', async () => {
+  const { env, admin, mod, user, target } = await cast();
+  const id = target.user.id;
+  const { stepIds, tourIds } = guideIndex();
+  const action = (a, b = admin, opts) => b.post(`/api/admin/users/${id}/guide`, { action: a }, opts);
+  // No settings document yet: the progress is only in the player's browser, so nothing to act on.
+  const none = await action('reset');
+  assert.equal(none.status, 409);
+  assert.match(none.body.error.message, /no settings in the account yet/);
+  assert.equal((await admin.get(`/api/admin/users/${id}`)).body.guide.stored, false);
+
+  // The player plays: three tour steps and a passive one, the tour switched off, synced as usual.
+  const guide = { done: { 'base.mcv': true, 'base.power': true, 'base.refinery': true, 'power.low': true }, tourInGames: false, seen: '0.19.0', lastTip: 4 };
+  assert.equal((await target.put('/api/account/settings', { settings: { audio: { master: 0.4 }, guide } }, { headers: { 'If-Match': '"v0"' } })).status, 200);
+  await user.put('/api/account/settings', { settings: { guide: { done: Object.fromEntries(stepIds.map((s) => [s, true])), quickTipsAsked: true } } }, { headers: { 'If-Match': '"v0"' } });
+  // A settings document without guide.done (only other settings): no step done.
+  assert.equal((await mod.put('/api/account/settings', { settings: { audio: { master: 0.3 }, guide: { lastTip: 2 } } }, { headers: { 'If-Match': '"v0"' } })).status, 200);
+
+  // The detail: steps, the tour's state, chapter and step, the switch, the question, seen, the last write.
+  const detail = (await admin.get(`/api/admin/users/${id}`)).body.guide;
+  assert.deepEqual(detail.steps, { done: 4, total: stepIds.length });
+  assert.deepEqual(detail.tour, { done: 3, total: tourIds.length, state: 'off', chapter: 'base', chapterIndex: 0, chapters: GUIDE_OUTLINE.tourOrder.length, step: 'base.barracks' });
+  assert.deepEqual([detail.tourInGames, detail.quickTipsAsked, detail.seen, detail.resetAt, detail.stored], [false, false, '0.19.0', null, true]);
+  assert.equal(detail.updatedAt, Date.now());
+  // Moderators see no settings, so no guide progress either.
+  assert.equal((await mod.get(`/api/admin/users/${id}`)).body.guide, undefined);
+
+  // The list: a guide summary on every row (admins), a filter and a sort.
+  const list = await admin.get('/api/admin/users?limit=100');
+  const row = (body, uid) => body.users.find((u) => u.id === uid);
+  assert.deepEqual(row(list.body, id).guide.steps, { done: 4, total: stepIds.length });
+  assert.equal(row(list.body, user.user.id).guide.tour.state, 'finished');
+  assert.equal(row(list.body, admin.user.id).guide.stored, false);
+  assert.equal(row((await mod.get('/api/admin/users')).body, id).guide, undefined);
+  const names = async (q) => (await admin.get(`/api/admin/users?${q}`)).body.users.map((u) => u.username);
+  assert.deepEqual(await names('guide=started'), ['Target']);
+  assert.deepEqual(await names('guide=done'), ['Plain']);
+  assert.deepEqual((await names('guide=none')).sort(), ['Moddy', 'Root Admin'], 'Moddy has a document without guide.done');
+  assert.equal(row(list.body, mod.user.id).guide.stored, true);
+  assert.equal(row(list.body, mod.user.id).guide.steps.done, 0);
+  assert.deepEqual((await names('sort=guide&order=desc')).slice(0, 2), ['Plain', 'Target']);
+  assert.equal((await admin.get('/api/admin/users?guide=all')).status, 400);
+  assert.equal((await mod.get('/api/admin/users?guide=started')).status, 403);
+  assert.equal((await mod.get('/api/admin/users?sort=guide')).status, 403);
+  assert.equal((await admin.get('/api/admin/users?sort=guide&guide=started')).body.total, 1, 'the count query works with the filter');
+
+  // Bad requests: an unknown action, an unknown field, no CSRF header.
+  assert.equal((await action('wipe')).status, 400);
+  assert.equal((await admin.post(`/api/admin/users/${id}/guide`, { action: 'reset', extra: 1 })).status, 400);
+  assert.equal((await action('reset', admin, { headers: { 'X-WebRA-CSRF': null } })).status, 403);
+  assert.equal((await action('reset', admin, { headers: { Origin: 'https://evil.example' } })).status, 403);
+  assert.equal((await admin.post('/api/admin/users/ffffffffffffffffffffffffffffffff/guide', { action: 'reset' })).status, 404);
+
+  // Reset: a new version, every step open, the tour on, the question to ask again, a reset epoch; the rest kept.
+  const before = (await admin.get(`/api/admin/users/${id}/settings`)).body;
+  const reset = await action('reset');
+  assert.equal(reset.status, 200, JSON.stringify(reset.body));
+  assert.equal(reset.res.headers.get('etag'), `"v${before.version + 1}"`);
+  assert.equal(reset.body.version, before.version + 1);
+  assert.deepEqual(reset.body.settings.guide, { done: {}, tourInGames: true, seen: '0.19.0', lastTip: 4, quickTipsAsked: false, resetAt: Date.now() });
+  assert.equal(reset.body.settings.audio.master, 0.4);
+  assert.equal(reset.body.guide.tour.state, 'running');
+  assert.equal(reset.body.guide.resetAt, Date.now());
+  const stored = (await target.get('/api/account/settings')).body;
+  assert.equal(stored.version, before.version + 1, 'the player\'s game sees the newer version on its next sync');
+  assert.deepEqual(stored.settings.guide.done, {});
+  const entry = (await admin.get('/api/admin/audit?action=user.guide_update')).body.entries[0];
+  assert.equal(entry.actor.id, admin.user.id);
+  assert.deepEqual(entry.target, { type: 'user', id, label: 'Target' });
+  assert.equal(Object.keys(entry.before.guide.done).length, 4);
+  assert.equal(entry.after.action, 'reset');
+  assert.deepEqual(entry.after.guide.done, {});
+
+  // Complete: every step, the question counted as asked; the switch stays; a newer epoch even in the same millisecond.
+  const complete = await action('complete');
+  assert.equal(complete.body.guide.steps.done, stepIds.length);
+  assert.equal(complete.body.guide.tour.state, 'finished');
+  assert.equal(complete.body.settings.guide.quickTipsAsked, true);
+  assert.equal(complete.body.settings.guide.tourInGames, true);
+  assert.equal(complete.body.settings.guide.resetAt, Date.now() + 1);
+  // Restart tour: the tour's steps only.
+  const restart = await action('restartTour');
+  assert.equal(restart.body.guide.tour.done, 0);
+  assert.equal(restart.body.guide.steps.done, stepIds.length - tourIds.length);
+  assert.equal(restart.body.settings.guide.quickTipsAsked, true);
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 3);
+
+  // A write of the player between the server's read and its write: the action runs again on the newer document.
+  const prepare = env.DB.prepare.bind(env.DB);
+  let raced = false;
+  env.DB.prepare = (sql) => {
+    if (!raced && /^UPDATE settings_docs SET version/.test(sql)) {
+      raced = true;
+      env.DB.sqlite.prepare("UPDATE settings_docs SET version = version + 1, doc = json_set(doc, '$.audio.master', 0.7) WHERE user_id = ?1").run(id);
+    }
+    return prepare(sql);
+  };
+  const again = await action('reset');
+  env.DB.prepare = prepare;
+  assert.equal(raced, true);
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.version, restart.body.version + 2);
+  assert.equal(again.body.settings.audio.master, 0.7, 'the player\'s write is kept');
+  assert.deepEqual(again.body.settings.guide.done, {});
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4, 'one entry for the action');
+  // Writes that keep coming: after three tries the admin is told to try again, nothing is written.
+  env.DB.prepare = (sql) => {
+    if (/^UPDATE settings_docs SET version/.test(sql)) env.DB.sqlite.prepare('UPDATE settings_docs SET version = version + 1 WHERE user_id = ?1').run(id);
+    return prepare(sql);
+  };
+  const busy = await action('reset');
+  env.DB.prepare = prepare;
+  assert.equal(busy.status, 409);
+  assert.equal(busy.body.error.message, "The player's settings kept changing; try again in a moment.");
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4);
+
+  // The player wrote meanwhile with the version they had: their write is refused (412) and merges as usual.
+  assert.equal((await target.put('/api/account/settings', { settings: { guide } }, { headers: { 'If-Match': `"v${before.version}"` } })).status, 412);
+
+  // An action on a document that no longer passes validation is refused, nothing written.
+  env.DB.sqlite.prepare("UPDATE settings_docs SET doc = ?1 WHERE user_id = ?2").run(JSON.stringify({ guide: { lastTip: 'x' } }), id);
+  const broken = await action('reset');
+  assert.equal(broken.status, 400);
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4);
+
+  // Admins act within a rate limit (120 an hour each).
+  for (let i = 0; i < 120; i++) await takeQuota(env.DB, env.IP_HASH_SALT, 'admin-guide', admin.user.id, 120, 3600 * 1000, Date.now());
+  assert.equal((await action('reset')).status, 429);
 });

@@ -17,6 +17,8 @@ import {
   auditParams,
   banExpiry,
   canBan,
+  guideFacts,
+  guideLine,
   looksLikeCidr,
   normalizeQuery,
   parseView,
@@ -26,6 +28,8 @@ import {
 } from '../js/account/admin-state.js';
 import { buildSettingsForm, controlFor, formatValue, parseValue } from '../js/account/admin-forms.js';
 import { GROUPS, checkDocument, specOf } from '../js/registry.js';
+import { guideSummary } from '../protocol/guide.js';
+import { STEP_IDS } from '../js/guide.js';
 import { FakeTimers } from './fake-timers.mjs';
 
 const { mountAdmin } = await import('../../website/assets/admin.js');
@@ -258,6 +262,8 @@ test('dashboard: moderators see overview and users only; approve, ban users, no 
   assert.equal(byText(drawer, 'button', /Delete/), undefined);
   assert.equal(byText(drawer, 'summary', /Settings/), undefined);
   assert.equal(byText(drawer, 'summary', /IP history/), undefined);
+  assert.equal(byText(drawer, 'summary', /Guide progress/), undefined, 'no guide progress for moderators');
+  assert.equal(byText(root, 'th', /^Guide$/), undefined);
   assert.ok(byText(drawer, 'button', /^Ban$/));
   assert.equal(users.length, 30);
 });
@@ -389,6 +395,99 @@ test('dashboard: the drawer shows the relay budgets and resets them after a conf
   assert.equal(server.audit[0].action, 'user.relay_quota_reset');
   const after = byText(root.querySelector('.drawer'), 'summary', /One-click relay budgets/);
   assert.doesNotMatch(textOf(after), /in use/);
+});
+
+test('admin state: guide lines and facts say how far a player is with the guide', () => {
+  assert.equal(guideLine(null), '');
+  assert.equal(guideLine({ stored: false }), 'No settings yet');
+  const g = guideSummary({ done: { 'base.mcv': true, 'base.power': true, 'power.low': true }, seen: '0.19.0', resetAt: 1_760_000_000_000 });
+  const view = { ...g, stored: true, updatedAt: 1_760_000_100_000 };
+  assert.equal(guideLine(view), '2/26 tour, 3/32 guide');
+  const facts = Object.fromEntries(guideFacts(view, (ms) => `t${ms}`));
+  assert.equal(facts.Guide, '3 of 32 steps done');
+  assert.equal(facts.Tour, 'Running, 2 of 26 tour steps');
+  assert.equal(facts['Tour position'], 'Chapter 1 of 7 (base), step base.refinery');
+  assert.equal(facts['Quick tips question'], 'not asked yet');
+  assert.equal(facts['Guide content seen'], '0.19.0');
+  assert.equal(facts['Last reset'], 't1760000000000');
+  assert.equal(facts['Settings updated'], 't1760000100000');
+  assert.match(guideFacts({ stored: false })[0][1], /only in the player's browser/);
+  const done = { ...guideSummary({ done: Object.fromEntries(STEP_IDS.map((id) => [id, true])), quickTipsAsked: true }), stored: true, updatedAt: 1 };
+  assert.equal(Object.fromEntries(guideFacts(done)).Tour, 'Finished');
+  assert.equal(Object.fromEntries(guideFacts(done))['Tour position'], 'Every tour step done');
+  // The users query keeps the guide filter and sort.
+  assert.deepEqual(apiQuery(normalizeQuery({ guide: 'started', sort: 'guide' })), { guide: 'started', sort: 'guide' });
+  assert.equal(normalizeQuery({ guide: 'all' }).guide, '');
+});
+
+test('dashboard: admins see guide progress in the list and the drawer, filter and sort by it, and complete, reset or restart it after a confirmation', async () => {
+  const server = new MockAccountServer();
+  const { admin, users } = seed(server);
+  server.signIn(admin);
+  const target = users[7];
+  server.settingsDocs.set(target.id, { version: 3, updatedAt: server.now - 60_000, settings: { schema: 1, audio: { master: 0.5 }, guide: { done: { 'base.mcv': true, 'base.power': true }, seen: '0.19.0' } } });
+  const { root } = await dashboard(server, '#users');
+  // The Guide column: a summary per row.
+  assert.ok(byText(root, 'th', /^Guide$/));
+  const rowOf = (name) => [...root.querySelectorAll('tbody tr')].find((tr) => tr.querySelector('th')?.textContent.startsWith(name));
+  assert.equal(rowOf('Player07').querySelector('.col-guide').textContent, '2/26 tour, 2/32 guide');
+  assert.equal(rowOf('Player08').querySelector('.col-guide').textContent, 'No settings yet');
+  // The filter and the sort reach the API.
+  // Status, Role, Flag, Guide, Per page.
+  choose(root.querySelectorAll('.ui-select-plate')[3], 'In progress');
+  await settle(20);
+  assert.match(server.requests.at(-1).url, /guide=started/);
+  assert.equal(root.querySelectorAll('tbody tr').length, 1);
+  click(byText(root, 'button', /^Guide$/));
+  await settle(20);
+  assert.match(server.requests.at(-1).url, /guide=started&sort=guide$/, 'the furthest first (desc, the default)');
+
+  // The drawer: the facts and the actions, each asked first.
+  click(byText(root, 'button', /^Player07$/));
+  await settle(30);
+  const block = () => byText(root.querySelector('.drawer'), 'summary', /Guide progress/).closest('details');
+  assert.match(textOf(block()), /Guide progress \(2\/26 tour, 2\/32 guide\)/);
+  assert.match(textOf(block()), /2 of 32 steps done/);
+  assert.match(textOf(block()), /Chapter 1 of 7 \(base\), step base\.refinery/);
+  const confirmLast = async (label, re) => {
+    const dialog = [...doc.body.querySelectorAll('[role="dialog"]')].at(-1);
+    assert.match(textOf(dialog), re);
+    click(byText(dialog, 'button', label));
+    await settle(30);
+  };
+  // Cancel changes nothing.
+  click(byText(block(), 'button', /^Reset guide$/));
+  await settle(5);
+  await confirmLast(/^Cancel$/, /Start the guide over for Player07/);
+  assert.equal(server.settingsDocs.get(target.id).version, 3);
+  click(byText(block(), 'button', /^Complete guide$/));
+  await settle(5);
+  await confirmLast(/^Complete guide$/, /Mark every guide step done/);
+  assert.equal(server.settingsDocs.get(target.id).version, 4);
+  assert.equal(server.audit[0].action, 'user.guide_update');
+  assert.match(textOf(root.querySelector('.drawer')), /The guide is complete/);
+  assert.match(textOf(block()), /26\/26 tour, 32\/32 guide/);
+  click(byText(block(), 'button', /^Restart tour$/));
+  await settle(5);
+  await confirmLast(/^Restart tour$/, /Only the tour's steps start over/);
+  assert.match(textOf(block()), /0\/26 tour, 6\/32 guide/);
+  click(byText(block(), 'button', /^Reset guide$/));
+  await settle(5);
+  await confirmLast(/^Reset guide$/, /asks the quick tips question again/);
+  assert.match(textOf(block()), /0\/26 tour, 0\/32 guide/);
+  assert.deepEqual(server.audit.slice(0, 3).map((e) => e.after.action), ['reset', 'restartTour', 'complete']);
+  assert.equal(server.settingsDocs.get(target.id).settings.audio.master, 0.5, 'the other settings stay');
+});
+
+test('dashboard: the guide actions are off for a player without settings in the account', async () => {
+  const server = new MockAccountServer();
+  const { admin, users } = seed(server);
+  server.signIn(admin);
+  const { root } = await dashboard(server, `#user=${users[4].id}`);
+  await settle(20);
+  const block = byText(root.querySelector('.drawer'), 'summary', /Guide progress/).closest('details');
+  assert.match(textOf(block), /No settings in the account yet/);
+  for (const label of [/^Complete guide$/, /^Reset guide$/, /^Restart tour$/]) assert.equal(byText(block, 'button', label).disabled, true);
 });
 
 test('dashboard: the drawer shows the email verification state, sends a new link and marks the address verified', async () => {
