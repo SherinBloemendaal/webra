@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { installDom, uninstallDom, FakeEvent, click, check, settle, textOf } from './dom-fixtures.mjs';
+import { theatersWithoutRoads } from '../js/content/install.js';
 import { mountContentSettings, mountContentPanel, mountContentNotice, installResultLines, contentState, classifyFiles, graphicsPackStates, partOverview, pushLog, QUICKINSTALL_MIRRORS } from '../js/content/panel.js';
 import { QUICKINSTALL_BYTES } from '../js/content/download.js';
 import { createRegistry } from '../js/registry.js';
@@ -296,6 +297,15 @@ test('contentState: what is missing, by part', () => {
   const all = contentState(s({ effects: 5, voices: 1, announcer: 1, music: 3, graphics: 30 }, { theaters: ['TEMPERAT', 'SNOW'] }));
   assert.equal(all.level, 'complete');
   assert.match(all.installed.at(-1), /Mission movies \(optional\): none/, 'movies are said, never missing');
+  // Installed before whole roads were drawn: the road pieces are missing, the package brings them.
+  const oldRoads = contentState(s({ effects: 5, voices: 1, announcer: 1, music: 3, graphics: 30 }, { theaters: ['TEMPERAT', 'SNOW'], roadsMissing: ['TEMPERAT'] }));
+  assert.equal(oldRoads.level, 'partial');
+  assert.match(oldRoads.missing.join('|'), /^Road pieces for temperate maps \(.*add the files again, or Check for missing files\)$/);
+  assert.equal(oldRoads.parts.package, true);
+  // What an install has: the plain road squares only, or the road pieces too.
+  assert.deepEqual(theatersWithoutRoads(['temperat.pal', 'clear1.tem', 'd44.tem', 'd45.tem']), ['TEMPERAT']);
+  assert.deepEqual(theatersWithoutRoads(['temperat.pal', 'clear1.tem', 'd44.tem', 'd08.tem']), []);
+  assert.deepEqual(theatersWithoutRoads([]), []);
 });
 
 test('dialog: dropping the ZIP on the drop zone installs it with progress, then shows what came in and the switch', async () => {

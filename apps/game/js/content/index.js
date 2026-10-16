@@ -126,6 +126,10 @@ export class ContentSystem {
     this.builtinError = null;
     this.readBuiltin = builtin;
     this.listeners = new Set();
+    /** Bumped by every change: theaters (`theater`) read before it are stale. */
+    this.version = 0;
+    /** The last theater read for the tile planner: `{ key, tileset, files }`. */
+    this.theaterCache = null;
     this.loaded = null;
     this.loadError = null;
     /** The last reload in the queue: reloads run one after another, so the newest state always wins. */
@@ -168,6 +172,8 @@ export class ContentSystem {
   }
 
   changed() {
+    this.version++;
+    this.theaterCache = null;
     for (const fn of this.listeners) {
       try {
         fn();
@@ -364,16 +370,33 @@ export class ContentSystem {
   /**
    * Terrain for a map: `{ atlas, cells, source }` for Renderer.setTerrainAtlas
    * and uploadCells, or null for WebRA's own tiles. `terrain` is the engine's
-   * terrain bytes.
+   * terrain bytes, `hints` its Game.terrain_hints_json (bridges and the cells
+   * structures stand on, which the original tiles fit the ground to) or null.
    */
-  terrain(biome, terrain, w, h) {
+  terrain(biome, terrain, w, h, hints = null) {
     const pack = this.packTerrain(biome, terrain, w, h);
     if (pack) return pack;
     if (this.originalActive) {
-      const r = originalTerrain((n) => this.getFile(n), TILESET_OF_BIOME[biome] ?? 'TEMPERAT', terrain, w, h);
+      const r = originalTerrain((n) => this.getFile(n), TILESET_OF_BIOME[biome] ?? 'TEMPERAT', terrain, w, h, hints);
       if (r) return { ...r, source: 'original' };
     }
     return null;
+  }
+
+  /**
+   * The original graphics' tile plan of a map as a job for a tile worker
+   * (editor/js/tiles.js TileWorker: `{ key, tileset, files, bytes, w, h,
+   * hints }`, `terrain`'s arguments), so the plan runs off the main thread;
+   * null when no plan is wanted (a texture pack tiles `biome`, `packTerrain`,
+   * or the original graphics are not in use). The theater (`key`) is read
+   * once per content change and biome.
+   */
+  terrainJob(biome, terrain, w, h, hints = null) {
+    if (!this.originalActive) return null;
+    const tileset = TILESET_OF_BIOME[biome] ?? 'TEMPERAT';
+    const key = `${this.version}:${tileset}`;
+    if (this.theaterCache?.key !== key) this.theaterCache = { key, ...this.theater(biome) };
+    return { key, tileset, files: this.theaterCache.files, bytes: terrain, w, h, hints };
   }
 
   /** `terrain` from the first enabled texture pack with tiles for `biome` (quick), or null. */

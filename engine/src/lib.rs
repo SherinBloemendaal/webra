@@ -608,6 +608,25 @@ impl Game {
         .to_string()
     }
 
+    /// What the original graphics' tile terrain fits the ground to
+    /// (apps/game/js/content/terrain.js), besides the terrain types:
+    /// `{ bridges: [{ type, x, y, look }], standing: [cell] }`, the bridges
+    /// as they stand now (actor id, top-left cell of the template,
+    /// BridgeLook name) and the cells structures and trees stand on, which
+    /// stay dry ground. Presentation only.
+    pub fn terrain_hints_json(&self) -> String {
+        let w = &self.world;
+        let bridges: Vec<_> = w
+            .neutral
+            .bridges
+            .bridges
+            .iter()
+            .map(|b| json!({ "type": w.rules.actors[b.ty as usize].id, "x": b.cx, "y": b.cy, "look": b.look.name() }))
+            .collect();
+        let standing: Vec<usize> = (0..w.map.cells()).filter(|&ci| w.building_at[ci] != NONE).collect();
+        json!({ "bridges": bridges, "standing": standing }).to_string()
+    }
+
     /// Heat shimmer instances for the view rectangle (world pixels): own and
     /// visible vehicles that run hot, `[x, y, heat 0..1, overheated 0|1]`
     /// each, at most `MAX_HEAT_FX`. Returns the count; read with `fx_ptr`.

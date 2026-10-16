@@ -571,8 +571,10 @@ on upload like any other map (it never unpacks `.oramap` files itself).
   Only the terrain type of each cell is kept: the map file has no tile
   templates, so the game draws the terrain from the types alone (WebRA
   tiles, or tile terrain chosen from the theater's templates when original
-  art is installed, `js/content/terrain.js`), not OpenRA's cliff, shore and
-  road templates. Unknown templates or tiles become clear (reported).
+  art is installed, `js/content/terrain.js`: beach tiles fitted to the
+  coast, road tiles fitted along the roads, the ground around bridges
+  fitted to their templates), not the map's own cliff, shore and road
+  templates. Unknown templates or tiles become clear (reported).
   Trees (`t01`...) become tree terrain and rocks, ice floes, boxes and
   civilian buildings become rock under their footprint. The map is cropped
   to `Bounds`; more than 256 cells is refused, less than 32 is padded with
@@ -717,7 +719,8 @@ guards it by counting reads, not by the clock.
   whole map on the main thread (a few milliseconds; the decals follow a seed
   of the whole map's terrain, as in a game). The original graphics' tiles are
   planned in a worker (`editor/js/tiles-worker.js`, section 8) whenever the
-  terrain types change; meanwhile the editor draws the last plan, with the
+  terrain types or the terrain hints (bridges, cells that structures and
+  trees stand on) change; meanwhile the editor draws the last plan, with the
   cells whose type changed since in the tile most cells of that type have in
   it, and WebRA's tiles until the first plan is in. The finished picture is
   the one a game on the map draws. Texture packs tile cell by cell on the
@@ -5198,7 +5201,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 |---------|---------|---------------------|
 | `tick`, `apply_frame`, `take_orders`, `set_lockstep`, `state_hash`, `snapshot`, `restore` | drivers, recorder | Only in the worker (`js/sim/core.js`); hashes through `stateHash` and `encode` |
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (range circles, engine/src/range_circles.rs, rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
-| `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
+| `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `terrain_hints_json` (the start's bridges and the cells structures and trees stand on, for the original graphics' tile terrain, `js/content/terrain.js`), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
 | `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `sell_buildings`, `repair_building`, `repair_buildings`, `repair_units`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
@@ -5215,12 +5218,20 @@ game is (one message for a whole selection instead of one per actor).
 The map editor plans the original graphics' terrain tiles
 (`js/content/terrain.js` `originalTerrain`) in a module worker
 (`editor/js/tiles.js` `TileWorker`); without module workers, or when the
-worker fails, the plans run on the main thread.
+worker fails, the plans run on the main thread. A game and the map lens
+plan theirs in the same kind of worker (`js/terraintiles.js`, one shared
+worker per page; jobs from `ContentSystem.terrainJob`): a game draws
+WebRA's tiles meanwhile and keeps its loading screen (on the battlefield
+step) until the plan is in, and the lens waits for it between its read
+steps (a step yields `{ share, wait, sync }`; `runSteps` plans on the spot).
+The editor starts a plan `PLAN_DELAY_MS` (40 ms) after the change that
+needs it, so changes that come together (a tree stroke's terrain types,
+then its preview's terrain hints) are planned once.
 
 | Direction | Message | Meaning |
 |-----------|---------|---------|
 | to the worker | `{ t: 'theater', key, tileset, files: [name, bytes][] }` | The theater to tile with: the installed files `theaterFiles(tileset)` names (palette, templates, trees, smudges, ore and gems), sent once per `key` (art and biome) |
-| to the worker | `{ t: 'plan', id, key, bytes, w, h }` | Tile engine terrain bytes (RGBA per cell, R the type) |
+| to the worker | `{ t: 'plan', id, key, bytes, w, h, hints }` | Tile engine terrain bytes (RGBA per cell, R the type) with the preview's terrain hints (`Game.terrain_hints_json`: bridges and the cells structures and trees stand on), or null |
 | from the worker | `{ t: 'planned', id, result }` | `originalTerrain`'s `{ atlas, cells, report }`, or null; the atlas pixels and cells are transferred |
 | from the worker | `{ t: 'failed', id, error }` | The plan failed (the editor keeps WebRA's tiles) |
 

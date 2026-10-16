@@ -105,6 +105,19 @@ impl BridgeLook {
     pub fn code(self) -> u8 {
         self as u8
     }
+
+    /// The look's name in the content tables' bridge art (ACTOR_ART `bridge`
+    /// keys, tools/gen_content_tables.py BRIDGE_STATES).
+    pub fn name(self) -> &'static str {
+        match self {
+            BridgeLook::Healthy => "healthy",
+            BridgeLook::Damaged => "damaged",
+            BridgeLook::Destroyed => "destroyed",
+            BridgeLook::DestroyedNorth => "destroyed_north",
+            BridgeLook::DestroyedSouth => "destroyed_south",
+            BridgeLook::DestroyedBoth => "destroyed_both",
+        }
+    }
 }
 
 impl BridgeTemplate {

@@ -287,7 +287,15 @@ export class SimCore {
       // The terrain at the start (engine terrain bytes, RGBA per cell), so the
       // terrain art is made before the first frame; later changes come with frames.
       terrain: this.initialTerrain(),
+      // What the original graphics' tile terrain fits the ground to at the start (Game.terrain_hints_json).
+      terrainHints: this.terrainHints(),
     };
+  }
+
+  /** The bridges and the cells structures stand on now (Game.terrain_hints_json), or null without the method (tests' fakes). */
+  terrainHints() {
+    const g = this.game;
+    return typeof g.terrain_hints_json === 'function' ? JSON.parse(g.terrain_hints_json()) : null;
   }
 
   /** A copy of the game's terrain bytes now (null without engine memory, as in some tests). */

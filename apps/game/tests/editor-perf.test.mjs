@@ -394,7 +394,8 @@ test('installed tiles: nothing until planned, then the plan; changed cells show 
   const h = 30;
   const jobs = [];
   let readyCalls = 0;
-  const tiles = new InstalledTiles({ plan: (job) => (jobs.push(job), Promise.resolve(planTiles(job, job.bytes, job.w, job.h))), ready: () => readyCalls++ });
+  // Plans start at once here (`defer`); the editor waits PLAN_DELAY_MS so changes that come together plan once.
+  const tiles = new InstalledTiles({ plan: (job) => (jobs.push(job), Promise.resolve(planTiles(job, job.bytes, job.w, job.h))), ready: () => readyCalls++, defer: (fn) => fn() });
   const before = coastBytes(w, h);
   assert.equal(tiles.tiles(THEATER, before, w, h), null, 'no plan yet: WebRA tiles meanwhile');
   assert.equal(jobs.length, 1);

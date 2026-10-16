@@ -122,6 +122,8 @@ export function contentState(s) {
   else {
     if (s.palette === false) missing.push('The palette from temperat.mix (the graphics cannot be used without it)');
     for (const t of ['TEMPERAT', 'SNOW']) if (!s.theaters.includes(t)) missing.push(`Terrain for ${THEATER_NAMES[t]} maps`);
+    // Installs from before roads were fitted kept only the plain road squares.
+    for (const t of s.roadsMissing ?? []) missing.push(`Road pieces for ${THEATER_NAMES[t] ?? t.toLowerCase()} maps (installed before WebRA drew whole roads: add the files again, or Check for missing files)`);
   }
   if (!b.effects) missing.push('Sound effects (sounds.mix, in ra-quickinstall.zip)');
   if (!b.voices) missing.push('Unit voices (allies.mix and russian.mix, in ra-quickinstall.zip)');

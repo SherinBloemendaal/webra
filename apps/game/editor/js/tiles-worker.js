@@ -5,7 +5,7 @@
 // messages.
 //
 //   in:  { t: 'theater', key, tileset, files: [name, bytes][] }  the theater to tile with
-//        { t: 'plan', id, key, bytes, w, h }                     engine terrain bytes to tile
+//        { t: 'plan', id, key, bytes, w, h, hints }              engine terrain bytes (and terrain hints) to tile
 //   out: { t: 'planned', id, result }                            originalTerrain's result or null
 //        { t: 'failed', id, error }
 
@@ -25,7 +25,7 @@ port.onmessage = (e) => {
   if (m?.t !== 'plan') return;
   try {
     if (!theater || theater.key !== m.key) throw new Error('no theater for this plan');
-    const result = planTiles(theater, m.bytes, m.w, m.h);
+    const result = planTiles(theater, m.bytes, m.w, m.h, m.hints ?? null);
     const transfer = result ? [result.atlas.data.buffer, result.cells.buffer] : [];
     port.postMessage({ t: 'planned', id: m.id, result }, transfer);
   } catch (err) {
