@@ -4,6 +4,7 @@
 export * from './constants.js';
 export * from './accounts.js';
 export * from './friends.js';
+export * from './realtime.js';
 export { formatInviteCode, invitePath, normalizeInviteCode, randomInviteCode } from './invite.js';
 export { jitterOf, latePercent, median, netBars, netQuality } from './netquality.js';
 export { ProtocolError, text, truncate, utf8Length } from './check.js';

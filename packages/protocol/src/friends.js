@@ -24,8 +24,13 @@ export const FRIEND_REQUEST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const PRESENCE_INTERVAL_MS = 60_000;
 export const PRESENCE_ONLINE_MS = 150_000;
 export const PRESENCE_AWAY_MS = 10 * 60_000;
-/** The friends list is polled this often while the menu shows it (no socket of its own). */
+/**
+ * The friends list is polled this often while a screen shows it and the
+ * realtime channel (realtime.js) is not open, and only this often while it
+ * is (the channel says when to look again; the slow poll is a safety net).
+ */
 export const FRIENDS_POLL_MS = 30_000;
+export const FRIENDS_POLL_SLOW_MS = 5 * 60_000;
 
 /**
  * The privacy settings come from the `social` section of the settings
