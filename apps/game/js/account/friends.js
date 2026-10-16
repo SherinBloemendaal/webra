@@ -1,18 +1,19 @@
 // Friends in the game and on the account page (docs/accounts-api.md 5.11):
-// the API client, a polling store for the friends screen, and the presence
-// heartbeat that tells friends whether this player is around. No DOM except
-// the input listeners of PresenceTracker.
+// the API client, a store for the friends screens (it loads the list on
+// every realtime hint and polls as a safety net), and the presence heartbeat
+// that tells friends whether this player is around. No DOM except the input
+// listeners of PresenceTracker and the document's visibility.
 //
-//   const friends = new FriendsStore();          // signed in only
+//   const friends = new FriendsStore({ realtime }); // signed in only; realtime: js/account/realtime.js
 //   friends.on('change', (doc) => render(doc));  // { friends, incoming, outgoing, blocked, invites, sentInvites, privacy, limits }
-//   friends.start();                              // polls every FRIENDS_POLL_MS while shown
+//   friends.start();                              // follows the hints; polls every FRIENDS_POLL_MS without them
 //   await friends.request('Ivan');                // every action refreshes the list
 //   friends.stop();
 //
 //   const presence = new PresenceTracker();      // once per page while signed in
 //   presence.start();
 
-import { FRIENDS_POLL_MS, PRESENCE_AWAY_MS, PRESENCE_INTERVAL_MS } from '../protocol.js';
+import { FRIENDS_POLL_MS, FRIENDS_POLL_SLOW_MS, PRESENCE_AWAY_MS, PRESENCE_INTERVAL_MS } from '../protocol.js';
 import { Emitter } from '../netquality.js';
 import { AccountApi, AccountError } from './api.js';
 
@@ -44,31 +45,76 @@ export class FriendsClient {
 }
 
 /**
- * The friends list, polled while a screen shows it. Events: `change` (the
- * document), `error` (an AccountError; polling goes on unless it was 401 or
- * 403, which stop it: signed out or no longer allowed).
+ * The friends list while a screen shows it. With a realtime client
+ * (js/account/realtime.js) it follows the `friends` topic: every hint loads
+ * the list again (the hints of a burst once), and the poll runs every
+ * `slowPollMs` while the channel is open and every `pollMs` while it is not.
+ * A hidden tab skips its polls (the hints wait for it to show). Events:
+ * `change` (the document), `hint` (the realtime event that made it load:
+ * `kind`, `data.username`, `batch`), `error` (an AccountError; polling goes
+ * on unless it was 401 or 403, which stop it: signed out or no longer
+ * allowed).
  */
 export class FriendsStore extends Emitter {
-  constructor({ client = new FriendsClient(), pollMs = FRIENDS_POLL_MS, timers = globalThis } = {}) {
+  constructor({ client = new FriendsClient(), pollMs = FRIENDS_POLL_MS, slowPollMs = FRIENDS_POLL_SLOW_MS, timers = globalThis, realtime = null, doc = globalThis.document ?? null } = {}) {
     super();
     this.client = client;
     this.pollMs = pollMs;
+    this.slowPollMs = slowPollMs;
     this.timers = timers;
+    this.realtime = realtime;
+    this.page = doc;
     this.doc = null;
     this.timer = null;
     this.running = false;
+    this.offHints = null;
+    this.offState = null;
   }
 
   start() {
     if (this.running) return;
     this.running = true;
+    if (this.realtime) {
+      this.offHints = this.realtime.subscribe('friends', (event) => {
+        if (!this.running) return;
+        this.emit('hint', event);
+        this.refresh();
+      });
+      // The channel closed: back to the normal poll from now (the slow one may be minutes away).
+      this.offState = this.realtime.on('state', (state) => {
+        if (this.running && state !== 'open' && state !== 'connecting') this.schedule();
+      });
+    }
     this.refresh();
   }
 
   stop() {
     this.running = false;
+    this.offHints?.();
+    this.offState?.();
+    this.offHints = null;
+    this.offState = null;
     if (this.timer !== null) this.timers.clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  /** The poll interval now: slow while realtime hints arrive. */
+  interval() {
+    return this.realtime?.state === 'open' ? this.slowPollMs : this.pollMs;
+  }
+
+  /** Arm the next poll (replacing the one armed). */
+  schedule() {
+    if (this.timer !== null) this.timers.clearTimeout(this.timer);
+    this.timer = this.running ? this.timers.setTimeout(() => this.poll(), this.interval()) : null;
+  }
+
+  /** A poll: a hidden tab with a list at hand does not ask (the next turn looks again). */
+  poll() {
+    this.timer = null;
+    if (!this.running) return;
+    if (this.doc && this.page?.visibilityState === 'hidden') return this.schedule();
+    return this.refresh();
   }
 
   /** Load the list now (and schedule the next poll while running). Resolves with the document or null. */
@@ -84,7 +130,7 @@ export class FriendsStore extends Emitter {
       if (err instanceof AccountError && (err.status === 401 || err.status === 403)) this.running = false;
       return null;
     } finally {
-      if (this.running && this.timer === null) this.timer = this.timers.setTimeout(() => this.refresh(), this.pollMs);
+      if (this.running && this.timer === null) this.schedule();
     }
   }
 

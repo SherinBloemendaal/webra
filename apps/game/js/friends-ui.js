@@ -4,9 +4,11 @@
 // Spectate and Invite, adding a friend by username, the requests (accept,
 // ignore, withdraw), invites from friends, removing and (un)blocking, and the
 // three privacy switches (the `social` settings, which the server applies).
-// Signed-in players only. The list is polled while the screen shows
-// (js/account/friends.js FriendsStore); `friendsView` works out what to show
-// without the DOM, so the tests check it with fixtures.
+// Signed-in players only. The list loads on every realtime hint and is
+// polled as a safety net while the screen shows (js/account/friends.js
+// FriendsStore); a request or an invite that arrives while the screen is
+// closed shows a toast. `friendsView` works out what to show without the
+// DOM, so the tests check it with fixtures.
 
 import { FriendsClient, FriendsStore, PresenceTracker } from './account/friends.js';
 import { clockText, mapName, modeName } from './online-view.js';
@@ -19,14 +21,30 @@ import { formatInviteCode } from './protocol.js';
 /** The friends store of each account API: the online screens and the friends screen share it. */
 const stores = new WeakMap();
 
-/** The page's friends store for `api` (js/account/api.js AccountApi), made on first use. */
-export function sharedFriendsStore(api) {
+/**
+ * The page's friends store for `api` (js/account/api.js AccountApi), made on
+ * first use; `realtime` (js/account/realtime.js, the account's channel) makes
+ * it follow the hints.
+ */
+export function sharedFriendsStore(api, realtime = null) {
   let store = stores.get(api);
   if (!store) {
-    store = new FriendsStore({ client: new FriendsClient(api) });
+    store = new FriendsStore({ client: new FriendsClient(api), realtime });
     stores.set(api, store);
   }
   return store;
+}
+
+/**
+ * The toast for a realtime friends hint that arrives while the Friends
+ * screen is closed: the last request or invite of the batch, or null.
+ */
+export function hintToastText(event) {
+  const shown = (event?.batch ?? [event]).filter((e) => e && typeof e.data?.username === 'string' && (e.kind === 'request' || e.kind === 'invite'));
+  const last = shown.at(-1);
+  if (!last) return null;
+  const name = last.data.username;
+  return last.kind === 'request' ? `${name} sent you a friend request. Open Friends to answer.` : `${name} invites you to a lobby. Open Friends to join.`;
 }
 
 const users = new WeakMap();
@@ -200,7 +218,7 @@ export class FriendsScreen {
   constructor(root, ctx) {
     this.root = root;
     this.ctx = ctx;
-    this.store = ctx.store ?? sharedFriendsStore(ctx.account.api);
+    this.store = ctx.store ?? sharedFriendsStore(ctx.account.api, ctx.account.realtime ?? null);
     this.now = ctx.now ?? (() => Date.now());
     this.query = '';
     this.doc = null;
@@ -600,13 +618,21 @@ export class FriendsScreen {
  * The Friends entry of the start screen's main menu (index.html
  * #start-friends): shown while a player is signed in; opens the screen.
  * Also starts the presence heartbeat (js/account/friends.js
- * PresenceTracker) while signed in, so friends see this player around.
+ * PresenceTracker) while signed in, so friends see this player around, and
+ * `toast`s a friend request or invite that a realtime hint announces while
+ * the screen is closed (an open screen shows it in its lists).
  * `cover`: the screens it shows over (hidden meanwhile); `presence`: makes
  * the heartbeat (tests). Returns `{ open(from), close({ restore }) }`.
  */
-export function mountFriends({ entry, root, account, registry, signIn, onJoin, lobby, version, cover = [], presence: makePresence }) {
+export function mountFriends({ entry, root, account, registry, signIn, onJoin, lobby, version, cover = [], presence: makePresence, toast = null }) {
   let screen = null;
   let presence = null;
+  let offHints = null;
+  const onHint = (event) => {
+    if (screen?.shown) return;
+    const text = hintToastText(event);
+    if (text) toast?.(text);
+  };
   // The screens under it are hidden while it shows (so they leave the tab order and the reader), then come back.
   let covered = [];
   const onClose = () => {
@@ -621,9 +647,12 @@ export function mountFriends({ entry, root, account, registry, signIn, onJoin, l
       // start() does nothing while it runs; after a 401 or 403 stopped it, a new sign-in starts it again.
       presence ??= makePresence ? makePresence() : new PresenceTracker({ client: new FriendsClient(account.api) });
       presence.start();
-    } else if (presence) {
-      presence.stop();
+      if (toast && account.realtime) offHints ??= account.realtime.subscribe('friends', onHint);
+    } else {
+      presence?.stop();
       presence = null;
+      offHints?.();
+      offHints = null;
     }
     // Signed out while it shows: the screen says so (FriendsScreen follows the account itself).
   };

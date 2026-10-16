@@ -1,9 +1,15 @@
 // The signed-in account of this page (the game, the account page, the admin
-// page): who is signed in, what the site allows (GET /api/site), and the
-// settings sync while someone is signed in. Listeners hear every change.
+// page): who is signed in, what the site allows (GET /api/site), the
+// settings sync while someone is signed in, and the realtime channel
+// (js/account/realtime.js) that says when the account or its settings
+// changed elsewhere. Listeners hear every change.
 
 import { AccountApi } from './api.js';
+import { RealtimeClient } from './realtime.js';
 import { SettingsSync } from './sync.js';
+
+/** A reconnect's catch-up is skipped when the account was loaded this recently (the first connect after a page load). */
+const FRESH_MS = 10_000;
 
 /**
  * What a player can do now, from the account status (docs/accounts-api.md
@@ -71,13 +77,19 @@ export class AccountSession {
    * @param {Storage | null} [o.storage] for the sync state
    * @param {Function} [o.onConflict] see SettingsSync
    * @param {object} [o.win] for the sync's 'online' event
+   * @param {RealtimeClient | null} [o.realtime] the realtime channel (null: none, the page only polls)
+   * @param {() => number} [o.now]
    */
-  constructor({ api = new AccountApi(), registry = null, storage = null, onConflict, win = null } = {}) {
+  constructor({ api = new AccountApi(), registry = null, storage = null, onConflict, win = null, realtime, now = () => Date.now() } = {}) {
     this.api = api;
     this.site = null;
     this.user = null;
     this.session = null;
     this.ready = false;
+    this.now = now;
+    /** When `refresh` last answered (a reconnect right after it needs no second load). */
+    this.refreshedAt = -Infinity;
+    this.refreshing = null;
     this.listeners = new Set();
     this.signOutListeners = new Set();
     this.syncStatus = { status: 'idle', detail: '' };
@@ -94,6 +106,20 @@ export class AccountSession {
           },
         })
       : null;
+    this.realtime = realtime === undefined ? new RealtimeClient() : realtime;
+    if (this.realtime) {
+      const stale = (e) => e.kind !== 'resync' || this.now() - this.refreshedAt >= FRESH_MS;
+      // Approved, banned, verified or renamed elsewhere: load the account again.
+      this.realtime.subscribe('account', (e) => {
+        if (stale(e)) this.refresh();
+      });
+      // Settings saved on another device (or by an admin): the sync loads them (js/account/sync.js).
+      this.realtime.subscribe('settings', (e) => {
+        if (stale(e)) this.sync?.remoteChanged(e.data?.version).catch((err) => console.warn('settings sync failed:', err));
+      });
+      // This sign-in ended (signed out elsewhere, revoked, banned): find out who is signed in now.
+      this.realtime.on('auth', () => this.refresh());
+    }
   }
 
   onChange(fn) {
@@ -132,14 +158,25 @@ export class AccountSession {
     return this.site ? !this.site.onlineRequiresAccount : true;
   }
 
-  /** Load the site settings and who is signed in. Never rejects (`error` says why). */
-  async refresh() {
+  /**
+   * Load the site settings and who is signed in. Never rejects (`error` says
+   * why). Calls while one runs share it (a hint and a button at once load once).
+   */
+  refresh() {
+    this.refreshing ??= this.load().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  async load() {
     this.error = null;
     const [site, me] = await Promise.allSettled([this.api.site(), this.api.me()]);
     if (site.status === 'fulfilled') this.site = site.value;
     if (me.status === 'fulfilled') await this.setUser(me.value.user ?? null, me.value.session ?? null);
     else this.error = me.reason;
     this.ready = true;
+    this.refreshedAt = this.now();
     this.changed();
     return this;
   }
@@ -149,6 +186,7 @@ export class AccountSession {
     const before = this.user?.id ?? null;
     this.user = user;
     this.session = session;
+    this.followRealtime();
     this.changed();
     if (!this.sync) return;
     if (!user || user.status === 'banned' || user.status === 'deleted') {
@@ -156,6 +194,19 @@ export class AccountSession {
       return;
     }
     if (user.id !== before) await this.sync.start(user).catch((err) => console.warn('settings sync failed:', err));
+  }
+
+  /**
+   * The realtime channel runs while an account that is not banned or
+   * deleted is signed in and the server offers it (`services.realtime` of
+   * GET /api/site: the setting is on and the hub exists).
+   */
+  followRealtime() {
+    if (!this.realtime) return;
+    const user = this.user;
+    const live = !!user && user.status !== 'banned' && user.status !== 'deleted' && this.site?.services?.realtime === true;
+    if (live) this.realtime.allow();
+    else this.realtime.stop();
   }
 
   /** `fn(userId)` runs when the player signs out here (not when a session ends by itself). */

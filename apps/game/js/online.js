@@ -703,17 +703,22 @@ export class OnlineUI {
   /**
    * The friends list (js/account/friends.js) while a signed-in player is on
    * the online screens: the browser's Friends filter and the lobby's Invite
-   * players panel. Polled every 30 s; stopped when the player leaves for a game.
+   * players panel. Loaded on every realtime hint (polled every 30 s without
+   * them); stopped when the player leaves for a game.
    */
   followFriends() {
     if (!this.account?.user || this.ctx.friendsStore === null) return null;
     if (!this.friendsStore) {
       // One store per page, shared with the friends screen (js/friends-ui.js): one poll, not two.
-      this.friendsStore = this.ctx.friendsStore ?? sharedFriendsStore(this.account.api);
+      this.friendsStore = this.ctx.friendsStore ?? sharedFriendsStore(this.account.api, this.account.realtime ?? null);
       this.friendsStore.on('change', (doc) => {
         this.friendsDoc = doc;
         if (this.sessionList?.isConnected) this.renderSessions();
         if (this.inviteBox?.isConnected) this.renderInvite();
+      });
+      // A friend opened or joined a lobby (a realtime hint): the browser shows it now, not on its next poll.
+      this.friendsStore.on('hint', (event) => {
+        if (this.sessionList?.isConnected && (event.batch ?? [event]).some((e) => e.kind === 'presence')) this.refresh();
       });
       this.friendsDoc = this.friendsStore.doc ?? null;
     }

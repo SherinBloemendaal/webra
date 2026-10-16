@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { strayValues, installDom, uninstallDom, FakeEvent, click, check, settle, textOf, submit, typeInto } from './dom-fixtures.mjs';
 import { MockAccountServer } from './account-mock.mjs';
 import { AccountApi } from '../js/account/api.js';
+import { FakeTimers } from './fake-timers.mjs';
 
 const { mountAccountPage, parseFragment, DISCORD_ERRORS, returnTarget, discordReturn } = await import('../../website/assets/account.js');
 
@@ -18,14 +19,15 @@ beforeEach(() => {
 });
 afterEach(() => uninstallDom());
 
-async function page(server, hash = '', search = '', storage = null) {
+/** `timers`: the page's polls (hand-driven, they never fire unless advanced); `realtime`: the channel stand-in. */
+async function page(server, hash = '', search = '', storage = null, { timers = new FakeTimers(), realtime } = {}) {
   const root = doc.createElement('div');
   doc.body.append(root);
   const replaced = [];
   const navigated = [];
   const location = { hash, pathname: '/account/', search, assign: (u) => navigated.push(u) };
   const history = { replaceState: (_s, _t, url) => replaced.push(url) };
-  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u), storage });
+  const view = await mountAccountPage(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, navigate: (u) => navigated.push(u), storage, timers, realtime });
   await settle(10);
   return { root, view, replaced, navigated };
 }
@@ -400,4 +402,40 @@ test('account page: a replay link from the play gate is kept for the game until 
   const { replaced } = await page(server, '#replay=0123456789abcdef', '?returnTo=%2Fplay%2F', storage);
   assert.equal(kept.get('webra.replayLink.v1'), '0123456789abcdef');
   assert.deepEqual(replaced, ['/account/?returnTo=%2Fplay%2F'], 'the fragment leaves the address');
+});
+
+test('a waiting account: the approval lands without a click (a realtime hint, else a check every minute)', async () => {
+  const server = new MockAccountServer();
+  server.services.realtime = true;
+  const waiting = server.addUser({ username: 'Waiting', password: 'a long passphrase', status: 'pending_approval' });
+  server.signIn(waiting);
+  const realtime = server.realtime.client();
+  const { root, navigated } = await page(server, '', '?returnTo=%2Fplay%2F', null, { realtime });
+  assert.match(textOf(root), /Waiting for approval/);
+  assert.equal(realtime.state, 'open', 'the page follows its account');
+  // A profile hint changes nothing here; the approval goes on to the game.
+  server.realtime.emit(waiting.id, { topic: 'account', kind: 'profile' });
+  await settle(10);
+  assert.deepEqual(navigated, []);
+  waiting.status = 'active';
+  server.realtime.emit(waiting.id, { topic: 'account', kind: 'status', data: { status: 'active' } });
+  await settle(10);
+  assert.deepEqual(navigated, ['/play/'], 'as "Check again" would');
+
+  // Without the channel: a quiet check every minute while the tab shows.
+  uninstallDom();
+  doc = installDom();
+  const other = new MockAccountServer();
+  const slow = other.addUser({ username: 'Slow', password: 'a long passphrase', status: 'pending_approval' });
+  other.signIn(slow);
+  const timers = new FakeTimers();
+  const second = await page(other, '', '', null, { timers });
+  timers.advance(60_000);
+  await settle(10);
+  assert.match(textOf(second.root), /Waiting for approval/);
+  assert.doesNotMatch(textOf(second.root), /Still waiting/, 'quiet');
+  slow.status = 'active';
+  timers.advance(60_000);
+  await settle(10);
+  assert.match(textOf(second.root), /Your account is active/);
 });

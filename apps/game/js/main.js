@@ -376,7 +376,7 @@ async function setupRecords(lobby, gpuError) {
     onLoadSave: (replay) => loadSave(replay, lobby),
     onWatchReplay: (replay) => watchReplay(replay, lobby),
     // Replays kept in the signed-in account (js/account/replays.js).
-    accountReplays: account ? { available: () => !!account.user && account.site?.services?.replays !== false, api: account.api } : undefined,
+    accountReplays: account ? { available: () => !!account.user && account.site?.services?.replays !== false, api: account.api, realtime: account.realtime } : undefined,
     // Saved missions show their titles (js/campaign: the mission index).
     missionTitle: async (id) => (wasm ? (findMission(await missionIndex(), id)?.mission.title ?? null) : null),
   });
@@ -690,6 +690,7 @@ function setupOnline(lobby, gpuError) {
             await open();
             ui?.joinElsewhere(session, o);
           },
+          toast: showToast,
         }),
       )
       .catch((err) => {

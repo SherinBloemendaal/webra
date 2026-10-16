@@ -210,7 +210,8 @@ const ACTION_LABELS = { retry: { offline: 'Try again', error: 'Try again', forbi
  */
 export function openAccessProblem(session, state, { probe = () => probePlayAccess(), navigate = (url) => globalThis.location.assign(url) } = {}) {
   const first = accessProblem(state, session?.user ?? null, session?.site ?? null);
-  return modal(
+  let offHints = null;
+  const done = modal(
     first.title,
     (body, close) => {
       const heading = body.closest?.('.account-dialog')?.querySelector('h1');
@@ -229,12 +230,7 @@ export function openAccessProblem(session, state, { probe = () => probePlayAcces
         text.textContent = p.text;
         action.textContent = p.action === 'retry' ? ACTION_LABELS.retry[p.state] : ACTION_LABELS.account;
       };
-      action.addEventListener('click', async () => {
-        if (shown.action === 'account') {
-          navigate(ACCOUNT_URL);
-          close(null);
-          return;
-        }
+      const check = async () => {
         action.disabled = true;
         status.textContent = 'Checking...';
         try {
@@ -251,12 +247,26 @@ export function openAccessProblem(session, state, { probe = () => probePlayAcces
         } finally {
           action.disabled = false;
         }
+      };
+      action.addEventListener('click', async () => {
+        if (shown.action === 'account') {
+          navigate(ACCOUNT_URL);
+          close(null);
+          return;
+        }
+        await check();
       });
+      // The account changed (approved, unbanned: a realtime hint): check at once, as the button does.
+      offHints =
+        session?.realtime?.subscribe?.('account', (e) => {
+          if ((e.batch ?? [e]).some((x) => x.kind === 'status') && shown.state === 'forbidden' && !action.disabled) check();
+        }) ?? null;
       body.append(text, status, el('div', { class: 'audio-buttons account-actions' }, action, later));
       show(first);
     },
     { className: 'account-problem-dialog', lamp: first.led },
   );
+  return done.finally(() => offHints?.());
 }
 
 /** Label of a setting for people: "Sound: Master volume". */
