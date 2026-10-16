@@ -383,6 +383,8 @@ test('guide progress: admins see it per user, filter and sort by it, and complet
   const guide = { done: { 'base.mcv': true, 'base.power': true, 'base.refinery': true, 'power.low': true }, tourInGames: false, seen: '0.19.0', lastTip: 4 };
   assert.equal((await target.put('/api/account/settings', { settings: { audio: { master: 0.4 }, guide } }, { headers: { 'If-Match': '"v0"' } })).status, 200);
   await user.put('/api/account/settings', { settings: { guide: { done: Object.fromEntries(stepIds.map((s) => [s, true])), quickTipsAsked: true } } }, { headers: { 'If-Match': '"v0"' } });
+  // A settings document without guide.done (only other settings): no step done.
+  assert.equal((await mod.put('/api/account/settings', { settings: { audio: { master: 0.3 }, guide: { lastTip: 2 } } }, { headers: { 'If-Match': '"v0"' } })).status, 200);
 
   // The detail: steps, the tour's state, chapter and step, the switch, the question, seen, the last write.
   const detail = (await admin.get(`/api/admin/users/${id}`)).body.guide;
@@ -403,7 +405,9 @@ test('guide progress: admins see it per user, filter and sort by it, and complet
   const names = async (q) => (await admin.get(`/api/admin/users?${q}`)).body.users.map((u) => u.username);
   assert.deepEqual(await names('guide=started'), ['Target']);
   assert.deepEqual(await names('guide=done'), ['Plain']);
-  assert.deepEqual((await names('guide=none')).sort(), ['Moddy', 'Root Admin']);
+  assert.deepEqual((await names('guide=none')).sort(), ['Moddy', 'Root Admin'], 'Moddy has a document without guide.done');
+  assert.equal(row(list.body, mod.user.id).guide.stored, true);
+  assert.equal(row(list.body, mod.user.id).guide.steps.done, 0);
   assert.deepEqual((await names('sort=guide&order=desc')).slice(0, 2), ['Plain', 'Target']);
   assert.equal((await admin.get('/api/admin/users?guide=all')).status, 400);
   assert.equal((await mod.get('/api/admin/users?guide=started')).status, 403);
@@ -469,6 +473,16 @@ test('guide progress: admins see it per user, filter and sort by it, and complet
   assert.equal(again.body.settings.audio.master, 0.7, 'the player\'s write is kept');
   assert.deepEqual(again.body.settings.guide.done, {});
   assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4, 'one entry for the action');
+  // Writes that keep coming: after three tries the admin is told to try again, nothing is written.
+  env.DB.prepare = (sql) => {
+    if (/^UPDATE settings_docs SET version/.test(sql)) env.DB.sqlite.prepare('UPDATE settings_docs SET version = version + 1 WHERE user_id = ?1').run(id);
+    return prepare(sql);
+  };
+  const busy = await action('reset');
+  env.DB.prepare = prepare;
+  assert.equal(busy.status, 409);
+  assert.equal(busy.body.error.message, "The player's settings kept changing; try again in a moment.");
+  assert.equal((await admin.get('/api/admin/audit?action=user.guide_update')).body.entries.length, 4);
 
   // The player wrote meanwhile with the version they had: their write is refused (412) and merges as usual.
   assert.equal((await target.put('/api/account/settings', { settings: { guide } }, { headers: { 'If-Match': `"v${before.version}"` } })).status, 412);

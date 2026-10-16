@@ -613,8 +613,9 @@ async function putUserSettings(ctx, { id }) {
  * 8.11): `complete`, `reset` or `restartTour` (packages/protocol
  * applyGuideAction). The document gets a new version (the game takes it on its
  * next sync) and a newer guide.resetAt, which wins the sync's merge on every
- * device. A write of the player meanwhile is merged by doing the action again
- * on the newer document. 409 when the account has no settings document yet:
+ * device (reset and complete; restartTour keeps the epoch). A write of the
+ * player meanwhile is merged by doing the action again on the newer document,
+ * at most three times. 409 when the account has no settings document yet:
  * its progress is only in the player's browser, and a new document would
  * replace the settings of that browser at its next sync.
  */
@@ -623,17 +624,20 @@ async function guideAction(ctx, { id }) {
   const actor = await ctx.requireRole('admin');
   const row = await target(ctx, id);
   if (!GUIDE_ACTIONS.includes(body.action)) throw invalid('action', `action must be one of ${GUIDE_ACTIONS.join(', ')}.`);
+  let before = await getSettingsDoc(ctx.db, row.id);
+  if (before.version === 0) throw new HttpError(409, 'conflict', 'This player has no settings in the account yet: their guide progress is only in their browser until they play signed in.');
   await ctx.limit('admin-guide', actor.id, 120, HOUR_MS);
   for (let attempt = 1; ; attempt++) {
-    const before = await getSettingsDoc(ctx.db, row.id);
-    if (before.version === 0) throw new HttpError(409, 'conflict', 'This player has no settings in the account yet: their guide progress is only in their browser until they play signed in.');
+    if (attempt > 1) before = await getSettingsDoc(ctx.db, row.id);
     const settings = check(() => validateSettingsDocument({ ...before.settings, guide: applyGuideAction(before.settings.guide, body.action, ctx.now) }, 'settings'), 'settings');
     let doc;
     try {
       doc = await putSettingsDoc(ctx.db, row.id, before.version, settings, actor.id, ctx.now);
     } catch (err) {
-      if (err instanceof HttpError && err.code === 'version_conflict' && attempt < 3) continue;
-      throw err;
+      if (!(err instanceof HttpError) || err.code !== 'version_conflict') throw err;
+      if (attempt < 3) continue;
+      // Not the player's "merge and try again": the admin only has to ask again.
+      throw new HttpError(409, 'conflict', "The player's settings kept changing; try again in a moment.");
     }
     await audit(
       ctx.db,
