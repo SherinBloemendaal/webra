@@ -100,6 +100,14 @@ class StaticFacts {
     return this.info.terrain ?? null;
   }
 
+  /**
+   * What the tile terrain of the original graphics fits the ground to at
+   * the start: `{ bridges, standing }` (SimCore.info `terrainHints`), or null.
+   */
+  initial_terrain_hints() {
+    return this.info.terrainHints ?? null;
+  }
+
   /** The sky at the start (biome, weather mode); per frame it comes with the frame (`frame.weather`). */
   weather_json() {
     return this.info.weatherJson ?? '{"biome":"temperate","mode":"off","weather":"clear"}';

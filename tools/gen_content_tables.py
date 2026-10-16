@@ -40,8 +40,9 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
   destroyed, and the long bridge spans' destroyed_north, destroyed_south,
   destroyed_both) and the template size.
 - TERRAIN[tileset] = { palette, rotation, images: [file], templates: [[image,
-  width, height, role, cells]] }: the templates the tile terrain uses, by role
-  (TERRAIN_ROLES), with the cells of the template that have a tile.
+  width, height, role, cells, road cells]] }: the templates the tile terrain
+  uses, by role (TERRAIN_ROLES), with the cells of the template that have a
+  tile and, for road templates, those of them whose terrain is Road.
 - TREES: tree images (decorations) composited onto tree cells.
 - RESOURCES: ore and gem overlay sequences (misc.yaml "resources").
 - SPECIAL_ART, EXPLOSIONS, EXPLOSION_ART, MUZZLE_ACTORS: the engine's special
@@ -93,8 +94,10 @@ WATER_ROTATION = {'TEMPERAT': [96, 7], 'SNOW': [96, 7], 'DESERT': [32, 7]}
 # plain ground variants; water: open water; shore: beaches (the runtime
 # matches their tiles to the coastline by their pixels); rough: loose stones
 # on open ground; rock: boulders on open ground (impassable); water-rock:
-# rocks standing in water; road: plain road pieces. Templates made by OpenRA
-# (bits.txt) are left out.
+# rocks standing in water; road: every road template (the runtime fits their
+# tiles along WebRA's roads by their pixels, the road cells' tiles on road
+# cells and their verges on the clear ground beside). Templates made by
+# OpenRA (bits.txt) are left out.
 TERRAIN_ROLES = {
     'TEMPERAT': {
         'clear': ['clear1'],
@@ -103,7 +106,7 @@ TERRAIN_ROLES = {
         'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
         'rock': ['b1', 'b2', 'b3'],
         'water-rock': ['sh55', 'sh56'],
-        'road': ['d44', 'd45'],
+        'road': 'Road',
     },
     'SNOW': {
         'clear': ['clear1'],
@@ -112,7 +115,7 @@ TERRAIN_ROLES = {
         'rough': ['rf01', 'rf02', 'rf03', 'rf04', 'rf05', 'rf06', 'rf07', 'rf08', 'rf09', 'rf10', 'rf11'],
         'rock': ['b1', 'b2', 'b3'],
         'water-rock': ['sh55', 'sh56'],
-        'road': ['d44', 'd45'],
+        'road': 'Road',
     },
     'DESERT': {
         'clear': ['clear1'],
@@ -121,7 +124,7 @@ TERRAIN_ROLES = {
         'rough': ['p01', 'p02', 'p03', 'p07'],
         'rock': ['p04'],
         'water-rock': [],
-        'road': ['d03'],
+        'road': 'Road',
     },
 }
 
@@ -1224,36 +1227,39 @@ def terrain_tables():
             root = parse.parse_miniyaml(f.read())
         roles = TERRAIN_ROLES[tid]
         by_name = {}
-        beach = []
+        by_category = {'Beach': [], 'Road': []}
         for _key, (_v, ch) in root['Templates'][1].items():
             img = ch['Images'][0].split(',')[0].strip().lower()
             if img in BITS and img not in SAME_LAYOUT:
                 continue
             w, h = (int(x) for x in ch['Size'][0].split(','))
-            cells = sorted(int(k) for k in ch.get('Tiles', ['', {}])[1])
+            tiles = {int(k): v for k, (v, _ch) in ch.get('Tiles', ['', {}])[1].items()}
+            cells = sorted(tiles)
             if not cells:
                 continue
-            tpl = (img, w, h, cells)
+            # The cells of the template whose terrain is Road (the road runs there, Clear cells hold its verges).
+            road = [c for c in cells if tiles[c] == 'Road']
+            tpl = (img, w, h, cells, road)
             by_name.setdefault(img.rsplit('.', 1)[0], tpl)
-            if 'Beach' in {c.strip() for c in ch.get('Categories', [''])[0].split(',')}:
-                beach.append(tpl)
+            for cat in {c.strip() for c in ch.get('Categories', [''])[0].split(',')} & by_category.keys():
+                by_category[cat].append(tpl)
         images = []
         index = {}
         templates = []
         for role, names in roles.items():
-            if names == 'Beach':
-                chosen = beach
+            if isinstance(names, str):
+                chosen = by_category[names]
             else:
                 chosen = []
                 for n in names:
                     if n not in by_name:
                         raise SystemExit(f'TERRAIN_ROLES {tid} {role}: no template {n} (or it is made by OpenRA)')
                     chosen.append(by_name[n])
-            for img, w, h, cells in chosen:
+            for img, w, h, cells, road in chosen:
                 if img not in index:
                     index[img] = len(images)
                     images.append(img)
-                templates.append([index[img], w, h, role, cells])
+                templates.append([index[img], w, h, role, cells] + ([road] if role == 'road' else []))
         rot = WATER_ROTATION[tid]
         out[tid] = {'palette': info['palette'], 'rotation': rot, 'images': images, 'templates': templates}
     return out
@@ -1601,8 +1607,10 @@ def main():
         '',
         '/**',
         ' * Terrain templates per tileset (tools/gen_content_tables.py TERRAIN_ROLES):',
-        ' * [image index, width, height, role, tile indexes the template has]. Roles:',
-        ' * clear, water, shore, rough, rock, water-rock. `rotation` is the first',
+        ' * [image index, width, height, role, tile indexes the template has] and,',
+        ' * for roads, the tile indexes whose terrain is Road (the others are its',
+        ' * verges on clear ground). Roles: clear, water, shore, rough, rock,',
+        ' * water-rock, road. `rotation` is the first',
         ' * terrain palette index and count that cycle to animate water (OpenRA',
         ' * RotationPaletteEffect).',
         ' */',

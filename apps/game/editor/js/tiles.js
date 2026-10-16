@@ -7,15 +7,17 @@
 // editor plans them in a worker (tiles-worker.js) whenever the terrain
 // types change and draws the last plan meanwhile: cells whose terrain type
 // changed since that plan show the tile most cells of their new type have
-// in it, until the next plan comes in. The finished picture is exactly the
-// one a game on the map draws. Texture packs tile cell by cell and stay on
+// in it, until the next plan comes in. The terrain hints (bridges and the
+// cells structures and trees stand on, from the engine preview) are part of
+// the plan: when they change the map is planned again. The finished picture
+// is exactly the one a game on the map draws. Texture packs tile cell by cell and stay on
 // the main thread (js/content/index.js packTerrain).
 
 import { originalTerrain } from '../../js/content/terrain.js';
 
-/** Plan the tiles of engine terrain bytes in the theater `{ tileset, files }` (here, in this thread). */
-export function planTiles(theater, bytes, w, h) {
-  return originalTerrain((name) => theater.files.get(name) ?? null, theater.tileset, bytes, w, h);
+/** Plan the tiles of engine terrain bytes (and terrain hints, or null) in the theater `{ tileset, files }` (here, in this thread). */
+export function planTiles(theater, bytes, w, h, hints = null) {
+  return originalTerrain((name) => theater.files.get(name) ?? null, theater.tileset, bytes, w, h, hints);
 }
 
 /**
@@ -34,9 +36,9 @@ export class TileWorker {
     this.broken = !WorkerClass;
   }
 
-  /** `job`: `{ key, tileset, files, bytes, w, h }`. */
+  /** `job`: `{ key, tileset, files, bytes, w, h, hints }`. */
   plan(job) {
-    if (this.broken) return Promise.resolve().then(() => planTiles(job, job.bytes, job.w, job.h));
+    if (this.broken) return Promise.resolve().then(() => planTiles(job, job.bytes, job.w, job.h, job.hints ?? null));
     try {
       this.start();
       if (this.sentKey !== job.key) {
@@ -50,7 +52,7 @@ export class TileWorker {
     const id = this.next++;
     return new Promise((resolve, reject) => {
       this.waiting.set(id, { resolve, reject, job });
-      this.worker.postMessage({ t: 'plan', id, key: job.key, bytes: job.bytes, w: job.w, h: job.h });
+      this.worker.postMessage({ t: 'plan', id, key: job.key, bytes: job.bytes, w: job.w, h: job.h, hints: job.hints ?? null });
     });
   }
 
@@ -96,6 +98,9 @@ export class TileWorker {
  */
 export const STAND_IN_SHARE = 0.25;
 
+/** How long a plan waits before it starts (ms): changes that come in meanwhile join it. */
+export const PLAN_DELAY_MS = 40;
+
 /** The terrain type (R) of every cell of engine terrain bytes. */
 function typesOf(bytes) {
   const out = new Uint8Array(bytes.length / 4);
@@ -109,11 +114,19 @@ function typesOf(bytes) {
  * comes in, so the editor uploads the tiles again.
  */
 export class InstalledTiles {
-  constructor({ plan, ready = () => {} }) {
+  /**
+   * `defer(fn)` runs a plan's start a moment later (PLAN_DELAY_MS): what
+   * changes together in consecutive frames (a tree stroke's terrain types,
+   * then its preview's terrain hints) is planned once, with the newest.
+   */
+  constructor({ plan, ready = () => {}, defer = (fn) => setTimeout(fn, PLAN_DELAY_MS) }) {
     this.plan = plan;
     this.ready = ready;
+    this.defer = defer;
+    /** The plan about to start (the newest request while `defer` waits), or null. */
+    this.queued = null;
     this.key = null;
-    /** The last plan: `{ types, w, h, atlas, cells, common }` (`result` null when the theater cannot tile). */
+    /** The last plan: `{ types, hints, w, h, atlas, cells, common }` (`atlas` null when the theater cannot tile; `hints` the JSON of its terrain hints). */
     this.done = null;
     this.busy = false;
     this.plans = 0;
@@ -135,27 +148,42 @@ export class InstalledTiles {
 
   /**
    * Tiles for engine terrain `bytes` (`w` x `h`) in `theater` (`{ key,
-   * tileset, files }`; a new key drops what was planned for another):
+   * tileset, files }`; a new key drops what was planned for another) with
+   * the engine's terrain `hints` (or null):
    * `{ atlas, cells }` from the last plan, with the cells whose type changed
    * since shown in their type's most common tile; `null` while no plan is
    * ready or when the theater cannot tile this map (WebRA's tiles then).
-   * Starts a plan when the types differ from the last one and none is
-   * running.
+   * Starts a plan when the types or the hints differ from the last one and
+   * none is running.
    */
-  tiles(theater, bytes, w, h) {
+  tiles(theater, bytes, w, h, hints = null) {
     if (theater.key !== this.key) {
       this.key = theater.key;
       this.done = null;
     }
     const types = typesOf(bytes);
+    const hintsKey = JSON.stringify(hints);
     const done = this.done;
-    const same = done && done.w === w && done.h === h && done.types.every((t, i) => t === types[i]);
-    if (!same && !this.busy) this.start(theater, bytes, types, w, h);
+    const sameTypes = done && done.w === w && done.h === h && done.types.every((t, i) => t === types[i]);
+    const same = sameTypes && done.hints === hintsKey;
+    if (!same && this.queued) {
+      // Not started yet: it plans the newest.
+      Object.assign(this.queued, { theater, bytes: bytes.slice(), types, w, h, hints, hintsKey });
+    } else if (!same && !this.busy) {
+      this.busy = true;
+      this.queued = { theater, bytes: bytes.slice(), types, w, h, hints, hintsKey };
+      this.defer(() => {
+        const q = this.queued;
+        this.queued = null;
+        this.start(q.theater, q.bytes, q.types, q.w, q.h, q.hints, q.hintsKey);
+      });
+    }
     if (!done || done.w !== w || done.h !== h || !done.atlas) {
       this.standIn = this.busy;
       return null;
     }
-    if (same) {
+    if (sameTypes) {
+      // The same types (other hints planning): the last plan's tiles as they are.
       this.standIn = false;
       return { atlas: done.atlas, cells: done.cells };
     }
@@ -174,11 +202,11 @@ export class InstalledTiles {
     return { atlas: done.atlas, cells };
   }
 
-  start(theater, bytes, types, w, h) {
+  start(theater, bytes, types, w, h, hints = null, hintsKey = JSON.stringify(hints)) {
     this.busy = true;
     const key = theater.key;
     this.plans++;
-    this.plan({ key, tileset: theater.tileset, files: theater.files, bytes: bytes.slice(), w, h })
+    this.plan({ key, tileset: theater.tileset, files: theater.files, bytes, w, h, hints })
       .catch((err) => {
         console.warn('Planning terrain tiles failed:', err);
         return null;
@@ -186,7 +214,9 @@ export class InstalledTiles {
       .then((result) => {
         this.busy = false;
         if (key === this.key) {
-          this.done = result ? { types, w, h, atlas: result.atlas, cells: result.cells, common: commonTiles(types, result.cells) } : { types, w, h, atlas: null };
+          this.done = result
+            ? { types, hints: hintsKey, w, h, atlas: result.atlas, cells: result.cells, common: commonTiles(types, result.cells) }
+            : { types, hints: hintsKey, w, h, atlas: null };
         }
         this.ready();
         for (const resolve of this.waiters.splice(0)) resolve();

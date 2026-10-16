@@ -164,3 +164,24 @@ fn fog_preview_shows_what_a_spawn_sees_at_the_start() {
     assert_eq!(w.editor_fog(5), vec![0; 48 * 48], "no such spawn");
     assert_eq!(w.actors.iter().filter(|a| a.alive).count(), 0, "the preview itself is unchanged");
 }
+
+#[test]
+fn terrain_hints_list_the_bridges_and_the_cells_things_stand_on() {
+    // A river across the map with a bridge over it, a tree and a power plant.
+    let d = data(&[(4, 4), (40, 40)], vec![actor("BRIDGE1", -1, 20, 23), actor("T01", -1, 10, 10), actor("POWR", 0, 30, 30)], |m| {
+        for x in 0..48 {
+            for y in 23..26 {
+                let i = m.idx(x, y);
+                m.terrain[i] = Terrain::River;
+            }
+        }
+    });
+    let Ok(g) = Game::editor_preview(&d.canonical_json()) else { panic!("preview game") };
+    let hints: serde_json::Value = serde_json::from_str(&g.terrain_hints_json()).expect("json");
+    assert_eq!(hints["bridges"], serde_json::json!([{ "type": "BRIDGE1", "x": 20, "y": 23, "look": "healthy" }]));
+    let standing: Vec<u64> = hints["standing"].as_array().expect("standing").iter().filter_map(|v| v.as_u64()).collect();
+    assert!(standing.contains(&(11 * 48 + 10)), "the tree's cell (T01 stands on the bottom-left cell of its 2 x 2 box)");
+    assert!(standing.contains(&(30 * 48 + 30)), "the power plant's cells");
+    let bridge_cell = (23 * 48 + 22) as u64;
+    assert!(!standing.contains(&bridge_cell), "a bridge lies over its cells without standing on them");
+}

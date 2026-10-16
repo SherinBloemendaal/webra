@@ -168,9 +168,9 @@ export class EditorArt {
     if (this.atlas) applyGameArt(game, this.atlas, this.original);
   }
 
-  /** Tile terrain from installed content for engine terrain bytes, or null for WebRA's tiles. */
-  terrain(biome, bytes, w, h) {
-    return this.content?.terrain(biome, bytes, w, h) ?? null;
+  /** Tile terrain from installed content for engine terrain bytes (and terrain hints, or null), or null for WebRA's tiles. */
+  terrain(biome, bytes, w, h, hints = null) {
+    return this.content?.terrain(biome, bytes, w, h, hints) ?? null;
   }
 
   /** `terrain` from a texture pack (made at once), or null (js/content/index.js packTerrain). */
