@@ -533,6 +533,8 @@ export const DEFAULT_SITE_SETTINGS = Object.freeze({
   onlineRequiresAccount: true,
   gameRequiresAccount: true,
   contentRelay: true,
+  // The realtime channel (realtime.js): off, pages only poll.
+  realtime: true,
   motd: '',
 });
 
@@ -542,6 +544,7 @@ const SITE_SHAPE = {
   onlineRequiresAccount: boolean,
   gameRequiresAccount: boolean,
   contentRelay: boolean,
+  realtime: boolean,
   motd: (v, f) => {
     if (typeof v !== 'string') bad(f, 'Must be text.');
     const s = v.normalize('NFC').replace(/\r\n?/g, '\n').trim();

@@ -4554,10 +4554,12 @@ set through CSSOM (`--avatar`, `--fill`, the select plate's `--sp-*`).
   Breaking; `site-data.js` `releaseTag`).
 - **Shared with the game and the server**: the code rules come from the
   protocol (`/lib/protocol/invite.js`: `normalizeInviteCode`,
-  `formatInviteCode`, `invitePath`), the friends client from the game
-  (`/lib/js/account/friends.js` `FriendsClient`), the poll interval and
-  the privacy reader from the protocol (`/lib/protocol/friends.js`
-  `FRIENDS_POLL_MS`, `socialSettings`) and the privacy defaults from the
+  `formatInviteCode`, `invitePath`), the friends client and store from the
+  game (`/lib/js/account/friends.js` `FriendsClient`, `FriendsStore`, which
+  follows the realtime channel `/lib/js/account/realtime.js`, accounts API
+  5.12), the poll intervals and the privacy reader from the protocol
+  (`/lib/protocol/friends.js` `FRIENDS_POLL_MS`, `FRIENDS_POLL_SLOW_MS`,
+  `socialSettings`) and the privacy defaults from the
   protocol's accounts module (`/lib/protocol/accounts.js`
   `SOCIAL_SETTING_DEFAULTS`). The routes are the Worker's:
   `/join/<code>` (the redirect into the game), `GET /api/invite/:code` and

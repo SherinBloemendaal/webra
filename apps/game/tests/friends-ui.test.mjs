@@ -255,3 +255,48 @@ test('mountFriends: a game start closes the screen and keeps the lobby hidden; t
     uninstallDom();
   }
 });
+
+test('mountFriends: a request or invite hint shows a toast while the screen is closed; an open screen loads instead', async () => {
+  const doc = installDom();
+  try {
+    const { mountFriends, hintToastText } = await import('../js/friends-ui.js');
+    const { MockAccountServer } = await import('./account-mock.mjs');
+    const server = new MockAccountServer();
+    const me = server.addUser({ username: 'Commander', password: 'a long passphrase' });
+    server.signIn(me);
+    const realtime = server.realtime.client();
+    realtime.allow();
+    let lists = 0;
+    const api = {};
+    const account = { user: { username: 'Commander' }, api, realtime, onChange() {} };
+    const toasts = [];
+    const root = doc.createElement('section');
+    root.hidden = true;
+    doc.body.append(root);
+    const f = mountFriends({ entry: null, root, account, registry: { get: () => true, set() {} }, presence: () => ({ start() {}, stop() {} }), toast: (t) => toasts.push(t) });
+    // The shared store must not reach the network in this test.
+    const { sharedFriendsStore } = await import('../js/friends-ui.js');
+    const store = sharedFriendsStore(api, realtime);
+    store.client = { list: async () => (lists++, DOC) };
+    store.timers = { setTimeout: () => 1, clearTimeout() {} };
+
+    server.realtime.emit(me.id, { topic: 'friends', kind: 'request', data: { username: 'Ivan' } });
+    assert.deepEqual(toasts, ['Ivan sent you a friend request. Open Friends to answer.']);
+    server.realtime.emit(me.id, { topic: 'friends', kind: 'presence', data: { username: 'Kara' } });
+    assert.equal(toasts.length, 1, 'presence is no news worth a toast');
+
+    f.open();
+    await new Promise((r) => setTimeout(r, 0));
+    const before = lists;
+    server.realtime.emit(me.id, { topic: 'friends', kind: 'invite', data: { username: 'Kara', session: 'b'.repeat(64) } });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(toasts.length, 1, 'the open screen shows it in its lists');
+    assert.equal(lists, before + 1, 'and loads the list');
+    f.close();
+    server.realtime.emit(me.id, { topic: 'friends', kind: 'invite', data: { username: 'Kara', session: 'b'.repeat(64) } });
+    assert.equal(toasts.at(-1), 'Kara invites you to a lobby. Open Friends to join.');
+    assert.equal(hintToastText({ kind: 'request', data: null }), null, 'own echo (no name): no toast');
+  } finally {
+    uninstallDom();
+  }
+});

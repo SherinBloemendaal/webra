@@ -30,6 +30,7 @@ import { buildSettingsForm, controlFor, formatValue, parseValue } from '../js/ac
 import { GROUPS, checkDocument, specOf } from '../js/registry.js';
 import { guideSummary } from '../protocol/guide.js';
 import { STEP_IDS } from '../js/guide.js';
+import { FakeTimers } from './fake-timers.mjs';
 
 const { mountAdmin } = await import('../../website/assets/admin.js');
 
@@ -222,12 +223,13 @@ function seed(server) {
   return { admin, mod, users };
 }
 
-async function dashboard(server, hash = '') {
+/** `timers`: the live reloads and polls (hand-driven); `realtime`: the channel stand-in (none by default). */
+async function dashboard(server, hash = '', { timers = new FakeTimers(), realtime = null } = {}) {
   const root = doc.createElement('div');
   doc.body.append(root);
   const location = { hash, pathname: '/admin.html', search: '' };
   const history = { replaceState: (_s, _t, url) => (location.hash = url.slice(url.indexOf('#'))) };
-  const view = await mountAdmin(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history });
+  const view = await mountAdmin(root, { api: new AccountApi({ fetchImpl: server.fetch }), location, history, timers, realtime });
   await settle(20);
   return { root, view, location };
 }
@@ -626,4 +628,38 @@ test('CSP safety: account and admin code builds the DOM without HTML strings, in
       assert.equal(m[2].trim(), '', `${rel}: no inline script`);
     }
   }
+});
+
+test('dashboard: an admin hint reloads the table (same page and filters) and the open detail of that user', async () => {
+  const server = new MockAccountServer();
+  const { admin, users } = seed(server);
+  server.signIn(admin);
+  const realtime = server.realtime.client({ path: '/api/admin/realtime' });
+  const timers = new FakeTimers();
+  const { root, location, view } = await dashboard(server, '#users', { timers, realtime });
+  assert.equal(view.realtime, realtime);
+  assert.equal(realtime.state, 'open');
+  click(byText(root, 'button', /^Next$/));
+  await settle(20);
+  assert.match(textOf(root.querySelector('.pager')), /26 to 32 of 32/);
+  click(byText(root, 'button', new RegExp(`^${users[0].username}$`)) ?? byText(root.querySelector('tbody'), 'button', /^Details$/));
+  await settle(20);
+  const shown = root.querySelector('.drawer h2').textContent;
+  const target = [...server.users.values()].find((u) => u.username === shown);
+  // Another admin renames the user and a new player signs up.
+  target.displayName = 'Renamed Live';
+  server.addUser({ username: 'Newcomer', password: 'a long passphrase', status: 'pending_approval' });
+  const before = server.requests.length;
+  server.realtime.emit('admin', { topic: 'admin', kind: 'user_updated', data: { userId: target.id } });
+  server.realtime.emit('admin', { topic: 'admin', kind: 'user_created', data: { userId: 'f'.repeat(32) } });
+  await settle(10);
+  assert.equal(server.requests.length, before, 'debounced');
+  timers.advance(1000);
+  await settle(20);
+  const loads = server.requests.slice(before).map((r) => r.url);
+  assert.equal(loads.filter((u) => /\/api\/admin\/users\?/.test(u)).length, 1, 'one table load for the burst');
+  assert.match(loads.find((u) => /\/api\/admin\/users\?/.test(u)), /page=2/, 'the same page');
+  assert.match(location.hash, /page=2/);
+  assert.match(textOf(root.querySelector('.pager')), /of 33/, 'the newcomer counts');
+  assert.match(textOf(root.querySelector('.drawer')), /Renamed Live/, 'the open detail of that user loaded again');
 });

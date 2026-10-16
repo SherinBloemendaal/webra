@@ -472,3 +472,113 @@ test('bulk edit: the host sends one slots message, everyone gets one lobby; a gu
   assert.equal(slotOf('Guest'), -1);
   for (const ws of [host, guest]) assertValid(ws);
 });
+
+// ---- Realtime presence hints (src/realtime/publish.js) ----------------------------------------
+
+/**
+ * A D1 stand-in that knows who is friends with whom (the one read the
+ * hints make) and records the directory writes; a hub namespace that
+ * records publishes (or throws with `fail`).
+ */
+function presenceWorld(friends) {
+  const writes = [];
+  const DB = {
+    prepare: (sql) => ({
+      // The site settings (no row: the defaults, realtime on).
+      first: async () => null,
+      bind: (...args) => ({
+        run: async () => {
+          if (/INSERT INTO sessions/.test(sql)) writes.push(args[0]);
+          return { meta: { changes: 1 } };
+        },
+        first: async () => null,
+        all: async () => ({ results: /FROM friendships/.test(sql) ? (friends[args[0]] ?? []).map((id) => ({ id })) : [] }),
+      }),
+    }),
+  };
+  const hub = {
+    publishes: [],
+    fail: false,
+    idFromName: (name) => ({ name }),
+    get: (id) => ({
+      publish: async (e) => {
+        if (hub.fail) throw new Error('hub unavailable');
+        hub.publishes.push({ to: id.name, kind: e.kind, username: e.data?.username ?? null });
+        return 1;
+      },
+    }),
+  };
+  return { DB, hub, writes };
+}
+
+const account = (n) => ({ id: String(n).repeat(32).slice(0, 32), username: `Player${n}` });
+
+test('presence hints: joining, leaving and starting tell the friends of signed-in members only, once per change', async () => {
+  const A = account(1);
+  const B = account(2);
+  const friendOfA = '9'.repeat(32);
+  const friendOfB = '8'.repeat(32);
+  const { DB, hub } = presenceWorld({ [A.id]: [friendOfA], [B.id]: [friendOfB] });
+  const s = await makeSession({ DB, env: { USER_HUB: hub } });
+  const host = s.connect('host', '10.0.0.1', { account: A, refuse: null });
+  await s.send(host, hello(s, A.username, { hostKey: s.hostKey }));
+  assert.deepEqual(hub.publishes, [{ to: `user:${friendOfA}`, kind: 'presence', username: null }], 'the host is in a lobby now (no name: the hint only says "look again")');
+  hub.publishes.length = 0;
+
+  // An anonymous guest changes the room but names nobody new: the host's friends see the count change.
+  const anon = s.connect('anon');
+  await s.send(anon, hello(s, 'Guest'));
+  assert.deepEqual(hub.publishes.map((p) => p.to), [`user:${friendOfA}`], 'no hint for an anonymous member itself');
+  hub.publishes.length = 0;
+
+  const guest = s.connect('guest', '10.0.0.3', { account: B, refuse: null });
+  await s.send(guest, hello(s, B.username));
+  assert.deepEqual(hub.publishes.map((p) => p.to).sort(), [`user:${friendOfA}`, `user:${friendOfB}`].sort());
+  hub.publishes.length = 0;
+
+  // A heartbeat with nothing changed tells nobody, also after the object woke up (state from storage).
+  await s.session.syncDirectory(true);
+  s.session.presence = null;
+  s.session.lastDirectoryCore = null;
+  await s.session.syncDirectory(true);
+  assert.deepEqual(hub.publishes, []);
+
+  // Leaving: the friends of the one who left hear it too.
+  await s.send(guest, { t: 'leave' });
+  assert.deepEqual(hub.publishes.map((p) => p.to).sort(), [`user:${friendOfA}`, `user:${friendOfB}`].sort());
+  hub.publishes.length = 0;
+
+  // The game starts: lobby -> game.
+  await s.send(anon, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  assert.ok(hub.publishes.some((p) => p.to === `user:${friendOfA}`), 'in a game now');
+  hub.publishes.length = 0;
+
+  // The session ends: everyone who was in it.
+  await s.session.destroy();
+  assert.deepEqual(hub.publishes.map((p) => p.to), [`user:${friendOfA}`]);
+});
+
+test('presence hints: a failing hub is logged and the directory is written anyway; no binding, no hints', async () => {
+  const A = account(1);
+  const { DB, hub, writes } = presenceWorld({ [A.id]: ['9'.repeat(32)] });
+  hub.fail = true;
+  const errors = [];
+  const realError = console.error;
+  console.error = (...args) => errors.push(args.join(' '));
+  try {
+    const s = await makeSession({ DB, env: { USER_HUB: hub } });
+    const host = s.connect('host', '10.0.0.1', { account: A, refuse: null });
+    await s.send(host, hello(s, A.username, { hostKey: s.hostKey }));
+    assert.equal(host.take('welcome').length, 1, 'the join went through');
+  } finally {
+    console.error = realError;
+  }
+  assert.ok(writes.length > 0, 'the directory row was written');
+  assert.ok(errors.some((e) => /realtime publish failed/.test(e)), errors.join('\n'));
+
+  const plain = await makeSession({ DB });
+  const h = plain.connect('host', '10.0.0.1', { account: A, refuse: null });
+  await plain.send(h, hello(plain, A.username, { hostKey: plain.hostKey }));
+  assert.equal(h.take('welcome').length, 1);
+});

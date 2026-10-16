@@ -341,7 +341,7 @@ export class RecordBrowser {
  * @param {HTMLElement} root the #records-entry element
  * @param {{ version: string, canPlay(): boolean, showError(msg: string): void,
  *   onLoadSave(replay: object): void, onWatchReplay(replay: object): void, store?: SaveStore,
- *   accountReplays?: { available(): boolean, api: import('./account/api.js').AccountApi },
+ *   accountReplays?: { available(): boolean, api: import('./account/api.js').AccountApi, realtime?: import('./account/realtime.js').RealtimeClient | null },
  *   missionTitle?(id: string): Promise<string | null> }} ctx
  *   missionTitle: a mission's title for the saves of missions (js/campaign: the mission index)
  */
@@ -397,7 +397,8 @@ function screenTabs(head, label, list) {
 /** Replays: the signed-in account's replays (Watch, Download, Delete) and opening a file. */
 async function replaysDialog(ctx) {
   if (!ctx.canPlay()) return ctx.showError('WebGPU is not available.');
-  const { api } = ctx.accountReplays;
+  const { api, realtime = null } = ctx.accountReplays;
+  let offHints = null;
   const chosen = await dialog(
     'Replays',
     (body, close, head) => {
@@ -512,10 +513,13 @@ async function replaysDialog(ctx) {
       actions.append(button('Close', 'ui-btn', () => close(null)));
       body.append(account, file, status, actions);
       render();
+      // A replay added or deleted in another tab or on another device (a realtime hint): the list loads again.
+      offHints = realtime?.subscribe('replays', () => render()) ?? null;
       // A list like Load game: a screen card the size of the window (css/records.css .records-screen).
     },
     { screen: true },
   );
+  offHints?.();
   if (chosen) ctx.onWatchReplay(chosen);
 }
 

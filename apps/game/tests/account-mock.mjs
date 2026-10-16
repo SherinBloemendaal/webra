@@ -6,6 +6,13 @@
 //
 //   const server = new MockAccountServer();
 //   const api = new AccountApi({ fetchImpl: server.fetch });
+//
+// `server.realtime` stands in for the realtime channel (docs/accounts-api.md
+// 5.12) without a socket: pages get `server.realtime.client()` as their
+// RealtimeClient, and tests send hints with `server.realtime.emit(userId,
+// { topic, kind, data })` (`'admin'` for the dashboard's topic).
+
+import { Emitter } from '../js/netquality.js';
 
 import { applyGuideAction, GUIDE_ACTIONS, guideSummary } from '../protocol/guide.js';
 
@@ -32,9 +39,12 @@ export class MockAccountServer {
       onlineRequiresAccount: true,
       gameRequiresAccount: true,
       contentRelay: true,
+      realtime: true,
       motd: '',
     };
-    this.services = { email: false, discord: false, replays: true };
+    // `realtime`: whether pages open the channel (GET /api/site services.realtime); the mock has no hub.
+    this.services = { email: false, discord: false, replays: true, realtime: false };
+    this.realtime = new MockRealtime(this);
     /** Replays kept in accounts (docs/accounts-api.md 5.10): userId -> [{ view, text }], newest first. */
     this.replays = new Map();
     /** The admin stats' daily outbound mail budget. */
@@ -785,5 +795,108 @@ export class MockAccountServer {
     const next = { version: doc.version + 1, updatedAt: this.now, settings: body.settings };
     this.settingsDocs.set(user.id, next);
     return reply(200, next, { ETag: `"v${next.version}"` });
+  }
+}
+
+/**
+ * The realtime channel of the mock: clients that look like RealtimeClient
+ * (js/account/realtime.js: subscribe, allow, start, stop, state, events)
+ * and deliver the hints a test emits at once (no debounce, no socket).
+ */
+export class MockRealtime {
+  constructor(server) {
+    this.server = server;
+    this.clients = new Set();
+  }
+
+  /** A client for a page (`path`: '/api/admin/realtime' for the dashboard). */
+  client({ path = '/api/account/realtime' } = {}) {
+    const c = new MockRealtimeClient(this, path);
+    this.clients.add(c);
+    return c;
+  }
+
+  /** A hint to the open clients of `target` (an account id, or 'admin'); returns how many got it. */
+  emit(target, { topic, kind, data = null }) {
+    let n = 0;
+    for (const c of this.clients) if (c.deliver(target, { topic, kind, data })) n++;
+    return n;
+  }
+
+  /** The hub closes `userId`'s sockets with 4001 (signed out elsewhere). */
+  signOut(userId) {
+    for (const c of this.clients) if (c.userId === userId && c.state === 'open') c.close(4001);
+  }
+}
+
+class MockRealtimeClient extends Emitter {
+  constructor(hub, path) {
+    super();
+    this.hub = hub;
+    this.admin = path === '/api/admin/realtime';
+    this.state = 'idle';
+    this.userId = null;
+    this.subs = new Map();
+    this.seq = 0;
+    this.allowed = false;
+  }
+
+  subscribe(topic, fn) {
+    if (!this.subs.has(topic)) this.subs.set(topic, new Set());
+    this.subs.get(topic).add(fn);
+    this.sync();
+    return () => this.subs.get(topic)?.delete(fn);
+  }
+
+  allow() {
+    this.allowed = true;
+    this.sync();
+  }
+
+  start() {
+    this.allow();
+  }
+
+  /** Delivered hints keep it live (RealtimeClient.live). */
+  live() {
+    return this.state === 'open';
+  }
+
+  reconnect() {
+    if (!this.allowed) return;
+    this.reconnects = (this.reconnects ?? 0) + 1;
+    this.state = 'idle';
+    this.sync();
+  }
+
+  stop() {
+    this.allowed = false;
+    this.userId = null;
+    this.set('stopped');
+  }
+
+  sync() {
+    if (!this.allowed || this.state === 'open') return;
+    this.userId = this.admin ? null : (this.hub.server.current()?.user.id ?? null);
+    this.set('open');
+  }
+
+  set(state) {
+    if (this.state === state) return;
+    this.state = state;
+    this.emit('state', state);
+  }
+
+  close(code) {
+    this.set('stopped');
+    this.emit('close', { code });
+    this.emit('auth', code);
+  }
+
+  deliver(target, { topic, kind, data }) {
+    if (this.state !== 'open' || (this.admin ? target !== 'admin' : target !== this.userId)) return false;
+    const event = { t: 'event', v: 1, seq: ++this.seq, topic, kind, at: this.hub.server.now, data };
+    for (const fn of [...(this.subs.get(topic) ?? [])]) fn({ ...event, batch: [event] });
+    return true;
   }
 }

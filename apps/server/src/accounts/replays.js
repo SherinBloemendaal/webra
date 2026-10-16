@@ -34,6 +34,7 @@ import { HttpError, json, readBody } from '../http.js';
 import { randomHex } from '../crypto.js';
 import { checkJsonType } from '../maps.js';
 import { invalid } from './context.js';
+import { notify, originOf, publishToUsers } from '../realtime/publish.js';
 
 const HOUR = 60 * 60 * 1000;
 /** Uploads per account and hour (one per game; retries of a failed one count too). */
@@ -229,6 +230,7 @@ async function uploadReplay(ctx) {
   }
   const evicted = results[3].results?.length ?? 0;
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
+  replaysHint(ctx, user, 'added', id);
   const row = await db.prepare('SELECT * FROM account_replays WHERE id = ?1').bind(id).first();
   return json({ replay: replayView(row), evicted }, 201);
 }
@@ -289,7 +291,13 @@ async function deleteReplay(ctx, { id }) {
   const { results } = await ctx.db.prepare('DELETE FROM account_replays WHERE id = ?1 AND user_id = ?2 RETURNING id').bind(id, user.id).all();
   if (!results.length) throw notFound();
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
+  replaysHint(ctx, user, 'removed', id);
   return noContent();
+}
+
+/** After the answer: the account's other open replay lists load again (the device that did it has the change). */
+function replaysHint(ctx, user, kind, id) {
+  notify(ctx, async (env) => publishToUsers(env, [user.id], { topic: 'replays', kind, data: { id }, origin: await originOf(ctx) }));
 }
 
 /**

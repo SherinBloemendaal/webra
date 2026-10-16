@@ -266,6 +266,17 @@ export class SettingsSync {
     return this.run(() => (this.state?.dirty ? this.push() : this.pull()));
   }
 
+  /**
+   * A realtime hint (js/account/realtime.js): the account's document changed
+   * elsewhere. `version` is the new one (undefined after a reconnect, when
+   * it is not known): a version this device has already needs nothing,
+   * anything else syncs now (flush: pull, or push and merge).
+   */
+  remoteChanged(version) {
+    if (!this.state || (version !== undefined && version === this.state.version)) return Promise.resolve();
+    return this.flush();
+  }
+
   /** One sync step at a time; a step asked for meanwhile runs after it. */
   async run(step) {
     if (this.running) {

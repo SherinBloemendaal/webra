@@ -9,49 +9,8 @@ import { FriendsClient, FriendsStore, PresenceTracker } from '../js/account/frie
 import { AccountError } from '../js/account/api.js';
 import { ApiError } from '../js/net.js';
 import { encodeClient, parseClientMessage, PRESENCE_AWAY_MS, PRESENCE_INTERVAL_MS } from '../js/protocol.js';
+import { FakeTimers } from './fake-timers.mjs';
 
-/** Timers driven by hand. */
-class FakeTimers {
-  constructor() {
-    this.now = 0;
-    this.next = 1;
-    this.jobs = new Map();
-  }
-
-  setTimeout(fn, ms) {
-    const id = this.next++;
-    this.jobs.set(id, { fn, at: this.now + ms, every: null });
-    return id;
-  }
-
-  setInterval(fn, ms) {
-    const id = this.next++;
-    this.jobs.set(id, { fn, at: this.now + ms, every: ms });
-    return id;
-  }
-
-  clearTimeout(id) {
-    this.jobs.delete(id);
-  }
-
-  clearInterval(id) {
-    this.jobs.delete(id);
-  }
-
-  advance(ms) {
-    const end = this.now + ms;
-    for (;;) {
-      const due = [...this.jobs.entries()].filter(([, j]) => j.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
-      if (!due) break;
-      const [id, job] = due;
-      this.now = job.at;
-      if (job.every) job.at += job.every;
-      else this.jobs.delete(id);
-      job.fn();
-    }
-    this.now = end;
-  }
-}
 
 /** A Connection stand-in: records sent messages (validated like net.js does), lets the test deliver server messages. */
 class FakeConn {

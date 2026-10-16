@@ -145,7 +145,7 @@ test('answers never tell whether an address has an account; the mail goes out af
     exec,
   );
   assert.equal(res.status, 201);
-  assert.equal(pending.length, 1, 'the mail is background work');
+  assert.equal(pending.length, 2, 'the mail and the admin dashboard hint are background work');
   const sentBefore = env.EMAIL.sent.length;
   release();
   await Promise.all(pending);

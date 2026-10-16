@@ -77,7 +77,9 @@ export async function recordIp(db, userId, ip, now = Date.now()) {
 
 /**
  * Start a session for `userId`. Deletes the request's current session (if
- * any) in the same batch. Returns { token, publicId, cookie }.
+ * any) in the same batch. Returns { token, publicId, cookie, replaced }:
+ * `replaced` is the deleted session ({ userId, publicId, role }) or null, so
+ * the caller can close its realtime sockets (src/realtime/publish.js).
  */
 export async function createSession(env, request, ip, userId, now = Date.now(), { replace = true } = {}) {
   const token = randomToken();
@@ -85,7 +87,11 @@ export async function createSession(env, request, ip, userId, now = Date.now(), 
   const summary = summarizeUserAgent(request.headers.get('User-Agent'));
   const statements = [];
   const old = replace ? sessionToken(request) : null;
-  if (old) statements.push(env.DB.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1').bind(await sha256Hex(old)));
+  if (old) {
+    statements.push(
+      env.DB.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1 RETURNING user_id, public_id, (SELECT role FROM users WHERE id = auth_sessions.user_id) AS role').bind(await sha256Hex(old)),
+    );
+  }
   // Signing in is not a re-authentication (reauth_at 0): sensitive changes ask for an explicit one.
   statements.push(
     env.DB.prepare(
@@ -95,9 +101,11 @@ export async function createSession(env, request, ip, userId, now = Date.now(), 
     // A successful sign-in also clears the account's failure count and delay.
     env.DB.prepare('UPDATE users SET last_seen_at = ?2, login_failures = 0, login_failed_at = NULL, login_delay_until = NULL WHERE id = ?1').bind(userId, now),
   );
-  await env.DB.batch(statements);
+  const results = await env.DB.batch(statements);
   await recordIp(env.DB, userId, ip, now);
-  return { token, publicId, cookie: sessionCookie(request, token) };
+  const gone = old ? results[0].results?.[0] : null;
+  const replaced = gone ? { userId: gone.user_id, publicId: gone.public_id, role: gone.role ?? null } : null;
+  return { token, publicId, cookie: sessionCookie(request, token), replaced };
 }
 
 /**

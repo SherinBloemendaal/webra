@@ -39,12 +39,31 @@ import { adminUser, banOf, hasPassword, softDeleteStatement, uniqueViolation, us
 import { statusAfterVerification } from './common.js';
 import { sendAddressMail } from './verification.js';
 import { deleteAccountReplaysStatement, drainReplayTrash } from './replays.js';
+import { closeUserSockets, notify, originOf, publishAdmin, publishToFriendsOf, publishToUsers, revoke } from '../realtime/publish.js';
 
 const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 const notFound = (what = 'user') => new HttpError(404, 'not_found', `No such ${what}.`);
 const forbidden = (message = 'You do not have permission for this.') => new HttpError(403, 'forbidden', message);
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Realtime hints after an admin action (src/realtime/publish.js): `account`
+ * (`{ kind, data }`) to the account's pages, `friends` true to its friends'
+ * lists (they show names, and only active accounts), `admin` (a kind) to
+ * the other dashboards (`adminsOnly`: only admins', for what moderators may
+ * not see). The acting dashboard reloads by itself.
+ */
+function adminHints(ctx, userId, { account = null, friends = false, admin = null, adminsOnly = false }) {
+  notify(ctx, async (env) => {
+    if (account) await publishToUsers(env, [userId], { topic: 'account', ...account });
+    if (friends) await publishToFriendsOf(env, ctx.db, userId, { topic: 'friends', kind: 'presence' });
+    if (admin) await publishAdmin(env, { kind: admin, data: { userId }, origin: await originOf(ctx), adminsOnly });
+  });
+}
+
+/** After the answer: close every realtime socket of the account (its sign-in sessions ended). */
+const closeAll = (ctx, row, staff = row.role !== 'user') => revoke(ctx, (env) => closeUserSockets(env, row.id, { staff }));
 
 function page(url) {
   const p = Number(url.searchParams.get('page') ?? '1');
@@ -276,6 +295,7 @@ async function markEmailVerified(ctx, { id }) {
     if (uniqueViolation(err) === 'email') throw new HttpError(409, 'conflict', 'Another account verified this email address.', {}, { field: 'email' });
     throw err;
   }
+  adminHints(ctx, row.id, { account: status !== row.status ? { kind: 'status', data: { status } } : { kind: 'profile' }, admin: 'user_updated' });
   return json({ user: adminUser(await target(ctx, row.id)) });
 }
 
@@ -360,6 +380,10 @@ async function patchUser(ctx, { id }) {
     if (which === 'username' || which === 'email') throw new HttpError(409, 'conflict', `This ${which} is taken.`, {}, { field: which });
     throw err;
   }
+  if (roleChanged || deactivated) closeAll(ctx, row, true);
+  const statusChanged = body.status !== undefined && body.status !== row.status;
+  const shown = statusChanged || body.username !== undefined || body.displayName !== undefined || body.avatarColor !== undefined;
+  adminHints(ctx, row.id, { account: statusChanged ? { kind: 'status', data: { status: body.status } } : { kind: 'profile' }, friends: shown, admin: 'user_updated' });
   const after = await target(ctx, row.id);
   await audit(ctx.db, { actor, action: 'user.update', targetType: 'user', targetId: row.id, targetLabel: after.username, before: adminUser(row), after: adminUser(after) }, ctx.now);
   return json({ user: adminUser(after) });
@@ -375,6 +399,8 @@ async function approve(ctx, { id }) {
     ctx.db.prepare("UPDATE users SET status = 'active', approved_at = ?2, approved_by = ?3 WHERE id = ?1").bind(row.id, ctx.now, actor.id),
     auditStatement(ctx.db, { actor, action: 'user.approve', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { status: row.status }, after: { status: 'active' } }, ctx.now),
   ]);
+  // A player waiting on the account page or in the game sees it at once.
+  adminHints(ctx, row.id, { account: { kind: 'status', data: { status: 'active' } }, admin: 'user_approved' });
   return json({ user: adminUser(await target(ctx, row.id), { moderator: actor.role !== 'admin' }) });
 }
 
@@ -392,6 +418,8 @@ async function reject(ctx, { id }) {
     deleteAccountReplaysStatement(ctx.db, row.id),
     auditStatement(ctx.db, { actor, action: 'user.reject', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { status: row.status }, after: { status: 'deleted' }, reason }, ctx.now),
   ]);
+  closeAll(ctx, row);
+  adminHints(ctx, row.id, { admin: 'user_rejected' });
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
   return json({ user: adminUser(await target(ctx, row.id), { moderator: actor.role !== 'admin' }) });
 }
@@ -414,6 +442,8 @@ async function ban(ctx, { id }) {
     auditStatement(ctx.db, { actor, action: 'user.ban', targetType: 'user', targetId: row.id, targetLabel: row.username, before, after: { reason, expiresAt }, reason }, ctx.now),
   ]);
   await evictFromGames(ctx.env, { userIds: [row.id] }, ctx.now);
+  closeAll(ctx, row);
+  adminHints(ctx, row.id, { friends: true, admin: 'user_banned' });
   return json({ ban: accountBanView(results[1].results[0]), user: adminUser(await target(ctx, row.id), { moderator: actor.role !== 'admin' }) }, 201);
 }
 
@@ -429,6 +459,7 @@ async function unban(ctx, { id }) {
       .bind(row.id, ctx.now, actor.id),
     auditStatement(ctx.db, { actor, action: 'user.unban', targetType: 'user', targetId: row.id, targetLabel: row.username, before: current, after: null }, ctx.now),
   ]);
+  adminHints(ctx, row.id, { account: { kind: 'status', data: { status: row.status } }, friends: true, admin: 'user_unbanned' });
   return json({ user: adminUser(await target(ctx, row.id), { moderator: actor.role !== 'admin' }) });
 }
 
@@ -440,6 +471,8 @@ async function forceLogout(ctx, { id }) {
     ctx.db.prepare('DELETE FROM auth_sessions WHERE user_id = ?1').bind(row.id),
     auditStatement(ctx.db, { actor, action: 'user.logout', targetType: 'user', targetId: row.id, targetLabel: row.username }, ctx.now),
   ]);
+  closeAll(ctx, row);
+  adminHints(ctx, row.id, { admin: 'user_updated' });
   return noContent();
 }
 
@@ -449,6 +482,8 @@ async function revokeUserSession(ctx, { id, sessionId }) {
   if (!/^[0-9a-f]{16}$/.test(sessionId)) throw notFound('session');
   const r = await ctx.db.prepare('DELETE FROM auth_sessions WHERE public_id = ?1 AND user_id = ?2').bind(sessionId, row.id).run();
   if (r.meta.changes !== 1) throw notFound('session');
+  revoke(ctx, (env) => closeUserSockets(env, row.id, { sids: [sessionId], staff: row.role !== 'user' }));
+  adminHints(ctx, row.id, { admin: 'user_updated' });
   await audit(ctx.db, { actor, action: 'user.session_revoke', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { session: sessionId } }, ctx.now);
   return noContent();
 }
@@ -467,6 +502,10 @@ async function softDelete(ctx, { id }) {
     auditStatement(ctx.db, { actor, action: 'user.delete', targetType: 'user', targetId: row.id, targetLabel: row.username, before: { status: row.status }, after: { status: 'deleted' } }, ctx.now),
   ]);
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
+  closeAll(ctx, row);
+  // Its friends rows stay until the daily job; the friends' lists already leave out deleted accounts.
+  notify(ctx, (env) => publishToFriendsOf(env, ctx.db, row.id, { topic: 'friends', kind: 'remove', data: { username: row.username } }));
+  adminHints(ctx, row.id, { admin: 'user_deleted' });
   await evictFromGames(ctx.env, { userIds: [row.id] }, ctx.now);
   return json({ user: adminUser(await target(ctx, row.id)) });
 }
@@ -525,6 +564,7 @@ async function restore(ctx, { id }) {
     if (which === 'email' || which === 'discord') throw new HttpError(409, 'conflict', 'Another account just claimed its address or Discord account. Try again.', {}, { field: which });
     throw err;
   }
+  adminHints(ctx, row.id, { friends: true, admin: 'user_restored' });
   return json({ user: adminUser(await target(ctx, row.id)), dropped });
 }
 
@@ -561,6 +601,8 @@ async function purge(ctx, { id }) {
     auditStatement(ctx.db, { actor, action: 'user.purge', targetType: 'user', targetId: row.id, before: { purged: true }, after: { purged: true } }, ctx.now),
   ]);
   ctx.background('replay trash', () => drainReplayTrash(ctx.env, ctx.now));
+  closeAll(ctx, row);
+  adminHints(ctx, row.id, { admin: 'user_purged' });
   return noContent();
 }
 
@@ -605,6 +647,10 @@ async function putUserSettings(ctx, { id }) {
   const before = await getSettingsDoc(ctx.db, row.id);
   const doc = await putSettingsDoc(ctx.db, row.id, expected, settings, actor.id, ctx.now);
   await audit(ctx.db, { actor, action: 'user.settings_update', targetType: 'user', targetId: row.id, targetLabel: row.username, before, after: doc }, ctx.now);
+  // Every device of the account loads the new document (no origin: the admin's own game tab too).
+  notify(ctx, (env) => publishToUsers(env, [row.id], { topic: 'settings', kind: 'updated', data: { version: doc.version } }));
+  // The guide column reads the document; only admins see it.
+  adminHints(ctx, row.id, { admin: 'user_updated', adminsOnly: true });
   return settingsResponse(doc);
 }
 
@@ -652,6 +698,9 @@ async function guideAction(ctx, { id }) {
       },
       ctx.now,
     );
+    // The player's devices load the new document (the game's sync applies it); other dashboards reload the row.
+    notify(ctx, (env) => publishToUsers(env, [row.id], { topic: 'settings', kind: 'updated', data: { version: doc.version } }));
+    adminHints(ctx, row.id, { admin: 'user_updated', adminsOnly: true });
     return settingsResponse({ ...doc, guide: guideView(doc) });
   }
 }

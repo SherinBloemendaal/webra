@@ -7,12 +7,13 @@ import { randomInt, randomToken, sha256Hex } from '../crypto.js';
 import { check, invalid } from './context.js';
 import { queueAddressMail } from './verification.js';
 import { networkOf } from './ip.js';
-import { rotate, statusAfterVerification } from './common.js';
+import { closeReplaced, rotate, statusAfterVerification } from './common.js';
 import { authorizeUrl, DiscordError, fetchDiscordUser, OAUTH_COOKIE, OAUTH_TTL_MS, pkceChallenge } from './discord.js';
 import { banOf, initialStatus, insertUser, uniqueViolation, userByDiscord, userByEmail, userByUsername, userById } from './users.js';
 import { createSession, hasRecentReauth } from './sessions.js';
 import { LIMITS, methodDisabled } from './routes-auth.js';
 import { logError } from '../telemetry.js';
+import { notify, publishAdmin } from '../realtime/publish.js';
 
 const MODES = ['login', 'signup', 'link', 'reauth'];
 const DEFAULT_RETURN = '/account/';
@@ -212,9 +213,11 @@ async function callback(ctx) {
     }
     // A typed address is confirmed like any other signup's (the answer does not wait for the mail).
     if (!verifiedEmail && eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
+    notify(ctx, (env) => publishAdmin(env, { kind: 'user_created', data: { userId: id } }));
     user = await userById(ctx.db, id, ctx.now);
   }
   const s = await createSession(ctx.env, ctx.request, ctx.ip, user.id, ctx.now);
+  closeReplaced(ctx, s.replaced);
   ctx.cookies.push(s.cookie);
   return back(null);
 }

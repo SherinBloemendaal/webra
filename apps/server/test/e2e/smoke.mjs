@@ -23,11 +23,14 @@
 // resumed in a new session. Protocol 8: the start gate (no frame past the
 // start frames until every player sent `loaded`), invite codes, ping and
 // netstat, `waiting`, running games in the session list with their summary,
-// and the online counter (both lists are cached per isolate: polled).
+// and the online counter (both lists are cached per isolate: polled). The
+// realtime channel: a pending account's socket hears its approval, a friend
+// request reaches the other player's socket at once, and a sign-in revoked
+// from another device closes its socket with 4001.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { COOP_MISSIONS, encodeClient, encodeReplay, MAP_FORMAT_VERSION, mapHash, MEMBER_HEADER, normalizeInviteCode, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
+import { COOP_MISSIONS, parseRealtimeMessage, encodeClient, encodeReplay, MAP_FORMAT_VERSION, mapHash, MEMBER_HEADER, normalizeInviteCode, parseMap, parseServerMessage, PROTOCOL_VERSION, REPLAY_FORMAT, REPLAY_VERSION, sha256Hex } from '@webra/protocol';
 import { LIST_CACHE_MS, ONLINE_CACHE_MS } from '../../src/directory.js';
 
 const BASE = process.argv[2] || 'http://localhost:8799';
@@ -59,6 +62,45 @@ async function api(path, init = {}, who = null) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** A realtime channel socket (docs/accounts-api.md 5.12) with `account`'s cookie; messages are checked with the protocol package. */
+class RealtimeSocket {
+  constructor(account) {
+    this.account = account;
+    this.inbox = [];
+    this.closeCode = null;
+    this.ws = new WebSocket(`${BASE.replace(/^http/, 'ws')}/api/account/realtime`, { headers: { Origin: ORIGIN, Cookie: cookies.get(account) } });
+    this.ws.addEventListener('message', (e) => {
+      const r = parseRealtimeMessage(e.data);
+      assert.ok(r.ok, `${account}: invalid realtime message ${e.data}`);
+      this.inbox.push(r.msg);
+    });
+    this.ws.addEventListener('close', (e) => {
+      this.closeCode = e.code;
+    });
+  }
+
+  /** The first message matching `ok` within `ms` (removed from the inbox). */
+  async next(ok, what, ms = 2000) {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const i = this.inbox.findIndex(ok);
+      if (i >= 0) return this.inbox.splice(i, 1)[0];
+      if (Date.now() > deadline) assert.fail(`${this.account}: ${what} not seen within ${ms} ms (inbox ${JSON.stringify(this.inbox).slice(0, 400)}, close ${this.closeCode})`);
+      await sleep(25);
+    }
+  }
+
+  async closed(ms = 2000) {
+    const deadline = Date.now() + ms;
+    while (this.closeCode === null && Date.now() < deadline) await sleep(25);
+    return this.closeCode;
+  }
+
+  close() {
+    this.ws.close(1000);
+  }
+}
+
 /**
  * Poll `path` until `ok(body)` holds: the session list and the online count
  * are cached per isolate (directory.js LIST_CACHE_MS, ONLINE_CACHE_MS), so a
@@ -73,6 +115,37 @@ async function poll(path, ok, what, cacheMs) {
     if (Date.now() > deadline) assert.fail(`${what}: not seen within ${cacheMs + 2000} ms (last answer ${JSON.stringify(r.body).slice(0, 600)})`);
     await sleep(250);
   }
+}
+
+/**
+ * Realtime between two active players: a friend request reaches the other
+ * player's socket within 2 s (the sender's own socket hears it without a
+ * name), and a sign-in revoked from another device closes that device's
+ * socket with 4001. The friendship is undone again (later parts do not
+ * expect it).
+ */
+async function realtimeFriends(a, b) {
+  const sb = new RealtimeSocket(b);
+  assert.deepEqual((await sb.next((m) => m.t === 'hello', 'hello')).topics, ['friends', 'account', 'settings', 'replays']);
+  const sent = await api('/api/account/friends/requests', { method: 'POST', body: JSON.stringify({ username: b }) }, a);
+  assert.equal(sent.status, 201, JSON.stringify(sent.body));
+  const hint = await sb.next((m) => m.t === 'event' && m.topic === 'friends' && m.kind === 'request', 'the friend request');
+  assert.equal(hint.data.username, a);
+  assert.equal((await api(`/api/account/friends/requests/${encodeURIComponent(b)}`, { method: 'DELETE' }, a)).status, 204);
+  await sb.next((m) => m.t === 'event' && m.kind === 'withdraw', 'the withdrawal');
+
+  // Another device of b signs in; b revokes it from the first device: its socket closes with 4001.
+  const PHONE = `${b}#phone`;
+  assert.equal((await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ login: b, password: PASSWORD }) }, PHONE)).status, 200);
+  const phoneSid = (await api('/api/auth/me', {}, PHONE)).body.session.id;
+  const phone = new RealtimeSocket(PHONE);
+  await phone.next((m) => m.t === 'hello', 'hello on the phone');
+  assert.equal((await api(`/api/account/sessions/${phoneSid}`, { method: 'DELETE' }, b)).status, 204);
+  await phone.next((m) => m.t === 'event' && m.topic === 'account' && m.kind === 'signed_out', 'signed out on the other device');
+  // The close frame follows (wrangler dev lets the TCP close wait about 10 s; the event above is what pages act on).
+  assert.equal(await phone.closed(15000), 4001, 'and the socket closes');
+  assert.equal(sb.closeCode, null, 'the first device stays connected');
+  sb.close();
 }
 
 /** The session `id` as GET /api/sessions lists it, once it is there and `ok(entry)` holds. */
@@ -750,6 +823,10 @@ async function main() {
   assert.equal((await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ login: ADMIN, password: PASSWORD }) }, ADMIN)).status, 200);
   const pending = await api(`/api/admin/users?status=pending_approval&q=${RUN}`, {}, ADMIN);
   assert.deepEqual(pending.body.users.map((u) => u.username).sort(), [GUEST, HOST, WATCHER].sort());
+  // Realtime: a waiting player's socket hears only about itself, then its approval.
+  const waitingSocket = new RealtimeSocket(HOST);
+  const waitingHello = await waitingSocket.next((m) => m.t === 'hello', 'hello');
+  assert.deepEqual(waitingHello.topics, ['account', 'settings'], 'a pending account hears nothing about friends');
   for (const name of [HOST, GUEST, WATCHER]) {
     const r = await api(`/api/admin/users/${accounts[name].id}/approve`, { method: 'POST', body: '{}' }, ADMIN);
     assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -761,6 +838,10 @@ async function main() {
     assert.equal(r.status, 200);
     assert.equal(r.body.user.canPlayOnline, true);
   }
+  const approved = await waitingSocket.next((m) => m.t === 'event' && m.topic === 'account' && m.kind === 'status', 'the approval');
+  assert.equal(approved.data.status, 'active');
+  waitingSocket.close();
+  await realtimeFriends(HOST, GUEST);
   await playGate(ADMIN, HOST);
   await sharedMapLobby(HOST, GUEST, WATCHER);
   await coopMissionLobby(HOST, GUEST);

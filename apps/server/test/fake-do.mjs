@@ -26,6 +26,21 @@ registerHooks({
 const { Session, readAuthHeader } = await import('../src/session.js');
 export { readAuthHeader };
 
+// Runtime globals the realtime hub (src/userhub.js) uses: a socket pair
+// (client side, server side) and the auto response pair it registers.
+globalThis.WebSocketPair ??= class {
+  constructor() {
+    this[0] = new FakeSocket('client');
+    this[1] = new FakeSocket('server');
+  }
+};
+globalThis.WebSocketRequestResponsePair ??= class {
+  constructor(request, response) {
+    this.request = request;
+    this.response = response;
+  }
+};
+
 export class FakeStorage {
   constructor() {
     this.data = new Map();
@@ -72,6 +87,8 @@ export class FakeSocket {
     this.inbox = [];
     this.closed = null;
     this.att = null;
+    /** Hibernation tags given to acceptWebSocket. */
+    this.tags = [];
   }
 
   serializeAttachment(value) {
@@ -115,7 +132,7 @@ const db = {
  * loading screen closes instantly), so tests about other things need not
  * pass the start gate themselves.
  */
-export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0', DB = db, isPublic = false, autoLoaded = true } = {}) {
+export async function makeSession({ maxPlayers = 3, password = null, version = '1.0.0', DB = db, isPublic = false, autoLoaded = true, env = {} } = {}) {
   const sockets = [];
   const ctx = {
     storage: new FakeStorage(),
@@ -123,7 +140,8 @@ export async function makeSession({ maxPlayers = 3, password = null, version = '
     acceptWebSocket: (ws) => sockets.push(ws),
     blockConcurrencyWhile: (fn) => fn(),
   };
-  const session = new Session(ctx, { DB });
+  // `env`: more bindings (USER_HUB for the realtime presence hints).
+  const session = new Session(ctx, { DB, ...env });
   await new Promise((r) => setTimeout(r, 0));
   const { hostKey } = await session.init({ id: 'a'.repeat(64), name: 'Test', password, isPublic, maxPlayers, version });
   const send = async (ws, msg) => {
@@ -158,4 +176,27 @@ export async function makeSession({ maxPlayers = 3, password = null, version = '
     },
   };
   return api;
+}
+
+/**
+ * The Durable Object state of a realtime hub: storage, hibernatable sockets
+ * with tags (getWebSockets(tag) filters, closed sockets drop out) and the
+ * recorded auto response.
+ */
+export function makeHubCtx() {
+  const sockets = [];
+  return {
+    sockets,
+    storage: new FakeStorage(),
+    autoResponse: null,
+    getWebSockets: (tag) => sockets.filter((s) => !s.closed && (tag === undefined || s.tags.includes(tag))),
+    acceptWebSocket: (ws, tags = []) => {
+      ws.tags = [...tags];
+      sockets.push(ws);
+    },
+    setWebSocketAutoResponse(pair) {
+      this.autoResponse = pair;
+    },
+    blockConcurrencyWhile: (fn) => fn(),
+  };
 }

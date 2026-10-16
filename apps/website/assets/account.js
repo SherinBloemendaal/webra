@@ -29,7 +29,7 @@ import {
   validUsername,
 } from '/lib/protocol/accounts.js';
 import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
-import { FRIENDS_POLL_MS, FriendsClient, friendsSummary, groupFriends, socialSettings } from './friends.js';
+import { FriendsClient, FriendsStore, friendsSummary, groupFriends, socialSettings } from './friends.js';
 import { formatInviteCode, invitePath, inviteInPath, inviteSummary, lookupInvite, normalizeInviteCode } from './invite.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
@@ -37,6 +37,8 @@ export const DEFAULT_RETURN = '/play/';
 /** Same rule as the server (apps/server/src/http.js RETURN_PATH_RE): one leading slash, URL characters, at most 200. */
 const RETURN_RE = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]{0,199}$/;
 const BASE = 'https://webra.invalid';
+/** A waiting account checks its state this often while the realtime channel is not open. */
+const PENDING_POLL_MS = 60_000;
 
 /**
  * Where to go after signing in: the `returnTo` query parameter when it is a
@@ -118,14 +120,23 @@ export const DISCORD_ERRORS = {
  * @param {HTMLElement} root
  * `storage` (sessionStorage) keeps a replay link (`#replay=<id>`, from the
  * game's Watch through the play gate) until the game opens it after sign-in.
- * @param {{ api?: AccountApi, location?: Location, history?: History, navigate?: (url: string) => void, storage?: Storage | null }} [deps]
+ * `realtime` replaces the realtime channel (js/account/realtime.js; tests
+ * pass a stand-in), `timers` the timers of the polls.
+ * @param {{ api?: AccountApi, location?: Location, history?: History, navigate?: (url: string) => void, storage?: Storage | null, realtime?: object | null, timers?: object }} [deps]
  */
 export async function mountAccountPage(root, deps = {}) {
   const api = deps.api ?? new AccountApi();
   const loc = deps.location ?? globalThis.location;
   const hist = deps.history ?? globalThis.history;
   const navigate = deps.navigate ?? ((url) => loc.assign(url));
-  const session = new AccountSession({ api });
+  const timers = deps.timers ?? globalThis;
+  const session = new AccountSession({ api, realtime: deps.realtime });
+  /** What the shown account view follows (realtime topics, timers): undone on every new render. */
+  let follows = [];
+  const unfollow = () => {
+    for (const off of follows) off();
+    follows = [];
+  };
   // Signing out here drops the replays this account left waiting in this browser (js/account/replays.js).
   session.onSignOut((userId) => clearQueuedReplays(userId));
   const notice = statusLine();
@@ -190,7 +201,18 @@ export async function mountAccountPage(root, deps = {}) {
 
   /** The friends list while the account shows (polls; stopped on every new render). */
   let friendsView = null;
+  // This sign-in ended elsewhere (signed out, revoked, banned): show the signed-out page.
+  session.realtime?.on('auth', async () => {
+    await session.refresh();
+    if (session.user) return;
+    unfollow();
+    friendsView?.stop();
+    friendsView = null;
+    notice.show('You were signed out.', 'info');
+    render();
+  });
   const render = () => {
+    unfollow();
     friendsView?.stop();
     friendsView = null;
     if (fragment.kind === 'reset' && !fragment.used) return renderReset();
@@ -676,15 +698,34 @@ export async function mountAccountPage(root, deps = {}) {
     }
     if (state.kind === 'pending_approval' || state.kind === 'pending_email') {
       const again = el('button', { type: 'button', class: 'btn btn-small', text: 'Check again' });
-      again.addEventListener('click', () => busy(again, s, async () => {
+      /** Load the account; once it is active, go on (back to the game, or the full page). `quiet`: no "still waiting". */
+      const check = async (quiet = false) => {
         const r = await api.account();
         session.user = r.user;
-        if (r.user.status !== 'active') return s.show('Still waiting. You get an email once the account is active.', 'info');
+        if (r.user.status !== 'active') {
+          if (r.user.status !== user.status) return renderAccount();
+          if (!quiet) s.show('Still waiting. You get an email once the account is active.', 'info');
+          return;
+        }
         if (goOn()) return;
         notice.show('Your account is active.', 'ok');
         render();
-      }, errorText));
+      };
+      again.addEventListener('click', () => busy(again, s, () => check(), errorText));
       actions.append(again);
+      // The approval (or the verified address) lands without a click: a realtime hint, and a
+      // check every minute while the tab shows (also with the channel open: it may be quiet).
+      const quietly = () => check(true).catch(() => {});
+      if (session.realtime) follows.push(session.realtime.subscribe('account', (e) => e.kind !== 'resync' && quietly()));
+      let timer = null;
+      const poll = () => {
+        timer = timers.setTimeout(() => {
+          if (globalThis.document?.visibilityState !== 'hidden') quietly();
+          poll();
+        }, PENDING_POLL_MS);
+      };
+      poll();
+      follows.push(() => timers.clearTimeout(timer));
     }
     if (actions.childNodes.length) box.append(actions);
     box.append(s.node);
@@ -704,12 +745,14 @@ export async function mountAccountPage(root, deps = {}) {
       notice.show(errorText(err), 'error');
     }
     const state = accountState(user, session.site);
+    unfollow();
     friendsView?.stop();
     friendsView = null;
     const top = [];
     if (session.site?.motd) top.push(el('p', { class: 'notice', text: session.site.motd }));
     const signOut = el('button', { type: 'button', class: 'btn', text: 'Sign out' });
     signOut.addEventListener('click', async () => {
+      unfollow();
       friendsView?.stop();
       await session.signOut().catch(() => {});
       notice.show('You are signed out.', 'info');
@@ -1065,6 +1108,8 @@ export async function mountAccountPage(root, deps = {}) {
     };
     loadSetting();
     load();
+    // Added or deleted in the game or another tab, or the switch changed there (realtime hints).
+    if (session.realtime) follows.push(session.realtime.subscribe('replays', () => load()), session.realtime.subscribe('settings', () => loadSetting()));
     return section('Replays', toggleRow.row, status.node, usage, meter, list);
   }
 
@@ -1073,18 +1118,18 @@ export async function mountAccountPage(root, deps = {}) {
    * game, in a lobby, online or offline, with Join and Spectate where the
    * friend allows it; requests and lobby invites; adding and blocking by
    * username; and the three privacy switches (settings `social.*`, which the
-   * server applies). Polls every FRIENDS_POLL_MS while the tab is visible.
-   * Returns `{ node, start, stop, refresh }`; a server without the routes
-   * (404) gets a line saying so.
+   * server applies). The game's FriendsStore keeps the list: it loads on
+   * every realtime hint and polls as a safety net while the tab is visible
+   * (js/account/friends.js). Returns `{ node, start, stop, refresh }`; a
+   * server without the routes (404) gets a line saying so.
    */
   function friendsSection(user) {
     const client = deps.friends ?? new FriendsClient(api);
-    const timers = deps.timers ?? globalThis;
+    const store = new FriendsStore({ client, timers: deps.timers ?? globalThis, realtime: session.realtime });
     const status = statusLine();
     let doc = null;
-    let timer = null;
-    let running = false;
     let settingsDoc = null;
+    let offs = [];
 
     const friendError = (err) => {
       if (err instanceof AccountError) {
@@ -1097,11 +1142,7 @@ export async function mountAccountPage(root, deps = {}) {
       return errorText(err);
     };
     /** Run an action, then load the list again; resolves with the action's answer. */
-    const act = async (fn) => {
-      const out = await fn();
-      await refresh();
-      return out;
-    };
+    const act = (fn) => store.act(fn);
     const button = (text, cls, onClick, label) => {
       const b = el('button', { type: 'button', class: `btn btn-small ${cls}`.trim(), text, 'aria-label': label });
       b.addEventListener('click', () => busy(b, status, onClick, friendError));
@@ -1341,43 +1382,39 @@ export async function mountAccountPage(root, deps = {}) {
       ),
     );
 
-    async function refresh() {
-      if (timer !== null) timers.clearTimeout(timer);
-      timer = null;
-      try {
-        // A hidden tab does not ask; the next turn looks again.
-        if (doc && globalThis.document?.visibilityState === 'hidden') return;
-        doc = await client.list();
-        paint();
-      } catch (err) {
-        if (err instanceof AccountError && err.status === 404) {
-          // A server without friends yet: say so and stop asking.
-          running = false;
-          summary.textContent = 'Not available';
-          list.replaceChildren(el('p', { class: 'form-help', text: 'Friends are not available on this server yet.' }));
-          return;
-        }
-        if (err instanceof AccountError && (err.status === 401 || err.status === 403)) running = false;
-        status.show(errorText(err), 'error');
-      } finally {
-        if (running && timer === null) timer = timers.setTimeout(() => refresh(), FRIENDS_POLL_MS);
+    const onError = (err) => {
+      if (err instanceof AccountError && err.status === 404) {
+        // A server without friends yet: say so and stop asking.
+        store.stop();
+        summary.textContent = 'Not available';
+        list.replaceChildren(el('p', { class: 'form-help', text: 'Friends are not available on this server yet.' }));
+        return;
       }
-    }
+      status.show(errorText(err), 'error');
+    };
 
     return {
       node,
       start() {
-        if (running) return;
-        running = true;
-        refresh();
+        if (store.running) return;
+        offs = [
+          store.on('change', (d) => {
+            doc = d;
+            paint();
+          }),
+          store.on('error', onError),
+          // The privacy switches changed in another tab or the game.
+          session.realtime?.subscribe('settings', () => loadSocial()) ?? (() => {}),
+        ];
+        store.start();
         loadSocial();
       },
       stop() {
-        running = false;
-        if (timer !== null) timers.clearTimeout(timer);
-        timer = null;
+        store.stop();
+        for (const off of offs) off();
+        offs = [];
       },
-      refresh,
+      refresh: () => store.refresh(),
     };
   }
 

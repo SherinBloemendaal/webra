@@ -114,6 +114,8 @@ import { inRange, ipRecord } from './accounts/ip.js';
 import { AUTH_HEADER } from './accounts/play.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { logError } from './telemetry.js';
+import { publishToFriendsOf, publishToUsers, realtimeOn } from './realtime/publish.js';
+import { effective, loadSiteCached } from './accounts/site.js';
 
 /** Unused sessions (nobody ever joined) are deleted after this long. */
 const UNUSED_TTL_MS = 5 * 60 * 1000;
@@ -223,6 +225,8 @@ export class Session extends DurableObject {
     this.lastDirectory = null;
     this.lastDirectoryCore = null;
     this.lastDirectoryAt = 0;
+    /** The last realtime presence hint: { key, members: [accountId] } (publishPresence). */
+    this.presence = null;
     this.pingBuckets = new WeakMap();
     this.stallBuckets = new WeakMap();
     /** When `netstat` last went out. */
@@ -1552,6 +1556,9 @@ export class Session extends DurableObject {
   /** Delete the session: directory row, storage and alarm. */
   async destroy() {
     const id = this.meta?.id;
+    // Friends of everyone who was in it see them leave (after the rows below are gone).
+    const present = await this.presenceMembers();
+    this.presence = null;
     this.meta = null;
     this.room = null;
     this.lockstep = null;
@@ -1566,6 +1573,7 @@ export class Session extends DurableObject {
       } catch (err) {
         logError('directory delete failed', err);
       }
+      await this.tellFriends(present);
     }
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
@@ -1682,6 +1690,8 @@ export class Session extends DurableObject {
     if (!heartbeat && key === this.lastDirectory) return;
     if (!heartbeat && coreKey === this.lastDirectoryCore && now - this.lastDirectoryAt < SUMMARY_WRITE_MS) {
       await this.ensureAlarm(this.lastDirectoryAt + SUMMARY_WRITE_MS);
+      // The row is there; a spectator who came or went changes only game_presence (written already).
+      await this.publishPresence(coreKey);
       return;
     }
     try {
@@ -1691,6 +1701,69 @@ export class Session extends DurableObject {
       this.lastDirectoryAt = now;
     } catch (err) {
       logError('directory update failed', err);
+      return;
+    }
+    await this.publishPresence(coreKey);
+  }
+
+  // ---- Realtime presence hints (src/realtime/publish.js) ---------------------------------------
+
+  /** The account ids of the signed-in members (players and spectators). */
+  memberAccounts() {
+    const out = new Set();
+    if (!this.room) return out;
+    for (const m of [...this.room.humans(), ...this.room.spectators]) {
+      const id = this.room.accountOf(m.client);
+      if (id) out.add(id);
+    }
+    return out;
+  }
+
+  /**
+   * The members' friends lists show this session (lobby or game, its name,
+   * map and places): when that or the set of signed-in members changed since
+   * the last hint, the friends of everyone in it now or before are told to
+   * look again. The last state is kept in storage (`presence`), so a woken
+   * object does not tell them again; a heartbeat with no change tells nobody.
+   */
+  async publishPresence(coreKey) {
+    try {
+      const members = this.memberAccounts();
+      const key = JSON.stringify([coreKey, [...members].sort()]);
+      const last = await this.presenceMembers(true);
+      if (last.key === key) return;
+      this.presence = { key, members: [...members] };
+      await this.ctx.storage.put('presence', this.presence);
+      await this.tellFriends(new Set([...last.members, ...members]));
+    } catch (err) {
+      logError('presence publish failed', err);
+    }
+  }
+
+  /** The members of the last hint and the present ones (`withKey`: the stored `{ key, members }`), from memory or storage. */
+  async presenceMembers(withKey = false) {
+    try {
+      this.presence ??= (await this.ctx.storage.get('presence')) ?? { key: null, members: [] };
+    } catch (err) {
+      logError('presence read failed', err);
+      this.presence = { key: null, members: [] };
+    }
+    return withKey ? this.presence : new Set([...this.presence.members, ...this.memberAccounts()]);
+  }
+
+  /** Whether hints go out: the hub binding exists and the site setting `realtime` is on. */
+  async realtimeAllowed() {
+    if (!realtimeOn(this.env)) return false;
+    return effective((await loadSiteCached(this.env.DB)).settings, this.env).realtime;
+  }
+
+  /** `friends/presence` (no data: "look again") to the friends of each account id. Never throws. */
+  async tellFriends(accounts) {
+    try {
+      if (accounts.size === 0 || !(await this.realtimeAllowed())) return;
+      await Promise.all([...accounts].map((id) => publishToFriendsOf(this.env, this.env.DB, id, { topic: 'friends', kind: 'presence' })));
+    } catch (err) {
+      logError('presence publish failed', err);
     }
   }
 
@@ -1817,7 +1890,22 @@ export class Session extends DurableObject {
     this.meta.invite = { code, expiresAt };
     await this.ctx.storage.put('meta', this.meta);
     this.broadcastLobby();
+    await this.dismissOldInvites(code);
     return { ok: true, code, expiresAt };
+  }
+
+  /**
+   * Friend invites made with the previous code vanish from the invited
+   * players' lists (they name a code that no longer works): tell them.
+   */
+  async dismissOldInvites(code) {
+    try {
+      if (!this.meta || !(await this.realtimeAllowed())) return;
+      const { results } = await this.env.DB.prepare('SELECT DISTINCT to_user FROM friend_invites WHERE session_id = ?1 AND code != ?2').bind(this.meta.id, code).all();
+      await publishToUsers(this.env, results.map((r) => r.to_user), { topic: 'friends', kind: 'invite_dismiss' });
+    } catch (err) {
+      logError('invite publish failed', err);
+    }
   }
 
   /** The lobby's code ends (the game starts): in D1 and for the members. */

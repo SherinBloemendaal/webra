@@ -1205,7 +1205,8 @@ docs/accounts-api.md 5.11).
 - **Heartbeat cost.** The presence heartbeat is stored at most every 45 s
   per account, and a change of `away` at most every 5 s after the last
   write, so flipping the flag cannot turn it into many D1 writes. Both the
-  heartbeat and the friends list (read-only, polled every 30 s) have a
+  heartbeat and the friends list (read-only, polled every 30 s, or every 5
+  minutes while realtime hints arrive) have a
   burst limit per address (20 a minute with the rate limit binding).
 - **Authorization.** Every friends route needs a signed-in, active account
   and only acts on rows of the caller (the SQL always names the caller's
@@ -1218,6 +1219,48 @@ docs/accounts-api.md 5.11).
   deleted in other ways, requests after 30 days, ended invites and stale
   heartbeats; the purge removes the rest (foreign keys). The data export
   lists friends, requests, blocks, invites and the heartbeat.
+- **Realtime hints leak nothing.** The realtime channel
+  (docs/accounts-api.md 5.12) carries hints, not data: a topic, a kind and
+  at most the other player's username (public already; never for presence,
+  whose hints carry nothing), a session id for an invite, a settings
+  version, a replay id or, on the admin topic, an account id. Changes only
+  admins may see (settings documents and guide progress) reach only admins'
+  dashboards, not moderators'. No private field leaves the hub; the receiving page loads its list
+  through the same route and rules as before. A hidden request, an ignore,
+  the withdrawal of an ignored or hidden request, and a block of a player
+  who was no friend publish **nothing** to the other player (the timing of a
+  hint cannot reveal them); blocking a friend reads as a removal. Tests
+  assert both the hints and their absence
+  (apps/server/test/accounts-realtime.test.mjs).
+
+### Realtime channel
+
+- **Who connects.** The Worker authenticates the upgrade (session cookie,
+  same `Origin` required, not banned or deleted, IP bans apply) and passes
+  its verdict to the `UserHub` Durable Object in `X-WebRA-Auth`, replacing
+  any client copy; the cookie is not forwarded. One object per account, one
+  for the admin dashboard (moderators and admins only). Topics follow the
+  account state: a pending account hears only about itself.
+- **Ended sign-ins close sockets.** Sign-out, a new sign-in replacing the
+  browser's session, revocation (one, all others, by an admin), password
+  change or reset, deletion, rejection, bans, role changes and deactivation
+  close the affected sockets with 4001, also while the feature is switched
+  off. The worst case of a missed close is a hint whose reload answers 401.
+- **Accepted: expiry and IP bans.** A sign-in session that expires (idle or
+  absolute lifetime) and an IP ban (which ends no sign-in) close no socket:
+  such a socket keeps hearing hints of its own account, which carry no
+  private data, and every reload they cause is refused (401 or 403).
+- **Cost and abuse.** Connects are burst limited per address, 16 sockets per
+  object; the client sends only a ping (answered by the runtime without
+  waking the object); anything else is limited to 10 a minute per socket,
+  counted in the socket's attachment, then closed (1008). The hub keeps no
+  state besides an event counter, writes nothing for accounts without open
+  pages, and has no timers. Hints follow writes that are rate limited
+  already; presence hints go out only on a change of state.
+- **Failure isolation.** Publishing runs after the answer (or in try/catch
+  in the session object) and is logged when it fails; a missing binding
+  makes it a no-op and the upgrade routes 503. The site setting `realtime`
+  switches hints and new connections off at once.
 - **Migrations.** 0009 and 0010 only add tables and one nullable column
   (`sessions.summary_json`); nothing existing is rewritten, so applying them
   to the production database is safe and old Workers keep working with the

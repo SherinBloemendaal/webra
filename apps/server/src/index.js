@@ -33,11 +33,16 @@ import { loadSaveRecord, missionDigest } from './onlinesaves.js';
 import { moviesRange, scoresRange } from './cdmusic.js';
 import { isPlayPath, servePlay } from './playgate.js';
 import { AUTH_HEADER, handleAccountApi, isNavigationRoute, newContext, playVerdict, requirePlay, requireRelay, scheduled } from './accounts/index.js';
+import { effectiveStatus } from './accounts/users.js';
 import { Session as SessionObject } from './session.js';
+import { UserHub as UserHubObject } from './userhub.js';
+import { realtimeOn } from './realtime/publish.js';
 import { instrumentSession, logError, reportHttpError, withTelemetry } from './telemetry.js';
 
 /** The session Durable Object (wrangler.jsonc), with error reports. */
 export const Session = instrumentSession(SessionObject);
+/** The realtime hub Durable Object (wrangler.jsonc, src/userhub.js), with error reports. */
+export const UserHub = instrumentSession(UserHubObject);
 
 const SERVER_VERSION = pkg.version;
 const SESSION_LIMIT = 20;
@@ -81,6 +86,39 @@ async function connectSession(ctx, id) {
   headers.delete('Cookie');
   headers.set(AUTH_HEADER, JSON.stringify({ account: verdict.account, refuse: verdict.refuse ? { code: verdict.refuse.code, message: verdict.refuse.message } : null }));
   return env.SESSION.get(doId).fetch(new Request(request, { headers }));
+}
+
+/** Topics of the account channel: a pending (or otherwise inactive) account hears only about itself. */
+const ACTIVE_TOPICS = ['friends', 'account', 'settings', 'replays'];
+const INACTIVE_TOPICS = ['account', 'settings'];
+
+/**
+ * WebSocket upgrade into a realtime hub (src/userhub.js, docs/accounts-api.md
+ * 5.12): `admin` false is the account's own channel (GET
+ * /api/account/realtime, any signed-in account that is not banned or
+ * deleted, so a pending one hears its approval), true the dashboard's
+ * (GET /api/admin/realtime, moderators and admins). Like connectSession,
+ * the Worker decides who it is and tells the object in X-WebRA-Auth; the
+ * cookie is not passed on. 503 while the site setting `realtime` is off
+ * or the binding is missing: the pages poll.
+ */
+async function connectRealtime(ctx, { admin }) {
+  const { request, env } = ctx;
+  if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+    throw new HttpError(426, 'bad_message', 'Expected a WebSocket upgrade.');
+  }
+  if (!realtimeOn(env) || !(await ctx.eff()).realtime) throw new HttpError(503, 'unavailable', 'Live updates are switched off. The page checks for changes by itself.');
+  // Counted before the account is looked up: a loop of refused upgrades costs no session reads.
+  await ctx.burst('realtime', [60, 60 * 60 * 1000]);
+  const user = admin ? await ctx.requireRole('moderator') : await ctx.requireUser();
+  const { session } = await ctx.auth();
+  const status = effectiveStatus(user);
+  const topics = admin ? ['admin'] : status === 'active' ? ACTIVE_TOPICS : INACTIVE_TOPICS;
+  const headers = new Headers(request.headers);
+  headers.delete('Cookie');
+  headers.set(AUTH_HEADER, JSON.stringify({ userId: user.id, username: user.username, sid: session.public_id, role: user.role, status, topics }));
+  const stub = env.USER_HUB.get(env.USER_HUB.idFromName(admin ? 'topic:admin' : `user:${user.id}`));
+  return stub.fetch(new Request(request, { headers }));
 }
 
 /** The session's Durable Object for an id from a path (404 for malformed ids). */
@@ -325,6 +363,10 @@ async function route(ctx) {
   if (m) {
     if (method !== 'GET') throw methodNotAllowed('GET');
     return connectSession(ctx, m[1]);
+  }
+  if (path === '/api/account/realtime' || path === '/api/admin/realtime') {
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    return connectRealtime(ctx, { admin: path === '/api/admin/realtime' });
   }
   m = /^\/api\/sessions\/([^/]+)\/map$/.exec(path);
   if (m) {
