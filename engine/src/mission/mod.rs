@@ -342,6 +342,26 @@ pub struct Mission {
 }
 
 impl Mission {
+    /// (owner, token) of every prerequisite a live script prop provides
+    /// (OpenRA ProvidesPrerequisite on a prop: production.rs `refresh_tokens`).
+    pub(crate) fn prop_tokens(&self, rules: &crate::rules::Rules) -> Vec<(u8, u16)> {
+        let mut out = Vec::new();
+        for hd in &self.handles {
+            if !matches!(hd.state, HState::Prop { alive: true, .. }) {
+                continue;
+            }
+            if let Some(p) = self.data.props.get(&hd.ty) {
+                out.extend(p.provides.iter().filter_map(|t| rules.token(t)).map(|t| (hd.owner, t)));
+            }
+        }
+        out
+    }
+
+    /// The Tooltip name of a script prop that provides `token`, if any.
+    pub(crate) fn prop_name_for(&self, token: &str) -> Option<String> {
+        self.data.props.values().find(|p| p.provides.iter().any(|t| t == token)).and_then(|p| p.name.clone())
+    }
+
     pub(crate) fn handle(&self, h: u32) -> Option<&Handle> {
         self.handles.get(h as usize)
     }

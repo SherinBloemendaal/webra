@@ -1068,3 +1068,16 @@ fn the_lobby_tech_level_and_all_tech_set_what_is_listed() {
     w.players[0].dev.all_tech = true;
     assert_lists(&w, 0, &["ATEK", "BARR", "3TNK", "MGG", "DTRK"], &["FACT"]);
 }
+
+#[test]
+fn country_items_stay_apart_without_a_construction_yard() {
+    // `~!structures.ukraine`: the Ukrainian yard always gives it (Rules::always_provided),
+    // so Ukraine never sees the plain Airfield, also before its MCV deploys or after losing the yard.
+    for (faction, own, other) in [("ukraine", "AFLD.Ukraine", "AFLD"), ("england", "SPY.England", "SPY")] {
+        let mut w = World::new(1, 64, &[(faction, false), ("allies", false)]);
+        let fact = find(&w, 0, "FACT");
+        destroy(&mut w, fact);
+        assert!(!w.players[0].tokens.iter().enumerate().any(|(t, &h)| h && w.rules.tokens[t].starts_with("structures.")));
+        assert_lists(&w, 0, &[own], &[other]);
+    }
+}

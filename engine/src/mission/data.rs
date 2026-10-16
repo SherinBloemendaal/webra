@@ -148,6 +148,14 @@ pub struct PropInfo {
     /// Sprite image of a prop drawn in the game (a flare), or none.
     #[serde(default)]
     pub image: Option<String>,
+    /// Prerequisites it gives its owner while it exists (OpenRA
+    /// ProvidesPrerequisite on a script actor: intervention's `mainland`).
+    #[serde(default)]
+    pub provides: Vec<String>,
+    /// Its Tooltip name, which the sidebar names when an item needs what it
+    /// provides ("Requires Reach the mainland").
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Conditions of one actor type (tools/gen_missions.py reads them from the

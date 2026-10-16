@@ -2556,7 +2556,7 @@ impl Rules {
     }
 
     /// Whether `token` is given to `faction` by its Construction Yard (faction tokens).
-    fn always_provided(&self, faction: usize, token: u16) -> bool {
+    pub(crate) fn always_provided(&self, faction: usize, token: u16) -> bool {
         self.actor_index("FACT")
             .and_then(|f| self.actors[f].building.as_ref())
             .is_some_and(|b| b.provides.get(faction).is_some_and(|p| p.contains(&token)))
@@ -2577,6 +2577,22 @@ impl Rules {
 
     pub fn token(&self, name: &str) -> Option<u16> {
         self.tokens.iter().position(|t| t == name).map(|i| i as u16)
+    }
+
+    /// The token of `name`, added when no rule names it (a mission prop's
+    /// ProvidesPrerequisite that only scripts ask for, negotiations' `ai.hard`).
+    /// Before any player exists: their token tables are sized from this list.
+    pub(crate) fn intern_token(&mut self, name: &str) -> u16 {
+        self.token(name).unwrap_or_else(|| {
+            self.tokens.push(name.to_string());
+            (self.tokens.len() - 1) as u16
+        })
+    }
+
+    /// Whether some structure gives `token` to some faction: a side's or a
+    /// building's prerequisite, as opposed to one only a script grants.
+    pub fn structure_token(&self, token: u16) -> bool {
+        self.actors.iter().any(|a| a.building.as_ref().is_some_and(|b| b.provides.iter().any(|p| p.contains(&token))))
     }
 
     /// Faction side: 0 = Allies, 1 = Soviet.

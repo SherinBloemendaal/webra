@@ -18,6 +18,20 @@ const MAX_STEPS: usize = 32;
 impl Ctx<'_> {
     // ---- Handle state ------------------------------------------------------------------
 
+    /// A prop that provides prerequisites came, went or changed hands: the
+    /// tokens follow at once, so `Player.HasPrerequisites` in the same script
+    /// sees them (the mission is outside the world while scripts run, so its
+    /// props are added here; the next tick's refresh finds them in the world).
+    fn prop_tokens_changed(&mut self) {
+        self.w.refresh_tokens();
+        for (owner, t) in self.m.prop_tokens(&self.w.rules) {
+            if let Some(p) = self.w.players.get_mut(owner as usize) {
+                p.tokens[t as usize] = true;
+            }
+        }
+        self.w.tokens_dirty = true;
+    }
+
     /// The engine actor of a live handle.
     pub(crate) fn engine_actor(&self, h: u32) -> Option<usize> {
         match self.m.handle(h)?.state {
@@ -358,7 +372,10 @@ impl Ctx<'_> {
                         self.m.handles[h as usize].owner = p;
                     }
                     Some(_) => {}
-                    None => self.m.handles[h as usize].owner = p,
+                    None => {
+                        self.m.handles[h as usize].owner = p;
+                        self.prop_tokens_changed();
+                    }
                 }
                 Ok(())
             }
@@ -467,6 +484,7 @@ impl Ctx<'_> {
             F::ADestroy => {
                 if let Some(HState::Prop { alive, .. }) = self.m.handles.get_mut(h as usize).map(|hd| &mut hd.state) {
                     *alive = false;
+                    self.prop_tokens_changed();
                     return none;
                 }
                 if matches!(self.m.handles[h as usize].state, HState::Limbo(_)) {
@@ -962,6 +980,10 @@ impl Ctx<'_> {
         if let Some(p) = self.m.data.props.get(&lower).cloned() {
             let state = HState::Prop { x, y, reveal: p.reveal, image: p.image, alive: add };
             let h = self.m.new_handle(lower, owner, state);
+            if !p.provides.is_empty() {
+                // OpenRA's tech tree follows at once (ProvidesPrerequisite, INotifyAddedToWorld).
+                self.prop_tokens_changed();
+            }
             return Ok(actor_value(h));
         }
         let t = self.actor_type(ty)?;

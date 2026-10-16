@@ -2125,12 +2125,18 @@ and `pause_production {ty, paused}` serve every queue, structures included:
   item only when a prerequisite can never be met: one it does not hold and
   that nothing it can build provides (`reachable_tokens`: the tokens of its
   structures now, then a fixed point from a Construction Yard with its
-  faction, as rules.rs `solve_obtainable`), which also hides items that need
-  the other side's tech center (the Longbow for Soviets, who build helipads
-  in WebRA); a `~!` prerequisite while held (as in OpenRA) or when the
-  structure that provides another missing prerequisite always brings it
-  (England's barracks gives `infantry.england`: England never sees the
-  generic Spy). Held now always counts: a captured Construction Yard keeps
+  faction, as rules.rs `solve_obtainable`). For a plain (non-`~`)
+  prerequisite that holds only when some structure gives it to some faction
+  (`Rules::structure_token`), which hides items that need the other side's
+  tech center (the Longbow for Soviets, who build helipads in WebRA); a
+  plain prerequisite no structure gives (only a mission prop, or nothing)
+  leaves the item listed and locked like OpenRA's greyed items, its
+  `requires` naming the prop ("Reach the mainland") or else the token. A
+  `~!` prerequisite hides the item while held (as in OpenRA), when this
+  faction's Construction Yard gives it (`Rules::always_provided`: Ukraine
+  never sees the plain Airfield, also without a yard), or when the structure
+  that provides another missing prerequisite always brings it (England's
+  barracks gives `infantry.england`: England never sees the generic Spy). Held now always counts: a captured Construction Yard keeps
   its faction (OpenRA FactionInit, no ResetOnOwnerChange), so an Allied
   player who captures a Soviet one is offered the Soviet structures and
   what they unlock, until it is lost. The debug menu's "all tech" lists
@@ -5138,7 +5144,7 @@ A mission file (`format: 1`, at most 4 MiB, checked by
 | `players` | map.yaml Players: name, faction, colour, playable, required, owns world, non-combatant, bot, allies, enemies |
 | `actors` | Every map actor with its inits (owner, location, facing, subcell, health, stance, free actor, tags), the map's bridges too |
 | `rules` | The mission's rules (OpenRA's merged with the map's, through `gen_rules.py`) as changes to `engine/rules.json`: actors, weapons, locomotors and armour types patched by key or added (`Rules::load_mission`) |
-| `props`, `art`, `conditions`, `death_spawns`, `bot_conditions`, `smudges` | Script-only actors (waypoints, cameras, flares), the art key each mission actor draws with, ExternalCondition effects, actors left on death, the conditions a bot gives, map smudges |
+| `props`, `art`, `conditions`, `death_spawns`, `bot_conditions`, `smudges` | Script-only actors (waypoints, cameras, flares; a prop's `provides` are the prerequisites its ProvidesPrerequisite gives its owner while it exists, `name` its Tooltip name: intervention's `mainland`, negotiations' `ai.hard`; their tokens are interned when the mission loads, so `Player.HasPrerequisites` knows them, and they change at once when a script creates, destroys or hands over the prop), the art key each mission actor draws with, ExternalCondition effects, actors left on death, the conditions a bot gives, map smudges |
 | `scripts`, `messages`, `options` | The Lua files in load order (`campaign.lua`, `utils.lua`, the map's), the Fluent strings, the lobby options (`difficulty` with its values and default) |
 | `starting_cash`, `tech_level`, `time_limit`, `start_notification`, `objectives` | World settings: MissionObjectives (`early_game_over`, `game_over_delay`, `cooperative`) |
 

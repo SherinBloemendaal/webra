@@ -92,6 +92,14 @@ impl World {
             }
             p.storage += b.storage;
         }
+        // Script props with ProvidesPrerequisite (mission/mod.rs `prop_tokens`).
+        if let Some(m) = &self.mission {
+            for (owner, t) in m.prop_tokens(&self.rules) {
+                if let Some(p) = self.players.get_mut(owner as usize) {
+                    p.tokens[t as usize] = true;
+                }
+            }
+        }
         // Proxies granted by infiltrations (infantry.rs).
         for p in 0..self.players.len() {
             for t in self.proxy_tokens(p) {
@@ -179,13 +187,20 @@ impl World {
     /// also lists, locked and with what is missing, the items this player can
     /// still get by building something (`reachable_tokens`), and hides the
     /// ones it can never get:
-    /// - a prerequisite (`~` or not) that is not held and that nothing this
-    ///   player can build provides: the other side, another country, a
-    ///   higher lobby tech level, the other side's tech center;
-    /// - `~!token` while held (as in OpenRA), or when it is sure to come with
-    ///   what the item still needs: every structure of this faction that
-    ///   provides another missing prerequisite also provides it (England's
-    ///   barracks gives `infantry.england`, so England never sees the Spy).
+    /// - a `~` prerequisite that is not held and that nothing this player can
+    ///   build provides: the other side, another country, a higher lobby tech
+    ///   level;
+    /// - a plain prerequisite likewise when it is a structure's (some
+    ///   structure gives it to some faction): the other side's tech center.
+    ///   One no structure gives (only a script prop, intervention's
+    ///   `mainland`, or nothing at all) leaves the item listed and locked,
+    ///   like OpenRA's greyed items;
+    /// - `~!token` while held (as in OpenRA), or when it is sure to come:
+    ///   this faction's Construction Yard gives it (Ukraine never sees the
+    ///   plain Airfield, also without a yard), or every structure of this
+    ///   faction that provides another missing prerequisite also provides it
+    ///   (England's barracks gives `infantry.england`, so England never sees
+    ///   the Spy).
     ///
     /// The debug menu's "all tech" lists everything of this game (OpenRA
     /// AllTech, ProductionQueue.AllItems).
@@ -203,12 +218,12 @@ impl World {
             return true;
         }
         let prereqs = &self.rules.actors[ty as usize].prerequisites;
-        if prereqs.iter().any(|pr| !pr.negate && !reach[pr.token as usize]) {
+        if prereqs.iter().any(|pr| !pr.negate && !reach[pr.token as usize] && (pr.hidden || self.rules.structure_token(pr.token))) {
             return false;
         }
         let held = |t: u16| p.tokens[t as usize];
         prereqs.iter().filter(|pr| pr.negate && pr.hidden).all(|pr| {
-            if held(pr.token) {
+            if held(pr.token) || self.rules.always_provided(p.faction, pr.token) {
                 return false;
             }
             !prereqs.iter().filter(|o| !o.negate && !held(o.token)).any(|o| {
@@ -286,6 +301,12 @@ impl World {
                 let name = &self.rules.tokens[pr.token as usize];
                 if let Some(level) = name.strip_prefix("techlevel.") {
                     Requirement { label: format!("Tech level {}", tech_level_label(level)), never: true }
+                } else if providers.is_empty() && !self.rules.structure_token(pr.token) {
+                    // Only a script grants it (a prop's ProvidesPrerequisite) or
+                    // nothing does: named like OpenRA's ProductionTooltipLogic,
+                    // by the providing actor's tooltip name, else the token.
+                    let label = self.mission.as_ref().and_then(|m| m.prop_name_for(name)).unwrap_or_else(|| name.clone());
+                    Requirement { label, never: false }
                 } else if providers.is_empty() {
                     Requirement { label: self.exclusive_label(pr.token), never: true }
                 } else {
