@@ -52,6 +52,8 @@ export const SIZE_ZOOM_MAX = 2.4;
 export const CELL_OFFSET = 4096;
 /** How far ahead of the simulation the weather clock may be before it jumps (a seek, catching up). */
 export const CLOCK_SNAP = 1;
+/** How far (seconds) the weather clock runs behind the simulated time, to ride out frames where it stands. */
+export const CLOCK_LAG = 0.1;
 /** Reduced motion: the particles fall this much slower (and fewer of them fall, density()). */
 export const REDUCED_SPEED = 0.3;
 
@@ -166,10 +168,8 @@ export class WeatherFx {
     this.thunderAt = -1;
     /** The strike whose thunder is on its way: { x, y, kind } (world pixels). */
     this.strike = null;
-    /** The weather's own clock (seconds, see advance) and the simulated time it last followed. */
+    /** The weather's own clock (seconds, see advance). */
     this.clock = null;
-    this.lastSim = 0;
-    this.still = 0;
     /** Where each depth layer is in its fall (0..1, wrapping), and the snow's sway. */
     this.phases = [0, 0, 0];
     this.sway = 0;
@@ -204,6 +204,28 @@ export class WeatherFx {
     }
   }
 
+  /**
+   * Follow the browser's prefers-reduced-motion, also when it changes mid
+   * game (as js/anim.js AnimClock.watchReducedMotion): `resolve(prefers)`
+   * turns the browser's choice into the game's (the Reduce motion setting's
+   * 'auto' follows it). Returns a function that stops listening.
+   */
+  watchReducedMotion(win = globalThis.window, resolve = (prefers) => prefers) {
+    let query = null;
+    try {
+      query = win?.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+    } catch {
+      query = null;
+    }
+    if (!query) return () => {};
+    this.reducedMotion = !!resolve(!!query.matches);
+    const onChange = (e) => {
+      this.reducedMotion = !!resolve(!!e.matches);
+    };
+    query.addEventListener?.('change', onChange);
+    return () => query.removeEventListener?.('change', onChange);
+  }
+
   /** 0..1: how far the current weather has built up (and ramps down before it ends). */
   intensity() {
     const s = this.state;
@@ -227,13 +249,17 @@ export class WeatherFx {
    * Run the weather's clock for a frame: `sim` the simulated time of the
    * frame (js/simclock.js, seconds), `dt` the page time since the last frame
    * (seconds). The particles stand still with the game, but the clock does
-   * not step with the simulation's ticks: it runs at the page's pace and
-   * leans toward the simulated time (a little faster when behind, slower when
-   * ahead, still once the simulation stood still a quarter of a second), so
-   * the falling never judders when a frame's tick interpolation does, and it
-   * never runs backwards. Only a gap over CLOCK_SNAP seconds (catching up,
-   * a replay seeking) makes it jump. The fall of each layer is kept as a
-   * phase that wraps, so no large time reaches the GPU.
+   * not step with the simulation's ticks: it runs at the page's pace toward
+   * CLOCK_LAG behind the simulated time (a little faster when further
+   * behind, slower when closer), and never past the simulated time itself.
+   * The lag absorbs frames where the simulated time stands (a repeated
+   * worker frame, the ticks' interpolation), so the falling never judders;
+   * when the game pauses, the clock runs on into that lag and stops exactly
+   * at the simulated time, and when it goes on, the clock goes on at once
+   * (a little slower for a moment). It never runs backwards; only a gap over
+   * CLOCK_SNAP seconds (catching up, a replay seeking) makes it jump. The
+   * fall of each layer is kept as a phase that wraps, so no large time
+   * reaches the GPU.
    */
   advance(sim, dt) {
     if (!Number.isFinite(sim)) return;
@@ -241,19 +267,11 @@ export class WeatherFx {
     const before = this.clock;
     if (before === null || Math.abs(sim - before) > CLOCK_SNAP) {
       this.clock = sim;
-      this.lastSim = sim;
-      this.still = 0;
       if (before === null) return;
     } else {
-      if (sim > this.lastSim) {
-        this.lastSim = sim;
-        this.still = 0;
-      } else {
-        this.still += step;
-      }
-      const lead = sim - before;
-      const rate = this.still < 0.25 ? 1 + 2 * lead : 2 * lead;
-      this.clock = before + Math.max(0, Math.min(3, rate)) * step;
+      const lead = sim - CLOCK_LAG - before;
+      const rate = Math.max(0, Math.min(3, 1 + 2 * lead));
+      this.clock = Math.max(before, Math.min(sim, before + rate * step));
     }
     const moved = this.clock - before;
     const kind = KINDS[this.state?.weather] ?? KINDS.rain;

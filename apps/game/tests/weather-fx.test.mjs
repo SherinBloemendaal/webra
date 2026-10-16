@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   CELL_OFFSET,
+  CLOCK_LAG,
   KINDS,
   LAYERS,
   MAX_PARTICLES,
@@ -198,13 +199,26 @@ test('the weather clock runs smoothly with the game, stands still with it and ne
     if (i > 120) assert.ok(step > dt * 0.8 && step < dt * 1.2, `frame ${i}: ${step}`);
     last = fx.clock;
   }
-  assert.ok(Math.abs(fx.clock - (10 + real)) < 0.06, 'and keeps up with the game');
-  // Paused: it stops within a quarter of a second and a little.
+  assert.ok(Math.abs(fx.clock - (10 + real - CLOCK_LAG)) < 0.06, 'and keeps up with the game, its lag behind');
+  // Paused: it runs on into its lag and stops exactly at the simulated time, never past it.
   const paused = 10 + Math.floor(real / 0.04) * 0.04;
-  for (let i = 0; i < 30; i++) fx.advance(paused, dt);
-  const stopped = fx.clock;
+  for (let i = 0; i < 30; i++) {
+    fx.advance(paused, dt);
+    assert.ok(fx.clock <= paused, 'no overshoot');
+  }
+  assert.equal(fx.clock, paused, 'stopped at the simulated time');
   for (let i = 0; i < 60; i++) fx.advance(paused, dt);
-  assert.ok(fx.clock - stopped < 0.01, 'stands still while the game does');
+  assert.equal(fx.clock, paused, 'and stands still while the game does');
+  // Going on: the particles move again on the very next frame, never much slower than the game.
+  let sim = paused;
+  last = fx.clock;
+  for (let i = 0; i < 60; i++) {
+    sim += dt;
+    fx.advance(sim, dt);
+    const step = fx.clock - last;
+    assert.ok(step > dt * 0.75 && step < dt * 1.25, `frame ${i} after the pause: ${step / dt}`);
+    last = fx.clock;
+  }
   // A replay seeking or catching up jumps.
   fx.advance(500, dt);
   assert.equal(fx.clock, 500);
@@ -260,8 +274,9 @@ test('the weather uniforms reach the shaders in the layout of shaders/common.wgs
   assert.ok(u.wgrid.every(Number.isInteger), 'block indices are whole numbers, exact as f32');
   // Clear skies: the defaults.
   const clear = packGlobals({ width: 1, height: 1, camera: { x: 0, y: 0 }, zoom: 1, time: 0, mapW: 1, mapH: 1 });
-  assert.deepEqual(vec.call(null, 'wcell').length, 4);
-  assert.deepEqual([...clear.slice(WEATHER_OFFSET, WEATHER_OFFSET + 8)], [0, 0, 0, 0, 1, 1, 0, 1]);
+  // wgrid none, wcell [cell 1, block 1, no fade, size 1], wphase and wfall zero, and no particles (env2.z).
+  assert.deepEqual([...clear.slice(WEATHER_OFFSET, WEATHER_OFFSET + 16)], [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...clear.slice(at.env2, at.env2 + 4)], [0, 0, 0, 1]);
 });
 
 test('the particle shader works in the world from the grid and the phases, never from the screen or the raw clock', () => {
@@ -323,4 +338,23 @@ test('no lightning or thunder while a thunderstorm dies down (engine STORM_CALM_
   fx.update(storm(last + Math.ceil(delay * 25), [last, 1e6, 1e6, 0]), delay);
   assert.equal(heard.length, 1, 'the thunder came');
   assert.equal(fx.intensity(), 1, 'before the rain started to stop');
+});
+
+test('the browser\'s reduced motion is followed while the game runs, until the watch stops', () => {
+  const listeners = new Set();
+  const query = { matches: false, addEventListener: (t, fn) => listeners.add(fn), removeEventListener: (t, fn) => listeners.delete(fn) };
+  const win = { matchMedia: (q) => (q === '(prefers-reduced-motion: reduce)' ? query : null) };
+  const fx = new WeatherFx();
+  let setting = 'auto';
+  const off = fx.watchReducedMotion(win, (prefers) => setting === 'on' || (setting !== 'off' && prefers));
+  assert.equal(fx.reducedMotion, false);
+  for (const fn of listeners) fn({ matches: true });
+  assert.equal(fx.reducedMotion, true, 'the OS setting changed: at once');
+  setting = 'off';
+  for (const fn of listeners) fn({ matches: true });
+  assert.equal(fx.reducedMotion, false, 'the game setting Off wins');
+  off();
+  assert.equal(listeners.size, 0, 'teardown stops listening');
+  assert.doesNotThrow(() => new WeatherFx().watchReducedMotion({})());
+  assert.doesNotThrow(() => new WeatherFx().watchReducedMotion({ matchMedia() { throw new Error('no'); } })());
 });

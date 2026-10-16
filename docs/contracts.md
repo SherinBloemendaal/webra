@@ -1054,13 +1054,15 @@ on a 1920 x 1080 CSS px view (fewer on smaller views, half with Low
 quality), so about as many particles show however far out the camera goes
 and at most 8192 instances are drawn. The fall comes from a weather clock
 (`WeatherFx.advance`) that follows the simulation clock (js/simclock.js) at
-the page's frame pace: it stands still with the game, never runs backwards,
-does not judder with the ticks' interpolation and only jumps over gaps of
-more than a second (catching up, a replay seeking); each layer's fall is a
+the page's frame pace, 0.1 s behind it (`CLOCK_LAG`): it stops exactly
+where the game stopped and goes on at once when it goes on, never runs
+ahead of the game or backwards, does not judder with the ticks'
+interpolation and only jumps over gaps of more than a second (catching up,
+a replay seeking); each layer's fall is a
 phase that wraps, so no large time reaches the GPU. Reduce motion (the
-setting, or the browser's with `auto`) makes them fall at 30 % speed, shows
-60 % of them and drops splashes and the snow's sway; both settings apply at
-once. The battlefield canvas is the only place they are drawn, under the
+setting, or the browser's with `auto`, also when the browser's changes
+mid game) makes them fall at 30 % speed, shows 60 % of them and drops
+splashes and the snow's sway; both settings apply at once. The battlefield canvas is the only place they are drawn, under the
 HUD and the sidebar. The sky pass (shaders/sky.wgsl) after them tints the
 view for rain, storms, snow, sand and heat, and flashes for lightning.
 Red Alert's view has no camera tilt: a 3D pack's `groundShear` leans that

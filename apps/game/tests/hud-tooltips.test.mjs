@@ -43,8 +43,9 @@ test('the weather badge: its sky in the game\'s tooltip, reachable by keyboard, 
     badge.setAttribute('title', 'left over from an older page');
     doc.body.append(badge);
     const w = new WeatherBadge(badge);
-    assert.equal(badge.getAttribute('tabindex'), '0', 'keyboard focus opens the tooltip');
+    assert.equal(badge.getAttribute('tabindex'), null, 'not focusable while empty');
     w.update(sky());
+    assert.equal(badge.getAttribute('tabindex'), '0', 'keyboard focus opens the tooltip');
     const { label, detail } = weatherInfo(sky());
     assert.equal(badge.hidden, false);
     assert.equal(badge.querySelector('.effects').textContent, detail);
@@ -62,8 +63,13 @@ test('the weather badge: its sky in the game\'s tooltip, reachable by keyboard, 
     assert.match(weatherTip(sky({ mode: 'cosmetic' })).desc, /only for show/);
     assert.equal(weatherTip(sky({ weather: 'clear', biome: 'temperate', sightPct: 100 })).desc, NO_EFFECT);
     assert.equal(weatherTip(sky({ mode: 'off' })), null);
+    w.update(sky({ mode: 'off' }));
+    assert.equal(badge.hidden, true);
+    assert.equal(badge.getAttribute('tabindex'), null, 'no hidden tab stop when the weather is off');
+    w.update(sky());
     w.clear();
     assert.equal(badge.hidden, true);
+    assert.equal(badge.getAttribute('tabindex'), null, 'none after the game either');
     assert.ok(!badge.classList.contains('has-tooltip'), 'the game is over: the tooltip goes');
   } finally {
     uninstallDom();
@@ -116,6 +122,19 @@ test('the observer panel: view buttons and player names use the game\'s tooltip'
     assert.equal(names.length, 2);
     for (const n of names) assert.equal(n.getAttribute('title'), null);
     assertGameTooltip(doc, names[1], 'A very long commander name');
+    // Rows rebuilt (another panel): the old names' tooltips go with them, also one that shows.
+    focus(names[1]);
+    assert.equal(openTooltip(doc)?.target, names[1]);
+    panel.showPanel('economy');
+    panel.update([{ player: 0, earned: 0, armyValue: 0, cash: 0 }, { player: 1, earned: 0, armyValue: 0, cash: 0 }], 50);
+    assert.equal(openTooltip(doc), null, 'the open tooltip closed with its row');
+    assert.ok(!names[1].classList.contains('has-tooltip'), 'and the old row lets go of it');
+    // The panel goes: an open tooltip goes too, and no view button keeps one.
+    focus(buttons[0]);
+    assert.equal(openTooltip(doc)?.target, buttons[0]);
+    panel.remove();
+    assert.equal(openTooltip(doc), null);
+    for (const b of buttons) assert.ok(!b.classList.contains('has-tooltip'));
   } finally {
     uninstallDom();
   }

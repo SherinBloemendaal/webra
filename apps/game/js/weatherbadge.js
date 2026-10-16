@@ -1,7 +1,8 @@
 // The biome and weather badge of the HUD (index.html #weather, css/style.css):
 // the sky's name, the effects in force under it, and the same in the game's
-// own tooltip (js/ui/tooltip.js) instead of the browser's native title. The
-// badge takes keyboard focus, so the tooltip opens from the keyboard too.
+// own tooltip (js/ui/tooltip.js) instead of the browser's native title. While
+// it shows a sky the badge takes keyboard focus, so the tooltip opens from the
+// keyboard too.
 
 import { NO_EFFECT, weatherInfo } from './weather-fx.js';
 import { attachTooltip } from './ui/tooltip.js';
@@ -19,7 +20,7 @@ export class WeatherBadge {
     this.sky = null;
     this.key = '';
     badge.removeAttribute('title');
-    badge.setAttribute('tabindex', '0');
+    badge.removeAttribute('tabindex');
     this.tip = attachTooltip(badge, () => weatherTip(this.sky), { side: 'right' });
   }
 
@@ -33,6 +34,9 @@ export class WeatherBadge {
     const badge = this.badge;
     badge.hidden = !label;
     badge.textContent = label;
+    // Focusable (its tooltip opens from the keyboard) only while it shows something.
+    if (label) badge.setAttribute('tabindex', '0');
+    else badge.removeAttribute('tabindex');
     if (label && sky.mode === 'full' && detail !== NO_EFFECT) {
       const line = badge.ownerDocument.createElement('span');
       line.className = 'effects';
@@ -49,5 +53,6 @@ export class WeatherBadge {
     this.key = '';
     this.badge.hidden = true;
     this.badge.textContent = '';
+    this.badge.removeAttribute('tabindex');
   }
 }

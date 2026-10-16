@@ -213,11 +213,13 @@ export class ObserverPanel {
     head.setAttribute('role', 'group');
     head.setAttribute('aria-label', 'View');
     this.viewButtons = [];
+    /** The view buttons' tooltips (detached in remove()). */
+    this.viewTips = [];
     const addView = (label, value, color, desc) => {
       const b = el('button', 'observer-view', label);
       b.type = 'button';
       // The game's tooltip (js/ui/tooltip.js) says what the view shows; the label stays the button's name.
-      attachTooltip(b, () => viewTip(label, desc), { side: 'bottom' });
+      this.viewTips.push(attachTooltip(b, () => viewTip(label, desc), { side: 'bottom' }));
       if (color) b.style.setProperty('--player-color', rgbCss(color));
       b.addEventListener('click', () => this.setView(value));
       head.append(b);
@@ -370,9 +372,9 @@ export class ObserverPanel {
         flag.setAttribute('aria-hidden', 'true');
         name.append(flag, el('span', 'observer-player', p.name));
         // The whole name when the column cuts it short (the row's text already has it for screen readers).
-        attachTooltip(name, () => ({ title: p.name }), { side: 'right' });
+        const nameTip = attachTooltip(name, () => ({ title: p.name }), { side: 'right' });
         row.append(name);
-        const rec = { el: row, defeated: false, cells: [], texts: [], strip: null, data: null };
+        const rec = { el: row, defeated: false, cells: [], texts: [], strip: null, data: null, nameTip };
         if (panel.columns) {
           rec.cells = panel.columns.map(() => el('span', 'observer-cell'));
           row.append(...rec.cells);
@@ -403,7 +405,10 @@ export class ObserverPanel {
 
   /** Forget the rows (their tooltips too). */
   dropLayout() {
-    for (const row of this.layout?.rows.values() ?? []) row.strip?.remove();
+    for (const row of this.layout?.rows.values() ?? []) {
+      row.strip?.remove();
+      row.nameTip?.detach();
+    }
     this.layout = null;
   }
 
@@ -452,6 +457,8 @@ export class ObserverPanel {
 
   remove() {
     this.dropLayout();
+    for (const tip of this.viewTips) tip.detach();
+    this.viewTips = [];
     this.root.remove();
   }
 }

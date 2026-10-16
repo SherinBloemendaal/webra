@@ -1747,7 +1747,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const weather = new WeatherFx({ reducedMotion: motionIsReduced(), lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
-  // Reduce motion and Low quality apply at once.
+  // Reduce motion (the setting, and the browser's for 'auto') and Low quality apply at once.
+  scope.add(weather.watchReducedMotion(window, (prefers) => motionReduced(settings.get('reduceMotion'), prefers)));
   scope.add(settings.subscribe('reduceMotion', () => (weather.reducedMotion = motionIsReduced())));
   scope.add(settings.subscribe('lowQuality', (on) => (weather.lowQuality = !!on)));
   // The biome and weather badge with its tooltip (js/weatherbadge.js).
@@ -2871,7 +2872,10 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
     weather.advance(simSeconds, dt / 1000);
-    const fx = { ...weather.uniforms(simSeconds, [v.x0, v.y0, v.x1, v.y1], input.camera.zoom, canvas.clientWidth * canvas.clientHeight), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
+    // The view's CSS px² from the drawn size (no layout read per frame).
+    const ratio = renderer.pixelRatio();
+    const cssArea = (canvas.width * canvas.height) / (ratio * ratio);
+    const fx = { ...weather.uniforms(simSeconds, [v.x0, v.y0, v.x1, v.y1], input.camera.zoom, cssArea), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
     const fxTick = BattleFx.ticksAt(simSeconds);
     const [shakeX, shakeY] = battle.cameraOffset(fxTick, (v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2);
