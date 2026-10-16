@@ -77,7 +77,10 @@ jobs:
       - name: Check that this commit is still the tip of main
         id: tip
         run: |
-          tip=$(git ls-remote origin refs/heads/main | cut -f1)
+          # A failing ls-remote fails the deploy loudly, never skips it.
+          refs=$(git ls-remote origin refs/heads/main) || { echo "::error::git ls-remote failed"; exit 1; }
+          tip=$(cut -f1 <<< "$refs")
+          [ -n "$tip" ] || { echo "::error::origin has no refs/heads/main"; exit 1; }
           if [ "$tip" = "$GITHUB_SHA" ]; then
             echo "current=true" >> "$GITHUB_OUTPUT"
           else

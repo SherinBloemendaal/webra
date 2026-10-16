@@ -78,7 +78,8 @@ dispatch (Actions, Deploy, Run workflow):
    the commit) and uploads `apps/game/pkg` as the artifact `webra-pkg` of
    the run.
 2. `deploy` (GitHub environment `production`, a `small` runner): first checks
-   that the commit is still the tip of `main` (`git ls-remote`); when a newer
+   that the commit is still the tip of `main` (`git ls-remote`; when that
+   fails, the deploy fails, it never skips silently); when a newer
    commit has arrived meanwhile, every further step is skipped, the job
    succeeds and the newer commit's own run deploys. Otherwise it downloads
    `webra-pkg` of this run into `apps/game/pkg` (no Rust, no second wasm
@@ -106,7 +107,10 @@ deploy job waits until the running deploy is done, so two deploys never
 overlap. GitHub keeps one waiting job per group, so with three pushes in quick
 succession the second one's waiting deploy job is cancelled (its run shows as
 cancelled) and the third deploys; with the tip check above an older commit
-never deploys after a newer one. Wrangler runs with `--no-install`, so it must be a pinned dependency
+never deploys after a newer one. Two manual runs of Deploy on `main` share
+CI's concurrency group `ci-Deploy-refs/heads/main` (only pushes are grouped
+per commit), so the second cancels the first one's CI and with it that run's
+deploy; the second run deploys. Wrangler runs with `--no-install`, so it must be a pinned dependency
 in the lockfile (a `devDependency` of `apps/server`), never a fresh download.
 
 ### Required GitHub secrets

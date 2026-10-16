@@ -60,4 +60,14 @@ unless `changed_only` is set, which compares the tip commit with its parent.
 
 A newer push to a pull request cancels its older CI run. Pushes to `main`
 are grouped per commit, so each push's CI finishes; only Deploy's deploy job
-is serialized (deploy.md).
+is serialized (deploy.md). Manual runs are grouped by branch: two manual
+Deploy runs on `main` share `ci-Deploy-refs/heads/main`, so the second
+cancels the first one's CI (and so its deploy), and two manual CI runs on one
+branch do the same.
+
+The skip is fail-safe: the engine and shader jobs run unless the changes job
+says `false`, and a failing script fails the changes job (and so CI).
+
+Deploy's deploy job checks that its commit is still the tip of `main` with
+`git ls-remote`; when that command fails, the deploy fails instead of being
+skipped (deploy.md).

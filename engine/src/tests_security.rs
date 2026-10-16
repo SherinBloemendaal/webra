@@ -647,7 +647,15 @@ fn nested_fuzz() -> &'static NestedFuzz {
                             let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let Some((section, id, patch)) = edits.get(i) else { break out };
                             let over = serde_json::json!({ *section: { id: patch.clone() } });
-                            out.push((i, crate::rules::Rules::load_over(base.clone(), Some(&over)).is_ok()));
+                            // A panic names the edit (a scoped thread's own message is lost in the join).
+                            let load = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                crate::rules::Rules::load_over(base.clone(), Some(&over)).is_ok()
+                            }));
+                            let ok = load.unwrap_or_else(|e| {
+                                let msg = e.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| e.downcast_ref::<String>().cloned());
+                                panic!("rules edit {i} panicked ({}): {over}", msg.as_deref().unwrap_or("no message"))
+                            });
+                            out.push((i, ok));
                         }
                     })
                 })
