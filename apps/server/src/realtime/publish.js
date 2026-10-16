@@ -63,10 +63,14 @@ export async function publishToFriendsOf(env, db, userId, event) {
   return publishToUsers(env, await friendIds(db, userId), event);
 }
 
-/** One event to the admin dashboard's hub (topic `admin`). */
-export async function publishAdmin(env, { kind, data = null, origin = null }) {
+/**
+ * One event to the admin dashboard's hub (topic `admin`). `adminsOnly`: only
+ * the dashboards of admins hear it (a change only admins may see, such as
+ * guide progress; moderators share the object).
+ */
+export async function publishAdmin(env, { kind, data = null, origin = null, adminsOnly = false }) {
   if (!realtimeOn(env)) return { reached: 0, failed: 0 };
-  return fanOut(['topic:admin'], (name) => hub(env, name).publish({ topic: 'admin', kind, data, origin }));
+  return fanOut(['topic:admin'], (name) => hub(env, name).publish({ topic: 'admin', kind, data, origin, adminsOnly }));
 }
 
 /**

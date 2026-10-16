@@ -478,12 +478,10 @@ async function presence(ctx) {
     )
     .bind(user.id, ctx.now, away, ctx.now - idle, ctx.now - PRESENCE_WRITE_MS, ctx.now - PRESENCE_CHANGE_MS)
     .run();
-  // Friends hear of a change (offline, online, away), not of every heartbeat. A hint for a
-  // player who hides their status says nothing: the friends' list still shows offline.
+  // Friends hear of a change (offline, online, away), not of every heartbeat. The hint names
+  // nobody and says only "look again": the list of a player who hides their status still shows offline.
   const after = r.meta.changes > 0 ? (away ? 'away' : 'online') : before;
-  if (after !== before) {
-    notify(ctx, (env) => publishToFriendsOf(env, ctx.db, user.id, { topic: 'friends', kind: 'presence', data: { username: user.username } }));
-  }
+  if (after !== before) notify(ctx, (env) => publishToFriendsOf(env, ctx.db, user.id, { topic: 'friends', kind: 'presence' }));
   return noContent();
 }
 

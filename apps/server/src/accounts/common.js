@@ -2,6 +2,7 @@
 
 import { json } from '../http.js';
 import { createSession, rotateSession } from './sessions.js';
+import { closeUserSockets, revoke } from '../realtime/publish.js';
 import { selfUser, userById } from './users.js';
 
 /** The address waiting for its change link, or null. */
@@ -26,8 +27,14 @@ export async function selfView(ctx, userId, { pendingEmail } = {}) {
 /** Start a session for the account and answer `{ user }`. */
 export async function signIn(ctx, userId, status = 200) {
   const s = await createSession(ctx.env, ctx.request, ctx.ip, userId, ctx.now);
+  closeReplaced(ctx, s.replaced);
   ctx.cookies.push(s.cookie);
   return json({ user: await selfView(ctx, userId) }, status);
+}
+
+/** After the answer: close the realtime sockets of the sign-in a new one replaced in this browser. */
+export function closeReplaced(ctx, replaced) {
+  if (replaced) revoke(ctx, (env) => closeUserSockets(env, replaced.userId, { sids: [replaced.publicId], staff: replaced.role === null ? undefined : replaced.role !== 'user' }));
 }
 
 /** Rotate the current session id (after credential changes); `reauth` refreshes the proof time. */

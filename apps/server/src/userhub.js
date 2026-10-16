@@ -99,14 +99,19 @@ export class UserHub extends DurableObject {
   /**
    * RPC: one event to every socket that follows `topic`. The sign-in session
    * `origin` (the device that made the change) is skipped for topics whose
-   * pages reload after their own changes anyway. Returns how many sockets
+   * pages reload after their own changes anyway. `adminsOnly`: only sockets
+   * of admin accounts (on the dashboard's object, which moderators share: what
+   * only admins may see, such as guide progress). Returns how many sockets
    * it reached. Without listeners nothing is stored (no write per offline
    * account).
    */
-  async publish({ topic, kind, data = null, origin = null }) {
+  async publish({ topic, kind, data = null, origin = null, adminsOnly = false }) {
     if (!REALTIME_TOPICS.includes(topic)) throw new TypeError('unknown realtime topic');
     const skip = ORIGIN_SKIP.has(topic) && typeof origin === 'string' ? origin : null;
-    const targets = this.ctx.getWebSockets(`topic:${topic}`).filter((ws) => skip === null || ws.deserializeAttachment()?.sid !== skip);
+    const targets = this.ctx.getWebSockets(`topic:${topic}`).filter((ws) => {
+      const att = ws.deserializeAttachment();
+      return (skip === null || att?.sid !== skip) && (!adminsOnly || att?.role === 'admin');
+    });
     if (targets.length === 0) return 0;
     const seq = ((await this.ctx.storage.get('seq')) ?? 0) + 1;
     await this.ctx.storage.put('seq', seq);

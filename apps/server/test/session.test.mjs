@@ -522,7 +522,7 @@ test('presence hints: joining, leaving and starting tell the friends of signed-i
   const s = await makeSession({ DB, env: { USER_HUB: hub } });
   const host = s.connect('host', '10.0.0.1', { account: A, refuse: null });
   await s.send(host, hello(s, A.username, { hostKey: s.hostKey }));
-  assert.deepEqual(hub.publishes, [{ to: `user:${friendOfA}`, kind: 'presence', username: A.username }], 'the host is in a lobby now');
+  assert.deepEqual(hub.publishes, [{ to: `user:${friendOfA}`, kind: 'presence', username: null }], 'the host is in a lobby now (no name: the hint only says "look again")');
   hub.publishes.length = 0;
 
   // An anonymous guest changes the room but names nobody new: the host's friends see the count change.

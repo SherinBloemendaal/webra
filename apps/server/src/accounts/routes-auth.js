@@ -264,9 +264,14 @@ async function login(ctx) {
 
 async function logout(ctx) {
   const token = sessionToken(ctx.request);
-  const ended = token ? await ctx.db.prepare('DELETE FROM auth_sessions WHERE id_hash = ?1 RETURNING user_id, public_id').bind(await sha256Hex(token)).first() : null;
-  // This browser's other tabs hear that it signed out (the role is not loaded here: both hubs are asked).
-  if (ended) revoke(ctx, (env) => closeUserSockets(env, ended.user_id, { sids: [ended.public_id] }));
+  const ended = token
+    ? await ctx.db
+        .prepare('DELETE FROM auth_sessions WHERE id_hash = ?1 RETURNING user_id, public_id, (SELECT role FROM users WHERE id = auth_sessions.user_id) AS role')
+        .bind(await sha256Hex(token))
+        .first()
+    : null;
+  // This browser's other tabs hear that it signed out (the dashboard's object only for staff).
+  if (ended) revoke(ctx, (env) => closeUserSockets(env, ended.user_id, { sids: [ended.public_id], staff: ended.role !== 'user' }));
   ctx.cookies.push(...signOutCookies(ctx.request));
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }

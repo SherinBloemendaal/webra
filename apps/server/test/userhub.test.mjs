@@ -95,6 +95,15 @@ test('publish: seq grows, only the topic hears it, the origin is skipped for set
 
   await assert.rejects(h.hub.publish({ topic: 'gossip', kind: 'x' }), TypeError);
   await assert.rejects(h.hub.publish({ topic: 'friends', kind: 'poke' }), TypeError);
+  // adminsOnly: only sockets of admin accounts (the dashboard object is shared with moderators).
+  const admins = makeHub();
+  const adminWs = await connect(admins, { role: 'admin', topics: ['admin'] });
+  const modWs = await connect(admins, { userId: OTHER, sid: SID2, role: 'moderator', topics: ['admin'] });
+  assert.equal(await admins.hub.publish({ topic: 'admin', kind: 'user_updated', data: { userId: USER }, adminsOnly: true }), 1);
+  assert.equal(adminWs.take('event').length, 1);
+  assert.equal(modWs.take('event').length, 0);
+  assert.equal(await admins.hub.publish({ topic: 'admin', kind: 'user_created', data: { userId: USER } }), 2, 'everything else reaches both');
+
   // Only the documented fields leave the hub: anything else in `data` is dropped.
   await h.hub.publish({ topic: 'friends', kind: 'request', data: { username: 'Ivan', email: 'ivan@example.com' } });
   assert.deepEqual(a.take('event')[0].data, { username: 'Ivan' });

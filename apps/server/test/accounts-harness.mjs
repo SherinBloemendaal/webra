@@ -116,7 +116,7 @@ export class FakeUserHubs {
     return {
       publish: async (event) => {
         failing();
-        const e = { topic: event.topic, kind: event.kind, data: event.data ?? null, origin: event.origin ?? null };
+        const e = { topic: event.topic, kind: event.kind, data: event.data ?? null, origin: event.origin ?? null, ...(event.adminsOnly ? { adminsOnly: true } : {}) };
         this.onPublish?.(name, e);
         this.publishes.push({ name, ...e });
         return 1;

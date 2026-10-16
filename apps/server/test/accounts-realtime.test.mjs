@@ -206,21 +206,21 @@ test('friends: invites and their dismissal reach both; presence only on a change
 
   // Presence: the first heartbeat (offline -> online) is told, the next ones are not.
   assert.equal((await a.post('/api/account/presence', { away: false })).status, 204);
-  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', { username: 'Alpha' }]]);
+  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', null]]);
   hubs(env).clear();
   clock.advance(60_000);
   await a.post('/api/account/presence', { away: false });
   assert.deepEqual(events(env, userHub(b)), [], 'a heartbeat without a change');
   clock.advance(10_000);
   await a.post('/api/account/presence', { away: true, idleMs: 600_000 });
-  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', { username: 'Alpha' }]], 'away');
+  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', null]], 'away');
   hubs(env).clear();
   clock.advance(1_000);
   await a.post('/api/account/presence', { away: false });
   assert.deepEqual(events(env, userHub(b)), [], 'within PRESENCE_CHANGE_MS nothing is stored, so nothing is told');
   clock.advance(PRESENCE_ONLINE_MS + 1);
   await a.post('/api/account/presence', { away: false });
-  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', { username: 'Alpha' }]], 'back after the heartbeat expired');
+  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', null]], 'back after the heartbeat expired');
   assert.deepEqual(events(env, userHub(a)), [], 'presence goes to friends, not to the player');
 });
 
@@ -236,7 +236,7 @@ test('account: profile, settings and the sign-in sessions it ends', async () => 
 
   assert.equal((await a.patch('/api/account', { displayName: 'Alpha One' })).status, 200);
   assert.deepEqual(events(env, userHub(a)), [['account', 'profile', null]]);
-  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', { username: 'Alpha' }]], 'friends see the new name');
+  assert.deepEqual(events(env, userHub(b)), [['friends', 'presence', null]], 'friends see the new name');
   hubs(env).clear();
 
   const current = await a.get('/api/account/settings');
@@ -263,12 +263,36 @@ test('account: profile, settings and the sign-in sessions it ends', async () => 
   assert.deepEqual(hubs(env).closes, [{ name: userHub(a), sids: null, except: sidA, userId: null }]);
   hubs(env).clear();
 
-  // Signing out closes this sign-in's sockets (the role is not loaded there: both hubs are asked).
+  // Signing out closes this sign-in's sockets; a plain user's own hub only.
   assert.equal((await a.post('/api/auth/logout')).status, 204);
+  assert.deepEqual(hubs(env).closes, [{ name: userHub(a), sids: [sidA], except: null, userId: null }]);
+  hubs(env).clear();
+
+  // A staff account's sign-out also closes its dashboard socket.
+  const mod = await player(env, 'Watchman');
+  promote(env, mod.user.id, 'moderator');
+  const sidMod = await sidOf(mod);
+  hubs(env).clear();
+  assert.equal((await mod.post('/api/auth/logout')).status, 204);
   assert.deepEqual(hubs(env).closes, [
-    { name: userHub(a), sids: [sidA], except: null, userId: null },
-    { name: 'topic:admin', sids: [sidA], except: null, userId: a.user.id },
+    { name: userHub(mod), sids: [sidMod], except: null, userId: null },
+    { name: 'topic:admin', sids: [sidMod], except: null, userId: mod.user.id },
   ]);
+});
+
+test('a sign-in that replaces this browser\'s session closes the replaced session\'s sockets', async () => {
+  const env = makeEnv({ email: false });
+  const a = await player(env, 'Alpha');
+  const before = await sidOf(a);
+  hubs(env).clear();
+  assert.equal((await a.post('/api/auth/login', { login: 'Alpha', password: PASSWORD })).status, 200);
+  assert.notEqual(await sidOf(a), before);
+  assert.deepEqual(hubs(env).closes, [{ name: userHub(a), sids: [before], except: null, userId: null }]);
+  hubs(env).clear();
+  // A first sign-in (no session in this browser yet) replaces nothing.
+  const fresh = new Browser(env, { ip: '198.51.100.77' });
+  assert.equal((await fresh.post('/api/auth/login', { login: 'Alpha', password: PASSWORD })).status, 200);
+  assert.deepEqual(hubs(env).closes, []);
 });
 
 test('account deletion: every socket closes, former friends and the dashboard hear it', async () => {
@@ -306,14 +330,14 @@ test('admin: sign-ups, approvals, bans and settings reach the account and the da
   const put = await admin.put(`/api/admin/users/${waiting.user.id}/settings`, { settings: { ...doc.body.settings, schema: 1 } }, { headers: { 'If-Match': `"v${doc.body.version}"` } });
   assert.equal(put.status, 200, JSON.stringify(put.body));
   assert.deepEqual(hubs(env).to(`user:${waiting.user.id}`), [{ topic: 'settings', kind: 'updated', data: { version: put.body.version }, origin: null }]);
-  assert.deepEqual(events(env, 'topic:admin'), [['admin', 'user_updated', { userId: waiting.user.id }]], 'the guide column reads the document');
+  assert.deepEqual(hubs(env).to('topic:admin'), [{ topic: 'admin', kind: 'user_updated', data: { userId: waiting.user.id }, origin: sidAdmin, adminsOnly: true }], 'the guide column reads the document: admins only');
   hubs(env).clear();
 
   // A guide action: the player's devices sync, other dashboards reload the row.
   const guided = await admin.post(`/api/admin/users/${waiting.user.id}/guide`, { action: 'reset' });
   assert.equal(guided.status, 200, JSON.stringify(guided.body));
   assert.deepEqual(hubs(env).to(`user:${waiting.user.id}`), [{ topic: 'settings', kind: 'updated', data: { version: guided.body.version }, origin: null }]);
-  assert.deepEqual(hubs(env).to('topic:admin'), [{ topic: 'admin', kind: 'user_updated', data: { userId: waiting.user.id }, origin: sidAdmin }]);
+  assert.deepEqual(hubs(env).to('topic:admin'), [{ topic: 'admin', kind: 'user_updated', data: { userId: waiting.user.id }, origin: sidAdmin, adminsOnly: true }], 'moderators do not see guide progress');
   hubs(env).clear();
   const nodoc = await signup(env, 'Nodoc');
   hubs(env).clear();
@@ -369,7 +393,7 @@ test('failure isolation: a failing hub never changes an answer; the site setting
   await b.del('/api/account/friends/Alpha');
   assert.deepEqual(hubs(env).publishes, [], 'no hints while switched off');
   assert.equal((await b.post('/api/auth/logout')).status, 204);
-  assert.equal(hubs(env).closes.length, 2, 'sockets opened before the switch still close with their sign-in');
+  assert.equal(hubs(env).closes.length, 1, 'sockets opened before the switch still close with their sign-in');
 });
 
 test('signing up and verifying an address: the dashboard and the waiting tab hear it', async () => {

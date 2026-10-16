@@ -108,8 +108,9 @@ async function connectRealtime(ctx, { admin }) {
     throw new HttpError(426, 'bad_message', 'Expected a WebSocket upgrade.');
   }
   if (!realtimeOn(env) || !(await ctx.eff()).realtime) throw new HttpError(503, 'unavailable', 'Live updates are switched off. The page checks for changes by itself.');
-  const user = admin ? await ctx.requireRole('moderator') : await ctx.requireUser();
+  // Counted before the account is looked up: a loop of refused upgrades costs no session reads.
   await ctx.burst('realtime', [60, 60 * 60 * 1000]);
+  const user = admin ? await ctx.requireRole('moderator') : await ctx.requireUser();
   const { session } = await ctx.auth();
   const status = effectiveStatus(user);
   const topics = admin ? ['admin'] : status === 'active' ? ACTIVE_TOPICS : INACTIVE_TOPICS;

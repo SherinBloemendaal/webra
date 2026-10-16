@@ -70,9 +70,8 @@ async function patchAccount(ctx) {
   };
   if (body.displayName !== undefined) add('display_name', check(() => validDisplayName(body.displayName)));
   if (body.avatarColor !== undefined) add('avatar_color', check(() => validAvatarColor(body.avatarColor)));
-  let username = user.username;
   if (body.username !== undefined) {
-    username = check(() => validUsername(body.username));
+    const username = check(() => validUsername(body.username));
     if (username !== user.username) {
       if (user.username_changed_at !== null && user.username_changed_at + USERNAME_CHANGE_MS > ctx.now) {
         throw new HttpError(403, 'forbidden', 'You can change your username once every 30 days.', {}, { field: 'username' });
@@ -94,7 +93,7 @@ async function patchAccount(ctx) {
     }
     accountHint(ctx, user);
     // Names and colours show in the friends' lists.
-    notify(ctx, (env) => publishToFriendsOf(env, ctx.db, user.id, { topic: 'friends', kind: 'presence', data: { username } }));
+    notify(ctx, (env) => publishToFriendsOf(env, ctx.db, user.id, { topic: 'friends', kind: 'presence' }));
   }
   return json({ user: await selfView(ctx, user.id) });
 }

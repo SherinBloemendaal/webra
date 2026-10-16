@@ -51,13 +51,14 @@ const HOUR_MS = 60 * 60 * 1000;
  * Realtime hints after an admin action (src/realtime/publish.js): `account`
  * (`{ kind, data }`) to the account's pages, `friends` true to its friends'
  * lists (they show names, and only active accounts), `admin` (a kind) to
- * the other dashboards. The acting dashboard reloads by itself.
+ * the other dashboards (`adminsOnly`: only admins', for what moderators may
+ * not see). The acting dashboard reloads by itself.
  */
-function adminHints(ctx, userId, { account = null, friends = false, admin = null }) {
+function adminHints(ctx, userId, { account = null, friends = false, admin = null, adminsOnly = false }) {
   notify(ctx, async (env) => {
     if (account) await publishToUsers(env, [userId], { topic: 'account', ...account });
     if (friends) await publishToFriendsOf(env, ctx.db, userId, { topic: 'friends', kind: 'presence' });
-    if (admin) await publishAdmin(env, { kind: admin, data: { userId }, origin: await originOf(ctx) });
+    if (admin) await publishAdmin(env, { kind: admin, data: { userId }, origin: await originOf(ctx), adminsOnly });
   });
 }
 
@@ -648,8 +649,8 @@ async function putUserSettings(ctx, { id }) {
   await audit(ctx.db, { actor, action: 'user.settings_update', targetType: 'user', targetId: row.id, targetLabel: row.username, before, after: doc }, ctx.now);
   // Every device of the account loads the new document (no origin: the admin's own game tab too).
   notify(ctx, (env) => publishToUsers(env, [row.id], { topic: 'settings', kind: 'updated', data: { version: doc.version } }));
-  // The dashboard's guide column reads the document.
-  adminHints(ctx, row.id, { admin: 'user_updated' });
+  // The guide column reads the document; only admins see it.
+  adminHints(ctx, row.id, { admin: 'user_updated', adminsOnly: true });
   return settingsResponse(doc);
 }
 
@@ -699,7 +700,7 @@ async function guideAction(ctx, { id }) {
     );
     // The player's devices load the new document (the game's sync applies it); other dashboards reload the row.
     notify(ctx, (env) => publishToUsers(env, [row.id], { topic: 'settings', kind: 'updated', data: { version: doc.version } }));
-    adminHints(ctx, row.id, { admin: 'user_updated' });
+    adminHints(ctx, row.id, { admin: 'user_updated', adminsOnly: true });
     return settingsResponse({ ...doc, guide: guideView(doc) });
   }
 }

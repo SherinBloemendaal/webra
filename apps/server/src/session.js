@@ -225,7 +225,7 @@ export class Session extends DurableObject {
     this.lastDirectory = null;
     this.lastDirectoryCore = null;
     this.lastDirectoryAt = 0;
-    /** The last realtime presence hint: { key, members: [[accountId, username]] } (publishPresence). */
+    /** The last realtime presence hint: { key, members: [accountId] } (publishPresence). */
     this.presence = null;
     this.pingBuckets = new WeakMap();
     this.stallBuckets = new WeakMap();
@@ -1708,13 +1708,13 @@ export class Session extends DurableObject {
 
   // ---- Realtime presence hints (src/realtime/publish.js) ---------------------------------------
 
-  /** The signed-in members (players and spectators): account id -> username. */
+  /** The account ids of the signed-in members (players and spectators). */
   memberAccounts() {
-    const out = new Map();
+    const out = new Set();
     if (!this.room) return out;
     for (const m of [...this.room.humans(), ...this.room.spectators]) {
       const id = this.room.accountOf(m.client);
-      if (id) out.set(id, m.name);
+      if (id) out.add(id);
     }
     return out;
   }
@@ -1729,18 +1729,18 @@ export class Session extends DurableObject {
   async publishPresence(coreKey) {
     try {
       const members = this.memberAccounts();
-      const key = JSON.stringify([coreKey, [...members.keys()].sort()]);
+      const key = JSON.stringify([coreKey, [...members].sort()]);
       const last = await this.presenceMembers(true);
       if (last.key === key) return;
       this.presence = { key, members: [...members] };
       await this.ctx.storage.put('presence', this.presence);
-      await this.tellFriends(new Map([...last.members, ...members]));
+      await this.tellFriends(new Set([...last.members, ...members]));
     } catch (err) {
       logError('presence publish failed', err);
     }
   }
 
-  /** The members of the last hint (`withKey`: `{ key, members }`), from memory or storage. */
+  /** The members of the last hint and the present ones (`withKey`: the stored `{ key, members }`), from memory or storage. */
   async presenceMembers(withKey = false) {
     try {
       this.presence ??= (await this.ctx.storage.get('presence')) ?? { key: null, members: [] };
@@ -1748,7 +1748,7 @@ export class Session extends DurableObject {
       logError('presence read failed', err);
       this.presence = { key: null, members: [] };
     }
-    return withKey ? this.presence : new Map([...this.presence.members, ...this.memberAccounts()]);
+    return withKey ? this.presence : new Set([...this.presence.members, ...this.memberAccounts()]);
   }
 
   /** Whether hints go out: the hub binding exists and the site setting `realtime` is on. */
@@ -1757,11 +1757,11 @@ export class Session extends DurableObject {
     return effective((await loadSiteCached(this.env.DB)).settings, this.env).realtime;
   }
 
-  /** `friends/presence` to the friends of each account (id -> username). Never throws. */
+  /** `friends/presence` (no data: "look again") to the friends of each account id. Never throws. */
   async tellFriends(accounts) {
     try {
       if (accounts.size === 0 || !(await this.realtimeAllowed())) return;
-      await Promise.all([...accounts].map(([id, username]) => publishToFriendsOf(this.env, this.env.DB, id, { topic: 'friends', kind: 'presence', data: { username } })));
+      await Promise.all([...accounts].map((id) => publishToFriendsOf(this.env, this.env.DB, id, { topic: 'friends', kind: 'presence' })));
     } catch (err) {
       logError('presence publish failed', err);
     }
