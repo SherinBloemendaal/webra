@@ -138,6 +138,45 @@ fn produced_units_and_empty_wallets_are_reported() {
     assert_eq!(w.players[0].queues[QueueType::Infantry as usize].items.len(), 1, "still waiting for money");
 }
 
+/// The free Ore Truck of a refinery (OpenRA FreeActor) is spawned with the
+/// structure, not produced: the client's guide (apps/game/js/guide.js,
+/// `army.vehicle` and `ore.truck`) counts UnitProduced as a unit the player
+/// built, so the free one must not be reported. A truck from the War
+/// Factory's queue is.
+#[test]
+fn a_refinery_free_truck_is_not_reported_as_produced() {
+    let mut w = World::new(3, 80, &[("allies", false), ("soviet", true)]);
+    let (sx, sy) = w.players[0].start;
+    w.spawn_building(ty(&w, "POWR"), 0, sx + 4, sy);
+    w.refresh_tokens();
+    w.players[0].cash = 20_000;
+    w.sound.set_enabled(true);
+    let (proc_t, harv) = (ty(&w, "PROC"), ty(&w, "HARV"));
+    w.queue_order(Order::StartProduction { player: 0, ty: proc_t, count: 1 });
+    let build = w.rules.actors[proc_t as usize].build_ticks as u32;
+    run(&mut w, build + 5);
+    let spot = (sx - 8..sx + 10).flat_map(|x| (sy - 8..sy + 10).map(move |y| (x, y))).find(|&(x, y)| w.can_place(0, proc_t, x, y)).unwrap();
+    let trucks = |w: &World| w.actors.iter().filter(|a| a.alive && a.owner == 0 && a.ty == harv).count();
+    assert_eq!(trucks(&w), 0);
+    w.queue_order(Order::Place { player: 0, ty: proc_t, cx: spot.0, cy: spot.1 });
+    run(&mut w, 2);
+    let ev = events(&mut w);
+    assert!(ev.iter().any(|e| e[0] == K::BuildingPlaced as i32 && e[1] == proc_t as i32 && e[4] == 0), "refinery placed");
+    assert_eq!(trucks(&w), 1, "the free truck came with it");
+    let produced: Vec<_> = ev.iter().filter(|e| e[0] == K::UnitProduced as i32 && e[4] == 0).collect();
+    assert!(produced.is_empty(), "the free truck is not a produced unit: {produced:?}");
+
+    // A truck built in the War Factory is.
+    w.spawn_building(ty(&w, "WEAP"), 0, sx + 4, sy + 8).unwrap();
+    w.refresh_tokens();
+    w.queue_order(Order::StartProduction { player: 0, ty: harv, count: 1 });
+    let build = w.rules.actors[harv as usize].build_ticks as u32;
+    run(&mut w, build + 25);
+    let ev = events(&mut w);
+    assert!(ev.iter().any(|e| e[0] == K::UnitProduced as i32 && e[1] == harv as i32 && e[4] == 0), "the bought truck is reported");
+    assert_eq!(trucks(&w), 2);
+}
+
 #[test]
 fn structures_under_fire_report_once_per_burst() {
     let mut w = World::new(4, 64, &[("allies", false), ("soviet", false)]);
