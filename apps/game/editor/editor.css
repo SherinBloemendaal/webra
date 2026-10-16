@@ -35,7 +35,7 @@ body.editor {
   justify-content: center;
   gap: 0.4em;
   min-height: 2rem;
-  padding: 0.25em 0.8em;
+  padding: calc(0.25em - var(--ui-cap-nudge)) 0.8em calc(0.25em + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);

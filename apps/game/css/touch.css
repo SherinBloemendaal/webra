@@ -67,7 +67,7 @@ body.touch #touch-place {
 .touch-button {
   min-width: max(44px, calc(44 * var(--ui-px)));
   min-height: max(44px, calc(44 * var(--ui-px)));
-  padding: 0 calc(12 * var(--ui-px));
+  padding: 0 calc(12 * var(--ui-px)) calc(2 * var(--ui-cap-nudge));
   background: linear-gradient(180deg, rgba(58, 66, 77, 0.92), rgba(34, 40, 48, 0.92));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -109,7 +109,7 @@ body.touch #touch-place {
 body.touch .hud-button {
   min-width: max(44px, calc(44 * var(--ui-px)));
   min-height: max(44px, calc(44 * var(--ui-px)));
-  padding: 0 calc(12 * var(--ui-px));
+  padding: 0 calc(12 * var(--ui-px)) calc(2 * var(--ui-cap-nudge));
   font-size: calc(13 * var(--ui-px));
   touch-action: manipulation;
 }
@@ -327,7 +327,7 @@ body.touch #app:not([hidden]) ~ #version,
 
 /* Phones: fewer action bar labels per row. */
 #app[data-layout='portrait'] .touch-button {
-  padding: 0 calc(9 * var(--ui-px));
+  padding: 0 calc(9 * var(--ui-px)) calc(2 * var(--ui-cap-nudge));
 }
 
 /* ---- Lobby and menus on phones ------------------------------------------------- */

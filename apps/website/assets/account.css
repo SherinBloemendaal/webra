@@ -204,7 +204,7 @@ ul.form-status {
 }
 
 .btn-hazard > span {
-  padding: 4px 10px;
+  padding: calc(4px - var(--ui-cap-nudge)) 10px calc(4px + var(--ui-cap-nudge));
   background: var(--ui-metal-0);
   color: var(--accent-hi);
 }
@@ -270,7 +270,7 @@ ul.form-status {
 
 .tab {
   min-height: 44px;
-  padding: 8px 16px;
+  padding: calc(8px - var(--ui-cap-nudge)) 16px calc(8px + var(--ui-cap-nudge));
   border: 1px solid transparent;
   border-bottom: 0;
   border-radius: var(--radius) var(--radius) 0 0;
@@ -444,7 +444,7 @@ ul.form-status {
   align-items: center;
   gap: 10px;
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 12px calc(2 * var(--ui-cap-nudge));
   border: 1px solid transparent;
   color: var(--ui-text-2);
   font: 700 0.95rem/1 var(--display);
@@ -456,6 +456,7 @@ ul.form-status {
 .account-nav-link .lamp {
   width: 7px;
   height: 7px;
+  margin-top: calc(2 * var(--ui-cap-nudge));
   background: var(--ui-led-off);
   box-shadow: var(--ui-led-off-glow);
 }

@@ -295,7 +295,7 @@
   justify-content: center;
   gap: 8px;
   min-height: max(var(--ctl-row), 36px);
-  padding: 0 14px;
+  padding: 0 14px calc(2 * var(--ui-cap-nudge));
   background: var(--ui-raised);
   color: var(--l-text);
   border: 1px solid var(--ui-edge);
@@ -327,7 +327,7 @@
 #menu .lobby-btn-primary {
   min-height: 46px;
   min-width: 220px;
-  padding: 0 28px;
+  padding: 0 28px calc(2 * var(--ui-cap-nudge));
   background: var(--ui-primary-fill);
   border-color: var(--ui-edge);
   box-shadow:

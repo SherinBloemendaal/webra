@@ -101,7 +101,7 @@
 .campaign-tabs > .ui-tab {
   min-height: max(var(--ctl-row), 36px);
   margin: 0;
-  padding: 0 12px;
+  padding: 0 12px calc(2 * var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -422,7 +422,7 @@
 
 .campaign-play.ui-btn {
   min-height: max(var(--ctl-row), 48px);
-  padding: 0 30px;
+  padding: 0 30px calc(2 * var(--ui-cap-nudge));
   font-size: 18px;
 }
 
@@ -445,7 +445,7 @@
 
 /* The game's buttons in a mission (js/campaign/view.js: Skip, Restart mission, Leave). */
 .campaign-btn {
-  padding: 7px 12px;
+  padding: calc(7px - var(--ui-cap-nudge)) 12px calc(7px + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);

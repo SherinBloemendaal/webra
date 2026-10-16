@@ -3941,7 +3941,11 @@ the same values under the same `--ui-*` names, checked by
   15) and the board's scale `--ui-fs-display` 44, `--ui-fs-title` 26,
   `--ui-fs-section` 20, `--ui-fs-label` 14, `--ui-fs-body` 15 (Barlow
   Condensed 700 in capitals for the first three, 600 for labels), tracking
-  `--ui-track-{display,title,section,button,label}`, `--ui-lh-body`.
+  `--ui-track-{display,title,section,button,label}`, `--ui-lh-body`,
+  `--ui-cap-nudge` (0.05 em: every button, tab, segment, badge and select
+  plate with a label in capitals moves its text up by it, so the capitals,
+  not the line box, sit in the middle; lamps beside them move down by it;
+  `tests/cap-centre.test.mjs` recomputes it from the fonts' metrics).
 - Space and shape: `--ui-space-1` to `--ui-space-7` (4, 8, 12, 16, 24, 32,
   48 px), `--ui-radius` (2 px), `--ui-focus-ring` and `--ui-focus-offset`
   (2 px, 2 px), shadows `--ui-shadow` (dialogs), `--ui-shadow-pop`

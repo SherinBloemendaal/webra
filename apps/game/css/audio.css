@@ -6,7 +6,7 @@
   left: calc(8 * var(--ui-px));
   bottom: calc(24 * var(--ui-px));
   z-index: 60;
-  padding: calc(3 * var(--ui-px)) calc(10 * var(--ui-px));
+  padding: calc(3 * var(--ui-px) - var(--ui-cap-nudge)) calc(10 * var(--ui-px)) calc(3 * var(--ui-px) + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -250,7 +250,7 @@ button.danger {
   width: auto;
   margin: 0;
   min-height: var(--ctl-row);
-  padding: 0 calc(8 * var(--ui-px));
+  padding: 0 calc(8 * var(--ui-px)) calc(2 * var(--ui-cap-nudge));
 }
 
 .music-list h2,

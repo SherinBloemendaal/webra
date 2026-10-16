@@ -6,7 +6,7 @@
   left: calc(8 * var(--ui-px));
   bottom: calc(52 * var(--ui-px));
   z-index: 60;
-  padding: calc(3 * var(--ui-px)) calc(10 * var(--ui-px));
+  padding: calc(3 * var(--ui-px) - var(--ui-cap-nudge)) calc(10 * var(--ui-px)) calc(3 * var(--ui-px) + var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -524,7 +524,7 @@
 .menu-card button.content-tab {
   width: auto;
   margin: 0;
-  padding: calc(6 * var(--ui-px)) calc(12 * var(--ui-px));
+  padding: calc(6 * var(--ui-px) - var(--ui-cap-nudge)) calc(12 * var(--ui-px)) calc(6 * var(--ui-px) + var(--ui-cap-nudge));
   font-size: var(--ui-fs-s);
   border-bottom-width: 0;
   border-radius: var(--ui-radius) var(--ui-radius) 0 0;
@@ -604,14 +604,14 @@
 .menu-card button.content-notice-close {
   width: auto;
   margin: 0;
-  padding: calc(4 * var(--ui-px)) calc(10 * var(--ui-px));
+  padding: calc(4 * var(--ui-px) - var(--ui-cap-nudge)) calc(10 * var(--ui-px)) calc(4 * var(--ui-px) + var(--ui-cap-nudge));
   font-size: var(--ui-fs-s);
 }
 
 .menu-card .content-steps button:not(.content-dropzone) {
   width: auto;
   margin-top: calc(6 * var(--ui-px));
-  padding: calc(8 * var(--ui-px)) calc(12 * var(--ui-px));
+  padding: calc(8 * var(--ui-px) - var(--ui-cap-nudge)) calc(12 * var(--ui-px)) calc(8 * var(--ui-px) + var(--ui-cap-nudge));
 }
 
 .content-notice-legal {

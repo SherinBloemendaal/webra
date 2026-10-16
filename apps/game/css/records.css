@@ -48,7 +48,7 @@
 /* The compact dialogs' buttons (the modded map warning). */
 .records-dialog button:not(.ui-btn):not(.ui-tab):not(.records-row) {
   min-height: var(--ctl-row, 2.25rem);
-  padding: 6px 12px;
+  padding: calc(6px - var(--ui-cap-nudge)) 12px calc(6px + var(--ui-cap-nudge));
   background: var(--ui-raised);
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
@@ -157,7 +157,7 @@
 .records-tabs > .ui-tab {
   min-height: max(var(--ctl-row), 36px);
   margin: 0;
-  padding: 0 14px;
+  padding: 0 14px calc(2 * var(--ui-cap-nudge));
   background: linear-gradient(180deg, var(--ui-metal-3), var(--ui-metal-2));
   border: 1px solid var(--ui-edge);
   border-radius: 0;

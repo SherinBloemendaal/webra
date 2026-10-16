@@ -158,6 +158,8 @@
   --ui-track-button: 0.12em;
   --ui-track-label: 0.14em;
   --ui-lh-body: 1.5;
+  /* Capitals in the middle of a control (apps/game/css/theme.css, same value). */
+  --ui-cap-nudge: 0.05em;
   --ui-space-1: 4px;
   --ui-space-2: 8px;
   --ui-space-3: 12px;
@@ -355,7 +357,7 @@ code {
   display: none;
   margin-left: auto;
   min-height: 44px;
-  padding: 8px 16px;
+  padding: calc(8px - var(--ui-cap-nudge)) 16px calc(8px + var(--ui-cap-nudge));
   background: var(--ui-raised);
   color: var(--text);
   border: 1px solid var(--edge-dark);
@@ -384,7 +386,7 @@ code {
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 14px calc(2 * var(--ui-cap-nudge));
   color: var(--ui-text-2);
   text-decoration: none;
   font: 700 1rem/1 var(--display);
@@ -462,7 +464,7 @@ code {
   justify-content: center;
   gap: 8px;
   min-height: 44px;
-  padding: 0 20px;
+  padding: 0 20px calc(2 * var(--ui-cap-nudge));
   border: 1px solid var(--edge-dark);
   border-radius: var(--radius);
   background: var(--ui-raised);
@@ -544,13 +546,13 @@ code {
 
 .btn-small {
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0 12px calc(2 * var(--ui-cap-nudge));
   font-size: 0.9rem;
 }
 
 .btn-big {
   min-height: 48px;
-  padding: 0 28px;
+  padding: 0 28px calc(2 * var(--ui-cap-nudge));
   font-size: 1.15rem;
   letter-spacing: var(--ui-track-label);
 }
@@ -624,7 +626,7 @@ code {
   align-items: center;
   gap: 8px;
   margin: 0;
-  padding: 5px 10px;
+  padding: calc(5px - var(--ui-cap-nudge)) 10px calc(5px + var(--ui-cap-nudge));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-led-ok-edge);
   color: var(--ok);
@@ -636,6 +638,8 @@ code {
 .beta-badge .lamp {
   width: 7px;
   height: 7px;
+  /* Level with the capitals, which the padding moved up (--ui-cap-nudge). */
+  margin-top: calc(2 * var(--ui-cap-nudge));
   background: var(--ui-led-ok);
   box-shadow: var(--ui-led-ok-glow);
 }
@@ -1080,7 +1084,7 @@ code {
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 14px calc(2 * var(--ui-cap-nudge));
   border: 0;
   border-right: 1px solid var(--edge-dark);
   background: var(--ui-raised);
@@ -1097,6 +1101,7 @@ code {
   content: '';
   width: 7px;
   height: 7px;
+  margin-top: calc(2 * var(--ui-cap-nudge));
   border-radius: 50%;
   background: var(--ui-led-off);
   box-shadow: var(--ui-led-off-glow);
@@ -1717,7 +1722,7 @@ code {
   align-items: center;
   gap: 6px;
   flex: none;
-  padding: 2px 8px;
+  padding: calc(2px - var(--ui-cap-nudge)) 8px calc(2px + var(--ui-cap-nudge));
   border: 1px solid currentColor;
   border-radius: var(--radius);
   background: var(--ui-metal-0);
@@ -1732,6 +1737,7 @@ code {
   content: '';
   width: 6px;
   height: 6px;
+  margin-top: calc(2 * var(--ui-cap-nudge));
   border-radius: 50%;
   background: currentColor;
 }

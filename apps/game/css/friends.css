@@ -241,7 +241,7 @@
 
 .friends-menu-item {
   min-height: max(var(--ctl-row, 2.25rem), 2.25em);
-  padding: 0 12px;
+  padding: 0 12px calc(2 * var(--ui-cap-nudge));
   background: var(--ui-raised);
   border: 1px solid var(--ui-edge);
   color: var(--ui-text);
