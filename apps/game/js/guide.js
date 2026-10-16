@@ -5,9 +5,11 @@
 //
 // Progress is a declared setting (registry guide.done: { stepId: true }), so
 // it follows the account like every other setting; guide.tourInGames is the
-// "Tour in my games" switch, the player's own choice (skipping the tour turns
-// it off; finishing it does not, so tour steps a later version adds still
-// show).
+// "Tour in my games" switch, the player's own choice: skipping the tour turns
+// it off; since 0.18.0 finishing it does not, so tour steps a later version
+// adds reach players who finish from then on. 0.17.0 turned it off when the
+// tour was done; those players find later tour steps through the "New"
+// badges and the Guide (its switch, Take the tour again).
 //
 // Content added in later versions (docs/contracts.md, "The guide and the
 // tour"): every chapter, and a step that came later than its chapter, says
@@ -280,9 +282,10 @@ export class GuideProgress {
    * - a new player (no step done, the tour not switched off) has seen
    *   everything: no "New" badges, the tour as usual;
    * - a player from 0.17.0 has seen the baseline guide, so what came later
-   *   is new to them. 0.17.0 switched the tour off when it was finished;
-   *   such a player (every baseline tour step done) gets the switch back on,
-   *   so new tour steps reach them. A player who skipped the tour keeps it off.
+   *   is new to them. Their switch stays as stored: 0.17.0 turned it off both
+   *   when the tour was finished and when it was skipped, and its tracker
+   *   ticked the tour's steps whatever the switch said, so a skipper who
+   *   played on looks the same as a player who finished.
    */
   reconcile() {
     if (this.seen !== null) return;
@@ -292,9 +295,7 @@ export class GuideProgress {
       this.registry.set('guide', 'seen', this.content.version);
       return;
     }
-    const baselineTour = this.content.tourSteps.filter((id) => !newerThan(this.content.steps.get(id).since, GUIDE_BASELINE));
-    const finished = baselineTour.length > 0 && baselineTour.every((id) => done[id] === true);
-    this.registry.patch('guide', { seen: GUIDE_BASELINE, ...(finished && !this.tourInGames ? { tourInGames: true } : {}) });
+    this.registry.set('guide', 'seen', GUIDE_BASELINE);
   }
 
   /** Follow changes of the guide settings (here, another tab, the account): fn(). Returns the unsubscribe. */

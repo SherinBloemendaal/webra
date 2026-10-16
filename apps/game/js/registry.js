@@ -359,7 +359,7 @@ export const GROUPS = deepFreeze({
         type: 'boolean',
         default: true,
         label: 'Tour in my games',
-        help: 'The tour starts by itself in your skirmish games (not in missions, online games or replays) until its steps are done or you skip it. Tour steps that later versions add show too, unless you skipped it.',
+        help: 'The tour starts by itself in your skirmish games (not in missions, online games or replays) until its steps are done or you skip it. Tour steps that later versions add show too while this is on.',
       },
       // Step id -> true for every guide and tour step done (js/guide, the 0.17 guide work).
       done: { type: 'json', default: {}, maxBytes: SETTINGS_GUIDE_DONE_MAX_BYTES, label: 'Guide steps done', help: 'The steps of the guide and the tour you have done.' },

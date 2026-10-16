@@ -5,10 +5,12 @@
 // step off (js/guide.js GuideTracker). Skip step ticks the step off by hand,
 // the close button skips the whole tour (guide.tourInGames off: the Guide's
 // "Tour in my games" switch turns it on again), Full guide opens the game
-// menu's Guide page. Tour steps that a later version adds show to players
-// who finished the tour before (the open steps only; js/guide.js
-// GuideProgress.reconcile), never to players who skipped it. The tour never takes the focus; its announcements are a
-// polite live region.
+// menu's Guide page. Tour steps that a later version adds show, the open
+// steps only, while the switch is on: for players who finished the tour
+// since 0.18.0 (finishing leaves it on), never for players who skipped it.
+// 0.17.0 turned it off on finishing too; those players get the "New" badges
+// (js/guide.js GuideProgress). The tour never takes the focus; its
+// announcements are a polite live region.
 //
 // When it runs is js/guide.js tourRuns: the player's own skirmish games
 // only, never missions, online games, replays or spectators.

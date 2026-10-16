@@ -467,27 +467,18 @@ test('guide versions: since per chapter and step, compared as versions; the real
   assert.equal(CONTENT.version, GUIDE_BASELINE, '0.17.0 content is the baseline');
 });
 
-test('guide updates: a 0.17.0 player who finished the tour gets the new steps as New and the tour for the new tour step only', () => {
+test('guide updates: a 0.17.0 player whose tour is done gets the new steps as New; the switch stays as stored; turned on, the tour shows the new step only', () => {
   const registry = createRegistry({ storage: memoryStorage() });
-  // As 0.17.0 left it: the tour done and its switch turned off by that, no guide.seen.
+  // As 0.17.0 left it: every tour step done and the switch off (finished or skipped: 0.17.0 cannot tell), no guide.seen.
   registry.patch('guide', { tourInGames: false, done: BASELINE_DONE });
   const progress = new GuideProgress(registry, LATER);
   progress.reconcile();
   assert.equal(registry.get('guide', 'seen'), GUIDE_BASELINE);
-  assert.equal(progress.tourInGames, true, 'finished, not skipped: the switch comes back on');
+  assert.equal(progress.tourInGames, false, 'the switch stays as stored');
+  assert.equal(tourRuns({ kind: 'skirmish' }, progress), false);
   assert.deepEqual(progress.newSteps(), NEW_IDS);
   // What was done stays done.
   for (const id of Object.keys(BASELINE_DONE)) assert.ok(progress.isDone(id), id);
-  // The tour runs again in the next skirmish, at the new step, the old ones shown done.
-  assert.equal(tourRuns({ kind: 'skirmish' }, progress), true);
-  assert.equal(progress.tourStep(), 'base.silo');
-  const model = tourModel(progress);
-  assert.match(model.where, /6 of 6/);
-  assert.deepEqual(model.dots, ['done', 'done', 'done', 'done', 'done', 'active']);
-  // Once only: the player skips the new tour, the next start leaves it skipped.
-  progress.setTourInGames(false);
-  progress.reconcile();
-  assert.equal(progress.tourInGames, false);
 
   // The game menu: the Guide button carries "3 new" until the Guide is opened.
   const { menu, root, guideButton } = guideMenu(progress, registry);
@@ -495,6 +486,8 @@ test('guide updates: a 0.17.0 player who finished the tour gets the new steps as
   assert.match(textOf(guideButton()), /3 new/);
   assert.ok(guideButton().querySelector('.ui-badge'));
   click(guideButton());
+  // The Guide's switch is off (the tour is not finished: a new tour step is open), so no Take the tour again.
+  assert.equal(root.querySelector('#guide-tour-in-games').checked, false);
   // The Guide opens at the first chapter with a new step; its steps and chapters say New for this visit.
   assert.equal(root.querySelector('.guide-chapter[aria-current="step"]').id, 'guide-chapter-base');
   assert.match(textOf(root.querySelector('[data-step="base.silo"]')), /New/);
@@ -507,6 +500,13 @@ test('guide updates: a 0.17.0 player who finished the tour gets the new steps as
   // Another chapter in the same visit still shows what was new.
   click(root.querySelector('#guide-chapter-ore'));
   assert.match(textOf(root.querySelector('[data-step="ore.derrick"]')), /New/);
+  // The player turns the tour on: the next skirmish shows the new tour step only, the old ones done.
+  check(root.querySelector('#guide-tour-in-games'), true);
+  assert.equal(tourRuns({ kind: 'skirmish' }, progress), true);
+  assert.equal(progress.tourStep(), 'base.silo');
+  const model = tourModel(progress);
+  assert.match(model.where, /6 of 6/);
+  assert.deepEqual(model.dots, ['done', 'done', 'done', 'done', 'done', 'active']);
   // The next time the menu opens, nothing is new any more.
   menu.close();
   menu.open();
@@ -517,19 +517,25 @@ test('guide updates: a 0.17.0 player who finished the tour gets the new steps as
   menu.dispose();
 });
 
-test('guide updates: a 0.17.0 player who skipped the tour gets the New badges, no tour', () => {
-  const registry = createRegistry({ storage: memoryStorage() });
-  registry.patch('guide', { tourInGames: false, done: { 'base.mcv': true } });
-  const progress = new GuideProgress(registry, LATER);
-  progress.reconcile();
-  assert.equal(registry.get('guide', 'seen'), GUIDE_BASELINE);
-  assert.equal(progress.tourInGames, false, 'skipped stays skipped');
-  assert.equal(tourRuns({ kind: 'skirmish' }, progress), false);
-  assert.deepEqual(progress.newSteps(), NEW_IDS);
-  const { menu, guideButton } = guideMenu(progress, registry);
-  menu.open();
-  assert.match(textOf(guideButton()), /3 new/);
-  menu.dispose();
+test('guide updates: a 0.17.0 player who skipped the tour gets the New badges, never the tour back, also with every tour step done', () => {
+  // Skipped early, and skipped then played on: 0.17.0's tracker ticked every tour step anyway.
+  for (const done of [{ 'base.mcv': true }, { ...BASELINE_DONE }]) {
+    const registry = createRegistry({ storage: memoryStorage() });
+    registry.patch('guide', { tourInGames: false, done });
+    const progress = new GuideProgress(registry, LATER);
+    progress.reconcile();
+    assert.equal(registry.get('guide', 'seen'), GUIDE_BASELINE);
+    assert.equal(progress.tourInGames, false, 'skipped stays skipped');
+    assert.equal(tourRuns({ kind: 'skirmish' }, progress), false);
+    assert.ok(progress.newSteps().includes('base.silo'));
+    // The next start changes nothing.
+    progress.reconcile();
+    assert.equal(progress.tourInGames, false);
+    const { menu, guideButton } = guideMenu(progress, registry);
+    menu.open();
+    assert.match(textOf(guideButton()), /\d new/);
+    menu.dispose();
+  }
 });
 
 test('guide updates: a player since 0.18.0 who finished the tour gets a later tour step; a new player sees no New badges', () => {

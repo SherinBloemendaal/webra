@@ -4104,7 +4104,9 @@ Debug and NetMenu.
   skips the tour (`tourInGames` off). `tourInGames` is the player's
   choice only: finishing the tour leaves it on (0.17.0 switched it off;
   see below), so tour steps a later version adds show in the next
-  skirmish, the open ones only. The Guide's "Take the tour again" (once
+  skirmish, the open ones only. Players who finished on 0.17.0, which
+  switched it off then, keep it off and find later tour steps through the
+  "New" badges and the Guide. The Guide's "Take the tour again" (once
   the tour is done), or turning "Tour in my games" on when every tour step
   is done, clears the tour's steps (the rest of the guide keeps its
   ticks), so it shows in the next skirmish. It sits above the command bar
@@ -4116,11 +4118,11 @@ Debug and NetMenu.
   `since`. `js/guide.js` `GuideProgress.reconcile()` runs at the start of
   each game: the first time (`guide.seen` not set), a player without
   history (no step done, the tour not switched off) has seen everything
-  (`guide.seen` = the newest `since`: no badges), a player of 0.17.0 has
-  seen `GUIDE_BASELINE`, and if that player finished the 0.17.0 tour
-  (which switched it off) `tourInGames` goes on again, while a player who
-  skipped it keeps it off and only gets the badges. To add guide content
-  in a release:
+  (`guide.seen` = the newest `since`: no badges), and a player of 0.17.0
+  has seen `GUIDE_BASELINE`. `tourInGames` stays as stored: 0.17.0 turned
+  it off both on finishing and on skipping, and its tracker ticked tour
+  steps whatever the switch said, so the two cannot be told apart. To add
+  guide content in a release:
   1. Add the step to its chapter in `GUIDE` (`js/help.js`) with
      `since: 'x.y.z'`, the version it ships in (the next release), or add a
      chapter with `since` (its steps inherit it). Give a tour chapter step
@@ -4132,7 +4134,8 @@ Debug and NetMenu.
      back done. Never change the `since` of shipped content.
   4. Players who had the guide before see the step as "New" until they
      open the Guide; a new tour step runs in the next skirmish for players
-     whose tour is on (finished included), never for those who skipped it.
+     whose tour is on (finished since 0.18.0 included), never for those
+     whose switch is off (skipped, or finished on 0.17.0).
 - **Sound and Music dialogs**: `.ui-dialog` cards with `.ui-btn` buttons;
   the music player's tracks carry a lamp.
 - **Debug menu** (`js/debug.js`): the panel on the right with a hazard

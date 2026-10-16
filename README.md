@@ -212,7 +212,7 @@ them (WebRA's own art and synthesized sounds).
 - [x] Loading OpenRA `.oramap` maps
 - [x] The Red Alert campaign and expansion missions with OpenRA's Lua scripts
 - [x] In-game menu (Esc) with tabbed settings (game, graphics with the texture pack cards, controls, hotkeys with search, sound, privacy, advanced) and rebindable hotkeys (OpenRA defaults), fullscreen, OpenRA's **game info** (objectives with every player's score by team and state, the briefing, the lobby options as played) beside the actions, **Surrender** in online games and a **Network** tab for online games (everyone's ping over the last minute, stalls and waiting time; it shows once the online screen hands the game its connection quality)
-- [x] **Guide** in the game menu: seven chapters whose steps tick off by themselves as you play, and a **tour** in your first skirmish games (not missions, online games or replays) that lights up what to build next; Skip skips a step or the tour, and "Tour in my games" turns it on again. Steps that later versions add show as **New** in the game menu and the Guide, and new tour steps come to players who finished the tour (not to those who skipped it)
+- [x] **Guide** in the game menu: seven chapters whose steps tick off by themselves as you play, and a **tour** in your first skirmish games (not missions, online games or replays) that lights up what to build next; Skip skips a step or the tour, and "Tour in my games" turns it on again. Steps that later versions add show as **New** in the game menu and the Guide, and new tour steps come to players whose tour is still on (finished from 0.18.0 on, never skipped)
 - [x] Mobile/touch controls
 
 ## Architecture
