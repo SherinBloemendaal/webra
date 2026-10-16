@@ -7,9 +7,14 @@ import {
   ACCOUNT_FLAGS,
   ACCOUNT_ROLES,
   ACCOUNT_STATUSES,
+  applyGuideAction,
   BAN_REASON_MAX,
   emailKey,
   flagsToMask,
+  GUIDE_ACTIONS,
+  GUIDE_PROGRESS_FILTERS,
+  guideIndex,
+  guideSummary,
   mergeSiteSettings,
   usernameKey,
   validAvatarColor,
@@ -18,6 +23,7 @@ import {
   validFlags,
   validLabel,
   validUsername,
+  validateSettingsDocument,
 } from '@webra/protocol';
 import { HttpError, json } from '../http.js';
 import { check, invalid } from './context.js';
@@ -38,6 +44,7 @@ const noContent = () => new Response(null, { status: 204, headers: { 'cache-cont
 const notFound = (what = 'user') => new HttpError(404, 'not_found', `No such ${what}.`);
 const forbidden = (message = 'You do not have permission for this.') => new HttpError(403, 'forbidden', message);
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 function page(url) {
   const p = Number(url.searchParams.get('page') ?? '1');
@@ -96,6 +103,48 @@ function reasonOf(v, field = 'reason') {
 
 const SORTS = { created: 'u.created_at', lastSeen: 'u.last_seen_at', username: 'u.username_key' };
 
+/**
+ * SQL for the number of guide steps an account has done: the steps of the
+ * guide (packages/protocol GUIDE_OUTLINE) that are `true` in its settings
+ * document's guide.done; 0 without a document. The step ids are a literal
+ * (the users count query binds only the filters' parameters); they are
+ * generated ids of letters and dots, checked here anyway.
+ */
+function guideDoneSql() {
+  const ids = guideIndex().stepIds;
+  if (!ids.every((id) => /^[A-Za-z0-9._-]+$/.test(id))) throw new Error('unexpected guide step id');
+  return `(SELECT COUNT(*) FROM settings_docs s, json_each(s.doc, '$.guide.done') j
+     WHERE s.user_id = u.id AND j.type = 'true' AND j.key IN (SELECT value FROM json_each('${JSON.stringify(ids)}')))`;
+}
+
+/**
+ * The guide progress of an account from its settings document
+ * (docs/accounts-api.md 8.11): packages/protocol guideSummary, whether the
+ * account has a document at all and when it was last written. Admins only.
+ */
+export function guideView(doc) {
+  return { ...guideSummary(doc.settings?.guide), stored: doc.version > 0, updatedAt: doc.updatedAt ?? null };
+}
+
+/** guideView for each listed account (one query): user id -> view. */
+async function guideViews(db, ids) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const { results } = await db.prepare('SELECT user_id, version, doc, updated_at FROM settings_docs WHERE user_id IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(ids)).all();
+  const docs = new Map(results.map((r) => [r.user_id, r]));
+  for (const id of ids) {
+    const r = docs.get(id);
+    let settings = {};
+    try {
+      settings = r ? JSON.parse(r.doc) : {};
+    } catch {
+      settings = {};
+    }
+    out.set(id, guideView(r ? { version: r.version, updatedAt: r.updated_at, settings } : { version: 0, updatedAt: null, settings }));
+  }
+  return out;
+}
+
 async function listUsers(ctx) {
   const actor = await ctx.requireRole('moderator');
   const moderator = actor.role !== 'admin';
@@ -134,8 +183,21 @@ async function listUsers(ctx) {
     if (!Object.hasOwn(ACCOUNT_FLAGS, flag)) throw invalid('flag', 'Unknown flag.');
     where.push(`(u.flags & ${arg(ACCOUNT_FLAGS[flag])}) != 0`);
   }
-  const sort = SORTS[url.searchParams.get('sort') ?? 'created'];
-  if (!sort) throw invalid('sort', 'sort must be created, lastSeen or username.');
+  // Guide progress (admins: it comes from the settings document): a filter and a sort by steps done.
+  const guide = url.searchParams.get('guide');
+  const sortName = url.searchParams.get('sort') ?? 'created';
+  let guideDone = null;
+  if (guide || sortName === 'guide') {
+    if (moderator) throw forbidden('Only admins see guide progress.');
+    guideDone = guideDoneSql();
+  }
+  if (guide) {
+    if (!GUIDE_PROGRESS_FILTERS.includes(guide)) throw invalid('guide', `guide must be ${GUIDE_PROGRESS_FILTERS.join(', ')}.`);
+    const total = guideIndex().stepIds.length;
+    where.push(guide === 'none' ? `${guideDone} = 0` : guide === 'done' ? `${guideDone} = ${total}` : `${guideDone} BETWEEN 1 AND ${total - 1}`);
+  }
+  const sort = sortName === 'guide' ? guideDone : SORTS[sortName];
+  if (!sort) throw invalid('sort', 'sort must be created, lastSeen, username or guide.');
   const order = (url.searchParams.get('order') ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
   if (!['asc', 'desc', null].includes(url.searchParams.get('order'))) throw invalid('order', 'order must be asc or desc.');
   const base = userSelect(where.join(' AND '));
@@ -144,7 +206,9 @@ async function listUsers(ctx) {
     .prepare(`${base} ORDER BY ${sort} ${order}, u.id LIMIT ${limit} OFFSET ${offset}`)
     .bind(ctx.now, ...args)
     .all();
-  return json({ users: results.map((r) => adminUser(r, { moderator })), total: total.n, page: p, limit });
+  const guides = moderator ? null : await guideViews(ctx.db, results.map((r) => r.id));
+  const users = results.map((r) => (guides ? { ...adminUser(r), guide: guides.get(r.id) } : adminUser(r, { moderator })));
+  return json({ users, total: total.n, page: p, limit });
 }
 
 async function userDetail(ctx, { id }) {
@@ -153,6 +217,7 @@ async function userDetail(ctx, { id }) {
   const bans = (await ctx.db.prepare('SELECT * FROM account_bans WHERE user_id = ?1 ORDER BY id DESC LIMIT 50').bind(row.id).all()).results.map(accountBanView);
   if (actor.role !== 'admin') return json({ user: adminUser(row, { moderator: true }), bans });
   const ips = (await ctx.db.prepare('SELECT ip, first_seen, last_seen, count FROM user_ips WHERE user_id = ?1 ORDER BY last_seen DESC').bind(row.id).all()).results;
+  const settings = await getSettingsDoc(ctx.db, row.id);
   return json({
     user: adminUser(row),
     sessions: (await listSessions(ctx.db, row.id)).map((s) => {
@@ -162,7 +227,8 @@ async function userDetail(ctx, { id }) {
     passkeys: (await listPasskeys(ctx.db, row.id)).map((p) => ({ id: p.id, name: p.name, alg: p.alg, createdAt: p.created_at, lastUsedAt: p.last_used_at, counterError: p.counter_error === 1 })),
     ips: ips.map((r) => ({ ip: r.ip, firstSeen: r.first_seen, lastSeen: r.last_seen, count: r.count })),
     bans,
-    settings: await getSettingsDoc(ctx.db, row.id),
+    settings,
+    guide: guideView(settings),
     relay: await relayQuotas(ctx.db, ctx.salt(), row.id, ctx.now),
     emailLink: await pendingAddressLink(ctx, row.id),
     emailSending: (await ctx.eff()).login.email,
@@ -542,6 +608,54 @@ async function putUserSettings(ctx, { id }) {
   return settingsResponse(doc);
 }
 
+/**
+ * An admin guide action on an account's settings document (docs/accounts-api.md
+ * 8.11): `complete`, `reset` or `restartTour` (packages/protocol
+ * applyGuideAction). The document gets a new version (the game takes it on its
+ * next sync) and a newer guide.resetAt, which wins the sync's merge on every
+ * device (reset and complete; restartTour keeps the epoch). A write of the
+ * player meanwhile is merged by doing the action again on the newer document,
+ * at most three times. 409 when the account has no settings document yet:
+ * its progress is only in the player's browser, and a new document would
+ * replace the settings of that browser at its next sync.
+ */
+async function guideAction(ctx, { id }) {
+  const body = await ctx.body(['action']);
+  const actor = await ctx.requireRole('admin');
+  const row = await target(ctx, id);
+  if (!GUIDE_ACTIONS.includes(body.action)) throw invalid('action', `action must be one of ${GUIDE_ACTIONS.join(', ')}.`);
+  let before = await getSettingsDoc(ctx.db, row.id);
+  if (before.version === 0) throw new HttpError(409, 'conflict', 'This player has no settings in the account yet: their guide progress is only in their browser until they play signed in.');
+  await ctx.limit('admin-guide', actor.id, 120, HOUR_MS);
+  for (let attempt = 1; ; attempt++) {
+    if (attempt > 1) before = await getSettingsDoc(ctx.db, row.id);
+    const settings = check(() => validateSettingsDocument({ ...before.settings, guide: applyGuideAction(before.settings.guide, body.action, ctx.now) }, 'settings'), 'settings');
+    let doc;
+    try {
+      doc = await putSettingsDoc(ctx.db, row.id, before.version, settings, actor.id, ctx.now);
+    } catch (err) {
+      if (!(err instanceof HttpError) || err.code !== 'version_conflict') throw err;
+      if (attempt < 3) continue;
+      // Not the player's "merge and try again": the admin only has to ask again.
+      throw new HttpError(409, 'conflict', "The player's settings kept changing; try again in a moment.");
+    }
+    await audit(
+      ctx.db,
+      {
+        actor,
+        action: 'user.guide_update',
+        targetType: 'user',
+        targetId: row.id,
+        targetLabel: row.username,
+        before: { version: before.version, guide: before.settings.guide ?? {} },
+        after: { action: body.action, version: doc.version, guide: settings.guide },
+      },
+      ctx.now,
+    );
+    return settingsResponse({ ...doc, guide: guideView(doc) });
+  }
+}
+
 // ---- IP bans ---------------------------------------------------------------------------------
 
 async function listIpBans(ctx) {
@@ -743,6 +857,7 @@ export function registerAdminRoutes(router) {
     .add('DELETE', '/api/admin/users/:id/relay-quota', resetRelayQuota)
     .add('GET', '/api/admin/users/:id/settings', getUserSettings, read)
     .add('PUT', '/api/admin/users/:id/settings', putUserSettings)
+    .add('POST', '/api/admin/users/:id/guide', guideAction)
     .add('GET', '/api/admin/ip-bans', listIpBans, read)
     .add('POST', '/api/admin/ip-bans', createIpBan)
     .add('PATCH', '/api/admin/ip-bans/:id', patchIpBan)

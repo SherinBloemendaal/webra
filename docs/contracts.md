@@ -4389,6 +4389,36 @@ Debug and NetMenu.
   game) shows the question in the next skirmish. It is asked once per
   player, ever: Take the tour again does not ask again, and players who
   skipped the tour are not asked.
+- **Reset guide progress** (the Guide page, shown while there is progress:
+  a step done, the tour switched off or the quick tips question asked):
+  the game menu's confirm step (Back returns to the Guide), then
+  `GuideProgress.resetProgress()`: no step done, `tourInGames` on,
+  `quickTipsAsked` false (the last card asks again), and a new reset epoch
+  `guide.resetAt`. `guide.seen` stays: it holds what the player was shown,
+  not progress, and setting it back would mark every step "New". Take the
+  tour again stays as it is (only the tour's counted steps) and keeps the
+  epoch: the set merge removes the tour's steps on the other devices and
+  keeps the passive and outside steps they ticked meanwhile. The epoch makes
+  a reset win the account sync on every device (docs/accounts-api.md 5.8,
+  the epoch rule): the side of a merge with the newer epoch gives
+  `guide.done`, `tourInGames` and `quickTipsAsked` whole instead of the set
+  merge, which would bring back steps another device still had. Device
+  clocks order two resets: when device A (clock ahead) resets and device B
+  resets later while it has not synced A's reset, B's reset is absorbed by
+  A's newer epoch at B's next sync (steps B ticked after its reset are
+  dropped). Clients before 0.20.0 leave `guide.resetAt` out of what they
+  upload, so during a rolling upgrade a current device uploads its progress
+  whole and the steps a 0.19 client ticked since its last sync can be
+  overwritten. Admins can complete, reset or restart a player's guide from
+  the dashboard (docs/accounts-api.md 8.11); the game takes it the same way.
+- **Guide outline for the server**: `packages/protocol/src/guide-outline.js`
+  is the guide's structure without texts (chapters, step ids, `since`,
+  `after`, `parallel`, `passive`, `outside`, the tour order), generated from
+  `GUIDE` by `node tools/gen-guide-outline.mjs`; CI and
+  `tools/gen-guide-outline.test.mjs` fail when it is out of date. The
+  protocol package's `src/guide.js` computes the admin's progress view and
+  the admin actions from it with the rules of `GuideProgress`
+  (`apps/game/tests/guide.test.mjs` compares the two).
 - **Guide content in later versions**: every chapter of `GUIDE` has
   `since`, the version that brought it (0.17.0 for the first guide,
   `GUIDE_BASELINE`); a step added to an existing chapter later has its own
@@ -4423,6 +4453,7 @@ Debug and NetMenu.
      open the Guide; a new tour step runs in the next skirmish for players
      whose tour is on (finished since 0.18.0 included), never for those
      whose switch is off (skipped, or finished on 0.17.0).
+  5. Regenerate the server's outline: `node tools/gen-guide-outline.mjs`.
 - **Sound and Music dialogs**: `.ui-dialog` cards with `.ui-btn` buttons;
   the music player's tracks carry a lamp.
 - **Debug menu** (`js/debug.js`): the panel on the right with a hazard

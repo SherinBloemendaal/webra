@@ -49,6 +49,7 @@ import {
   SOCIAL_SETTING_DEFAULTS,
   NET_SETTING_DEFAULTS,
 } from '../protocol/accounts.js';
+import { GUIDE_RESET_AT_MAX } from '../protocol/guide.js';
 import { PRESETS_MAX, presetNameKey, validateSavedPresets } from '../protocol/presets.js';
 
 /** localStorage key of the registry document. */
@@ -378,6 +379,9 @@ export const GROUPS = deepFreeze({
       lastTip: { type: 'integer', default: -1, min: -1, max: LOADING_TIP_INDEX_MAX, label: 'Last loading tip shown' },
       // The tour's last card asked whether to keep game.quickTips (js/tour.js): once per player, ever.
       quickTipsAsked: { type: 'boolean', default: false, label: 'Quick tips question asked' },
+      // The reset epoch (Unix ms, 0: never reset): a reset of the progress sets a newer one, and in the account
+      // sync the newer epoch gives guide.done, tourInGames and quickTipsAsked whole (js/account/sync.js EPOCH_MERGE).
+      resetAt: { type: 'integer', default: 0, min: 0, max: GUIDE_RESET_AT_MAX, label: 'Guide progress reset at' },
     },
   },
   extra: {

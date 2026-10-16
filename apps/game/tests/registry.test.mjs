@@ -426,12 +426,12 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   const protocol = await import('../protocol/accounts.js');
   assert.deepEqual(Object.keys(GROUPS.net.settings), ['warnSelf', 'warnOthers', 'signalBars']);
   assert.deepEqual(Object.keys(GROUPS.social.settings), ['showOnline', 'friendsJoin', 'allowSpectate']);
-  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'seen', 'lastTip', 'quickTipsAsked']);
+  assert.deepEqual(Object.keys(GROUPS.guide.settings), ['tourInGames', 'done', 'seen', 'lastTip', 'quickTipsAsked', 'resetAt']);
   const r = createRegistry({ storage: null });
   // Defaults: every network aid on; shown online and joinable by friends, spectating off; the tour on.
   assert.deepEqual(r.values().net, { warnSelf: true, warnOthers: true, signalBars: true });
   assert.deepEqual(r.values().social, { showOnline: true, friendsJoin: true, allowSpectate: false });
-  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, seen: null, lastTip: -1, quickTipsAsked: false });
+  assert.deepEqual(r.values().guide, { tourInGames: true, done: {}, seen: null, lastTip: -1, quickTipsAsked: false, resetAt: 0 });
   // The tour's last card asks about the quick tips (game.quickTips, on by default) once.
   assert.equal(r.values().game.quickTips, true);
   assert.deepEqual(r.values().net, { ...protocol.NET_SETTING_DEFAULTS });
@@ -442,10 +442,11 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   // Values the registry keeps pass the server; what it refuses, the server refuses too.
   r.patch('net', { warnSelf: false, signalBars: false });
   r.patch('social', { allowSpectate: true, showOnline: false });
-  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12, quickTipsAsked: true });
+  r.patch('guide', { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12, quickTipsAsked: true, resetAt: 1_760_000_000_000 });
   r.patch('game', { quickTips: false });
   const doc = r.document();
-  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12, quickTipsAsked: true });
+  assert.deepEqual(protocol.validateSettingsDocument(doc).guide, { tourInGames: false, done: { 'ch1.deploy': true, 'ch1.power': true }, seen: '0.18.0', lastTip: 12, quickTipsAsked: true, resetAt: 1_760_000_000_000 });
+  assert.equal(GROUPS.guide.settings.resetAt.max, (await import('../protocol/guide.js')).GUIDE_RESET_AT_MAX);
   assert.equal(protocol.validateSettingsDocument(doc).game.quickTips, false);
   assert.deepEqual(doc.social, { showOnline: false, friendsJoin: true, allowSpectate: true });
   for (const bad of [
@@ -458,6 +459,10 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
     { guide: { done: [] } },
     { guide: { seen: 18 } },
     { guide: { quickTipsAsked: 'yes' } },
+    { guide: { resetAt: -1 } },
+    { guide: { resetAt: 1.5 } },
+    { guide: { resetAt: 9e15 } },
+    { guide: { resetAt: '1760000000000' } },
     { game: { quickTips: 1 } },
     { guide: { seen: 'not a version!' } },
     { guide: { done: { 'bad key!': true } } },
@@ -497,6 +502,39 @@ test('registry: the 0.17 keys (network warnings, friends privacy, guide and tips
   const big = mergeSettings({ base, local: done(many('x')), remote: done(many('y')) });
   assert.deepEqual(big.conflicts.map((c) => `${c.group}.${c.key}`), ['guide.done']);
   assert.deepEqual(big.merged.guide.done, many('y'));
+});
+
+test('registry: a newer guide reset epoch gives the guide progress whole; equal epochs merge step by step', () => {
+  const g = (guide) => normalizeValues({ guide }).values;
+  const old = { done: { a: true, b: true }, tourInGames: false, quickTipsAsked: true, resetAt: 0 };
+  // The account was reset (an admin, or the player on another device); this device still has its steps.
+  const remote = g({ done: {}, tourInGames: true, quickTipsAsked: false, resetAt: 500 });
+  for (const base of [g(old), null]) {
+    // A step done here meanwhile, and another setting: the reset wins the progress, the other setting merges.
+    const local = { ...g({ ...old, done: { a: true, b: true, c: true } }), audio: { ...g({}).audio, master: 0.25 } };
+    const m = mergeSettings({ base, local, remote });
+    assert.deepEqual(m.merged.guide.done, {}, `no step comes back (base ${base ? 'kept' : 'none'})`);
+    assert.equal(m.merged.guide.tourInGames, true);
+    assert.equal(m.merged.guide.quickTipsAsked, false);
+    assert.equal(m.merged.guide.resetAt, 500);
+    // Never a conflict for the guide (without a base every other difference is one, as before).
+    assert.deepEqual(m.conflicts.map((c) => `${c.group}.${c.key}`), base ? [] : ['audio.master']);
+    if (base) assert.equal(m.merged.audio.master, 0.25);
+  }
+  // The other way round: this device reset later than the account: its progress goes up whole.
+  const mine = g({ done: { x: true }, tourInGames: true, quickTipsAsked: false, resetAt: 900 });
+  const theirs = g({ ...old, done: { a: true, b: true, y: true }, resetAt: 500 });
+  const up = mergeSettings({ base: g({ ...old, resetAt: 500 }), local: mine, remote: theirs });
+  assert.deepEqual(up.merged.guide.done, { x: true });
+  assert.equal(up.merged.guide.resetAt, 900);
+  assert.deepEqual(up.conflicts, []);
+  // The same epoch on both sides: the usual set merge (steps done after the reset add up).
+  const same = mergeSettings({ base: g({ done: {}, resetAt: 500 }), local: g({ done: { a: true }, resetAt: 500 }), remote: g({ done: { b: true }, resetAt: 500 }) });
+  assert.deepEqual(same.merged.guide.done, { a: true, b: true });
+  // Settings outside the progress (the loading tip, guide.seen) follow their own rules whatever the epochs.
+  const tips = mergeSettings({ base: g({ lastTip: 1 }), local: g({ lastTip: 4, seen: '0.19.0' }), remote: g({ lastTip: 1, resetAt: 7, seen: '0.18.0' }) });
+  assert.equal(tips.merged.guide.lastTip, 4);
+  assert.equal(tips.merged.guide.seen, '0.19.0');
 });
 
 test('registry: guide.seen syncs as the newer version of two devices, never a conflict', () => {

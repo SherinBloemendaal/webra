@@ -200,6 +200,7 @@ Every check is made on the server. `self` means the signed-in account.
 | Password reset link | | | yes |
 | Delete, restore, purge accounts | | | yes |
 | Read and edit any settings document | | | yes |
+| Guide progress of users, complete, reset or restart it (8.11) | | | yes |
 | IP bans | | | yes |
 | Site settings | | | yes |
 | Audit log | | | yes |
@@ -859,7 +860,9 @@ Serialized size at most 32 KiB.
     "tourInGames": true,           // the tour starts by itself in the player's skirmish games
     "done": { "ch1.deploy": true },  // guide and tour steps done: step id -> true, JSON object at most 2 KiB
     "seen": "0.18.0",              // the newest guide content the player was shown, a version (left out: not yet)
-    "lastTip": -1                  // index of the last loading screen tip shown, -1 to 999 (-1: none yet)
+    "lastTip": -1,                 // index of the last loading screen tip shown, -1 to 999 (-1: none yet)
+    "quickTipsAsked": false,       // the tour's last card asked about game.quickTips
+    "resetAt": 0                   // the reset epoch: Unix ms of the last reset of the progress (0: never)
   },
   "extra": { }                     // any JSON object for future keys, at most 8 KiB serialized
                                    // (the game keeps e.g. "mouseCaptureHints": 0..99 and the
@@ -879,7 +882,37 @@ Serialized size at most 32 KiB.
   by step when two devices changed it (`mergeSettings` in
   `apps/game/js/account/sync.js`): a step stays when both have it or one side
   added it, a step one side removed stays removed; only a result over 2 KiB
-  is a conflict.
+  is a conflict. A reset epoch decides first (`guide.resetAt` below).
+- `guide.resetAt`: an integer from 0 to 8.64e15 (`GUIDE_RESET_AT_MAX`), the
+  reset epoch of the guide progress. A reset of the whole progress sets a
+  newer one: the player's Reset guide progress (the Guide page) and the
+  admin's `reset` and `complete` (8.11). Take the tour again and the admin's
+  `restartTour` keep the epoch: the set merge already removes the tour's
+  steps on a device that has a base, and a newer epoch would drop the
+  passive and outside steps other devices ticked meanwhile (a device without
+  a base, its first sync with changes of its own, can bring tour steps back
+  there; that is accepted). The new epoch is the current time, but at
+  least the stored epoch plus 1 (`nextGuideEpoch` in the protocol package,
+  `src/guide.js`), so a clock that is behind still moves it on. **The epoch
+  rule** (`EPOCH_MERGE` in `apps/game/js/account/sync.js`): when the two sides
+  of a merge have different epochs, the side with the newer one gives
+  `guide.done`, `guide.tourInGames`, `guide.quickTipsAsked` and the epoch
+  whole (`GUIDE_EPOCH_KEYS`), never a conflict, also on a device without a
+  base. Without it the set merge of `guide.done` would bring back the steps a
+  device still had from before the reset. Steps a device ticked off before it
+  learned of a newer reset are dropped with them: the reset counts as later
+  than anything that device did. Equal epochs merge as described above.
+  `guide.seen` and `guide.lastTip` keep their own rules.
+  Device clocks decide the order of two resets: device A, whose clock is
+  ahead, resets; device B resets later in real time while it has not synced
+  A's reset. B's epoch is lower than A's, so at B's next sync A's reset
+  wins and B's is absorbed (both are resets, so the progress ends up empty
+  either way, but steps B ticked after its own reset are dropped too).
+  Clients before 0.20.0 do not know the key and leave it out of the
+  document they upload (like `guide.seen` with 0.17 clients). During such a
+  rolling upgrade a current device then has the newer epoch and uploads its
+  progress whole: the steps a 0.19 client ticked since its last sync with
+  that device can be overwritten.
 - `guide.seen`: a version (the same rule as `releaseNotes.lastSeenVersion`).
   It only moves forward: when two devices differ, the game keeps the newer
   one (`NEWEST_MERGE` in `apps/game/js/account/sync.js`), never a conflict.
@@ -1370,14 +1403,19 @@ is left out.
 
 ### 8.1 Users
 
-`GET /api/admin/users?q=&status=&role=&flag=&sort=&order=&page=&limit=`
+`GET /api/admin/users?q=&status=&role=&flag=&guide=&sort=&order=&page=&limit=`
 
 - `q`: matches username, display name or email (case-insensitive substring;
   moderators: username and display name only), at most 100 characters.
 - `status`: one of the five statuses (`banned` means a ban in effect).
-- `role`, `flag`: exact. `sort`: `created` (default), `lastSeen`, `username`.
+- `role`, `flag`: exact. `sort`: `created` (default), `lastSeen`, `username`,
+  `guide` (admins: guide steps done, 8.11).
   `order`: `desc` (default) or `asc`. `page` from 1, `limit` 1 to 100 (25).
-- `200 { "users": [AdminUser], "total", "page", "limit" }`
+- `guide` (admins): `none` (no guide step done, or no settings document),
+  `started` (some), `done` (every step). Moderators asking for the guide
+  filter or sort get `403 forbidden`.
+- `200 { "users": [AdminUser], "total", "page", "limit" }`; for admins each
+  user also has `guide`: a GuideProgress (8.11).
 
 `GET /api/admin/users/:id` -> `200`:
 
@@ -1389,6 +1427,7 @@ is left out.
   "ips": [{ "ip": "203.0.113.7", "firstSeen", "lastSeen", "count" }],
   "bans": [{ "id", "reason", "createdAt", "createdBy", "expiresAt", "revokedAt", "revokedBy" }],
   "settings": { "version", "updatedAt", "settings" },
+  "guide": GuideProgress,
   "relay": RelayBudgets,
   "emailLink": { "purpose": "verify" | "change", "email", "sentAt", "expiresAt" } | null,
   "emailSending": true
@@ -1396,7 +1435,7 @@ is left out.
 ```
 
 Moderators get `user`, `bans` and `passkeys` count only (`sessions`, `ips`,
-`settings`, `relay`, `emailLink`, `emailSending` are left out). `relay` is
+`settings`, `guide`, `relay`, `emailLink`, `emailSending` are left out). `relay` is
 described in 8.10. `emailLink` is the account's open verification or change
 link (8.6); `emailSending` whether links can be sent now (`login.email`).
 `emailSetAt` (AdminUser) is when the current address was set.
@@ -1521,7 +1560,7 @@ Expired IP bans are deleted 90 days after they end.
   `actor` null is the system (scheduled purges and expiries). Actions: `user.update`,
   `user.approve`, `user.reject`, `user.ban`, `user.unban`, `user.logout`,
   `user.session_revoke`, `user.password_reset_link`, `user.delete`,
-  `user.restore`, `user.purge`, `user.settings_update`,
+  `user.restore`, `user.purge`, `user.settings_update`, `user.guide_update`,
   `user.relay_quota_reset`, `user.expire` (system: an unconfirmed signup
   expired, 2.2), `user.email_verify`, `user.email_resend`, `ipban.create`,
   `ipban.update`, `ipban.delete`, `site.update`. Entries are kept 365 days.
@@ -1579,6 +1618,75 @@ current window ends (unix milliseconds).
   (all zero). The audit entry `user.relay_quota_reset` stores what was used
   before, without the addresses.
 
+### 8.11 Guide progress (admin)
+
+A player's progress through the game's guide and tour, read from the
+`guide` section of their settings document (5.8) against the guide's
+structure (`GUIDE_OUTLINE`, generated from the game's `help.js` GUIDE by
+`tools/gen-guide-outline.mjs`; `guideSummary` in the protocol package,
+`src/guide.js`, the same rules as the game's `GuideProgress`):
+
+```json
+{
+  "steps": { "done": 15, "total": 32 },          // guide steps done (steps the guide no longer has do not count)
+  "tour": {
+    "done": 12, "total": 26,                     // the steps the tour counts (not passive or outside ones)
+    "state": "running",                          // running | finale | finished | off
+    "chapter": "ore", "chapterIndex": 2, "chapters": 7,  // the tour's chapter, its place in the tour order (null when done)
+    "step": "ore.truck"                          // its open step whose turn it is (null when done)
+  },
+  "tourInGames": true, "quickTipsAsked": false,
+  "seen": "0.19.0",                              // guide content seen, null: not set yet
+  "resetAt": 1760000000000,                      // the last reset (null: never)
+  "version": "0.19.0",                           // the guide content the server knows
+  "stored": true,                                // false: no settings document yet (the rest are defaults)
+  "updatedAt": 1760000000000                     // when the settings document was last written
+}
+```
+
+`state`: `running` (the switch is on, a tour step is open), `finale` (every
+tour step done, the last card with the quick tips question has not shown
+yet), `finished`, `off` (skipped or switched off before the end).
+
+`POST /api/admin/users/:id/guide` (admin) `{ "action": "complete" | "reset" | "restartTour" }`
+-> `200 { "version", "updatedAt", "settings", "guide": GuideProgress }` with
+the new `ETag`:
+
+- `reset`: no step done, `tourInGames` on, `quickTipsAsked` false (the
+  player's own Reset guide progress does the same). `guide.seen` stays: the
+  guide content the player was shown stays shown.
+- `restartTour`: the tour's steps start over, passive and outside steps keep
+  their ticks, `tourInGames` on (Take the tour again). The epoch stays
+  (5.8): the set merge removes the tour's steps on the player's devices.
+- `complete`: every step done and `quickTipsAsked` true, so no tour card
+  shows at all (the quick tips question is the tour's last card: an admin
+  who completes the guide for a player ends the tour); `tourInGames` stays
+  as it is, as when a player finishes the tour.
+
+`reset` and `complete` set a newer `guide.resetAt` (the epoch rule of 5.8).
+Each action keeps every other setting, validates the result (`validateSettingsDocument`) and writes it as
+a new version (`updated_by` is the admin). The game takes it on its next
+sync (start, sign-in, or its next upload, which gets `412` and merges):
+without unsynced changes it takes the document as it is; with them, the
+newer epoch wins the guide progress, so steps the device still has do not
+come back, and there is no conflict question. A write of the player in
+between (`412` inside the server) is merged by doing the action again on the
+newer document, at most three times; after that the answer is
+`409 conflict` "The player's settings kept changing; try again in a
+moment." and nothing is written. `409 conflict` also when the account has no
+settings document yet: its progress is only in the player's browser, and a
+document made by the server would replace that browser's settings at its
+first sync. `400 invalid` for another action or another field. The audit
+entry (`user.guide_update`) stores `{ version, guide }` before and
+`{ action, version, guide }` after. Rate limit: 9 (charged after the check
+for a settings document).
+
+The guide filter and sort of the users list (8.1) count the done steps with
+a `json_each` subquery over each listed account's settings document. That
+is fine for the current number of accounts; at a larger scale a
+`guide_done` column, kept up to date on every settings write, would be the
+fix.
+
 ## 9. Rate limits
 
 Per IP limits key on an HMAC of the address under the secret `IP_HASH_SALT`
@@ -1604,6 +1712,7 @@ write.
 | Discord start | burst per IP (20 per 15 minutes) |
 | Profile changes | 30 per hour per account |
 | Settings document writes | 120 per hour per account |
+| Admin guide actions (8.11) | 120 per hour per admin |
 | Data export | 5 per hour per account |
 | Replay uploads (5.10) | 60 per hour per account |
 | Replay downloads (5.10) | 300 per hour per account |

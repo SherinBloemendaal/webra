@@ -1,9 +1,11 @@
 // State of the admin dashboard without DOM (apps/website/assets/admin.js):
 // what a role may do (docs/accounts-api.md 2.3), the users table (search,
-// filters, sorting, pages, selection for bulk actions) and the audit log
-// filters, kept in the address fragment so a view can be shared and reloaded.
+// filters, sorting, pages, selection for bulk actions), the guide progress
+// lines (8.11) and the audit log filters, kept in the address fragment so a
+// view can be shared and reloaded.
 
 import { ACCOUNT_FLAG_NAMES, ACCOUNT_ROLES, ACCOUNT_STATUSES, ACCOUNT_STORED_STATUSES } from '../../protocol/accounts.js';
+import { GUIDE_PROGRESS_FILTERS } from '../../protocol/guide.js';
 
 /** Statuses, roles and flags: the protocol package's (packages/protocol/src/accounts.js). */
 export const STATUSES = ACCOUNT_STATUSES;
@@ -13,7 +15,9 @@ export const ROLES = ACCOUNT_ROLES;
 const FLAG_LABELS = { content_autoinstall: 'One-click content install' };
 /** Flag -> label for people (a flag the client has no words for shows its name). */
 export const FLAGS = Object.freeze(Object.fromEntries(ACCOUNT_FLAG_NAMES.map((f) => [f, FLAG_LABELS[f] ?? f])));
-export const SORTS = Object.freeze({ created: 'Created', lastSeen: 'Last seen', username: 'Username' });
+export const SORTS = Object.freeze({ created: 'Created', lastSeen: 'Last seen', username: 'Username', guide: 'Guide' });
+/** The users filter on guide progress (admins, packages/protocol GUIDE_PROGRESS_FILTERS). */
+export const GUIDE_FILTERS = Object.freeze(Object.fromEntries(GUIDE_PROGRESS_FILTERS.map((f) => [f, { none: 'Not started', started: 'In progress', done: 'Every step done' }[f] ?? f])));
 /** Audit actions (apps/server/src/accounts/audit.js AUDIT_ACTIONS, docs/accounts-api.md 8.9). */
 export const AUDIT_ACTIONS = Object.freeze([
   'user.update',
@@ -28,6 +32,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'user.restore',
   'user.purge',
   'user.settings_update',
+  'user.guide_update',
   'user.relay_quota_reset',
   'user.expire',
   'user.email_verify',
@@ -67,6 +72,8 @@ export function permissions(role) {
     resetLink: admin,
     delete: admin,
     settings: admin,
+    /** See guide progress (it comes from the settings document) and complete, reset or restart it. */
+    guide: admin,
     ipBans: admin,
     site: admin,
     audit: admin,
@@ -99,7 +106,7 @@ export function relayLines(relay, when = (ms) => new Date(ms).toISOString()) {
   return { account: lines(relay?.account), networks, used: any(relay?.account) || networks.some((n) => n.used) };
 }
 
-export const DEFAULT_QUERY = Object.freeze({ q: '', status: '', role: '', flag: '', sort: 'created', order: 'desc', page: 1, limit: 25 });
+export const DEFAULT_QUERY = Object.freeze({ q: '', status: '', role: '', flag: '', guide: '', sort: 'created', order: 'desc', page: 1, limit: 25 });
 
 /** A valid users query from anything (the fragment, a form). */
 export function normalizeQuery(raw = {}) {
@@ -108,6 +115,7 @@ export function normalizeQuery(raw = {}) {
   if (STATUSES.includes(raw.status)) q.status = raw.status;
   if (ROLES.includes(raw.role)) q.role = raw.role;
   if (Object.hasOwn(FLAGS, raw.flag)) q.flag = raw.flag;
+  if (Object.hasOwn(GUIDE_FILTERS, raw.guide)) q.guide = raw.guide;
   if (Object.hasOwn(SORTS, raw.sort)) q.sort = raw.sort;
   if (raw.order === 'asc' || raw.order === 'desc') q.order = raw.order;
   const page = Number(raw.page);
@@ -120,7 +128,7 @@ export function normalizeQuery(raw = {}) {
 /** The API query of a table state: only what differs from the server's defaults is sent. */
 export function apiQuery(q) {
   const out = {};
-  for (const k of ['q', 'status', 'role', 'flag']) if (q[k]) out[k] = q[k];
+  for (const k of ['q', 'status', 'role', 'flag', 'guide']) if (q[k]) out[k] = q[k];
   if (q.sort !== 'created') out.sort = q.sort;
   if (q.order !== 'desc') out.order = q.order;
   if (q.page !== 1) out.page = q.page;
@@ -150,6 +158,7 @@ export class UsersTable {
   /** Sort by a column; the same column again flips the order. */
   sortBy(column) {
     if (!Object.hasOwn(SORTS, column)) return this.query;
+    // Username starts A to Z; dates and guide progress start with the newest and the furthest.
     const order = this.query.sort === column ? (this.query.order === 'asc' ? 'desc' : 'asc') : column === 'username' ? 'asc' : 'desc';
     this.query = normalizeQuery({ ...this.query, sort: column, order, page: 1 });
     return this.query;
@@ -195,6 +204,45 @@ export class UsersTable {
     const to = Math.min(this.total, from + this.users.length - 1);
     return `${from} to ${to} of ${this.total}`;
   }
+}
+
+/** Where the tour is (packages/protocol GUIDE_TOUR_STATES), for people. */
+export const TOUR_STATE_LABELS = Object.freeze({
+  running: 'Running',
+  finale: 'Done, the last card (quick tips question) still to show',
+  finished: 'Finished',
+  off: 'Skipped or switched off',
+});
+
+/**
+ * The users table's guide column for a user's `guide` (docs/accounts-api.md
+ * 8.11): "12/26 tour, 15/32 guide", or that nothing is stored yet.
+ */
+export function guideLine(g) {
+  if (!g) return '';
+  if (!g.stored) return 'No settings yet';
+  return `${g.tour.done}/${g.tour.total} tour, ${g.steps.done}/${g.steps.total} guide`;
+}
+
+/**
+ * The guide facts of the user drawer: [label, text] pairs. `when(ms)`
+ * formats a time.
+ */
+export function guideFacts(g, when = (ms) => new Date(ms).toISOString()) {
+  if (!g?.stored) return [['Progress', 'No settings in the account yet: the progress is only in the player\'s browser until they play signed in.']];
+  const t = g.tour;
+  const tourText = t.state === 'running' || t.state === 'off' ? `${TOUR_STATE_LABELS[t.state]}, ${t.done} of ${t.total} tour steps` : TOUR_STATE_LABELS[t.state] ?? t.state;
+  const where = t.chapter ? `Chapter ${t.chapterIndex + 1} of ${t.chapters} (${t.chapter})${t.step ? `, step ${t.step}` : ''}` : 'Every tour step done';
+  return [
+    ['Guide', `${g.steps.done} of ${g.steps.total} steps done`],
+    ['Tour', tourText],
+    ['Tour position', where],
+    ['Tour in my games', g.tourInGames ? 'on' : 'off'],
+    ['Quick tips question', g.quickTipsAsked ? 'asked' : 'not asked yet'],
+    ['Guide content seen', g.seen ?? 'not set yet (before the first game)'],
+    ['Last reset', g.resetAt ? when(g.resetAt) : 'never'],
+    ['Settings updated', g.updatedAt ? when(g.updatedAt) : 'unknown'],
+  ];
 }
 
 /** The dashboard view in the fragment: `#users?status=pending_approval&page=2`, `#user=<id>`, `#site`. */

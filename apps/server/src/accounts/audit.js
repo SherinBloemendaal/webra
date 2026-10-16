@@ -15,6 +15,7 @@ export const AUDIT_ACTIONS = Object.freeze([
   'user.restore',
   'user.purge',
   'user.settings_update',
+  'user.guide_update',
   'user.relay_quota_reset',
   'user.expire',
   'user.email_verify',

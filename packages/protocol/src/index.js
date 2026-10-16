@@ -160,3 +160,17 @@ export {
   validPresetName,
   validateSavedPresets,
 } from './presets.js';
+export {
+  applyGuideAction,
+  GUIDE_ACTIONS,
+  GUIDE_EPOCH_KEYS,
+  GUIDE_OUTLINE,
+  GUIDE_PROGRESS_FILTERS,
+  GUIDE_RESET_AT_MAX,
+  GUIDE_TOUR_STATES,
+  guideIndex,
+  guideSummary,
+  guideValues,
+  nextGuideEpoch,
+  tourPosition,
+} from './guide.js';
