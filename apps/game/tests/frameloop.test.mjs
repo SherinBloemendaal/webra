@@ -119,7 +119,7 @@ test('main.js: the loop is createFrameLoop and the guide, the tour and the other
   assert.match(main, /const frame = createFrameLoop\(\{/);
   assert.equal((main.match(/rafId = requestAnimationFrame\(frame\)/g) ?? []).length, 1, 'only the first frame is asked for by hand');
   assert.match(main, /strict: \(\) => !firstFrame\.drawn/);
-  for (const call of ['guideTracker?.onEvents(events)', 'guideTracker?.onState(', 'tour?.refresh()', 'commandBar.update()', 'commandBar.frame()', 'pings.onEvents(', 'audio?.frame(']) {
+  for (const call of ['guideTracker?.onEvents(events)', 'guideTracker?.onState(', 'tour?.refresh(state)', 'commandBar.update()', 'commandBar.frame()', 'pings.onEvents(', 'audio?.frame(']) {
     const at = main.indexOf(call);
     assert.ok(at > 0, call);
     assert.match(main.slice(Math.max(0, at - 40), at), /safe\('[a-z ]+', \(\) =>\s*$/, `${call} runs through safe()`);

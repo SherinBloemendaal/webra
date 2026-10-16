@@ -373,6 +373,39 @@
   font-size: var(--ui-fs-s);
 }
 
+/* The step that runs beside the main one ("Also: train infantry"). */
+.tour-also {
+  margin: 0;
+  padding-left: var(--ui-space-2);
+  border-left: calc(2 * var(--ui-px)) solid color-mix(in srgb, var(--ui-tip-key) 55%, transparent);
+  color: var(--ui-text-2);
+}
+
+/* Low power while the tour runs. */
+.tour-warn {
+  margin: 0;
+  padding: var(--ui-space-1) var(--ui-space-2);
+  border: 1px solid var(--ui-led-warn);
+  border-radius: var(--ui-radius);
+  color: var(--ui-warn);
+  font-weight: 700;
+}
+
+.tour-also[hidden],
+.tour-warn[hidden],
+.tour-watch[hidden],
+.tour-finale[hidden],
+.tour-dots[hidden] {
+  display: none;
+}
+
+/* The last card: the quick tips question. */
+.tour-finale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+}
+
 .tour-foot {
   display: flex;
   flex-wrap: wrap;
@@ -411,6 +444,10 @@
   background: var(--ui-led-ok);
 }
 
+.tour-dot-also {
+  background: color-mix(in srgb, var(--ui-tip-key) 50%, var(--ui-led-off));
+}
+
 .tour-dot-active {
   background: var(--ui-tip-key);
   box-shadow: 0 0 0 calc(2 * var(--ui-px)) var(--ui-metal-0), 0 0 0 3px var(--ui-tip-key);
@@ -439,6 +476,12 @@
   outline: calc(2 * var(--ui-px)) solid var(--ui-tip-key);
   outline-offset: -2px;
   animation: tour-pulse 1.6s ease-out infinite;
+}
+
+/* The "Also" step's cameo: the same frame, a dimmer pulse. */
+.sb-card.tour-target.tour-target-also {
+  outline-color: color-mix(in srgb, var(--ui-tip-key) 55%, transparent);
+  animation-duration: 2.4s;
 }
 
 @keyframes tour-pulse {
