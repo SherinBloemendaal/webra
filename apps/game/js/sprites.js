@@ -20,7 +20,7 @@ import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry
 import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
 import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
 import { EXPLOSIONS, FAKE_ACTORS, MUZZLE_ACTORS } from './content/tables.js';
-import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from './art/buildings.js';
+import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE, BUILDING_RISE } from './art/buildings.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from './art/animated.js';
 import { drawPixelCameo, pixelBox, pixelSlots } from './art/pixel.js';
 import { cameoInner, paintCameoBackdrop, paintCameoFrame, paintCameoShadow, paintFakeMark } from './art/cameo.js';
@@ -207,7 +207,17 @@ export function actorSprites(a) {
     const second = turret ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null);
     // The footprint; WebRA's pixel art that reaches past it (a mast) draws into a box grown around it.
     const [w, h] = pixelBox({ ...a, id: key }) ?? [a.width * 24, a.height * 24];
-    return { body: [w, h, draw], second, turret: !!turret };
+    // Vector art taller than its footprint (art/buildings.js BUILDING_RISE) grows its box upwards:
+    // the drawing keeps its footprint coordinates, the frame's centre moves up by half the rise.
+    const rise = BUILDING_DRAW[key] ? (BUILDING_RISE[key] ?? 0) : 0;
+    if (rise > 0) {
+      const body = [w, h + rise, (ctx, P) => {
+        ctx.translate(0, rise);
+        draw(ctx, P);
+      }];
+      return { body, second, turret: !!turret, rise, offset: [0, -rise / 2] };
+    }
+    return { body: [w, h, draw], second, turret: !!turret, rise: 0, offset: null };
   }
   if (a.kind === 'crate') {
     // Crates (art/leftovers.js): the land image, then the water image.
@@ -406,6 +416,12 @@ export function buildAtlas(actors, opts = {}) {
   }
   const plan = animationPlan(actors, list.length, (i) => slots.has(2 * i + 1));
   const meta = new Map(); // atlas index -> { offset, anim: [start, frames, fps] }
+  // Building bodies taller than their footprint (actorSprites `offset`): the frame sits higher.
+  actors.forEach((a, i) => {
+    if (a.kind !== 'building' || slots.has(2 * i)) return;
+    const { offset } = actorSprites(a);
+    if (offset) meta.set(2 * i, { offset, anim: [0, 0, 0] });
+  });
   const overlays = new Uint32Array(actors.length);
   for (const p of plan) {
     meta.set(p.head, { offset: p.offset, anim: [p.start, p.frames, p.fps] });
@@ -676,11 +692,13 @@ export function drawIcon(canvas, actor, teamRgb) {
   // animated building layers (their first frame) where they belong.
   const parts = [[body, 0, 0]];
   const anim = actor.kind === 'building' ? buildingAnim(spriteKey(actor.art ?? actor.id)) : null;
+  // A body grown upwards (actorSprites `rise`): the footprint and what sits on it start that much lower.
+  const rise = sprites.rise ?? 0;
   if (sprites.turret) {
     const [tw, th, draw] = sprites.second;
-    parts.push([draw, (w - tw) / 2, (h - th) / 2]);
+    parts.push([draw, (w - tw) / 2, (h + rise - th) / 2]);
   } else if (anim) {
-    parts.push([(c, p) => anim.draw(c, p, 0), 0, 0]);
+    parts.push([(c, p) => anim.draw(c, p, 0), 0, rise]);
   }
   const scale = Math.min(canvas.width / w, canvas.height / h) * (actor.kind === 'building' ? 0.92 : 0.8);
   ctx.save();
@@ -711,12 +729,14 @@ function cameoModel(typeName, kind) {
     const [cw, ch] = BUILDING_SIZE[key];
     const w = cw * 24;
     const h = ch * 24;
-    const parts = [[BUILDING_DRAW[key], 0, 0]];
+    // Art taller than its footprint (BUILDING_RISE) shows whole: the picture grows upwards.
+    const rise = BUILDING_RISE[key] ?? 0;
+    const parts = [[BUILDING_DRAW[key], 0, rise]];
     const t = BUILDING_TURRET[key];
-    if (t) parts.push([t[2], (w - t[0]) / 2, (h - t[1]) / 2]);
+    if (t) parts.push([t[2], (w - t[0]) / 2, rise + (h - t[1]) / 2]);
     const anim = buildingAnim(key);
-    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, 0]);
-    return { building: true, w, h, parts };
+    if (anim) parts.push([(c, P) => anim.draw(c, P, 0), 0, rise]);
+    return { building: true, w, h: h + rise, parts };
   }
   const d = UNIT_DRAW[key] ?? CIVILIAN_DRAW[key] ?? (kind ? fallbackUnit({ kind }) : null);
   if (!d) return null;
