@@ -545,20 +545,49 @@ body.editor {
   display: none;
 }
 
-.boot {
+/* Installed tiles being planned for most of the map (editor.js showTilesBusy):
+   a line at the top of the map, over it but not in the way (the editor stays
+   usable meanwhile). The spinner is the loading screen's (css/loading.css). */
+.busy {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 2rem;
-  background: var(--ui-bg);
-  color: var(--ui-muted);
-  font: 700 var(--ui-fs-l) var(--ui-font);
-  text-align: center;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: calc(100% - 2rem);
+  margin: 0;
+  padding: 0.4em 0.9em;
+  background: rgba(6, 7, 8, 0.85);
+  border: 1px solid var(--ui-edge);
+  color: var(--ui-text);
+  font: var(--ui-fs-s) / 1.4 var(--ui-font);
+  pointer-events: none;
 }
 
-.boot.error {
-  color: var(--ui-bad);
+.busy[hidden] {
+  display: none;
+}
+
+.busy .loading-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busy .loading-spinner {
+    animation: none;
+  }
+}
+
+/* The editor waits behind the boot screen (#boot, css/loading.css): hidden,
+   from the keyboard and screen readers too, but laid out, so the map view
+   can measure itself. */
+.is-booting #topbar,
+.is-booting #workspace {
+  visibility: hidden;
 }
 
 /* ---- Side panels ------------------------------------------------------------------ */

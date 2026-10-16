@@ -19,6 +19,7 @@ import { renderReport } from '../js/oramap/report.js';
 import { EditorArt } from './js/art.js';
 import { PREVIEW_NEUTRAL, PreviewWorld } from './js/world.js';
 import { InstalledTiles, TileWorker } from './js/tiles.js';
+import { LivePreview } from './js/live.js';
 import { idleTask } from './js/idle.js';
 import { MapDoc } from './js/doc.js';
 import { EditorView, controlOwnsKeys, isTyping } from './js/view.js';
@@ -39,6 +40,8 @@ import { PALETTE_GROUPS } from './js/palette.js';
 import { LIMITS, TERRAIN, TERRAIN_NAMES, byteLength, canonicalJson, createMap, isModded, mapFileName, mapFileText, parseMap, validateMap } from './js/mapformat.js';
 import { applyFix, openMapFile } from './js/upgrade.js';
 import { mapThumbnail } from '../js/protocol.js';
+import { motionReduced } from '../js/battlefx.js';
+import { bootEditor, editorBoot, requestFirstFrame } from './js/boot.js';
 import { LensArt } from '../js/maplens/source.js';
 import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
@@ -132,60 +135,82 @@ const tips = [];
 
 // ---- Boot ---------------------------------------------------------------------------
 
-async function boot() {
-  const bootEl = $('#boot');
-  const fail = (err) => {
-    bootEl.hidden = false;
-    bootEl.classList.add('error');
-    bootEl.textContent = `The editor cannot start: ${err?.message ?? err}.`;
-    console.error(err);
-  };
+/**
+ * The boot, step by step on the boot screen (js/boot.js, the game's boot
+ * screen with the editor's steps): it goes once the first frame of the map
+ * is drawn, and shows the error with Reload when a step fails.
+ */
+function boot() {
   let wasm;
-  try {
-    wasm = await init();
-    const engineRules = JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json());
-    actorList = engineRules.actors;
-    catalog = Object.fromEntries(actorList.map((a) => [a.id, a]));
-    rulesBase = await loadRulesBase();
-  } catch (err) {
-    fail(err);
-    return;
-  }
-  try {
-    renderer = await Renderer.create($('#view'));
-  } catch (err) {
-    fail(new Error(`${err?.message ?? err} It needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+)`));
-    return;
-  }
-  try {
-    // Installed content is read before the first frame, as a game does.
-    art = new EditorArt({ settings });
-    await art.load();
-    // Neutral actors (trees, civilians, tech buildings) in the civilian tan, as in a game (js/main.js).
-    TEAM_COLORS[PREVIEW_NEUTRAL] = NEUTRAL_COLOR.slice();
-    animClock.watchReducedMotion();
-    preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
-    const tileWorker = new TileWorker();
-    installedTiles = new InstalledTiles({ plan: (job) => tileWorker.plan(job), ready: () => view && (view.terrainDirty = true) });
-    thumbLens = new MapLens({
-      art: new LensArt({ Game, memory: () => wasm.memory, content: art.content }),
-      gameScale: () => gameScaleFor(settings, window),
-    });
-    await start();
-  } catch (err) {
-    fail(err);
-  }
+  let opening;
+  return bootEditor(
+    editorBoot,
+    {
+      engine: async () => {
+        wasm = await init();
+        const engineRules = JSON.parse(new Game(1, 'allies', 'soviet', 48).rules_json());
+        actorList = engineRules.actors;
+        catalog = Object.fromEntries(actorList.map((a) => [a.id, a]));
+      },
+      rules: async () => {
+        rulesBase = await loadRulesBase();
+      },
+      graphics: async () => {
+        try {
+          renderer = await Renderer.create($('#view'));
+        } catch (err) {
+          throw new Error(`${err?.message ?? err} It needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).`);
+        }
+      },
+      content: async () => {
+        // Installed content is read before the first frame, as a game does.
+        art = new EditorArt({ settings });
+        await art.load();
+        // Neutral actors (trees, civilians, tech buildings) in the civilian tan, as in a game (js/main.js).
+        TEAM_COLORS[PREVIEW_NEUTRAL] = NEUTRAL_COLOR.slice();
+        animClock.watchReducedMotion();
+        preview = new PreviewWorld({ Game, memory: () => wasm.memory, prepare: (g) => art.applyTo(g) });
+        const tileWorker = new TileWorker();
+        installedTiles = new InstalledTiles({ plan: (job) => tileWorker.plan(job), ready: () => view && (view.terrainDirty = true) });
+        thumbLens = new MapLens({
+          art: new LensArt({ Game, memory: () => wasm.memory, content: art.content }),
+          gameScale: () => gameScaleFor(settings, window),
+        });
+      },
+      map: async () => {
+        opening = await openFirstMap();
+      },
+      editor: () => start(opening),
+      // The original graphics' tiles of the map, planned in a worker (js/tiles.js): the screen waits a little for them.
+      tiles: () => (installedTiles.busy ? installedTiles.idle() : null),
+    },
+    { reducedMotion: motionIsReduced },
+  );
 }
 
-async function start() {
+/** "Reduce motion" (the game's setting, or the browser's), as js/main.js has it. */
+function motionIsReduced() {
+  return motionReduced(settings.get('reduceMotion'), !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+}
+
+/** The map the editor opens with (js/upgrade.js openMapFile of `?map=`, the draft or a new map), as the document. */
+async function openFirstMap() {
   loadPrefs();
   const { map: raw, note, edited = false } = await initialMap();
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
-  // A restored draft with changes not saved to a file stays marked as edited.
   // A restored draft with changes not saved to a file stays edited (a saved point no history reaches).
   savedPoint = edited ? { top: {}, time: -1 } : historyPoint();
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
+  return { note, first };
+}
+
+/** The first frame: `{ resolve, reject }` of start's promise until it is drawn (or throws). */
+let firstFrame = null;
+
+/** Build the editor around the opened map and start drawing; resolves once its first frame is drawn. */
+function start({ note, first }) {
+  const drawn = new Promise((resolve, reject) => (firstFrame = { resolve, reject }));
   view = new EditorView($('#view'), renderer, {
     down: (c, e) => ctl.down(c, e),
     move: (c, e) => ctl.move(c, e),
@@ -220,7 +245,6 @@ async function start() {
   view.setMap(doc);
   requestAnimationFrame(() => view.fit());
   onDocChange({ cells: true, objects: true, meta: true, resized: true }, { initial: true });
-  $('#boot').hidden = true;
   if (note || first.notice) toast([note, first.notice].filter(Boolean).join(' '), first.status !== 'current' && first.status !== 'upgraded');
   window.webraEditor = { doc, view, ctl, catalog, rulesBase, state, art, preview, keys };
   setInterval(saveRecovery, RECOVERY_EVERY_MS);
@@ -228,7 +252,8 @@ async function start() {
     autosave();
     saveRecovery();
   });
-  requestAnimationFrame(frame);
+  requestFirstFrame(frame);
+  return drawn;
 }
 
 /**
@@ -300,25 +325,55 @@ let previewDirty = true;
 /** The engine checks (Game.editor_cells, editor_report) are out of date. */
 let analysisDirty = true;
 
-/** Previews built so far, and the fog shown (js/world.js, Game.editor_fog). */
-let previewBuilds = 0;
+/** The fog shown (Game.editor_fog), for the full preview build it was made from. */
 let shownFog = 'clear';
 
 /** Layers that need the engine's cell checks. */
 const ANALYSIS_LAYERS = ['passability', 'buildable', 'zones', 'rush', 'reach'];
 
+/** Full preview builds (after a closed transaction): the fog preview follows them, not the live ones. */
+let fullBuilds = 0;
+/**
+ * When the preview is built (js/live.js): after every closed transaction,
+ * and during an edit that changes actors or trees at most every 100 ms (a
+ * slow build spaces them out more). Only the full builds rerun the checks.
+ */
+const livePreview = new LivePreview({
+  build: () => buildPreview(),
+  onFull: () => {
+    analysisDirty = true;
+    fullBuilds++;
+  },
+});
+
+/** A frame; the first one tells the boot whether the editor draws (a throw there is the boot's error, not a hang). */
 function frame(now) {
+  const first = firstFrame;
+  if (!first) return drawFrame(now);
+  firstFrame = null;
+  try {
+    drawFrame(now);
+  } catch (err) {
+    first.reject(err);
+    return;
+  }
+  first.resolve();
+}
+
+function drawFrame(now) {
   updatePanels();
   const dt = Math.min(0.25, (now - last) / 1000);
   animClock.advance(now - last, false);
   last = now;
   view.update(dt);
+  // A shape or a moved region follows the pointer once per frame.
+  ctl.flush();
   if (previewDirty) {
     previewDirty = false;
-    if (preview.update(doc.snapshot().json)) previewBuilds++;
-    if (preview.error) console.warn('Map preview:', preview.error);
+    livePreview.full();
     view.terrainDirty = true;
-    analysisDirty = true;
+  } else if (doc.inTransaction) {
+    liveFrame(now);
   }
   if (analysisDirty && preview.game && (ANALYSIS_LAYERS.some((k) => state.layers[k]) || activeTab === 'check')) {
     analysisDirty = false;
@@ -327,21 +382,56 @@ function frame(now) {
     if (activeTab === 'check') fairnessTask.soon();
   }
   // Fog preview: what the chosen spawn sees at the start, else everything visible.
-  const fogKey = state.layers.fog && preview.game ? `${previewBuilds}:${state.fogSpawn}` : 'clear';
+  const fogKey = state.layers.fog && preview.game ? `${fullBuilds}:${state.fogSpawn}` : 'clear';
   if (fogKey !== shownFog) {
     shownFog = fogKey;
     view.uploadFog(fogKey === 'clear' ? null : preview.game.editor_fog(state.fogSpawn));
   }
-  if (view.terrainDirty) view.updateTerrain(doc, preview.terrain(), installedTerrain);
+  if (view.terrainDirty) {
+    // During an edit the picture as patched so far (the preview is the map before it).
+    const live = view.live.bytes;
+    view.updateTerrain(doc, doc.inTransaction && live?.length === doc.width * doc.height * 4 ? live : preview.terrain(), installedTerrain);
+  }
   const scene = ctl.scene();
   const actors = state.layers.actors ? preview.sprites(view.viewRect()) : new Float32Array(0);
   view.draw(animClock.uniform(), actors, scene);
+  showTilesBusy(now);
   placeLabels(state.layers.spawns ? scene.labels : []);
   if (now - minimapTime > 66) {
     minimapTime = now;
     minimap.draw(doc, catalog, view.viewRect());
   }
   requestAnimationFrame(frame);
+}
+
+/** Build the engine preview of the map as it is now (js/world.js); the live view patches from it. The checks are `livePreview`'s to rerun. */
+function buildPreview() {
+  preview.update(doc.snapshot().json);
+  if (preview.error) console.warn('Map preview:', preview.error);
+  view.live.setBase(doc, preview.error ? null : preview.terrain());
+}
+
+/**
+ * The frame of an edit in progress (a transaction is open): the cells it
+ * changed since the last frame go into the drawn terrain and the minimap
+ * (only those, js/live.js); actors and trees it changed come with a new
+ * preview, at most every LIVE_PREVIEW_MS (js/live.js LivePreview).
+ */
+function liveFrame(now) {
+  const { cells, objects } = doc.takeLive();
+  if (cells.length) {
+    if (view.live.mark(doc, cells)) livePreview.want();
+    minimap.patch(doc, cells);
+  }
+  if (objects) {
+    livePreview.want();
+    minimap.invalidate();
+  }
+  if (livePreview.live(now)) {
+    // The cells patched from the document take the new preview's bytes (a tree cell is clear ground under its tree there).
+    view.live.remark(doc);
+  }
+  view.flushLive();
 }
 
 /**
@@ -355,6 +445,27 @@ function installedTerrain(bytes) {
   if (pack) return pack;
   const theater = currentTheater(biome);
   return theater ? installedTiles.tiles(theater, bytes, doc.width, doc.height) : null;
+}
+
+/**
+ * The busy line over the map (#busy): shown while the worker plans the
+ * installed tiles of most of the map (a map opened, resized or turned to
+ * another biome; js/tiles.js standIn), after BUSY_DELAY_MS so a quick plan
+ * shows nothing. The editor stays usable meanwhile (the map shows stand-in
+ * tiles), so this is a line, not a screen over it.
+ */
+const BUSY_DELAY_MS = 300;
+const BUSY_TEXT = 'Laying the terrain tiles...';
+let busySince = null;
+function showTilesBusy(now) {
+  const busy = !!installedTiles?.busy && installedTiles.standIn;
+  busySince = busy ? (busySince ?? now) : null;
+  const show = busy && now - busySince >= BUSY_DELAY_MS;
+  const el = $('#busy');
+  if (!el || el.hidden === !show) return;
+  el.hidden = !show;
+  // The polite status line says it once it shows (a change of visibility alone is not announced).
+  el.querySelector('.busy-text').textContent = show ? BUSY_TEXT : '';
 }
 
 /** The original theater files of the biome for the tile worker, read once per art change. */

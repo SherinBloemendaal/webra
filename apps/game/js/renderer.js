@@ -392,6 +392,18 @@ export class Renderer {
     this.uploadBytes += bytes.byteLength;
   }
 
+  /**
+   * The `w` x `h` cells at (x, y) of the terrain and the tile layer, from
+   * map-sized `terrain` and `cells` (RGBA per cell): the map editor uploads
+   * the cells an edit in progress changed, not the whole map.
+   */
+  uploadTerrainRect(terrain, cells, x, y, w, h) {
+    const layout = { offset: (y * this.mapW + x) * 4, bytesPerRow: this.mapW * 4 };
+    this.device.queue.writeTexture({ texture: this.terrainTex, origin: [x, y] }, terrain, layout, [w, h]);
+    this.device.queue.writeTexture({ texture: this.cellTex, origin: [x, y] }, cells, layout, [w, h]);
+    this.uploadBytes += w * h * 8;
+  }
+
   uploadFog(bytes) {
     this.device.queue.writeTexture({ texture: this.fogTex }, bytes, { bytesPerRow: this.mapW }, [this.mapW, this.mapH]);
     this.uploadBytes += bytes.byteLength;

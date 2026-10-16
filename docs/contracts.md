@@ -666,6 +666,43 @@ guards it by counting reads, not by the clock.
 - The shape preview (line, rectangle, ellipse while dragging) is made when
   its corners, the brush, the fill or the symmetry change, as runs of cells
   along each row (the same pixels as a rect per cell), not every frame.
+- Live edits (`editor/js/live.js`, `controller.js`, `doc.js`): every drag
+  tool changes the map while the pointer is down, inside one transaction
+  from press to release (one undo step; Esc rolls it back with
+  `MapDoc.rollback`, and the closed transaction rebuilds the picture).
+  Strokes add cells with each move; a shape or a moved region is remade
+  when its corner, offset or the tool settings changed, at most once a frame
+  (`Controller.flush`). A shape whose paint stayed the same gives back only
+  the cells that left it (`MapDoc.revertCells`) and paints only the ones that
+  came in, so a corner moved on a full-map filled rectangle costs its edge
+  (a 256 x 256 rectangle: about 3 ms a frame, median); with beaches along
+  painted water, a changed paint and for moved regions it is made again from
+  the start (`MapDoc.revert`, which keeps the transaction open). Undo or redo
+  during a drag rolls the drag back first (`MapDoc.undo`), so redo never
+  holds half an edit; a `pointercancel` from the system cancels the drag
+  too. A region moved by nothing still makes an undo step, and the analysis
+  layers and the checks follow at the release, not during the drag. `MapDoc.takeLive()` hands the frame the cells changed
+  since the last frame and whether spawns or actors changed (`touchObjects`
+  on every object change). The frame patches the uploaded picture instead of
+  rebuilding the engine preview: the changed cells' terrain bytes (the
+  preview's where the document still matches the preview, else the
+  document's, as `terrain_bytes` makes them), WebRA's tiles of the 16 x 16
+  chunks within four cells of them (`cellTiles` with an `area`, the decal
+  seed of the last full upload; exactly the full tiling's), or for installed
+  tiles the type's most common tile, then only those chunks go up
+  (`Renderer.uploadTerrainRect`). The minimap redraws the changed cells only
+  (`Minimap.patch`). Actors and the trees of tree terrain are the preview's:
+  a gesture that changes actors, spawns or tree cells builds the preview
+  again at most every 100 ms (`LivePreview`, `LIVE_PREVIEW_MS`), and less
+  often when a build is slow (at most an eighth of the time; one build of a
+  256 x 256 map with 2000 actors takes about 12 ms in Node); a tree cell
+  shows the tree tile until then. These live builds only draw: the checks
+  (`editor_cells`, the fairness table) and the fog preview follow the full
+  build after the commit. The commit builds the preview and the full picture as
+  before, with the new decal seed (the decals follow the whole map's terrain,
+  as in a game). The canvas captures the tool's pointer from press to
+  release; a capture lost without a release ends the gesture where the
+  pointer last was, and a second pointer starts no gesture.
 - After a burst of edits the editor runs, once and when the browser is idle
   (`js/idle.js`): the checks (engine `validate_map`, the editor's checks and
   quick fixes; 300 ms after the last change) and the draft save (800 ms).
@@ -684,7 +721,30 @@ guards it by counting reads, not by the clock.
   cells whose type changed since in the tile most cells of that type have in
   it, and WebRA's tiles until the first plan is in. The finished picture is
   the one a game on the map draws. Texture packs tile cell by cell on the
-  main thread.
+  main thread. While a plan runs and more than `STAND_IN_SHARE` (a quarter)
+  of the map shows stand-in tiles (a map opened, resized or turned to another
+  biome), a polite busy line over the map (`#busy`, after 300 ms) says
+  "Laying the terrain tiles". It is a line, not a loading screen: the editor
+  stays usable meanwhile, and the work that blocks (building the preview and
+  the atlas) is done within a frame or two.
+- Boot screen (`editor/index.html #boot`, `editor/js/boot.js`): the game's
+  boot screen (`js/bootscreen.js`, `css/loading.css`, section 5 "Start,
+  loading, end of game and statistics screens") with the title "Map editor"
+  and the steps `files`, `engine`, `rules`, `graphics`, `content`, `map`,
+  `tiles` and `editor` (`EDITOR_BOOT_STEPS`; `BootScreen` takes `steps`,
+  `optional` and `app`). The section carries `data-boot="editor"`, so the
+  game's `bootScreen` leaves it alone; `editor/js/boot.js` loads ahead of
+  editor.js and watches `editor/editor.js` (`watchGameFiles` `main`).
+  `bootEditor` runs the steps in order; `editor` resolves once the first
+  frame of the map is drawn (a throw there fails it; in a hidden tab the
+  first frame is drawn from a timer, `requestFirstFrame`, since animation
+  frames wait for the tab to show), `tiles` waits at most
+  `BOOT_WAIT_MS` for the installed tiles' first plan (`InstalledTiles.idle`),
+  then the screen fades. A failing step shows "The map editor could not
+  start" with Reload; the late line's link goes to `editor/` (the page's base
+  is `/play/`). `body.is-booting` hides `#topbar` and `#workspace`. The CSP of
+  `/play/*` (apps/website/_headers, apps/server/src/static-headers.js) covers
+  the page: no inline scripts or styles.
 
 ## 3. Game options (lobby to engine)
 

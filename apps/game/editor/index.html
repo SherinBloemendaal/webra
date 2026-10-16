@@ -18,9 +18,45 @@
     <link rel="stylesheet" href="css/patterns.css" />
     <link rel="stylesheet" href="css/tooltip.css" />
     <link rel="stylesheet" href="css/maplens.css" />
+    <link rel="stylesheet" href="css/loading.css" />
     <link rel="stylesheet" href="editor/editor.css" />
   </head>
-  <body class="editor">
+  <body class="editor is-booting">
+    <!-- The boot screen (editor/js/boot.js, the game's js/bootscreen.js and css/loading.css): over the page
+         from its first paint until the editor is usable, with the boot's real steps as lamps. Static, so it
+         shows before any script; .is-booting hides the editor behind it until then. -->
+    <section id="boot" class="loading-screen" data-boot="editor" aria-busy="true" aria-labelledby="boot-title">
+      <div class="loading-card">
+        <div class="loading-intro">
+          <div class="loading-brand ui-brand" aria-hidden="true"><img class="ui-brand-emblem" src="brand/favicon.svg" alt="" width="34" height="34" /><span class="ui-brand-word">Web<span>RA</span></span></div>
+          <p class="loading-kicker">Starting up</p>
+          <h1 id="boot-title" class="loading-title">Map editor</h1>
+        </div>
+        <div class="loading-bottom">
+          <div class="loading-head">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <p class="loading-status" role="status" aria-live="polite">Loading the editor files...</p>
+          </div>
+          <div class="loading-bar" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="loading-bar-fill"></span></div>
+          <ol class="loading-steps">
+            <li class="loading-step" data-step="files" data-state="active" aria-current="step">Loading the editor files</li>
+            <li class="loading-step" data-step="engine" data-state="pending">Starting the engine</li>
+            <li class="loading-step" data-step="rules" data-state="pending">Reading the rules</li>
+            <li class="loading-step" data-step="graphics" data-state="pending">Checking the graphics card</li>
+            <li class="loading-step" data-step="content" data-state="pending">Reading installed content</li>
+            <li class="loading-step" data-step="map" data-state="pending">Opening the map</li>
+            <li class="loading-step" data-step="tiles" data-state="pending">Laying the terrain tiles</li>
+            <li class="loading-step" data-step="editor" data-state="pending">Opening the editor</li>
+          </ol>
+          <noscript><p class="loading-error">The map editor needs JavaScript. Turn it on for this site and reload the page.</p></noscript>
+          <!-- Shown by css/loading.css after a long wait (no script needed): a link to this page (against the
+               base, /play/) reloads it. With scripts the status line above says it too (js/bootscreen.js), so
+               screen readers hear it, and Reload reloads the page as it is (its ?map= too). -->
+          <p class="boot-late">This is taking longer than usual. Check your internet connection, or <a class="boot-reload" href="editor/">reload the page</a>.</p>
+        </div>
+      </div>
+    </section>
+
     <header id="topbar">
       <a class="brand ui-brand" href="./" title="Back to the game"><img class="ui-brand-emblem" src="brand/favicon.svg" alt="WebRA" width="30" height="30" /><span class="ui-brand-word">Map editor</span></a>
       <nav id="commands" aria-label="Map"></nav>
@@ -42,7 +78,8 @@
         <div id="labels" aria-hidden="true"></div>
         <div id="viewbar" aria-label="View"></div>
         <div id="status" role="status"></div>
-        <div id="boot" class="boot">Loading the engine...</div>
+        <!-- Installed tiles being planned for most of the map (editor.js showTilesBusy); the editor stays usable. -->
+        <p id="busy" class="busy" hidden><span class="loading-spinner" aria-hidden="true"></span><span class="busy-text" role="status" aria-live="polite"></span></p>
       </main>
 
       <aside id="side" aria-label="Map panels">
@@ -56,6 +93,8 @@
     <input id="file-input" type="file" accept=".json,application/json,.oramap" hidden />
 
     <script type="module" src="js/telemetry/boot.js"></script>
+    <!-- The boot screen's steps; editor/editor.js imports the same module and goes on with them. -->
+    <script type="module" src="editor/js/boot.js"></script>
     <script type="module" src="editor/editor.js"></script>
   </body>
 </html>

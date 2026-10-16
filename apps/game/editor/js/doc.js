@@ -45,6 +45,12 @@ export class MapDoc {
      */
     this.version = 0;
     this.snap = null;
+    /**
+     * What the open transaction changed since the editor last drew it
+     * (`takeLive`): the cells, and whether spawns or actors changed. A
+     * gesture's edit shows while it goes on, before its commit.
+     */
+    this.live = { cells: new Set(), objects: false };
     this.load(map);
   }
 
@@ -54,6 +60,7 @@ export class MapDoc {
   load(map) {
     const { terrain, ore, gems } = decodeLayers(map);
     this.version++;
+    this.dropLive();
     this.width = map.width;
     this.height = map.height;
     this.terrain = terrain;
@@ -192,14 +199,15 @@ export class MapDoc {
     this.terrain[i] = t;
     this.ore[i] = o;
     this.gems[i] = g;
-    this.tx.dirtyCells = true;
+    this.live.cells.add(i);
     return true;
   }
 
-  /** Call before mutating `spawns` or `actors` inside a transaction. */
+  /** Call before mutating `spawns` or `actors` inside a transaction (each time: the change then shows live). */
   touchObjects() {
     this.autoBegin('Edit');
     if (!this.tx.objects) this.tx.objects = { spawns: clone(this.spawns), actors: clone(this.actors) };
+    this.live.objects = true;
   }
 
   /** Call before mutating `meta` or `rules` inside a transaction. */
@@ -217,6 +225,7 @@ export class MapDoc {
     const tx = this.tx;
     if (!tx) return;
     this.tx = null;
+    this.dropLive();
     const entry = { label: tx.label, kind: 'edit', coalesceKey: tx.coalesceKey, time: Date.now() };
     let changed = false;
     if (tx.cells.size) {
@@ -273,6 +282,7 @@ export class MapDoc {
     if (!tx) return;
     this.tx = null;
     this.version++;
+    this.dropLive();
     for (const [i, [t, o, g]] of tx.cells) {
       this.terrain[i] = t;
       this.ore[i] = o;
@@ -287,6 +297,67 @@ export class MapDoc {
       this.rules = tx.meta.rules;
     }
     this.emit({ cells: tx.cells.size > 0, objects: !!tx.objects, meta: !!tx.meta, resized: false });
+  }
+
+  /**
+   * Undo what the open transaction changed so far and keep it open: a
+   * gesture that makes its edit again from the start (a shape whose corner
+   * moved, a region dragged on) changes the map only once, as one step.
+   */
+  revert() {
+    const tx = this.tx;
+    if (!tx) return;
+    for (const [i, [t, o, g]] of tx.cells) {
+      this.terrain[i] = t;
+      this.ore[i] = o;
+      this.gems[i] = g;
+      this.live.cells.add(i);
+    }
+    if (tx.objects) {
+      this.spawns = tx.objects.spawns;
+      this.actors = tx.objects.actors;
+      this.live.objects = true;
+    }
+    if (tx.meta) {
+      this.meta = tx.meta.meta;
+      this.rules = tx.meta.rules;
+    }
+    tx.cells = new Map();
+    tx.objects = null;
+    tx.meta = null;
+  }
+
+  /**
+   * Put cells `list` (indices) back as they were before the open
+   * transaction, which stays open: a dragged shape gives back the cells
+   * that left it.
+   */
+  revertCells(list) {
+    const tx = this.tx;
+    if (!tx) return;
+    for (const i of list) {
+      const before = tx.cells.get(i);
+      if (!before) continue;
+      [this.terrain[i], this.ore[i], this.gems[i]] = before;
+      tx.cells.delete(i);
+      this.live.cells.add(i);
+    }
+  }
+
+  /**
+   * The live changes since the last call: `{ cells, objects }` (cell
+   * indices, whether spawns or actors changed). Empty outside a
+   * transaction: a closed one tells its listeners (`onChange`).
+   */
+  takeLive() {
+    const out = { cells: [...this.live.cells], objects: this.live.objects };
+    this.dropLive();
+    return out;
+  }
+
+  dropLive() {
+    this.live.cells.clear();
+    this.live.objects = false;
   }
 
   push(entry) {
@@ -305,8 +376,12 @@ export class MapDoc {
     return this.redoStack.length > 0;
   }
 
+  /**
+   * Undo the last step. An open transaction (a drag in progress) is rolled
+   * back first, not recorded: redo never holds half an edit.
+   */
   undo() {
-    if (this.tx) this.commit();
+    if (this.tx) this.rollback();
     const e = this.undoStack.pop();
     if (!e) return null;
     this.apply(e, 'before');
@@ -314,8 +389,9 @@ export class MapDoc {
     return e.label;
   }
 
+  /** Redo the last undone step (an open transaction is rolled back first, as for undo). */
   redo() {
-    if (this.tx) this.commit();
+    if (this.tx) this.rollback();
     const e = this.redoStack.pop();
     if (!e) return null;
     this.apply(e, 'after');
@@ -325,6 +401,7 @@ export class MapDoc {
 
   apply(e, side) {
     this.version++;
+    this.dropLive();
     if (e.kind === 'replace') {
       this.load(e[side]);
       this.emit({ cells: true, objects: true, meta: true, resized: true });

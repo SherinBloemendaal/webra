@@ -579,7 +579,7 @@ test('the map editor: every spelling of its URL ends on /play/editor/, and it an
     const base = new URL(html.match(/<base href="([^"]+)"/)[1], new URL(path, ORIGIN));
     const refs = [...html.matchAll(/(?:href|src)="([^"#]+)"/g)].map((m) => new URL(m[1], base).pathname).filter((p) => p !== base.pathname);
     for (const p of new Set([...refs, ...[...graph].map((g) => `/play/${g}`)])) {
-      if (p === '/play/') continue; // the game itself (the brand link)
+      if (p === '/play/' || p === '/play/editor/') continue; // the game itself (the brand link) and this page (the boot screen's reload link)
       const asset = await b.get(p, SUB);
       assert.equal(asset.status, 200, `${spelling}: ${p} ${asset.status}`);
       assert.equal(asset.res.headers.get('content-type'), TYPES[p.split('.').pop()], p);
