@@ -40,9 +40,10 @@ export const isRemap = (index) => index >= REMAP_START && index <= REMAP_END;
  * Colour and team-mask lookup of a palette, RGBA per index:
  * `{ color: Uint8Array(1024), mask: Uint8Array(256) }`. With `remap`, the
  * remap range becomes grey levels with mask 255 (the shader tints them);
- * `shadow` lists the indices drawn as translucent black.
+ * `shadow` lists the indices drawn as translucent black, `transparent` the
+ * ones not drawn (OpenRA PaletteFromFile TransparentIndex, default 0).
  */
-export function paletteLookup(rgb, { remap = true, shadow = ACTOR_SHADOW } = {}) {
+export function paletteLookup(rgb, { remap = true, shadow = ACTOR_SHADOW, transparent = [TRANSPARENT_INDEX] } = {}) {
   const color = new Uint8Array(256 * 4);
   const mask = new Uint8Array(256);
   const lum = (i) => (0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2]) / 255;
@@ -50,7 +51,7 @@ export function paletteLookup(rgb, { remap = true, shadow = ACTOR_SHADOW } = {})
   for (let i = REMAP_START; i <= REMAP_END; i++) top = Math.max(top, lum(i));
   for (let i = 0; i < 256; i++) {
     const o = i * 4;
-    if (i === TRANSPARENT_INDEX) continue;
+    if (transparent.includes(i)) continue;
     if (shadow.includes(i)) {
       color[o + 3] = SHADOW_ALPHA;
       continue;

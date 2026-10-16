@@ -72,7 +72,7 @@ function resolveAll(defs) {
   const resolve = (name, seen = []) => {
     if (cache.has(name)) return cache.get(name);
     if (seen.includes(name)) throw new Error(`inheritance cycle at ${name}`);
-    // A parent outside data/source (e.g. ^Palettes of OpenRA's palettes.yaml) adds nothing sound related.
+    // A parent outside data/source (e.g. OpenRA's ^MapGenerators) adds nothing sound related.
     if (!defs[name]) return {};
     let result = {};
     const own = {};

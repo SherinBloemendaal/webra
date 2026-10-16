@@ -10,7 +10,7 @@ import { actorSprites, buildAtlas, animationPlan, workingPlan, spriteList, drawC
 import { MODE, POSE, POSE_COUNT, onceTicks, packSprite } from '../js/content/sequences.js';
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from '../js/art/animated.js';
-import { worldBox, worldDraw } from '../js/art/world.js';
+import { worldBox, worldDraw, MINE_ORE, MINE_GEMS } from '../js/art/world.js';
 import { pixelSlots } from '../js/art/pixel.js';
 import init, { Game } from '../pkg/webra_sim.js';
 
@@ -351,6 +351,39 @@ function rasterMask(draw, w, h, biome = 'temperate') {
 
 /** The shapes of a recorded log without their colours (a stroke keeps its width). */
 const shapesOf = (log) => log.map((l) => (l.startsWith('fill:') ? 'fill' : l.startsWith('stroke:') ? `stroke:${l.split(':').pop()}` : l)).join('|');
+
+test('the ore and gem mines: a shaft in a rocky rim, ore colours against gem colours, per biome', () => {
+  const fills = (id, biome) => {
+    const log = [];
+    const bounds = [];
+    worldDraw({ id, kind: 'building', width: 1, height: 1 })(fakeContext(log, bounds, true), passes({ team: 0 }, biome).colour);
+    return { styles: new Set(log.filter((l) => l.startsWith('fill:') || l.startsWith('stroke:')).map((l) => l.split(':')[1])), bounds };
+  };
+  const ore = [MINE_ORE.base, MINE_ORE.lit];
+  const gems = [MINE_GEMS.blue, MINE_GEMS.magenta, MINE_GEMS.glint];
+  const rims = new Set();
+  for (const biome of BIOMES) {
+    const mine = fills('MINE', biome);
+    const gmine = fills('GMINE', biome);
+    for (const [name, { styles }] of [['MINE', mine], ['GMINE', gmine]]) {
+      // The dark shaft and its lit inner wall (design canvas "Ertsmijn": a mine, not a mound).
+      assert.ok(styles.has('#14110d') && styles.has('#3a3026'), `${name} ${biome}: no shaft`);
+    }
+    for (const c of ore) {
+      assert.ok(mine.styles.has(c), `MINE ${biome}: ore colour ${c}`);
+      assert.ok(!gmine.styles.has(c), `GMINE ${biome}: ore colour ${c}`);
+    }
+    for (const c of gems) {
+      assert.ok(gmine.styles.has(c), `GMINE ${biome}: gem colour ${c}`);
+      assert.ok(!mine.styles.has(c), `MINE ${biome}: gem colour ${c}`);
+    }
+    // The rim's rocks look like the biome.
+    rims.add([...mine.styles].filter((c) => !ore.includes(c)).sort().join());
+    // The ore spills over most of the cell: nuggets reach its lower left quarter.
+    assert.ok(mine.bounds.some((b) => b.style === MINE_ORE.base && b.x1 < 12 && b.y0 > 12), `MINE ${biome}: no spilled ore`);
+  }
+  assert.equal(rims.size, BIOMES.length, 'every biome has its own rock tones');
+});
 
 test('the mask check finds translucent paint over team colour and team colour outside the box', () => {
   const m = rasterMask((ctx, P) => {
