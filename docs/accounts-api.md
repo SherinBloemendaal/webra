@@ -1287,8 +1287,9 @@ actions that change what the friends' lists show. An admin's settings write
 or guide action (8.7, 8.11) sends `settings/updated` to every device of the
 player and `admin/user_updated` to the other dashboards.
 
-**Ending sign-ins.** Every path that ends a sign-in session closes its
-sockets with 4001 `signed_out`: sign-out, revoking one or all other
+**Ending sign-ins.** Every path that ends a sign-in session sends its
+sockets an `account/signed_out` event (acted on at once: a close frame can
+take seconds to arrive) and closes them with 4001 `signed_out`: sign-out, revoking one or all other
 sessions, a password change or reset, deletion, rejection, a ban, an admin's
 forced sign-out or session revocation, a role change or deactivation (also
 while the setting is off). The page then asks `GET /api/auth/me` and shows
