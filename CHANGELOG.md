@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.20.0](https://github.com/SherinBloemendaal/webra/compare/v0.19.0...v0.20.0) (2026-10-16)
+
+
+### Features
+
+* **engine:** give placed structures and produced units their producer's faction ([3d8e244](https://github.com/SherinBloemendaal/webra/commit/3d8e244c053ab02f5cb57b1c6a8b2293db376e1b))
+* **engine:** give placed structures and produced units their producer's faction, like OpenRA ([762256c](https://github.com/SherinBloemendaal/webra/commit/762256cae1741ba9a3361cd4d77506e896d494be))
+* **game:** act on the hub's signed_out event at once ([f4998eb](https://github.com/SherinBloemendaal/webra/commit/f4998ebae730ddd649638a7746a242907a2f50db))
+* **game:** follow realtime hints in the friends, account, settings and replays screens ([286593a](https://github.com/SherinBloemendaal/webra/commit/286593a580c067ffd4127068caf1297f7e5ee972))
+* **game:** reset guide progress from the Guide page, with a reset epoch that wins the sync ([3cf9d2e](https://github.com/SherinBloemendaal/webra/commit/3cf9d2e4f1c4be8a53bae706cf5667bde41785b6))
+* **game:** reset guide progress, and show and change it per player in the admin panel ([762256c](https://github.com/SherinBloemendaal/webra/commit/762256cae1741ba9a3361cd4d77506e896d494be))
+* **protocol:** add REALTIME_FRESH_MS, the window in which a realtime channel counts as live ([018299d](https://github.com/SherinBloemendaal/webra/commit/018299d58a3ed72155acc3984d65c57d6eb33139))
+* **protocol:** add the realtime channel messages and the realtime site setting ([dde5ddd](https://github.com/SherinBloemendaal/webra/commit/dde5ddd38501dc0e40408415e8d60947461ada09))
+* **server:** announce a sign-out on the realtime socket before closing it ([98dacb5](https://github.com/SherinBloemendaal/webra/commit/98dacb58cef62ce40610f010a55dca4fcea0d636))
+* **server:** publish realtime hints for admin guide actions ([10c16ff](https://github.com/SherinBloemendaal/webra/commit/10c16ff8a9d9cab992b8afb433042397c5236e60))
+* **server:** push live updates for friends, approvals, settings, replays and the admin dashboard ([762256c](https://github.com/SherinBloemendaal/webra/commit/762256cae1741ba9a3361cd4d77506e896d494be))
+* **server:** push realtime hints through a per-account UserHub Durable Object ([e974c74](https://github.com/SherinBloemendaal/webra/commit/e974c741f2f340efa2550368bc060ee0fd82ca19))
+* **server:** show and change a player's guide progress in the admin API ([c5cbc7e](https://github.com/SherinBloemendaal/webra/commit/c5cbc7e5c5382d519ce32079219e3038e63cc93b))
+* **website:** guide progress column, filter and actions in the admin dashboard ([6e55eed](https://github.com/SherinBloemendaal/webra/commit/6e55eed84bf79cce16c4472cc376298c0a78aa24))
+* **website:** live friends, approval and admin dashboard updates ([99bdf90](https://github.com/SherinBloemendaal/webra/commit/99bdf90d30bf89088733fe708dec8ca756bb8b9b))
+
+
+### Bug Fixes
+
+* **engine:** let the bots pick producers in the engine's launch order ([841925e](https://github.com/SherinBloemendaal/webra/commit/841925e8da6a1b91f796dad04355385cab32214e))
+* **game:** bound the tile worker with a deadline and never hold the start for it ([54b9ba1](https://github.com/SherinBloemendaal/webra/commit/54b9ba1fbad3e881bd13d52bdd14d24ad51ecbee))
+* **game:** draw roads, bridge banks and shores with Red Alert's own templates in the original graphics ([762256c](https://github.com/SherinBloemendaal/webra/commit/762256cae1741ba9a3361cd4d77506e896d494be))
+* **game:** fit Red Alert's road templates, bridges and their shores in the original tile terrain ([e7551f1](https://github.com/SherinBloemendaal/webra/commit/e7551f13ca7e6972878a47ba45eede40104ebebb))
+* **game:** keep the reset epoch when the tour is taken again ([e512011](https://github.com/SherinBloemendaal/webra/commit/e512011b6df86611150d6ef3eb67299bb517200a))
+* **game:** list the road pieces as missing for original content installed before whole roads ([d694a93](https://github.com/SherinBloemendaal/webra/commit/d694a93d6f2dca6773200a2208853fbe4e992f26))
+* **game:** reconnect realtime on a new status or role, and poll fast when hints stop ([c42aa13](https://github.com/SherinBloemendaal/webra/commit/c42aa135d11dd53358c25b8185304555b8183a49))
+* **game:** warm the synth up before the audio cost gate and widen its margin ([ef444a3](https://github.com/SherinBloemendaal/webra/commit/ef444a3417abab9902143ac4f2f07ead5289a7c2))
+* **server:** tell the admin to retry when a player's settings keep changing ([081de4b](https://github.com/SherinBloemendaal/webra/commit/081de4bfc05804487006b779cec184ca343d840d))
+* **server:** tighten realtime hints after the security review ([b5c74db](https://github.com/SherinBloemendaal/webra/commit/b5c74db8dcdadbd54cc394698ec07507ddc0e0e5))
+* **server:** treat only moderators and admins as staff when closing sockets ([5d36689](https://github.com/SherinBloemendaal/webra/commit/5d366895459981dbd3d00f82628ec5814db00fea))
+* **website:** check waiting accounts every minute whatever the realtime socket says ([83fb318](https://github.com/SherinBloemendaal/webra/commit/83fb31857f7efe406c0e803c42772695fb1d41e1))
+
+
+### Performance Improvements
+
+* **game:** plan the original terrain tiles in a worker for games and map previews ([2636be1](https://github.com/SherinBloemendaal/webra/commit/2636be174aa1b35d1d8c1522650bf1fb642bf46c))
+* **game:** plan the original terrain tiles in a worker with a deadline ([762256c](https://github.com/SherinBloemendaal/webra/commit/762256cae1741ba9a3361cd4d77506e896d494be))
+
 ## [0.19.0](https://github.com/SherinBloemendaal/webra/compare/v0.18.0...v0.19.0) (2026-10-16)
 
 
