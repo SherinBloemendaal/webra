@@ -5218,12 +5218,27 @@ game is (one message for a whole selection instead of one per actor).
 The map editor plans the original graphics' terrain tiles
 (`js/content/terrain.js` `originalTerrain`) in a module worker
 (`editor/js/tiles.js` `TileWorker`); without module workers, or when the
-worker fails, the plans run on the main thread. A game and the map lens
-plan theirs in the same kind of worker (`js/terraintiles.js`, one shared
-worker per page; jobs from `ContentSystem.terrainJob`): a game draws
+worker fails, the plans run on the main thread. A game, the map lens and
+the map editor share one worker per page (`js/terraintiles.js`
+`planInWorker`; jobs from `ContentSystem.terrainJob`): a game draws
 WebRA's tiles meanwhile and keeps its loading screen (on the battlefield
-step) until the plan is in, and the lens waits for it between its read
-steps (a step yields `{ share, wait, sync }`; `runSteps` plans on the spot).
+step) until the plan is in, for up to `START_TILES_WAIT_MS` (10 s; an
+online game holds every player until all are in), then starts with
+WebRA's tiles and takes the plan when it comes; a plan that comes in after
+the game was taken down is dropped. The lens waits for it between its read
+steps (a step yields `{ share, wait, cancel, sync }`; `runSteps` plans on
+the spot), and a read given up gives its plan up (`cancel`, an
+AbortSignal to `planInWorker`).
+
+`TileWorker` hands the worker one plan at a time and keeps the rest; a
+plan given up while it waits never reaches the worker, and the answer to
+one given up in the worker is dropped (both resolve with null). The
+worker has `tileDeadline` to answer a plan (20 s for a map of up to
+128 x 128 cells, longer in proportion for a bigger one): a browser that
+kills a worker (out of memory) fires no error event, so a worker that
+does not answer in time, fails to load or sends a message that cannot be
+read (`messageerror`) is given up and the plans in flight and waiting run
+on the main thread.
 The editor starts a plan `PLAN_DELAY_MS` (40 ms) after the change that
 needs it, so changes that come together (a tree stroke's terrain types,
 then its preview's terrain hints) are planned once.

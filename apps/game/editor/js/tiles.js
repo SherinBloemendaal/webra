@@ -20,40 +20,87 @@ export function planTiles(theater, bytes, w, h, hints = null) {
   return originalTerrain((name) => theater.files.get(name) ?? null, theater.tileset, bytes, w, h, hints);
 }
 
+/** How long the tile worker may take over a plan before the main thread takes over (ms), for a map of up to TILE_DEADLINE_CELLS cells. */
+export const TILE_DEADLINE_MS = 20_000;
+/** Cells per TILE_DEADLINE_MS: a bigger map gets that much longer (a 256 x 256 map 80 s). */
+export const TILE_DEADLINE_CELLS = 128 * 128;
+
+/** The deadline of a plan job `{ w, h }` in the tile worker (ms). */
+export function tileDeadline(job) {
+  return TILE_DEADLINE_MS * Math.max(1, ((job.w | 0) * (job.h | 0)) / TILE_DEADLINE_CELLS);
+}
+
 /**
  * The tile worker from the main thread's side: `plan(job)` resolves with
  * planTiles' result. The theater goes to the worker once per `key`. Without
  * module workers (or when the worker fails) plans run in this thread.
+ *
+ * One plan is in the worker at a time; the others wait here, so a request
+ * given up meanwhile (`plan(job, { signal })`, the signal aborted) never
+ * reaches the worker, and every plan's deadline (tileDeadline) counts from
+ * when the worker got it. A worker that does not answer in time is taken as
+ * gone: a browser that kills a worker (out of memory) fires no event at all.
+ * A plan given up resolves with null.
  */
 export class TileWorker {
-  constructor({ WorkerClass = globalThis.Worker, url = new URL('./tiles-worker.js', import.meta.url) } = {}) {
+  constructor({ WorkerClass = globalThis.Worker, url = new URL('./tiles-worker.js', import.meta.url), deadline = tileDeadline, timers = globalThis } = {}) {
     this.WorkerClass = WorkerClass;
     this.url = url;
+    this.deadline = deadline;
+    this.timers = timers;
     this.worker = null;
     this.sentKey = null;
     this.next = 1;
-    this.waiting = new Map();
+    /** Plans waiting for the worker: `{ job, resolve, reject, signal }`. */
+    this.queue = [];
+    /** The plan in the worker: `{ id, job, resolve, reject, signal, timer }`, or null. */
+    this.current = null;
     this.broken = !WorkerClass;
   }
 
-  /** `job`: `{ key, tileset, files, bytes, w, h, hints }`. */
-  plan(job) {
-    if (this.broken) return Promise.resolve().then(() => planTiles(job, job.bytes, job.w, job.h, job.hints ?? null));
+  /** `job`: `{ key, tileset, files, bytes, w, h, hints }`; `signal` (an AbortSignal) gives the plan up. */
+  plan(job, { signal = null } = {}) {
+    if (signal?.aborted) return Promise.resolve(null);
+    if (this.broken) return Promise.resolve().then(() => (signal?.aborted ? null : planTiles(job, job.bytes, job.w, job.h, job.hints ?? null)));
+    return new Promise((resolve, reject) => {
+      const entry = { job, resolve, reject, signal };
+      this.queue.push(entry);
+      signal?.addEventListener?.('abort', () => this.giveUp(entry), { once: true });
+      this.pump();
+    });
+  }
+
+  /** A plan given up: out of the queue (the worker never sees it), or its answer dropped. */
+  giveUp(entry) {
+    const k = this.queue.indexOf(entry);
+    if (k >= 0) this.queue.splice(k, 1);
+    entry.resolve(null);
+  }
+
+  /** Hand the next plan that is still wanted to the worker, when it has none. */
+  pump() {
+    if (this.broken || this.current) return;
+    let entry;
+    do entry = this.queue.shift();
+    while (entry?.signal?.aborted);
+    if (!entry) return;
+    const { job } = entry;
     try {
       this.start();
       if (this.sentKey !== job.key) {
         this.worker.postMessage({ t: 'theater', key: job.key, tileset: job.tileset, files: [...job.files] });
         this.sentKey = job.key;
       }
-    } catch (err) {
-      this.fail(err);
-      return this.plan(job);
-    }
-    const id = this.next++;
-    return new Promise((resolve, reject) => {
-      this.waiting.set(id, { resolve, reject, job });
+      const id = this.next++;
+      this.current = { ...entry, id, timer: null };
       this.worker.postMessage({ t: 'plan', id, key: job.key, bytes: job.bytes, w: job.w, h: job.h, hints: job.hints ?? null });
-    });
+      const ms = this.deadline(job);
+      this.current.timer = this.timers.setTimeout(() => this.fail(new Error(`the tile worker did not answer in ${Math.round(ms / 1000)} s`)), ms);
+    } catch (err) {
+      this.current = null;
+      this.queue.unshift(entry);
+      this.fail(err);
+    }
   }
 
   start() {
@@ -61,33 +108,47 @@ export class TileWorker {
     this.worker = new this.WorkerClass(this.url, { type: 'module', name: 'webra-tiles' });
     this.worker.onmessage = (e) => {
       const m = e.data;
-      const w = this.waiting.get(m?.id);
-      if (!w) return;
-      this.waiting.delete(m.id);
-      if (m.t === 'planned') w.resolve(m.result);
-      else w.reject(new Error(m.error));
+      const cur = this.current;
+      if (!cur || m?.id !== cur.id) return;
+      this.timers.clearTimeout(cur.timer);
+      this.current = null;
+      if (cur.signal?.aborted) cur.resolve(null);
+      else if (m.t === 'planned') cur.resolve(m.result);
+      else cur.reject(new Error(m.error));
+      this.pump();
     };
     this.worker.onerror = (e) => {
       e.preventDefault?.();
       this.fail(new Error(e.message || 'the tile worker failed to load'));
     };
+    // An answer that cannot be read here: which plan it was is unknown, so the worker is no use.
+    this.worker.onmessageerror = () => this.fail(new Error('a message from the tile worker could not be read'));
   }
 
-  /** The worker is unusable: plan in this thread from now on, the plans in flight too. */
+  /** The worker is unusable: plan in this thread from now on, the plans in flight and waiting too. */
   fail(err) {
     console.warn('Terrain tiles are planned on the main thread:', err?.message ?? err);
     this.broken = true;
     this.worker?.terminate();
     this.worker = null;
-    const waiting = [...this.waiting.values()];
-    this.waiting.clear();
-    for (const w of waiting) this.plan(w.job).then(w.resolve, w.reject);
+    const cur = this.current;
+    if (cur) this.timers.clearTimeout(cur.timer);
+    const waiting = [...(cur ? [cur] : []), ...this.queue];
+    this.current = null;
+    this.queue = [];
+    for (const w of waiting) this.plan(w.job, { signal: w.signal }).then(w.resolve, w.reject);
   }
 
   dispose() {
+    if (this.current) this.timers.clearTimeout(this.current.timer);
     this.worker?.terminate();
     this.worker = null;
     this.sentKey = null;
+    // Nobody hears from the worker any more: the plans it had or would have get null.
+    const waiting = [...(this.current ? [this.current] : []), ...this.queue];
+    this.current = null;
+    this.queue = [];
+    for (const w of waiting) w.resolve(null);
   }
 }
 

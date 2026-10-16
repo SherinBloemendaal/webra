@@ -549,7 +549,7 @@ export class MapLens {
           job.progress = Math.max(job.progress, Math.min(1, Number(share) || 0));
           // A step that waits (the terrain tiles planned in the tile worker): the next one once it is in.
           if (typeof r.value?.wait?.then === 'function') {
-            job.timer = { cancel: () => {} };
+            job.timer = { cancel: () => r.value.cancel?.() };
             r.value.wait.then(() => {
               if (this.job !== job) return;
               job.timer = null;

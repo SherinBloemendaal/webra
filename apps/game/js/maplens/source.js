@@ -19,9 +19,10 @@
 //   per idle task (js/maplens/lens.js), so no single task holds the page up
 //   for all of it. `fromMap` and friends run every step at once. With a
 //   `planner` (js/terraintiles.js planInWorker) the original graphics' tiles
-//   are planned in the tile worker: that step yields `{ share, wait, sync }`,
-//   the lens waits for `wait` before the next step, and `runSteps` plans on
-//   the spot (`sync`).
+//   are planned in the tile worker: that step yields `{ share, wait, cancel,
+//   sync }`, the lens waits for `wait` before the next step (and calls
+//   `cancel` when it gives the read up), and `runSteps` plans on the spot
+//   (`sync`).
 
 import { applyGameArt, artActors, buildGameAtlas } from '../gameart.js';
 import { buildTerrainAtlas, cellTiles, terrainSeed } from '../art/terrain.js';
@@ -211,7 +212,9 @@ export class LensArt {
       game = null;
       yield share(3);
       let tiles;
-      const planned = this.planner ? mapTerrain(this.content, b, terrain, width, height, hints, this.planner) : null;
+      // A read given up (another map, steps.return()) gives its plan up too: it never reaches the worker, or its answer is dropped.
+      const abort = typeof AbortController === 'function' ? new AbortController() : null;
+      const planned = this.planner ? mapTerrain(this.content, b, terrain, width, height, hints, this.planner, { signal: abort?.signal ?? null }) : null;
       if (planned?.plan) {
         // The original graphics' tiles in the tile worker: the lens waits for them (or plans them now, `sync`).
         const box = { done: false, value: null };
@@ -224,7 +227,12 @@ export class LensArt {
           console.warn('Map lens: planning the terrain tiles failed:', err);
           settle(null);
         });
-        yield { share: share(3.5), wait, sync: () => settle(this.content?.terrain(b, terrain, width, height, hints) ?? null) };
+        const cancel = () => abort?.abort();
+        try {
+          yield { share: share(3.5), wait, cancel, sync: () => (settle(this.content?.terrain(b, terrain, width, height, hints) ?? null), cancel()) };
+        } finally {
+          if (!box.done) cancel();
+        }
         tiles = box.value ? { atlas: box.value.atlas, cells: box.value.cells, source: box.value.source } : this.webraTiles(b, terrain, width, height);
       } else {
         tiles = planned?.tiles ? { atlas: planned.tiles.atlas, cells: planned.tiles.cells, source: planned.tiles.source ?? 'installed' } : planned ? this.webraTiles(b, terrain, width, height) : this.tiles(b, terrain, width, height, hints);
