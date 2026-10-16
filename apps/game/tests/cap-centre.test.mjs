@@ -276,7 +276,6 @@ const NOT_CENTRED_CAPS = new Map([
   // A select plate is a .editor button left out of the editor's button look.
   ['apps/game/editor/editor.css .editor table.slots .ui-select-plate', 'not a button: the plate in a table cell'],
   ['apps/game/editor/editor.css .editor .anchors button.anchor', 'no text: the anchor picker squares'],
-  // Another branch owns guide.css; the coordinator applies the nudge there at merge.
 ]);
 
 const isZero = (v) => /^0(px|em|rem)?$/.test(v);
