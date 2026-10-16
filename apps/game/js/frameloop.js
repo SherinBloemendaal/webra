@@ -5,7 +5,11 @@
 //   frame that throws never ends the loop: the simulation keeps being
 //   stepped and drawn. The error itself still reaches the page (it is not
 //   caught here): the browser logs it and error reports (js/telemetry) see it.
-//   Only `stopped()` ends the loop (the game left, a start that failed).
+//   A single frame that throws is a hiccup. FAILING_FRAMES frames in a row
+//   that throw (about a second) mean the game cannot go on: `onFailing(err)`
+//   stops it and tells the player, instead of a console full of the same
+//   error and a game that runs on half broken. Otherwise only `stopped()`
+//   ends the loop (the game left, a start that failed).
 // - UiGuard runs the presentation-only callbacks of a frame (the guide, the
 //   tour, the sidebar, the command bar, sounds, effects, the HUD). One that
 //   throws is logged and reported once per name, and the frame goes on with
@@ -15,17 +19,33 @@
 //
 // No DOM here: Node tests import it.
 
+/** Frames in a row that throw before the loop gives up: about one second at 60 frames a second. */
+export const FAILING_FRAMES = 60;
+
 /**
  * The frame callback: `run(now)` does the frame, `request(fn)` asks for the
  * next one (requestAnimationFrame) and returns its id for `onRequest(id)`.
+ * `onFailing(err)` runs once when `failLimit` frames in a row threw (with
+ * the last error); it should stop the game (`stopped()` true), else the
+ * count starts over.
  * @param {{ run: (now: number) => void, request: (fn: (now: number) => void) => number,
- *   stopped: () => boolean, onRequest?: (id: number) => void }} o
+ *   stopped: () => boolean, onRequest?: (id: number) => void, onFailing?: (err: unknown) => void,
+ *   failLimit?: number }} o
  */
-export function createFrameLoop({ run, request, stopped, onRequest = () => {} }) {
+export function createFrameLoop({ run, request, stopped, onRequest = () => {}, onFailing = () => {}, failLimit = FAILING_FRAMES }) {
+  let failures = 0;
   const frame = (now) => {
     if (stopped()) return;
     try {
       run(now);
+      failures = 0;
+    } catch (err) {
+      failures++;
+      if (failures >= failLimit) {
+        failures = 0;
+        onFailing(err);
+      }
+      throw err;
     } finally {
       if (!stopped()) onRequest(request(frame));
     }

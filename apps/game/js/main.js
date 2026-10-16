@@ -2711,6 +2711,15 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     request: (fn) => requestAnimationFrame(fn),
     stopped: () => stopped,
     onRequest: (id) => (rafId = id),
+    // Every frame threw for about a second (FAILING_FRAMES): the game cannot go on. It stops,
+    // the error is reported once, and the player is told, as for a simulation that failed (host 'failed').
+    onFailing: (err) => {
+      leaving = true;
+      stopped = true;
+      cancelAnimationFrame(rafId);
+      reportError(err, { source: 'frame' });
+      showToast(`The game stopped: ${err?.message ?? err}`);
+    },
   });
   // The screen's parts in the frame: one that throws is reported once and the game goes on without it.
   const uiGuard = new UiGuard({ report: (err, name) => reportError(err, { source: `frame:${name}` }), strict: () => !firstFrame.drawn });
@@ -2805,9 +2814,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // and radar pings. Fast-forwarding (loading, rejoining, seeking) stays
     // silent: the simulation drops the events.
     const events = game.take_audio_events();
-    safe('guide', () => guideTracker?.onEvents(events));
+    safe('guide events', () => guideTracker?.onEvents(events));
     safe('pings', () => pings.onEvents(events, simNow, now));
-    safe('effects', () =>
+    safe('effects events', () =>
       battle.onEvents(events, BattleFx.ticksAt(simSeconds), (x, y) => {
         // In sight now: the frame's fog (255 visible) of the cell.
         const cx = Math.floor(x / rules.pxPerCell);
@@ -2816,13 +2825,13 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         return !!viewer || (cx >= 0 && cy >= 0 && cx < mapW && cy < mapH && fog[cy * mapW + cx] === 255);
       }),
     );
-    safe('sound', () => audio?.frame(v, () => f.fog(), events));
+    safe('sound frame', () => audio?.frame(v, () => f.fog(), events));
 
     // UI rects may call into wasm (placement preview, main thread mode), which
     // may grow its memory, so the frame's views are made after them.
     const renderStart = performance.now();
     const uiRects = input.uiRects();
-    safe('command bar', () => commandBar.frame());
+    safe('command bar frame', () => commandBar.frame());
     safe('tooltip', () => worldTip.frame(now));
     // The structure being placed shows its range circles (engine range_circles.rs).
     const placing = input.placementState();
@@ -2863,7 +2872,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         if (!stopped) gameStart.begin(performance.now());
       });
     }
-    safe('effects', () => battle.frame(fxTick, drawCamera));
+    safe('effects frame', () => battle.frame(fxTick, drawCamera));
     // Read the canvas in the same task as the draw, before it is presented.
     if (screenshotPending) {
       screenshotPending = false;
@@ -2872,7 +2881,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Shared memory: count a frame the worker wrote over while it was read (js/sim/framebuffer.js).
     f.valid();
     // After drawing: the debug views call into wasm, which may detach the views above.
-    safe('debug', () => debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps }));
+    safe('debug frame', () => debug.frame({ frameMs: dt, renderMs: performance.now() - renderStart, simFrameMs, simMs, fps }));
     safe('radar', () => minimap?.frame(now, simNow));
     safe('mission', () => missionView?.frame());
 
@@ -2889,7 +2898,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       const json = game.player_json(player);
       const state = json ? JSON.parse(json) : null;
       if (state && !watching()) {
-        safe('sidebar', () => {
+        safe('sidebar state', () => {
           // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game stands still.
           sidebar.setPaused(paused);
           sidebar.update(state);
@@ -2905,11 +2914,11 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
             }),
           ),
         );
-        safe('command bar', () => commandBar.update());
-        safe('sound', () => audio?.playerState(state));
-        safe('guide', () => guideTracker?.onState(state, { weather: sky?.weather ?? null }));
+        safe('command bar state', () => commandBar.update());
+        safe('sound state', () => audio?.playerState(state));
+        safe('guide state', () => guideTracker?.onState(state, { weather: sky?.weather ?? null }));
         safe('tour', () => tour?.refresh());
-        safe('sidebar', () => {
+        safe('sidebar selection', () => {
           sidebar.setSelection(selectionInfo(game, input.selection, allied, input.groups.groups, (type) => sidebar.actors.get(type)?.name));
           sidebar.setDeployState(input.deployState());
         });
@@ -2926,15 +2935,16 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       // The sky of the newest frame: badge text (thunder and flashes follow in weather.update).
       if (f.weather) safe('weather badge', () => (weatherText = updateWeatherBadge(JSON.parse(f.weather), weatherText)));
       safe('touch', () => touch.update());
-      if (state) safe('debug', () => debug.update(state));
+      if (state) safe('debug state', () => debug.update(state));
       // The time limit clock (js/battlefx.js), for players and spectators alike.
       if (state) safe('time limit', () => battle.timeLimit(state));
       if (state && !stress) {
         winner = state.winner ?? null;
         const event = flow.update(state, { ended: !!replay?.ended });
         // The announcer: "Mission failed" on the defeat, "Mission accomplished" on a win (also an ally's, after a defeat).
-        if (event === 'defeat') audio?.gameOver(false);
-        else if (event === 'victory' || (event === 'over' && !viewer && state.won)) audio?.gameOver(true);
+        // A sound that fails must not skip what follows (missionWon).
+        if (event === 'defeat') safe('sound defeat', () => audio?.gameOver(false));
+        else if (event === 'victory' || (event === 'over' && !viewer && state.won)) safe('sound victory', () => audio?.gameOver(true));
         if (event === 'victory') missionWon();
         over = flow.over || flow.phase !== 'playing';
         // The whole game ended (or this player won): its replay goes to the account, in the background.

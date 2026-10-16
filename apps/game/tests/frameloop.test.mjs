@@ -125,3 +125,57 @@ test('main.js: the loop is createFrameLoop and the guide, the tour and the other
     assert.match(main.slice(Math.max(0, at - 40), at), /safe\('[a-z ]+', \(\) =>\s*$/, `${call} runs through safe()`);
   }
 });
+
+test('frame loop: one throw goes on; FAILING_FRAMES in a row stop the game and report once; a clean frame resets the count', async () => {
+  const { FAILING_FRAMES } = await import('../js/frameloop.js');
+  assert.ok(FAILING_FRAMES >= 30 && FAILING_FRAMES <= 120, 'about a second of frames');
+  const raf = frames();
+  let stopped = false;
+  let throwing = false;
+  const failing = [];
+  const frame = createFrameLoop({
+    run: () => {
+      if (throwing) throw new Error('flow.update broke');
+    },
+    request: raf.request,
+    stopped: () => stopped,
+    // As js/main.js: stop the loop, report once, tell the player.
+    onFailing: (err) => {
+      stopped = true;
+      failing.push(err.message);
+    },
+  });
+  frame(0);
+  // A hiccup: one frame throws, the next is clean.
+  throwing = true;
+  assert.throws(() => raf.next());
+  throwing = false;
+  raf.next();
+  assert.equal(raf.pending(), 1);
+  // One short of the limit, then a clean frame: the count starts over.
+  throwing = true;
+  for (let i = 0; i < FAILING_FRAMES - 1; i++) assert.throws(() => raf.next());
+  throwing = false;
+  raf.next();
+  assert.deepEqual(failing, []);
+  // FAILING_FRAMES in a row: the game stops, reported once, no more frames.
+  throwing = true;
+  for (let i = 0; i < FAILING_FRAMES - 1; i++) assert.throws(() => raf.next());
+  assert.deepEqual(failing, []);
+  assert.throws(() => raf.next(), /flow\.update broke/);
+  assert.deepEqual(failing, ['flow.update broke']);
+  assert.equal(raf.pending(), 0, 'stopped: no next frame');
+});
+
+test('main.js: a failing loop stops the game, reports with source frame and says so; a game over sound cannot skip missionWon', () => {
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const at = main.indexOf('onFailing: (err) => {');
+  assert.ok(at > 0);
+  const body = main.slice(at, main.indexOf('},', at));
+  for (const part of [/stopped = true;/, /cancelAnimationFrame\(rafId\);/, /reportError\(err, \{ source: 'frame' \}\);/, /showToast\(`The game stopped: \$\{err\?\.message \?\? err\}`\);/]) assert.match(body, part);
+  assert.match(main, /safe\('sound defeat', \(\) => audio\?\.gameOver\(false\)\)/);
+  assert.match(main, /safe\('sound victory', \(\) => audio\?\.gameOver\(true\)\)/);
+  // Every guarded call site has its own name, so each failure is reported.
+  const names = [...main.matchAll(/safe\('([^']+)'/g)].map((m) => m[1]);
+  assert.equal(new Set(names).size, names.length, `distinct: ${names.join(', ')}`);
+});
