@@ -167,6 +167,10 @@ test('veterancy art draws within its box', () => {
         see(x, y);
         see(x + rw, y + rh);
       },
+      roundRect(x, y, rw, rh) {
+        see(x, y);
+        see(x + rw, y + rh);
+      },
       arc(x, y, r) {
         see(x - r, y - r);
         see(x + r, y + r);

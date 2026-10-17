@@ -572,37 +572,50 @@ const CIVILIANS = {
   GNRL: { shirt: '#5a6040', legs: '#3e4230', hair: '#8a2a20', coat: true, gun: true },
 };
 
-/** A civilian seen from above (facing north), in the shape of WebRA's soldiers (sprites.js E1). */
+/** The civilians' sprite box: the soldiers' 12 x 16 (art/infantry.js), as big as the original infantry. */
+const CIV_W = 12;
+const CIV_H = 16;
+/** The figure's own width and height inside the box (the rest holds its shadow). */
+const FIG_W = CIV_W - 2;
+const FIG_H = CIV_H - 2;
+
+/** The civilian's legs (trousers, or a skirt for `f`) under the shoulders. */
+function civilianLegs(ctx, P, c, y) {
+  if (c.f) flat(ctx, P, c.legs, 1, y, FIG_W - 2, FIG_H - y, 1);
+  else {
+    flat(ctx, P, c.legs, 1.5, y, 3, FIG_H - y, 1);
+    flat(ctx, P, c.legs, FIG_W - 4.5, y, 3, FIG_H - y, 1);
+  }
+}
+
+/**
+ * A civilian seen from above (facing north), in the shape of WebRA's
+ * soldiers: the shirt (or a longer coat) over the legs, the head with its
+ * hair, a pistol held forward when armed; one hard shadow.
+ */
 function civilianDraw(c) {
   return (ctx, P) => {
-    if (c.gun) rect(ctx, P.c('#2b2b28'), 6.5, 2, 1, 4); // pistol
-    circle(ctx, P.c(C.shadow), 5.6, 7, 3.6);
-    if (c.f) poly(ctx, P.c(c.legs), [1.5, 9.8, 8.5, 9.8, 7.4, 6.6, 2.6, 6.6]);
-    poly(ctx, P.c(c.shirt), [2, 5.5, 8, 5.5, 7.6, 9, 2.4, 9]);
-    if (c.coat) poly(ctx, P.c(tone(c.shirt, -0.12)), [2, 8, 8, 8, 8.4, 10.6, 1.6, 10.6]);
-    circle(ctx, P.c(C.skin), 5, 6, 1.9);
-    circle(ctx, P.c(c.hair), 5, 5.6, 1.6);
+    flat(ctx, P, SHADOW, SHADOW_OFFSET, 4.5 + SHADOW_OFFSET, FIG_W, FIG_H - 4.5, 3);
+    civilianLegs(ctx, P, c, 9.5);
+    flat(ctx, P, c.coat ? tone(c.shirt, -0.12) : c.shirt, 0, 4.5, FIG_W, c.coat ? 8 : 6, 2.5);
+    circle(ctx, P.c(C.skin), FIG_W / 2, 7, 2.4);
+    circle(ctx, P.c(c.hair), FIG_W / 2, 6.4, 1.9);
+    if (c.gun) flat(ctx, P, M.darker, FIG_W - 2.6, 0, 1.4, 5);
   };
 }
 
 /**
  * A civilian in panic (OpenRA ScaredyCat "panic-stand" and "panic-run"):
- * both arms thrown up beside the head, the weapon dropped, the body leaning
- * forward into the run.
+ * both arms thrown up beside the head, the weapon dropped.
  */
 function civilianPanicDraw(c) {
   return (ctx, P) => {
-    circle(ctx, P.c(C.shadow), 5.6, 7.4, 3.6);
-    if (c.f) poly(ctx, P.c(c.legs), [1.5, 10.4, 8.5, 10.4, 7.4, 7.2, 2.6, 7.2]);
-    poly(ctx, P.c(c.shirt), [2, 6.2, 8, 6.2, 7.6, 9.6, 2.4, 9.6]);
-    if (c.coat) poly(ctx, P.c(tone(c.shirt, -0.12)), [2, 8.6, 8, 8.6, 8.4, 11.2, 1.6, 11.2]);
-    // Arms up: sleeves from the shoulders past the head, hands at the top.
-    for (const [x0, x1] of [[2.4, 1.2], [7.6, 8.8]]) {
-      poly(ctx, P.c(c.shirt), [x0 - 0.7, 6.6, x0 + 0.7, 6.6, x1 + 0.6, 1.6, x1 - 0.6, 1.6]);
-      circle(ctx, P.c(C.skin), x1, 1.4, 0.8);
-    }
-    circle(ctx, P.c(C.skin), 5, 5.2, 1.9);
-    circle(ctx, P.c(c.hair), 5, 4.8, 1.6);
+    flat(ctx, P, SHADOW, SHADOW_OFFSET, 4.5 + SHADOW_OFFSET, FIG_W, FIG_H - 4.5, 3);
+    civilianLegs(ctx, P, c, 10);
+    flat(ctx, P, c.coat ? tone(c.shirt, -0.12) : c.shirt, 0, 5, FIG_W, c.coat ? 8 : 6, 2.5);
+    flat(ctx, P, c.shirt, 0, 0.5, 2, 6, 1);
+    flat(ctx, P, c.shirt, FIG_W - 2, 0.5, 2, 6, 1);
+    circle(ctx, P.c(c.hair), FIG_W / 2, 7, 2.4);
   };
 }
 
@@ -711,7 +724,7 @@ export function worldSecond(a) {
  * the panic pose fills the second sprite slot, where soldiers lie prone.
  */
 export const CIVILIAN_DRAW = Object.fromEntries(
-  Object.entries(CIVILIANS).map(([id, c]) => [id, { body: [10, 12, civilianDraw(c)], panic: [10, 12, civilianPanicDraw(c)] }]),
+  Object.entries(CIVILIANS).map(([id, c]) => [id, { body: [CIV_W, CIV_H, civilianDraw(c)], panic: [CIV_W, CIV_H, civilianPanicDraw(c)] }]),
 );
 
 /** A tree fire `s` times the size of the small one (decoration specials 2, 4 and 5). */

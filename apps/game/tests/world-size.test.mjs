@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { actorSprites } from '../js/sprites.js';
 import { BUILDING_DRAW } from '../js/art/buildings.js';
-import { originalExtent, worldBox, worldDraw } from '../js/art/world.js';
+import { CIVILIAN_DRAW, originalExtent, worldBox, worldDraw } from '../js/art/world.js';
 import { ORIGINAL_BOUNDS, RENDER_FACTS } from '../js/content/render-facts.js';
 import init, { Game } from '../pkg/webra_sim.js';
 
@@ -121,4 +121,18 @@ test('structures whose original stands taller than its footprint draw into a box
   assert.deepEqual(ORIGINAL_BOUNDS.LHUS.bounds, [1024, 2048, 0, -682]);
   assert.deepEqual(worldBox(actors.find((a) => a.id === 'LHUS')), [24, 80]);
   assert.deepEqual(worldBox(actors.find((a) => a.id === 'WINDMILL')), [36, 64]);
+});
+
+test('civilians are as big as the original infantry, like the soldiers: the longer side within 15 %', () => {
+  const civilians = actors.filter((a) => CIVILIAN_DRAW[a.id]);
+  assert.ok(civilians.length >= 13, `${civilians.length} civilians`);
+  for (const a of civilians) {
+    const rec = ORIGINAL_BOUNDS[a.id]?.decoration ?? ORIGINAL_BOUNDS[a.id]?.bounds;
+    assert.ok(rec, `${a.id} has original bounds`);
+    const original = (Math.max(rec[0], rec[1]) * 24) / 1024;
+    for (const [w, h] of [CIVILIAN_DRAW[a.id].body, CIVILIAN_DRAW[a.id].panic]) {
+      const ratio = Math.max(w, h) / original;
+      assert.ok(Math.abs(ratio - 1) <= 0.15, `${a.id}: ${w}x${h} against the original ${original} px (${ratio.toFixed(2)})`);
+    }
+  }
 });
