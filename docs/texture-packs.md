@@ -35,6 +35,18 @@ player's pack may be (`BUILTIN_LIMITS` in `content/packs.js`). Its manifest says
 sheared hulls with the same shear, so the Cruiser's two turrets and the Chinook's two rotors sit on their mounts in
 all 32 facings.
 
+Since 0.21.0 the models are big blocks (three to six per structure, two to five per unit with its turret, two per
+tree; `budget.py` fails the build on a model over its budget, `--budget` prints the counts) with one team area each,
+in the colours the 2D minimal art shares (`apps/game/js/art/shared-palette.js`, read by `core.py`). Every model is
+as big on screen as the original sprite, measured against OpenRA's DecorationBounds, else Bounds
+(`render-facts.js` `ORIGINAL_BOUNDS`; `extents.py`): a structure stands on that box with no slab or margin, its
+front edge on the box's bottom (the bib drawn as a flat apron down to the footprint's front), its front corners on
+the box's sides and its top at the box's top; only its back leans east by the ground shear. A unit's longer side on
+screen, union over its 32 facings with its turret, is within 15% of the box's longer side: the same measure as the
+2D minimal units, so 2D and 3D agree on screen. The raw model sizes in world pixels are smaller than the 2D art's on
+purpose (the 3/4 camera adds the hull height, the diagonal facings and the shear); do not copy the 2D sizes into the
+3D models. `apps/game/tests/minimal3d-size.test.mjs` checks all of this on the committed archive.
+
 ## Format version 1
 
 A pack is a ZIP archive, named `*.webrapack` (or `*.zip`), with
