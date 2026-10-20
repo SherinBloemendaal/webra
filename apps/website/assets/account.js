@@ -31,6 +31,7 @@ import {
 import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
 import { FriendsClient, FriendsStore, friendsSummary, groupFriends, socialSettings } from './friends.js';
 import { formatInviteCode, invitePath, inviteInPath, inviteSummary, lookupInvite, normalizeInviteCode } from './invite.js';
+import { showWebgpuNotice } from './webgpu-check.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
 export const DEFAULT_RETURN = '/play/';
@@ -438,10 +439,14 @@ export async function mountAccountPage(root, deps = {}) {
     };
     usePasskey?.input.addEventListener('change', syncPasswordRow);
     syncPasswordRow();
+    // Before anyone signs up: WebRA needs WebGPU (filled and shown only when this browser lacks it).
+    const webgpu = el('p', { class: 'notice notice-warning webgpu-notice', hidden: true });
+    showWebgpuNotice(webgpu).catch(() => {});
     const form = el(
       'form',
       { class: 'form-stack', novalidate: true },
       status.node,
+      webgpu,
       site?.registration?.approvalRequired ? el('p', { class: 'notice', text: 'WebRA is in a closed beta: new accounts wait for an admin to approve them.' }) : null,
       username.row,
       displayName.row,

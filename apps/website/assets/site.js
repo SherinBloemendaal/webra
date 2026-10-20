@@ -11,6 +11,7 @@
 // may play get that module; the others see a note instead of the art.
 
 import { initPlayLinks } from './play-links.js';
+import { initWebgpuCheck } from './webgpu-check.js';
 import { betaBadge, releaseTag } from './site-data.js';
 import { INVITE_MESSAGES, formatInviteCode, inviteSummary, invitePath, lookupInvite, normalizeInviteCode, typedInviteCode } from './invite.js';
 
@@ -1002,7 +1003,7 @@ async function initPrivacy() {
 // ---- Boot -------------------------------------------------------------------
 
 const PAGES = {
-  home: () => Promise.all([initHeroArt(), initBeta(), initGallery(), initFactions()]),
+  home: () => Promise.all([initHeroArt(), initBeta(), initGallery(), initFactions(), initWebgpuCheck()]),
   maps: initMaps,
   multiplayer: initLobbies,
   changelog: initChangelog,
