@@ -255,6 +255,7 @@ One versioned document, edited by admins. Defaults in brackets.
   "login": { "password": true, "email": true, "discord": true, "passkey": true },
   "onlineRequiresAccount": true,
   "gameRequiresAccount": true,
+  "onlineSessionsOpen": true,
   "contentRelay": true,
   "realtime": true,
   "motd": ""
@@ -285,6 +286,12 @@ documents saved before it existed).
   False: anyone may load the game. A change applies at once on the server that
   saved it and within 30 seconds everywhere (each server caches the settings
   for the gate that long).
+- `onlineSessionsOpen` [true]: new online sessions may be created. False:
+  `POST /api/sessions` answers `503 sessions_closed` (`Retry-After: 300`) with
+  a message the game shows ("New online games are paused..."); lobbies and
+  games already running go on, and players can still join existing lobbies.
+  A kill switch for heavy load (docs/launch.md). It applies at once (session
+  creation reads the settings without the gate's cache).
 - `contentRelay` [true]: the one-click Red Alert content relay is on (it
   always also needs the flag or the admin role).
 - `realtime` [true]: the realtime channel (5.12) is on: open pages hear at
@@ -315,6 +322,7 @@ No authentication. What clients need to draw sign-in and signup forms.
   "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false },
   "onlineRequiresAccount": true,
   "gameRequiresAccount": true,
+  "onlineSessionsOpen": true,
   "contentRelay": true,
   "motd": "",
   "passkey": { "rpId": "webra.sherin.dev" },
@@ -377,14 +385,18 @@ null.
   username). Discord signup is 4.6.
 - `201 { user }` and a session cookie, also for pending accounts (they can
   verify their email, add login methods and see their status). While email
-  sending is available (`login.email`), the verification mail goes out
-  after the answer (so neither the answer nor its timing depends on it):
-  the link, or, when another account verified the address, a notice without
-  a link (4.3). Without email sending nothing is mailed and the address
-  waits unverified.
+  verification is required (`registration.emailVerificationRequired` of
+  `GET /api/site`: the setting on and email sending available), the
+  verification mail goes out after the answer (so neither the answer nor its
+  timing depends on it): the link, or, when another account verified the
+  address, a notice without a link (4.3). Otherwise nothing is mailed at
+  signup and the address waits unverified; the player can ask for the link
+  from the account page (5.4 `POST /api/account/email/resend`), so a burst
+  of signups does not use up `EMAIL_DAILY_LIMIT`. Password resets need a
+  verified address.
 - Errors: `registration_closed`, `method_disabled`, `invalid` (with `field`),
   `conflict` (`field: username`; never for the email), `ip_banned`,
-  `rate_limited` (10 signups per hour per network: an IPv4 address or an
+  `rate_limited` (40 signups per hour per network: an IPv4 address or an
   IPv6 /64, together with Discord signups).
 
 ### 4.3 Password sign-in
@@ -403,8 +415,8 @@ null.
   in normally (their `status` says what is missing).
 - Throttling (`429` with `retryAfter`; `rate_limited` or `locked`). The login
   is resolved to its account first, so username and email share one budget:
-  - a burst limit per IP (20 per minute through the Workers Rate Limiting
-    binding; 30 per 15 minutes in D1 without it);
+  - a burst limit per IP (60 per minute through the Workers Rate Limiting
+    binding `AUTH_LIMITER`; 30 per 15 minutes in D1 without it);
   - 10 failures per 15 minutes per account (or unknown name) **and IP**:
     that address is locked for that account for the rest of the window;
   - 100 failures per day per IP across all accounts;
@@ -616,7 +628,8 @@ with PKCE (S256) and `state`, scopes `identify email`, redirect URI
   the signup fails with `email_taken`, which only the owner of that Discord
   inbox can see), else the optional `email` of this request (checked here,
   `400 invalid` with `field: email`; it travels with the OAuth state and is
-  stored unverified with a verification link mailed as in 4.2). With
+  stored unverified, with a verification link mailed as in 4.2: only while
+  verification is required). With
   neither the callback answers `email_required` and creates nothing.
 - `email` is accepted with `signup` only.
 - `link` (signed in, recent re-authentication): link Discord to this account.
@@ -997,7 +1010,7 @@ Limits (protocol `constants.js`):
 |----------|-------|
 | `ACCOUNT_REPLAYS_MAX` | 100 replays per account |
 | `ACCOUNT_REPLAYS_BYTES_MAX` | 100 MiB of stored (gzip) files per account |
-| `ACCOUNT_REPLAY_MAX_BYTES` | 16 MiB per uploaded file (UTF-8, before compression) |
+| `ACCOUNT_REPLAY_MAX_BYTES` | 4 MiB per uploaded file (UTF-8, before compression) |
 | `ACCOUNT_REPLAY_RETENTION_MS` | 30 days after the upload |
 
 `Replay` (a list entry):
@@ -1385,10 +1398,12 @@ Refusals:
 
 Every gated response, served or refused, carries the static security headers
 of `apps/website/_headers` (CSP, COOP, COEP `require-corp`, HSTS and the
-rest), `Cross-Origin-Resource-Policy: same-origin` and `Vary: Cookie`. Served
-files have `Cache-Control: private, max-age=0, must-revalidate` (browsers
-revalidate with the ETag through the gate; shared caches never store them);
-refusals and redirects `no-store`.
+rest), `Cross-Origin-Resource-Policy: same-origin` and `Vary: Cookie`. Pages
+have `Cache-Control: private, max-age=0, must-revalidate` and set the build
+cookie `webra_build`; other files of the current build (requested with that
+cookie) `private, max-age=600`, the play pass lifetime (docs/security.md,
+"The play gate", Caching); shared caches never store them; refusals and
+redirects `no-store`.
 
 **Play pass.** After a successful D1 check the response sets the play pass
 cookie (section 2.4): `1.<userId>.<sid>.<exp>.<mac>`, where `sid` is the first
@@ -1442,11 +1457,12 @@ that is not banned, from an address that is not banned:
   account_required`), and it must have played in the save (`403 forbidden`).
   Saving an online game needs every player signed in.
 - `GET /api/sessions/:id/ws`: the upgrade always succeeds for a well-formed
-  request from the site's origin; the server answers the first `hello` with
-  `error` and closes when the connection may not play: codes
-  `account_required` (no session), `account_inactive`, `banned`,
-  `ip_banned`. With the setting off, anonymous connections play as before
-  and IP bans still apply.
+  request from the site's origin (within the per-address burst limit,
+  section 9). When the connection may not play, the Worker answers the
+  upgrade itself with an `error` message and closes with 1008, without
+  waking the session: codes `account_required` (no session),
+  `account_inactive`, `banned`, `ip_banned`. With the setting off,
+  anonymous connections play as before and IP bans still apply.
 
 Protocol 5 (`PROTOCOL_VERSION`, docs/contracts.md section 4):
 
@@ -1582,6 +1598,13 @@ on plain users).
   states).
 - `POST /api/admin/users/:id/reject` `{ "reason"? }` (moderator) -> `200 { user }`;
   a pending account becomes `deleted`.
+- `POST /api/admin/users/approve-pending` `{}` (admin) -> `200 { "approved", "remaining" }`:
+  the oldest 100 accounts in `pending_approval` that are not banned become
+  `active` in one batch (accounts still waiting for their email are left
+  alone). One audit entry `user.approve_all` records the count and the ids
+  of the accounts this call approved (none: no entry); each approved account's pages hear it at once (realtime, `account`
+  `status`) and the other dashboards reload. The dashboard's "Approve all
+  pending" button calls it again until `remaining` is 0.
 
 ### 8.3 Account bans
 
@@ -1683,7 +1706,7 @@ Expired IP bans are deleted 90 days after they end.
 - `GET /api/admin/audit?actor=&target=&action=&since=&until=&page=&limit=`
   (admin) -> `{ "entries": [{ "id", "at", "actor": { "id", "username" } | null, "action", "target": { "type", "id", "label" }, "before", "after", "reason" }], "total", "page", "limit" }`.
   `actor` null is the system (scheduled purges and expiries). Actions: `user.update`,
-  `user.approve`, `user.reject`, `user.ban`, `user.unban`, `user.logout`,
+  `user.approve`, `user.approve_all` (8.2), `user.reject`, `user.ban`, `user.unban`, `user.logout`,
   `user.session_revoke`, `user.password_reset_link`, `user.delete`,
   `user.restore`, `user.purge`, `user.settings_update`, `user.guide_update`,
   `user.relay_quota_reset`, `user.expire` (system: an unconfirmed signup
@@ -1815,15 +1838,19 @@ fix.
 ## 9. Rate limits
 
 Per IP limits key on an HMAC of the address under the secret `IP_HASH_SALT`
-(never the address). Burst limits go through the Workers Rate Limiting
-binding `AUTH_LIMITER` (20 per minute per purpose and address, no D1
-access); without the binding the D1 values in brackets apply. D1 counters
-are read before they are written: a request already over its limit costs no
-write.
+(never the address). Burst limits go through two Workers Rate Limiting
+bindings, per minute, purpose and address, with no D1 access:
+`AUTH_LIMITER` (60 per minute) for the sign-in endpoints (password and
+passkey sign-in, token redemption, Discord start, invite lookups) and
+`APP_LIMITER` (600 per minute) for what a signed-in game calls by itself
+(presence, friends list, realtime connects, session sockets), so many
+players behind one NAT or mobile carrier address keep playing. Without a
+binding the D1 values in brackets apply. D1 counters are read before they
+are written: a request already over its limit costs no write.
 
 | What | Limit |
 |------|-------|
-| Signup (all methods) | 10 per hour per network (IPv4 address, IPv6 /64) |
+| Signup (all methods) | 40 per hour per network (IPv4 address, IPv6 /64) |
 | Password sign-in | burst per IP (30 per 15 minutes); 10 failures per 15 minutes per account and IP; 100 failures per day per IP; escalating account delay (4.3) |
 | Passkey sign-in and options | burst per IP (30 per 15 minutes) |
 | Re-authentication | 10 failures per 15 minutes per account |
@@ -1844,10 +1871,11 @@ write.
 | Friend requests (5.11) | 20 per hour per account |
 | Blocks (5.11) | 30 per hour per account |
 | Friend invites (5.11) | 30 per hour per account |
-| Presence heartbeat (5.11) | burst per IP (120 per hour); stored at most every 45 s per account, a change of away at most every 5 s |
-| Friends list (5.11) | burst per IP (240 per hour) |
-| Realtime connects (5.12) | burst per IP (60 per hour); 16 sockets per account; 10 client messages per socket and minute besides the ping (more closes it with 1008) |
-| Invite codes (docs/contracts.md section 4) | 30 issued codes per network per hour (refused requests do not count); lookups: burst per IP (20 per minute), 30 failed lookups per network per hour (a blocked player's lookups do not count) |
+| Presence heartbeat (5.11) | burst per IP on `APP_LIMITER` (120 per hour); stored at most every 45 s per account, a change of away at most every 5 s |
+| Friends list (5.11) | burst per IP on `APP_LIMITER` (240 per hour) |
+| Realtime connects (5.12) | burst per IP on `APP_LIMITER` (60 per hour); 16 sockets per account; 10 client messages per socket and minute besides the ping (more closes it with 1008) |
+| Session sockets (docs/contracts.md section 4) | burst per IP on `APP_LIMITER` (300 per hour); a refused upgrade (no account, pending account, IP ban) is answered by the Worker with an `error` message and close 1008 and never reaches the session; a session holds at most 8 sockets before their `hello` is answered, 2 of them per address |
+| Invite codes (docs/contracts.md section 4) | 30 issued codes per network per hour (refused requests do not count); lookups: burst per IP (60 per minute on `AUTH_LIMITER`; 20 per minute in D1 without it), 30 failed lookups per network per hour (a blocked player's lookups do not count) |
 | One-click package relay | 8 completed downloads and 24 requests per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
 | One-click music relay | 256 MiB and 96 requests per account per UTC day; 64 requests per network per hour (7.3) |
 | One-click movie relay | 1,500 MiB and 288 requests per account per UTC day; 192 requests per network per hour (7.3) |

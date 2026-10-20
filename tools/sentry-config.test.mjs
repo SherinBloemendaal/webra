@@ -49,7 +49,7 @@ test('the client config module and the Worker variables carry the same settings 
   assert.equal(release, 'webra@0.9.0+abcdef12');
   const text = clientConfigModule(config, release);
   const mod = await import(`data:text/javascript,${encodeURIComponent(text)}`);
-  assert.deepEqual(mod.TELEMETRY_CONFIG, { dsn: OPERATOR, environment: 'production', release, tracesSampleRate: 0.05 });
+  assert.deepEqual(mod.TELEMETRY_CONFIG, { dsn: OPERATOR, environment: 'production', release, tracesSampleRate: 0.005 });
   assert.ok(Object.isFrozen(mod.TELEMETRY_CONFIG));
   const off = await import(`data:text/javascript,${encodeURIComponent(clientConfigModule(sentryBuildConfig({}), release))}`);
   assert.deepEqual(off.TELEMETRY_CONFIG, { dsn: '', environment: 'dev', release: '', tracesSampleRate: 0 });
@@ -61,7 +61,7 @@ test('the client config module and the Worker variables carry the same settings 
     '--var',
     `SENTRY_RELEASE:${release}`,
     '--var',
-    'SENTRY_TRACES_SAMPLE_RATE:0.05',
+    'SENTRY_TRACES_SAMPLE_RATE:0.005',
   ]);
   // Without a DSN the Worker gets an empty one (its wrapper does nothing).
   assert.equal(workerVarArgs(sentryBuildConfig({ WEBRA_ENV: 'production' }), release)[1], 'SENTRY_DSN:');

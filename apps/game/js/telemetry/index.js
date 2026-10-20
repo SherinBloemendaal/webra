@@ -33,6 +33,51 @@ export const CONSENT_SETTING = 'errorReports';
 const EARLY_MAX = 10;
 /** Breadcrumbs kept per event. */
 const MAX_BREADCRUMBS = 50;
+/** Reports of one and the same error per page load (a render loop throwing every frame sends this many). */
+export const SAME_ERROR_MAX = 3;
+/** Reports per page in any minute, all errors together. */
+export const ERRORS_PER_MINUTE = 10;
+const MINUTE_MS = 60 * 1000;
+
+/**
+ * The page's error report budget: at most SAME_ERROR_MAX reports of one
+ * error (same type and message, else same message text) per page load, and
+ * at most ERRORS_PER_MINUTE reports in any 60 seconds. A burst of players
+ * hitting the same bug sends a few reports each, not one per frame.
+ */
+export class ErrorBudget {
+  constructor({ sameMax = SAME_ERROR_MAX, perMinute = ERRORS_PER_MINUTE, now = () => Date.now() } = {}) {
+    this.sameMax = sameMax;
+    this.perMinute = perMinute;
+    this.now = now;
+    /** Reports per error key. */
+    this.seen = new Map();
+    /** Times of the reports in the last minute. */
+    this.recent = [];
+  }
+
+  /** The key of an event: its first exception's type and message, else its message (cut short). */
+  static keyOf(event) {
+    const ex = event?.exception?.values?.[0];
+    const raw = ex ? `${ex.type ?? ''}: ${ex.value ?? ''}` : String(event?.message ?? event?.logentry?.message ?? '');
+    return raw.slice(0, 200);
+  }
+
+  /** Whether this event may be sent (and count it when so). */
+  take(event) {
+    const t = this.now();
+    while (this.recent.length > 0 && t - this.recent[0] >= MINUTE_MS) this.recent.shift();
+    if (this.recent.length >= this.perMinute) return false;
+    const key = ErrorBudget.keyOf(event);
+    const n = this.seen.get(key) ?? 0;
+    if (n >= this.sameMax) return false;
+    // A page with a great many different errors keeps no unbounded map.
+    if (this.seen.size >= 500 && n === 0) this.seen.clear();
+    this.seen.set(key, n + 1);
+    this.recent.push(t);
+    return true;
+  }
+}
 
 /**
  * Every category of data the SDK could collect by itself is off
@@ -72,6 +117,7 @@ function freshState() {
     early: [],
     offs: [],
     redactor: new Redactor(),
+    budget: new ErrorBudget(),
   };
 }
 
@@ -207,7 +253,8 @@ export function sdkOptions(sdk, config = state.config) {
     maxBreadcrumbs: MAX_BREADCRUMBS,
     initialScope: { tags: baseTags() },
     // The browser's user agent stays: it says which browser and GPU stack failed.
-    beforeSend: (event, hint) => (state.consent ? scrubEvent(withContext(event, hint), state.redactor, { userAgent: true }) : null),
+    // Errors over the page's budget (ErrorBudget) are dropped before anything is sent.
+    beforeSend: (event, hint) => (state.consent && state.budget.take(event) ? scrubEvent(withContext(event, hint), state.redactor, { userAgent: true }) : null),
     beforeSendTransaction: (event) => (state.consent ? scrubEvent(event, state.redactor, { userAgent: true }) : null),
     beforeBreadcrumb: (crumb) => (state.consent ? scrubBreadcrumb(crumb, state.redactor) : null),
     // Every span, also one sent on its own, is scrubbed (a span cannot be dropped here: the transport does that).
@@ -287,8 +334,9 @@ export function noteUserText(value) {
   else state.redactor.harvest(value);
 }
 
-/** Forget everything (tests). */
-export function resetTelemetry() {
+/** Forget everything (tests). `budget`: options of the page's ErrorBudget (a test clock). */
+export function resetTelemetry({ budget = null } = {}) {
   for (const off of state.offs) off();
   state = freshState();
+  if (budget) state.budget = new ErrorBudget(budget);
 }

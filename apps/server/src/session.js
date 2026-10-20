@@ -123,6 +123,19 @@ const UNUSED_TTL_MS = 5 * 60 * 1000;
 const HELLO_TIMEOUT_MS = 15 * 1000;
 const MAX_SOCKETS = 24;
 const MAX_PENDING_SOCKETS = 8;
+/**
+ * Sockets one address may hold before their hello is answered: a script
+ * cannot take every pending place of a public lobby (refused accounts never
+ * get this far, the Worker answers them itself: src/wsrefuse.js).
+ */
+export const MAX_PENDING_PER_IP = 2;
+/**
+ * Sockets one address may hold in all (open or still closing): a script that
+ * gets its sockets closed and never completes the close cannot fill the
+ * session's MAX_SOCKETS places either. Half of them, so a LAN party behind
+ * one address still fits a full lobby with spectators.
+ */
+export const MAX_SOCKETS_PER_IP = 12;
 /** Wrong passwords per IP before a lockout, and the lockout length. */
 const PASSWORD_FAILURES = 5;
 const PASSWORD_LOCKOUT_MS = 60 * 1000;
@@ -350,9 +363,12 @@ export class Session extends DurableObject {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected a WebSocket upgrade.', { status: 426 });
     }
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     const all = this.ctx.getWebSockets();
-    const pending = all.filter((ws) => !this.attachment(ws).client).length;
-    if (all.length >= MAX_SOCKETS || pending >= MAX_PENDING_SOCKETS) {
+    // Waiting for their hello: a refused socket the object is closing (readyState CLOSING) no longer counts.
+    const pending = all.filter((ws) => !(ws.readyState > 1)).map((ws) => this.attachment(ws)).filter((att) => !att.client);
+    const fromIp = all.filter((ws) => this.attachment(ws).ip === ip).length;
+    if (all.length >= MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP || pending.length >= MAX_PENDING_SOCKETS || pending.filter((att) => att.ip === ip).length >= MAX_PENDING_PER_IP) {
       return new Response('Too many connections.', { status: 429 });
     }
     const pair = new WebSocketPair();
@@ -361,14 +377,19 @@ export class Session extends DurableObject {
     const auth = readAuthHeader(request);
     server.serializeAttachment({
       client: null,
-      ip: request.headers.get('CF-Connecting-IP') || 'unknown',
+      ip,
       since: Date.now(),
       busy: false,
       account: auth.account,
       refuse: auth.refuse,
     });
     await this.ensureAlarm(Date.now() + HELLO_TIMEOUT_MS);
-    return new Response(null, { status: 101, webSocket: clientSide });
+    return this.upgraded(clientSide);
+  }
+
+  /** The 101 answer that hands the client side of the pair to the runtime (tests replace it: Node's Response has no 101). */
+  upgraded(client) {
+    return new Response(null, { status: 101, webSocket: client });
   }
 
   // ---- Hibernation handlers ---------------------------------------------------------

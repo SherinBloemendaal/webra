@@ -192,6 +192,8 @@ export class AccountApi {
   user = (id) => this.get(`/api/admin/users/${enc(id)}`);
   updateUser = (id, input) => this.patch(`/api/admin/users/${enc(id)}`, input);
   approveUser = (id) => this.post(`/api/admin/users/${enc(id)}/approve`);
+  /** Approve up to 100 waiting accounts at once (admins): { approved, remaining }. */
+  approveAllPending = () => this.post('/api/admin/users/approve-pending');
   rejectUser = (id, reason) => this.post(`/api/admin/users/${enc(id)}/reject`, reason ? { reason } : {});
   banUser = (id, reason, expiresAt) => this.post(`/api/admin/users/${enc(id)}/ban`, { reason, expiresAt });
   unbanUser = (id) => this.del(`/api/admin/users/${enc(id)}/ban`);

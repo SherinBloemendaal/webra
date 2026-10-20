@@ -8,12 +8,16 @@ import { PROTOCOL_VERSION } from '@webra/protocol';
 import { Browser, Clock, makeEnv, ORIGIN, PASSWORD, promote, setSite, signup } from './accounts-harness.mjs';
 import { makeSession, readAuthHeader } from './fake-do.mjs';
 import { FakeD1 } from './fake-d1.mjs';
+import { upgrades } from '../src/wsrefuse.js';
 
 const clock = new Clock();
 test.after(() => clock.restore());
 
 const create = (b) => b.post('/api/sessions', { name: 'Game', public: true, maxPlayers: 2, version: '1.0.0' });
 const SID = 'c'.repeat(64);
+// Node's Response has no 101: a refused upgrade answers what its server side sent instead.
+upgrades.respond = (client, server) => new Response(JSON.stringify({ sent: server.inbox, closed: server.closed, accepted: server.accepted === true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
 const upgrade = (b, extra = {}) =>
   b.get(`/api/sessions/${SID}/ws`, { csrf: false, json: false, headers: { Upgrade: 'websocket', 'Sec-Fetch-Site': null, ...extra } });
 
@@ -37,6 +41,31 @@ test('creating sessions needs an active account (setting on), and works anonymou
   // IP bans apply either way.
   env.DB.sqlite.prepare("INSERT INTO ip_bans (cidr, ip_v, start_hex, end_hex, reason, created_at) VALUES ('198.51.100.7', 4, 'c6336407', 'c6336407', 'x', 0)").run();
   assert.equal((await create(anon)).body.error.code, 'ip_banned');
+});
+
+test('onlineSessionsOpen off: no new sessions (503 sessions_closed with a message), sockets to running ones still work', async () => {
+  const env = makeEnv({ email: false });
+  const b = await signup(env, 'Host Player');
+  promote(env, b.user.id);
+  await b.post('/api/auth/login', { login: 'host player', password: PASSWORD });
+  assert.equal((await new Browser(env).get('/api/site', { csrf: false })).body.onlineSessionsOpen, true, 'on by default');
+  assert.equal((await create(b)).status, 201);
+  await setSite(env, { onlineSessionsOpen: false });
+  assert.equal((await new Browser(env).get('/api/site', { csrf: false })).body.onlineSessionsOpen, false, 'the game can tell before it asks');
+  const r = await create(b);
+  assert.equal(r.status, 503);
+  assert.equal(r.body.error.code, 'sessions_closed');
+  assert.match(r.body.error.message, /paused.*running go on/s);
+  assert.equal(r.res.headers.get('retry-after'), '300');
+  assert.equal(env.SESSION.inits.length, 1, 'no session object was made');
+  // Joining a session that already exists goes on as before.
+  const fetches = env.SESSION.fetches.length;
+  assert.equal((await upgrade(b)).status, 200);
+  assert.equal(env.SESSION.fetches.length, fetches + 1);
+  // An anonymous request is told the same (no sign-in prompt for a paused server).
+  assert.equal((await create(new Browser(env))).body.error.code, 'sessions_closed');
+  await setSite(env, { onlineSessionsOpen: true });
+  assert.equal((await create(b)).status, 201);
 });
 
 test('map uploads need an active account and record the uploader', async () => {
@@ -64,13 +93,20 @@ test('WebSocket upgrade: the Worker tells the session who connects; clients cann
   const forwarded = env.SESSION.fetches.at(-1).request;
   assert.equal(forwarded.headers.get('Cookie'), null, 'the session cookie does not reach the object');
   assert.deepEqual(readAuthHeader(forwarded), { account: { id: b.user.id, username: 'Player One' }, refuse: null });
-  // Anonymous with accounts required: forwarded with the refusal (the object answers hello with it).
-  await upgrade(new Browser(env));
-  assert.deepEqual(readAuthHeader(env.SESSION.fetches.at(-1).request).refuse.code, 'account_required');
+  // Anonymous with accounts required: the Worker answers with its own socket that says why and
+  // closes; the session object is never woken (refused sockets hold none of its pending places).
+  const count = env.SESSION.fetches.length;
+  const anonRefused = await upgrade(new Browser(env));
+  assert.equal(anonRefused.status, 200, 'the test stand-in for 101');
+  assert.deepEqual(anonRefused.body.sent, [{ t: 'error', code: 'account_required', message: 'Sign in to play online.' }]);
+  assert.deepEqual(anonRefused.body.closed, { code: 1008, reason: 'account_required' });
+  assert.equal(anonRefused.body.accepted, true);
+  assert.equal(env.SESSION.fetches.length, count);
   // Pending account.
   const p = await signup(env, 'Waiting');
-  await upgrade(p);
-  assert.equal(readAuthHeader(env.SESSION.fetches.at(-1).request).refuse.code, 'account_inactive');
+  const pendingRefused = await upgrade(p);
+  assert.equal(pendingRefused.body.sent[0].code, 'account_inactive');
+  assert.equal(env.SESSION.fetches.length, count);
   // Cross-origin upgrades never reach the object.
   const before = env.SESSION.fetches.length;
   assert.equal((await upgrade(b, { Origin: 'https://evil.example' })).status, 403);

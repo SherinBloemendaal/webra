@@ -31,6 +31,7 @@ import {
 import { el, field, toggle as switchRow, statusLine, openDialog, confirmDialog, busy, saveBlob, present } from './ui.js';
 import { FriendsClient, FriendsStore, friendsSummary, groupFriends, socialSettings } from './friends.js';
 import { formatInviteCode, invitePath, inviteInPath, inviteSummary, lookupInvite, normalizeInviteCode } from './invite.js';
+import { showWebgpuNotice } from './webgpu-check.js';
 
 const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
 export const DEFAULT_RETURN = '/play/';
@@ -409,10 +410,14 @@ export async function mountAccountPage(root, deps = {}) {
     });
     const displayName = field('Display name (optional)', el('input', { type: 'text', autocomplete: 'nickname', maxlength: String(policy.displayNameMax) }));
     // Every new account gives an address (docs/accounts-api.md 4.2).
+    // The server sends the link at signup only while verification is required (docs/accounts-api.md 4.2).
+    const linkAtSignup = methods.email && site?.registration?.emailVerificationRequired === true;
     const email = field('Email', el('input', { type: 'email', autocomplete: 'email', maxlength: String(EMAIL_MAX), required: true }), {
-      help: methods.email
+      help: linkAtSignup
         ? 'We send a link to confirm it. Used for password resets, never shown to other players.'
-        : 'Never shown to other players. This server cannot send confirmation links yet; you confirm the address from your account page once it can.',
+        : methods.email
+          ? 'Never shown to other players. Confirm it later from your account page to be able to reset your password.'
+          : 'Never shown to other players. This server cannot send confirmation links yet; you confirm the address from your account page once it can.',
     });
     const usePasskey = methods.passkey && methods.password ? switchRow('Use a passkey instead of a password') : null;
     const password = field('Password', el('input', { type: 'password', autocomplete: 'new-password', minlength: String(policy.passwordMin), maxlength: String(policy.passwordMax) }), {
@@ -434,10 +439,14 @@ export async function mountAccountPage(root, deps = {}) {
     };
     usePasskey?.input.addEventListener('change', syncPasswordRow);
     syncPasswordRow();
+    // Before anyone signs up: WebRA needs WebGPU (filled and shown only when this browser lacks it).
+    const webgpu = el('p', { class: 'notice notice-warning webgpu-notice', hidden: true });
+    showWebgpuNotice(webgpu).catch(() => {});
     const form = el(
       'form',
       { class: 'form-stack', novalidate: true },
       status.node,
+      webgpu,
       site?.registration?.approvalRequired ? el('p', { class: 'notice', text: 'WebRA is in a closed beta: new accounts wait for an admin to approve them.' }) : null,
       username.row,
       displayName.row,
@@ -485,7 +494,7 @@ export async function mountAccountPage(root, deps = {}) {
         const r = await api.signup(input);
         await session.setUser(r.user);
         if (goOn()) return;
-        notice.show(methods.email ? `Your account is created. We sent a link to ${input.email} to confirm it.` : 'Your account is created.', 'ok');
+        notice.show(linkAtSignup ? `Your account is created. We sent a link to ${input.email} to confirm it.` : 'Your account is created.', 'ok');
         render();
       }, (err) => {
         if (err.field) form.querySelector(`[name="${err.field}"]`)?.focus?.();

@@ -10,6 +10,8 @@ import { AccountApi, AccountError, errorText, formatDateTime } from '/lib/js/acc
 import { checkInput } from '/lib/js/ui/controls.js';
 import {
   AUDIT_ACTIONS,
+  approveAllPending,
+  mailBudgetLevel,
   BAN_PRESETS,
   FLAGS,
   GUIDE_FILTERS,
@@ -175,16 +177,45 @@ export async function mountAdmin(root, deps = {}) {
   }
 
   // ---- Overview --------------------------------------------------------------------------
-  /** Account mail sent today against the daily ceiling; a warning once it is reached. */
+  /**
+   * Account mail sent today against the daily ceiling: a help line, a
+   * warning from 80% on and an alert once it is reached (both shown at the
+   * top of the overview).
+   */
   function mailBudgetLine(budget) {
     if (!budget) return null;
     const text = `Account email today: ${budget.sentToday} of ${budget.dailyLimit} (UTC day).`;
-    if (!budget.limitReached) return el('p', { class: 'form-help', text });
-    return el('p', { class: 'notice notice-error', role: 'alert' }, el('strong', { text: 'Daily email limit reached. ' }), el('span', { text: `${text} No verification or reset email goes out until the next UTC day; players are not told. Raise EMAIL_DAILY_LIMIT if this is real use.` }));
+    const level = mailBudgetLevel(budget);
+    if (level === 'ok') return el('p', { class: 'form-help', text });
+    if (level === 'near') {
+      return el('p', { class: 'notice notice-warning', role: 'status', 'data-mail-budget': 'near' }, el('strong', { text: 'Email is close to the daily limit. ' }), el('span', { text: `${text} Once it is reached, no verification or reset email goes out until the next UTC day. Raise EMAIL_DAILY_LIMIT (wrangler.jsonc) and deploy, or switch email verification off in Site settings.` }));
+    }
+    return el('p', { class: 'notice notice-error', role: 'alert', 'data-mail-budget': 'reached' }, el('strong', { text: 'Daily email limit reached. ' }), el('span', { text: `${text} No verification or reset email goes out until the next UTC day; players are not told. Raise EMAIL_DAILY_LIMIT if this is real use.` }));
   }
 
-  async function renderOverview() {
-    const status = statusLine();
+  /** "Approve all pending" (admins): every waiting account, 100 per call, with progress. */
+  function approveAllButton(pending, status) {
+    if (!can.approveAll || pending === 0) return null;
+    const button = el('button', { type: 'button', class: 'btn btn-small', text: `Approve all pending (${pending})` });
+    button.addEventListener('click', async () => {
+      const ok = await confirmDialog('Approve all pending', `Approve every account that is waiting for approval (${pending} now)? Banned accounts and accounts waiting for their email are left alone.`, { confirmText: 'Approve all' });
+      if (!ok) return;
+      await busy(
+        button,
+        status,
+        async () => {
+          const r = await approveAllPending(api, { onProgress: (p) => status.show(`${p.approved} approved, ${p.remaining} still waiting...`, 'ok') });
+          status.show(`${r.approved} account${r.approved === 1 ? '' : 's'} approved${r.remaining ? `; ${r.remaining} could not be (banned or changed meanwhile)` : ''}.`, 'ok');
+          renderOverview({ keepStatus: status });
+        },
+        (err) => `${err.approved ?? 0} approved, then: ${errorText(err)}`,
+      );
+    });
+    return el('p', { class: 'form-actions' }, button);
+  }
+
+  async function renderOverview({ keepStatus = null } = {}) {
+    const status = keepStatus ?? statusLine();
     panel.replaceChildren(status.node, el('p', { class: 'status-line', text: 'Loading...' }));
     try {
       const s = await api.stats();
@@ -194,30 +225,36 @@ export async function mountAdmin(root, deps = {}) {
         return el('li', { class: 'panel stat' }, body);
       };
       const pending = s.users.byStatus.pending_approval ?? 0;
+      const mail = mailBudgetLine(s.email);
+      const mailFirst = mailBudgetLevel(s.email) !== 'ok';
       panel.replaceChildren(
-        status.node,
-        el(
-          'ul',
-          { class: 'stats', 'aria-label': 'Overview' },
-          tile('Users', s.users.total, '#users'),
-          tile('Waiting for approval', pending, '#users?status=pending_approval'),
-          tile('Email not verified', s.users.byStatus.pending_email ?? 0, '#users?status=pending_email'),
-          tile('Active', s.users.byStatus.active ?? 0, '#users?status=active'),
-          tile('Banned', s.users.byStatus.banned ?? 0, '#users?status=banned'),
-          tile('New in 7 days', s.users.newLast7Days),
-          tile('Signed-in sessions', s.sessions.active),
-          tile('Open lobbies', s.games.lobbies),
-          tile('Running games', s.games.running),
-          tile('Maps', s.maps.total),
-          tile('IP bans', s.bans.ips),
+        ...present(
+          status.node,
+          mailFirst ? mail : null,
+          el(
+            'ul',
+            { class: 'stats', 'aria-label': 'Overview' },
+            tile('Users', s.users.total, '#users'),
+            tile('Waiting for approval', pending, '#users?status=pending_approval'),
+            tile('Email not verified', s.users.byStatus.pending_email ?? 0, '#users?status=pending_email'),
+            tile('Active', s.users.byStatus.active ?? 0, '#users?status=active'),
+            tile('Banned', s.users.byStatus.banned ?? 0, '#users?status=banned'),
+            tile('New in 7 days', s.users.newLast7Days),
+            tile('Signed-in sessions', s.sessions.active),
+            tile('Open lobbies', s.games.lobbies),
+            tile('Running games', s.games.running),
+            tile('Maps', s.maps.total),
+            tile('IP bans', s.bans.ips),
+          ),
+          el(
+            'p',
+            { class: 'form-help' },
+            el('span', { text: `Roles: ${s.users.byRole.admin} admin, ${s.users.byRole.moderator} moderator, ${s.users.byRole.user} user. ` }),
+            el('span', { text: `Email sending: ${s.services.email ? 'available' : 'not available (needs the email plan)'}. Discord: ${s.services.discord ? 'configured' : 'not configured'}.` }),
+          ),
+          approveAllButton(pending, status),
+          mailFirst ? null : mail,
         ),
-        el(
-          'p',
-          { class: 'form-help' },
-          el('span', { text: `Roles: ${s.users.byRole.admin} admin, ${s.users.byRole.moderator} moderator, ${s.users.byRole.user} user. ` }),
-          el('span', { text: `Email sending: ${s.services.email ? 'available' : 'not available (needs the email plan)'}. Discord: ${s.services.discord ? 'configured' : 'not configured'}.` }),
-        ),
-        mailBudgetLine(s.email),
       );
       for (const a of panel.querySelectorAll('a.stat-link')) {
         a.addEventListener('click', (e) => {
@@ -998,6 +1035,11 @@ export async function mountAdmin(root, deps = {}) {
       'The server serves /play only to active, unbanned accounts (admins and moderators always). Off: anyone can load the game. A change reaches every server within 30 seconds; a revoked sign-in loses the game within 10 minutes.',
     );
     const online = toggle('Online play needs an account', s.onlineRequiresAccount, 'Off: anonymous players can host and join (IP bans still apply).');
+    const sessionsOpen = toggle(
+      'New online games',
+      s.onlineSessionsOpen !== false,
+      'Off: nobody can host a new online game (the game says it is paused); lobbies and games already running go on. A kill switch for heavy load; it applies at once.',
+    );
     const relay = toggle('One-click content relay', s.contentRelay, 'Only for accounts with the one-click flag, and admins.');
     const live = toggle('Live updates', s.realtime !== false, 'Open pages show friend requests, approvals and settings changes at once. Off: they pick changes up on their next check.', unavailable(s.realtime !== false, svc.realtime, 'Unavailable: the realtime hub is not bound'));
     const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: String(MOTD_MAX) }), { help: `Plain text, shown on the start screen and the account page. At most ${MOTD_MAX} characters.` });
@@ -1008,7 +1050,7 @@ export async function mountAdmin(root, deps = {}) {
       { class: 'form-stack', novalidate: true },
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Registration' }), open.row, approval.row, verify.row),
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Sign-in methods' }), loginPw.row, loginEmail.row, loginDiscord.row, loginPasskey.row),
-      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, relay.row, live.row),
+      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, sessionsOpen.row, relay.row, live.row),
       motd.row,
       el('div', { class: 'form-actions' }, save),
     );
@@ -1020,6 +1062,7 @@ export async function mountAdmin(root, deps = {}) {
         login: { password: loginPw.input.checked, email: loginEmail.input.checked, discord: loginDiscord.input.checked, passkey: loginPasskey.input.checked },
         gameRequiresAccount: game.input.checked,
         onlineRequiresAccount: online.input.checked,
+        onlineSessionsOpen: sessionsOpen.input.checked,
         contentRelay: relay.input.checked,
         realtime: live.input.checked,
         motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, MOTD_MAX),

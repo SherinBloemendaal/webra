@@ -12,8 +12,20 @@
 //
 // Refusals: a page navigation goes to /account/?returnTo=<path>; any other
 // request gets 401 or 403 with a JSON error and nothing of the game.
+//
+// Caching (docs/security.md "The play gate"): pages (HTML) are revalidated on
+// every load; the other files (about 250 per load) are kept by the browser
+// for up to a play pass lifetime (10 minutes). `Vary: Cookie` makes the whole
+// Cookie header part of the cache key, so a kept file is used only while the
+// cookies stay the same: a reload with the same play pass (or, with the game
+// open to all, the same cookies) costs no request for them, and a renewed
+// pass or a new sign-in fetches them again. A 304 revalidation gets the same
+// rule as its 200. File names carry no version, so each page load sets the
+// build cookie (the deployed dist/version.json `build`) and a file is kept
+// only when its request named the current build: with `Vary: Cookie`, a page
+// of a newer deploy never runs with files of an older one.
 
-import { errorResponse, HttpError, isReturnPath, parseCookies, cookieName, withCookies } from './http.js';
+import { cookieHeader, errorResponse, HttpError, isReturnPath, parseCookies, cookieName, withCookies } from './http.js';
 import { ipSalt } from './ipkey.js';
 import { applyPlayHeaders } from './static-headers.js';
 import { logError, reportHttpError } from './telemetry.js';
@@ -23,8 +35,16 @@ import { loadSiteCached } from './accounts/site.js';
 import { sessionToken } from './accounts/sessions.js';
 import { banOf, effectiveStatus } from './accounts/users.js';
 
-/** Cache-Control of every gated response: browsers may keep a copy, shared caches never. */
+/** Cache-Control of the game's pages (and of anything not kept, below): browsers revalidate on every load, shared caches never store it. */
 export const PLAY_CACHE_CONTROL = 'private, max-age=0, must-revalidate';
+/** Cache-Control of the other game files of the current build: the browser keeps them as long as a play pass lives. */
+export const PLAY_FILE_CACHE_CONTROL = `private, max-age=${PASS_TTL_S}`;
+/** The cookie that names the build of the game page the browser loaded last (part of every file's cache key through Vary: Cookie). */
+export const BUILD_COOKIE = 'webra_build';
+/** How long the build cookie lasts (it is set again by every page load). */
+const BUILD_COOKIE_TTL_S = 30 * 24 * 60 * 60;
+/** A build id as dist/version.json writes it: `<version>+<commit>`. */
+const BUILD_RE = /^[0-9A-Za-z.+_-]{1,64}$/;
 const STAFF = new Set(['admin', 'moderator']);
 const DEFAULT_RETURN = '/play/';
 
@@ -104,14 +124,57 @@ function appendVary(headers, name) {
   else if (!current.split(',').some((v) => v.trim().toLowerCase() === name.toLowerCase())) headers.set('Vary', `${current}, ${name}`);
 }
 
-/** The file from Workers Static Assets with the static security headers and private caching. */
+/** The deployed build per isolate (an isolate serves one deployment's assets). */
+const builds = new WeakMap();
+
+/**
+ * The build of the deployed files (dist/version.json `build`, read once per
+ * isolate from the static assets), or null when it cannot be read (then no
+ * file is kept by the browser).
+ */
+export async function deployedBuild(env, url) {
+  if (builds.has(env.ASSETS)) return builds.get(env.ASSETS);
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL('/version.json', url), { method: 'GET' }));
+    if (!r.ok) return null;
+    const build = (await r.json())?.build;
+    if (typeof build !== 'string' || !BUILD_RE.test(build)) return null;
+    builds.set(env.ASSETS, build);
+    return build;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a game path is a page (HTML): /play, a directory (trailing slash)
+ * or a .html file. Decided from the request path, not the answer: a 304
+ * revalidation carries no Content-Type, and a page must never be kept.
+ */
+export function isPagePath(pathname) {
+  return pathname === '/play' || pathname.endsWith('/') || pathname.toLowerCase().endsWith('.html');
+}
+
+/**
+ * The file from Workers Static Assets with the static security headers and
+ * private caching: pages revalidate, other files of the current build are
+ * kept (see the top of this file). A 304 (the browser revalidated after the
+ * time ran out) gets the same headers as the 200 it confirms, because the
+ * browser replaces the stored headers with the 304's (RFC 9111 4.3.4). A
+ * page sets the build cookie when the browser's is not the current build.
+ */
 async function serve(request, env, cookies) {
   const asset = await env.ASSETS.fetch(request);
   const res = new Response(asset.body, asset);
   applyPlayHeaders(res.headers);
-  res.headers.set('Cache-Control', PLAY_CACHE_CONTROL);
+  const page = isPagePath(new URL(request.url).pathname);
+  const build = res.status === 200 || res.status === 304 ? await deployedBuild(env, request.url) : null;
+  const named = parseCookies(request).get(cookieName(request, BUILD_COOKIE)) ?? null;
+  const keep = build !== null && !page && named === build;
+  res.headers.set('Cache-Control', keep ? PLAY_FILE_CACHE_CONTROL : PLAY_CACHE_CONTROL);
   appendVary(res.headers, 'Cookie');
-  return withCookies(res, cookies);
+  const out = page && build !== null && named !== build ? [...cookies, cookieHeader(request, BUILD_COOKIE, build, BUILD_COOKIE_TTL_S)] : cookies;
+  return withCookies(res, out);
 }
 
 /** A refusal: the redirect to sign in for page loads, otherwise the JSON error (nothing of the game). */

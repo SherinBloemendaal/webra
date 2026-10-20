@@ -178,8 +178,14 @@ export const REPLAY_TIME_MAX = 8.64e15;
 export const ACCOUNT_REPLAYS_MAX = 100;
 export const ACCOUNT_REPLAYS_BYTES_MAX = 100 * 1024 * 1024;
 export const ACCOUNT_REPLAY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-/** Largest replay file one upload may carry (UTF-8 bytes, before compression). */
-export const ACCOUNT_REPLAY_MAX_BYTES = 16 * 1024 * 1024;
+/**
+ * Largest replay file one upload may carry (UTF-8 bytes, before compression).
+ * The Worker holds an upload a few times over while it checks and compresses
+ * it (bytes, text, parsed replay, gzip), so this stays well inside an
+ * isolate's 128 MiB even with several uploads at once; the game keeps a
+ * larger replay on the device only (js/account/replays.js).
+ */
+export const ACCOUNT_REPLAY_MAX_BYTES = 4 * 1024 * 1024;
 /** How the game ended for the uploader: `left` the player left before the end, `spectated` a spectator's replay. */
 export const ACCOUNT_REPLAY_RESULTS = ['won', 'lost', 'left', 'spectated', 'unknown'];
 export const ACCOUNT_REPLAY_ID_RE = /^[0-9a-f]{16}$/;

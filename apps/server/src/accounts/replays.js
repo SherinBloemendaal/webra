@@ -163,7 +163,7 @@ async function uploadReplay(ctx) {
   checkJsonType(ctx.request);
   const result = resultOf(ctx.url);
   await ctx.limit('replay-upload', user.id, REPLAY_UPLOAD_LIMIT, HOUR, 'Too many replays uploaded. Try again later.');
-  // Peak memory of a 16 MiB upload: the bytes, their text and the parsed replay; the text goes
+  // Peak memory of a 4 MiB upload: the bytes, their text and the parsed replay; the text goes
   // out of reach after parsing, the replay after its summary, so only the bytes reach R2.
   const body = await readBody(ctx.request, ACCOUNT_REPLAY_MAX_BYTES);
   const bytes = body.bytes;

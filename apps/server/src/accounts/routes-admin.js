@@ -404,6 +404,53 @@ async function approve(ctx, { id }) {
   return json({ user: adminUser(await target(ctx, row.id), { moderator: actor.role !== 'admin' }) });
 }
 
+/** Accounts one "approve all pending" call approves at most; the dashboard calls again until none are left. */
+export const APPROVE_ALL_MAX = 100;
+
+/** Accounts waiting for approval that are not banned (a ban is decided separately). */
+const PENDING_UNBANNED = `u.status = 'pending_approval' AND NOT EXISTS (SELECT 1 FROM account_bans b WHERE b.user_id = u.id AND b.revoked_at IS NULL AND (b.expires_at IS NULL OR b.expires_at > ?1))`;
+
+/**
+ * POST /api/admin/users/approve-pending (admins): approve the oldest
+ * APPROVE_ALL_MAX accounts waiting for approval (not banned, not waiting for
+ * their email) in one D1 batch with one audit entry that holds the count and
+ * the ids. Answers { approved, remaining }; each approved account's pages
+ * hear it at once (realtime), the other dashboards reload once.
+ */
+async function approveAllPending(ctx) {
+  await ctx.body([]);
+  const actor = await ctx.requireRole('admin');
+  const db = ctx.db;
+  const { results } = await db.prepare(`SELECT u.id FROM users u WHERE ${PENDING_UNBANNED} ORDER BY u.created_at, u.id LIMIT ?2`).bind(ctx.now, APPROVE_ALL_MAX).all();
+  const ids = results.map((r) => r.id);
+  let approved = [];
+  if (ids.length > 0) {
+    const updates = ids.map((id) => db.prepare("UPDATE users SET status = 'active', approved_at = ?2, approved_by = ?3 WHERE id = ?1 AND status = 'pending_approval'").bind(id, ctx.now, actor.id));
+    // The audit entry, in the same batch, lists the accounts this batch actually approved (an
+    // account another admin approved meanwhile is not among them): those it stamped with this
+    // actor and time. None approved: no entry.
+    const auditApproved = db
+      .prepare(
+        `INSERT INTO audit_log (at, actor_id, actor_username, action, target_type, target_id, target_label, before_json, after_json, reason)
+         SELECT ?1, ?2, ?3, 'user.approve_all', 'user', NULL, NULL, '{"status":"pending_approval"}',
+                json_object('status', 'active', 'count', COUNT(*), 'userIds', json_group_array(id)), NULL
+         FROM (SELECT id FROM users WHERE id IN (SELECT value FROM json_each(?4)) AND status = 'active' AND approved_at = ?1 AND approved_by = ?2 ORDER BY created_at, id)
+         HAVING COUNT(*) > 0`,
+      )
+      .bind(ctx.now, actor.id, actor.username, JSON.stringify(ids));
+    const out = await db.batch([...updates, auditApproved]);
+    approved = ids.filter((_, i) => out[i].meta.changes > 0);
+  }
+  if (approved.length > 0) {
+    notify(ctx, async (env) => {
+      await publishToUsers(env, approved, { topic: 'account', kind: 'status', data: { status: 'active' } });
+      await publishAdmin(env, { kind: 'user_approved', origin: await originOf(ctx) });
+    });
+  }
+  const remaining = (await db.prepare(`SELECT COUNT(*) AS n FROM users u WHERE ${PENDING_UNBANNED}`).bind(ctx.now).first()).n;
+  return json({ approved: approved.length, remaining });
+}
+
 async function reject(ctx, { id }) {
   const body = await ctx.body(['reason']);
   const actor = await ctx.requireRole('moderator');
@@ -905,6 +952,7 @@ export function registerAdminRoutes(router) {
     .add('GET', '/api/admin/users/:id', userDetail, read)
     .add('PATCH', '/api/admin/users/:id', patchUser)
     .add('DELETE', '/api/admin/users/:id', softDelete)
+    .add('POST', '/api/admin/users/approve-pending', approveAllPending)
     .add('POST', '/api/admin/users/:id/approve', approve)
     .add('POST', '/api/admin/users/:id/reject', reject)
     .add('POST', '/api/admin/users/:id/ban', ban)

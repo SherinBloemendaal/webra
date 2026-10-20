@@ -70,7 +70,7 @@
   // the most account mails sent per UTC day, whoever asks (docs/deploy.md).
   "vars": {
     "SITE_ORIGIN": "https://webra.sherin.dev",
-    "EMAIL_DAILY_LIMIT": "300",
+    "EMAIL_DAILY_LIMIT": "5000",
     // PBKDF2 iterations for new password hashes (src/accounts/password.js):
     // the Workers Paid plan has the CPU room for the maximum, 100,000.
     "PASSWORD_ITERATIONS": "100000",
@@ -78,11 +78,20 @@
     "SENTRY_DSN": "",
     "SENTRY_ENVIRONMENT": "dev",
     "SENTRY_RELEASE": "",
-    "SENTRY_TRACES_SAMPLE_RATE": "0.05"
+    "SENTRY_TRACES_SAMPLE_RATE": "0.005"
   },
-  // Per-IP burst limits for the sign-in endpoints without D1 writes
-  // (src/accounts/context.js `burst`): 20 requests per minute per purpose and
-  // address. The Worker falls back to D1 counters when the binding is absent.
-  "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
-  "observability": { "enabled": true }
+  // Per-IP burst limits without D1 writes (src/accounts/context.js `burst`),
+  // per purpose and address and per minute. AUTH_LIMITER: the sign-in
+  // endpoints (password, passkeys, tokens, Discord, invite lookups).
+  // APP_LIMITER: what a signed-in game calls on its own (presence, friends
+  // list, realtime and session sockets), high enough for many players behind
+  // one NAT or mobile carrier address. The Worker falls back to D1 counters
+  // when a binding is absent.
+  "ratelimits": [
+    { "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "APP_LIMITER", "namespace_id": "1002", "simple": { "limit": 600, "period": 60 } }
+  ],
+  // Workers Logs: one request in ten is logged (a launch burst would
+  // otherwise use the daily log allowance in hours; docs/launch.md).
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
 }

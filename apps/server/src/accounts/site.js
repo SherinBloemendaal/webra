@@ -118,6 +118,7 @@ export function effective(settings, env) {
     registrationOpen: settings.registration.open,
     onlineRequiresAccount: settings.onlineRequiresAccount,
     gameRequiresAccount: settings.gameRequiresAccount,
+    onlineSessionsOpen: settings.onlineSessionsOpen,
     contentRelay: settings.contentRelay,
     // The realtime channel: switched on and the binding there (pages poll otherwise).
     realtime: settings.realtime && svc.realtime,
@@ -138,6 +139,9 @@ export function publicSite(request, env, settings) {
     services: { ...eff.services, realtime: eff.realtime },
     onlineRequiresAccount: settings.onlineRequiresAccount,
     gameRequiresAccount: settings.gameRequiresAccount,
+    // Off: POST /api/sessions answers 503 sessions_closed, and the game shows that answer's message
+    // when a player tries to host (js/account/ui.js onlineRefusal).
+    onlineSessionsOpen: settings.onlineSessionsOpen,
     contentRelay: settings.contentRelay,
     motd: settings.motd,
     passkey: { rpId: rpIdFor(request) },

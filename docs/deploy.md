@@ -66,6 +66,15 @@ deploy can never ship a game without its engine.
 
 ## Automatic deploys (GitHub Actions)
 
+**A deploy ends every running online game and lobby.** Deploying a new
+Worker version restarts its Durable Objects, so every session object
+(`Session`) drops its WebSockets and the players are disconnected; a
+rollback does the same. Games in the browser (skirmish, missions) are not
+affected until the page reloads. Do not deploy while online games run: switch
+"New online games" off in the admin site settings first and wait for the
+running games to end (see [launch.md](launch.md), "No deploys while games
+run").
+
 `.github/workflows/deploy.yml` runs on every push to `main` and on manual
 dispatch (Actions, Deploy, Run workflow):
 
@@ -221,6 +230,8 @@ npx wrangler rollback <version-id>
 
 A rollback restores the Worker code and its assets, but not the D1 schema:
 write migrations so that the previous Worker version still works with them.
+Like a deploy, a rollback ends every running online game (the Durable
+Objects restart).
 
 A rollback across the Durable Object migration `v2` (the realtime hub
 `UserHub`, docs/accounts-api.md 5.12) is fine: the class stays defined, the
@@ -307,7 +318,7 @@ settings.
 | `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` | variables in `wrangler.jsonc` (empty DSN: off), set by the deploy | Error reports of the Worker (see Error reports) |
 | `EMAIL_FROM` | repository variable, passed by the deploy (absent locally) | Sender of account mail; set, the deploy also adds the `send_email` binding `EMAIL` (see Email). Unset: no email |
 | `SITE_ORIGIN` | variable in `wrangler.jsonc` | Where links in account mail point (`https://webra.sherin.dev`); `wrangler dev` links to its own local address |
-| `EMAIL_DAILY_LIMIT` | variable in `wrangler.jsonc` | Most account mails per UTC day, whoever asks (default 300, 1 to 100,000); over it nothing is sent until the next day and the admin overview warns |
+| `EMAIL_DAILY_LIMIT` | variable in `wrangler.jsonc` (5000 since the launch, docs/launch.md) | Most account mails per UTC day, whoever asks (code default 300, 1 to 100,000); over it nothing is sent until the next day; the admin overview warns from 80% and alerts at the limit |
 | `PASSWORD_ITERATIONS` | variable in `wrangler.jsonc` (100,000 since 0.15.0, on the Workers Paid plan) | PBKDF2 iterations for new hashes, 10,000 to 100,000 (code default 40,000). CPU ceiling: one derivation must fit well inside the Free plan's 10 ms per request; keep it at or below 50,000 on the Free plan, 100,000 is fine on the Paid plan |
 
 Secrets are set by the owner, never committed:
@@ -366,10 +377,11 @@ as described in docs/security.md and changed in both
 The D1 Free plan allows 100,000 row writes a day, so floods must not turn
 into writes:
 
-- `wrangler.jsonc` binds the Workers Rate Limiting API as `AUTH_LIMITER`
-  (`ratelimits`, 20 requests per minute per purpose and address) for the
-  sign-in, passkey, token and Discord endpoints: those checks never touch
-  D1. Without the binding (for example if the account's plan rejects it:
+- `wrangler.jsonc` binds the Workers Rate Limiting API twice (`ratelimits`,
+  per minute, purpose and address): `AUTH_LIMITER` (60) for the sign-in,
+  passkey, token, Discord and invite lookup endpoints, and `APP_LIMITER`
+  (600) for presence, the friends list, realtime and session sockets (many
+  players behind one NAT): those checks never touch D1. Without a binding (for example if the account's plan rejects it:
   remove the `ratelimits` entry and redeploy) the Worker falls back to D1
   counters that are read before they are written, so refused requests still
   cost no write.
@@ -439,10 +451,11 @@ To enable it (owner, in this order):
    can confirm it from their account page, accounts without an address keep
    working and can add one.
 
-The daily ceiling `EMAIL_DAILY_LIMIT` (300 in `wrangler.jsonc`) keeps a
+The daily ceiling `EMAIL_DAILY_LIMIT` (5000 in `wrangler.jsonc`) keeps a
 flood of requests from running up the bill: the admin overview shows the
-day's count and warns once it is reached; raise it in `wrangler.jsonc` when
-real use needs more. The Worker serves only `webra.sherin.dev`
+day's count, warns at the top from 80% and alerts once it is reached; change
+it in `wrangler.jsonc` when real use needs more (or less). While email
+verification is off, signups send no mail at all (docs/accounts-api.md 4.2). The Worker serves only `webra.sherin.dev`
 (`workers_dev` and `preview_urls` are off), and mail links always point at
 `SITE_ORIGIN`.
 
@@ -471,6 +484,13 @@ node test/e2e/email.mjs http://localhost:8798
 The cron trigger runs `apps/server/src/accounts/cron.js` once a day. To run
 it locally: `npx wrangler dev --test-scheduled`, then
 `curl "http://localhost:8787/__scheduled?cron=17+3+*+*+*"`.
+
+## Workers Logs
+
+`observability` in `wrangler.jsonc` keeps Workers Logs on with
+`head_sampling_rate` 0.1: one request in ten is logged (with its
+`console` lines), so a launch burst does not use the daily log allowance in
+hours. Set it to 1 temporarily to debug one problem.
 
 ## Error reports
 
@@ -504,7 +524,7 @@ as soon as step 2 is deployed):
 
    The next deploy builds the game and the website with it and passes it to
    the Worker. Optional variables: `SENTRY_ENVIRONMENT` (default
-   `production`) and `SENTRY_TRACES_SAMPLE_RATE` (default `0.05`).
+   `production`) and `SENTRY_TRACES_SAMPLE_RATE` (default `0.005`).
 3. Optional, for releases, source files and deploy markers: see below.
 
 To turn reporting off again, delete the variable (or set it to `off`) and
@@ -517,7 +537,7 @@ build` and, for the Worker, passed by the deploy workflow as `--var`:
 |------|---------|---------|
 | `SENTRY_DSN` | none: nothing is reported | Where reports go (a public client key, not a secret). `off` is the same as unset. A DSN for another host needs that host in the CSP `connect-src` (`apps/website/_headers` and `apps/server/src/static-headers.js`), or the build stops |
 | `SENTRY_ENVIRONMENT` | `production` in production builds (`WEBRA_ENV=production`), else `dev` | The Sentry environment |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of page loads and Worker requests sent as performance traces (0 to 1) |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.005` | Share of page loads and Worker requests sent as performance traces (0 to 1); Durable Object alarms and WebSocket messages are never traced |
 
 Local builds, `wrangler dev` (`SENTRY_DSN` is empty in `wrangler.jsonc`)
 and the tests report nothing. To try reports locally, build with

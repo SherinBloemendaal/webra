@@ -37,6 +37,7 @@ import { effectiveStatus } from './accounts/users.js';
 import { Session as SessionObject } from './session.js';
 import { UserHub as UserHubObject } from './userhub.js';
 import { realtimeOn } from './realtime/publish.js';
+import { refuseUpgrade } from './wsrefuse.js';
 import { instrumentSession, logError, reportHttpError, withTelemetry } from './telemetry.js';
 
 /** The session Durable Object (wrangler.jsonc), with error reports. */
@@ -49,10 +50,14 @@ const SESSION_LIMIT = 20;
 const SESSION_WINDOW_MS = 60 * 60 * 1000;
 const SESSION_BODY_MAX = 1024;
 
+/** The answer while the site setting `onlineSessionsOpen` is off (the game shows its message). */
+const SESSIONS_CLOSED_MESSAGE = 'New online games are paused for a moment because of heavy load. Games already running go on. Try again in a few minutes, or play a skirmish against the AI.';
+
 async function createSession(ctx) {
   const { request, env } = ctx;
   const { value } = await readJson(request, SESSION_BODY_MAX);
   const input = validateCreateSession(value);
+  if (!(await ctx.eff()).onlineSessionsOpen) throw new HttpError(503, 'sessions_closed', SESSIONS_CLOSED_MESSAGE, { 'retry-after': '300' }, { retryAfter: 300 });
   await requirePlay(ctx);
   if (!(await takeQuota(env.DB, ctx.salt(), 'sessions', ctx.ip, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many sessions created. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
@@ -63,11 +68,18 @@ async function createSession(ctx) {
   return json({ id: id.toString(), hostKey }, 201);
 }
 
+/** Session socket upgrades per address and hour when the APP_LIMITER binding is missing (D1 fallback). */
+const SESSION_WS_FALLBACK = [300, 60 * 60 * 1000];
+
 /**
- * WebSocket upgrade into the session's Durable Object. The Worker decides
- * who the connection is (session cookie) and whether it may play, and tells
- * the object in a header it sets itself (any client copy is replaced); the
- * object answers `hello` with the refusal, so the player sees why.
+ * WebSocket upgrade into the session's Durable Object. A burst limit per
+ * address comes first (APP_LIMITER, no D1 access). The Worker decides who
+ * the connection is (session cookie) and whether it may play. A refused
+ * upgrade never reaches the object: the Worker answers it with its own
+ * socket that carries the reason and closes (src/wsrefuse.js), so refused
+ * connections cannot fill a lobby's pending sockets. Otherwise the object
+ * learns the account in a header the Worker sets itself (any client copy
+ * is replaced).
  */
 async function connectSession(ctx, id) {
   const { request, env } = ctx;
@@ -81,10 +93,12 @@ async function connectSession(ctx, id) {
   } catch {
     throw new HttpError(404, 'not_found', 'No such session.');
   }
+  await ctx.burst('session-ws', SESSION_WS_FALLBACK);
   const verdict = await playVerdict(ctx);
+  if (verdict.refuse) return refuseUpgrade({ code: verdict.refuse.code, message: verdict.refuse.message });
   const headers = new Headers(request.headers);
   headers.delete('Cookie');
-  headers.set(AUTH_HEADER, JSON.stringify({ account: verdict.account, refuse: verdict.refuse ? { code: verdict.refuse.code, message: verdict.refuse.message } : null }));
+  headers.set(AUTH_HEADER, JSON.stringify({ account: verdict.account, refuse: null }));
   return env.SESSION.get(doId).fetch(new Request(request, { headers }));
 }
 

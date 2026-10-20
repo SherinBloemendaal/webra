@@ -11,6 +11,7 @@ import { discordName } from '../src/accounts/discord.js';
 import { parseCidr } from '../src/accounts/ip.js';
 import { sha256Hex } from '../src/crypto.js';
 import { DEV_IP_SALT } from '../src/ipkey.js';
+import { APP_PURPOSES } from '../src/accounts/context.js';
 
 const clock = new Clock();
 test.after(() => clock.restore());
@@ -164,6 +165,29 @@ test('F4: refused requests write nothing; the rate limiting binding keeps bursts
   assert.ok(calls.every((k) => /^passkey:[0-9a-f]{64}$/.test(k) && !k.includes('203.0.113.61')), 'binding keys are keyed hashes');
 });
 
+test('burst limits: sign-in purposes count on AUTH_LIMITER, what a signed-in game calls by itself on APP_LIMITER', async () => {
+  const seen = { auth: [], app: [] };
+  const limiter = (name, max) => ({ limit: async ({ key }) => (seen[name].push(key.split(':')[0]), { success: seen[name].filter((p) => p === key.split(':')[0]).length <= max }) });
+  const env = makeEnv({ email: false, vars: { AUTH_LIMITER: limiter('auth', 2), APP_LIMITER: limiter('app', 1000) } });
+  assert.deepEqual([...APP_PURPOSES].sort(), ['friends-list', 'presence', 'realtime', 'session-ws']);
+  const b = await signup(env, 'Nat Player', { ip: '203.0.113.70' });
+  promote(env, b.user.id);
+  await b.post('/api/auth/login', { login: 'nat player', password: PASSWORD });
+  // Many players behind one address: presence and friends lists go on long after sign-in bursts are spent.
+  for (let i = 0; i < 30; i++) {
+    assert.equal((await b.get('/api/account/friends')).status, 200);
+    assert.notEqual((await b.post('/api/account/presence', { away: false })).status, 429);
+  }
+  assert.equal((await b.post('/api/auth/login', { login: 'nat player', password: PASSWORD })).status, 200);
+  assert.equal((await b.post('/api/auth/login', { login: 'nat player', password: PASSWORD })).status, 429, 'the sign-in budget is separate');
+  assert.ok(seen.app.includes('friends-list') && seen.app.includes('presence'));
+  assert.ok(!seen.auth.includes('friends-list') && !seen.auth.includes('presence'));
+  assert.ok(seen.auth.includes('login') && !seen.app.includes('login'));
+  // The session socket counts on APP_LIMITER too.
+  await b.req('GET', `/api/sessions/${'a'.repeat(64)}/ws`, undefined, { headers: { Upgrade: 'websocket' } });
+  assert.ok(seen.app.includes('session-ws'));
+});
+
 test('F4: an active session costs at most one row write per 15 minutes', async () => {
   const env = makeEnv({ email: false });
   const b = await signup(env, 'Busy Player', { ip: '198.51.100.9' });
@@ -222,8 +246,13 @@ test('F6: the reviewer repro (r5): no squatting, no reset to unverified addresse
   await setSite(env2, { registration: { emailVerification: false } });
   const claimer = await signup(env2, 'Claimer', { email: 'ceo@bigcorp.example' });
   assert.equal(claimer.user.emailVerified, false);
-  const owner = await new Browser(env2, { ip: '198.51.100.31' }).post('/api/auth/signup', { username: 'Real CEO', email: 'ceo@bigcorp.example', password: PASSWORD, acceptPrivacy: true });
+  const ownerBrowser = new Browser(env2, { ip: '198.51.100.31' });
+  const owner = await ownerBrowser.post('/api/auth/signup', { username: 'Real CEO', email: 'ceo@bigcorp.example', password: PASSWORD, acceptPrivacy: true });
   assert.equal(owner.status, 201, 'unverified claims never block a signup');
+  // Verification is off: no link at signup; each asks for one from the account page.
+  assert.equal(env2.EMAIL.sent.length, 0);
+  assert.equal((await claimer.post('/api/account/email/resend', {})).status, 202);
+  assert.equal((await ownerBrowser.post('/api/account/email/resend', {})).status, 202);
   const sent = env2.EMAIL.sent.length;
   assert.equal((await new Browser(env2).post('/api/auth/password/forgot', { email: 'ceo@bigcorp.example' })).status, 202);
   assert.equal(env2.EMAIL.sent.length, sent, 'no reset link to an unverified address');

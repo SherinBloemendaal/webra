@@ -95,7 +95,13 @@ test('wrangler.jsonc: daily cron, Discord client id variable, no email binding (
   assert.equal(typeof config.vars.DISCORD_CLIENT_ID, 'string');
   assert.equal(config.send_email, undefined, 'needs the Workers Paid plan: added by the deploy with EMAIL_FROM (tools/email-config.mjs)');
   assert.equal(config.vars.EMAIL_FROM, undefined, 'set by the deploy, absent locally');
-  assert.deepEqual(config.ratelimits, [{ name: 'AUTH_LIMITER', namespace_id: '1001', simple: { limit: 20, period: 60 } }]);
+  assert.deepEqual(config.ratelimits, [
+    { name: 'AUTH_LIMITER', namespace_id: '1001', simple: { limit: 60, period: 60 } },
+    { name: 'APP_LIMITER', namespace_id: '1002', simple: { limit: 600, period: 60 } },
+  ]);
+  assert.equal(config.observability.head_sampling_rate, 0.1, 'Workers Logs: one request in ten');
+  assert.equal(config.vars.EMAIL_DAILY_LIMIT, '5000');
+  assert.equal(config.vars.SENTRY_TRACES_SAMPLE_RATE, '0.005');
   assert.equal(JSON.stringify(config).includes('IP_HASH_SALT'), false, 'the IP hash secret is a secret, never a variable');
   assert.equal(/SECRET|PEPPER/.test(JSON.stringify(config.vars)), false);
 });
@@ -150,4 +156,13 @@ test('password hashes: iterations stored per hash, pepper per hash, rehash rules
   assert.equal(await verifyAccountPassword('x', { password_hash: null }, plain), false);
   // The scheduled handler is wired into the Worker export.
   assert.equal(typeof call, 'function');
+});
+
+test('the Worker entry exports only what workerd accepts: handlers (functions, classes) and the default handler object', async () => {
+  // workerd refuses to start a Worker whose entry module exports anything else (a string, a number).
+  const entry = await import('../src/index.js');
+  for (const [name, value] of Object.entries(entry)) {
+    if (name === 'default') assert.equal(typeof value.fetch, 'function');
+    else assert.equal(typeof value, 'function', `export ${name} must be a function or class`);
+  }
 });

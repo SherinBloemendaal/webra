@@ -21,6 +21,13 @@ export function isPlainObjectValue(v) {
 export const ROLE_RANK = { user: 0, moderator: 1, admin: 2 };
 const DEFAULT_BODY_MAX = 8 * 1024;
 
+/**
+ * Burst purposes counted by the APP_LIMITER binding (calls a signed-in game
+ * makes on its own, many players per address behind a NAT); every other
+ * purpose (sign-in, tokens, passkeys, Discord, invite lookups) by AUTH_LIMITER.
+ */
+export const APP_PURPOSES = new Set(['presence', 'friends-list', 'realtime', 'session-ws']);
+
 export function invalid(field, message) {
   return new HttpError(400, 'invalid', message, {}, field ? { field } : {});
 }
@@ -162,13 +169,16 @@ export class RequestContext {
   }
 
   /**
-   * Per-IP burst limit for unauthenticated endpoints. With the Workers Rate
-   * Limiting binding AUTH_LIMITER (wrangler.jsonc `ratelimits`: 20 per minute
-   * per purpose and address) it costs no D1 access at all; without it the
-   * D1 fallback below applies (`fallback`: [limit, windowMs]).
+   * Per-IP burst limit. Two Workers Rate Limiting bindings (wrangler.jsonc
+   * `ratelimits`) cost no D1 access at all: AUTH_LIMITER (a low limit per
+   * minute, purpose and address) guards the sign-in endpoints, APP_LIMITER (a
+   * high one) the calls every signed-in player makes on its own (presence,
+   * friends list, realtime and session sockets), so many players behind one
+   * NAT keep playing (APP_PURPOSES). Without the binding the D1 fallback
+   * below applies (`fallback`: [limit, windowMs]).
    */
   async burst(purpose, fallback) {
-    const limiter = this.env.AUTH_LIMITER;
+    const limiter = APP_PURPOSES.has(purpose) ? this.env.APP_LIMITER : this.env.AUTH_LIMITER;
     if (limiter && typeof limiter.limit === 'function') {
       const key = `${purpose}:${await keyedHash(this.salt(), 'burst', this.ip)}`;
       const { success } = await limiter.limit({ key });

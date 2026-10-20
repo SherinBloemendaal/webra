@@ -593,12 +593,29 @@ without cookies, and checks that none returns a game file. Cloudflare's
 edge URL normalization, when on for the zone, only makes more requests
 canonical before they arrive.
 
-**Caching.** Gated responses are `Cache-Control: private, max-age=0,
-must-revalidate` with `Vary: Cookie`: browsers may keep a copy and revalidate
-it through the gate, shared caches and the Cloudflare edge never store them
-(Worker responses are not cached unless the Worker uses the Cache API, which
-it does not, and nothing in `_headers` sets a public cache policy for
-`/play`). Refusals and redirects are `no-store`.
+**Caching.** Gated responses are `private` with `Vary: Cookie`: shared
+caches and the Cloudflare edge never store them (Worker responses are not
+cached unless the Worker uses the Cache API, which it does not, and nothing
+in `_headers` sets a public cache policy for `/play`). Pages (HTML) are
+`max-age=0, must-revalidate`, so every load goes through the gate. The other
+game files (about 250 per load) are `max-age=600`, the lifetime of a play
+pass, and a 304 revalidation of one gets the same headers (the browser
+stores the 304's). `Vary: Cookie` makes the whole Cookie header part of the
+cache key, so a kept file is used only while the browser's cookies are the
+same: a reload with the same play pass costs no request for these files, and
+when the pass is renewed (it lives 10 minutes) or the sign-in changes they
+are fetched again (with the game open to all, players without an account
+have no pass cookie, so their copies last the full 10 minutes). A revoked
+account keeps at most what it could have loaded with its last pass anyway.
+Pages are decided by their path (`/play`, a trailing slash or `.html`),
+since a 304 has no Content-Type. File
+names carry no version, so every page load sets the cookie `webra_build`
+(`__Host-` on HTTPS) to the deployed build (`dist/version.json` `build`,
+read once per isolate), and a file is kept only when its request named the
+current build: after a deploy the new page renames the build and, through
+`Vary: Cookie`, no file of the old build is used with it. Signing out
+changes the cookies too, so kept files stop matching. Without a readable
+build nothing is kept. Refusals and redirects are `no-store`.
 
 **Headers.** Workers Static Assets applies `_headers` only to files it serves
 itself, so the Worker sets the same security headers (CSP, COOP, COEP
@@ -877,8 +894,9 @@ description below (`privacySections`, tools/sentry-config.mjs).
   purpose (engine panics and traps, a simulation worker that stopped, a 5xx
   the Worker answers, failed background writes, failed cron runs), online
   desyncs (`Lockstep desync`, with the newest state hashes), and a sampled
-  share (`SENTRY_TRACES_SAMPLE_RATE`, default 5%) of page loads and Worker
-  requests as performance traces. Each report has the release
+  share (`SENTRY_TRACES_SAMPLE_RATE`, default 0.5%) of page loads and Worker
+  requests as performance traces (Durable Object alarms and WebSocket
+  messages are never traced). Each report has the release
   (`webra@<version>+<commit>`), the environment, tags (`surface`: game,
   website or worker; `mode`: menu, editor, skirmish, mission, online, replay,
   stress; `renderer`: webgpu or unavailable; `original_content`: on or off;
@@ -1159,7 +1177,7 @@ docs/accounts-api.md 5.11).
 
 - **Guessing.** A code is 6 characters of 31 (887,503,681 codes); only open
   lobbies have one (at most 2 hours, replaced or ended at the start). Lookups
-  are limited per address (20 per minute) and failed ones per network (30
+  are limited per address (60 per minute) and failed ones per network (30
   per hour, then every lookup waits out the hour), so finding a live code by
   guessing is hopeless. Codes are drawn with `crypto.getRandomValues` and
   rejection sampling (uniform), and the D1 primary key makes collisions

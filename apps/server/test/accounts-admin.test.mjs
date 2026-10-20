@@ -7,6 +7,7 @@ import { Browser, Clock, makeEnv, PASSWORD, promote, signup } from './accounts-h
 import { takeQuota } from '../src/quota.js';
 import { GUIDE_OUTLINE, guideIndex } from '@webra/protocol';
 import { CONTENT_ACCOUNT_LIMIT, CONTENT_NET_LIMIT } from '../src/content.js';
+import { APPROVE_ALL_MAX } from '../src/accounts/routes-admin.js';
 
 const clock = new Clock();
 test.after(() => clock.restore());
@@ -534,4 +535,77 @@ test('guide progress: admins see it per user, filter and sort by it, and complet
   // Admins act within a rate limit (120 an hour each).
   for (let i = 0; i < 120; i++) await takeQuota(env.DB, env.IP_HASH_SALT, 'admin-guide', admin.user.id, 120, 3600 * 1000, Date.now());
   assert.equal((await action('reset')).status, 429);
+});
+
+test('approve all pending: admins only, CSRF, at most APPROVE_ALL_MAX per call, banned and unverified left alone, one audit entry, realtime hints', async () => {
+  const { env, admin, mod, target } = await cast();
+  // 104 more accounts waiting for approval (older than Target), one of them banned, and one waiting for its email.
+  const insert = env.DB.sqlite.prepare(
+    "INSERT INTO users (id, username, username_key, display_name, avatar_color, status, user_handle, created_at) VALUES (?, ?, ?, ?, '#808080', ?, ?, ?)",
+  );
+  const ids = [];
+  for (let i = 0; i < 106; i++) {
+    const id = (0x10000000 + i).toString(16).padStart(32, '0');
+    insert.run(id, `Wait${i}`, `wait${i}`, `Wait${i}`, i === 105 ? 'pending_email' : 'pending_approval', `h${i}`, Date.UTC(2026, 0, 1) + i);
+    ids.push(id);
+  }
+  env.DB.sqlite.prepare("INSERT INTO account_bans (user_id, reason, created_at) VALUES (?, 'spam', 0)").run(ids[104]);
+  const path = '/api/admin/users/approve-pending';
+  assert.equal((await mod.post(path, {})).status, 403, 'moderators approve one by one');
+  assert.equal((await admin.post(path, {}, { csrf: false })).status, 403, 'CSRF like every admin mutation');
+  assert.equal((await admin.post(path, { all: true })).status, 400, 'no fields');
+  const hubs = env.USER_HUB;
+  hubs.publishes.length = 0;
+  const first = await admin.post(path, {});
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.deepEqual(first.body, { approved: APPROVE_ALL_MAX, remaining: 104 + 1 - APPROVE_ALL_MAX });
+  assert.equal(APPROVE_ALL_MAX, 100);
+  const active = (id) => env.DB.rows('SELECT status, approved_by FROM users WHERE id = ?', id)[0];
+  assert.deepEqual(active(ids[0]), { status: 'active', approved_by: admin.user.id }, 'oldest first');
+  assert.equal(active(target.user.id).status, 'pending_approval', 'the newest waits for the next call');
+  const second = await admin.post(path, {});
+  assert.deepEqual(second.body, { approved: 5, remaining: 0 });
+  assert.equal(active(target.user.id).status, 'active');
+  assert.equal(active(ids[104]).status, 'pending_approval', 'a banned account is not approved');
+  assert.equal(active(ids[105]).status, 'pending_email', 'an unconfirmed address is not approved');
+  assert.deepEqual((await admin.post(path, {})).body, { approved: 0, remaining: 0 });
+  // One audit entry per call, with the count and the ids.
+  const entries = env.DB.rows("SELECT actor_id, after_json FROM audit_log WHERE action = 'user.approve_all' ORDER BY id");
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].actor_id, admin.user.id);
+  assert.equal(JSON.parse(entries[0].after_json).count, 100);
+  assert.equal(JSON.parse(entries[1].after_json).userIds.length, 5);
+  // Each approved account hears it; the other dashboards reload once per call.
+  const statusHints = hubs.publishes.filter((p) => p.topic === 'account' && p.kind === 'status');
+  assert.equal(statusHints.length, 105);
+  assert.ok(statusHints.every((p) => p.data.status === 'active'));
+  assert.equal(hubs.publishes.filter((p) => p.name === 'topic:admin' && p.kind === 'user_approved').length, 2);
+  // Nobody is left waiting for approval (the banned account lists as banned).
+  assert.deepEqual((await admin.get('/api/admin/users?status=pending_approval')).body.users, []);
+  assert.deepEqual((await admin.get('/api/admin/users?status=banned')).body.users.map((u) => u.username), ['Wait104']);
+});
+
+test('approve all pending: the audit entry lists the accounts this call approved, not one another admin approved meanwhile', async () => {
+  const { env, admin, target } = await cast();
+  const other = await signup(env, 'Other Waiting', { ip: '198.51.100.77' });
+  // Another admin approves Target between this call's selection and its batch.
+  const batch = env.DB.batch.bind(env.DB);
+  env.DB.batch = async (statements) => {
+    env.DB.batch = batch;
+    env.DB.sqlite.prepare("UPDATE users SET status = 'active', approved_at = 1, approved_by = 'x' WHERE id = ?").run(target.user.id);
+    return batch(statements);
+  };
+  const r = await admin.post('/api/admin/users/approve-pending', {});
+  assert.deepEqual(r.body, { approved: 1, remaining: 0 });
+  const entries = env.DB.rows("SELECT actor_id, actor_username, target_type, before_json, after_json FROM audit_log WHERE action = 'user.approve_all'");
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].actor_id, admin.user.id);
+  assert.deepEqual(JSON.parse(entries[0].after_json), { status: 'active', count: 1, userIds: [other.user.id] });
+  assert.deepEqual(JSON.parse(entries[0].before_json), { status: 'pending_approval' });
+  // A call that approves nobody writes no entry.
+  assert.deepEqual((await admin.post('/api/admin/users/approve-pending', {})).body, { approved: 0, remaining: 0 });
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'user.approve_all'")[0].n, 1);
+  // The audit API shows it like any entry.
+  const listed = await admin.get('/api/admin/audit?action=user.approve_all');
+  assert.equal(listed.body.entries[0].after.count, 1);
 });

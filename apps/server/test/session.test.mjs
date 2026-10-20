@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LOG_MAX_BYTES, MAX_REJOINS, parseServerMessage, PROTOCOL_VERSION, RECONNECT_GRACE_MS, SEAT_KEY_RE } from '@webra/protocol';
-import { makeSession } from './fake-do.mjs';
+import { makeSession, MAX_PENDING_PER_IP, MAX_SOCKETS_PER_IP } from './fake-do.mjs';
 
 const hello = (s, name, extra = {}) => ({ t: 'hello', protocol: PROTOCOL_VERSION, version: s.version, name, ...extra });
 
@@ -581,4 +581,69 @@ test('presence hints: a failing hub is logged and the directory is written anywa
   const h = plain.connect('host', '10.0.0.1', { account: A, refuse: null });
   await plain.send(h, hello(plain, A.username, { hostKey: plain.hostKey }));
   assert.equal(h.take('welcome').length, 1);
+});
+
+test('upgrades: one address holds at most MAX_PENDING_PER_IP sockets before hello, others still get in', async () => {
+  const s = await makeSession({ maxPlayers: 8 });
+  // Node's Response has no 101: read the client side directly.
+  s.session.upgraded = (client) => ({ status: 101, webSocket: client });
+  const upgrade = (ip) =>
+    s.session.fetch(new Request('https://session/', { headers: { Upgrade: 'websocket', 'CF-Connecting-IP': ip, 'X-WebRA-Auth': JSON.stringify({ account: null, refuse: null }) } }));
+  const pendingOf = (ip) => s.ctx.getWebSockets().filter((ws) => ws.deserializeAttachment().ip === ip && !ws.deserializeAttachment().client);
+  assert.equal(MAX_PENDING_PER_IP, 2);
+  for (let i = 0; i < MAX_PENDING_PER_IP; i++) assert.equal((await upgrade('203.0.113.5')).status, 101);
+  assert.equal((await upgrade('203.0.113.5')).status, 429, 'a script cannot hold the lobby with silent sockets');
+  assert.equal((await upgrade('198.51.100.6')).status, 101, 'another address still gets in');
+  // A socket that said hello is no longer pending: its address may open another.
+  const [first] = pendingOf('203.0.113.5');
+  await s.send(first, hello(s, 'Host', { hostKey: s.hostKey }));
+  assert.ok(first.last('welcome'));
+  assert.equal((await upgrade('203.0.113.5')).status, 101);
+  // A silent socket closes at the hello timeout and frees its place.
+  for (const ws of pendingOf('203.0.113.5')) ws.close(1008, 'hello timeout');
+  assert.equal((await upgrade('203.0.113.5')).status, 101);
+  // A refused hello (wrong password, another version) frees its place at once, even while the
+  // runtime still lists the closing socket: a player may retry right away.
+  const listed = s.ctx.getWebSockets;
+  const everything = [];
+  s.ctx.acceptWebSocket = (ws) => everything.push(ws);
+  s.ctx.getWebSockets = () => [...listed(), ...everything];
+  for (let i = 0; i < 3; i++) {
+    const r = await upgrade('192.0.2.77');
+    assert.equal(r.status, 101, `retry ${i}`);
+    const ws = everything.at(-1);
+    await s.send(ws, hello(s, 'Retry', { version: '0.0.1' }));
+    assert.equal(ws.last('error').code, 'version_mismatch');
+    assert.equal(ws.readyState, 2, 'closing, still listed');
+  }
+});
+
+test('upgrades: closed sockets that never finish closing cannot fill the session from one address', async () => {
+  const s = await makeSession({ maxPlayers: 8 });
+  s.session.upgraded = (client) => ({ status: 101, webSocket: client });
+  // The runtime keeps listing a socket until its close completes; this attacker never completes it.
+  const everything = [];
+  s.ctx.acceptWebSocket = (ws) => everything.push(ws);
+  s.ctx.getWebSockets = () => [...everything];
+  const upgrade = (ip) =>
+    s.session.fetch(new Request('https://session/', { headers: { Upgrade: 'websocket', 'CF-Connecting-IP': ip, 'X-WebRA-Auth': JSON.stringify({ account: null, refuse: null }) } }));
+  assert.equal(MAX_SOCKETS_PER_IP, 12);
+  let refused = 0;
+  for (let i = 0; i < 30; i++) {
+    const r = await upgrade('203.0.113.66');
+    if (r.status === 429) {
+      refused++;
+      continue;
+    }
+    const ws = everything.at(-1);
+    await s.send(ws, hello(s, 'Spam', { version: '0.0.1' }));
+    assert.equal(ws.readyState, 2, 'a refused hello closes it (still listed)');
+  }
+  assert.equal(everything.filter((ws) => ws.deserializeAttachment().ip === '203.0.113.66').length, MAX_SOCKETS_PER_IP);
+  assert.equal(refused, 30 - MAX_SOCKETS_PER_IP);
+  // Honest players from other addresses still get in.
+  const host = await upgrade('198.51.100.20');
+  assert.equal(host.status, 101);
+  await s.send(everything.at(-1), hello(s, 'Host', { hostKey: s.hostKey }));
+  assert.ok(everything.at(-1).last('welcome'));
 });

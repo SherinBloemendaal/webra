@@ -1180,6 +1180,9 @@ WebSocket need a signed-in, active, unbanned account (accounts API, section
 `gameRequiresAccount` (on by default) the game files themselves need one too
 (section 6 and accounts API, section 7.1); `UserSelf.canPlay` and
 `GET /api/site` `gameRequiresAccount` tell clients in advance.
+While the site setting `onlineSessionsOpen` is off, `POST /api/sessions`
+answers `503 sessions_closed` with a message to show; running sessions and
+joins are not affected (accounts API, section 2.5).
 
 `/api/content/ra-quickinstall` (`apps/server/src/content.js`): the game's
 one-click install of the original content. It needs a signed-in, active
@@ -1436,7 +1439,7 @@ may carry the dash, spaces, or be a whole link (`/join/<code>` or
   replaced. A code that ended answers 410 for a day, then 404 (rows are
   deleted by the daily job). A rematch back to the lobby needs a new code.
 - `GET /api/invite/:code`: `{ invite }` for a code whose lobby is open; 404
-  unknown, 410 expired. Lookups are limited per address (20 per minute,
+  unknown, 410 expired. Lookups are limited per address (60 per minute,
   without D1 when the rate limit binding exists) and failed ones (404 and
   410) to 30 per network per hour, then 429 for every lookup until the hour
   ends. A signed-in player that a present member of the lobby blocked gets

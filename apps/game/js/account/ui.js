@@ -364,6 +364,9 @@ export function onlineRefusal(code, message = '') {
       return { text: message || 'Your account is banned from online play.', signIn: false };
     case 'ip_banned':
       return { text: 'Online play is blocked from your network.', signIn: false };
+    // The site setting onlineSessionsOpen is off: running games go on, new ones wait.
+    case 'sessions_closed':
+      return { text: message || 'New online games are paused for a moment. Games already running go on. Try again in a few minutes.', signIn: false };
     default:
       return null;
   }
