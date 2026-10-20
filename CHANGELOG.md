@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.1](https://github.com/SherinBloemendaal/webra/compare/v0.20.0...v0.20.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **game:** draw every original pose, special and muzzle in OpenRA's palette ([bb028b0](https://github.com/SherinBloemendaal/webra/commit/bb028b0ed6b6573ad78c37520e467cc6f2ac1b83))
+* **game:** draw ore and gem mines as mines and in OpenRA's palettes ([2e6dbdd](https://github.com/SherinBloemendaal/webra/commit/2e6dbdd594a211402460b4ec25929bae7116ba5f))
+* **game:** draw ore and gem mines as real mines in every graphics mode ([928e073](https://github.com/SherinBloemendaal/webra/commit/928e073b006eb3b73595b9714154b4a1a7ef56de))
+* **game:** draw original-graphics objects, effects and civilians in the palettes the rules give them, without stray team colour ([928e073](https://github.com/SherinBloemendaal/webra/commit/928e073b006eb3b73595b9714154b4a1a7ef56de))
+* **game:** read palette owner flags alone and check the seeded lookups ([1f22d83](https://github.com/SherinBloemendaal/webra/commit/1f22d83927054c083a4612770015ec7ea18a9867))
+
 ## [0.20.0](https://github.com/SherinBloemendaal/webra/compare/v0.19.0...v0.20.0) (2026-10-16)
 
 
