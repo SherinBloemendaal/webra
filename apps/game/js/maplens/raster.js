@@ -226,11 +226,6 @@ export class TerrainRaster {
         g *= k;
         b *= k;
       }
-      const wave = Math.sin(wx * 0.35 + wy * 0.22) * Math.sin(wy * 0.31);
-      const k = 0.97 + 0.04 * wave;
-      r *= k;
-      g *= k;
-      b *= k;
     }
     // Rock casts its shadow down and to the right.
     let sh = 1;
@@ -262,11 +257,6 @@ export class TerrainRaster {
     if ((flags & ART_WATER_ROTATION) !== 0) {
       const a = Math.round(s[3] * 255);
       if (a >= WATER_ALPHA && a < WATER_ALPHA + WATER_COLORS) this.waterColor(a - WATER_ALPHA, out);
-    } else if (t === 3 || t === 5 || t === 7 || t === 9) {
-      const k = 0.97 + 0.04 * Math.sin(wx * 0.35 + wy * 0.22) * Math.sin(wy * 0.31);
-      out[0] *= k;
-      out[1] *= k;
-      out[2] *= k;
     }
     const i = (cy * this.width + cx) * 4;
     const ore = this.terrain[i + 1] / 255;

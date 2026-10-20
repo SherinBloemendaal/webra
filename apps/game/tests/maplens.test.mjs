@@ -1597,6 +1597,9 @@ test('WebRA ore and gems: the CPU copy uses the same constants and formulas as t
   assert.deepEqual(rgb(SHARED_PALETTE.materials.ice2), shaderConst('GEM_GLINT'), 'glint');
   assert.equal(shaderConst('RES_SHADOW')[0], SHARED_PALETTE.shadow.offset, 'shadow offset');
   assert.equal(shaderConst('RES_SHADE')[0], 1 - SHARED_PALETTE.shadow.alpha, 'shadow alpha');
+  // Water is flat (the minimal look): no wave or glint in either copy, only the depth.
+  assert.ok(!/\bwave\b/.test(wgsl) && !/\bwave\b/.test(js), 'no water wave in terrain.wgsl or raster.js');
+  assert.ok(wgsl.includes('water_depth(cf) * 0.35') && js.includes('this.waterDepth(fx, fy) * 0.35'), 'the same depth step');
   // The function bodies: block size, mirror, shadow, face and glint.
   const body = (text, start) => {
     const i = text.indexOf(start);

@@ -2,7 +2,7 @@
 // and a per-cell layer that picks the tile, a decal, the water depth and the
 // shadow cast by rock to the north and west. The engine's terrain texture
 // (R = terrain type, G = ore density, B = gem density) adds ore, gems and
-// the type for soft ground edges and water animation. Light comes from the
+// the type for soft ground edges and the water's depth. Light comes from the
 // top left, like the building art.
 //
 // With tile terrain (g.art.x bit 1: original graphics or a texture pack,
@@ -146,7 +146,7 @@ fn smudge_color(col: vec3f, s: u32, c: vec2i, local: vec2f) -> vec3f {
 }
 
 /// Tile terrain (original graphics, texture packs): the tiles as they are,
-/// water rotation (original) or shimmer (packs), and ore and gems from their
+/// water rotation (original; packs' water stays flat), and ore and gems from their
 /// overlay tiles.
 fn tiled(c: vec2i, t: u32, local: vec2f, w: vec2f, tile: u32) -> vec4f {
     let px = tile_px(tile, local);
@@ -157,9 +157,6 @@ fn tiled(c: vec2i, t: u32, local: vec2f, w: vec2f, tile: u32) -> vec4f {
         if (a >= WATER_ALPHA && a < WATER_ALPHA + WATER_COLORS) {
             col = water_color(a - WATER_ALPHA);
         }
-    } else if (t == 3u || t == 5u || t == 7u || t == 9u) {
-        let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
-        col = col * (0.97 + 0.04 * wave);
     }
     let res = textureLoad(terrain_tex, c, 0);
     if (res.g > 0.0) {
@@ -345,13 +342,10 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
         col = mix(col, d.rgb, d.a);
     }
     if (wet) {
-        // Deeper water further from the shore; a gentle wave drifts over it with time (flat, no glints:
-        // the minimal look).
+        // Deeper water further from the shore; otherwise flat (the minimal look: no waves or glints).
         if (t == 3u || t == 9u) {
             col = col * (1.0 - water_depth(cf) * 0.35);
         }
-        let wave = sin(w.x * 0.35 + w.y * 0.22 + g.time * 1.6 * g.env2.w) * sin(w.y * 0.31 - g.time * 1.1 * g.env2.w);
-        col = col * (0.97 + 0.04 * wave);
     }
     // Rock casts its shadow down and to the right.
     var s = 1.0;
