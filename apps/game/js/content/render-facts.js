@@ -290,9 +290,9 @@ export const RENDER_FACTS = {
 };
 
 /**
- * OpenRA's Selectable/Interactable Bounds and DecorationBounds per actor
+ * The selection bounds and decoration bounds of the original art per actor
  * ([width, height, x, y] in 1/1024 cell around the actor's centre), where
- * its rules set them: how big the original sprite looks on screen. The
+ * the rules set them: how big the original sprite looks on screen. The
  * texture pack size tests measure the built-in art against them.
  */
 export const ORIGINAL_BOUNDS = {
