@@ -194,7 +194,9 @@ test('invalid files, saves, the content type, the result and the size cap are re
   assert.equal((await refuse(text(save), 422)).message, 'This is a saved game, not a replay.');
   assert.equal((await refuse(text(replay(5)), 415, { headers: { 'Content-Type': 'text/plain' } })).code, 'bad_message');
   assert.equal((await refuse(text(replay(5)), 400, {}, 'victory')).field, 'result');
-  // Larger than ACCOUNT_REPLAY_MAX_BYTES: refused from Content-Length (and while reading without one).
+  // Larger than ACCOUNT_REPLAY_MAX_BYTES (4 MiB, so a few uploads at once fit an isolate's memory):
+  // refused from Content-Length, and while reading without one.
+  assert.equal(ACCOUNT_REPLAY_MAX_BYTES, 4 * 1024 * 1024);
   const big = text(replay(5, { title: 'Big' })).replace('"title":"Big"', `"title":"Big","pad":"${'x'.repeat(ACCOUNT_REPLAY_MAX_BYTES)}"`);
   assert.equal((await refuse(big, 413)).code, 'too_large');
   assert.deepEqual(rows(env, b.user.id), []);

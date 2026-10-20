@@ -11,7 +11,7 @@ import {
   verifyHostKey,
   verifyPassword,
 } from '../src/crypto.js';
-import { checkOrigin, HttpError, readJson, readText } from '../src/http.js';
+import { checkOrigin, HttpError, readBody, readJson, readText } from '../src/http.js';
 import { prepareMap } from '../src/maps.js';
 import { cheatsAllowed, ordersFitRules, validateCreateSession } from '../src/validate.js';
 import { DEFAULT_OPTIONS, HOST_KEY_RE, parseClientMessage } from '@webra/protocol';
@@ -286,4 +286,26 @@ test('cheat orders are relayed only in games with the cheats option', () => {
   for (const options of [undefined, null, {}, { cheats: 'true' }, { cheats: 1 }]) {
     assert.equal(cheatsAllowed(cheats, options), false, JSON.stringify(options));
   }
+});
+
+test('readBody: one buffer for a declared length, the cap with and without Content-Length, lying lengths refused', async () => {
+  const bytes = new TextEncoder().encode('é'.repeat(5000));
+  const stream = (b, step = 1000) =>
+    new ReadableStream({
+      start(c) {
+        for (let i = 0; i < b.length; i += step) c.enqueue(b.slice(i, i + step));
+        c.close();
+      },
+    });
+  const req = (b, length) => new Request('https://x/', { method: 'POST', body: stream(b), duplex: 'half', headers: length === undefined ? {} : { 'Content-Length': String(length) } });
+  const declared = await readBody(req(bytes, bytes.length), 1 << 20);
+  assert.equal(declared.text, 'é'.repeat(5000));
+  assert.equal(declared.bytes.byteLength, bytes.length);
+  const unknown = await readBody(req(bytes), 1 << 20);
+  assert.equal(unknown.text, declared.text);
+  await assert.rejects(readBody(req(bytes), bytes.length - 1), (e) => e instanceof HttpError && e.status === 413);
+  await assert.rejects(readBody(req(bytes, bytes.length), bytes.length - 1), (e) => e instanceof HttpError && e.status === 413);
+  await assert.rejects(readBody(req(bytes, 100), 1 << 20), (e) => e instanceof HttpError && e.status === 400, 'longer than declared');
+  const short = await readBody(req(bytes.slice(0, 2000), 3000), 1 << 20);
+  assert.equal(short.bytes.byteLength, 2000);
 });
