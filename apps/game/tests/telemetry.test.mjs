@@ -14,6 +14,9 @@ import { initSync, Game, take_panic, version } from '../pkg/webra_sim.js';
 import {
   CONSENT_KEY,
   DATA_COLLECTION,
+  ErrorBudget,
+  ERRORS_PER_MINUTE,
+  SAME_ERROR_MAX,
   active,
   connectRegistry,
   initTelemetry,
@@ -161,6 +164,42 @@ test('switching off while running drops every event, transaction and breadcrumb 
   // An account sync switches it back on.
   registry.applyDocument({ privacy: { errorReports: true } });
   assert.ok(o.beforeSend({ message: 'x' }, {}));
+});
+
+test('error budget: a few reports of one error per page, and a cap per minute over all errors', async () => {
+  let t = 1_000_000;
+  resetTelemetry({ budget: { now: () => t } });
+  const sdk = fakeSdk();
+  await initTelemetry({ surface: 'game', config: CONFIG, storage: memoryStorage(), win: fakeWindow(), loadSdk: async () => sdk });
+  const o = sdk.options;
+  const ev = (value, type = 'TypeError') => ({ exception: { values: [{ type, value }] } });
+  // A render loop throwing every frame: SAME_ERROR_MAX reports, then nothing for the rest of the page.
+  const sent = Array.from({ length: 50 }, () => o.beforeSend(ev('x is undefined'), {})).filter(Boolean).length;
+  assert.equal(sent, SAME_ERROR_MAX);
+  t += 10 * 60 * 1000;
+  assert.equal(o.beforeSend(ev('x is undefined'), {}), null, 'per page load, not per minute');
+  // Another type with the same text is another error; messages count by their text.
+  assert.ok(o.beforeSend(ev('x is undefined', 'RangeError'), {}));
+  assert.ok(o.beforeSend({ message: 'Lockstep desync' }, {}));
+  // Many different errors: at most ERRORS_PER_MINUTE in any minute.
+  let n = 2;
+  for (let i = 0; i < 40; i++) if (o.beforeSend(ev(`error ${i}`), {})) n++;
+  assert.equal(n, ERRORS_PER_MINUTE);
+  t += 59 * 1000;
+  assert.equal(o.beforeSend(ev('later'), {}), null);
+  t += 1000;
+  assert.ok(o.beforeSend(ev('later'), {}), 'a minute after, the next report goes');
+});
+
+test('error budget keys: exception type and message, else the message, cut short', () => {
+  assert.equal(ErrorBudget.keyOf({ exception: { values: [{ type: 'Error', value: 'boom' }] } }), 'Error: boom');
+  assert.equal(ErrorBudget.keyOf({ message: 'desync' }), 'desync');
+  assert.equal(ErrorBudget.keyOf({ logentry: { message: 'log' } }), 'log');
+  assert.equal(ErrorBudget.keyOf({ message: 'm'.repeat(1000) }).length, 200);
+  const b = new ErrorBudget({ sameMax: 1, perMinute: 100, now: () => 0 });
+  assert.equal(b.take({ message: 'a' }), true);
+  assert.equal(b.take({ message: 'a' }), false);
+  assert.equal(b.take({ message: 'b' }), true);
 });
 
 test('the switch is in the settings registry, the account document, the game menu (with help) and kept by Defaults', async () => {

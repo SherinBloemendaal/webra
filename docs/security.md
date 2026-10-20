@@ -864,8 +864,9 @@ description below (`privacySections`, tools/sentry-config.mjs).
   purpose (engine panics and traps, a simulation worker that stopped, a 5xx
   the Worker answers, failed background writes, failed cron runs), online
   desyncs (`Lockstep desync`, with the newest state hashes), and a sampled
-  share (`SENTRY_TRACES_SAMPLE_RATE`, default 5%) of page loads and Worker
-  requests as performance traces. Each report has the release
+  share (`SENTRY_TRACES_SAMPLE_RATE`, default 0.5%) of page loads and Worker
+  requests as performance traces (Durable Object alarms and WebSocket
+  messages are never traced). Each report has the release
   (`webra@<version>+<commit>`), the environment, tags (`surface`: game,
   website or worker; `mode`: menu, editor, skirmish, mission, online, replay,
   stress; `renderer`: webgpu or unavailable; `original_content`: on or off;
@@ -1146,7 +1147,7 @@ docs/accounts-api.md 5.11).
 
 - **Guessing.** A code is 6 characters of 31 (887,503,681 codes); only open
   lobbies have one (at most 2 hours, replaced or ended at the start). Lookups
-  are limited per address (20 per minute) and failed ones per network (30
+  are limited per address (60 per minute) and failed ones per network (30
   per hour, then every lookup waits out the hour), so finding a live code by
   guessing is hopeless. Codes are drawn with `crypto.getRandomValues` and
   rejection sampling (uniform), and the D1 primary key makes collisions

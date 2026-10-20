@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createTransport } from '@sentry/cloudflare';
-import { DATA_COLLECTION, dsnOf, instrumentSession, logError, reportHttpError, sentryOptions, withTelemetry } from '../src/telemetry.js';
+import { DATA_COLLECTION, DEFAULT_TRACES_SAMPLE_RATE, dsnOf, UNTRACED_SPANS, instrumentSession, logError, reportHttpError, sentryOptions, withTelemetry } from '../src/telemetry.js';
 import { HttpError } from '../src/http.js';
 
 const DSN = 'https://0123456789abcdef0123456789abcdef@sentry.invalid/1';
@@ -259,7 +259,16 @@ test('options: nothing collected by the SDK, release and environment from the va
   assert.deepEqual(o.dataCollection.httpBodies, []);
   assert.equal(o.dataCollection.urlQueryParams, false);
   assert.equal(o.dataCollection.userInfo, false);
-  assert.equal(sentryOptions({ SENTRY_TRACES_SAMPLE_RATE: '7' }).tracesSampleRate, 0.05);
+  assert.equal(sentryOptions({ SENTRY_TRACES_SAMPLE_RATE: '7' }).tracesSampleRate, 0.005);
+  assert.equal(sentryOptions({}).tracesSampleRate, DEFAULT_TRACES_SAMPLE_RATE);
+  assert.equal(DEFAULT_TRACES_SAMPLE_RATE, 0.005);
+  // Session alarms and socket messages are never traced; other spans at the rate or as their parent decided.
+  const sample = (name, parentSampled) => o.tracesSampler({ name, parentSampled, inheritOrSampleWith: (f) => (parentSampled === undefined ? f : Number(parentSampled)) });
+  assert.equal(sample('alarm'), 0);
+  assert.equal(sample('webSocketMessage', true), 0);
+  assert.equal(sample('POST /api/sessions'), 0.2);
+  assert.equal(sample('fetch', true), 1);
+  for (const n of UNTRACED_SPANS) assert.equal(sample(n), 0);
   assert.equal(sentryOptions({}).dsn, '');
 });
 

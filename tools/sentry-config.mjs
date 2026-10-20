@@ -7,7 +7,7 @@
 //                              repository variable SENTRY_DSN (docs/deploy.md).
 //   SENTRY_ENVIRONMENT         default "production" in production builds
 //                              (WEBRA_ENV=production), else "dev"
-//   SENTRY_TRACES_SAMPLE_RATE  share of page loads and requests traced, 0 to 1 (default 0.05)
+//   SENTRY_TRACES_SAMPLE_RATE  share of page loads and requests traced, 0 to 1 (default 0.005)
 //
 // tools/build-dist.mjs writes it into the client (js/telemetry/config.js);
 // the deploy workflow passes it to the Worker as variables:
@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_TRACES_SAMPLE_RATE = 0.05;
+export const DEFAULT_TRACES_SAMPLE_RATE = 0.005;
 /** A Sentry DSN: https, a 32 hex public key, a host and a numeric project id. */
 const DSN_RE = /^https:\/\/[0-9a-f]{32}@([a-z0-9.-]+(?::\d{1,5})?)\/\d+$/;
 

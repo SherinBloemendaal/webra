@@ -34,7 +34,15 @@ export const DATA_COLLECTION = Object.freeze({
   stackFrameVariables: false,
 });
 
-const DEFAULT_TRACES_SAMPLE_RATE = 0.05;
+export const DEFAULT_TRACES_SAMPLE_RATE = 0.005;
+
+/**
+ * Durable Object handlers that are never traced: the session alarm (every
+ * second in a running game) and every WebSocket message (each lockstep frame
+ * and ping). At any sample rate they would outnumber all other traces; their
+ * errors are still reported.
+ */
+export const UNTRACED_SPANS = new Set(['alarm', 'webSocketMessage']);
 
 /** The Worker's DSN, or '' (reports off). */
 export function dsnOf(env) {
@@ -53,11 +61,14 @@ function sampleRate(value) {
  * @param {{ transport?: Function }} [o]
  */
 export function sentryOptions(env, { transport = null } = {}) {
+  const rate = sampleRate(env?.SENTRY_TRACES_SAMPLE_RATE);
   return {
     dsn: dsnOf(env),
     release: typeof env?.SENTRY_RELEASE === 'string' && env.SENTRY_RELEASE ? env.SENTRY_RELEASE : undefined,
     environment: typeof env?.SENTRY_ENVIRONMENT === 'string' && env.SENTRY_ENVIRONMENT ? env.SENTRY_ENVIRONMENT : 'production',
-    tracesSampleRate: sampleRate(env?.SENTRY_TRACES_SAMPLE_RATE),
+    tracesSampleRate: rate,
+    // Per trace: the handlers above never, the rest at the rate (or as the parent decided).
+    tracesSampler: ({ name, inheritOrSampleWith }) => (UNTRACED_SPANS.has(name) ? 0 : inheritOrSampleWith(rate)),
     // Traces as transaction events, so they pass beforeSendTransaction (the
     // default streams spans past it).
     traceLifecycle: 'static',
