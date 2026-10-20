@@ -25,6 +25,8 @@ jobs:
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
 
   deploy:
     name: Deploy to Cloudflare
@@ -42,11 +44,18 @@ jobs:
       cancel-in-progress: false
     # Builds nothing: the wasm comes from the CI web job of this run.
     runs-on: small
+    permissions:
+      contents: read
+    # The production environment: its protection rules (required reviewers,
+    # deployment branches limited to main) apply to this job once they are
+    # set in the repository settings (docs/deploy.md).
     environment:
       name: production
       url: https://webra.sherin.dev
+    # The Cloudflare API token is not in the job env: only the steps that run
+    # wrangler get it (step-level env), so npm, the build and the Sentry CLI
+    # never see it.
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Error reports (docs/deploy.md, "Error reports") are opt-in: only with
       # the repository variable SENTRY_DSN set do the game, the website and the
@@ -68,7 +77,7 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Pushes deploy in order: while this job waited for the previous deploy
       # (or its CI ran), a newer commit may have reached main, and its own run
@@ -92,19 +101,21 @@ jobs:
       # profile, WEBRA_GIT_HASH = this commit), from this run only.
       - name: Download the wasm package
         if: steps.tip.outputs.current == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: webra-pkg
           path: apps/game/pkg
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.tip.outputs.current == 'true'
         with:
           node-version: '22'
           cache: npm
 
+      # No install scripts: nothing from the registry runs before the
+      # wrangler steps (esbuild and wrangler work without them).
       - if: steps.tip.outputs.current == 'true'
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # Fails when apps/game/pkg/webra_sim_bg.wasm is missing.
       - name: Assemble dist/
@@ -114,6 +125,8 @@ jobs:
       - name: Check secrets and wrangler
         if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::Repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required (see docs/deploy.md)."
@@ -125,6 +138,8 @@ jobs:
       - name: Apply D1 migrations
         if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           if [ -d migrations ]; then
             npx --no-install wrangler d1 migrations apply webra --remote
@@ -141,6 +156,8 @@ jobs:
       - name: Create the replays R2 bucket when missing
         if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           bucket=webra-replays
           if npx --no-install wrangler r2 bucket info "$bucket" >/dev/null 2>&1; then
@@ -157,18 +174,19 @@ jobs:
           fi
 
       # Releases, source files and deploy markers in Sentry need an org auth
-      # token (secret SENTRY_AUTH_TOKEN) and the variables SENTRY_ORG and
-      # SENTRY_PROJECT; without the token these steps are skipped.
+      # token (secret SENTRY_AUTH_TOKEN) and the variables SENTRY_URL (the
+      # Sentry host), SENTRY_ORG and SENTRY_PROJECT; without the token or
+      # SENTRY_URL these steps are skipped.
       - name: Create the Sentry release and upload the sources
         if: steps.tip.outputs.current == 'true'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.vitrion.dev' }}
+          SENTRY_URL: ${{ vars.SENTRY_URL }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
-          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "No SENTRY_AUTH_TOKEN secret: skipping the Sentry release and source upload."
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_URL" ]; then
+            echo "No SENTRY_AUTH_TOKEN secret or SENTRY_URL variable: skipping the Sentry release and source upload."
             exit 0
           fi
           if [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
@@ -184,6 +202,8 @@ jobs:
       - name: Deploy the Worker
         if: steps.tip.outputs.current == 'true'
         working-directory: apps/server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         # The SENTRY_* variables of the Worker (src/telemetry.js) come from the same configuration as the game's.
         # With EMAIL_FROM, email-config.mjs writes wrangler.deploy.jsonc (the binding) and selects it.
         run: |
@@ -196,12 +216,12 @@ jobs:
         if: steps.tip.outputs.current == 'true'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.vitrion.dev' }}
+          SENTRY_URL: ${{ vars.SENTRY_URL }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
-          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "No SENTRY_AUTH_TOKEN secret: skipping the Sentry deploy marker."
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_URL" ]; then
+            echo "No SENTRY_AUTH_TOKEN secret or SENTRY_URL variable: skipping the Sentry deploy marker."
             exit 0
           fi
           release=$(node tools/sentry-config.mjs release)

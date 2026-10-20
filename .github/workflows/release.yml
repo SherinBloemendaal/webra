@@ -6,15 +6,21 @@ on:
   push:
     branches: [main]
 
+# Read only by default; the job below asks for what it needs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: small
+    # Writes the release PR's branch, tags and releases (contents) and opens
+    # or updates the release PR (pull-requests). Runs only on pushes to main,
+    # never for pull requests.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           config-file: release-please-config.json
@@ -34,17 +40,19 @@ jobs:
       # main never carries lock files a version behind.
       - name: Sync lock files on the release PR
         if: steps.release.outputs.pr
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.release.outputs.pr
         with:
           node-version: '22'
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         if: steps.release.outputs.pr
+        with:
+          toolchain: stable
 
       - name: Commit synced lock files
         if: steps.release.outputs.pr

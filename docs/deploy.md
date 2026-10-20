@@ -83,8 +83,8 @@ dispatch (Actions, Deploy, Run workflow):
    commit has arrived meanwhile, every further step is skipped, the job
    succeeds and the newer commit's own run deploys. Otherwise it downloads
    `webra-pkg` of this run into `apps/game/pkg` (no Rust, no second wasm
-   build), installs Node 22, runs `npm ci` and
-   `npm run build` (with `WEBRA_ENV=production` and the error report
+   build), installs Node 22, runs `npm ci --ignore-scripts` (no install
+   scripts from the registry run in the deploy job) and `npm run build` (with `WEBRA_ENV=production` and the error report
    variables, see Error reports),
    and from `apps/server`:
    - `npx wrangler d1 migrations apply webra --remote`, only when
@@ -95,11 +95,18 @@ dispatch (Actions, Deploy, Run workflow):
      "already exists" answer counts as success, so the step changes nothing
      once the bucket exists. It runs before the deploy because a Worker
      cannot deploy with a binding to a missing bucket.
-   - with the secret `SENTRY_AUTH_TOKEN`: create the Sentry release and upload
-     the JavaScript sources and source maps (skipped without it)
+   - with the secret `SENTRY_AUTH_TOKEN` and the variable `SENTRY_URL`:
+     create the Sentry release and upload the JavaScript sources and source
+     maps (skipped without either)
    - `npx wrangler deploy` with the Worker's `SENTRY_*` variables
-   - with `SENTRY_AUTH_TOKEN`: finalize the release and record the deploy in
-     Sentry (skipped without it)
+   - with `SENTRY_AUTH_TOKEN` and `SENTRY_URL`: finalize the release and
+     record the deploy in Sentry (skipped without either)
+
+   `CLOUDFLARE_API_TOKEN` is passed only to the steps that run wrangler
+   (step-level `env`), never to the whole job, so `npm ci`, the build and the
+   Sentry CLI do not see it. The job is bound to the `production`
+   environment, whose protection rules (required reviewers, deployment
+   branches) apply once they are set.
 
 The CI of two pushes runs side by side; only the deploy job has the
 concurrency group `deploy-production`, without cancelling: a newer push's
@@ -518,14 +525,15 @@ creates and stores; never paste it anywhere else:
 2. In GitHub (Settings, Secrets and variables, Actions): add the secret
    `SENTRY_AUTH_TOKEN` (repository or `production` environment) and the
    variables `SENTRY_ORG` (the organization slug) and `SENTRY_PROJECT` (the
-   project slug of the DSN's project, id 121). `SENTRY_URL` is optional
-   (default `https://sentry.vitrion.dev`).
+   project slug of the DSN's project, id 121) and `SENTRY_URL` (the Sentry
+   host, for example `https://sentry.example.com`). There is no default:
+   without `SENTRY_URL` the steps are skipped like without the token.
 
 With the token, each deploy creates the release, uploads every `.js` and
 `.map` under `dist/` by its URL path (`~/play/js/main.js`, the SDK with its
 source map; the game's own modules are not bundled, so they are their own
 sources), finalizes it and records a deploy for the environment. Without the
-token those steps print a notice and are skipped; with the token but without
+token or `SENTRY_URL` those steps print a notice and are skipped; with the token but without
 `SENTRY_ORG` or `SENTRY_PROJECT` the deploy fails with an error.
 
 Reports carry no addresses and tell Sentry not to infer them (`infer_ip:
