@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.21.0](https://github.com/SherinBloemendaal/webra/compare/v0.20.1...v0.21.0) (2026-10-20)
+
+
+### Features
+
+* **game:** retexture the 2D and 3D minimal art with fewer, bigger shapes ([791f760](https://github.com/SherinBloemendaal/webra/commit/791f76030c5ff55eec3051689fd8ea02889f9532))
+
+
+### Bug Fixes
+
+* **game:** cast the 2D minimal unit shadows in world space ([0ad2c21](https://github.com/SherinBloemendaal/webra/commit/0ad2c21a56c9d1ecc1b4b9caa6910569fcfdab91))
+* **game:** crop the editor icons of the tall world structures to what they draw ([762aad4](https://github.com/SherinBloemendaal/webra/commit/762aad448b0666bad9e2f3c788db3a9d6a28dee1))
+* **game:** draw the minimal water flat, without the diagonal wave ([4e29da1](https://github.com/SherinBloemendaal/webra/commit/4e29da193953cc661cccc3433b1ac82d02b0284e))
+* **game:** fill the whole footprint of the depot, naval yard and sub pen in 3D ([96014e2](https://github.com/SherinBloemendaal/webra/commit/96014e2c31b79a1c24dcc8a98ab9a4225d5a1472))
+* **game:** keep the apron under the shadows and fill the depot and yards' full footprint ([a80aff6](https://github.com/SherinBloemendaal/webra/commit/a80aff6d26bc2dc393084412082e0c4751ac389a))
+* **game:** keep the ground shadow under wrecks of 2D minimal vehicles ([2aebe11](https://github.com/SherinBloemendaal/webra/commit/2aebe11434ab802fe675eb547717a978dbdc9c09))
+* **game:** leave the civilians' shadow to the renderer ([bcdd3b9](https://github.com/SherinBloemendaal/webra/commit/bcdd3b94b668be953ebde481595fd4b6afbf8f11))
+
 ## [0.20.1](https://github.com/SherinBloemendaal/webra/compare/v0.20.0...v0.20.1) (2026-10-17)
 
 
