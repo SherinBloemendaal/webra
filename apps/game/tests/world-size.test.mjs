@@ -123,16 +123,22 @@ test('structures whose original stands taller than its footprint draw into a box
   assert.deepEqual(worldBox(actors.find((a) => a.id === 'WINDMILL')), [36, 64]);
 });
 
-test('civilians are as big as the original infantry, like the soldiers: the longer side within 15 %', () => {
+test('civilians are as big as the original infantry (the longer side within 15 %) and leave their shadow to the renderer', () => {
   const civilians = actors.filter((a) => CIVILIAN_DRAW[a.id]);
   assert.ok(civilians.length >= 13, `${civilians.length} civilians`);
   for (const a of civilians) {
     const rec = ORIGINAL_BOUNDS[a.id]?.decoration ?? ORIGINAL_BOUNDS[a.id]?.bounds;
     assert.ok(rec, `${a.id} has original bounds`);
     const original = (Math.max(rec[0], rec[1]) * 24) / 1024;
-    for (const [w, h] of [CIVILIAN_DRAW[a.id].body, CIVILIAN_DRAW[a.id].panic]) {
+    for (const [w, h, draw] of [CIVILIAN_DRAW[a.id].body, CIVILIAN_DRAW[a.id].panic]) {
       const ratio = Math.max(w, h) / original;
       assert.ok(Math.abs(ratio - 1) <= 0.15, `${a.id}: ${w}x${h} against the original ${original} px (${ratio.toFixed(2)})`);
+      // No shadow baked in: the renderer casts the ground shadow of slots marked groundShadow (js/sprites.js shadowSlots).
+      const fills = [];
+      const ctx = new Proxy({}, { get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => { if (k === 'fillStyle') fills.push(v); o[k] = v; return true; } });
+      draw(ctx, { c: (c) => c, team: () => '#4d8cf2', biome: 'temperate' });
+      assert.ok(!fills.some((f) => String(f).startsWith('rgba(0,0,0,')), `${a.id} draws its own shadow`);
+      assert.equal(draw.groundShadow, true, `${a.id} casts the renderer's ground shadow`);
     }
   }
 });

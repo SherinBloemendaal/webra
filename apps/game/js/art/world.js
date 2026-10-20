@@ -572,12 +572,21 @@ const CIVILIANS = {
   GNRL: { shirt: '#5a6040', legs: '#3e4230', hair: '#8a2a20', coat: true, gun: true },
 };
 
-/** The civilians' sprite box: the soldiers' 12 x 16 (art/infantry.js), as big as the original infantry. */
+/**
+ * The civilians' sprite box: the soldiers' size in the 0.21 retexture, 12 x 16, the figure filling it. They carry
+ * no shadow of their own: the renderer casts the ground shadow of every slot whose draw function has
+ * `groundShadow` set (js/sprites.js shadowSlots, as the soldiers do).
+ */
 const CIV_W = 12;
 const CIV_H = 16;
-/** The figure's own width and height inside the box (the rest holds its shadow). */
-const FIG_W = CIV_W - 2;
-const FIG_H = CIV_H - 2;
+const FIG_W = CIV_W;
+const FIG_H = CIV_H;
+
+/** Marks a civilian draw function for the renderer's ground shadow. */
+function grounded(draw) {
+  draw.groundShadow = true;
+  return draw;
+}
 
 /** The civilian's legs (trousers, or a skirt for `f`) under the shoulders. */
 function civilianLegs(ctx, P, c, y) {
@@ -591,17 +600,16 @@ function civilianLegs(ctx, P, c, y) {
 /**
  * A civilian seen from above (facing north), in the shape of WebRA's
  * soldiers: the shirt (or a longer coat) over the legs, the head with its
- * hair, a pistol held forward when armed; one hard shadow.
+ * hair, a pistol held forward when armed.
  */
 function civilianDraw(c) {
-  return (ctx, P) => {
-    flat(ctx, P, SHADOW, SHADOW_OFFSET, 4.5 + SHADOW_OFFSET, FIG_W, FIG_H - 4.5, 3);
+  return grounded((ctx, P) => {
     civilianLegs(ctx, P, c, 9.5);
     flat(ctx, P, c.coat ? tone(c.shirt, -0.12) : c.shirt, 0, 4.5, FIG_W, c.coat ? 8 : 6, 2.5);
     circle(ctx, P.c(C.skin), FIG_W / 2, 7, 2.4);
     circle(ctx, P.c(c.hair), FIG_W / 2, 6.4, 1.9);
     if (c.gun) flat(ctx, P, M.darker, FIG_W - 2.6, 0, 1.4, 5);
-  };
+  });
 }
 
 /**
@@ -609,14 +617,13 @@ function civilianDraw(c) {
  * both arms thrown up beside the head, the weapon dropped.
  */
 function civilianPanicDraw(c) {
-  return (ctx, P) => {
-    flat(ctx, P, SHADOW, SHADOW_OFFSET, 4.5 + SHADOW_OFFSET, FIG_W, FIG_H - 4.5, 3);
+  return grounded((ctx, P) => {
     civilianLegs(ctx, P, c, 10);
     flat(ctx, P, c.coat ? tone(c.shirt, -0.12) : c.shirt, 0, 5, FIG_W, c.coat ? 8 : 6, 2.5);
     flat(ctx, P, c.shirt, 0, 0.5, 2, 6, 1);
     flat(ctx, P, c.shirt, FIG_W - 2, 0.5, 2, 6, 1);
     circle(ctx, P.c(c.hair), FIG_W / 2, 7, 2.4);
-  };
+  });
 }
 
 // ---- Tables ------------------------------------------------------------------------------------
