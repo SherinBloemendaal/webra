@@ -177,7 +177,14 @@ Done once, by hand, by someone with access to the Cloudflare account:
 3. Make sure `webra.sherin.dev` has no existing DNS record that conflicts with
    the Worker custom domain (wrangler creates the record on the first deploy).
 4. Create the GitHub environment `production` (Settings, Environments) and add
-   the two secrets. Optionally add required reviewers to gate deploys.
+   the two secrets. The deploy job is bound to it, so its protection rules
+   apply: limit its deployment branches to `main` and, on a public
+   repository, add required reviewers to gate deploys.
+5. Set the Worker secrets (Variables and secrets below): `IP_HASH_SALT` is
+   required, and `PASSWORD_PEPPER` should be set in production before the
+   first accounts exist. Setting a pepper for the first time is safe at any
+   time (see the pepper note below); changing or removing one later is not,
+   because the code supports no pepper rollover.
 
 ## Manual deploy
 
@@ -314,10 +321,15 @@ npx wrangler secret put PASSWORD_PEPPER      # optional
 
 Notes:
 
-- **Pepper:** once set, never change or remove it. Each hash records whether
-  it was peppered; hashes made before the pepper keep working and are
-  upgraded at the next sign-in, but peppered hashes cannot be checked without
-  it (those accounts would need a reset link).
+- **Pepper:** set it in production, once, and never change or remove it.
+  Each hash records only whether it was peppered (`password_peppered`, 0 or
+  1), not which pepper, so `apps/server/src/accounts/password.js` supports
+  exactly one pepper and no rollover. Turning it on later is migration-safe:
+  hashes made before it keep verifying without the pepper and are upgraded
+  to a peppered hash the next time their password is set (change or reset,
+  never at sign-in). Changing or removing it breaks every peppered hash
+  (those accounts would need a reset link); a real rollover would need a
+  pepper id per hash and a second secret first.
 - **Iterations:** no request derives more than one key (a sign-in that also
   rehashed would need two). Raising `PASSWORD_ITERATIONS` (for example to
   100,000 on the Workers Paid plan) applies to new hashes and to each
