@@ -2,7 +2,7 @@
 // against the original sprites: every civilian and tech building, hut,
 // field and mine fills the same extent as its original sprite, so they
 // stand as far apart as in the original art. The original extent comes
-// from numbers in the repo only: OpenRA's DecorationBounds or Bounds
+// from numbers in the repo only: the original art's DecorationBounds or Bounds
 // (content/render-facts.js ORIGINAL_BOUNDS, around the footprint's centre
 // plus the rules' centerOffset), else the footprint; a bib row the original
 // draws under the structure (a `bib` part in RENDER_FACTS) counts too.

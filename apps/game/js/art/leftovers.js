@@ -25,7 +25,7 @@ const M = SHARED_PALETTE.materials;
 const SHADOW = `rgba(0,0,0,${SHARED_PALETTE.shadow.alpha})`;
 const SHADOW_OFFSET = SHARED_PALETTE.shadow.offset * 24;
 
-/** A steel crate (OpenRA scrate: the multiplayer crate): the box, a dark band each way and a yellow stud. */
+/** A steel crate (the original art's scrate, the multiplayer crate): the box, a dark band each way and a yellow stud. */
 function steelCrate(ctx, P, x, y, s) {
   rect(ctx, P.c(M.steel), x, y, s, s);
   rect(ctx, P.c(M.dark), x, y + s / 2 - 0.7, s, 1.4);
@@ -33,7 +33,7 @@ function steelCrate(ctx, P, x, y, s) {
   rect(ctx, P.c(M.yellow), x + s / 2 - 1.2, y + s / 2 - 1.2, 2.4, 2.4);
 }
 
-/** A wooden crate (OpenRA wcrate): the planks, one seam and a lit top edge. */
+/** A wooden crate (the original art's wcrate): the planks, one seam and a lit top edge. */
 function woodCrate(ctx, P, x, y, s) {
   rect(ctx, P.c(M.wood), x, y, s, s);
   rect(ctx, P.c(tone(M.wood, -0.3)), x, y + s / 2 - 0.6, s, 1.2);

@@ -11,8 +11,8 @@
 // shadow to the lower right, and keeps the one or two things that make it
 // recognisable (the hospital's red cross, the church's steeple, the
 // windmill's sails, the mine's shaft). Captured tech buildings show their
-// owner as one strip along the front. Civilians are not team coloured: OpenRA
-// draws them with fixed civilian palettes. Trees, huts, rocks and mines look
+// owner as one strip along the front. Civilians are not team coloured: the
+// original art draws them with fixed civilian palettes. Trees, huts, rocks and mines look
 // like the map's biome (`P.biome`: temperate, snow or desert;
 // js/sprites.js buildAtlas passes it).
 //
@@ -20,7 +20,7 @@
 // original sprites do; the few whose original sprite reaches past the
 // footprint (the lighthouse and the windmill stand tall) draw into the box
 // worldBox gives, grown evenly around the footprint's centre. Trees and the
-// like draw only over their occupied cells (OpenRA footprints such as
+// like draw only over their occupied cells (footprints such as
 // `__ x_`: the trunk stands on the occupied cell, the crown leans into the
 // empty ones above).
 
@@ -86,8 +86,8 @@ function bar(ctx, fill, x0, y0, x1, y1, w) {
 
 /**
  * How big the original sprite of world actor `a` (rules_json record) looks,
- * in world pixels around the footprint's centre: [x0, y0, x1, y1]. OpenRA's
- * DecorationBounds, else its Bounds (content/render-facts.js
+ * in world pixels around the footprint's centre: [x0, y0, x1, y1]. The original
+ * art's DecorationBounds, else its Bounds (content/render-facts.js
  * ORIGINAL_BOUNDS, around the actor's centre: the footprint's centre plus
  * `centerOffset`), else the footprint itself (the original frames of
  * structures without bounds are their footprint).
@@ -258,7 +258,7 @@ function field(ctx, P, crop) {
   for (const x of [3, 10, 17]) flat(ctx, P, plant, x, 2, 4, 20);
 }
 
-/** A haystack: a rounded straw heap with a lighter top (or an igloo on snow maps: OpenRA's Tooltip@WINTER). */
+/** A haystack: a rounded straw heap with a lighter top (or an igloo on snow maps, as in the original art). */
 function haystack(ctx, P) {
   if (biomeOf(P) === 'snow') {
     slab(ctx, P, M.steam, 2, 2, 19, 19, 9);
@@ -280,7 +280,7 @@ function pumpjack(ctx, P, burnt = false) {
 
 // ---- Tech buildings ----------------------------------------------------------------------------
 
-/** Hospital (OpenRA HOSP): a white roof with the red cross, the owner's strip in front. */
+/** Hospital (HOSP): a white roof with the red cross, the owner's strip in front. */
 function hospital(ctx, P) {
   slab(ctx, P, M.wall, 1, 1, 45, 45);
   flat(ctx, P, M.paint, 4, 4, 39, 34);
