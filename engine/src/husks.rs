@@ -20,7 +20,7 @@
 
 use crate::instances::{Sink, SpriteRec};
 use crate::math::{dist, CELL};
-use crate::render::{posed, px, Pose, SpriteIds, DISABLED_SHADE};
+use crate::render::{posed, px, unit_shadow, Pose, SpriteIds, DISABLED_SHADE};
 use crate::rules::Kind;
 use crate::rules_options::HuskCapture;
 use crate::world::{cell_center, World, NONE};
@@ -301,6 +301,10 @@ impl World {
             let body = if self.render_opts.poses { posed(slot, Pose::Idle, 0) } else { slot as f32 };
             let flash = (a.flash > 0) as i32 as f32;
             let r = at.facing(a.pfacing, 0);
+            // A wreck of a 2D minimal vehicle keeps its vehicle's ground shadow (render.rs `unit_shadow`).
+            if self.render_opts.casts_shadow(slot) {
+                sink.sprite(sprites, unit_shadow(r, body, a.owner as f32, 1.0));
+            }
             sink.sprite(sprites, r.look(body, a.owner as f32, 1.0, 1.0, flash));
             sink.sprite(sprites, r.look(body, a.owner as f32, 1.0, DISABLED_SHADE, -1.0));
             let fire = ids.leftovers_base + LEFTOVER_FIRE as f32;

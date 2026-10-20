@@ -4,9 +4,9 @@
 // of the infantry (TakeCover), which sprites.js puts in the infantry's turret slot.
 // Helpers and palette come from ./kit.js; the prone soldier from ./infantry.js.
 
-import { rect, circle, poly } from './kit.js';
-import { U } from './unitkit.js';
-import { hands, lying } from './infantry.js';
+import { circle, poly } from './kit.js';
+import { M, box } from './unitkit.js';
+import { prone, proneForward } from './infantry.js';
 
 const GOLD = '#f2c94c';
 const OUTLINE = '#1a1408';
@@ -54,16 +54,7 @@ export const VETERANCY_SPECIALS = [
  * soldier lies along its facing, head and weapon forward, legs behind.
  */
 export const PRONE_DRAW = {
-  E1: [8, 14, (ctx, P) => {
-    lying(ctx, P, U.helmet);
-    rect(ctx, P.c(U.steelDark), 3.6, 0, 0.9, 4); // rifle
-    hands(ctx, P, [4.1, 2.8]);
-  }],
-  E3: [8, 14, (ctx, P) => {
-    lying(ctx, P, U.helmet);
-    rect(ctx, P.c(U.steelDark), 5, 0.5, 1.8, 9); // launcher along the right side
-    rect(ctx, P.c(U.steel), 5.4, 1.5, 0.7, 7.5);
-    rect(ctx, P.c(U.steelLight), 5.3, 0.5, 1.2, 1.2);
-    hands(ctx, P, [5, 3]);
-  }],
+  E1: prone(M.olive, [[M.dark, proneForward(1.2, 7.5)]]),
+  // The launch tube along the right side.
+  E3: prone(M.olive, [[M.steel2, box(5.6, 0, 2.6, 11.5, 0.6)]]),
 };

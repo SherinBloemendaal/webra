@@ -4753,7 +4753,7 @@ Main thread to worker:
 |-----|--------|--------|
 | `init` | `module` (the compiled engine, or null: fetch it), `mode` | `ready { version, mode, shared }` or `failed { error }` |
 | `start` | `id`, `spec` (below) | `result { id, value: info }` (static facts: rules, map size, cheats, start positions, alliances, recorder start, replay length, `weatherJson`: the sky at the start, whose biome picks the terrain atlas and minimap colours, `terrain`: the terrain bytes at the start, so the terrain art and the minimap are made before the first frame (frames carry terrain only when it changed later), `timings { createMs, infoMs }`: the engine's time to make the game, for the performance capture, section 10) |
-| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` |
+| `call` | `method`, `args` | none: an order, `set_selection`, `set_hover`, `set_control_groups`, `set_placing`, `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art`, `set_shadow_slots` |
 | `ask` | `id`, `method`, `args` | `result { id, value }`: a fresh query answer |
 | `command` | `id`, `name`, `args` | `result { id, value }`: `net` (`frame`/`log`/`sync`), `back`, `reattach`, `stop`, `hidden`, `background` (`[on]`: tick a hidden local game on a timer, see "Hidden pages"; answers whether the timer runs; false while held), `begin` (a held game starts, see "Start"; answers whether it was held), `seek`, `setSpeed`, `togglePlay`, `dispose`, `encode` (`save`/`replay`: `{ text, ticks, full }`), `debugStep`, `stateHash`, `tick`, `report` (facts for an error report: `{ engine, mode, tick, hashes }`, the newest state hashes `[tick, hash]` sent online or kept by the recorder) |
 | `step` | `req { dt, paused, view, rect, audio, paths, table, queries, instances, perf }`, `recycle` | `frame` |
@@ -5061,6 +5061,16 @@ that unit is on its exit cell and not yet idle there, then one frame per
 tick back to 0. Under fog the value itself (the layer's still pose) is
 drawn.
 
+Ground shadows of the 2D minimal units (`Game.set_shadow_slots(slots)`, a
+render setting; the atlas's `shadows`, `js/sprites.js` `shadowSlots`): WebRA's
+vector unit sprites carry no shadow, because a sprite turns with its unit.
+For every vehicle, soldier and ship slot listed, the renderer draws a black
+copy of the sprite at 25 percent opacity under all unit bodies, 0.08 cell to
+the right and down in world space (`render.rs` `unit_shadow`), so the light
+stays at the top left whatever way the unit or its turret faces. Slots with
+installed art, texture packs (the 3D minimal pack) or WebRA's pixel art are
+never listed: their art has its own shadow.
+
 Slots from the original graphics (`Game.set_original_slots(slots, info)`, a
 render setting; `js/content/atlas.js` `originalSlotInfo`, plus the slots of
 WebRA's own pixel art, `js/gameart.js` `applyGameArt`, and the actor slots of
@@ -5254,7 +5264,7 @@ The UI holds a game handle (`js/sim/proxy.js`: `RemoteGame` for a worker,
 | `build_render`, `sprite_ptr`, `rect_*`, `build_render_records`, `record_*`, `rect_record_*`, `build_lines` (range circles, engine/src/range_circles.rs, rally lines, with "Show unit paths" `build_paths`, and the target lines of the units js/targetlines.js shows, engine/src/target_lines.rs), `path_ptr`, `build_heat_fx`, `fx_ptr`, `weather_json`, `fog_ptr`, `fog_len`, `terrain_*`, `take_audio_events` | main loop, audio, weather renderer | In the worker each step; results come with the frame (`take_audio_events` hands out the frame's events once) |
 | `rules_json`, `map_width`, `map_height`, `cheats_enabled`, `player_count`, `start_position`, `are_allies`, `weather_json` (the start's sky), `terrain_hints_json` (the start's bridges and the cells structures and trees stand on, for the original graphics' tile terrain, `js/content/terrain.js`), `mission_camera` | setup, command bar, terrain atlas, minimap | Static: read once at `start` |
 | `is_mission`, `mission_state`, `take_mission_events` | the mission view (`js/campaign/view.js`) | In the worker each step; results come with the frame (`game.mission`, a `MissionFeed`) |
-| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
+| `set_audio_events`, `set_health_bars`, `set_building_overlays`, `set_sprite_poses`, `set_original_slots`, `set_death_art`, `set_make_art`, `set_shadow_slots` | audio, settings, atlas | `call` (render and audio settings, never simulation state) |
 | `order_*`, `sell`, `sell_buildings`, `repair_building`, `repair_buildings`, `repair_units`, `power_down`, `place_beacon`, `surrender`, `deploy`, `activate_power`, `set_rally`, `set_stance`, `start_production`, `cancel_production`, `pause_production`, `place_building`, `dev_*` | input, sidebar, command bar, minimap, debug menu, touch, game menu | `call`, in order |
 | `set_selection`, `set_hover`, `set_control_groups`, `set_placing` | input, command bar, main loop | `call`, mirrored on the main thread (`set_hover` and `set_placing` only when they change; `set_control_groups(ids, groups)` is local UI state for the group numbers on selection boxes, `set_placing(actor, cx, cy)` the structure being placed for its range circles; never part of the state hash) |
 | `selection`, owner and kind lookups (`actor_info`) | input, command bar, audio voices | The actor table (`Game.actor_table`: id and `owner \| flags << 8 \| type << 16` per slot), synchronous |

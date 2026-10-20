@@ -583,6 +583,9 @@ test('the atlas holds pose tables: head, descriptors and facing frames where the
   try {
     const plain = buildAtlas(ACTORS);
     const atlas = buildAtlas(ACTORS, { slots: out.slots, filter: 'nearest' });
+    // Installed art casts no renderer ground shadow (Game.set_shadow_slots); WebRA's 2D minimal art does.
+    for (const k of atlas.shadows) assert.ok(!out.slots.has(k), `slot ${k} is installed art`);
+    assert.ok(plain.shadows.some((k) => out.slots.has(k)), 'the same slots cast one without installed art');
     assert.equal(atlas.filter, 'nearest');
     const entry = (i) => Array.from(atlas.frames.slice(i * FRAME_FLOATS, (i + 1) * FRAME_FLOATS));
     const t = ACTORS.findIndex((a) => a.id === 'E1');

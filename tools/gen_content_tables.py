@@ -53,8 +53,9 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - GRAPHICS_FILES: every file name the tables can use (what the installer keeps).
 - render-facts.js RENDER_FACTS: what OpenRA draws per actor (the art audit);
   WEBRA_ACTORS: WebRA's own actors, which OpenRA does not draw at all;
-  ORIGINAL_BOUNDS: OpenRA's Bounds and DecorationBounds per actor (how big
-  the original sprite looks, for the texture pack size tests).
+  ORIGINAL_BOUNDS: the selection and decoration bounds of the original art
+  per actor (how big the original sprite looks, for the texture pack size
+  tests).
 - engine/render.json: effect warheads per weapon, muzzle flashes, damage
   smoke and working animations per actor (engine/src/fx.rs).
 
@@ -1469,10 +1470,11 @@ FIRE_ROLES = {'burn-s': 'fire-small', 'burn-m': 'fire-medium', 'burn-l': 'fire-l
 
 
 def original_bounds(actors):
-    """Per WebRA actor: OpenRA's Selectable/Interactable `Bounds` and `DecorationBounds` ([width, height, x, y]
-    in 1/1024 cell, offsets from the actor's centre), where its rules set them. OpenRA draws health bars and
-    pips around DecorationBounds, so they describe how big the original sprite looks on screen; the texture
-    packs measure their art against them (apps/game/tests/minimal3d-size.test.mjs)."""
+    """Per WebRA actor: the `Bounds` and `DecorationBounds` of its Selectable/Interactable rules in
+    data/source ([width, height, x, y] in 1/1024 cell, offsets from the actor's centre), where they are
+    set. Health bars and pips sit around the decoration bounds, so they describe how big the original
+    sprite looks on screen; the texture packs measure their art against them
+    (apps/game/tests/minimal3d-size.test.mjs, units-art.test.mjs)."""
     out = {}
     for a in actors:
         tree = rules_of(a.get('source', a['id']))
@@ -2124,9 +2126,9 @@ def main():
         '};',
         '',
         '/**',
-        ' * OpenRA\'s Selectable/Interactable Bounds and DecorationBounds per actor',
+        ' * The selection bounds and decoration bounds of the original art per actor',
         ' * ([width, height, x, y] in 1/1024 cell around the actor\'s centre), where',
-        ' * its rules set them: how big the original sprite looks on screen. The',
+        ' * the rules set them: how big the original sprite looks on screen. The',
         ' * texture pack size tests measure the built-in art against them.',
         ' */',
         'export const ORIGINAL_BOUNDS = {',
