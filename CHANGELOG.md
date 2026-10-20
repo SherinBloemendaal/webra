@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/SherinBloemendaal/webra/compare/v0.21.0...v0.22.0) (2026-10-20)
+
+
+### Features
+
+* **server:** prepare the servers and the repository for a public launch ([6931e55](https://github.com/SherinBloemendaal/webra/commit/6931e55639534ce2c720d476dba16e47c0739e81))
+
+
+### Bug Fixes
+
+* **server:** address the launchprep review ([2df12ca](https://github.com/SherinBloemendaal/webra/commit/2df12cacae6da53e1d616e466f7c90c30112e425))
+
 ## [0.21.0](https://github.com/SherinBloemendaal/webra/compare/v0.20.1...v0.21.0) (2026-10-20)
 
 
