@@ -255,6 +255,7 @@ One versioned document, edited by admins. Defaults in brackets.
   "login": { "password": true, "email": true, "discord": true, "passkey": true },
   "onlineRequiresAccount": true,
   "gameRequiresAccount": true,
+  "onlineSessionsOpen": true,
   "contentRelay": true,
   "realtime": true,
   "motd": ""
@@ -285,6 +286,12 @@ documents saved before it existed).
   False: anyone may load the game. A change applies at once on the server that
   saved it and within 30 seconds everywhere (each server caches the settings
   for the gate that long).
+- `onlineSessionsOpen` [true]: new online sessions may be created. False:
+  `POST /api/sessions` answers `503 sessions_closed` (`Retry-After: 300`) with
+  a message the game shows ("New online games are paused..."); lobbies and
+  games already running go on, and players can still join existing lobbies.
+  A kill switch for heavy load (docs/launch.md). It applies at once (session
+  creation reads the settings without the gate's cache).
 - `contentRelay` [true]: the one-click Red Alert content relay is on (it
   always also needs the flag or the admin role).
 - `realtime` [true]: the realtime channel (5.12) is on: open pages hear at
@@ -315,6 +322,7 @@ No authentication. What clients need to draw sign-in and signup forms.
   "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false },
   "onlineRequiresAccount": true,
   "gameRequiresAccount": true,
+  "onlineSessionsOpen": true,
   "contentRelay": true,
   "motd": "",
   "passkey": { "rpId": "webra.sherin.dev" },

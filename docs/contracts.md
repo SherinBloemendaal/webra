@@ -1180,6 +1180,9 @@ WebSocket need a signed-in, active, unbanned account (accounts API, section
 `gameRequiresAccount` (on by default) the game files themselves need one too
 (section 6 and accounts API, section 7.1); `UserSelf.canPlay` and
 `GET /api/site` `gameRequiresAccount` tell clients in advance.
+While the site setting `onlineSessionsOpen` is off, `POST /api/sessions`
+answers `503 sessions_closed` with a message to show; running sessions and
+joins are not affected (accounts API, section 2.5).
 
 `/api/content/ra-quickinstall` (`apps/server/src/content.js`): the game's
 one-click install of the original content. It needs a signed-in, active

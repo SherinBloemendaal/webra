@@ -43,6 +43,31 @@ test('creating sessions needs an active account (setting on), and works anonymou
   assert.equal((await create(anon)).body.error.code, 'ip_banned');
 });
 
+test('onlineSessionsOpen off: no new sessions (503 sessions_closed with a message), sockets to running ones still work', async () => {
+  const env = makeEnv({ email: false });
+  const b = await signup(env, 'Host Player');
+  promote(env, b.user.id);
+  await b.post('/api/auth/login', { login: 'host player', password: PASSWORD });
+  assert.equal((await new Browser(env).get('/api/site', { csrf: false })).body.onlineSessionsOpen, true, 'on by default');
+  assert.equal((await create(b)).status, 201);
+  await setSite(env, { onlineSessionsOpen: false });
+  assert.equal((await new Browser(env).get('/api/site', { csrf: false })).body.onlineSessionsOpen, false, 'the game can tell before it asks');
+  const r = await create(b);
+  assert.equal(r.status, 503);
+  assert.equal(r.body.error.code, 'sessions_closed');
+  assert.match(r.body.error.message, /paused.*running go on/s);
+  assert.equal(r.res.headers.get('retry-after'), '300');
+  assert.equal(env.SESSION.inits.length, 1, 'no session object was made');
+  // Joining a session that already exists goes on as before.
+  const fetches = env.SESSION.fetches.length;
+  assert.equal((await upgrade(b)).status, 200);
+  assert.equal(env.SESSION.fetches.length, fetches + 1);
+  // An anonymous request is told the same (no sign-in prompt for a paused server).
+  assert.equal((await create(new Browser(env))).body.error.code, 'sessions_closed');
+  await setSite(env, { onlineSessionsOpen: true });
+  assert.equal((await create(b)).status, 201);
+});
+
 test('map uploads need an active account and record the uploader', async () => {
   const env = makeEnv({ email: false });
   const w = 48;

@@ -41,6 +41,9 @@ test('account states and sign-in methods follow the account and the site', () =>
   assert.equal(onlineRefusal('account_required').signIn, true);
   assert.equal(onlineRefusal('banned', 'Banned until Friday').text, 'Banned until Friday');
   assert.equal(onlineRefusal('ip_banned').signIn, false);
+  // New online games paused by the site setting onlineSessionsOpen: the server's message, no sign-in offered.
+  assert.deepEqual(onlineRefusal('sessions_closed', 'Paused for load.'), { text: 'Paused for load.', signIn: false });
+  assert.match(onlineRefusal('sessions_closed').text, /paused/);
   assert.equal(onlineRefusal('kicked'), null);
   assert.equal(settingLabel('audio', 'master'), 'Sound: Master volume');
   assert.equal(valueText('game', 'healthBars', 'all'), 'All units and buildings');

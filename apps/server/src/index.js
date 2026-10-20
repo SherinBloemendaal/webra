@@ -50,10 +50,14 @@ const SESSION_LIMIT = 20;
 const SESSION_WINDOW_MS = 60 * 60 * 1000;
 const SESSION_BODY_MAX = 1024;
 
+/** The answer while the site setting `onlineSessionsOpen` is off (the game shows its message). */
+export const SESSIONS_CLOSED_MESSAGE = 'New online games are paused for a moment because of heavy load. Games already running go on. Try again in a few minutes, or play a skirmish against the AI.';
+
 async function createSession(ctx) {
   const { request, env } = ctx;
   const { value } = await readJson(request, SESSION_BODY_MAX);
   const input = validateCreateSession(value);
+  if (!(await ctx.eff()).onlineSessionsOpen) throw new HttpError(503, 'sessions_closed', SESSIONS_CLOSED_MESSAGE, { 'retry-after': '300' }, { retryAfter: 300 });
   await requirePlay(ctx);
   if (!(await takeQuota(env.DB, ctx.salt(), 'sessions', ctx.ip, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many sessions created. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });

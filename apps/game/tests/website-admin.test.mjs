@@ -641,11 +641,15 @@ test('dashboard: IP bans, site settings with unavailable services, and the audit
   const gameGate = [...root.querySelectorAll('input[type="checkbox"]')].find((c) => /The game needs an account/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
   assert.equal(gameGate.checked, true, 'on by default');
   check(gameGate, false);
+  const sessionsOpen = [...root.querySelectorAll('input[type="checkbox"]')].find((c) => /New online games/.test(root.querySelector(`label[for="${c.id}"]`).textContent));
+  assert.equal(sessionsOpen.checked, true, 'new online games allowed by default');
+  check(sessionsOpen, false);
   root.querySelector('textarea').value = 'Open beta!';
   submit(root.querySelector('form'));
   await settle(30);
   assert.equal(server.site.registration.approvalRequired, false);
   assert.equal(server.site.gameRequiresAccount, false);
+  assert.equal(server.site.onlineSessionsOpen, false);
   assert.equal(server.site.motd, 'Open beta!');
   assert.equal(server.requests.find((r) => r.method === 'PATCH' && r.url === '/api/admin/site').headers['if-match'], '"v1"');
   // Audit log with a filter.

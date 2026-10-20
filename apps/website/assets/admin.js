@@ -1026,6 +1026,11 @@ export async function mountAdmin(root, deps = {}) {
       'The server serves /play only to active, unbanned accounts (admins and moderators always). Off: anyone can load the game. A change reaches every server within 30 seconds; a revoked sign-in loses the game within 10 minutes.',
     );
     const online = toggle('Online play needs an account', s.onlineRequiresAccount, 'Off: anonymous players can host and join (IP bans still apply).');
+    const sessionsOpen = toggle(
+      'New online games',
+      s.onlineSessionsOpen !== false,
+      'Off: nobody can host a new online game (the game says it is paused); lobbies and games already running go on. A kill switch for heavy load; it applies at once.',
+    );
     const relay = toggle('One-click content relay', s.contentRelay, 'Only for accounts with the one-click flag, and admins.');
     const live = toggle('Live updates', s.realtime !== false, 'Open pages show friend requests, approvals and settings changes at once. Off: they pick changes up on their next check.', unavailable(s.realtime !== false, svc.realtime, 'Unavailable: the realtime hub is not bound'));
     const motd = field('Message of the day', el('textarea', { rows: '3', maxlength: String(MOTD_MAX) }), { help: `Plain text, shown on the start screen and the account page. At most ${MOTD_MAX} characters.` });
@@ -1036,7 +1041,7 @@ export async function mountAdmin(root, deps = {}) {
       { class: 'form-stack', novalidate: true },
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Registration' }), open.row, approval.row, verify.row),
       el('fieldset', { class: 'check-group' }, el('legend', { text: 'Sign-in methods' }), loginPw.row, loginEmail.row, loginDiscord.row, loginPasskey.row),
-      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, relay.row, live.row),
+      el('fieldset', { class: 'check-group' }, el('legend', { text: 'Play' }), game.row, online.row, sessionsOpen.row, relay.row, live.row),
       motd.row,
       el('div', { class: 'form-actions' }, save),
     );
@@ -1048,6 +1053,7 @@ export async function mountAdmin(root, deps = {}) {
         login: { password: loginPw.input.checked, email: loginEmail.input.checked, discord: loginDiscord.input.checked, passkey: loginPasskey.input.checked },
         gameRequiresAccount: game.input.checked,
         onlineRequiresAccount: online.input.checked,
+        onlineSessionsOpen: sessionsOpen.input.checked,
         contentRelay: relay.input.checked,
         realtime: live.input.checked,
         motd: motd.input.value.replace(/\r\n/g, '\n').slice(0, MOTD_MAX),

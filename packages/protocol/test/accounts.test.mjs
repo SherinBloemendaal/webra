@@ -158,6 +158,14 @@ test('site settings: merge, validation, stored values over defaults', () => {
   assert.equal('obsolete' in stored, false);
 });
 
+test('site settings: onlineSessionsOpen defaults on, validates, and older documents read it as on', () => {
+  assert.equal(DEFAULT_SITE_SETTINGS.onlineSessionsOpen, true);
+  assert.equal(mergeSiteSettings(DEFAULT_SITE_SETTINGS, { onlineSessionsOpen: false }).onlineSessionsOpen, false);
+  throwsField(() => mergeSiteSettings(DEFAULT_SITE_SETTINGS, { onlineSessionsOpen: 'no' }), 'settings.onlineSessionsOpen');
+  assert.equal(normalizeSiteSettings({ gameRequiresAccount: false }).onlineSessionsOpen, true);
+  assert.equal(normalizeSiteSettings({ onlineSessionsOpen: false }).onlineSessionsOpen, false);
+});
+
 test('site settings: gameRequiresAccount defaults on, validates, and older documents read it as on', () => {
   assert.equal(DEFAULT_SITE_SETTINGS.gameRequiresAccount, true);
   assert.equal(mergeSiteSettings(DEFAULT_SITE_SETTINGS, { gameRequiresAccount: false }).gameRequiresAccount, false);

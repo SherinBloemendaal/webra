@@ -532,6 +532,9 @@ export const DEFAULT_SITE_SETTINGS = Object.freeze({
   login: Object.freeze({ password: true, email: true, discord: true, passkey: true }),
   onlineRequiresAccount: true,
   gameRequiresAccount: true,
+  // New online sessions may be created (POST /api/sessions). Off: running
+  // lobbies and games go on, nobody can host a new one (a kill switch).
+  onlineSessionsOpen: true,
   contentRelay: true,
   // The realtime channel (realtime.js): off, pages only poll.
   realtime: true,
@@ -543,6 +546,7 @@ const SITE_SHAPE = {
   login: { password: boolean, email: boolean, discord: boolean, passkey: boolean },
   onlineRequiresAccount: boolean,
   gameRequiresAccount: boolean,
+  onlineSessionsOpen: boolean,
   contentRelay: boolean,
   realtime: boolean,
   motd: (v, f) => {
