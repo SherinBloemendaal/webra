@@ -7,3 +7,21 @@ dist/
 apps/server/wrangler.deploy.jsonc
 __pycache__/
 tools/gen_minimal3d/previews/
+
+# Local secrets and credentials: never committed.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.local
+
+# Editor and agent settings, logs.
+.claude/
+.cursor/
+.idea/
+.vscode/
+*.log
