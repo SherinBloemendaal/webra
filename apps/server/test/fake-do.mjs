@@ -91,6 +91,11 @@ export class FakeSocket {
     this.tags = [];
   }
 
+  /** 1 open, 2 closing (closed by this side; the runtime may still list it until the close completes). */
+  get readyState() {
+    return this.closed ? 2 : 1;
+  }
+
   /** A socket the Worker answers itself (src/wsrefuse.js) is accepted, not hibernated. */
   accept() {
     this.accepted = true;

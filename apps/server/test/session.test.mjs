@@ -602,4 +602,18 @@ test('upgrades: one address holds at most MAX_PENDING_PER_IP sockets before hell
   // A silent socket closes at the hello timeout and frees its place.
   for (const ws of pendingOf('203.0.113.5')) ws.close(1008, 'hello timeout');
   assert.equal((await upgrade('203.0.113.5')).status, 101);
+  // A refused hello (wrong password, another version) frees its place at once, even while the
+  // runtime still lists the closing socket: a player may retry right away.
+  const listed = s.ctx.getWebSockets;
+  const everything = [];
+  s.ctx.acceptWebSocket = (ws) => everything.push(ws);
+  s.ctx.getWebSockets = () => [...listed(), ...everything];
+  for (let i = 0; i < 3; i++) {
+    const r = await upgrade('192.0.2.77');
+    assert.equal(r.status, 101, `retry ${i}`);
+    const ws = everything.at(-1);
+    await s.send(ws, hello(s, 'Retry', { version: '0.0.1' }));
+    assert.equal(ws.last('error').code, 'version_mismatch');
+    assert.equal(ws.readyState, 2, 'closing, still listed');
+  }
 });

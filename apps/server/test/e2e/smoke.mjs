@@ -932,7 +932,8 @@ async function main() {
   const { id, hostKey } = created.body;
 
   // ---- Lobby --------------------------------------------------------------------
-  // Anonymous connections are refused at hello (accounts are required).
+  // Anonymous connections are refused (accounts are required): the Worker answers the upgrade with
+  // the error and a close, without waking the session (src/wsrefuse.js).
   const anon = new Client('anon');
   await anon.open(id);
   anon.send({ t: 'hello', protocol: PROTOCOL_VERSION, version: VERSION, name: 'Nobody', password: 'pw' });

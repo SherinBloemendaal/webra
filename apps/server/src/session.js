@@ -358,7 +358,8 @@ export class Session extends DurableObject {
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     const all = this.ctx.getWebSockets();
-    const pending = all.map((ws) => this.attachment(ws)).filter((att) => !att.client);
+    // Waiting for their hello: a refused socket the object is closing (readyState CLOSING) no longer counts.
+    const pending = all.filter((ws) => !(ws.readyState > 1)).map((ws) => this.attachment(ws)).filter((att) => !att.client);
     if (all.length >= MAX_SOCKETS || pending.length >= MAX_PENDING_SOCKETS || pending.filter((att) => att.ip === ip).length >= MAX_PENDING_PER_IP) {
       return new Response('Too many connections.', { status: 429 });
     }
