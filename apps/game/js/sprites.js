@@ -15,7 +15,7 @@ import { HELI_DRAW, HELI_SPECIALS } from './art/helis.js';
 import { ABILITY_DRAW, ABILITY_SPECIALS } from './art/abilities.js';
 import { PRONE_DRAW, VETERANCY_SPECIALS } from './art/veterancy.js';
 import { DECORATION_SPECIALS } from './art/decorations.js';
-import { CIVILIAN_DRAW, worldDraw, worldSecond } from './art/world.js';
+import { CIVILIAN_DRAW, worldBox, worldDraw, worldIconCrop, worldSecond } from './art/world.js';
 import { INFANTRY_DRAW, INFANTRY_PRONE, INFANTRY_SPECIALS } from './art/infantry.js';
 import { CRATE_DRAW, LEFTOVER_SPECIALS, huskBase, huskOf } from './art/leftovers.js';
 import { EFFECT_SPECIALS, MUZZLE_FLASH, explosionArt } from './art/effects.js';
@@ -205,8 +205,9 @@ export function actorSprites(a) {
     const anim = buildingAnim(key);
     const turret = BUILDING_TURRET[key] ?? null;
     const second = turret ?? worldSecond(a) ?? (anim ? layerSprite(anim, 0) : null);
-    // The footprint; WebRA's pixel art that reaches past it (a mast) draws into a box grown around it.
-    const [w, h] = pixelBox({ ...a, id: key }) ?? [a.width * 24, a.height * 24];
+    // The footprint; WebRA's pixel art that reaches past it (a mast) and world structures whose original
+    // sprite stands taller (the lighthouse, the windmill) draw into a box grown around it.
+    const [w, h] = pixelBox({ ...a, id: key }) ?? (BUILDING_DRAW[key] ? null : worldBox(a)) ?? [a.width * 24, a.height * 24];
     // Vector art taller than its footprint (art/buildings.js BUILDING_RISE) grows its box upwards:
     // the drawing keeps its footprint coordinates, the frame's centre moves up by half the rise.
     const rise = BUILDING_DRAW[key] ? (BUILDING_RISE[key] ?? 0) : 0;
@@ -700,12 +701,15 @@ export function drawIcon(canvas, actor, teamRgb) {
   } else if (anim) {
     parts.push([(c, p) => anim.draw(c, p, 0), 0, rise]);
   }
-  const scale = Math.min(canvas.width / w, canvas.height / h) * (actor.kind === 'building' ? 0.92 : 0.8);
+  // A world structure drawn into a box grown past its footprint (art/world.js worldBox) shows only what it draws.
+  const shown = actor.kind === 'building' && !BUILDING_DRAW[spriteKey(actor.art ?? actor.id)] ? worldIconCrop(actor.art ? { ...actor, id: actor.art } : actor) : null;
+  const [cx, cy, cw, ch] = shown ?? [0, 0, w, h];
+  const scale = Math.min(canvas.width / cw, canvas.height / ch) * (actor.kind === 'building' ? 0.92 : 0.8);
   ctx.save();
-  ctx.translate((canvas.width - w * scale) / 2, (canvas.height - h * scale) / 2);
+  ctx.translate((canvas.width - cw * scale) / 2 - cx * scale, (canvas.height - ch * scale) / 2 - cy * scale);
   ctx.scale(scale, scale);
   ctx.beginPath();
-  ctx.rect(0, 0, w, h);
+  ctx.rect(cx, cy, cw, ch);
   ctx.clip();
   for (const [draw, dx, dy] of parts) {
     ctx.save();

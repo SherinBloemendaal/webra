@@ -11,7 +11,7 @@ import { MODE, POSE, POSE_COUNT, onceTicks, packSprite } from '../js/content/seq
 import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE, BUILDING_RISE, GROUND, SHADOW, SHAFT } from '../js/art/buildings.js';
 import { ORIGINAL_BOUNDS } from '../js/content/render-facts.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from '../js/art/animated.js';
-import { worldDraw, MINE_ORE, MINE_GEMS } from '../js/art/world.js';
+import { worldBox, worldDraw, MINE_ORE, MINE_GEMS } from '../js/art/world.js';
 import { pixelSlots } from '../js/art/pixel.js';
 import init, { Game } from '../pkg/webra_sim.js';
 
@@ -170,10 +170,12 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
         assert.ok(frames[i * 2 * FRAME_FLOATS + 13] > 0, `${a.id} pose table`);
         return;
       }
-      // Art taller than its footprint grows its box upwards (BUILDING_RISE), the frame's centre with it.
+      // Art taller than its footprint grows its box upwards (BUILDING_RISE), the frame's centre with it;
+      // a world structure whose original sprite stands taller draws into a box grown around it (art/world.js worldBox).
       const rise = BUILDING_DRAW[keyOf(a.id)] ? (BUILDING_RISE[keyOf(a.id)] ?? 0) : 0;
-      assert.equal(frames[i * 2 * FRAME_FLOATS + 4], a.width * 24, `${a.id} sprite width`);
-      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], a.height * 24 + rise, `${a.id} sprite height`);
+      const [w, h] = (isWorld(a) && worldBox(a)) || [a.width * 24, a.height * 24 + rise];
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 4], w, `${a.id} sprite width`);
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], h, `${a.id} sprite height`);
       assert.deepEqual([frames[i * 2 * FRAME_FLOATS + 6], frames[i * 2 * FRAME_FLOATS + 7]], [0, rise ? -rise / 2 : 0], `${a.id} sprite offset`);
     });
   } finally {

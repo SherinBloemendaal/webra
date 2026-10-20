@@ -7,7 +7,9 @@
 // PRIMARY tag and the crate pickup animations.
 // Helpers and palette come from ./kit.js.
 
-import { C, rect, rrect, circle, poly, line, ring } from './kit.js';
+import { rect, rrect, circle, poly, line, ring } from './kit.js';
+import { tone } from './volume.js';
+import { SHARED_PALETTE } from './shared-palette.js';
 
 const OUTLINE = '#141414';
 
@@ -18,39 +20,33 @@ const OUTLINE = '#141414';
  */
 export const LEFTOVER_SPECIAL_OFFSET = 68;
 
-/** Design canvas materials: "Staal" for the steel crate, the "Kratten" wood for the wooden one. */
-const STEEL = { base: '#70747a', lit: '#98a0a8', dark: '#3f4247' };
-const WOOD = { plank: '#8a6a3a', seam: '#5e4624', lit: '#b08e58' };
+/** The shared 2D/3D materials (art/shared-palette.js): steel for the steel crate, wood for the wooden one. */
+const M = SHARED_PALETTE.materials;
+const SHADOW = `rgba(0,0,0,${SHARED_PALETTE.shadow.alpha})`;
+const SHADOW_OFFSET = SHARED_PALETTE.shadow.offset * 24;
 
-/** A steel crate (OpenRA scrate: the multiplayer crate). */
+/** A steel crate (the original art's scrate, the multiplayer crate): the box, a dark band each way and a yellow stud. */
 function steelCrate(ctx, P, x, y, s) {
-  rect(ctx, P.c(OUTLINE), x - 0.5, y - 0.5, s + 1, s + 1);
-  rect(ctx, P.c(STEEL.dark), x, y, s, s);
-  rect(ctx, P.c(STEEL.base), x + 1, y + 1, s - 2, s - 2);
-  rect(ctx, P.c(STEEL.lit), x + 1, y + 1, s - 2, 1);
-  rect(ctx, P.c(STEEL.dark), x + 1, y + s / 2 - 0.6, s - 2, 1.2);
-  rect(ctx, P.c(STEEL.dark), x + s / 2 - 0.6, y + 1, 1.2, s - 2);
-  circle(ctx, P.c(C.yellow), x + s / 2, y + s / 2, 1.1);
+  rect(ctx, P.c(M.steel), x, y, s, s);
+  rect(ctx, P.c(M.dark), x, y + s / 2 - 0.7, s, 1.4);
+  rect(ctx, P.c(M.dark), x + s / 2 - 0.7, y, 1.4, s);
+  rect(ctx, P.c(M.yellow), x + s / 2 - 1.2, y + s / 2 - 1.2, 2.4, 2.4);
 }
 
-/** A wooden crate (OpenRA wcrate): planks with dark seams, a cross brace and a lit top edge. */
+/** A wooden crate (the original art's wcrate): the planks, one seam and a lit top edge. */
 function woodCrate(ctx, P, x, y, s) {
-  rect(ctx, P.c(OUTLINE), x - 0.5, y - 0.5, s + 1, s + 1);
-  rect(ctx, P.c(WOOD.seam), x, y, s, s);
-  rect(ctx, P.c(WOOD.plank), x + 0.5, y + 0.5, s - 1, s - 1);
-  for (let k = 1; k < 3; k++) rect(ctx, P.c(WOOD.seam), x + 0.5, y + (k * s) / 3 - 0.3, s - 1, 0.6);
-  line(ctx, P.c(WOOD.seam), 0.7, x + 1, y + s - 1, x + s - 1, y + 1);
-  rect(ctx, P.c(WOOD.lit), x + 0.5, y + 0.5, s - 1, 0.8);
+  rect(ctx, P.c(M.wood), x, y, s, s);
+  rect(ctx, P.c(tone(M.wood, -0.3)), x, y + s / 2 - 0.6, s, 1.2);
+  rect(ctx, P.c(tone(M.wood, 0.2)), x, y, s, 1.2);
 }
 
-/** Ripples around a crate bobbing in the water. */
+/** One ripple round a crate bobbing in the water. */
 function ripples(ctx, P) {
-  ring(ctx, P.c('rgba(210,235,245,0.55)'), 8, 8, 6.2, 0.8);
-  ring(ctx, P.c('rgba(210,235,245,0.3)'), 8, 8, 7.2, 0.6);
+  ring(ctx, P.c('rgba(210,235,245,0.55)'), 8, 8, 6.6, 0.8);
 }
 
 const steelLand = [14, 14, (ctx, P) => {
-  circle(ctx, P.c(C.shadow), 7.8, 7.8, 5.8);
+  rect(ctx, P.c(SHADOW), 2.5 + SHADOW_OFFSET, 2.5 + SHADOW_OFFSET, 9, 9);
   steelCrate(ctx, P, 2.5, 2.5, 9);
 }];
 const steelWater = [16, 16, (ctx, P) => {
@@ -58,7 +54,7 @@ const steelWater = [16, 16, (ctx, P) => {
   steelCrate(ctx, P, 4, 4, 8);
 }];
 const woodLand = [14, 14, (ctx, P) => {
-  circle(ctx, P.c(C.shadow), 7.8, 7.8, 5.8);
+  rect(ctx, P.c(SHADOW), 2.5 + SHADOW_OFFSET, 2.5 + SHADOW_OFFSET, 9, 9);
   woodCrate(ctx, P, 2.5, 2.5, 9);
 }];
 const woodWater = [16, 16, (ctx, P) => {
@@ -79,25 +75,22 @@ export const CRATE_DRAW = {
   MONEYCRATE: { body: woodLand, turret: woodWater },
 };
 
-/** Scorch marks over a sprite: [x, y, r] in sprite pixels, as fractions of its size. */
+/** Scorch marks over a sprite: two charred blocks [x, y, w, h] as fractions of its size. */
 const SOOT = [
-  [0.32, 0.3, 0.16],
-  [0.68, 0.55, 0.2],
-  [0.42, 0.74, 0.14],
+  [0.18, 0.18, 0.4, 0.3],
+  [0.45, 0.5, 0.4, 0.32],
 ];
 
 /**
  * The husk of a vehicle drawn by `body` ([w, h, draw], the vehicle's own
- * body sprite): the hull with soot and torn plating; its turret is gone
+ * body sprite): the hull with two charred patches; its turret is gone
  * (OpenRA throws it off as a particle).
  */
 export function huskOf(body) {
   const [w, h, draw] = body;
   return [w, h, (ctx, P) => {
     draw(ctx, P);
-    for (const [fx, fy, fr] of SOOT) circle(ctx, P.c('rgba(20,16,12,0.55)'), w * fx, h * fy, Math.min(w, h) * fr);
-    line(ctx, P.c('rgba(10,8,6,0.7)'), 0.8, w * 0.25, h * 0.45, w * 0.55, h * 0.4);
-    line(ctx, P.c('rgba(10,8,6,0.7)'), 0.8, w * 0.5, h * 0.62, w * 0.78, h * 0.7);
+    for (const [fx, fy, fw, fh] of SOOT) rect(ctx, P.c('rgba(20,16,12,0.55)'), w * fx, h * fy, w * fw, h * fh);
   }];
 }
 
