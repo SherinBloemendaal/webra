@@ -1,6 +1,6 @@
 {
   "name": "@webra/website",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "private": true,
   "description": "WebRA landing site (webra.sherin.dev)",
   "license": "GPL-3.0-or-later",
