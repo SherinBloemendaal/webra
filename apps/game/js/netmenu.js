@@ -1,5 +1,5 @@
-// The game menu's Network tab in online games (docs/redesign-uitwerking.md
-// 29; design board NetMenu): tiles (your ping, jitter, late pings, the
+// The game menu's Network tab in online games (docs/contracts.md section 4
+// "Network quality"; design board NetMenu): tiles (your ping, jitter, late pings, the
 // slowest player), the ping of every player over the last minute with the
 // stalls marked, a table per player, how long this game waited and for
 // whom, and the three net.* switches.

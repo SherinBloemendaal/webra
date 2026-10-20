@@ -4006,8 +4006,8 @@ production (clicks, holds, cancels, queue counts, the red funds marker of
 - `netSlot`: the place next to the clock where js/netwarn.js puts the signal
   bars.
 
-**Connection parts of an online game** (`NetWarn`, docs/redesign-uitwerking.md
-29). The wiring comes from three branches besides this one (work/hud):
+**Connection parts of an online game** (`NetWarn`; section 4 "Network
+quality"). The wiring comes from three branches besides this one (work/hud):
 
 - work/netround provides the data: `js/netquality.js` (`NetQuality`, which
   measures with `ping`/`pong` and reads `netstat` and the server's `waiting`
@@ -4567,7 +4567,7 @@ set through CSSOM (`--avatar`, `--fill`, the select plate's `--sp-*`).
 
 ## 6. Deployment
 
-One Worker named `webra` on the `WebRA` Cloudflare account serves
+One Worker named `webra` on the Cloudflare account serves
 everything on `webra.sherin.dev`:
 
 - `/` and `/assets/*`: `apps/website` build output
@@ -5569,7 +5569,8 @@ Progress is the registry setting `extra.campaignProgress` (mission id to the
 difficulty it was won on, synced with the account). In the numbered
 campaigns the first chapter is open and a chapter opens once a mission of
 the chapter before it is won; the expansion and OpenRA missions are open
-from the start. In a mission, `js/campaign/view.js` shows the objectives
+from the start. The browser shows no objectives (a deliberate choice): the
+mission scripts only set them while the mission runs. In a mission, `js/campaign/view.js` shows the objectives
 panel, messages, mission text, floating texts, movies (or their cards) and
 script errors, plays the scripts' speech and sounds, moves the camera and pings the
 radar; the end of game dialogs offer the next mission, a restart and the

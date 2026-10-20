@@ -8,7 +8,7 @@ every peer, and every client necessarily holds the full game state.
 
 ## Review (2026-10-07)
 
-A dedicated security review (Fable 5.1) covered the Worker API, the session
+An independent security review covered the Worker API, the session
 Durable Object, the protocol package, the engine's order, map and rules paths,
 the browser client, the website and the CI/deploy setup. Findings and status:
 
@@ -22,7 +22,7 @@ the browser client, the website and the CI/deploy setup. Findings and status:
 
 ## Follow-up review (2026-10-07)
 
-A second pass (Fable 5.1) over the fixes above found these gaps. Findings and
+A second independent review over the fixes above found these gaps. Findings and
 status:
 
 | # | Severity | Finding | Status |
@@ -483,7 +483,7 @@ the email binding or its sender is missing (Workers Free plan; see
 
 ## Accounts review (2026-10-09)
 
-A security review (Fable 5.1) of the accounts system found these issues; all
+An independent review of the accounts system found these issues; all
 are fixed, and `apps/server/test/accounts-review.test.mjs` replays each
 exploit:
 

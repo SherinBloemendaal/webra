@@ -42,8 +42,8 @@
 // - reading: steps that only explain tick off when the Guide shows them
 //   (in order) or with Got it on the tour card.
 //
-// State is preferred over events where it can tell (the notes in
-// docs/redesign-uitwerking.md 15): a hidden tab drops engine events. No DOM
+// State is preferred over events where it can tell (docs/contracts.md,
+// "The game menu, the guide and the tour"): a hidden tab drops engine events. No DOM
 // here: Node tests import it.
 
 import { GUIDE } from './help.js';

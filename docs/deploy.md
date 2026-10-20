@@ -1,7 +1,7 @@
 # Deploying WebRA
 
 WebRA runs at <https://webra.sherin.dev> as **one Cloudflare Worker** named
-`webra` on the `WebRA` Cloudflare account. The same Worker serves the
+`webra` on the Cloudflare account. The same Worker serves the
 website, the game, the HTTP API and the multiplayer sessions
 ([contracts](contracts.md), section 6).
 
@@ -128,7 +128,7 @@ or secrets of the `production` environment):
 | Secret | Value |
 |--------|-------|
 | `CLOUDFLARE_API_TOKEN` | An API token with the permissions below |
-| `CLOUDFLARE_ACCOUNT_ID` | The account ID of `WebRA` (dashboard, Workers and Pages, right sidebar) |
+| `CLOUDFLARE_ACCOUNT_ID` | The account ID of the Cloudflare account (dashboard, Workers and Pages, right sidebar; the same as `account_id` in `apps/server/wrangler.jsonc`) |
 
 The deploy job fails early with a clear error when either one is missing.
 
@@ -136,7 +136,9 @@ The deploy job fails early with a clear error when either one is missing.
 
 `tools/create-deploy-token.sh` creates this token from an existing token that
 may create API tokens and stores it as the repository secret without ever
-printing it. To do it by hand, create a **custom token** (My Profile, API
+printing it. It takes the account and zone ids from the environment:
+`CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_ZONE_ID=<zone id>
+tools/create-deploy-token.sh` (the zone id is on the zone's Overview page). To do it by hand, create a **custom token** (My Profile, API
 Tokens, Create Token, Custom token) with exactly these permissions:
 
 | Scope | Resource | Permission |
@@ -149,7 +151,7 @@ Tokens, Create Token, Custom token) with exactly these permissions:
 | Zone | Zone | Read |
 | Zone | DNS | Edit |
 
-- Account resources: include only the `WebRA` account.
+- Account resources: include only the Cloudflare account.
 - Zone resources: include only the zone `sherin.dev`.
 - DNS Edit is needed because wrangler creates the DNS record for the custom
   domain `webra.sherin.dev`.
@@ -190,7 +192,7 @@ cd apps/server
 npx wrangler login            # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 # The d1 commands ignore account_id in wrangler.jsonc; with a login that sees
 # several accounts they need it in the environment.
-export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
+export CLOUDFLARE_ACCOUNT_ID=<account id>   # account_id in wrangler.jsonc
 npx wrangler d1 migrations apply webra --remote   # only when apps/server/migrations exists
 npx wrangler r2 bucket info webra-replays || npx wrangler r2 bucket create webra-replays
 npx wrangler deploy $(WEBRA_ENV=production node ../../tools/sentry-config.mjs worker-vars)
@@ -273,7 +275,7 @@ unavailable (`GET /api/site`, the admin stats).
    # local wrangler dev database
    node tools/promote-admin.mjs <username> --local
    # production (asks for nothing else; the confirmation must repeat the name)
-   export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
+   export CLOUDFLARE_ACCOUNT_ID=<account id>   # account_id in apps/server/wrangler.jsonc
    node tools/promote-admin.mjs <username> --remote --confirm <username>
    ```
 
