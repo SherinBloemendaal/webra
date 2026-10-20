@@ -1,0 +1,65 @@
+WebRA
+Copyright (C) 2026 Sherin Bloemendaal
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version (GPL-3.0-or-later). See LICENSE for the full text.
+
+Portions Copyright (C) The OpenRA Developers and Contributors
+(https://github.com/OpenRA/OpenRA), licensed under the GNU General Public
+License version 3 or later (GPL-3.0-or-later). These portions are:
+
+1. Data copied from OpenRA's mods/ra, mods/common and mods/ra/maps at commit
+   b6fc03fcfaef1277592bbd4cbc7d44dd85219902 (data/CATALOG.md names each
+   source): everything under
+
+     data/source/
+
+   and the files generated from it by the tools in tools/ (each says so in
+   its header or in data/CATALOG.md):
+
+     data/actors.json
+     data/weapons.json
+     data/CATALOG.md
+     engine/rules.json
+     engine/render.json
+     apps/game/js/content/tables.js
+     apps/game/js/content/render-facts.js
+     apps/game/js/oramap/tables.js
+     apps/game/js/openra-hotkeys.js
+     apps/game/js/audio/catalog-data.js
+     apps/game/missions/
+     packages/protocol/src/coop-missions.js
+
+   The mission maps' authors are named in each map.yaml under
+   data/source/missions/maps/ and in the generated mission files.
+
+2. Decoders for the original game's file formats, whose algorithms follow
+   OpenRA's loaders (OpenRA.Mods.Cnc and OpenRA.Mods.Common: ShpTDLoader,
+   ShpD2Loader, TmpRALoader, TmpTDLoader, LCWCompression,
+   RLEZerosCompression, AudReader, WestwoodCompressedReader, ImaAdpcmReader,
+   VqaVideo, MixFile, BlowfishKeyProvider, ImmutablePalette and
+   PlayerColorPalette, DefaultSpriteSequence, CursorManager):
+
+     apps/game/js/content/shp.js
+     apps/game/js/content/vqa.js
+     apps/game/js/content/palette.js
+     apps/game/js/content/sequences.js
+     apps/game/js/content/cursors.js
+     apps/game/js/audio/aud.js
+     apps/game/js/audio/mix.js
+     apps/game/js/audio/mixkey.js
+
+3. Game logic. The simulation in engine/ and the game client in apps/game/
+   reimplement OpenRA's Red Alert behaviour (traits, activities, the bot
+   modules, the Lua mission API); comments name the OpenRA classes they
+   follow.
+
+No files of the original Command & Conquer: Red Alert (Westwood Studios,
+Electronic Arts) are part of this repository: players load the game's
+graphics, sounds and movies from their own copy in the browser.
+
+Third-party code compiled into or bundled with the shipped site (Rust
+crates, the error report SDK) and its licences: THIRD_PARTY_LICENSES.md.
+The fonts are under the SIL Open Font License 1.1: apps/game/fonts/OFL-*.txt.
