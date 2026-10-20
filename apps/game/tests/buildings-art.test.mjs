@@ -233,7 +233,13 @@ for (const a of buildings) {
  * shape blends over the team grey, in the mask pass it cuts the team colour
  * away, so the player's colour would show a grey hole there.
  */
-function rasterMask(draw, w, h, biome = 'temperate') {
+/**
+ * With `shadows` set, the drawing is rasterised in the colour pass instead
+ * and `over` counts the samples of the hard shadow (SHADOW) that the flat
+ * GROUND paints over afterwards: the ground lies under everything, so its
+ * shadow would vanish there.
+ */
+function rasterMask(draw, w, h, biome = 'temperate', shadows = false) {
   const S = 2;
   const [mx, my] = [-6, -14];
   const W = (w - 2 * mx) * S;
@@ -280,7 +286,9 @@ function rasterMask(draw, w, h, biome = 'temperate') {
     }
     return false;
   };
-  const kind = (style) => (style === '#fff' ? 2 : style === '#000' ? 1 : style === 'rgba(0,0,0,1)' ? 3 : -1);
+  const kind = shadows
+    ? (style) => (style === SHADOW ? 4 : style === GROUND ? 5 : 1)
+    : (style) => (style === '#fff' ? 2 : style === '#000' ? 1 : style === 'rgba(0,0,0,1)' ? 3 : -1);
   const paint = (polys, style, test) => {
     const k = kind(style);
     assert.ok(k > 0, `unexpected mask style ${style}`);
@@ -297,6 +305,11 @@ function rasterMask(draw, w, h, biome = 'temperate') {
         const y = (gy + 0.5) / S + my;
         if (!test(x, y) || !clips.every((c) => inside(c, x, y))) continue;
         const i = gy * W + gx;
+        if (shadows) {
+          if (k === 5 && grid[i] === 4) over++;
+          grid[i] = k;
+          continue;
+        }
         if (k === 3 && grid[i] === 2) over++;
         grid[i] = k === 2 ? 2 : 1;
       }
@@ -340,7 +353,8 @@ function rasterMask(draw, w, h, biome = 'temperate') {
     createLinearGradient() { throw new Error('flat art: no gradients'); },
     createRadialGradient() { throw new Error('flat art: no gradients'); },
   };
-  draw(ctx, { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000'), biome });
+  if (shadows) draw(ctx, { team: () => '#4d8cf2', c: (col) => col, biome });
+  else draw(ctx, { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000'), biome });
   let inBox = 0;
   let outBox = 0;
   for (let gy = 0; gy < H; gy++) {
@@ -467,6 +481,10 @@ for (const key of VECTOR) {
     assert.ok(shapes >= 3 && shapes <= 6, `${key} draws ${shapes} shapes`);
     assert.equal(shadows, 1, `${key} throws ${shadows} shadows`);
     assert.equal(team, WALLS.has(key) ? 0 : 1, `${key} has ${team} team areas`);
+    // The flat ground lies under everything: it never covers the shadow.
+    const [cw, ch] = BUILDING_SIZE[key];
+    const hidden = rasterMask(BUILDING_DRAW[key], cw * 24, ch * 24, 'temperate', true).over;
+    assert.equal(hidden, 0, `${key}: the ground covers ${hidden} px of its shadow`);
   });
 }
 
@@ -500,11 +518,18 @@ const SIZE_TOLERANCE = 3;
  * decoration bounds (else its selection bounds, content/render-facts.js
  * ORIGINAL_BOUNDS) around the actor's centre, the footprint's centre plus
  * the rules' centre offset.
+ *
+ * Rule: bounds smaller than the footprint, centred on it (no centre offset,
+ * no bounds offset), are a selection box drawn round the middle of a sprite
+ * that fills the whole footprint (the service depot, the naval yard and the
+ * sub pen: 3072 x 2048 on 3 x 3 cells). Those count as the full footprint.
  */
 function originalBox(a) {
   const b = ORIGINAL_BOUNDS[a.id];
   const [bw, bh, bx, by] = (b.decoration ?? b.bounds).map((v) => v * PX);
   const [ox, oy] = a.centerOffset ?? [0, 0];
+  const [fw, fh] = [a.width * 24, a.height * 24];
+  if (!ox && !oy && !bx && !by && bw <= fw && bh <= fh && (bw < fw || bh < fh)) return { x0: 0, y0: 0, x1: fw, y1: fh };
   const cx = (a.width * 24) / 2 + ox + bx;
   const cy = (a.height * 24) / 2 + oy + by;
   return { x0: cx - bw / 2, y0: cy - bh / 2, x1: cx + bw / 2, y1: cy + bh / 2 };
@@ -526,6 +551,11 @@ function drawnBox(draw) {
 test('the size check catches a drawing smaller than the original', () => {
   const a = { id: 'POWR', width: 2, height: 3, centerOffset: [0, -12] };
   assert.deepEqual(originalBox(a), { x0: 0, y0: 0, x1: 48, y1: 48 });
+  // A centred selection box smaller than the footprint stands for the whole footprint.
+  for (const id of ['FIX', 'SYRD', 'SPEN']) {
+    const rec = buildings.find((x) => x.id === id);
+    assert.deepEqual(originalBox(rec), { x0: 0, y0: 0, x1: 72, y1: 72 }, id);
+  }
   const small = drawnBox((ctx, P) => {
     ctx.fillStyle = P.c(GROUND);
     ctx.fillRect(0, 0, 48, 72);

@@ -8,7 +8,8 @@
 // plant, the big door on the factory, the gold silo of the refinery.
 //
 // Size: each structure fills its cells the way the original sprite does
-// (content/render-facts.js ORIGINAL_BOUNDS, tests/buildings-art.test.mjs): the
+// (content/render-facts.js ORIGINAL_BOUNDS, tests/buildings-art.test.mjs; the
+// service depot, naval yard and sub pen fill their whole 3x3 footprint): the
 // raised parts and their shadow cover the original's box; the bib rows below
 // it are a flat concrete apron (GROUND). A structure the original draws taller
 // than its footprint (the gap generator's mast, the tesla coil) reaches up by
@@ -18,8 +19,8 @@
 // Team colour is one strip (or cap) per structure, drawn with P.team(level)
 // (grey in the colour pass, white in the mask pass, see sprites.js); nothing
 // translucent is drawn over it (the mask pass draws every translucent colour
-// as opaque black, which would cut the team colour away), so the shadow comes
-// first, under everything.
+// as opaque black, which would cut the team colour away). So the flat GROUND
+// comes first, then the shadow on it, then the structure.
 //
 // Each draw function takes (ctx, P) and paints into its footprint box (cells
 // times 24 world pixels, BUILDING_SIZE). Everything is deterministic and drawn
@@ -144,8 +145,8 @@ export const BUILDING_DRAW = {
   // a half built block, and the tower crane's jib over both (its trolley runs:
   // art/animated.js).
   FACT: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, 40, E3), r(46, 30, 18, 20), r(3, 8, E3 - 3, 5));
     shape(ctx, P.c(GROUND), r(40, 0, 32, 72), r(0, 72, 72, 24));
+    shadow(ctx, P, r(0, 0, 40, E3), r(46, 30, 18, 20), r(3, 8, E3 - 3, 5));
     shape(ctx, P.c(M.roof), r(0, 0, 40, E3));
     shape(ctx, P.team(TEAM), r(0, E3 - 8, 40, 8));
     shape(ctx, P.c(M.yellow), r(46, 30, 18, 20), r(3, 8, E3 - 3, 5));
@@ -154,8 +155,8 @@ export const BUILDING_DRAW = {
   // Power plant 2x3: the block with two cooling towers (their steam rises:
   // art/animated.js) and the lightning sign.
   POWR: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 48, 24));
+    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(M.roof), r(0, 0, E2, E2));
     shape(ctx, P.team(TEAM), r(0, E2 - 6, E2, 6));
     shape(ctx, P.c(M.steel2), c(12.5, 16, 10), c(33.5, 16, 10));
@@ -167,8 +168,8 @@ export const BUILDING_DRAW = {
   // the original) under two big reactors with glowing cores (they pulse:
   // art/animated.js), its front wall below.
   APWR: (ctx, P) => {
-    shadow(ctx, P, r(0, -20, E3, E2 + 20));
     shape(ctx, P.c(GROUND), r(0, 48, 72, 24));
+    shadow(ctx, P, r(0, -20, E3, E2 + 20));
     shape(ctx, P.c(M.roof), r(0, -20, E3, E2 + 20));
     shape(ctx, P.c(M.wall), r(0, 26, E3, E2 - 26));
     shape(ctx, P.team(TEAM), r(0, E2 - 6, E3, 6));
@@ -179,8 +180,8 @@ export const BUILDING_DRAW = {
   // Ore refinery 3x4: the smelter hall with its furnace (it flickers:
   // art/animated.js) and the round silo full of gold.
   PROC: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, 44, 67), c(56, 30, 14));
     shape(ctx, P.c(GROUND), r(24, 48, 48, 24), r(0, 72, 72, 24));
+    shadow(ctx, P, r(0, 0, 44, 67), c(56, 30, 14));
     shape(ctx, P.c(M.roof), r(0, 0, 44, 67));
     shape(ctx, P.team(TEAM), r(0, 61, 44, 6));
     shape(ctx, P.c(M.molten), r(14, 40, 16, 10));
@@ -199,8 +200,8 @@ export const BUILDING_DRAW = {
   // Allied barracks 2x3: a canvas tent, its shaded half, the team band across
   // both halves and the door.
   TENT: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 48, 24));
+    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(M.canvas), r(0, 0, E2, E2));
     shape(ctx, P.c(M.olive), r(E2 / 2, 0, E2 / 2, E2));
     shape(ctx, P.team(TEAM), r(0, 16, E2, 6));
@@ -210,8 +211,8 @@ export const BUILDING_DRAW = {
   // Soviet barracks 2x3: a tiled roof in two halves, the team strip along the
   // front and the chimney (its smoke: art/animated.js).
   BARR: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 48, 24));
+    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(M.brick), r(0, 0, E2, E2));
     shape(ctx, P.c(M.tiles), r(E2 / 2, 0, E2 / 2, E2));
     shape(ctx, P.team(TEAM), r(0, E2 - 6, E2, 6));
@@ -230,8 +231,8 @@ export const BUILDING_DRAW = {
   // War factory 3x3: the hangar with its ridge, the team strip and the big
   // door onto the apron (left clear: the units it builds roll out there).
   WEAP: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E3, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 72, 24));
+    shadow(ctx, P, r(0, 0, E3, E2));
     shape(ctx, P.c(M.roof), r(0, 0, E3, E2));
     shape(ctx, P.c(M.seam), r(0, 19, E3, 3));
     shape(ctx, P.team(TEAM), r(0, 33, E3, 5));
@@ -241,23 +242,23 @@ export const BUILDING_DRAW = {
   // Service depot 3x3: the hexagonal repair pad in a yellow rim with the big
   // wrench, a team strip along its top.
   FIX: (ctx, P) => {
-    const rim = [18, 12, 52, 12, E3, 35, 52, 60 - S, 18, 60 - S, 0, 35];
+    const rim = [20, 0, 52, 0, E3, 36, 52, E3, 20, E3, 0, 36];
     shadow(ctx, P, ['p', rim]);
     shape(ctx, P.c(M.yellow), ['p', rim]);
-    shape(ctx, P.c(M.darker), p(21, 17, 49, 17, 64, 35, 49, 53, 21, 53, 6, 35));
+    shape(ctx, P.c(M.darker), p(23, 6, 49, 6, 64, 36, 49, 64, 23, 64, 8, 36));
     const wrench = [-0.2, -0.1, -0.2, -0.28, -0.08, -0.38, -0.08, -0.22, 0.08, -0.22, 0.08, -0.38, 0.2, -0.28, 0.2, -0.1, 0.07, 0.02, 0.07, 0.42, 0, 0.48, -0.07, 0.42, -0.07, 0.02];
-    const k = Math.SQRT1_2 * 30;
+    const k = Math.SQRT1_2 * 40;
     const pts = [];
     for (let i = 0; i < wrench.length; i += 2) pts.push(35 + (wrench[i] - wrench[i + 1]) * k, 36 + (wrench[i] + wrench[i + 1]) * k);
     shape(ctx, P.c(M.paint), ['p', pts]);
-    shape(ctx, P.team(TEAM), r(20, 12, 30, 4));
+    shape(ctx, P.team(TEAM), r(22, 0, 28, 4));
   },
 
   // Radar dome 2x3: the big dome on its block with the antenna mount (the
   // radar sweep turns over the dome: art/animated.js).
   DOME: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 48, 24));
+    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(M.roof), r(0, 0, E2, E2));
     shape(ctx, P.team(TEAM), r(0, E2 - 6, E2, 6));
     shape(ctx, P.c(M.dome), c(23, 21, 17));
@@ -267,8 +268,8 @@ export const BUILDING_DRAW = {
   // Helipad 2x3: a raised pad with the H and a team strip (a landing light
   // runs round it: art/animated.js).
   HPAD: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 48, 24));
+    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(M.asphalt), r(0, 0, E2, E2));
     shape(ctx, P.c(M.paint), r(15, 9, 4, 24), r(29, 9, 4, 24), r(19, 19, 10, 4));
     shape(ctx, P.team(TEAM), r(0, E2 - 5, E2, 5));
@@ -288,8 +289,8 @@ export const BUILDING_DRAW = {
   // Allied tech center 2x3: the lab under its glass roof and the satellite
   // dish (its feed turns: art/animated.js).
   ATEK: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 48, 24));
+    shadow(ctx, P, r(0, 0, E2, E2));
     shape(ctx, P.c(M.roof), r(0, 0, E2, E2));
     shape(ctx, P.c(M.glass), r(6, 19, 34, 16));
     shape(ctx, P.team(TEAM), r(0, E2 - 6, E2, 6));
@@ -299,8 +300,8 @@ export const BUILDING_DRAW = {
   // Soviet tech center 3x3: a brick block with a tiled roof panel and the
   // star, the antenna block (its red light blinks: art/animated.js).
   STEK: (ctx, P) => {
-    shadow(ctx, P, r(0, 0, E3, E2));
     shape(ctx, P.c(GROUND), r(0, 48, 72, 24));
+    shadow(ctx, P, r(0, 0, E3, E2));
     shape(ctx, P.c(M.brick), r(0, 0, E3, E2));
     shape(ctx, P.c(M.tiles), r(6, 6, 40, 28));
     shape(ctx, P.team(TEAM), r(0, E2 - 6, E3, 6));
@@ -311,22 +312,22 @@ export const BUILDING_DRAW = {
   // Naval yard 3x3: quays round open water (the water stays the map's), a team
   // strip along the back quay and the yard crane over the water.
   SYRD: (ctx, P) => {
-    const quay = [0, 12, E3, 12, E3, 60 - S, 56, 60 - S, 56, 26, 14, 26, 14, 60 - S, 0, 60 - S];
+    const quay = [0, 0, E3, 0, E3, E3, 56, E3, 56, 18, 14, 18, 14, E3, 0, E3];
     shadow(ctx, P, ['p', quay]);
     shape(ctx, P.c(M.wall), ['p', quay]);
-    shape(ctx, P.team(TEAM), r(14, 22, 42, 4));
-    shape(ctx, P.c(M.yellow), r(40, 14, 4, 30));
-    shape(ctx, P.c(M.darker), r(37, 14, 10, 7));
+    shape(ctx, P.team(TEAM), r(14, 14, 42, 4));
+    shape(ctx, P.c(M.yellow), r(40, 4, 4, 38));
+    shape(ctx, P.c(M.darker), r(37, 4, 10, 7));
   },
 
   // Sub pen 3x3: a concrete pen with a team strip over its roof and the dark
   // arch where the submarines leave.
   SPEN: (ctx, P) => {
-    shadow(ctx, P, r(0, 12, E3, 48 - S));
-    shape(ctx, P.c(M.wall), r(0, 12, E3, 48 - S));
-    shape(ctx, P.c(M.roof), r(6, 16, 58, 20));
-    shape(ctx, P.team(TEAM), r(6, 27, 58, 5));
-    shape(ctx, P.c(M.darker), p(24, 60 - S, 24, 44, 30, 38, 42, 38, 48, 44, 48, 60 - S));
+    shadow(ctx, P, r(0, 0, E3, E3));
+    shape(ctx, P.c(M.wall), r(0, 0, E3, E3));
+    shape(ctx, P.c(M.roof), r(6, 6, 58, 30));
+    shape(ctx, P.team(TEAM), r(6, 21, 58, 5));
+    shape(ctx, P.c(M.darker), p(22, E3, 22, 50, 29, 42, 43, 42, 50, 50, 50, E3));
   },
 
   // Gap generator 1x1: the tall emitter mast (above its footprint like the
