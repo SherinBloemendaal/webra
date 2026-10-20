@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Browser, Clock, makeEnv, ORIGIN, promote, setSite, signup } from './accounts-harness.mjs';
 import { PASS_TTL_S, passKey, signPass, verifyPass, sidOfToken, passMatchesSession } from '../src/accounts/playpass.js';
-import { isNavigation, isPlayPath, normalizedSegments, PLAY_CACHE_CONTROL, returnPathFor } from '../src/playgate.js';
+import { BUILD_COOKIE, deployedBuild, isNavigation, isPlayPath, normalizedSegments, PLAY_CACHE_CONTROL, PLAY_FILE_CACHE_CONTROL, returnPathFor } from '../src/playgate.js';
 import { PLAY_HEADERS, SITE_HEADERS } from '../src/static-headers.js';
 import { hmacSha256, toBase64Url } from '../src/crypto.js';
 
@@ -20,14 +20,29 @@ const SID = '0123456789abcdef';
 const nowS = () => Math.floor(clock.now / 1000);
 
 /** Static assets stand-in: records requests and answers like Workers Static Assets (public caching, ETag). */
-function assets(env) {
+const BUILD = '0.20.1+abcdef12';
+
+/**
+ * Static assets stand-in: records requests and answers like Workers Static
+ * Assets (public caching, ETag). Pages (paths ending in / or .html) are HTML.
+ * /version.json (the gate reads the deployed build from it once) is answered
+ * with `build` and not recorded.
+ */
+function assets(env, { build = BUILD } = {}) {
   env.assetRequests = [];
+  env.versionReads = 0;
   env.ASSETS = {
     fetch: async (request) => {
-      env.assetRequests.push(new URL(request.url).pathname);
-      return new Response(`file ${new URL(request.url).pathname}`, {
+      const path = new URL(request.url).pathname;
+      if (path === '/version.json') {
+        env.versionReads++;
+        return build === null ? new Response('not found', { status: 404 }) : Response.json({ version: '0.20.1', build });
+      }
+      env.assetRequests.push(path);
+      const html = path.endsWith('/') || path.endsWith('.html');
+      return new Response(`file ${path}`, {
         status: 200,
-        headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate', etag: '"abc"', vary: 'Accept-Encoding' },
+        headers: { 'content-type': html ? 'text/html; charset=utf-8' : 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate', etag: '"abc"', vary: 'Accept-Encoding' },
       });
     },
   };
@@ -236,7 +251,10 @@ async function expectServed(b, path, opts = SUB) {
   assert.equal(r.status, 200, `${path}: ${r.status} ${JSON.stringify(r.body)}`);
   assert.equal(r.body, `file ${path}`);
   assertSecurityHeaders(r.res);
-  assert.equal(r.res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+  // Pages revalidate; a file is kept only when the request named the deployed build (the cookie its page set).
+  const page = path.endsWith('/') || path.endsWith('.html');
+  const named = [...b.jar.entries()].some(([k, v]) => k.endsWith(BUILD_COOKIE) && v === BUILD);
+  assert.equal(r.res.headers.get('cache-control'), !page && named ? PLAY_FILE_CACHE_CONTROL : PLAY_CACHE_CONTROL, path);
   assert.match(r.res.headers.get('vary'), /\bCookie\b/);
   assert.match(r.res.headers.get('vary'), /Accept-Encoding/, 'the asset Vary is kept');
   assert.equal(r.res.headers.get('etag'), '"abc"', 'other asset headers are kept');
@@ -592,4 +610,75 @@ test('the map editor: every spelling of its URL ends on /play/editor/, and it an
   const anon = new Browser(env);
   await expectRedirect(anon, '/play/editor/');
   for (const p of ['/play/editor/editor.js', '/play/editor/editor.css', '/play/css/theme.css', '/play/js/gameart.js']) await expectRefused(anon, p, 401, 'unauthenticated');
+});
+
+// ---- Caching ---------------------------------------------------------------------------------
+
+test('caching: pages revalidate; files of the current build are kept for a pass lifetime, keyed by the build cookie', async () => {
+  const env = assets(makeEnv({ email: false }));
+  const b = await activeUser(env, 'Cache Player');
+  assert.equal(PLAY_FILE_CACHE_CONTROL, `private, max-age=${PASS_TTL_S}`);
+  assert.equal(PASS_TTL_S, 600);
+  // The page: revalidated on every load, and it names the deployed build in a cookie.
+  const page = await b.get('/play/', NAV);
+  assert.equal(page.status, 200);
+  assert.equal(page.res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+  assert.match(page.res.headers.get('vary'), /\bCookie\b/);
+  const buildCookie = page.res.headers.getSetCookie().find((c) => c.startsWith(`__Host-${BUILD_COOKIE}=`));
+  assert.ok(buildCookie, 'the page sets the build cookie');
+  assert.match(buildCookie, new RegExp(`^__Host-${BUILD_COOKIE}=${BUILD.replace('+', '\\+')}; Path=/; HttpOnly; SameSite=Lax; Max-Age=\\d+; Secure$`));
+  // Its files, requested with the cookie the page set: kept by the browser (no request on a reload within 10 minutes).
+  for (const p of ['/play/js/main.js', WASM, '/play/packs/terrain.bin']) {
+    const r = await b.get(p, SUB);
+    assert.equal(r.status, 200);
+    assert.equal(r.res.headers.get('cache-control'), PLAY_FILE_CACHE_CONTROL, p);
+    assert.match(r.res.headers.get('vary'), /\bCookie\b/, 'the cookie is part of the cache key');
+    assert.equal(r.res.headers.get('etag'), '"abc"');
+  }
+  // A second page load sets no cookie (the browser already names this build); the editor page revalidates too.
+  const again = await b.get('/play/', NAV);
+  assert.equal(again.res.headers.getSetCookie().find((c) => c.includes(BUILD_COOKIE)), undefined);
+  assert.equal((await b.get('/play/editor/', NAV)).res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+  assert.equal(env.versionReads, 1, 'the build is read once per isolate');
+});
+
+test('caching: after a deploy the page names the new build, so no file of the old build is used with it', async () => {
+  const env = assets(makeEnv({ email: false }), { build: '0.20.1+11111111' });
+  const b = await activeUser(env, 'Deploy Player');
+  await b.get('/play/', NAV);
+  assert.equal((await b.get('/play/js/main.js', SUB)).res.headers.get('cache-control'), PLAY_FILE_CACHE_CONTROL);
+  // A new deployment: new assets binding (a new isolate), another build.
+  const next = assets(env, { build: '0.20.2+22222222' });
+  // A file requested by a page of the old build (still open) is the new file: not kept, so it never sticks under the old key.
+  assert.equal((await b.get('/play/js/main.js', SUB)).res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+  // The new page renames the build: the browser's copies under the old cookie no longer match (Vary: Cookie).
+  const page = await b.get('/play/', NAV);
+  assert.ok(page.res.headers.getSetCookie().some((c) => c.includes(`${BUILD_COOKIE}=0.20.2+22222222`)));
+  assert.equal((await b.get('/play/js/main.js', SUB)).res.headers.get('cache-control'), PLAY_FILE_CACHE_CONTROL);
+  assert.equal(next.versionReads, 1);
+});
+
+test('caching: without a readable build, or for refusals and other statuses, nothing is kept', async () => {
+  const env = assets(makeEnv({ email: false }), { build: null });
+  const b = await activeUser(env, 'No Build');
+  const page = await b.get('/play/', NAV);
+  assert.equal(page.res.headers.getSetCookie().find((c) => c.includes(BUILD_COOKIE)), undefined);
+  assert.equal((await b.get('/play/js/main.js', SUB)).res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+  assert.equal(await deployedBuild({ ASSETS: { fetch: async () => Response.json({ build: 'bad build; x=1' }) } }, ORIGIN), null, 'a malformed build is not used');
+  assert.equal(await deployedBuild({ ASSETS: { fetch: async () => new Response('{nope') } }, ORIGIN), null);
+  // Refused requests stay no-store whatever the build.
+  const env2 = assets(makeEnv({ email: false }));
+  const anon = new Browser(env2);
+  const r = await anon.get('/play/js/main.js', SUB);
+  assert.equal(r.status, 401);
+  assert.equal(r.res.headers.get('cache-control'), 'no-store');
+  // A 404 from the assets is not kept either.
+  const env3 = makeEnv({ email: false });
+  env3.ASSETS = { fetch: async (req) => (new URL(req.url).pathname === '/version.json' ? Response.json({ build: BUILD }) : new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } })) };
+  await setSite(env3, { gameRequiresAccount: false });
+  const open = new Browser(env3);
+  open.jar.set(`__Host-${BUILD_COOKIE}`, BUILD);
+  const missing = await open.get('/play/nope.js', SUB);
+  assert.equal(missing.status, 404);
+  assert.equal(missing.res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
 });

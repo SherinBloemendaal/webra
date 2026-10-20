@@ -1393,10 +1393,12 @@ Refusals:
 
 Every gated response, served or refused, carries the static security headers
 of `apps/website/_headers` (CSP, COOP, COEP `require-corp`, HSTS and the
-rest), `Cross-Origin-Resource-Policy: same-origin` and `Vary: Cookie`. Served
-files have `Cache-Control: private, max-age=0, must-revalidate` (browsers
-revalidate with the ETag through the gate; shared caches never store them);
-refusals and redirects `no-store`.
+rest), `Cross-Origin-Resource-Policy: same-origin` and `Vary: Cookie`. Pages
+have `Cache-Control: private, max-age=0, must-revalidate` and set the build
+cookie `webra_build`; other files of the current build (requested with that
+cookie) `private, max-age=600`, the play pass lifetime (docs/security.md,
+"The play gate", Caching); shared caches never store them; refusals and
+redirects `no-store`.
 
 **Play pass.** After a successful D1 check the response sets the play pass
 cookie (section 2.4): `1.<userId>.<sid>.<exp>.<mac>`, where `sid` is the first

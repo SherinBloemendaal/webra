@@ -580,12 +580,21 @@ without cookies, and checks that none returns a game file. Cloudflare's
 edge URL normalization, when on for the zone, only makes more requests
 canonical before they arrive.
 
-**Caching.** Gated responses are `Cache-Control: private, max-age=0,
-must-revalidate` with `Vary: Cookie`: browsers may keep a copy and revalidate
-it through the gate, shared caches and the Cloudflare edge never store them
-(Worker responses are not cached unless the Worker uses the Cache API, which
-it does not, and nothing in `_headers` sets a public cache policy for
-`/play`). Refusals and redirects are `no-store`.
+**Caching.** Gated responses are `private` with `Vary: Cookie`: shared
+caches and the Cloudflare edge never store them (Worker responses are not
+cached unless the Worker uses the Cache API, which it does not, and nothing
+in `_headers` sets a public cache policy for `/play`). Pages (HTML) are
+`max-age=0, must-revalidate`, so every load goes through the gate. The other
+game files (about 250 per load) are `max-age=600`, the lifetime of a play
+pass, so a reload within 10 minutes costs no request, and a revoked account
+keeps at most what it could have loaded with its last pass anyway. File
+names carry no version, so every page load sets the cookie `webra_build`
+(`__Host-` on HTTPS) to the deployed build (`dist/version.json` `build`,
+read once per isolate), and a file is kept only when its request named the
+current build: after a deploy the new page renames the build and, through
+`Vary: Cookie`, no file of the old build is used with it. Signing out
+changes the cookies too, so kept files stop matching. Without a readable
+build nothing is kept. Refusals and redirects are `no-store`.
 
 **Headers.** Workers Static Assets applies `_headers` only to files it serves
 itself, so the Worker sets the same security headers (CSP, COOP, COEP
