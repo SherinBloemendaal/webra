@@ -10,7 +10,7 @@
     "@webra/protocol": "*"
   },
   "devDependencies": {
-    "wrangler": "4.148.0"
+    "wrangler": "4.149.0"
   },
   "imports": {
     "#engine-wasm": {
