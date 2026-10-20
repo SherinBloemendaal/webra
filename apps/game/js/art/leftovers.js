@@ -89,16 +89,19 @@ const SOOT = [
 /**
  * The husk of a vehicle drawn by `body` ([w, h, draw], the vehicle's own
  * body sprite): the hull with soot and torn plating; its turret is gone
- * (OpenRA throws it off as a particle).
+ * (thrown off as a particle). A wreck casts the renderer's ground shadow
+ * when its vehicle does (`groundShadow`, sprites.js shadowSlots).
  */
 export function huskOf(body) {
   const [w, h, draw] = body;
-  return [w, h, (ctx, P) => {
+  const husk = (ctx, P) => {
     draw(ctx, P);
     for (const [fx, fy, fr] of SOOT) circle(ctx, P.c('rgba(20,16,12,0.55)'), w * fx, h * fy, Math.min(w, h) * fr);
     line(ctx, P.c('rgba(10,8,6,0.7)'), 0.8, w * 0.25, h * 0.45, w * 0.55, h * 0.4);
     line(ctx, P.c('rgba(10,8,6,0.7)'), 0.8, w * 0.5, h * 0.62, w * 0.78, h * 0.7);
-  }];
+  };
+  if (draw.groundShadow !== undefined) husk.groundShadow = draw.groundShadow;
+  return [w, h, husk];
 }
 
 /** The vehicle a husk id is the wreck of: 2TNK.Husk -> 2TNK, HARV.FullHusk -> HARV. */

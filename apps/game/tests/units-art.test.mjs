@@ -279,6 +279,8 @@ test('the atlas lists the slots of every ground unit for the renderer\'s shadow 
   const left = new Set(shadowSlots(list, actors.length, taken));
   assert.ok(!left.has(2 * index('1TNK')) && !left.has(2 * index('1TNK') + 1) && left.has(2 * index('2TNK')));
   for (const k of slots) assert.ok(k < actors.length * 2, 'only actor slots');
+  // Wrecks keep their vehicle's shadow (art/leftovers.js huskOf).
+  for (const id of ['2TNK.Husk', 'HARV.FullHusk']) assert.ok(index(id) >= 0 && slots.has(2 * index(id)), `${id} body`);
 });
 
 /** The union of a unit's body and its turret centred on it, as the engine draws a turret at [0, 0]. */

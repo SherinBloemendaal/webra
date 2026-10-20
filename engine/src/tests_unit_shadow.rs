@@ -112,3 +112,32 @@ fn shadows_match_the_record_path_and_never_touch_the_simulation() {
     plain.step();
     assert_eq!(plain.state_hash(), stepped, "the shadow slots are not simulation state");
 }
+
+#[test]
+fn wrecks_of_shadow_casting_vehicles_keep_the_shadow_under_their_hull() {
+    let mut w = world();
+    let husk = ty(&w, "2TNK.Husk") as usize;
+    let h = w.place_husk(husk, 0, cell_center(10), cell_center(10), 300, 0);
+    // A rifleman next to it keeps the wreck's cell in sight.
+    w.spawn_unit(ty(&w, "E1"), 0, cell_center(12), cell_center(10), 0);
+    w.update_vision();
+    let slot = (w.actors[h].ty as u32) * 2;
+    // The wreck's dark shade (DISABLED_SHADE) is a black copy in place; the shadow is the one offset from the hull.
+    let offset =
+        |s: &[f32; 8], q: &[f32; 8]| (s[0] - q[0] - UNIT_SHADOW_OFFSET).abs() < 1e-3 && (s[1] - q[1] - UNIT_SHADOW_OFFSET).abs() < 1e-3;
+    let shadows = |drawn: &[[f32; 8]]| {
+        let hull = drawn.iter().position(|q| q[3] == slot as f32 && q[7] >= 0.0).expect("the wreck's hull");
+        let found: Vec<usize> =
+            (0..drawn.len()).filter(|&k| drawn[k][3] == slot as f32 && drawn[k][7] < 0.0 && offset(&drawn[k], &drawn[hull])).collect();
+        (hull, found)
+    };
+    assert!(shadows(&draw(&w)).1.is_empty(), "no shadow while the slot is not listed");
+    w.render_opts.set_shadow_slots(&[slot]);
+    let drawn = draw(&w);
+    let (hull, found) = shadows(&drawn);
+    assert_eq!(found.len(), 1, "one shadow");
+    let (s, q) = (drawn[found[0]], drawn[hull]);
+    assert!(found[0] < hull, "the shadow lies under the hull");
+    assert_eq!(s[2], q[2], "the shadow turns with the wreck");
+    assert_eq!(s[6], UNIT_SHADOW_ALPHA);
+}
