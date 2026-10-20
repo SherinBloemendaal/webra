@@ -1,0 +1,21 @@
+name: Feature request
+description: An idea for the game, the editor or the site.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like
+      description: What you want to do and why; what it would look like in the game.
+    validations:
+      required: true
+  - type: textarea
+    id: openra
+    attributes:
+      label: How OpenRA or Red Alert does it
+      description: If it exists there, how it behaves (WebRA follows OpenRA's rules where it can).
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways to get there that you thought about.
