@@ -3,10 +3,20 @@
 `.github/workflows/ci.yml` runs on pull requests (not on the release PR's
 `release-please--...` branch), on manual dispatch, and on every push to
 `main` through `deploy.yml`, which calls it as a reusable workflow before it
-deploys (see [deploy.md](deploy.md)). All jobs run on the self-hosted ARC
-runner scale sets `small`, `medium`, `large` and `enormous` (at most three
-`enormous` runners), with a minimal Ubuntu image: every job installs what it
-needs.
+deploys (see [deploy.md](deploy.md)). Pushes and manual runs use the
+self-hosted ARC runner scale sets `small`, `medium`, `large` and `enormous`
+(at most three `enormous` runners), with a minimal Ubuntu image: every job
+installs what it needs. Pull requests, including those from forks, run every
+job on GitHub-hosted `ubuntu-latest` runners instead, so code from a pull
+request never runs on the self-hosted runners (the Runner column below is the
+self-hosted label).
+
+Every job has `permissions: contents: read` only (the release job in
+`release.yml` also writes contents and pull requests). Third-party actions are
+pinned to a full commit SHA with the version in a comment;
+`.github/dependabot.yml` proposes updates weekly for the actions, npm and
+cargo. `dtolnay/rust-toolchain` is pinned to a commit of its `stable` branch
+and therefore names `toolchain: stable` as an input.
 
 ## Jobs
 

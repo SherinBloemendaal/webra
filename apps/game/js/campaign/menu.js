@@ -6,8 +6,9 @@
 // preview and briefing movie on the right, with its options (difficulty and
 // game speed) and Play below them.
 //
-// The objectives are not shown here (owner decision, docs/redesign-uitwerking.md
-// section 28): the mission scripts only set them while the mission runs.
+// The objectives are not shown here (a design decision, docs/contracts.md
+// "Campaign screen and progress"): the mission scripts only set them while
+// the mission runs.
 //
 // The mission list is apps/game/missions/index.json (tools/gen_missions.py);
 // a mission file is fetched when it is chosen, for its map preview, and again

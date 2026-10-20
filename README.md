@@ -523,3 +523,9 @@ Notes on browsers:
 ## License
 
 WebRA is licensed under the **GNU General Public License v3.0 or later** (GPL-3.0-or-later), because it derives its game data from OpenRA's GPLv3 rules. See [LICENSE](LICENSE) for the full text.
+
+- [NOTICE](NOTICE): the copyright notice, and which parts come from OpenRA (the data in `data/source/` and the files generated from it, the decoders that follow OpenRA's file loaders).
+- [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md): the Rust crates compiled into the engine's WebAssembly and the bundled error report SDK, with their licences.
+- The fonts are under the SIL Open Font License 1.1 (`apps/game/fonts/OFL-*.txt`).
+
+Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: see [SECURITY.md](SECURITY.md).

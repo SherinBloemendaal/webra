@@ -8,7 +8,7 @@ every peer, and every client necessarily holds the full game state.
 
 ## Review (2026-10-07)
 
-A dedicated security review (Fable 5.1) covered the Worker API, the session
+An independent security review covered the Worker API, the session
 Durable Object, the protocol package, the engine's order, map and rules paths,
 the browser client, the website and the CI/deploy setup. Findings and status:
 
@@ -22,7 +22,7 @@ the browser client, the website and the CI/deploy setup. Findings and status:
 
 ## Follow-up review (2026-10-07)
 
-A second pass (Fable 5.1) over the fixes above found these gaps. Findings and
+A second independent review over the fixes above found these gaps. Findings and
 status:
 
 | # | Severity | Finding | Status |
@@ -419,6 +419,19 @@ data, admins only), roles (admin powers), and the right to play online.
   that is never configured for deploys, plain HTTP and a local host, all
   three (tested). Every admin action is in the audit log with actor, target,
   before and after.
+- **Admin reset links.** An admin can issue a password reset link for any
+  account (`POST /api/admin/users/:id/password-reset`), which is the same
+  as taking it over: whoever holds the link sets the password. For plain
+  users and the admin's own account the link is shown to the admin (and
+  audited as `displayed: true`), so support can hand it over by another
+  channel. For another moderator or admin the server refuses that (`403
+  forbidden`) and accepts only `send: true`: the link goes to that account's
+  own address, the response carries `url: null` and the audit entry
+  `displayed: false`, so one admin cannot quietly take over another staff
+  account (`apps/server/test/accounts-admin.test.mjs`, "reset links for
+  other staff"). Admins remain fully trusted otherwise: they can still
+  change another staff account's role or email address, and each of those
+  is audited.
 - **Injection.** Every SQL statement binds its values; dynamic SQL is built
   only from fixed column names and whitelisted sort keys. Settings documents
   refuse `__proto__`, `constructor` and `prototype` keys. Usernames follow the
@@ -483,7 +496,7 @@ the email binding or its sender is missing (Workers Free plan; see
 
 ## Accounts review (2026-10-09)
 
-A security review (Fable 5.1) of the accounts system found these issues; all
+An independent review of the accounts system found these issues; all
 are fixed, and `apps/server/test/accounts-review.test.mjs` replays each
 exploit:
 

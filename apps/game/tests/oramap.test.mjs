@@ -795,7 +795,7 @@ test('round trip: the engine validates, hashes and starts a converted map', asyn
 });
 
 test('round trip: a map changing the Atom Bomb charge time charges it that long in the game and its timers', async () => {
-  // The owner of a map like this saw the nuke timer keep OpenRA's default: the importer dropped NukePower.ChargeInterval.
+  // On a map like this the nuke timer kept OpenRA's default: the importer dropped NukePower.ChargeInterval.
   const rules = 'MSLO:\n\tNukePower:\n\t\tChargeInterval: 50000\nIRON:\n\tGrantExternalConditionPower@IRONCURTAIN:\n\t\tStartFullyCharged: true\n';
   const base = [
     { type: 'mpspawn', x: 8, y: 8 },

@@ -1,7 +1,7 @@
 # Deploying WebRA
 
 WebRA runs at <https://webra.sherin.dev> as **one Cloudflare Worker** named
-`webra` on the `WebRA` Cloudflare account. The same Worker serves the
+`webra` on the Cloudflare account. The same Worker serves the
 website, the game, the HTTP API and the multiplayer sessions
 ([contracts](contracts.md), section 6).
 
@@ -83,8 +83,8 @@ dispatch (Actions, Deploy, Run workflow):
    commit has arrived meanwhile, every further step is skipped, the job
    succeeds and the newer commit's own run deploys. Otherwise it downloads
    `webra-pkg` of this run into `apps/game/pkg` (no Rust, no second wasm
-   build), installs Node 22, runs `npm ci` and
-   `npm run build` (with `WEBRA_ENV=production` and the error report
+   build), installs Node 22, runs `npm ci --ignore-scripts` (no install
+   scripts from the registry run in the deploy job) and `npm run build` (with `WEBRA_ENV=production` and the error report
    variables, see Error reports),
    and from `apps/server`:
    - `npx wrangler d1 migrations apply webra --remote`, only when
@@ -95,11 +95,18 @@ dispatch (Actions, Deploy, Run workflow):
      "already exists" answer counts as success, so the step changes nothing
      once the bucket exists. It runs before the deploy because a Worker
      cannot deploy with a binding to a missing bucket.
-   - with the secret `SENTRY_AUTH_TOKEN`: create the Sentry release and upload
-     the JavaScript sources and source maps (skipped without it)
+   - with the secret `SENTRY_AUTH_TOKEN` and the variable `SENTRY_URL`:
+     create the Sentry release and upload the JavaScript sources and source
+     maps (skipped without either)
    - `npx wrangler deploy` with the Worker's `SENTRY_*` variables
-   - with `SENTRY_AUTH_TOKEN`: finalize the release and record the deploy in
-     Sentry (skipped without it)
+   - with `SENTRY_AUTH_TOKEN` and `SENTRY_URL`: finalize the release and
+     record the deploy in Sentry (skipped without either)
+
+   `CLOUDFLARE_API_TOKEN` is passed only to the steps that run wrangler
+   (step-level `env`), never to the whole job, so `npm ci`, the build and the
+   Sentry CLI do not see it. The job is bound to the `production`
+   environment, whose protection rules (required reviewers, deployment
+   branches) apply once they are set.
 
 The CI of two pushes runs side by side; only the deploy job has the
 concurrency group `deploy-production`, without cancelling: a newer push's
@@ -121,7 +128,7 @@ or secrets of the `production` environment):
 | Secret | Value |
 |--------|-------|
 | `CLOUDFLARE_API_TOKEN` | An API token with the permissions below |
-| `CLOUDFLARE_ACCOUNT_ID` | The account ID of `WebRA` (dashboard, Workers and Pages, right sidebar) |
+| `CLOUDFLARE_ACCOUNT_ID` | The account ID of the Cloudflare account (dashboard, Workers and Pages, right sidebar; the same as `account_id` in `apps/server/wrangler.jsonc`) |
 
 The deploy job fails early with a clear error when either one is missing.
 
@@ -129,7 +136,9 @@ The deploy job fails early with a clear error when either one is missing.
 
 `tools/create-deploy-token.sh` creates this token from an existing token that
 may create API tokens and stores it as the repository secret without ever
-printing it. To do it by hand, create a **custom token** (My Profile, API
+printing it. It takes the account and zone ids from the environment:
+`CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_ZONE_ID=<zone id>
+tools/create-deploy-token.sh` (the zone id is on the zone's Overview page). To do it by hand, create a **custom token** (My Profile, API
 Tokens, Create Token, Custom token) with exactly these permissions:
 
 | Scope | Resource | Permission |
@@ -142,7 +151,7 @@ Tokens, Create Token, Custom token) with exactly these permissions:
 | Zone | Zone | Read |
 | Zone | DNS | Edit |
 
-- Account resources: include only the `WebRA` account.
+- Account resources: include only the Cloudflare account.
 - Zone resources: include only the zone `sherin.dev`.
 - DNS Edit is needed because wrangler creates the DNS record for the custom
   domain `webra.sherin.dev`.
@@ -168,7 +177,14 @@ Done once, by hand, by someone with access to the Cloudflare account:
 3. Make sure `webra.sherin.dev` has no existing DNS record that conflicts with
    the Worker custom domain (wrangler creates the record on the first deploy).
 4. Create the GitHub environment `production` (Settings, Environments) and add
-   the two secrets. Optionally add required reviewers to gate deploys.
+   the two secrets. The deploy job is bound to it, so its protection rules
+   apply: limit its deployment branches to `main` and, on a public
+   repository, add required reviewers to gate deploys.
+5. Set the Worker secrets (Variables and secrets below): `IP_HASH_SALT` is
+   required, and `PASSWORD_PEPPER` should be set in production before the
+   first accounts exist. Setting a pepper for the first time is safe at any
+   time (see the pepper note below); changing or removing one later is not,
+   because the code supports no pepper rollover.
 
 ## Manual deploy
 
@@ -183,7 +199,7 @@ cd apps/server
 npx wrangler login            # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 # The d1 commands ignore account_id in wrangler.jsonc; with a login that sees
 # several accounts they need it in the environment.
-export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
+export CLOUDFLARE_ACCOUNT_ID=<account id>   # account_id in wrangler.jsonc
 npx wrangler d1 migrations apply webra --remote   # only when apps/server/migrations exists
 npx wrangler r2 bucket info webra-replays || npx wrangler r2 bucket create webra-replays
 npx wrangler deploy $(WEBRA_ENV=production node ../../tools/sentry-config.mjs worker-vars)
@@ -266,7 +282,7 @@ unavailable (`GET /api/site`, the admin stats).
    # local wrangler dev database
    node tools/promote-admin.mjs <username> --local
    # production (asks for nothing else; the confirmation must repeat the name)
-   export CLOUDFLARE_ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
+   export CLOUDFLARE_ACCOUNT_ID=<account id>   # account_id in apps/server/wrangler.jsonc
    node tools/promote-admin.mjs <username> --remote --confirm <username>
    ```
 
@@ -305,10 +321,15 @@ npx wrangler secret put PASSWORD_PEPPER      # optional
 
 Notes:
 
-- **Pepper:** once set, never change or remove it. Each hash records whether
-  it was peppered; hashes made before the pepper keep working and are
-  upgraded at the next sign-in, but peppered hashes cannot be checked without
-  it (those accounts would need a reset link).
+- **Pepper:** set it in production, once, and never change or remove it.
+  Each hash records only whether it was peppered (`password_peppered`, 0 or
+  1), not which pepper, so `apps/server/src/accounts/password.js` supports
+  exactly one pepper and no rollover. Turning it on later is migration-safe:
+  hashes made before it keep verifying without the pepper and are upgraded
+  to a peppered hash the next time their password is set (change or reset,
+  never at sign-in). Changing or removing it breaks every peppered hash
+  (those accounts would need a reset link); a real rollover would need a
+  pepper id per hash and a second secret first.
 - **Iterations:** no request derives more than one key (a sign-in that also
   rehashed would need two). Raising `PASSWORD_ITERATIONS` (for example to
   100,000 on the Workers Paid plan) applies to new hashes and to each
@@ -478,7 +499,7 @@ as soon as step 2 is deployed):
    repository variable `SENTRY_DSN` with the project's DSN:
 
    ```
-   https://<public key>@sentry.vitrion.dev/121
+   https://<public key>@<sentry host>/<project id>
    ```
 
    The next deploy builds the game and the website with it and passes it to
@@ -518,14 +539,15 @@ creates and stores; never paste it anywhere else:
 2. In GitHub (Settings, Secrets and variables, Actions): add the secret
    `SENTRY_AUTH_TOKEN` (repository or `production` environment) and the
    variables `SENTRY_ORG` (the organization slug) and `SENTRY_PROJECT` (the
-   project slug of the DSN's project, id 121). `SENTRY_URL` is optional
-   (default `https://sentry.vitrion.dev`).
+   project slug of the DSN's project, id 121) and `SENTRY_URL` (the Sentry
+   host, for example `https://sentry.example.com`). There is no default:
+   without `SENTRY_URL` the steps are skipped like without the token.
 
 With the token, each deploy creates the release, uploads every `.js` and
 `.map` under `dist/` by its URL path (`~/play/js/main.js`, the SDK with its
 source map; the game's own modules are not bundled, so they are their own
 sources), finalizes it and records a deploy for the environment. Without the
-token those steps print a notice and are skipped; with the token but without
+token or `SENTRY_URL` those steps print a notice and are skipped; with the token but without
 `SENTRY_ORG` or `SENTRY_PROJECT` the deploy fails with an error.
 
 Reports carry no addresses and tell Sentry not to infer them (`infer_ip:

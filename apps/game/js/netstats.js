@@ -1,5 +1,6 @@
-// The statistics screen's Network tab (docs/redesign-uitwerking.md 20 and
-// 29, the canvas board NetStats), for online games only: tiles (how long
+// The statistics screen's Network tab (docs/contracts.md section 4 "Network
+// quality" and "Start, loading, end of game and statistics screens", the
+// canvas board NetStats), for online games only: tiles (how long
 // the game waited, your average ping, your worst moment, late pings), the
 // ping of every player over the whole game with a red column for every
 // stall, a table per player (average, worst, jitter, loss, held up) and the

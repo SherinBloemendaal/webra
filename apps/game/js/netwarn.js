@@ -1,5 +1,5 @@
-// Connection quality in an online game (docs/redesign-uitwerking.md section
-// 29, the NetInGame board): the signal bars next to the clock in the
+// Connection quality in an online game (docs/contracts.md section 4 "Network
+// quality", the NetInGame board): the signal bars next to the clock in the
 // sidebar, the warning about the own connection at the top of the
 // battlefield, and the "Waiting for X" panel with the countdown to the drop
 // when the game waits for a player. The data is the session's NetQuality

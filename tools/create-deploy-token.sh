@@ -4,15 +4,19 @@
 # CLOUDFLARE_API_TOKEN. Asks for an existing token that may create API
 # tokens; neither token is ever printed.
 #
-#   tools/create-deploy-token.sh
+#   CLOUDFLARE_ACCOUNT_ID=<account id> CLOUDFLARE_ZONE_ID=<zone id> tools/create-deploy-token.sh
 #
+# The account id is the one in apps/server/wrangler.jsonc; the zone id is the
+# zone that serves the site (dashboard, the zone's Overview, right sidebar).
+# Both are given, not looked up, so the token used here needs no zone access.
 # Needs curl, jq and an authenticated gh. Run it again to rotate the token
 # (the old one is not deleted; remove it in the dashboard).
 set -euo pipefail
 
-ACCOUNT_ID=6a1cde1074a1925835edfca0f807efb5
-# sherin.dev; fixed like the account, so the token used here needs no zone access.
-ZONE_ID=<zone id>
+ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
+ZONE_ID=${CLOUDFLARE_ZONE_ID:-}
+[[ "$ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "set CLOUDFLARE_ACCOUNT_ID to the 32 hex digit account id" >&2; exit 1; }
+[[ "$ZONE_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "set CLOUDFLARE_ZONE_ID to the 32 hex digit zone id" >&2; exit 1; }
 REPO=SherinBloemendaal/webra
 API=https://api.cloudflare.com/client/v4
 
