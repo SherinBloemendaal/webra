@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { actorSprites, buildAtlas, animationPlan, workingPlan, spriteList, drawCameo, drawIcon, getCameo, clearCameoCache, FRAME_FLOATS } from '../js/sprites.js';
 import { MODE, POSE, POSE_COUNT, onceTicks, packSprite } from '../js/content/sequences.js';
-import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE } from '../js/art/buildings.js';
+import { BUILDING_DRAW, BUILDING_TURRET, BUILDING_SIZE, BUILDING_RISE, GROUND, SHADOW, SHAFT } from '../js/art/buildings.js';
+import { ORIGINAL_BOUNDS } from '../js/content/render-facts.js';
 import { BUILDING_ANIM, BUILDING_WORKING } from '../js/art/animated.js';
 import { worldDraw, MINE_ORE, MINE_GEMS } from '../js/art/world.js';
 import { pixelSlots } from '../js/art/pixel.js';
@@ -169,8 +170,11 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
         assert.ok(frames[i * 2 * FRAME_FLOATS + 13] > 0, `${a.id} pose table`);
         return;
       }
+      // Art taller than its footprint grows its box upwards (BUILDING_RISE), the frame's centre with it.
+      const rise = BUILDING_DRAW[keyOf(a.id)] ? (BUILDING_RISE[keyOf(a.id)] ?? 0) : 0;
       assert.equal(frames[i * 2 * FRAME_FLOATS + 4], a.width * 24, `${a.id} sprite width`);
-      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], a.height * 24, `${a.id} sprite height`);
+      assert.equal(frames[i * 2 * FRAME_FLOATS + 5], a.height * 24 + rise, `${a.id} sprite height`);
+      assert.deepEqual([frames[i * 2 * FRAME_FLOATS + 6], frames[i * 2 * FRAME_FLOATS + 7]], [0, rise ? -rise / 2 : 0], `${a.id} sprite offset`);
     });
   } finally {
     delete globalThis.document;
@@ -180,8 +184,12 @@ test('the atlas builds with every building and keeps footprint sizes', () => {
 for (const a of buildings) {
   test(`building art ${a.id}: finite, inside its box, team coloured, deterministic`, () => {
     const key = keyOf(a.id);
-    // The footprint box, or the taller one of pixel art reaching past it (art/pixel.js pixelBox: the Lightning Rod).
-    const [w, h] = actorSprites(a).body;
+    // The footprint box, or the taller one of pixel art reaching past it (art/pixel.js pixelBox: the Lightning Rod),
+    // or of vector art the original draws taller (BUILDING_RISE: it draws above its footprint, at negative y).
+    const sprites = actorSprites(a);
+    const [w, boxH] = sprites.body;
+    const rise = sprites.rise ?? 0;
+    const h = boxH - rise;
     assert.ok(w >= a.width * 24 && h >= a.height * 24, `${a.id} box covers the footprint`);
     const draw = drawOf(a);
     // The neutral world needs no team colour (OpenRA draws it with fixed palettes; captured
@@ -201,8 +209,8 @@ for (const a of buildings) {
           for (const b of bounds) {
             const margin = isShadow(b.style) ? 8 : 1.5;
             assert.ok(
-              b.x0 >= -margin && b.y0 >= -margin && b.x1 <= w + margin && b.y1 <= h + margin,
-              `${a.id} draws outside its ${w}x${h} box: ${JSON.stringify(b)}`,
+              b.x0 >= -margin && b.y0 >= -rise - margin && b.x1 <= w + margin && b.y1 <= h + margin,
+              `${a.id} draws outside its ${w}x${h} box (${rise} above it): ${JSON.stringify(b)}`,
             );
           }
           if (!WALLS.has(key) && !world) assert.ok(counter.team > 0, `${a.id} has no team colour area`);
@@ -225,7 +233,13 @@ for (const a of buildings) {
  * shape blends over the team grey, in the mask pass it cuts the team colour
  * away, so the player's colour would show a grey hole there.
  */
-function rasterMask(draw, w, h, biome = 'temperate') {
+/**
+ * With `shadows` set, the drawing is rasterised in the colour pass instead
+ * and `over` counts the samples of the hard shadow (SHADOW) that the flat
+ * GROUND paints over afterwards: the ground lies under everything, so its
+ * shadow would vanish there.
+ */
+function rasterMask(draw, w, h, biome = 'temperate', shadows = false) {
   const S = 2;
   const [mx, my] = [-6, -14];
   const W = (w - 2 * mx) * S;
@@ -272,7 +286,9 @@ function rasterMask(draw, w, h, biome = 'temperate') {
     }
     return false;
   };
-  const kind = (style) => (style === '#fff' ? 2 : style === '#000' ? 1 : style === 'rgba(0,0,0,1)' ? 3 : -1);
+  const kind = shadows
+    ? (style) => (style === SHADOW ? 4 : style === GROUND ? 5 : 1)
+    : (style) => (style === '#fff' ? 2 : style === '#000' ? 1 : style === 'rgba(0,0,0,1)' ? 3 : -1);
   const paint = (polys, style, test) => {
     const k = kind(style);
     assert.ok(k > 0, `unexpected mask style ${style}`);
@@ -289,6 +305,11 @@ function rasterMask(draw, w, h, biome = 'temperate') {
         const y = (gy + 0.5) / S + my;
         if (!test(x, y) || !clips.every((c) => inside(c, x, y))) continue;
         const i = gy * W + gx;
+        if (shadows) {
+          if (k === 5 && grid[i] === 4) over++;
+          grid[i] = k;
+          continue;
+        }
         if (k === 3 && grid[i] === 2) over++;
         grid[i] = k === 2 ? 2 : 1;
       }
@@ -332,7 +353,8 @@ function rasterMask(draw, w, h, biome = 'temperate') {
     createLinearGradient() { throw new Error('flat art: no gradients'); },
     createRadialGradient() { throw new Error('flat art: no gradients'); },
   };
-  draw(ctx, { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000'), biome });
+  if (shadows) draw(ctx, { team: () => '#4d8cf2', c: (col) => col, biome });
+  else draw(ctx, { team: () => '#fff', c: (col) => (col.startsWith('rgba') ? 'rgba(0,0,0,1)' : '#000'), biome });
   let inBox = 0;
   let outBox = 0;
   for (let gy = 0; gy < H; gy++) {
@@ -437,6 +459,130 @@ for (const key of VECTOR) {
       assert.ok(m.team >= 4, `${key}: the team colour shows (${m.team} px)`);
       // Team colour sits in strips, lamps and flags: the structure stays readable as a shape.
       assert.ok(m.team <= 0.45 * w * h, `${key}: team colour covers ${m.team} of ${w * h} px`);
+    }
+  });
+}
+
+// ---- Few shapes, one shadow, one team strip ---------------------------------------------
+
+/** The fills and strokes of one drawing in the colour pass, and how often it asked for team colour. */
+function recordShapes(draw, biome = 'temperate') {
+  const log = [];
+  const counter = { team: 0 };
+  draw(fakeContext(log, null), passes(counter, biome).colour);
+  const fills = log.filter((l) => l.startsWith('fill:')).map((l) => l.slice(5));
+  const strokes = log.filter((l) => l.startsWith('stroke:'));
+  return { shapes: fills.filter((f) => f !== SHADOW).length + strokes.length, shadows: fills.filter((f) => f === SHADOW).length, team: counter.team };
+}
+
+for (const key of VECTOR) {
+  test(`building shapes ${key}: three to six flat shapes, one hard shadow, one team strip`, () => {
+    const { shapes, shadows, team } = recordShapes(BUILDING_DRAW[key]);
+    assert.ok(shapes >= 3 && shapes <= 6, `${key} draws ${shapes} shapes`);
+    assert.equal(shadows, 1, `${key} throws ${shadows} shadows`);
+    assert.equal(team, WALLS.has(key) ? 0 : 1, `${key} has ${team} team areas`);
+    // The flat ground lies under everything: it never covers the shadow.
+    const [cw, ch] = BUILDING_SIZE[key];
+    const hidden = rasterMask(BUILDING_DRAW[key], cw * 24, ch * 24, 'temperate', true).over;
+    assert.equal(hidden, 0, `${key}: the ground covers ${hidden} px of its shadow`);
+  });
+}
+
+for (const [key, [, , draw]] of Object.entries(BUILDING_TURRET)) {
+  test(`building turret shapes ${key}: two to four shapes, one of them the team area`, () => {
+    const { shapes, shadows, team } = recordShapes(draw);
+    assert.ok(shapes >= 2 && shapes <= 4, `${key} turret draws ${shapes} shapes`);
+    assert.equal(shadows, 0);
+    assert.equal(team, 1);
+  });
+}
+
+test('animated and working layers draw at most three shapes a frame (the silo: shaft, missile, leaves)', () => {
+  for (const [key, layer] of [...Object.entries(BUILDING_ANIM), ...Object.entries(BUILDING_WORKING)]) {
+    for (let f = 0; f < layer.frames; f++) {
+      const { shapes } = recordShapes((ctx, P) => layer.draw(ctx, P, f));
+      assert.ok(shapes <= 3, `${key} frame ${f} draws ${shapes} shapes`);
+    }
+  }
+});
+
+// ---- Size against the original sprites ------------------------------------------------
+
+/** World pixels per 1/1024 cell. */
+const PX = 24 / 1024;
+/** How far each edge of the drawn extent may lie from the original's (an eighth of a cell). */
+const SIZE_TOLERANCE = 3;
+
+/**
+ * The box the original sprite covers, in the footprint's coordinates: its
+ * decoration bounds (else its selection bounds, content/render-facts.js
+ * ORIGINAL_BOUNDS) around the actor's centre, the footprint's centre plus
+ * the rules' centre offset.
+ *
+ * Rule: bounds smaller than the footprint, centred on it (no centre offset,
+ * no bounds offset), are a selection box drawn round the middle of a sprite
+ * that fills the whole footprint (the service depot, the naval yard and the
+ * sub pen: 3072 x 2048 on 3 x 3 cells). Those count as the full footprint.
+ */
+function originalBox(a) {
+  const b = ORIGINAL_BOUNDS[a.id];
+  const [bw, bh, bx, by] = (b.decoration ?? b.bounds).map((v) => v * PX);
+  const [ox, oy] = a.centerOffset ?? [0, 0];
+  const [fw, fh] = [a.width * 24, a.height * 24];
+  if (!ox && !oy && !bx && !by && bw <= fw && bh <= fh && (bw < fw || bh < fh)) return { x0: 0, y0: 0, x1: fw, y1: fh };
+  const cx = (a.width * 24) / 2 + ox + bx;
+  const cy = (a.height * 24) / 2 + oy + by;
+  return { x0: cx - bw / 2, y0: cy - bh / 2, x1: cx + bw / 2, y1: cy + bh / 2 };
+}
+
+/** The extent of everything a drawing raises off the ground (its shadow included, the flat GROUND left out). */
+function drawnBox(draw) {
+  const bounds = [];
+  draw(fakeContext([], bounds, true), passes({ team: 0 }).colour);
+  const raised = bounds.filter((b) => b.style !== GROUND);
+  return {
+    x0: Math.min(...raised.map((b) => b.x0)),
+    y0: Math.min(...raised.map((b) => b.y0)),
+    x1: Math.max(...raised.map((b) => b.x1)),
+    y1: Math.max(...raised.map((b) => b.y1)),
+  };
+}
+
+test('the size check catches a drawing smaller than the original', () => {
+  const a = { id: 'POWR', width: 2, height: 3, centerOffset: [0, -12] };
+  assert.deepEqual(originalBox(a), { x0: 0, y0: 0, x1: 48, y1: 48 });
+  // A centred selection box smaller than the footprint stands for the whole footprint.
+  for (const id of ['FIX', 'SYRD', 'SPEN']) {
+    const rec = buildings.find((x) => x.id === id);
+    assert.deepEqual(originalBox(rec), { x0: 0, y0: 0, x1: 72, y1: 72 }, id);
+  }
+  const small = drawnBox((ctx, P) => {
+    ctx.fillStyle = P.c(GROUND);
+    ctx.fillRect(0, 0, 48, 72);
+    ctx.fillStyle = P.c('#ffffff');
+    ctx.fillRect(6, 6, 36, 36);
+  });
+  assert.deepEqual(small, { x0: 6, y0: 6, x1: 42, y1: 42 }, 'the ground does not count');
+});
+
+for (const key of VECTOR) {
+  test(`building size ${key}: fills its cells like the original sprite`, () => {
+    // Every actor drawing as this key (fakes and variants share it), with the rules' footprint and centre.
+    const drawn = buildings.filter((a) => !isWorld(a) && keyOf(a.id) === key);
+    assert.ok(drawn.length > 0);
+    const got = drawnBox(BUILDING_DRAW[key]);
+    for (const a of drawn) {
+      const want = originalBox(a);
+      // The atlas box is the footprint grown by BUILDING_RISE at the top: the original's box inside it.
+      const top = -(BUILDING_RISE[key] ?? 0);
+      const clamp = { x0: Math.max(0, want.x0), y0: Math.max(top, want.y0), x1: Math.min(a.width * 24, want.x1), y1: Math.min(a.height * 24, want.y1) };
+      for (const edge of ['x0', 'y0', 'x1', 'y1']) {
+        assert.ok(Math.abs(got[edge] - clamp[edge]) <= SIZE_TOLERANCE, `${a.id} ${edge}: drawn ${got[edge].toFixed(1)}, original ${clamp[edge].toFixed(1)}`);
+      }
+      // Clamping may only trim what the box cannot hold by less than the tolerance.
+      for (const edge of ['x0', 'y0', 'x1', 'y1']) {
+        assert.ok(Math.abs(clamp[edge] - want[edge]) <= SIZE_TOLERANCE, `${a.id} ${edge}: the original reaches ${want[edge].toFixed(1)}, past the sprite box`);
+      }
     }
   });
 }
@@ -645,7 +791,7 @@ test('the silo hatch frames: shut draws nothing over the structure, open shows t
     return log.join('|');
   };
   assert.equal(draws(0), '', 'at rest the structure shows its own shut hatch');
-  for (let f = 1; f < w.frames; f++) assert.ok(draws(f).includes('fill:#141210'), `frame ${f}: the dark shaft`);
+  for (let f = 1; f < w.frames; f++) assert.ok(draws(f).includes(`fill:${SHAFT}`), `frame ${f}: the dark shaft`);
   assert.notEqual(draws(1), draws(4));
 });
 
