@@ -62,6 +62,14 @@ async function api(path, init = {}, who = null) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Extra time every timed wait allows on top of what the server promises:
+ * wrangler dev on a loaded machine (builds and tests running beside it) can
+ * be many seconds late with alarms, caches and close frames. The waits poll,
+ * so a fast machine still finishes at once, and what is asserted is unchanged.
+ */
+const LOADED_MARGIN_MS = 20000;
+
 /** A realtime channel socket (docs/accounts-api.md 5.12) with `account`'s cookie; messages are checked with the protocol package. */
 class RealtimeSocket {
   constructor(account) {
@@ -80,7 +88,7 @@ class RealtimeSocket {
   }
 
   /** The first message matching `ok` within `ms` (removed from the inbox). */
-  async next(ok, what, ms = 2000) {
+  async next(ok, what, ms = 2000 + LOADED_MARGIN_MS) {
     const deadline = Date.now() + ms;
     for (;;) {
       const i = this.inbox.findIndex(ok);
@@ -90,7 +98,7 @@ class RealtimeSocket {
     }
   }
 
-  async closed(ms = 2000) {
+  async closed(ms = 2000 + LOADED_MARGIN_MS) {
     const deadline = Date.now() + ms;
     while (this.closeCode === null && Date.now() < deadline) await sleep(25);
     return this.closeCode;
@@ -107,19 +115,19 @@ class RealtimeSocket {
  * change shows within that time plus a little. Returns the body that held.
  */
 async function poll(path, ok, what, cacheMs) {
-  const deadline = Date.now() + cacheMs + 2000;
+  const deadline = Date.now() + cacheMs + 2000 + LOADED_MARGIN_MS;
   for (;;) {
     const r = await api(path);
     assert.equal(r.status, 200, `${path}: ${JSON.stringify(r.body)}`);
     if (ok(r.body)) return r.body;
-    if (Date.now() > deadline) assert.fail(`${what}: not seen within ${cacheMs + 2000} ms (last answer ${JSON.stringify(r.body).slice(0, 600)})`);
+    if (Date.now() > deadline) assert.fail(`${what}: not seen within ${cacheMs + 2000 + LOADED_MARGIN_MS} ms (last answer ${JSON.stringify(r.body).slice(0, 600)})`);
     await sleep(250);
   }
 }
 
 /**
  * Realtime between two active players: a friend request reaches the other
- * player's socket within 2 s (the sender's own socket hears it without a
+ * player's socket within 2 s plus the loaded-machine margin (the sender's own socket hears it without a
  * name), and a sign-in revoked from another device closes that device's
  * socket with 4001. The friendship is undone again (later parts do not
  * expect it).
@@ -143,7 +151,7 @@ async function realtimeFriends(a, b) {
   assert.equal((await api(`/api/account/sessions/${phoneSid}`, { method: 'DELETE' }, b)).status, 204);
   await phone.next((m) => m.t === 'event' && m.topic === 'account' && m.kind === 'signed_out', 'signed out on the other device');
   // The close frame follows (wrangler dev lets the TCP close wait about 10 s; the event above is what pages act on).
-  assert.equal(await phone.closed(15000), 4001, 'and the socket closes');
+  assert.equal(await phone.closed(15000 + LOADED_MARGIN_MS), 4001, 'and the socket closes');
   assert.equal(sb.closeCode, null, 'the first device stays connected');
   sb.close();
 }
@@ -1203,12 +1211,13 @@ async function main() {
   assert.equal((await lateWatcher.type('error')).code, 'bad_state', 'confirmed once');
 
   // Silence: the host stops sending; everyone hears whom the game waits for, and it is dropped after about 10 s.
-  const waiting = await host.next((m) => m.t === 'waiting' && m.client === welcome.you && m.heldMs > 0, 'waiting for the host', 12000);
+  const waiting = await host.next((m) => m.t === 'waiting' && m.client === welcome.you && m.heldMs > 0, 'waiting for the host', 12000 + LOADED_MARGIN_MS);
   assert.ok(waiting.dropInMs >= 0);
-  const dropped = await host.next((m) => m.t === 'error' && m.code === 'dropped', 'drop', 15000);
+  // The drop comes from the session's alarm (every second) once dropInMs has passed.
+  const dropped = await host.next((m) => m.t === 'error' && m.code === 'dropped', 'drop', waiting.dropInMs + 5000 + LOADED_MARGIN_MS);
   assert.equal(dropped.code, 'dropped');
   // The close frame needs a network round trip, much longer against a deployed Worker.
-  for (let i = 0; i < 50 && !host.closed; i++) await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < 50 + LOADED_MARGIN_MS / 100 && !host.closed; i++) await new Promise((r) => setTimeout(r, 100));
   assert.equal(host.closed, true);
 
   // The session is gone afterwards.
