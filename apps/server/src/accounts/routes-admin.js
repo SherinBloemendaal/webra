@@ -426,10 +426,19 @@ async function approveAllPending(ctx) {
   let approved = [];
   if (ids.length > 0) {
     const updates = ids.map((id) => db.prepare("UPDATE users SET status = 'active', approved_at = ?2, approved_by = ?3 WHERE id = ?1 AND status = 'pending_approval'").bind(id, ctx.now, actor.id));
-    const out = await db.batch([
-      ...updates,
-      auditStatement(db, { actor, action: 'user.approve_all', targetType: 'user', before: { status: 'pending_approval' }, after: { status: 'active', count: ids.length, userIds: ids } }, ctx.now),
-    ]);
+    // The audit entry, in the same batch, lists the accounts this batch actually approved (an
+    // account another admin approved meanwhile is not among them): those it stamped with this
+    // actor and time. None approved: no entry.
+    const auditApproved = db
+      .prepare(
+        `INSERT INTO audit_log (at, actor_id, actor_username, action, target_type, target_id, target_label, before_json, after_json, reason)
+         SELECT ?1, ?2, ?3, 'user.approve_all', 'user', NULL, NULL, '{"status":"pending_approval"}',
+                json_object('status', 'active', 'count', COUNT(*), 'userIds', json_group_array(id)), NULL
+         FROM (SELECT id FROM users WHERE id IN (SELECT value FROM json_each(?4)) AND status = 'active' AND approved_at = ?1 AND approved_by = ?2 ORDER BY created_at, id)
+         HAVING COUNT(*) > 0`,
+      )
+      .bind(ctx.now, actor.id, actor.username, JSON.stringify(ids));
+    const out = await db.batch([...updates, auditApproved]);
     approved = ids.filter((_, i) => out[i].meta.changes > 0);
   }
   if (approved.length > 0) {

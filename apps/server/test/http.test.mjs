@@ -306,6 +306,14 @@ test('readBody: one buffer for a declared length, the cap with and without Conte
   await assert.rejects(readBody(req(bytes), bytes.length - 1), (e) => e instanceof HttpError && e.status === 413);
   await assert.rejects(readBody(req(bytes, bytes.length), bytes.length - 1), (e) => e instanceof HttpError && e.status === 413);
   await assert.rejects(readBody(req(bytes, 100), 1 << 20), (e) => e instanceof HttpError && e.status === 400, 'longer than declared');
-  const short = await readBody(req(bytes.slice(0, 2000), 3000), 1 << 20);
-  assert.equal(short.bytes.byteLength, 2000);
+  await assert.rejects(readBody(req(bytes.slice(0, 2000), 3000), 1 << 20), (e) => e instanceof HttpError && e.status === 400 && /shorter/.test(e.message), 'shorter than declared');
+  // A malformed or repeated Content-Length is a bad request, not a too large one.
+  for (const bad of ['abc', '12, 12', '-1', '1e3', '12345678901']) {
+    const r = new Request('https://x/', { method: 'POST', body: 'x', headers: { 'Content-Length': '1' } });
+    const h = new Headers(r.headers);
+    h.set('Content-Length', bad);
+    const fake = { headers: h, body: r.body };
+    await assert.rejects(readBody(fake, 1 << 20), (e) => e instanceof HttpError && e.status === 400 && e.code === 'bad_message', bad);
+  }
+  await assert.rejects(readBody({ headers: new Headers({ 'Content-Length': '2000000' }), body: null }, 1 << 20), (e) => e.status === 413);
 });

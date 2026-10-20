@@ -139,7 +139,8 @@ export function publicSite(request, env, settings) {
     services: { ...eff.services, realtime: eff.realtime },
     onlineRequiresAccount: settings.onlineRequiresAccount,
     gameRequiresAccount: settings.gameRequiresAccount,
-    // Off: the game does not offer to host a new online game (POST /api/sessions answers 503 sessions_closed).
+    // Off: POST /api/sessions answers 503 sessions_closed, and the game shows that answer's message
+    // when a player tries to host (js/account/ui.js onlineRefusal).
     onlineSessionsOpen: settings.onlineSessionsOpen,
     contentRelay: settings.contentRelay,
     motd: settings.motd,

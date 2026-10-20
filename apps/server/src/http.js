@@ -132,9 +132,9 @@ export async function readText(request, maxBytes) {
  */
 export async function readBody(request, maxBytes) {
   const declared = request.headers.get('Content-Length');
-  if (declared !== null && (!/^\d{1,10}$/.test(declared) || Number(declared) > maxBytes)) {
-    throw new HttpError(413, 'too_large', 'Request body is too large.');
-  }
+  // A malformed or repeated Content-Length ("12, 12" once joined) is a bad request; a real one over the cap is too large.
+  if (declared !== null && !/^\d{1,10}$/.test(declared)) throw new HttpError(400, 'bad_message', 'Content-Length is malformed.');
+  if (declared !== null && Number(declared) > maxBytes) throw new HttpError(413, 'too_large', 'Request body is too large.');
   if (!request.body) return { text: '', bytes: new Uint8Array(0) };
   const reader = request.body.getReader();
   const tooLarge = async () => {
@@ -156,7 +156,7 @@ export async function readBody(request, maxBytes) {
       all.set(value, size);
       size += value.byteLength;
     }
-    if (size !== all.byteLength) all = all.subarray(0, size);
+    if (size !== all.byteLength) throw new HttpError(400, 'bad_message', 'Request body is shorter than its Content-Length.');
   } else {
     const chunks = [];
     let size = 0;

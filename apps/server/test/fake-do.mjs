@@ -23,8 +23,8 @@ registerHooks({
   },
 });
 
-const { Session, readAuthHeader, MAX_PENDING_PER_IP } = await import('../src/session.js');
-export { readAuthHeader, MAX_PENDING_PER_IP };
+const { Session, readAuthHeader, MAX_PENDING_PER_IP, MAX_SOCKETS_PER_IP } = await import('../src/session.js');
+export { readAuthHeader, MAX_PENDING_PER_IP, MAX_SOCKETS_PER_IP };
 
 // Runtime globals the realtime hub (src/userhub.js) uses: a socket pair
 // (client side, server side) and the auto response pair it registers.

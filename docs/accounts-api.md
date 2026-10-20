@@ -1601,8 +1601,8 @@ on plain users).
 - `POST /api/admin/users/approve-pending` `{}` (admin) -> `200 { "approved", "remaining" }`:
   the oldest 100 accounts in `pending_approval` that are not banned become
   `active` in one batch (accounts still waiting for their email are left
-  alone). One audit entry `user.approve_all` records the count and the
-  ids; each approved account's pages hear it at once (realtime, `account`
+  alone). One audit entry `user.approve_all` records the count and the ids
+  of the accounts this call approved (none: no entry); each approved account's pages hear it at once (realtime, `account`
   `status`) and the other dashboards reload. The dashboard's "Approve all
   pending" button calls it again until `remaining` is 0.
 

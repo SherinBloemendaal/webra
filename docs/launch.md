@@ -92,8 +92,9 @@ When a fix cannot wait:
    (below).
 4. Check `/version.json`, switch "New online games" on, clear the message.
 
-Game files are cached by browsers for at most 10 minutes and only for the
-build they came with (docs/security.md, "The play gate"), so after a deploy
+Game files are cached by browsers for at most 10 minutes, only while the
+browser's cookies stay the same (a renewed play pass or a new sign-in fetches
+them again), and only for the build they came with (docs/security.md, "The play gate"), so after a deploy
 a page reload always gets matching files.
 
 ## 6. Rollback

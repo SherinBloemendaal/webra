@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Browser, Clock, makeEnv, ORIGIN, promote, setSite, signup } from './accounts-harness.mjs';
 import { PASS_TTL_S, passKey, signPass, verifyPass, sidOfToken, passMatchesSession } from '../src/accounts/playpass.js';
-import { BUILD_COOKIE, deployedBuild, isNavigation, isPlayPath, normalizedSegments, PLAY_CACHE_CONTROL, PLAY_FILE_CACHE_CONTROL, returnPathFor } from '../src/playgate.js';
+import { BUILD_COOKIE, deployedBuild, isNavigation, isPagePath, isPlayPath, normalizedSegments, PLAY_CACHE_CONTROL, PLAY_FILE_CACHE_CONTROL, returnPathFor } from '../src/playgate.js';
 import { PLAY_HEADERS, SITE_HEADERS } from '../src/static-headers.js';
 import { hmacSha256, toBase64Url } from '../src/crypto.js';
 
@@ -40,6 +40,8 @@ function assets(env, { build = BUILD } = {}) {
       }
       env.assetRequests.push(path);
       const html = path.endsWith('/') || path.endsWith('.html');
+      // A revalidation of the current file: 304 without a body or Content-Type, as Workers Static Assets answers.
+      if (request.headers.get('if-none-match') === '"abc"') return new Response(null, { status: 304, headers: { etag: '"abc"', 'cache-control': 'public, max-age=0, must-revalidate', vary: 'Accept-Encoding' } });
       return new Response(`file ${path}`, {
         status: 200,
         headers: { 'content-type': html ? 'text/html; charset=utf-8' : 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate', etag: '"abc"', vary: 'Accept-Encoding' },
@@ -681,4 +683,31 @@ test('caching: without a readable build, or for refusals and other statuses, not
   const missing = await open.get('/play/nope.js', SUB);
   assert.equal(missing.status, 404);
   assert.equal(missing.res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
+});
+
+test('caching: a 304 revalidation gets the same rule as its 200 (the browser stores the 304\'s headers); pages by path', async () => {
+  const env = assets(makeEnv({ email: false }));
+  const b = await activeUser(env, 'Revalidator');
+  await b.get('/play/', NAV);
+  const reval = (path, opts) => b.get(path, { ...opts, headers: { ...opts.headers, 'If-None-Match': '"abc"' } });
+  // A file of the current build: kept again for a pass lifetime, still keyed by the cookie.
+  const file = await reval('/play/js/main.js', SUB);
+  assert.equal(file.status, 304);
+  assert.equal(file.res.headers.get('cache-control'), PLAY_FILE_CACHE_CONTROL);
+  assert.match(file.res.headers.get('vary'), /\bCookie\b/);
+  assert.equal(file.res.headers.get('content-type'), null, 'no Content-Type on a 304');
+  assertSecurityHeaders(file.res);
+  // A page: never kept, though a 304 has no Content-Type to say it is HTML.
+  for (const p of ['/play/', '/play/editor/', '/play/index.html']) {
+    const page = await reval(p, NAV);
+    assert.equal(page.status, 304, p);
+    assert.equal(page.res.headers.get('cache-control'), PLAY_CACHE_CONTROL, p);
+    assert.match(page.res.headers.get('vary'), /\bCookie\b/);
+  }
+  assert.equal(isPagePath('/play'), true);
+  assert.equal(isPagePath('/play/js/main.js'), false);
+  assert.equal(isPagePath('/play/help/INDEX.HTML'), true);
+  // Without the current build cookie a 304 for a file is not kept either.
+  const stranger = await activeUser(env, 'No Cookie');
+  assert.equal((await stranger.get('/play/js/main.js', { ...SUB, headers: { ...SUB.headers, 'If-None-Match': '"abc"' } })).res.headers.get('cache-control'), PLAY_CACHE_CONTROL);
 });

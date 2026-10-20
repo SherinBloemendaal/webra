@@ -15,8 +15,12 @@
 //
 // Caching (docs/security.md "The play gate"): pages (HTML) are revalidated on
 // every load; the other files (about 250 per load) are kept by the browser
-// for as long as a play pass lives, so a reload within 10 minutes costs no
-// request at all. File names carry no version, so each page load sets the
+// for up to a play pass lifetime (10 minutes). `Vary: Cookie` makes the whole
+// Cookie header part of the cache key, so a kept file is used only while the
+// cookies stay the same: a reload with the same play pass (or, with the game
+// open to all, the same cookies) costs no request for them, and a renewed
+// pass or a new sign-in fetches them again. A 304 revalidation gets the same
+// rule as its 200. File names carry no version, so each page load sets the
 // build cookie (the deployed dist/version.json `build`) and a file is kept
 // only when its request named the current build: with `Vary: Cookie`, a page
 // of a newer deploy never runs with files of an older one.
@@ -143,17 +147,28 @@ export async function deployedBuild(env, url) {
 }
 
 /**
+ * Whether a game path is a page (HTML): /play, a directory (trailing slash)
+ * or a .html file. Decided from the request path, not the answer: a 304
+ * revalidation carries no Content-Type, and a page must never be kept.
+ */
+export function isPagePath(pathname) {
+  return pathname === '/play' || pathname.endsWith('/') || pathname.toLowerCase().endsWith('.html');
+}
+
+/**
  * The file from Workers Static Assets with the static security headers and
  * private caching: pages revalidate, other files of the current build are
- * kept (see the top of this file). A page sets the build cookie when the
- * browser's is not the current build.
+ * kept (see the top of this file). A 304 (the browser revalidated after the
+ * time ran out) gets the same headers as the 200 it confirms, because the
+ * browser replaces the stored headers with the 304's (RFC 9111 4.3.4). A
+ * page sets the build cookie when the browser's is not the current build.
  */
 async function serve(request, env, cookies) {
   const asset = await env.ASSETS.fetch(request);
   const res = new Response(asset.body, asset);
   applyPlayHeaders(res.headers);
-  const page = (res.headers.get('content-type') ?? '').toLowerCase().startsWith('text/html');
-  const build = res.status === 200 ? await deployedBuild(env, request.url) : null;
+  const page = isPagePath(new URL(request.url).pathname);
+  const build = res.status === 200 || res.status === 304 ? await deployedBuild(env, request.url) : null;
   const named = parseCookies(request).get(cookieName(request, BUILD_COOKIE)) ?? null;
   const keep = build !== null && !page && named === build;
   res.headers.set('Cache-Control', keep ? PLAY_FILE_CACHE_CONTROL : PLAY_CACHE_CONTROL);

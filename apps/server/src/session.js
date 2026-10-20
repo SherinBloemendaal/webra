@@ -129,6 +129,13 @@ const MAX_PENDING_SOCKETS = 8;
  * get this far, the Worker answers them itself: src/wsrefuse.js).
  */
 export const MAX_PENDING_PER_IP = 2;
+/**
+ * Sockets one address may hold in all (open or still closing): a script that
+ * gets its sockets closed and never completes the close cannot fill the
+ * session's MAX_SOCKETS places either. Half of them, so a LAN party behind
+ * one address still fits a full lobby with spectators.
+ */
+export const MAX_SOCKETS_PER_IP = 12;
 /** Wrong passwords per IP before a lockout, and the lockout length. */
 const PASSWORD_FAILURES = 5;
 const PASSWORD_LOCKOUT_MS = 60 * 1000;
@@ -360,7 +367,8 @@ export class Session extends DurableObject {
     const all = this.ctx.getWebSockets();
     // Waiting for their hello: a refused socket the object is closing (readyState CLOSING) no longer counts.
     const pending = all.filter((ws) => !(ws.readyState > 1)).map((ws) => this.attachment(ws)).filter((att) => !att.client);
-    if (all.length >= MAX_SOCKETS || pending.length >= MAX_PENDING_SOCKETS || pending.filter((att) => att.ip === ip).length >= MAX_PENDING_PER_IP) {
+    const fromIp = all.filter((ws) => this.attachment(ws).ip === ip).length;
+    if (all.length >= MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP || pending.length >= MAX_PENDING_SOCKETS || pending.filter((att) => att.ip === ip).length >= MAX_PENDING_PER_IP) {
       return new Response('Too many connections.', { status: 429 });
     }
     const pair = new WebSocketPair();

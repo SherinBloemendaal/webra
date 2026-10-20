@@ -586,8 +586,16 @@ cached unless the Worker uses the Cache API, which it does not, and nothing
 in `_headers` sets a public cache policy for `/play`). Pages (HTML) are
 `max-age=0, must-revalidate`, so every load goes through the gate. The other
 game files (about 250 per load) are `max-age=600`, the lifetime of a play
-pass, so a reload within 10 minutes costs no request, and a revoked account
-keeps at most what it could have loaded with its last pass anyway. File
+pass, and a 304 revalidation of one gets the same headers (the browser
+stores the 304's). `Vary: Cookie` makes the whole Cookie header part of the
+cache key, so a kept file is used only while the browser's cookies are the
+same: a reload with the same play pass costs no request for these files, and
+when the pass is renewed (it lives 10 minutes) or the sign-in changes they
+are fetched again (with the game open to all, players without an account
+have no pass cookie, so their copies last the full 10 minutes). A revoked
+account keeps at most what it could have loaded with its last pass anyway.
+Pages are decided by their path (`/play`, a trailing slash or `.html`),
+since a 304 has no Content-Type. File
 names carry no version, so every page load sets the cookie `webra_build`
 (`__Host-` on HTTPS) to the deployed build (`dist/version.json` `build`,
 read once per isolate), and a file is kept only when its request named the

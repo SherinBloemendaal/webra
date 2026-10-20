@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LOG_MAX_BYTES, MAX_REJOINS, parseServerMessage, PROTOCOL_VERSION, RECONNECT_GRACE_MS, SEAT_KEY_RE } from '@webra/protocol';
-import { makeSession, MAX_PENDING_PER_IP } from './fake-do.mjs';
+import { makeSession, MAX_PENDING_PER_IP, MAX_SOCKETS_PER_IP } from './fake-do.mjs';
 
 const hello = (s, name, extra = {}) => ({ t: 'hello', protocol: PROTOCOL_VERSION, version: s.version, name, ...extra });
 
@@ -616,4 +616,34 @@ test('upgrades: one address holds at most MAX_PENDING_PER_IP sockets before hell
     assert.equal(ws.last('error').code, 'version_mismatch');
     assert.equal(ws.readyState, 2, 'closing, still listed');
   }
+});
+
+test('upgrades: closed sockets that never finish closing cannot fill the session from one address', async () => {
+  const s = await makeSession({ maxPlayers: 8 });
+  s.session.upgraded = (client) => ({ status: 101, webSocket: client });
+  // The runtime keeps listing a socket until its close completes; this attacker never completes it.
+  const everything = [];
+  s.ctx.acceptWebSocket = (ws) => everything.push(ws);
+  s.ctx.getWebSockets = () => [...everything];
+  const upgrade = (ip) =>
+    s.session.fetch(new Request('https://session/', { headers: { Upgrade: 'websocket', 'CF-Connecting-IP': ip, 'X-WebRA-Auth': JSON.stringify({ account: null, refuse: null }) } }));
+  assert.equal(MAX_SOCKETS_PER_IP, 12);
+  let refused = 0;
+  for (let i = 0; i < 30; i++) {
+    const r = await upgrade('203.0.113.66');
+    if (r.status === 429) {
+      refused++;
+      continue;
+    }
+    const ws = everything.at(-1);
+    await s.send(ws, hello(s, 'Spam', { version: '0.0.1' }));
+    assert.equal(ws.readyState, 2, 'a refused hello closes it (still listed)');
+  }
+  assert.equal(everything.filter((ws) => ws.deserializeAttachment().ip === '203.0.113.66').length, MAX_SOCKETS_PER_IP);
+  assert.equal(refused, 30 - MAX_SOCKETS_PER_IP);
+  // Honest players from other addresses still get in.
+  const host = await upgrade('198.51.100.20');
+  assert.equal(host.status, 101);
+  await s.send(everything.at(-1), hello(s, 'Host', { hostKey: s.hostKey }));
+  assert.ok(everything.at(-1).last('welcome'));
 });

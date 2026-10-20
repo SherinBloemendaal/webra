@@ -546,3 +546,28 @@ test('approve all pending: admins only, CSRF, at most APPROVE_ALL_MAX per call, 
   assert.deepEqual((await admin.get('/api/admin/users?status=pending_approval')).body.users, []);
   assert.deepEqual((await admin.get('/api/admin/users?status=banned')).body.users.map((u) => u.username), ['Wait104']);
 });
+
+test('approve all pending: the audit entry lists the accounts this call approved, not one another admin approved meanwhile', async () => {
+  const { env, admin, target } = await cast();
+  const other = await signup(env, 'Other Waiting', { ip: '198.51.100.77' });
+  // Another admin approves Target between this call's selection and its batch.
+  const batch = env.DB.batch.bind(env.DB);
+  env.DB.batch = async (statements) => {
+    env.DB.batch = batch;
+    env.DB.sqlite.prepare("UPDATE users SET status = 'active', approved_at = 1, approved_by = 'x' WHERE id = ?").run(target.user.id);
+    return batch(statements);
+  };
+  const r = await admin.post('/api/admin/users/approve-pending', {});
+  assert.deepEqual(r.body, { approved: 1, remaining: 0 });
+  const entries = env.DB.rows("SELECT actor_id, actor_username, target_type, before_json, after_json FROM audit_log WHERE action = 'user.approve_all'");
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].actor_id, admin.user.id);
+  assert.deepEqual(JSON.parse(entries[0].after_json), { status: 'active', count: 1, userIds: [other.user.id] });
+  assert.deepEqual(JSON.parse(entries[0].before_json), { status: 'pending_approval' });
+  // A call that approves nobody writes no entry.
+  assert.deepEqual((await admin.post('/api/admin/users/approve-pending', {})).body, { approved: 0, remaining: 0 });
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'user.approve_all'")[0].n, 1);
+  // The audit API shows it like any entry.
+  const listed = await admin.get('/api/admin/audit?action=user.approve_all');
+  assert.equal(listed.body.entries[0].after.count, 1);
+});
