@@ -7,11 +7,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ACTOR_ART, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, SPECIAL_ART } from '../js/content/tables.js';
+import { ACTOR_ART, CURSOR_ART, EXPLOSIONS, EXPLOSION_ART, PALETTES, PLAYER_PALETTES, SEQUENCES, SPECIAL_ART } from '../js/content/tables.js';
+import { decodePalette, SHADOW_ALPHA } from '../js/content/palette.js';
+import { decodeShp } from '../js/content/shp.js';
 import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS, WEBRA_ACTORS } from '../js/content/render-facts.js';
 import { auditOriginalArt, formatAudit, ROLES, FX_LIMITS, withMissionActors } from '../js/content/audit.js';
-import { originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
-import { POSE, POSE_COUNT } from '../js/content/sequences.js';
+import { paletteLookups, paletteMatches, originalSlots, combineSlots, originalSlotInfo, specialSlot, muzzleSlot, explosionSlot, SPECIAL_MODULES, MODULE_SPECIAL_SLOTS, ORIGINAL_INFO } from '../js/content/atlas.js';
+import { POSE, POSE_COUNT, sequenceFile } from '../js/content/sequences.js';
 import { SPECIALS } from '../js/content/packs.js';
 import { spriteList, SPECIAL_SLOTS } from '../js/sprites.js';
 import { NAVAL_SPECIALS } from '../js/art/naval.js';
@@ -85,9 +87,12 @@ test('art audit: complete, every rules actor and every OpenRA render sequence ha
     else if (WEBRA_ACTORS.includes(r.actor)) assert.equal(r.openra, null, r.actor);
     else if (!/OpenRA's own art/.test(r.note)) assert.equal(RENDER_FACTS[r.actor].parts.find((p) => `${p[1]}.${p[2]}` === r.openra)[3], false, `${r.actor} ${r.openra}`);
   }
-  // What is left: vehicles that leave no husk; n/a: vehicles by parachute. Infantry
-  // deaths, idle animations, stand variants and attack variants all have poses.
-  for (const r of rows.filter((x) => x.status === 'gap')) assert.equal(r.role, 'husk', `${r.actor} ${r.role}: ${r.note}`);
+  // What is left: vehicles that leave no husk, the dog's run while it chases
+  // (one move pose); n/a: vehicles by parachute. Infantry deaths, idle
+  // animations, stand variants and attack variants all have poses.
+  for (const r of rows.filter((x) => x.status === 'gap')) {
+    assert.ok(r.role === 'husk' || (r.role === 'chase-run' && r.actor === 'DOG'), `${r.actor} ${r.role}: ${r.note}`);
+  }
   for (const r of rows.filter((x) => x.status === 'n/a')) assert.equal(r.role, 'parachute', `${r.actor} ${r.role}`);
 });
 
@@ -138,6 +143,135 @@ test('art audit: a wrong mapping, missing files and shifted frames are caught', 
   const r2 = auditOriginalArt(ACTORS, missing, { identify });
   assert.equal(r2.rows.find((r) => r.actor === 'HELI' && r.openra === 'heli.rotor').status, 'fallback');
   assert.match(formatAudit(r2, { only: ['fallback'] }), /HELI\s+rotor-air/);
+});
+
+test('art audit: the ore mine is Red Alert\'s on temperate and snow in the terrain palette, WebRA\'s elsewhere; a wrong palette fails', () => {
+  assert.deepEqual(RENDER_FACTS.MINE.parts, [['body', 'mine', 'idle', true, 'terrain']], 'OpenRA draws the ore mine with the terrain palette');
+  assert.equal(RENDER_FACTS.GMINE.parts[0][4], 'player', 'and the gem mine with the player palette, without the owner\'s colours');
+  for (const [tileset, want] of [['TEMPERAT', 'ok'], ['SNOW', 'ok'], ['DESERT', 'webra-only']]) {
+    const { rows } = auditOriginalArt(AUDITED, getFile, { tileset, identify });
+    const mine = rows.filter((r) => r.actor === 'MINE');
+    assert.deepEqual(mine.map((r) => [r.role, r.status]), [['body', want]], `${tileset}: ${formatAudit({ rows: mine, problems: [], counts: {} })}`);
+    assert.deepEqual(rows.filter((r) => r.actor === 'GMINE').map((r) => r.status), ['webra-only'], tileset);
+  }
+  // Drawn with another palette than OpenRA's (the old mapping: team coloured ore) the audit says so.
+  const actorArt = { ...ACTOR_ART, MINE: { ...ACTOR_ART.MINE, palettes: undefined }, SBAG: { ...ACTOR_ART.SBAG, palettes: { 'body.idle': 'desert' } } };
+  const { rows } = auditOriginalArt(AUDITED, getFile, { identify, actorArt });
+  const bad = rows.filter((r) => /palette/.test(r.note));
+  assert.deepEqual(bad.map((r) => [r.actor, r.where, r.status, r.note]), [
+    ['SBAG', 'body.idle', 'wrong', 'drawn with the desert palette, OpenRA uses effect'],
+    ['MINE', 'body.idle', 'wrong', 'drawn with the player+owner palette, OpenRA uses terrain'],
+  ]);
+});
+
+test('palettes: OpenRA\'s civilian, no-shadow, effect, chrome and one-colour palettes as palettes.yaml defines them', () => {
+  // The generator copies palettes.yaml: the civilians' clothes over the player palette, the
+  // paratroopers' palette without the shadow index, the owner's colours on 80..95.
+  assert.deepEqual(PALETTES.civilian4, { base: 'player', index: [7, 109, 111, 206, 210], replace: [187, 118, 119, 188, 182] });
+  assert.deepEqual(PALETTES['player-noshadow'], { files: { '*': 'temperat.pal' }, shadow: [], transparent: [0, 4] });
+  assert.deepEqual(PALETTES.chrome, { files: { '*': 'temperat.pal' }, shadow: [3], transparent: [0] });
+  assert.deepEqual(PALETTES.shadow, { rgba: [0, 0, 0, 140], shadow: [], transparent: [0] });
+  assert.deepEqual(PLAYER_PALETTES['player-noshadow'].remap, [...Array(16).keys()].map((i) => 80 + i));
+  for (let n = 2; n <= 10; n++) if (n !== 3) assert.ok(PALETTES[`civilian${n}`], `civilian${n}`);
+
+  const pal = SYNTH.files.get('temperat.pal');
+  const rgb = decodePalette(pal);
+  const problems = [];
+  const lookupOf = paletteLookups((n) => (n === 'temperat.pal' ? pal : null), 'TEMPERAT', problems);
+  const px = (key, i) => [...lookupOf(key).color.subarray(i * 4, i * 4 + 4)];
+  const own = (i) => [rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], 255];
+  for (const [n, spec] of Object.entries(PALETTES).filter(([k]) => k.startsWith('civilian'))) {
+    spec.index.forEach((i, k) => assert.deepEqual(px(n, i), own(spec.replace[k]), `${n}: ${i} shows ${spec.replace[k]}`));
+    assert.deepEqual(px(n, 85), own(85), `${n}: no owner colours`);
+    assert.equal(lookupOf(n).mask[85], 0);
+  }
+  assert.deepEqual(px('player-noshadow+owner', 4), [0, 0, 0, 0], 'no shadow: index 4 is not drawn');
+  assert.equal(lookupOf('player-noshadow+owner').mask[85], 255, 'owner colours');
+  assert.deepEqual(px('player+owner', 4), [0, 0, 0, SHADOW_ALPHA]);
+  assert.deepEqual(px('effect', 85), own(85), 'effects: no owner colours');
+  assert.deepEqual(px('chrome', 3), [0, 0, 0, SHADOW_ALPHA]);
+  assert.deepEqual(px('chrome', 4), own(4), 'chrome: only index 3 is a shadow');
+  assert.deepEqual(px('shadow', 77), [0, 0, 0, 140], 'one colour');
+  assert.deepEqual(px('shadow', 0), [0, 0, 0, 0]);
+  assert.deepEqual(px('terrain', 3), [0, 0, 0, SHADOW_ALPHA], 'the theater palette: shadows 3 and 4');
+  assert.equal(lookupOf('desert'), null, 'desert.pal is not installed here');
+  assert.ok(problems.some((p) => /desert\.pal/.test(p)), problems.join('; '));
+});
+
+test('palette seeds: the player and theater lookups stand in only for what PALETTES says', () => {
+  const player = { file: 'temperat.pal', shadow: [4], remap: true };
+  const terrain = (tileset) => ({ file: { TEMPERAT: 'temperat.pal', SNOW: 'snow.pal', DESERT: 'desert.pal' }[tileset], shadow: [3, 4], remap: false });
+  for (const tileset of ['TEMPERAT', 'SNOW', 'DESERT']) {
+    assert.ok(paletteMatches('player+owner', tileset, player), tileset);
+    assert.ok(paletteMatches('terrain', tileset, terrain(tileset)), tileset);
+  }
+  // A palettes.yaml that changed: the seed no longer fits, the lookup is built from PALETTES.
+  const changed = (over) => ({ ...PALETTES, player: { ...PALETTES.player, ...over } });
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, changed({ shadow: [3, 4] })));
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, changed({ transparent: [0, 4] })));
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, changed({ files: { '*': 'snow.pal' } })));
+  assert.ok(!paletteMatches('player+owner', 'TEMPERAT', player, PALETTES, { ...PLAYER_PALETTES, player: { ...PLAYER_PALETTES.player, remap: [80, 81] } }));
+  assert.ok(!paletteMatches('player', 'TEMPERAT', player), 'without the owner\'s colours it is another palette');
+  assert.ok(!paletteMatches('terrain', 'SNOW', terrain('TEMPERAT')));
+});
+
+test('original slots: every pose, special and muzzle in OpenRA\'s palette for it', () => {
+  // Frames of index 7 (a civilian clothes index), 85 (owner colours) and 4 (the shadow).
+  const files = new Map(SYNTH.files);
+  const frame = Uint8Array.from([7, 85, 4, 120, 7, 85, 4, 120]);
+  const override = (image, seq) => {
+    const name = sequenceFile(SEQUENCES[image][seq], 'TEMPERAT');
+    files.set(name, buildShp(4, 2, Array.from({ length: decodeShp(SYNTH.files.get(name)).frames.length }, () => frame)));
+  };
+  for (const [image, seq] of [['c2', 'stand'], ['e1', 'stand'], ['e1', 'die-crushed'], ['dog', 'stand'], ['rallypoint', 'flag'], ['smokey', 'idle'], ['missile', 'idle'], ['pips', 'medic']]) override(image, seq);
+  const out = originalSlots(ACTORS, (n) => files.get(n) ?? null, 'TEMPERAT');
+  assert.deepEqual(out.problems, []);
+  const rgb = decodePalette(files.get('temperat.pal'));
+  const own = (i) => [rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], 255];
+  const at = (img, x) => [...img.color.subarray(x * 4, x * 4 + 4)];
+  const t = (id) => ACTORS.findIndex((a) => a.id === id);
+  const image = (art, pose) => art.images[art.poses[pose].frames[0]];
+  const body = (id, pose) => image(out.slots.get(2 * t(id)), pose);
+  // Civilian C4 (WithInfantryBody Palette civilian4): index 7 in the colour of 187, no owner colours.
+  assert.deepEqual(at(body('C4', POSE.IDLE), 0), own(187));
+  assert.deepEqual(at(body('C4', POSE.IDLE), 1), own(85));
+  assert.equal(body('C4', POSE.IDLE).mask, null);
+  // A soldier: the owner's colours and the shadow; falling, no shadow; crushed, the effect palette.
+  assert.deepEqual(at(body('E1', POSE.IDLE), 0), own(7));
+  assert.ok(body('E1', POSE.IDLE).mask);
+  assert.deepEqual(at(body('E1', POSE.IDLE), 2), [0, 0, 0, SHADOW_ALPHA]);
+  for (const id of ['E1', 'DOG']) {
+    assert.deepEqual(at(body(id, POSE.PARACHUTE), 2), [0, 0, 0, 0], `${id}: player-noshadow`);
+    assert.ok(body(id, POSE.PARACHUTE).mask, `${id}: still the owner's colours`);
+  }
+  assert.equal(body('E1', POSE.CRUSHED).mask, null, 'crushed: effect palette');
+  assert.deepEqual(at(body('E1', POSE.CRUSHED), 1), own(85));
+  // Specials: the rally flag has the owner's colours (RallyPoint), smoke trails and the red
+  // cross do not (LeavesTrails effect, WithDecoration chrome: index 4 is no shadow there),
+  // the torpedo is OpenRA's one-colour underwater shadow.
+  const special = (key) => {
+    const art = out.slots.get(specialSlot(key, ACTORS.length));
+    return image(art, SPECIAL_ART[key].mode === 'effect' ? POSE.MAKE : POSE.IDLE);
+  };
+  assert.ok(special('rally').mask);
+  assert.equal(special('planes.3').mask, null);
+  assert.deepEqual(at(special('decorations.3'), 2), own(4));
+  for (let x = 0; x < 4; x++) assert.deepEqual(at(special('naval.0'), x), [0, 0, 0, 140]);
+  assert.equal(special('fx.3').mask, null, 'the SAM missile: effect');
+});
+
+test('art audit: a special or muzzle drawn in another palette than OpenRA\'s is wrong', () => {
+  const art = { ...ACTOR_ART, '1TNK': { ...ACTOR_ART['1TNK'], palettes: { ...ACTOR_ART['1TNK'].palettes, muzzle: 'chrome' } } };
+  const specialArt = { ...SPECIAL_ART, 'fx.0': { ...SPECIAL_ART['fx.0'], palette: 'effect' } };
+  const { rows } = auditOriginalArt(AUDITED, getFile, { identify, actorArt: art, specialArt });
+  const bad = rows.filter((r) => /palette/.test(r.note));
+  assert.ok(bad.length > 10 && bad.filter((r) => r.where === 'special fx.0').length === bad.length - 1, formatAudit({ rows: bad, problems: [], counts: {} }));
+  assert.ok(bad.every((r) => r.status === 'wrong'));
+  assert.deepEqual(bad.find((r) => r.where === 'muzzle'), { actor: '1TNK', role: 'muzzle', openra: '1tnk.muzzle', where: 'muzzle', webra: '1tnk.muzzle', status: 'wrong', note: 'drawn with the chrome palette, OpenRA uses effect' });
+  assert.ok(bad.some((r) => r.where === 'special fx.0' && r.note === 'drawn with the effect palette, OpenRA uses player+owner'));
+  assert.equal(SPECIAL_ART['fx.0'].palette, undefined, 'the tables are left alone');
+  // As generated, every palette agrees.
+  assert.deepEqual(auditOriginalArt(AUDITED, getFile, { identify }).rows.filter((r) => /palette/.test(r.note)), []);
 });
 
 test('art audit: an actor OpenRA draws from Red Alert files without an original mapping fails', () => {
@@ -384,5 +518,11 @@ test("art audit: infantry stands, idles, deaths and Tanya's composed shooting ar
   // Every infantry sequence OpenRA draws is shown.
   const infantry = new Set(ACTORS.filter((a) => a.kind === 'infantry').map((a) => a.id));
   const left = rows.filter((r) => infantry.has(r.actor) && !['ok', 'webra-only'].includes(r.status) && r.role !== 'parachute');
-  assert.deepEqual(left, []);
+  assert.deepEqual(left.map((r) => [r.actor, r.role, r.status]), [['DOG', 'chase-run', 'gap']], 'only the dog\'s chase run has no pose');
+  // Falling paratroopers, the dog and the spy too, in OpenRA's player-noshadow palette.
+  for (const [id, seq] of [['E1', 'e1.parachute'], ['DOG', 'dog.stand'], ['SPY', 'spy.stand']]) {
+    const r = rows.find((x) => x.actor === id && x.openra === seq && x.role === 'parachute-body');
+    assert.equal(r?.status, 'ok', `${id} ${seq}: ${r?.note}`);
+    assert.equal(ACTOR_ART[id].palettes['body.parachute'], 'player-noshadow+owner', id);
+  }
 });

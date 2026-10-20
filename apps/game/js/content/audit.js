@@ -17,7 +17,10 @@
 //              files, the pose table holds its frames in OpenRA's order)
 //   fallback   WebRA should draw it from the original art but shows its own
 //   wrong      WebRA maps it to another sequence, or the frames, facings,
-//              mode or offset in the pose table differ from OpenRA's, an
+//              mode or offset in the pose table differ from OpenRA's, it
+//              is drawn with another palette than OpenRA's (the fifth field
+//              of a RENDER_FACTS row against ACTOR_ART palettes and
+//              SPECIAL_ART palette), an
 //              effect lasts longer than the engine draws it, or the audit
 //              has no rule for the role yet
 //   gap        OpenRA draws it, the engine has nothing that shows it (the
@@ -38,7 +41,7 @@
 // content tests run it on synthetic files, where `identify` names the file
 // and frame every image came from, so every frame is checked too.
 
-import { ACTOR_ART, CURSOR_ART, EXPLOSION_ART, EXPLOSIONS, RESOURCES, SEQUENCES, SMUDGES, SPECIAL_ART, TERRAIN, TREES } from './tables.js';
+import { ACTOR_ART, CURSOR_ART, DEFAULT_PALETTE, EXPLOSION_ART, EXPLOSIONS, PALETTES, RESOURCES, SEQUENCES, SMUDGES, SPECIAL_ART, TERRAIN, TREES } from './tables.js';
 import { MISSION_ACTORS, OPENRA_MADE_FILES, RENDER_FACTS, WEBRA_ACTORS } from './render-facts.js';
 import { explosionSlot, muzzleSlot, originalSlots, specialSlot } from './atlas.js';
 import { originalCursorFrames } from './cursors.js';
@@ -123,6 +126,8 @@ export const ROLES = Object.freeze({
   'turret-damaged': { part: 'second', pose: 'damaged' },
   stand: { part: 'body', variants: ['idle', 'stand2'] },
   run: { part: 'body', pose: 'move' },
+  // OpenRA's dog runs (WithInfantryBody@RUN) while it chases a target; WebRA's walks.
+  'chase-run': { gap: "the dog's run while it chases a target (WithInfantryBody@RUN): the engine has one move pose, the walk" },
   shoot: { part: 'body', variants: ['attack', 'attack2'] },
   'prone-stand': { part: 'second', variants: ['idle', 'stand2'] },
   'prone-run': { part: 'second', pose: 'move' },
@@ -258,7 +263,7 @@ function expectedMode(entry, part, pose) {
  * frame of every image in draw order. `limit` is the ticks the engine draws
  * a pose played once. Returns a problem or null.
  */
-function checkPose(art, poseIndex, defs, { files, tileset, identify, offset, mode, lead = 0, reverse = false, limit = 0 }) {
+function checkPose(art, poseIndex, defs, { files, tileset, identify, offset, mode, lead = 0, reverse = false, limit = 0, palette = null }) {
   const desc = art?.poses?.[poseIndex];
   if (!desc) return 'no pose table';
   const parts = [];
@@ -308,8 +313,10 @@ function checkPose(art, poseIndex, defs, { files, tileset, identify, offset, mod
   if (identify) {
     for (let k = 0; k < want.length; k++) {
       const img = art.images[desc.frames[k]];
-      const got = identify(img);
       const w = want[k];
+      // A one-colour palette (OpenRA PaletteFromRGBA: the torpedo's underwater
+      // shadow) shows every frame alike: only its place is checked.
+      const got = PALETTES[palette ?? '']?.rgba ? w : identify(img);
       if (!got || got.file !== w.file || got.frame !== w.frame) {
         return `frame ${k} shows ${got ? `${got.file}#${got.frame}` : 'something else'}, OpenRA draws ${w.file}#${w.frame}`;
       }
@@ -349,20 +356,40 @@ const specialDefs = (spec) => spec.sequences.map((n) => SEQUENCES[spec.image]?.[
  * Audit the original art for `actors` (rules_json actors, as the game hands
  * them to originalSlots; withMissionActors adds the campaign's) with the
  * files `getFile` has. `identify(image)` (optional) names the `{ file,
- * frame }` an atlas image was cut from. `actorArt` replaces ACTOR_ART (tests).
+ * frame }` an atlas image was cut from. `actorArt` and `specialArt` replace
+ * ACTOR_ART and SPECIAL_ART for the rows (tests; the art stays built from the tables).
  * Returns `{ rows, problems, counts }`.
  */
-export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identify = null, actorArt = ACTOR_ART } = {}) {
+export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identify = null, actorArt = ACTOR_ART, specialArt = SPECIAL_ART } = {}) {
   const built = originalSlots(actors, getFile, tileset);
   const files = fileCache(getFile);
   const rows = [];
   const index = new Map(actors.map((a, t) => [a.id, t]));
-  const row = (r) => rows.push({ note: '', webra: null, where: '', ...r });
+  // The palette WebRA draws a part with, by where it draws it (null: not compared).
+  const webraPalette = (actor, where) => {
+    const part = /^(body|second)\.([\w-]+)/.exec(where);
+    if (part) return actorArt[actor]?.palettes?.[`${part[1]}.${part[2]}`] ?? DEFAULT_PALETTE;
+    if (where === 'muzzle') return actorArt[actor]?.palettes?.muzzle ?? DEFAULT_PALETTE;
+    const special = /^special (.+)$/.exec(where);
+    if (special) return specialArt[special[1]]?.palette ?? DEFAULT_PALETTE;
+    if (where === 'bib') return 'terrain';
+    return null;
+  };
+  // A row OpenRA's facts give a palette for (`palette`) is wrong when WebRA draws that part with another.
+  const row = (r) => {
+    const { palette, ...out } = { note: '', webra: null, where: '', ...r };
+    const webra = out.status === 'ok' && palette ? webraPalette(out.actor, out.where) : null;
+    if (webra && webra !== palette) {
+      out.status = 'wrong';
+      out.note = `drawn with the ${webra} palette, OpenRA uses ${palette}`;
+    }
+    rows.push(out);
+  };
   const check = (art, pose, defs, o) => checkPose(art, pose, defs, { files, tileset, identify, ...o });
 
   // A special sprite (SPECIAL_ART key) built from the files, checked as its mode plays.
   const specialRow = (base, key) => {
-    const spec = SPECIAL_ART[key];
+    const spec = specialArt[key];
     const where = `special ${key}`;
     if (!spec) {
       row({ ...base, where, status: 'webra-only', note: SPECIAL_NOTES[key] ?? 'Red Alert has no sprite for it (WebRA art)' });
@@ -378,9 +405,10 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
     let problem;
     const [mod, index] = key.split('.');
     const limit = mod === 'leftovers' ? FX_LIMITS.leftovers[Number(index)] : FX_LIMITS.explosion;
-    if (spec.mode === 'effect') problem = check(art, POSE.MAKE, defs, { offset: [0, 0], mode: MODE.ONCE, limit });
-    else if (spec.mode === 'lead') problem = check(art, POSE.IDLE, defs, { offset: [0, 0], mode: MODE.LEAD, lead: defs[0] ? resolvedLength(defs[0]) : 0 });
-    else problem = check(art, POSE.IDLE, defs, { offset: [0, 0], mode: spec.mode === 'index' ? MODE.INDEX : MODE.LOOP });
+    const palette = spec.palette ?? DEFAULT_PALETTE;
+    if (spec.mode === 'effect') problem = check(art, POSE.MAKE, defs, { offset: [0, 0], mode: MODE.ONCE, limit, palette });
+    else if (spec.mode === 'lead') problem = check(art, POSE.IDLE, defs, { offset: [0, 0], mode: MODE.LEAD, lead: defs[0] ? resolvedLength(defs[0]) : 0, palette });
+    else problem = check(art, POSE.IDLE, defs, { offset: [0, 0], mode: spec.mode === 'index' ? MODE.INDEX : MODE.LOOP, palette });
     row({ ...base, webra, where, status: problem ? 'wrong' : 'ok', note: problem ?? '' });
   };
   const resolvedLength = (def) => {
@@ -421,9 +449,9 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
     const rotors = rotorPairs(facts.parts);
     const kind = a.kind === 'aircraft' && rotors.length ? 'helicopter' : a.kind;
     const seenRole = new Map(); // role -> sequences of it so far
-    for (const [role, image, seq, original] of facts.parts) {
+    for (const [role, image, seq, original, palette] of facts.parts) {
       const openra = `${image}.${seq}`;
-      const base = { actor: a.id, role, openra };
+      const base = { actor: a.id, role, openra, palette };
       if (!original) {
         const have = installedMade([openra]);
         if (have.length) row({ ...base, status: 'wrong', note: `no original mapping although Red Alert has ${have.join(' ')} (tools/gen_content_tables.py IN_RED_ALERT_TOO)` });
@@ -467,7 +495,7 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
           row({ ...base, status: 'n/a', note: `WebRA never drops ${kind} actors by parachute (only paratroopers)` });
           continue;
         }
-        const s = SPECIAL_ART[key];
+        const s = specialArt[key];
         if (s && !(s.image === image && s.sequences.includes(seq))) {
           row({ ...base, webra: `${s.image}.${s.sequences.join('+')}`, where: `special ${key}`, status: 'wrong' });
           continue;
@@ -576,8 +604,8 @@ export function auditOriginalArt(actors, getFile, { tileset = 'TEMPERAT', identi
   }
 
   // Special sprites: what the engine draws besides the actors.
-  for (const key of Object.keys(SPECIAL_ART)) {
-    const spec = SPECIAL_ART[key];
+  for (const key of Object.keys(specialArt)) {
+    const spec = specialArt[key];
     specialRow({ actor: '(special)', role: key, openra: spec ? `${spec.image}.${spec.sequences.join('+')}` : null }, key);
   }
 

@@ -5162,6 +5162,43 @@ from an original file has no `ACTOR_ART` entry. `apps/game/tests/art-audit.test.
 files whose frames spell their own file and frame number, so a missing
 mapping or a frame out of OpenRA's order fails CI.
 
+Palettes of the original art: every pose of an actor, its muzzle flash,
+every special sprite and every explosion is drawn with the palette OpenRA
+draws it with. `tools/gen_content_tables.py` reads OpenRA's
+mods/ra/rules/palettes.yaml (copied into data/source/rules) into
+`PALETTES` and `PLAYER_PALETTES` (`js/content/tables.js`): palette files per
+tileset with their transparent and shadow indices (PaletteFromFile), one
+colour (PaletteFromRGBA: the torpedo's underwater shadow), palettes that
+show some indices in other indices' colours (IndexedPalette: the clothes
+of the civilians C2 and C4 to C10, `civilian2`...`civilian10`) and the
+owner's colours on indices 80 to 95 (PlayerColorPalette). A palette key is
+the palette's name, plus `+owner` for the owner's colours; `player+owner`
+(`DEFAULT_PALETTE`) is OpenRA's default. The generator resolves each part's
+palette from the render trait that draws it, with OpenRA's C# defaults where
+the rules name none (`TRAIT_PALETTES`): a body, turret or overlay without a
+palette uses RenderSprites' (its Palette without the owner's colours, else
+the owner's player palette); deaths use DeathSequencePalette (`player+owner`),
+crushed infantry CrushedSequencePalette (`effect`); falling paratroopers the
+parachute body's (`player-noshadow+owner`: index 4 is not drawn); muzzle
+flashes Armament MuzzlePalette (`effect`); special sprites the palette every
+OpenRA user of that image agrees on (`SPECIAL_USES`: projectiles, warheads,
+LeavesTrails, WithDamageOverlay, WithDecoration `chrome`, RallyPoint
+`player+owner`, ...). `ACTOR_ART` `palettes` (per `body.pose`,
+`second.pose` and `muzzle`), `SPECIAL_ART` and `EXPLOSION_ART` `palette`
+hold the keys that differ from the default; `js/content/atlas.js`
+`paletteLookups` builds each lookup once per tileset (the player's and the
+theater's are seeded). So the ore mine (`MINE`) and trees are drawn in the
+theater's palette (Red Alert's mine draws its gold with indices 80 to 95,
+which the owner's palette would turn into team colour), walls and crates
+without the owner's colours, the desert village and rocks in desert.pal. An
+actor, special or explosion whose palette file is not installed keeps
+WebRA's art. The ore mine is Red Alert's mine.tem and mine.sno (one 24 x 24
+frame on its cell); OpenRA drew the desert and interior mine and every gem
+mine (`GMINE`: gmine.tem, .sno, .des, `OPENRA_MADE_FILES`), so those keep
+WebRA's own mine art. `RENDER_FACTS` rows carry OpenRA's palette as their
+fifth field, and the audit reports a part WebRA draws with another palette
+as wrong.
+
 Content priority per part, cameo, terrain and sound: texture pack > original
 content > WebRA (its pixel art, then its vector art).
 
