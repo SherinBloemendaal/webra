@@ -1257,6 +1257,10 @@ code {
   border-left-color: var(--danger);
 }
 
+.notice-warning {
+  border-left-color: var(--money);
+}
+
 .notice p:last-child {
   margin-bottom: 0;
 }

@@ -22,6 +22,7 @@ export const GUIDE_FILTERS = Object.freeze(Object.fromEntries(GUIDE_PROGRESS_FIL
 export const AUDIT_ACTIONS = Object.freeze([
   'user.update',
   'user.approve',
+  'user.approve_all',
   'user.reject',
   'user.ban',
   'user.unban',
@@ -63,6 +64,8 @@ export function permissions(role) {
     stats: staff,
     users: staff,
     approve: staff,
+    /** Approve every account waiting for approval at once. */
+    approveAll: admin,
     /** Ban and unban: moderators only plain users. */
     ban: staff,
     banStaff: admin,
@@ -332,4 +335,41 @@ export function looksLikeCidr(text) {
   if (v4) return t.split('/')[0].split('.').every((o) => Number(o) <= 255) && (v4[4] === undefined || (Number(v4[4]) >= 8 && Number(v4[4]) <= 32));
   const v6 = /^([0-9a-f:]+)(\/(\d{1,3}))?$/i.exec(t);
   return !!v6 && v6[1].includes(':') && (v6[3] === undefined || (Number(v6[3]) >= 16 && Number(v6[3]) <= 128));
+}
+
+/**
+ * Approve every account waiting for approval, in server calls of at most
+ * 100 (`api.approveAllPending`, docs/accounts-api.md 8.2). Stops when none
+ * are left, when a call approves none (only banned ones are left, or another
+ * admin was faster) or after `maxCalls`. `onProgress({ approved, remaining })`
+ * after each call. Resolves with the totals; a failed call rejects with the
+ * error and the count so far in `err.approved`.
+ */
+export async function approveAllPending(api, { onProgress = () => {}, maxCalls = 500 } = {}) {
+  let approved = 0;
+  let remaining = null;
+  for (let i = 0; i < maxCalls; i++) {
+    let r;
+    try {
+      r = await api.approveAllPending();
+    } catch (err) {
+      err.approved = approved;
+      throw err;
+    }
+    approved += r.approved;
+    remaining = r.remaining;
+    onProgress({ approved, remaining });
+    if (r.remaining === 0 || r.approved === 0) break;
+  }
+  return { approved, remaining };
+}
+
+/** Share of EMAIL_DAILY_LIMIT from which the dashboard warns that mail is running out. */
+export const MAIL_NEAR_SHARE = 0.8;
+
+/** How close account mail is to its daily ceiling: 'ok', 'near' (80% or more) or 'reached'. */
+export function mailBudgetLevel(budget) {
+  if (!budget || !(budget.dailyLimit > 0)) return 'ok';
+  if (budget.limitReached || budget.sentToday >= budget.dailyLimit) return 'reached';
+  return budget.sentToday >= budget.dailyLimit * MAIL_NEAR_SHARE ? 'near' : 'ok';
 }

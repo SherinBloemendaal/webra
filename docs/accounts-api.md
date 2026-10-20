@@ -1583,6 +1583,13 @@ on plain users).
   states).
 - `POST /api/admin/users/:id/reject` `{ "reason"? }` (moderator) -> `200 { user }`;
   a pending account becomes `deleted`.
+- `POST /api/admin/users/approve-pending` `{}` (admin) -> `200 { "approved", "remaining" }`:
+  the oldest 100 accounts in `pending_approval` that are not banned become
+  `active` in one batch (accounts still waiting for their email are left
+  alone). One audit entry `user.approve_all` records the count and the
+  ids; each approved account's pages hear it at once (realtime, `account`
+  `status`) and the other dashboards reload. The dashboard's "Approve all
+  pending" button calls it again until `remaining` is 0.
 
 ### 8.3 Account bans
 
@@ -1680,7 +1687,7 @@ Expired IP bans are deleted 90 days after they end.
 - `GET /api/admin/audit?actor=&target=&action=&since=&until=&page=&limit=`
   (admin) -> `{ "entries": [{ "id", "at", "actor": { "id", "username" } | null, "action", "target": { "type", "id", "label" }, "before", "after", "reason" }], "total", "page", "limit" }`.
   `actor` null is the system (scheduled purges and expiries). Actions: `user.update`,
-  `user.approve`, `user.reject`, `user.ban`, `user.unban`, `user.logout`,
+  `user.approve`, `user.approve_all` (8.2), `user.reject`, `user.ban`, `user.unban`, `user.logout`,
   `user.session_revoke`, `user.password_reset_link`, `user.delete`,
   `user.restore`, `user.purge`, `user.settings_update`, `user.guide_update`,
   `user.relay_quota_reset`, `user.expire` (system: an unconfirmed signup

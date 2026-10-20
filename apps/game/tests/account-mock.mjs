@@ -49,6 +49,8 @@ export class MockAccountServer {
     this.replays = new Map();
     /** The admin stats' daily outbound mail budget. */
     this.mailBudget = { sentToday: 0, dailyLimit: 300, limitReached: false };
+    /** Accounts one POST /api/admin/users/approve-pending approves at most (100 on the server). */
+    this.approveAllMax = 100;
     /**
      * Friends (docs/accounts-api.md 5.11), off until enableFriends(): the
      * routes answer 404 like a server without them. Pairs and blocks are
@@ -585,6 +587,14 @@ export class MockAccountServer {
           services: { ...this.services },
           email: { ...this.mailBudget },
         });
+      }
+      if (key === 'POST /api/admin/users/approve-pending') {
+        if (!admin) return adminOnly();
+        const waiting = () => [...this.users.values()].filter((x) => x.status === 'pending_approval' && this.effectiveStatus(x) === 'pending_approval');
+        const batch = waiting().slice(0, this.approveAllMax);
+        for (const x of batch) x.status = 'active';
+        if (batch.length) this.log(me, 'user.approve_all', { type: 'user', id: null, label: null }, { status: 'pending_approval' }, { status: 'active', count: batch.length, userIds: batch.map((x) => x.id) });
+        return reply(200, { approved: batch.length, remaining: waiting().length });
       }
       if (key === 'GET /api/admin/users') {
         let list = [...this.users.values()];

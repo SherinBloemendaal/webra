@@ -25,6 +25,8 @@ import {
   permissions,
   relayLines,
   viewHash,
+  approveAllPending,
+  mailBudgetLevel,
 } from '../js/account/admin-state.js';
 import { buildSettingsForm, controlFor, formatValue, parseValue } from '../js/account/admin-forms.js';
 import { GROUPS, checkDocument, specOf } from '../js/registry.js';
@@ -295,6 +297,61 @@ test('dashboard: filters, sorting and pages drive the API query; bulk approve', 
   click(sort);
   await settle(20);
   assert.match(server.requests.at(-1).url, /sort=username&order=asc/);
+});
+
+test('dashboard: "Approve all pending" (admins) loops over capped calls; moderators do not get it', async () => {
+  const server = new MockAccountServer();
+  const { admin, mod, users } = seed(server);
+  for (let i = 3; i < 8; i++) users[i].status = 'pending_approval';
+  server.approveAllMax = 3;
+  server.signIn(mod);
+  let d = await dashboard(server, '#overview');
+  assert.equal(byText(d.root, 'button', /Approve all pending/), undefined, 'admins only');
+  uninstallDom();
+  doc = installDom();
+  server.signIn(admin);
+  d = await dashboard(server, '#overview');
+  const button = byText(d.root, 'button', /Approve all pending \(8\)/);
+  assert.ok(button);
+  click(button);
+  await settle(20);
+  click(byText(doc.body, 'button', /^Approve all$/));
+  await settle(60);
+  assert.ok(users.slice(0, 8).every((u) => u.status === 'active'));
+  assert.equal(server.requests.filter((r) => r.method === 'POST' && /approve-pending$/.test(r.url)).length, 3, '3 + 3 + 2');
+  assert.match(textOf(d.root), /8 accounts approved/);
+  assert.equal(byText(d.root, 'button', /Approve all pending/), undefined, 'none left: the button is gone');
+});
+
+test('admin state: approveAllPending stops when none are left, when a call approves none, and keeps the count on failure', async () => {
+  const calls = [];
+  const api = (answers) => ({ approveAllPending: async () => (calls.push(1), answers.shift()) });
+  const progress = [];
+  assert.deepEqual(await approveAllPending(api([{ approved: 100, remaining: 50 }, { approved: 50, remaining: 0 }]), { onProgress: (p) => progress.push(p) }), { approved: 150, remaining: 0 });
+  assert.deepEqual(progress, [{ approved: 100, remaining: 50 }, { approved: 150, remaining: 0 }]);
+  assert.deepEqual(await approveAllPending(api([{ approved: 2, remaining: 4 }, { approved: 0, remaining: 4 }])), { approved: 2, remaining: 4 }, 'only banned ones left');
+  const failing = { n: 0, approveAllPending: async () => { if (failing.n++) throw new Error('offline'); return { approved: 100, remaining: 1 }; } };
+  await assert.rejects(approveAllPending(failing), (err) => err.approved === 100);
+});
+
+test('admin state: mail budget levels', () => {
+  assert.equal(mailBudgetLevel(null), 'ok');
+  assert.equal(mailBudgetLevel({ sentToday: 3999, dailyLimit: 5000, limitReached: false }), 'ok');
+  assert.equal(mailBudgetLevel({ sentToday: 4000, dailyLimit: 5000, limitReached: false }), 'near');
+  assert.equal(mailBudgetLevel({ sentToday: 5000, dailyLimit: 5000, limitReached: true }), 'reached');
+});
+
+test('dashboard: the mail budget warns at the top of the overview from 80% on', async () => {
+  const server = new MockAccountServer();
+  const { admin } = seed(server);
+  server.signIn(admin);
+  server.mailBudget = { sentToday: 4100, dailyLimit: 5000, limitReached: false };
+  const { root } = await dashboard(server, '#overview');
+  const near = root.querySelector('[data-mail-budget="near"]');
+  assert.ok(near);
+  assert.match(textOf(near), /close to the daily limit.*4100 of 5000/s);
+  const kids = [...near.parentNode.childNodes];
+  assert.ok(kids.indexOf(near) < kids.indexOf(root.querySelector('.stats')), 'above the tiles');
 });
 
 test('dashboard: the drawer edits role and flags, bans with a reason, and the settings editor checks and saves', async () => {

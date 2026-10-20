@@ -5,6 +5,7 @@ export const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 export const AUDIT_ACTIONS = Object.freeze([
   'user.update',
   'user.approve',
+  'user.approve_all',
   'user.reject',
   'user.ban',
   'user.unban',
