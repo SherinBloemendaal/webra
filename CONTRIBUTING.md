@@ -54,7 +54,7 @@ before you push:
 |------|---------|
 | Rust formatting | `cargo fmt --all -- --check` |
 | Rust lints | `cargo clippy --workspace --profile ci --tests --examples -- -D warnings` |
-| Engine tests | `cargo test -p webra-sim --release` |
+| Engine tests | `cargo test --workspace --profile ci` |
 | WGSL shaders | `cargo run -p shader-check` |
 | WebAssembly build | `npm run build:wasm` |
 | JavaScript checks | `npm run check:js` |
@@ -94,7 +94,7 @@ Examples: `fix(server): refuse invite codes of a closed lobby`,
 ## Content and licensing
 
 - **No original game files.** Never commit, attach or upload files of
-  Command & Conquer: Red Alert or other Westwood or EA games, or anything
+  the original commercial game or other commercial games, or anything
   extracted or derived from them: `.mix`, `.shp`, `.aud`, `.vqa`, `.pal`,
   `.tmp`/`.tem`/`.sno`/`.int`/`.des`, the game's `.ini` files, sprites or
   sounds converted to PNG, WAV or base64, screenshots of the original art

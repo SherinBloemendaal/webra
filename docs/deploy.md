@@ -499,7 +499,7 @@ as soon as step 2 is deployed):
    repository variable `SENTRY_DSN` with the project's DSN:
 
    ```
-   https://<public key>@sentry.vitrion.dev/121
+   https://<public key>@<sentry host>/<project id>
    ```
 
    The next deploy builds the game and the website with it and passes it to

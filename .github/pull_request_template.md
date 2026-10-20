@@ -12,4 +12,4 @@
 - [ ] Tests cover the change, and the checks for the touched parts pass.
 - [ ] Generated files were regenerated with their tool, not edited by hand.
 - [ ] Docs in `docs/` are updated where the change touches what they describe.
-- [ ] No original Red Alert (Westwood or EA) files or anything derived from them, and no secrets.
+- [ ] No files of the original commercial game or anything derived from them, and no secrets.

@@ -2,7 +2,7 @@
 // 16-byte salt per hash, the iteration count stored with every hash, and an
 // optional pepper (Worker secret PASSWORD_PEPPER) applied as HMAC-SHA256
 // before PBKDF2 (recorded per hash, so turning it on later keeps old hashes
-// valid until they are upgraded at the next sign-in).
+// valid until the password is next set).
 //
 // CPU budget: the Workers Free plan gives a request 10 ms of CPU, and every
 // request does at most ONE key derivation (sign-in, re-authentication,

@@ -12,8 +12,8 @@ body:
   - type: textarea
     id: openra
     attributes:
-      label: How OpenRA or Red Alert does it
-      description: If it exists there, how it behaves (WebRA follows OpenRA's rules where it can).
+      label: How the original game does it
+      description: If it exists there, how it behaves (WebRA follows the original rules where it can).
   - type: textarea
     id: alternatives
     attributes:
