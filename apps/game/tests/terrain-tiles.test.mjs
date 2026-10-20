@@ -1,7 +1,7 @@
 // Tile terrain (js/content/terrain.js originalTerrain) picks the same tiles
 // as before it was made faster (the seam cache, the early stop of a tile's
 // score and tile pixels made once per tile): digests of the cells, the
-// atlas and the report taken with the code of commit 44a2036, on synthetic
+// atlas and the report taken with the code of commit 20d30ab, on synthetic
 // terrain and synthetic theaters (no EA files). No engine build needed.
 // Roads got their own fitting later (road templates and verges): the map
 // without its road keeps the digests of before (GOLDEN_NO_ROAD, the same

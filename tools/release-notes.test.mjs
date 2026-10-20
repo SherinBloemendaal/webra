@@ -12,7 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHANGELOG = readFileSync(join(root, 'CHANGELOG.md'), 'utf8');
 const { version: PACKAGE_VERSION } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const REPO = 'https://github.com/SherinBloemendaal/webra';
-const HASH = '3cb9f51f74d6c62aca86f3971ebdbc4b5177f939';
+const HASH = 'c82c843e40c53afb04ac815b1f76933f1f3303ab';
 
 /** Every bullet line of a markdown text. */
 const bullets = (md) => md.split('\n').filter((l) => /^[*-] /.test(l));
@@ -52,19 +52,19 @@ test('the real CHANGELOG.md: the first entries of 0.3.0 read as written', () => 
   assert.deepEqual(r.sections[0].entries[0], {
     scope: 'editor',
     text: 'add map document with undo history, tools and symmetry',
-    commit: '3cb9f51',
+    commit: 'c82c843',
     url: `${REPO}/commit/${HASH}`,
   });
 });
 
 test('entries: no scope, issue references, markdown in the summary, several commits', () => {
-  assert.deepEqual(parseEntry(`plain summary ([3cb9f51](${REPO}/commit/${HASH}))`), {
+  assert.deepEqual(parseEntry(`plain summary ([c82c843](${REPO}/commit/${HASH}))`), {
     scope: null,
     text: 'plain summary',
-    commit: '3cb9f51',
+    commit: 'c82c843',
     url: `${REPO}/commit/${HASH}`,
   });
-  const e = parseEntry(`**game:** use \`Esc\` and [docs](https://example.com) (sidebar) ([3cb9f51](${REPO}/commit/${HASH})), closes [#12](${REPO}/issues/12) [#13](${REPO}/issues/13)`);
+  const e = parseEntry(`**game:** use \`Esc\` and [docs](https://example.com) (sidebar) ([c82c843](${REPO}/commit/${HASH})), closes [#12](${REPO}/issues/12) [#13](${REPO}/issues/13)`);
   assert.equal(e.scope, 'game');
   assert.equal(e.text, 'use Esc and docs (sidebar)');
   assert.deepEqual(e.refs, [
@@ -76,9 +76,9 @@ test('entries: no scope, issue references, markdown in the summary, several comm
   assert.deepEqual(two.refs, [{ label: 'bbbbbbb', url: `${REPO}/commit/bbbbbbb2` }]);
   assert.deepEqual(parseEntry('**repo:** no link at all'), { scope: 'repo', text: 'no link at all', commit: null, url: null });
   // Only https links are kept: a plain http, javascript: or relative link never reaches the page.
-  const odd = parseEntry('**game:** odd ([3cb9f51](http://example.com/commit/3cb9f51)), [x](/relative) [y](javascript:void)');
+  const odd = parseEntry('**game:** odd ([c82c843](http://example.com/commit/c82c843)), [x](/relative) [y](javascript:void)');
   assert.equal(odd.text, 'odd');
-  assert.equal(odd.commit, '3cb9f51');
+  assert.equal(odd.commit, 'c82c843');
   assert.equal(odd.url, null);
   assert.equal(odd.refs, undefined);
 });

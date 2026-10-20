@@ -478,7 +478,7 @@ fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
     })
 }
 
-/// Generated maps where fleets used to pile up idle: before 1cc2c93, in 15
+/// Generated maps where fleets used to pile up idle: before bb04f7a, in 15
 /// minutes on 64 cell maps a Naval AI on rivers with fords (seed 3)
 /// gathered 20 ships idle without a target, a Turtle AI on islands (seed 3)
 /// 12, while enemies were in reach. Three checks per scenario:
@@ -489,7 +489,7 @@ fn meets_enemy(w: &World, player: u8, ships: &[usize]) -> bool {
 ///   nothing;
 /// - the most ships idle at once stays within the scenario's bound. A fleet
 ///   with no enemy it can reach may wait. Measured after the merge of main
-///   at 121bb8b: in both scenarios the peak was the Soviet bot's submarines
+///   at b263add: in both scenarios the peak was the Soviet bot's submarines
 ///   (3 on the rivers, 9 on the islands) with no enemy ship afloat or only
 ///   ones it does not see (a Gunboat or Destroyer in the fog). Recalibrated
 ///   when work/visualfixes (make animations, delayed sales) and this branch

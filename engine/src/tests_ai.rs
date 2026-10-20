@@ -420,7 +420,7 @@ fn ore_trucks_are_rebuilt_and_run_home_under_fire() {
     let trucks = crate::ai_harvest::trucks(&w, 0);
     assert!(trucks.len() >= 4, "InitialHarvesters 4: {}", trucks.len());
     // Lose all of them: new ones come. The second one comes after about two
-    // minutes (at 121bb8b just at 2:00, with the bot's other production
+    // minutes (at b263add just at 2:00, with the bot's other production
     // first); three minutes leave room for the bot's choices to shift.
     for &t in &trucks {
         w.actors[t].hp = 1;
