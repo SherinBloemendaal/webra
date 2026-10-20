@@ -158,8 +158,6 @@ mod tests_planes;
 #[cfg(test)]
 mod tests_poses;
 #[cfg(test)]
-mod tests_unit_shadow;
-#[cfg(test)]
 mod tests_power_timers;
 #[cfg(test)]
 mod tests_production;
@@ -191,6 +189,8 @@ mod tests_target_lines;
 mod tests_terrain;
 #[cfg(test)]
 mod tests_tooltip;
+#[cfg(test)]
+mod tests_unit_shadow;
 #[cfg(test)]
 mod tests_unreachable;
 #[cfg(test)]

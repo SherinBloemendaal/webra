@@ -54,7 +54,8 @@ fn every_listed_sprite_casts_one_shadow_offset_in_world_space() {
     let (w, types) = scene();
     let drawn = draw(&w);
     let shadows: Vec<_> = drawn.iter().filter(|q| q[7] < 0.0).collect();
-    let lit: Vec<_> = drawn.iter().filter(|q| q[7] >= 0.0 && types.iter().any(|&t| q[3] == (t * 2) as f32 || q[3] == (t * 2 + 1) as f32)).collect();
+    let lit: Vec<_> =
+        drawn.iter().filter(|q| q[7] >= 0.0 && types.iter().any(|&t| q[3] == (t * 2) as f32 || q[3] == (t * 2 + 1) as f32)).collect();
     // Every tank has a body and a turret, every rifleman a body, every cruiser a hull and two turrets.
     assert_eq!(lit.len(), 8 * (2 + 1 + 3));
     assert_eq!(shadows.len(), lit.len(), "one shadow per listed sprite");
@@ -62,7 +63,8 @@ fn every_listed_sprite_casts_one_shadow_offset_in_world_space() {
         let twin = shadows
             .iter()
             .find(|s| s[3] == q[3] && (s[0] - q[0] - UNIT_SHADOW_OFFSET).abs() < 1e-3 && (s[1] - q[1] - UNIT_SHADOW_OFFSET).abs() < 1e-3);
-        let s = twin.unwrap_or_else(|| panic!("no shadow {UNIT_SHADOW_OFFSET} px to the bottom right of sprite {} at {},{}", q[3], q[0], q[1]));
+        let s =
+            twin.unwrap_or_else(|| panic!("no shadow {UNIT_SHADOW_OFFSET} px to the bottom right of sprite {} at {},{}", q[3], q[0], q[1]));
         // The same sprite, turned the same way (the silhouette follows body and turret), black and faint.
         assert_eq!(s[2], q[2], "the shadow turns with its sprite");
         assert_eq!(s[6], UNIT_SHADOW_ALPHA);
