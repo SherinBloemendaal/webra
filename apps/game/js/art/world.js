@@ -119,6 +119,17 @@ export function worldBox(a) {
   return w === (a.width ?? 1) * 24 && h === (a.height ?? 1) * 24 ? null : [w, h];
 }
 
+/**
+ * The part of a grown world box (worldBox) an icon shows: the original
+ * extent in box coordinates, [x, y, w, h] (the lighthouse's tower, not the
+ * empty space below it). Null for actors drawn into their footprint.
+ */
+export function worldIconCrop(a) {
+  if (!worldBox(a)) return null;
+  const [x0, y0, x1, y1] = extentInBox(a);
+  return [x0, y0, x1 - x0, y1 - y0];
+}
+
 /** Where originalExtent lies in the box of `a` (worldBox or the footprint): [x0, y0, x1, y1]. */
 function extentInBox(a) {
   const [w, h] = worldBox(a) ?? [(a.width ?? 1) * 24, (a.height ?? 1) * 24];

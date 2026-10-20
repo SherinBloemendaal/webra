@@ -11,9 +11,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { actorSprites } from '../js/sprites.js';
+import { actorSprites, drawIcon } from '../js/sprites.js';
 import { BUILDING_DRAW } from '../js/art/buildings.js';
-import { CIVILIAN_DRAW, originalExtent, worldBox, worldDraw } from '../js/art/world.js';
+import { CIVILIAN_DRAW, originalExtent, worldBox, worldDraw, worldIconCrop } from '../js/art/world.js';
 import { ORIGINAL_BOUNDS, RENDER_FACTS } from '../js/content/render-facts.js';
 import init, { Game } from '../pkg/webra_sim.js';
 
@@ -141,4 +141,22 @@ test('civilians are as big as the original infantry (the longer side within 15 %
       assert.equal(draw.groundShadow, true, `${a.id} casts the renderer's ground shadow`);
     }
   }
+});
+
+test('editor icons of the tall world structures show their drawn extent, not the grown box', () => {
+  const lhus = actors.find((a) => a.id === 'LHUS');
+  const mill = actors.find((a) => a.id === 'WINDMILL');
+  // The original bounds sit a fraction of a pixel off the box's grid (682 and 597 of 1024 per cell).
+  const near = (got, want) => assert.ok(got.every((v, k) => Math.abs(v - want[k]) < 0.05), `${got} against ${want}`);
+  near(worldIconCrop(lhus), [0, 0, 24, 48]);
+  near(worldIconCrop(mill), [0, 0, 36, 36]);
+  assert.equal(worldIconCrop(actors.find((a) => a.id === 'HOSP')), null, 'footprint-sized structures show their box');
+  // drawIcon scales the crop to the canvas: the lighthouse's 48 px tower fills 92 % of a 64 px icon's height.
+  const calls = [];
+  const ctx = new Proxy({}, { get: (o, k) => (k in o ? o[k] : (...args) => calls.push([k, ...args])), set: (o, k, v) => ((o[k] = v), true) });
+  drawIcon({ width: 64, height: 64, getContext: () => ctx }, lhus, [0.3, 0.5, 0.9]);
+  const scale = calls.find((c) => c[0] === 'scale');
+  assert.ok(Math.abs(scale[1] - (64 / 48) * 0.92) < 1e-9, `icon scale ${scale[1]}`);
+  const clip = calls.find((c) => c[0] === 'rect');
+  near(clip.slice(1), [0, 0, 24, 48]);
 });
