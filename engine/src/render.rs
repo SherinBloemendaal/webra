@@ -8,7 +8,7 @@
 //! Rects:   8 floats each `[x, y, w, h, r, g, b, a]` for selection brackets and health bars;
 //!          a negative `r` selects team colour `-r - 1` scaled by `g` (overlays.rs `team_color`).
 
-use crate::instances::{Anchor, Sink, SpriteRec, NO_CULL};
+use crate::instances::{Anchor, Sink, SpriteRec, SpriteRecX, NO_CULL};
 use crate::math::{angle_diff, CELL};
 use crate::overlays::{push_brackets, push_group_number, push_health_bar, team_color, RALLY_MARKER};
 use crate::rules::Kind;
@@ -122,6 +122,30 @@ pub fn sheared_offset(fwd: i32, side: i32, facing: i32, shear: f32) -> [f32; 2] 
     let (f, r) = (px(fwd), px(side));
     let south = -c * f + s * r;
     [s * f + c * r + shear * south, CLASSIC_PITCH_SIN * south]
+}
+
+/// The ground shadow of WebRA's 2D minimal units (the design board's one hard
+/// shadow; apps/game/js/art/shared-palette.js `shadow`): a black copy of the
+/// sprite at this opacity, this many world pixels to the right and down in
+/// world space, so the light stays at the top left whatever way the unit faces.
+pub const UNIT_SHADOW_OFFSET: f32 = 0.08 * 24.0;
+pub const UNIT_SHADOW_ALPHA: f32 = 0.25;
+
+/// The ground shadow of a unit sprite drawn with `rec` (its facing and place):
+/// `sprite` in solid black at `UNIT_SHADOW_ALPHA` (times `alpha`), offset by
+/// `UNIT_SHADOW_OFFSET` in world space.
+pub fn unit_shadow(rec: SpriteRec, sprite: f32, team: f32, alpha: f32) -> SpriteRecX {
+    rec.look(sprite, team, 1.0, UNIT_SHADOW_ALPHA * alpha, -1.0).offset(UNIT_SHADOW_OFFSET, UNIT_SHADOW_OFFSET)
+}
+
+/// `unit_shadow` for a sprite already placed with an extra part (a ship's
+/// turret on its arm): the same arm, the shadow offset added in world space.
+pub fn unit_shadow_x(mut placed: SpriteRecX, sprite: f32, team: f32) -> SpriteRecX {
+    placed.rec = placed.rec.look(sprite, team, 1.0, UNIT_SHADOW_ALPHA, -1.0);
+    placed.extra.alpha1 = UNIT_SHADOW_ALPHA;
+    placed.extra.scale1 = 1.0;
+    let [o0, o1] = [placed.extra.offset0, placed.extra.offset1];
+    placed.offset_moving([o0[0] + UNIT_SHADOW_OFFSET, o0[1] + UNIT_SHADOW_OFFSET], [o1[0] + UNIT_SHADOW_OFFSET, o1[1] + UNIT_SHADOW_OFFSET])
 }
 
 /// Opacity of the black layer over a disabled structure (OpenRA
@@ -363,6 +387,9 @@ impl World {
         // ground, raised by their altitude, with a dark shadow underneath.
         let mut turrets: Vec<f32> = Vec::new();
         let mut aircraft: Vec<f32> = Vec::new();
+        // Ground shadows of WebRA's 2D minimal units, laid under every unit body.
+        let mut shadows: Vec<f32> = Vec::new();
+        let units_start = sprites.len();
         for (i, a) in self.actors.iter().enumerate() {
             // Passengers are inside their transport; mines are drawn by
             // render_abilities, husks and crates by render_leftovers.
@@ -399,7 +426,7 @@ impl World {
             let Some(at) = sink.group(from, to, 32.0) else { continue };
             let flash = (a.flash > 0) as i32 as f32;
             if a.kind == Kind::Ship {
-                self.push_ship(sink, sprites, &mut turrets, a, at, flash, &ids);
+                self.push_ship(sink, sprites, &mut turrets, &mut shadows, a, at, flash, &ids);
                 if !a.submerged {
                     // Muzzle flashes and damage smoke (fx.rs).
                     self.push_muzzle(i, at, 0.0, sink, &mut turrets);
@@ -414,16 +441,12 @@ impl World {
             // Prone infantry lie flat (TakeCover, veterancy.rs); panicking
             // civilians run with their arms up (ScaredyCat, neutral.rs).
             let body = if self.draws_prone(i) || self.draws_panic(i) { look * 2 + 1 } else { look * 2 };
-            sink.sprite(
-                sprites,
-                at.facing(a.pfacing, angle_diff(a.pfacing, a.facing)).look(
-                    self.body_sprite(i, body as u32),
-                    team as f32,
-                    1.0,
-                    body_alpha,
-                    flash,
-                ),
-            );
+            let hull = at.facing(a.pfacing, angle_diff(a.pfacing, a.facing));
+            let body_sprite = self.body_sprite(i, body as u32);
+            if self.render_opts.casts_shadow(body as u32) {
+                sink.sprite(&mut shadows, unit_shadow(hull, body_sprite, team as f32, body_alpha));
+            }
+            sink.sprite(sprites, hull.look(body_sprite, team as f32, 1.0, body_alpha, flash));
             let info = &self.rules.actors[a.ty as usize];
             if info.turret_turn_speed.is_some() {
                 let slot = a.ty as u32 * 2 + 1;
@@ -439,7 +462,12 @@ impl World {
                             r.offset_moving(sheared_offset(fwd, side, a.pfacing, g), sheared_offset(fwd, side, a.facing, g)),
                         );
                     }
-                    _ => sink.sprite(&mut turrets, r),
+                    _ => {
+                        if self.render_opts.casts_shadow(slot) {
+                            sink.sprite(&mut shadows, unit_shadow(r, slot as f32, a.owner as f32, 1.0));
+                        }
+                        sink.sprite(&mut turrets, r)
+                    }
                 }
             } else if let Some((fwd, side)) = self.render_opts.unit_overlay(a.ty) {
                 // An original overlay over the body (OpenRA WithIdleOverlay@SPINNER) at its offset.
@@ -451,6 +479,8 @@ impl World {
             self.push_muzzle(i, at, 0.0, sink, &mut turrets);
             self.push_damage_smoke(i, at, 0.0, sink, &mut turrets);
         }
+        // The ground shadows go under the first unit body (aircraft shadows stay where they are).
+        sprites.splice(units_start..units_start, shadows);
         // Shot-down helicopters falling (helicopter.rs).
         self.push_heli_crashes(player, sink, sprites, &mut aircraft);
         sprites.extend_from_slice(&turrets);
@@ -694,6 +724,7 @@ impl World {
         sink: &mut Sink,
         sprites: &mut Vec<f32>,
         turrets: &mut Vec<f32>,
+        shadows: &mut Vec<f32>,
         a: &crate::world::Actor,
         at: SpriteRec,
         flash: f32,
@@ -711,6 +742,9 @@ impl World {
             }
             return;
         }
+        if self.render_opts.casts_shadow(body as u32) {
+            sink.sprite(shadows, unit_shadow(hull, body, team, 1.0));
+        }
         sink.sprite(sprites, hull.look(body, team, 1.0, 1.0, flash));
         let info = &self.rules.actors[a.ty as usize];
         if info.turret_turn_speed.is_none() {
@@ -727,7 +761,11 @@ impl World {
                 continue;
             }
             // Forward is (sin, -cos) of the hull angle, right is (cos, sin).
-            sink.sprite(turrets, turret.extended().arm(px(fwd), px(side), a.pfacing, turn));
+            let placed = turret.extended().arm(px(fwd), px(side), a.pfacing, turn);
+            if self.render_opts.casts_shadow(body as u32 + 1) {
+                sink.sprite(shadows, unit_shadow_x(placed, body + 1.0, team));
+            }
+            sink.sprite(turrets, placed);
         }
     }
 

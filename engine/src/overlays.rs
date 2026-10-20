@@ -72,6 +72,12 @@ pub struct RenderOptions {
     /// perspective: WebRA's pixel art and the actor parts of texture packs
     /// with `"perspective": "classic"` (the built-in 3D minimal pack).
     pub original_slots: Vec<u32>,
+    /// Sprite slots of WebRA's 2D minimal unit art that cast a ground shadow
+    /// (apps/game/js/sprites.js `buildAtlas` returns them as `shadows`),
+    /// sorted: the renderer draws a dark copy of the sprite under the unit,
+    /// offset to the bottom right in world space, so the light stays fixed
+    /// whatever way the unit faces (render.rs `UNIT_SHADOW_OFFSET`).
+    pub shadow_slots: Vec<u32>,
     /// Per actor type drawn with a ground shear (`ORIGINAL_INFO_SHEAR`, a
     /// pack's `groundShear`): screen x per world pixel south, applied to its
     /// turret, rotor and muzzle offsets (render.rs `sheared_offset`).
@@ -131,6 +137,7 @@ impl Default for RenderOptions {
             poses: false,
             control_groups: Vec::new(),
             original_slots: Vec::new(),
+            shadow_slots: Vec::new(),
             unit_overlays: Vec::new(),
             level_stages: Vec::new(),
             smoke_frames: None,
@@ -223,6 +230,19 @@ impl RenderOptions {
     /// Whether sprite slot `slot` is drawn from the original graphics.
     pub fn is_original(&self, slot: u32) -> bool {
         self.original_slots.binary_search(&slot).is_ok()
+    }
+
+    /// Store the slots that cast a ground shadow (Game.set_shadow_slots), sorted and once each.
+    pub fn set_shadow_slots(&mut self, slots: &[u32]) {
+        let mut slots = slots.to_vec();
+        slots.sort_unstable();
+        slots.dedup();
+        self.shadow_slots = slots;
+    }
+
+    /// Whether sprite slot `slot` casts a ground shadow.
+    pub fn casts_shadow(&self, slot: u32) -> bool {
+        self.shadow_slots.binary_search(&slot).is_ok()
     }
 
     /// The forward and side offset of the overlay drawn over units of type `ty`, if any.

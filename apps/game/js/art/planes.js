@@ -19,11 +19,11 @@ export const PLANE_DRAW = {
       [M.dark, box(7, 0, 12, 1.6, 0.8)],
     ]),
   },
-  // MiG: a swept-wing jet.
+  // MiG: a swept-wing jet, dark wings under a wide team fuselage.
   MIG: {
     body: sprite(34, 36, [
-      [M.steel, shape(17, 7, 34, 26, 34, 29, 17, 25, 0, 29, 0, 26), shape(17, 28, 24, 35, 10, 35)],
-      [TEAM, box(15, 0, 4, 36, 2)],
+      [M.dark, shape(17, 6, 34, 25, 34, 29.5, 17, 25, 0, 29.5, 0, 25), shape(17, 27, 25, 35, 9, 35)],
+      [TEAM, shape(17, 0, 20, 5, 20, 36, 14, 36, 14, 5)],
       [M.glass, box(15.6, 7, 2.8, 5, 1.2)],
     ]),
   },

@@ -54,7 +54,7 @@ export const VETERANCY_SPECIALS = [
  * soldier lies along its facing, head and weapon forward, legs behind.
  */
 export const PRONE_DRAW = {
-  E1: prone(M.olive, [[M.dark, proneForward(1, 6)]]),
+  E1: prone(M.olive, [[M.dark, proneForward(1.2, 7.5)]]),
   // The launch tube along the right side.
-  E3: prone(M.olive, [[M.steel2, box(3.6, 0, 2, 9, 0.6)]]),
+  E3: prone(M.olive, [[M.steel2, box(5.6, 0, 2.6, 11.5, 0.6)]]),
 };

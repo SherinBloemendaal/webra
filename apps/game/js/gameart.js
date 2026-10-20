@@ -45,7 +45,8 @@ export function buildGameAtlas(content, actors, biome, maxSize = 8192) {
  * sequences and its turrets sit at their Turreted offset), animated
  * building layers and pre-rendered poses (the original graphics, texture
  * packs and the pixel art), the death sequences of art that has them and
- * which structures' art plays a make animation (the others fade in).
+ * which structures' art plays a make animation (the others fade in), and
+ * which unit slots of WebRA's 2D minimal art cast a ground shadow.
  */
 export function applyGameArt(game, atlas, original) {
   game.set_original_slots(prerenderedSlots(original?.slots, atlas.pixel), original?.info ?? new Int32Array(0));
@@ -53,6 +54,7 @@ export function applyGameArt(game, atlas, original) {
   game.set_sprite_poses(atlas.poses ?? atlas.filter === 'nearest');
   game.set_death_art(Uint32Array.from(atlas.deaths), Uint32Array.from(atlas.deathTicks));
   game.set_make_art(Uint32Array.from(atlas.makeArt ?? []));
+  game.set_shadow_slots(Uint32Array.from(atlas.shadows ?? []));
 }
 
 /** The original slots and the pixel art's, sorted and once each (Game.set_original_slots). */

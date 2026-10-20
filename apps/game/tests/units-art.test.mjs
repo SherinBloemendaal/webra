@@ -1,15 +1,15 @@
 // Unit art of the 2D minimal pack (art/vehicles.js, infantry.js, naval.js,
 // planes.js, helis.js and the prone soldiers in veterancy.js) and its block kit
 // (art/unitkit.js): two to four flat shapes per unit in the shared 2D/3D colours,
-// one team area, one hard shadow on the ground, every drawing finite, inside its
+// one team area, the ground shadow left to the renderer, every drawing finite, inside its
 // box and deterministic, filling its box, and as big as the original sprite
-// (OpenRA's DecorationBounds, else Bounds, render-facts.js ORIGINAL_BOUNDS).
+// (the original sprites' decoration bounds, else bounds, render-facts.js ORIGINAL_BOUNDS).
 // Canvas2D is replaced by a recording stub, so no browser or canvas package is needed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { M, TEAM, SHADOW_OFFSET, SHADOW_FILL, box, disc, shape, blade, geomBounds, sprite, inner } from '../js/art/unitkit.js';
+import { M, TEAM, GROUND, SHADOW_OFFSET, SHADOW_ALPHA, box, disc, shape, blade, geomBounds, sprite } from '../js/art/unitkit.js';
 import { SHARED_PALETTE } from '../js/art/shared-palette.js';
 import { ORIGINAL_BOUNDS } from '../js/content/render-facts.js';
 import { VEHICLE_DRAW } from '../js/art/vehicles.js';
@@ -18,7 +18,7 @@ import { PRONE_DRAW } from '../js/art/veterancy.js';
 import { NAVAL_DRAW } from '../js/art/naval.js';
 import { PLANE_DRAW } from '../js/art/planes.js';
 import { HELI_DRAW } from '../js/art/helis.js';
-import { actorSprites } from '../js/sprites.js';
+import { actorSprites, spriteList, shadowSlots } from '../js/sprites.js';
 
 const rules = JSON.parse(readFileSync(fileURLToPath(new URL('../../../engine/rules.json', import.meta.url)), 'utf8'));
 const actorOf = Object.fromEntries(rules.actors.map((a) => [a.id, a]));
@@ -96,26 +96,34 @@ function extent(boxes) {
 
 // ---- The kit -----------------------------------------------------------------------------
 
-test('the kit: geometry bounds, the shadow from the shared palette, parts drawn in order', () => {
+test('the kit: geometry bounds, parts drawn in order, the ground shadow flag', () => {
   assert.deepEqual(geomBounds(box(1, 2, 3, 4)), [1, 2, 4, 6]);
   assert.deepEqual(geomBounds(disc(5, 5, 2)), [3, 3, 7, 7]);
   assert.deepEqual(geomBounds(shape(0, 4, 2, 0, 4, 4)), [0, 0, 4, 4]);
   const b = geomBounds(blade(10, 10, Math.PI / 2, 8, 2)); // pointing east
   assert.ok(Math.abs(b[0] - 10) < 1e-9 && Math.abs(b[2] - 18) < 1e-9 && Math.abs(b[1] - 9) < 1e-9 && Math.abs(b[3] - 11) < 1e-9);
+  const s = sprite(10, 10, [[M.dark, box(0, 0, 4, 4)], [TEAM, disc(6, 6, 2)]], GROUND);
+  assert.deepEqual(painted(s).map((x) => x.style), [M.dark, 'rgb(217,217,217)'], 'no shadow baked into the sprite');
+  assert.equal(s[2].groundShadow, true);
+  assert.equal(sprite(10, 10, [[M.dark, box(0, 0, 4, 4)]])[2].groundShadow, false);
+});
+
+test("the renderer's ground shadow is the shared palette's (engine/src/render.rs)", () => {
   assert.equal(SHADOW_OFFSET, SHARED_PALETTE.shadow.offset * 24);
-  assert.equal(SHADOW_FILL, `rgba(0,0,0,${SHARED_PALETTE.shadow.alpha})`);
-  assert.deepEqual(inner(22, 30), [22 - SHADOW_OFFSET, 30 - SHADOW_OFFSET]);
-  const s = sprite(10, 10, [[M.dark, box(0, 0, 4, 4)], [TEAM, disc(6, 6, 2)]], box(0, 0, 8, 8));
-  const boxes = painted(s);
-  assert.deepEqual(boxes.map((x) => x.style), [SHADOW_FILL, M.dark, 'rgb(217,217,217)']);
-  assert.deepEqual([boxes[0].x0, boxes[0].y0], [SHADOW_OFFSET, SHADOW_OFFSET], 'the shadow is offset to the bottom right');
+  assert.equal(SHADOW_ALPHA, SHARED_PALETTE.shadow.alpha);
+  const src = readFileSync(fileURLToPath(new URL('../../../engine/src/render.rs', import.meta.url)), 'utf8');
+  const offset = src.match(/pub const UNIT_SHADOW_OFFSET: f32 = ([\d.]+) \* 24\.0;/);
+  const alpha = src.match(/pub const UNIT_SHADOW_ALPHA: f32 = ([\d.]+);/);
+  assert.ok(offset && alpha, 'render.rs defines the unit shadow');
+  assert.equal(Number(offset[1]), SHARED_PALETTE.shadow.offset);
+  assert.equal(Number(alpha[1]), SHARED_PALETTE.shadow.alpha);
 });
 
 // ---- The unit art ------------------------------------------------------------------------
 
 // [body, turret or null, prone or null]: the sprite sizes, as big as the original sprites (see the
 // size test below). 0.21.0 grew the ones that were too small: 4TNK, HARV, TTNK, QTNK, MCV, the
-// infantry, the dog, the ants, PT and MIG, and shortened CA.
+// infantry (and their prone poses in proportion), the dog, the ants, PT and MIG, and shortened CA.
 const SIZES = {
   '1TNK': [[22, 22], [22, 22]],
   '2TNK': [[24, 24], [24, 24]],
@@ -136,21 +144,21 @@ const SIZES = {
   TRUK: [[20, 26]],
   QTNK: [[34, 38]],
   MCV: [[32, 38]],
-  E1: [[12, 16], null, [8, 14]],
-  E2: [[12, 16], null, [8, 14]],
-  E3: [[12, 16], null, [8, 14]],
-  E4: [[12, 16], null, [8, 14]],
-  E6: [[12, 16], null, [8, 14]],
-  E7: [[12, 16], null, [8, 14]],
+  E1: [[12, 16], null, [10, 18]],
+  E2: [[12, 16], null, [10, 18]],
+  E3: [[12, 16], null, [10, 18]],
+  E4: [[12, 16], null, [10, 18]],
+  E6: [[12, 16], null, [10, 18]],
+  E7: [[12, 16], null, [10, 18]],
   ANT: [[22, 28]],
   FIREANT: [[22, 28]],
   SCOUTANT: [[22, 28]],
   DOG: [[10, 16]],
-  MEDI: [[12, 16], null, [8, 14]],
-  MECH: [[12, 16], null, [8, 14]],
-  SPY: [[12, 16], null, [8, 14]],
+  MEDI: [[12, 16], null, [10, 18]],
+  MECH: [[12, 16], null, [10, 18]],
+  SPY: [[12, 16], null, [10, 18]],
   THF: [[12, 16]],
-  SHOK: [[12, 16], null, [8, 14]],
+  SHOK: [[12, 16], null, [10, 18]],
   PT: [[16, 34], [10, 10]],
   DD: [[18, 40], [12, 12]],
   CA: [[24, 50], [14, 14]],
@@ -165,7 +173,7 @@ const SIZES = {
   HIND: [[28, 34], [34, 34]],
   HELI: [[26, 34], [32, 32]],
 };
-// WebRA's pixel art in Red Alert's style (art/pixel.js, tests/pixel-art.test.mjs) is not drawn here.
+// WebRA's pixel art (art/pixel.js, tests/pixel-art.test.mjs) is not drawn here.
 const PIXEL = new Set(['FTRK', 'MH60']);
 const DRAW = { ...VEHICLE_DRAW, ...INFANTRY_DRAW, ...NAVAL_DRAW, ...PLANE_DRAW, ...HELI_DRAW };
 const PRONE = { ...PRONE_DRAW, ...INFANTRY_PRONE };
@@ -218,7 +226,7 @@ for (const [name, [w, h, draw]] of drawings()) {
         assert.equal(ctx.depth, 0, `${name} leaves save/restore unbalanced`);
         for (const b of boxes) assert.ok(b.x0 >= -0.01 && b.y0 >= -0.01 && b.x1 <= w + 0.01 && b.y1 <= h + 0.01, `${name} draws outside its ${w}x${h} box: ${JSON.stringify(b)}`);
         if (pass === 'colour') {
-          for (const b of boxes) assert.ok(MATERIALS.has(b.style) || b.style === SHADOW_FILL || b.style.startsWith('rgb('), `${name} paints ${b.style}, not a shared colour`);
+          for (const b of boxes) assert.ok(MATERIALS.has(b.style) || b.style.startsWith('rgb('), `${name} paints ${b.style}, not a shared colour`);
         }
         if (run === 0) runs[pass] = log.join('|');
         else assert.equal(log.join('|'), runs[pass], `${name} ${pass} pass is not deterministic`);
@@ -240,25 +248,37 @@ test('two to four flat shapes per unit and per prone pose, one of them the team 
   };
   for (const id of IDS) check(id, partsOf(id));
   for (const [id, p] of Object.entries(PRONE)) check(`${id} prone`, p[2].parts);
-  // Rotor blades are not team coloured (nor are OpenRA's rotor sequences).
+  // Rotor blades are not team coloured (nor are the original rotor sequences).
   for (const id of HELIS) if (!PIXEL.has(id)) assert.ok(DRAW[id].turret[2].parts.every(([f]) => f !== TEAM), `${id} rotor`);
 });
 
-test('one hard shadow under every ground unit, none drawn into an aircraft', () => {
+test('ground units cast the renderer\'s shadow, aircraft and rotors do not, and no sprite bakes one in', () => {
   for (const id of IDS) {
     const air = kindOf(id) === 'aircraft';
     for (const s of [DRAW[id].body, DRAW[id].turret, PRONE[id]].filter(Boolean)) {
-      if (air) {
-        assert.equal(s[2].shadow, null, `${id}: the engine draws aircraft shadows`);
-        continue;
-      }
-      if (HELIS.has(id)) continue;
-      assert.ok(s[2].shadow, `${id} casts a shadow`);
-      const boxes = painted(s);
-      assert.equal(boxes[0].style, SHADOW_FILL, `${id}: the shadow lies under the shapes`);
-      assert.equal(boxes.filter((b) => b.style === SHADOW_FILL).length, 1, `${id}: one shadow`);
+      assert.equal(s[2].groundShadow, !air, `${id}: ${air ? 'the engine draws aircraft shadows' : 'a ground unit casts the ground shadow'}`);
+      // A shadow baked into the sprite would turn with the unit: none is painted.
+      assert.ok(painted(s).every((b) => !b.style.startsWith('rgba')), `${id} paints no shadow of its own`);
     }
   }
+});
+
+test('the atlas lists the slots of every ground unit for the renderer\'s shadow (Game.set_shadow_slots)', () => {
+  const actors = rules.actors;
+  const list = spriteList(actors);
+  const index = (id) => actors.findIndex((a) => a.id === id);
+  const slots = new Set(shadowSlots(list, actors.length));
+  for (const id of ['1TNK', 'HARV', 'E1', 'CA', 'SS']) assert.ok(slots.has(2 * index(id)), `${id} body`);
+  for (const id of ['1TNK', 'CA']) assert.ok(slots.has(2 * index(id) + 1), `${id} turret`);
+  assert.ok(slots.has(2 * index('E1') + 1), 'the prone rifleman');
+  for (const id of ['YAK', 'HIND', 'FTRK', 'POWR']) {
+    assert.ok(!slots.has(2 * index(id)) && !slots.has(2 * index(id) + 1), `${id}: aircraft, pixel art and buildings have their own shadow`);
+  }
+  // Slots taken by installed art or a texture pack are left to that art.
+  const taken = new Map([[2 * index('1TNK'), {}], [2 * index('1TNK') + 1, {}]]);
+  const left = new Set(shadowSlots(list, actors.length, taken));
+  assert.ok(!left.has(2 * index('1TNK')) && !left.has(2 * index('1TNK') + 1) && left.has(2 * index('2TNK')));
+  for (const k of slots) assert.ok(k < actors.length * 2, 'only actor slots');
 });
 
 /** The union of a unit's body and its turret centred on it, as the engine draws a turret at [0, 0]. */
@@ -270,7 +290,7 @@ function unitBoxes(id) {
   return out;
 }
 
-test('every unit fills its sprite box, as the original sprites fill theirs (no margin)', () => {
+test('every unit fills its whole sprite box, as the original sprites fill theirs (no margin)', () => {
   const tol = 0.5;
   const check = (name, [w, h], boxes) => {
     const [x0, y0, x1, y1] = extent(boxes);
@@ -280,7 +300,7 @@ test('every unit fills its sprite box, as the original sprites fill theirs (no m
   for (const [id, p] of Object.entries(PRONE)) check(`${id} prone`, p, painted(p));
 });
 
-// How big the original sprite looks: OpenRA's DecorationBounds, else its Bounds (1/1024 cell, 24 px a cell).
+// How big the original sprite looks: its decoration bounds, else its bounds (1/1024 cell, 24 px a cell).
 const ORIGINAL_TOLERANCE = 0.15;
 
 test('every unit is as big as its original sprite (DecorationBounds, else Bounds), within 15 %', () => {
@@ -345,7 +365,14 @@ test('each unit keeps the feature that names it', () => {
     BADR: M.dark, // engines
   };
   for (const [id, colour] of Object.entries(want)) assert.ok(uses(id, colour), `${id} shows ${colour}`);
-  // Two guns on the heavy tanks, the harvester's scoop in front of its bed.
+  // Two guns on the heavy tanks.
   for (const id of ['3TNK', '4TNK']) assert.equal(DRAW[id].turret[2].parts[1].length - 1, 2, `${id} twin guns`);
-  assert.ok(geomBounds(VEHICLE_DRAW.HARV.body[2].parts[1][1])[1] === 0, 'the scoop leads');
+  // The board's harvester: a scoop narrower than the body leads, the ore in front of the glass cab.
+  const [w] = VEHICLE_DRAW.HARV.body;
+  const parts = VEHICLE_DRAW.HARV.body[2].parts;
+  const scoop = parts.flatMap(([, ...g]) => g).map(geomBounds).find((b) => b[1] === 0);
+  assert.ok(scoop && scoop[2] - scoop[0] < w * 0.7, 'a narrow scoop leads');
+  const [ore] = parts.find(([f]) => f === M.gold).slice(1).map(geomBounds);
+  const [cab] = parts.find(([f]) => f === M.glass).slice(1).map(geomBounds);
+  assert.ok(ore[3] <= cab[1], 'the cab sits behind the ore');
 });

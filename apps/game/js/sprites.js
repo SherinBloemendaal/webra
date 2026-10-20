@@ -400,6 +400,8 @@ export function buildAtlas(actors, opts = {}) {
   const maxSize = opts.maxSize ?? 8192;
   const list = spriteList(actors);
   const slotCount = list.length;
+  // Actor slots drawn with WebRA's 2D minimal art that cast the renderer's ground shadow (Game.set_shadow_slots).
+  const shadows = shadowSlots(list, actors.length, slots);
   for (const k of slots.keys()) {
     if (k < 0 || k >= slotCount) throw new Error(`no sprite slot ${k}`);
     list[k] = null;
@@ -617,8 +619,22 @@ export function buildAtlas(actors, opts = {}) {
   }
   // Pose tables (sequence slots) need the engine's poses (Game.set_sprite_poses).
   const filter = opts.filter ?? 'linear';
-  // `pixel`: the slots of WebRA's pixel art, which the engine draws like pre-rendered art (gameart.js applyGameArt).
-  return { color, mask, frames, overlays, deaths, deathTicks, makeArt, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), width, height };
+  // `pixel`: the slots of WebRA's pixel art, which the engine draws like pre-rendered art (gameart.js applyGameArt);
+  // `shadows`: the slots that cast the renderer's ground shadow (shadowSlots).
+  return { color, mask, frames, overlays, deaths, deathTicks, makeArt, filter, poses: filter === 'nearest' || extra.length > 0, pixel: pixel.sort((x, y) => x - y), shadows, width, height };
+}
+
+/**
+ * The actor slots (body and second slot of each of `actorCount` actors in
+ * spriteList order `list`) whose WebRA art casts a ground shadow (art/unitkit.js
+ * `GROUND`), leaving out slots that `taken` (installed art, texture packs,
+ * pixel art) fills: the renderer draws their shadow in world space
+ * (engine/src/render.rs `unit_shadow`), the other art has its own.
+ */
+export function shadowSlots(list, actorCount, taken = new Map()) {
+  const out = [];
+  for (let k = 0; k < actorCount * 2; k++) if (!taken.has(k) && list[k]?.[2]?.groundShadow) out.push(k);
+  return out;
 }
 
 /**

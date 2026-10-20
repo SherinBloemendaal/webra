@@ -158,6 +158,8 @@ mod tests_planes;
 #[cfg(test)]
 mod tests_poses;
 #[cfg(test)]
+mod tests_unit_shadow;
+#[cfg(test)]
 mod tests_power_timers;
 #[cfg(test)]
 mod tests_production;
@@ -1070,6 +1072,16 @@ impl Game {
     /// Presentation only: the state hash is the same either way.
     pub fn set_original_slots(&mut self, slots: Vec<u32>, info: Vec<i32>) {
         self.world.render_opts.set_original_art(&slots, &info);
+    }
+
+    /// The sprite slots of WebRA's 2D minimal unit art that cast a ground
+    /// shadow (apps/game/js/sprites.js `buildAtlas` returns them as
+    /// `shadows`): the renderer draws a dark copy of each such sprite under
+    /// its unit, offset to the bottom right in world space (render.rs
+    /// `UNIT_SHADOW_OFFSET`). Presentation only: the state hash is the same
+    /// either way.
+    pub fn set_shadow_slots(&mut self, slots: Vec<u32>) {
+        self.world.render_opts.set_shadow_slots(&slots);
     }
 
     /// The local player's control groups, for the numbers on their selection

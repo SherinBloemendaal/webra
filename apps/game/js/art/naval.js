@@ -4,55 +4,54 @@
 // Turret sprites are centred on their pivot: the engine draws them at each
 // OpenRA Turreted offset along the hull (render.rs push_ship), so the Cruiser
 // shows its one turret sprite twice. Two to four flat shapes per ship (hull,
-// superstructure in team colour, and the gun or the ship's own feature), one
-// hard shadow under the hull. The kit is ./unitkit.js.
+// superstructure in team colour, and the gun or the ship's own feature), the ground
+// shadow is the renderer's (art/unitkit.js). The kit is ./unitkit.js.
 
 import { rect, rrect, circle, poly, line, ring } from './kit.js';
-import { M, TEAM, box, disc, shape, sprite, inner } from './unitkit.js';
+import { M, TEAM, box, disc, shape, sprite, GROUND } from './unitkit.js';
 
 const HULL_DARK = M.darker;
 
 /** A pointed hull from the bow (top) to a square stern, the bow `bow` long, filling the box. */
 function hull(w, h, bow) {
-  const [W, H] = inner(w, h);
-  return shape(W / 2, 0, W, bow, W, H, 0, H, 0, bow);
+  return shape(w / 2, 0, w, bow, w, h, 0, h, 0, bow);
 }
 
-/** A ship of `parts` over its hull shape, the hull's shadow on the water. */
+/** A ship of `parts` over its hull shape. */
 function ship(w, h, hullGeom, fill, ...parts) {
-  return sprite(w, h, [[fill, hullGeom], ...parts], hullGeom);
+  return sprite(w, h, [[fill, hullGeom], ...parts], GROUND);
 }
 
 export const NAVAL_DRAW = {
   // Gunboat: small and fast, a team bridge, a single gun forward.
   PT: {
     body: ship(16, 34, hull(16, 34, 9), M.steel, [TEAM, box(3.5, 15, 7, 8, 1)]),
-    turret: sprite(10, 10, [[M.steel2, disc(5, 5, 2.8)], [M.dark, box(4.4, 0, 1.2, 4)]], disc(5, 5, 2.8)),
+    turret: sprite(10, 10, [[M.steel2, disc(5, 5, 2.8)], [M.dark, box(4.4, 0, 1.2, 4)]], GROUND),
   },
   // Destroyer: a long hull, the team bridge amidships, the twin missile launcher forward.
   DD: {
     body: ship(18, 40, hull(18, 40, 11), M.steel, [TEAM, box(4, 17, 8, 10, 1)]),
-    turret: sprite(12, 12, [[M.steel2, box(3, 3.5, 6, 6, 1)], [M.paint, box(3.8, 0.5, 1.4, 4.5), box(6.8, 0.5, 1.4, 4.5)]], box(3, 3.5, 6, 6, 1)),
+    turret: sprite(12, 12, [[M.steel2, box(3, 3.5, 6, 6, 1)], [M.paint, box(3.8, 0.5, 1.4, 4.5), box(6.8, 0.5, 1.4, 4.5)]], GROUND),
   },
   // Cruiser: the big one, two twin gun houses fore and aft, the team superstructure between.
   CA: {
     body: ship(24, 50, hull(24, 50, 13), M.steel, [TEAM, box(5, 17, 12, 16, 1.5)]),
-    turret: sprite(14, 14, [[M.steel2, box(3, 3.5, 8, 8, 2)], [M.dark, box(4.6, 0, 1.4, 5), box(8, 0, 1.4, 5)]], box(3, 3.5, 8, 8, 2)),
+    turret: sprite(14, 14, [[M.steel2, box(3, 3.5, 8, 8, 2)], [M.dark, box(4.6, 0, 1.4, 5), box(8, 0, 1.4, 5)]], GROUND),
   },
   // Submarine: a dark cigar hull and the team conning tower.
   SS: (() => {
-    const [W, H] = inner(12, 34);
+    const [W, H] = [12, 34];
     return { body: ship(12, 34, box(0, 0, W, H, 5), M.dark, [TEAM, box(2.5, 11, W - 5, 8, 1.5)]) };
   })(),
   // Missile submarine: a wider hull, the team sail and a double row of launch hatches.
   MSUB: (() => {
-    const [W, H] = inner(16, 42);
+    const [W, H] = [16, 42];
     const hatches = [22, 27, 32].flatMap((y) => [disc(W / 2 - 2.6, y, 1.4), disc(W / 2 + 2.6, y, 1.4)]);
     return { body: ship(16, 42, box(0, 0, W, H, 7), M.dark, [TEAM, box(4, 7, W - 8, 9, 1.5)], [M.steel2, ...hatches]) };
   })(),
   // Transport (landing craft): a boxy hull, the yellow bow ramp, the open well deck, the team stern house.
   LST: (() => {
-    const [W, H] = inner(24, 38);
+    const [W, H] = [24, 38];
     return {
       body: ship(24, 38, box(0, 0, W, H, 2), M.steel, [M.yellow, box(1.5, 0, W - 3, 4, 1)], [M.dark, box(3, 5, W - 6, H - 16)], [TEAM, box(3, H - 10, W - 6, 8.5, 1)]),
     };

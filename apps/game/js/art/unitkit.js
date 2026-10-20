@@ -1,19 +1,20 @@
 // The flat block kit of the 2D minimal units (design board "Retexture 2D en 3D:
 // minder detail", 0.21.0): every unit is two to four flat shapes in the colours
-// the 2D and 3D minimal art share (./shared-palette.js), one team coloured area
-// (the turret, the cargo bed, the uniform or the superstructure) and one hard
-// shadow offset to the bottom right, under the whole sprite.
+// the 2D and 3D minimal art share (./shared-palette.js) and one team coloured
+// area (the turret, the cargo bed, the uniform or the superstructure).
 //
 // A sprite is declared as data: a list of parts, each one fill (a material
 // colour or the team) over one or more geometries (a shape and its mirror or
-// its repeats, such as a pair of treads or a row of wheels), plus the shadow's
-// geometry. The parts stay readable for the tests (shape counts, extents)
-// and for the preview sheets.
+// its repeats, such as a pair of treads or a row of wheels). The parts stay
+// readable for the tests (shape counts, extents) and for the preview sheets.
 //
-// Ground units fill their box like the original sprites fill theirs: the shapes
-// span the box up to the shadow offset at the right and bottom, the shadow
-// reaches the edge. Aircraft carry no shadow (the engine draws one under them,
-// engine/src/render.rs), so they fill the whole box.
+// Units fill their box like the original sprites fill theirs. The sprites
+// carry no shadow, because the engine turns them with the unit: the board's
+// one hard shadow of a ground unit is drawn by the renderer in world space
+// (engine/src/render.rs `unit_shadow`, for the slots sprites.js lists as
+// `shadows`), a dark copy of the sprite offset to the bottom right, so the
+// light stays at the top left whatever way the unit faces. Aircraft get the
+// engine's own airborne shadow instead.
 
 import { rect, rrect, circle, poly } from './kit.js';
 import { SHARED_PALETTE } from './shared-palette.js';
@@ -24,9 +25,13 @@ export const M = SHARED_PALETTE.materials;
 /** World pixels per cell. */
 const CELL = 24;
 
-/** The hard shadow: offset to the bottom right by this many pixels, in SHADOW_FILL. */
+/**
+ * The ground shadow the renderer draws under a sprite that casts one
+ * (engine/src/render.rs UNIT_SHADOW_OFFSET, UNIT_SHADOW_ALPHA): world pixels
+ * to the right and down, and its opacity.
+ */
 export const SHADOW_OFFSET = SHARED_PALETTE.shadow.offset * CELL;
-export const SHADOW_FILL = `rgba(0,0,0,${SHARED_PALETTE.shadow.alpha})`;
+export const SHADOW_ALPHA = SHARED_PALETTE.shadow.alpha;
 
 /** The fill of the team area. */
 export const TEAM = 'team';
@@ -51,12 +56,6 @@ export function geomBounds(g) {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
-/** A geometry moved by (dx, dy). */
-function moved(g, dx, dy) {
-  if (g[0] === 'p') return g.map((v, i) => (i === 0 ? v : v + (i % 2 ? dx : dy)));
-  return [g[0], g[1] + dx, g[2] + dy, ...g.slice(3)];
-}
-
 function paint(ctx, style, g) {
   if (g[0] === 'r') {
     if (g[5] > 0) rrect(ctx, style, g[1], g[2], g[3], g[4], Math.min(g[5], g[3] / 2, g[4] / 2));
@@ -77,27 +76,25 @@ export function blade(cx, cy, a, len, width) {
 
 // ---- Sprites -------------------------------------------------------------------------------
 
+/** `sprite` option: the sprite casts the renderer's ground shadow (ground units, not aircraft). */
+export const GROUND = true;
+
 /**
- * A sprite [w, h, draw] from its parts ([fill, ...geometries], drawn in order)
- * and its shadow geometry (or null). The draw function carries `parts` and
- * `shadow` for the tests and the previews.
+ * A sprite [w, h, draw] from its parts ([fill, ...geometries], drawn in
+ * order). The draw function carries `parts` for the tests and the previews,
+ * and `groundShadow` (`ground`, GROUND for ground units) for sprites.js
+ * buildAtlas `shadows`.
  */
-export function sprite(w, h, parts, shadowGeom = null) {
+export function sprite(w, h, parts, ground = false) {
   const draw = (ctx, P) => {
-    if (shadowGeom) paint(ctx, P.c(SHADOW_FILL), moved(shadowGeom, SHADOW_OFFSET, SHADOW_OFFSET));
     for (const [fill, ...geoms] of parts) {
       const style = fill === TEAM ? P.team(TEAM_LEVEL) : P.c(fill);
       for (const g of geoms) paint(ctx, style, g);
     }
   };
   draw.parts = parts;
-  draw.shadow = shadowGeom;
+  draw.groundShadow = ground === true;
   return [w, h, draw];
-}
-
-/** The box a ground unit's shapes fill: the sprite box less the shadow offset. */
-export function inner(w, h) {
-  return [w - SHADOW_OFFSET, h - SHADOW_OFFSET];
 }
 
 /** Wheels on both flanks of a `W` wide body, one pair per y in `ys`. */

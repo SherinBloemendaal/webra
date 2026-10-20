@@ -8,10 +8,10 @@
 // 2D minimal pack: two to four flat shapes per soldier (./unitkit.js): the
 // uniform in team colour (shoulders and legs), the head (helmet, hard hat,
 // hair), the weapon or tool held forward and at most one accent (fuel tanks,
-// coil pack, a red cross). One hard shadow under the soldier.
+// coil pack, a red cross). The renderer lays the ground shadow under them (./unitkit.js).
 
 import { rect, circle, poly, line, ring } from './kit.js';
-import { M, TEAM, box, disc, shape, sprite, inner } from './unitkit.js';
+import { M, TEAM, box, disc, shape, sprite, GROUND } from './unitkit.js';
 
 const OUTLINE = '#141414';
 const RED = '#c8281e';
@@ -19,7 +19,7 @@ const HELMET = M.olive;
 
 // ---- Standing soldiers (12 x 16) ------------------------------------------------------------
 
-const [SW, SH] = inner(12, 16);
+const [SW, SH] = [12, 16];
 
 /** The uniform: shoulders and the two legs behind them, in `fill` (the team, or the spy's suit). */
 function uniform(fill = TEAM) {
@@ -28,15 +28,15 @@ function uniform(fill = TEAM) {
 
 /** A standing soldier: the uniform, the head in `head` and up to two more parts (weapon, accent). */
 function soldier(head, ...extra) {
-  return { body: sprite(12, 16, [uniform(), [head, disc(SW / 2, 7, 2.4)], ...extra], box(0, 4.5, SW, SH - 4.5, 3)) };
+  return { body: sprite(12, 16, [uniform(), [head, disc(SW / 2, 7, 2.4)], ...extra], GROUND) };
 }
 
 /** A weapon held forward on the right: `w` wide, `len` long from the front edge. */
 const forward = (w, len, x = SW - w - 1.8) => box(x, 0, w, len, Math.min(0.6, w / 2));
 
-// ---- Prone soldiers (8 x 14) ----------------------------------------------------------------
+// ---- Prone soldiers (10 x 18) ----------------------------------------------------------------
 
-const [PW, PH] = inner(8, 14);
+const [PW, PH] = [10, 18];
 
 /**
  * A soldier lying along its facing: the uniform from the head back, the head
@@ -44,19 +44,19 @@ const [PW, PH] = inner(8, 14);
  * colour (a kit bag, a pistol).
  */
 export function prone(head, parts = [], held = []) {
-  const body = box(0, 3.5, PW, PH - 3.5, 2.5);
-  return sprite(8, 14, [[TEAM, body], [head, disc(PW / 2, 4.2, 2.1), ...held], ...parts], body);
+  const body = box(0, 4.5, PW, PH - 4.5, 3);
+  return sprite(PW, PH, [[TEAM, body], [head, disc(PW / 2, 5.4, 2.6), ...held], ...parts], GROUND);
 }
 
 /** A weapon held forward by a lying soldier. */
-export const proneForward = (w, len, x = PW - w - 0.6) => box(x, 0, w, len, Math.min(0.5, w / 2));
+export const proneForward = (w, len, x = PW - w - 0.8) => box(x, 0, w, len, Math.min(0.5, w / 2));
 
 /** A red cross centred on (x, y), `s` across. */
 const cross = (x, y, s) => [M.red, box(x - s / 2, y - s / 6, s, s / 3), box(x - s / 6, y - s / 2, s / 3, s)];
 
 // ---- Ants (22 x 28) and the dog (10 x 16) ---------------------------------------------------
 
-const [AW, AH] = inner(22, 28);
+const [AW, AH] = [22, 28];
 
 /** A giant ant from above: three leg bars, head, thorax and abdomen, a team mark, and its accent. */
 function ant(...accent) {
@@ -66,11 +66,11 @@ function ant(...accent) {
       [M.rust, disc(AW / 2, 4, 4), box(AW / 2 - 3, 7, 6, 9, 2), disc(AW / 2, AH - 6.5, 6.5)],
       [TEAM, box(AW / 2 - 2.5, 10, 5, 3, 0.5)],
       ...accent,
-    ], box(0, 8, AW, AH - 8, 4)),
+    ], GROUND),
   };
 }
 
-const [DW, DH] = inner(10, 16);
+const [DW, DH] = [10, 16];
 
 /** Standing infantry (sprite key -> { body: [w, h, draw] }). */
 export const INFANTRY_DRAW = {
@@ -86,7 +86,7 @@ export const INFANTRY_DRAW = {
   E6: soldier(M.yellow, [M.steel, box(SW - 3.6, 0, 3.4, 3.6, 0.5)]),
   // Tanya: dark hair, a pistol in each hand.
   E7: soldier(M.wood, [M.dark, forward(1.2, 6, 0.6), forward(1.2, 6, SW - 1.8)]),
-  // Giant ants of the ant missions (OpenRA WarriorAnt, FireAnt, ScoutAnt): the warrior is plain,
+  // Giant ants of the ant missions (the warrior, fire and scout ant): the warrior is plain,
   // the fire ant has hazard bands, the scout glassy wings.
   ANT: ant(),
   FIREANT: ant([M.yellow, box(AW / 2 - 5, AH - 10, 10, 1.6), box(AW / 2 - 5, AH - 6.5, 10, 1.6)]),
@@ -97,11 +97,11 @@ export const INFANTRY_DRAW = {
       [M.rust, box(0.4, 4, DW - 0.8, DH - 4, 3)],
       [M.wood, box(1.4, 0, DW - 2.8, 5, 2)],
       [TEAM, box(1.4, 4.6, DW - 2.8, 1.6, 0.5)],
-    ], box(0.4, 4, DW - 0.8, DH - 4, 3)),
+    ], GROUND),
   },
   // Medic: a white helmet with a red cross, the white kit bag held forward.
   MEDI: {
-    body: sprite(12, 16, [uniform(), [M.paint, disc(SW / 2, 7, 2.4), box(SW - 3.6, 0, 3.4, 3.4, 0.5)], cross(SW / 2, 7, 2.6)], box(0, 4.5, SW, SH - 4.5, 3)),
+    body: sprite(12, 16, [uniform(), [M.paint, disc(SW / 2, 7, 2.4), box(SW - 3.6, 0, 3.4, 3.4, 0.5)], cross(SW / 2, 7, 2.6)], GROUND),
   },
   // Mechanic: a yellow cap and a big wrench.
   MECH: soldier(M.yellow, [M.steel, forward(1.4, 9)]),
@@ -111,7 +111,7 @@ export const INFANTRY_DRAW = {
       uniform(M.steel),
       [TEAM, box(SW / 2 - 0.7, 4.5, 1.4, 4.5)],
       [M.dark, disc(SW / 2, 7, 2.4), forward(1.2, 6)],
-    ], box(0, 4.5, SW, SH - 4.5, 3)),
+    ], GROUND),
   },
   // Thief: a dark hood, the loot sack over the left shoulder.
   THF: soldier(M.darker, [M.canvas, box(0.4, 0, 4.4, 5, 2)]),
@@ -121,14 +121,14 @@ export const INFANTRY_DRAW = {
 
 /** Prone poses (TakeCover): every soldier but the dog and the thief lies down (E1 and E3 in art/veterancy.js). */
 export const INFANTRY_PRONE = {
-  E2: prone(HELMET, [[M.dark, disc(PW - 1.6, 1.5, 1.5)]]),
-  E4: prone(HELMET, [[M.dark, proneForward(1, 5)], [M.yellow, box(0.6, PH - 4.5, 2.2, 3.5, 1), box(PW - 2.8, PH - 4.5, 2.2, 3.5, 1)]]),
-  E6: prone(M.yellow, [[M.steel, box(PW - 2.8, 0, 2.6, 2.8, 0.4)]]),
-  E7: prone(M.wood, [[M.dark, proneForward(1, 4.5, 0.4), proneForward(1, 4.5, PW - 1.4)]]),
-  MEDI: prone(M.paint, [cross(PW / 2, 4.2, 2.2)], [box(PW - 2.8, 0, 2.6, 2.6, 0.4)]),
-  MECH: prone(M.yellow, [[M.steel, proneForward(1.2, 5.5)]]),
-  SPY: prone(M.dark, [], [proneForward(1, 4.5)]),
-  SHOK: prone(HELMET, [[M.steel2, proneForward(1.4, 5)], [M.blue, box(1.2, PH - 4.5, PW - 2.4, 3.2, 1)]]),
+  E2: prone(HELMET, [[M.dark, disc(PW - 2, 1.8, 1.8)]]),
+  E4: prone(HELMET, [[M.dark, proneForward(1.2, 6.5)], [M.yellow, box(0.8, PH - 5.5, 2.8, 4.4, 1.2), box(PW - 3.6, PH - 5.5, 2.8, 4.4, 1.2)]]),
+  E6: prone(M.yellow, [[M.steel, box(PW - 3.6, 0, 3.4, 3.6, 0.5)]]),
+  E7: prone(M.wood, [[M.dark, proneForward(1.2, 6, 0.6), proneForward(1.2, 6, PW - 1.8)]]),
+  MEDI: prone(M.paint, [cross(PW / 2, 5.4, 2.8)], [box(PW - 3.6, 0, 3.4, 3.4, 0.5)]),
+  MECH: prone(M.yellow, [[M.steel, proneForward(1.4, 7)]]),
+  SPY: prone(M.dark, [], [proneForward(1.2, 6)]),
+  SHOK: prone(HELMET, [[M.steel2, proneForward(1.6, 6.5)], [M.blue, box(1.5, PH - 5.5, PW - 3, 4, 1.2)]]),
 };
 
 /** A fallen soldier (death animations): limbs spread, team coloured. */

@@ -1,7 +1,7 @@
 // Art for helicopters (2D minimal pack). Entries: id -> { body: [w, h, draw], turret?: [w, h, draw] },
 // drawn facing north. Two to four flat shapes per helicopter, rotor included (./unitkit.js): the
-// airframe (fuselage, tail boom, stub wings), a team stripe along the spine, the glass cockpit and
-// the rotor. No shadow: the engine draws one under every aircraft (engine/src/render.rs).
+// airframe (tail boom, fin, stub wings), the fuselage in team colour, the glass cockpit and the
+// rotor. No shadow: the engine draws one under every aircraft (engine/src/render.rs).
 //
 // The "turret" of a helicopter is its rotor: the engine spins it every tick
 // (fast in the air, slowly on the ground) and draws it once per rotor (the
@@ -19,16 +19,16 @@ function rotor(s, n, width, hub = 2) {
   return sprite(s, s, [[M.dark, ...blades, disc(c, c, hub)]]);
 }
 
-/** A gunship's airframe: the pointed fuselage, the tail boom with its fin and the stub wings. */
-function airframe(w, h, half, wingY) {
+/** A gunship's tail boom with its fin and its stub wings (the fuselage over them is the caller's). */
+function airframe(w, h, wingY) {
   const c = w / 2;
-  return [
-    M.steel,
-    shape(c, 0, c + half, 5.5, c + half, 22, c, 25.5, c - half, 22, c - half, 5.5),
-    box(c - 1, 20, 2, h - 20),
-    box(c - 5, h - 4, 10, 2.5, 1),
-    box(0, wingY, w, 4, 1.5),
-  ];
+  return [M.steel, box(c - 1.2, 20, 2.4, h - 20), box(c - 5, h - 4, 10, 3, 1), box(0, wingY, w, 4.5, 1.5)];
+}
+
+/** A gunship's pointed fuselage, `half` wide each side of the centre line. */
+function fuselage(w, half) {
+  const c = w / 2;
+  return [TEAM, shape(c, 0, c + half, 5.5, c + half, 22, c, 26, c - half, 22, c - half, 5.5)];
 }
 
 export const HELI_DRAW = {
@@ -43,7 +43,7 @@ export const HELI_DRAW = {
   },
   // Hind: a gunship with a tandem glass cockpit and stub wings.
   HIND: {
-    body: sprite(28, 34, [airframe(28, 34, 4, 12), [TEAM, box(11.5, 12, 5, 8, 1)], [M.glass, box(12, 2.5, 4, 7.5, 2)]]),
+    body: sprite(28, 34, [airframe(28, 34, 12), fuselage(28, 4.5), [M.glass, box(12, 3, 4, 7.5, 2)]]),
     turret: rotor(34, 5, 1.8),
   },
   // Black Hawk: WebRA's own pixel art in Red Alert's style (art/pixel.js),
@@ -51,7 +51,7 @@ export const HELI_DRAW = {
   MH60: pixelUnitDraw('MH60'),
   // Longbow (Apache): a slim gunship, the radar dome on the mast.
   HELI: {
-    body: sprite(26, 34, [airframe(26, 34, 3, 11), [TEAM, box(10.8, 10.5, 4.4, 8, 1)], [M.glass, box(11, 2.5, 4, 7, 1.8)]]),
+    body: sprite(26, 34, [airframe(26, 34, 11), fuselage(26, 3.6), [M.glass, box(11.2, 3, 3.6, 7, 1.8)]]),
     turret: rotor(32, 4, 1.8, 3.2),
   },
 };
