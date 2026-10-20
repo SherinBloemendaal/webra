@@ -1,7 +1,8 @@
 """Terrain tiles of the 3D minimal pack: flat blocky tiles in the pack's colours, one set per biome.
 
-Retexture of 0.21.0: flat tiles in the colours the 2D minimal art shares, water one step lower (one flat colour and
-a ripple), ore and gems as two blocks per cell, trees as two blocks.
+Retexture of 0.21.0: flat tiles in the colours the 2D minimal art shares, water as one flat colour with a ripple,
+ore and gems as two blocks per cell, trees as two blocks. A tile does not know its neighbours, so water cannot show
+a bank one step lower: that needs neighbour-aware variants, a possible later extension of the pack format.
 
 build(biome, archive) -> (files, manifest terrain object). Each class is a row of variant tiles; ore and gems are
 grids (columns are density levels, rows are variants) with transparent ground. Features stay a few pixels inside
@@ -48,7 +49,7 @@ def _rock(t, v):
 
 
 def _water(t, v):
-    """Water lies one step lower: a flat colour with one lighter ripple block."""
+    """Water: a flat colour with one lighter ripple block."""
     tile = Tile(t['water'])
     r = Rng(400 + v)
     tile.block(r.int(3, 12), r.int(4, 18), r.int(6, 9), 2, t['waterLight'])

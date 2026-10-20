@@ -1,10 +1,10 @@
 """Defence structures and walls: pillboxes, turrets, flame tower, tesla coil, AA gun, SAM site, lightning rod,
 sandbags, fence and concrete wall.
 
-Retexture of 0.21.0: two to six big blocks each, each piece fills its cell like the original sprite and keeps its
+Retexture of 0.21.0: two to six big blocks each, each piece fills its cell like the original art and keeps its
 defining feature (the slit, the turning cannon, the nozzle, the coil and ball, the twin barrels, the missiles, the
-rod), with one team area: a hatch, band or strip, or the turret. Buildings are drawn in cells (see core.Building). The turning turrets
-(GUN, AGUN, SAM) are core.Unit models in pixels around the building centre with z from the ground (turret_offsets are
+rod), with one team area: a hatch, band or strip, or the turret. Buildings are drawn in cells (see core.Building).
+The turning turrets (GUN, AGUN, SAM) are core.Unit models in pixels around the building centre with z from the ground (turret_offsets are
 all [0, 0] in rules.json); their bodies stay static. A wall actor is one 1x1 cell piece that must look right when
 many sit side by side: the segment runs the full width of the cell east-west, with no visible end caps. The pack
 format cannot select connection frames."""

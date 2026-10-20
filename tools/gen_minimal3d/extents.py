@@ -1,6 +1,9 @@
-"""How big each actor's original sprite looks on screen, from numbers in the repo: OpenRA's DecorationBounds, else its
-Bounds (apps/game/js/content/render-facts.js ORIGINAL_BOUNDS, 1/1024 cell around the actor's centre), else the
-footprint less its bib rows (engine/rules.json). The same rule as apps/game/tests/minimal3d-size.test.mjs, which
+"""How big each actor's original sprite looks on screen, from numbers in the repo: the decoration bounds of the original
+art, else its selection bounds (apps/game/js/content/render-facts.js ORIGINAL_BOUNDS, 1/1024 cell around the actor's
+centre), else the footprint less its bib rows (engine/rules.json). Bounds smaller than the footprint and centred on
+it (no centre offset, no bounds offset) are a selection box round the middle of a sprite that fills the whole
+footprint (the service depot, the naval yard and the sub pen: 3072 x 2048 on 3 x 3 cells): they count as the full
+footprint, the same rule as the 2D minimal size test. The same rule as apps/game/tests/minimal3d-size.test.mjs, which
 measures the finished pack against it; the models use it to stand on exactly that box (core.Building).
 
 The contract is the size on screen, not the size of the model: a unit's longer side on screen (union over its
@@ -96,7 +99,13 @@ def box(aid):
         ob = original_bounds().get(key) or webra_bounds().get(key) or {}
         v = ob.get('decoration') or ob.get('bounds') or None
         if v:
-            return Box(v[0] * WD, v[1] * WD, v[2] * WD, v[3] * WD, 'bounds' if key == aid else f'bounds of {key}', bib)
+            source = 'bounds' if key == aid else f'bounds of {key}'
+            co = (b or {}).get('center_offset') or [0, 0]
+            if b and not any(co) and not v[2] and not v[3]:
+                fw, fh = b['width'] * 1024, b['height'] * 1024
+                if v[0] <= fw and v[1] <= fh and (v[0] < fw or v[1] < fh):
+                    return Box(b['width'] * core.CELL, b['height'] * core.CELL, 0.0, 0.0, source + ' (full footprint)', bib)
+            return Box(v[0] * WD, v[1] * WD, v[2] * WD, v[3] * WD, source, bib)
     if not b:
         return None
     co = b.get('center_offset') or [0, 0]

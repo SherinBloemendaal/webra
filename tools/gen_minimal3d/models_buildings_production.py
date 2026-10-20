@@ -65,17 +65,17 @@ def weap(b):
 
 
 def fix(b):
-    # The service pad: a yellow octagon with a big wrench, and a workshop with a team strip at the back.
+    # The service pad over the whole footprint: a yellow octagon with a big wrench, and a workshop with a team strip at
+    # the back.
     f = b.front
-    r = 1.3
+    b.box(b.x0, 0.0, b.x1 - b.x0, f, 0.05, 'concrete')
+    r = 1.35
     cy = f - 0.1 - 0.924 * r
-    b.box(b.x0, f - 2.0, b.x1 - b.x0, 2.0, 0.05, 'concrete')
     b.cyl(1.5, cy, r, 0.04, 'yellow', 0.05)
     b.cyl(1.5, cy, r - 0.18, 0.02, 'asphalt', 0.09)
     b.flat(place(WRENCH, 1.5, cy + 0.15, 1.5, -45), 0.111, 'paint')
-    hut = cy - 0.95
-    b.block(0.9, hut, 1.2, 0.5, 'wall')
-    b.box(0.9, hut + 0.42, 1.2, 0.08, 0.04, 'T', b.top(hut))
+    b.block(0.8, 0.0, 1.4, 0.45, 'wall')
+    b.box(0.8, 0.37, 1.4, 0.08, 0.04, 'T', b.top(0.0))
 
 
 def hpad(b):
@@ -103,28 +103,28 @@ def afld(b):
 
 
 def syrd(b):
-    # The U-shaped dock on the water with a team edge, and the crane over the berth.
+    # The U-shaped dock over the whole footprint on the water with a team edge, and the crane over the berth.
     f, x0, x1 = b.front, b.x0, b.x1
-    back = f - 2.0
-    b.box(x0, back, x1 - x0, 0.6, 0.2, 'concrete')
-    b.box(x0, back + 0.6, 0.5, 1.4, 0.2, 'concrete')
-    b.box(x1 - 0.5, back + 0.6, 0.5, 1.4, 0.2, 'concrete')
-    b.box(x0 + 0.5, back + 0.5, x1 - x0 - 1.0, 0.1, 0.02, 'T', 0.2)
-    top = b.top(back + 0.1)
-    b.box(1.8, back + 0.1, 0.18, 0.18, top - 0.12, 'yellow', 0.2)
-    b.box(1.78, back + 0.1, 0.22, 1.6, 0.12, 'yellow', top - 0.12)
+    back = f - 3.0
+    b.box(x0, back, x1 - x0, 0.8, 0.2, 'concrete')
+    b.box(x0, back + 0.8, 0.55, 2.2, 0.2, 'concrete')
+    b.box(x1 - 0.55, back + 0.8, 0.55, 2.2, 0.2, 'concrete')
+    b.box(x0 + 0.55, back + 0.7, x1 - x0 - 1.1, 0.1, 0.02, 'T', 0.2)
+    top = b.top(back + 0.15)
+    b.box(1.8, back + 0.15, 0.2, 0.2, top - 0.14, 'yellow', 0.2)
+    b.box(1.78, back + 0.15, 0.24, 2.0, 0.14, 'yellow', top - 0.14)
 
 
 def spen(b):
-    # The concrete pen with a team band on its roof and the dark water gate in its south face.
+    # The concrete pen over the whole footprint with a team band on its roof and the dark water gate in its south face.
     f, x0, x1 = b.front, b.x0, b.x1
-    depth = 2.0
-    wall_h = 0.7
+    depth = 3.0
+    wall_h = 0.8
     b.box(x0, f - depth, x1 - x0, depth, wall_h, 'concrete')
     rh = b.top(f - depth / 2) - wall_h
     b.gable(x0, f - depth, x1 - x0, depth, rh, 'roof', wall_h, 'x')
-    b.band(x0, f - depth, x1 - x0, depth, rh, wall_h, 'x', 'a', 0.7, 1.0, 'T')
-    b.box(0.6, f - 0.02, 1.8, 0.03, 0.58, '#0e1a22')
+    b.band(x0, f - depth, x1 - x0, depth, rh, wall_h, 'x', 'a', 0.75, 1.0, 'T')
+    b.box(0.6, f - 0.02, 1.8, 0.03, 0.68, '#0e1a22')
 
 
 ACTORS = {

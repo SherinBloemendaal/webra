@@ -4,7 +4,8 @@ derrick, the village houses V01 to V11, haystacks, fields and the oil pump (with
 Retexture of 0.21.0: three to six big blocks, each piece fills its footprint like the original sprite (see
 core.Building), the defining feature kept (the hospital's red cross, the lab's green tanks, the big dish, the derrick,
 the church tower, the awning, the canopy over the pumps, the hay, the crop rows, the walking beam). Civilian
-structures are never team coloured (OpenRA draws them with fixed palettes); the tech buildings carry one team strip."""
+structures are never team coloured (the original art draws them with fixed palettes); the tech buildings carry one
+team strip."""
 from specs import BuildingSpec
 
 WALLS = ('wall', '#e8c9a0', '#cfd8dc', '#d9c28a', '#c8d6b0')

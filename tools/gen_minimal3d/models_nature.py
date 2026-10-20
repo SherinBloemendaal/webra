@@ -41,12 +41,12 @@ SNOW = core.SHARED['terrain']['snow']
 DESERT = core.SHARED['terrain']['desert']
 # kind -> (crown colour, trunk colour, crown size, crown base as a share of the height, trunk width)
 TREES = {
-    'oak': (TERRAIN['tree'], TERRAIN['trunk'], 0.56, 0.3, 0.2),
-    'pine': (TERRAIN['treeDark'], TERRAIN['trunk'], 0.42, 0.18, 0.18),
-    'snowpine': (SNOW['tree'], SNOW['trunk'], 0.42, 0.18, 0.18),
+    'oak': (TERRAIN['tree'], TERRAIN['trunk'], 0.46, 0.45, 0.2),
+    'pine': (TERRAIN['treeDark'], TERRAIN['trunk'], 0.36, 0.4, 0.18),
+    'snowpine': (SNOW['tree'], SNOW['trunk'], 0.36, 0.4, 0.18),
     'palm': (DESERT['tree'], DESERT['trunk'], 0.5, 0.75, 0.14),
     'cactus': (DESERT['treeDark'], DESERT['treeDark'], 0.2, 0.35, 0.22),
-    'bush': (TERRAIN['tree'], TERRAIN['trunk'], 0.42, 0.12, 0.16),
+    'bush': (TERRAIN['tree'], TERRAIN['trunk'], 0.4, 0.4, 0.16),
     'dead': ('#6b5a44', TERRAIN['trunk'], 0.35, 0.55, 0.14),
 }
 CHAR = '#2e2a26'
@@ -73,8 +73,8 @@ def tree_at(b, kind, x, y, s, h):
         b.box(x - t / 2, y - t / 2, t, t, h, trunk)
         b.box(x - r * 1.3, y - t / 4, 2.6 * r, t / 2, h * 0.3, crown, h * 0.4)
         return
-    # The crown is a little flatter than it is wide; the trunk shows below it.
-    z = max(h * base, h - 1.5 * r)
+    # The crown starts at about half the height, so the trunk shows below it.
+    z = h * max(base, 0.45)
     b.box(x - t / 2, y - t / 2, t, t, z + 0.02, trunk)
     b.box(x - r, y - r, 2 * r, 2 * r, h - z, crown, z)
 

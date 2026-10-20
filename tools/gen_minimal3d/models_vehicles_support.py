@@ -25,23 +25,24 @@ def wheels(u, length, width, h=3.0):
 # ---- Harvester -----------------------------------------------------------------------------------
 
 
-def harv_body(ore='gold', hull='T', gear='darker', scoop='steel'):
-    # Tracks, the team ore bed heaped with ore, and the wide scoop in front.
+def harv_body(ore='gold', hull='steel2', bed='T', gear='darker', scoop='steel'):
+    # Tracks, the hull, the team cargo bed heaped with ore, and the wide scoop in front.
     u = Unit()
     u.box(-11.5, -15, 23, 27, 4.0, gear)
-    u.box(-10, -14, 20, 24, 11.0, hull, 4.0)
+    u.box(-10, -14, 20, 24, 6.0, hull, 4.0)
+    u.box(-9, -12, 18, 16, 5.0, bed, 10.0)
     if ore:
-        u.box(-7.5, -11, 15, 14, 4.0, ore, 15.0)
+        u.box(-7, -10.5, 14, 13, 3.5, ore, 15.0)
     u.box(-12, 11, 24, 6, 6.0, scoop, 1.0)
     return u
 
 
 def harv_empty_husk():
-    return harv_body(None, CHAR, CHAR2, CHAR2)
+    return harv_body(None, CHAR, CHAR, CHAR2, CHAR2)
 
 
 def harv_full_husk():
-    return harv_body('#8a6a2a', CHAR, CHAR2, CHAR2)
+    return harv_body('#8a6a2a', CHAR, CHAR, CHAR2, CHAR2)
 
 
 # ---- MCV -----------------------------------------------------------------------------------------

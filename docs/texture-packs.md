@@ -38,8 +38,9 @@ all 32 facings.
 Since 0.21.0 the models are big blocks (three to six per structure, two to five per unit with its turret, two per
 tree; `budget.py` fails the build on a model over its budget, `--budget` prints the counts) with one team area each,
 in the colours the 2D minimal art shares (`apps/game/js/art/shared-palette.js`, read by `core.py`). Every model is
-as big on screen as the original sprite, measured against OpenRA's DecorationBounds, else Bounds
-(`render-facts.js` `ORIGINAL_BOUNDS`; `extents.py`): a structure stands on that box with no slab or margin, its
+as big on screen as the original sprite, measured against the original art's decoration bounds, else its selection
+bounds (`render-facts.js` `ORIGINAL_BOUNDS`; `extents.py`; bounds smaller than a footprint they are centred on count
+as the whole footprint): a structure stands on that box with no slab or margin, its
 front edge on the box's bottom (the bib drawn as a flat apron down to the footprint's front), its front corners on
 the box's sides and its top at the box's top; only its back leans east by the ground shear. A unit's longer side on
 screen, union over its 32 facings with its turret, is within 15% of the box's longer side: the same measure as the

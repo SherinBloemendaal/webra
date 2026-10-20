@@ -35,9 +35,11 @@ test('the shared palette has the materials, the team strip, the shadow and terra
 
 // ---- Size against the original sprites ------------------------------------------------------------
 //
-// The original extent of an actor is OpenRA's DecorationBounds, else its Bounds (render-facts.js ORIGINAL_BOUNDS,
-// 1/1024 cell around the actor's centre): OpenRA draws health bars around them, so they say how big the original
-// sprite looks. WebRA's own actors (data/webra/rules.yaml) use their own rules' bounds; a husk is measured against
+// The original extent of an actor is the decoration bounds of the original art, else its selection bounds
+// (render-facts.js ORIGINAL_BOUNDS, 1/1024 cell around the actor's centre): health bars are drawn around them, so
+// they say how big the original sprite looks. Bounds smaller than the footprint and centred on it (no centre offset,
+// no bounds offset) are a selection box round the middle of a sprite that fills the whole footprint (the service
+// depot, the naval yard, the sub pen): they count as the full footprint, as in the 2D minimal size test. WebRA's own actors (data/webra/rules.yaml) use their own rules' bounds; a husk is measured against
 // the actor it was; structures without bounds (village houses, trees, rocks, props) use their footprint less its
 // bib rows. tools/gen_minimal3d/extents.py reads the same numbers to build the models.
 //
@@ -85,7 +87,14 @@ function originalBox(id) {
   for (const key of [id, base]) {
     const ob = ORIGINAL_BOUNDS[key] ?? WEBRA_BOUNDS[key];
     const box = ob?.decoration ?? (ob?.bounds?.length ? ob.bounds : null);
-    if (box) return { w: box[0] * PX, h: box[1] * PX, x: box[2] * PX, y: box[3] * PX, bib, from: key === id ? 'bounds' : `bounds of ${key}` };
+    if (!box) continue;
+    const from = key === id ? 'bounds' : `bounds of ${key}`;
+    const co = b?.center_offset ?? [0, 0];
+    if (b && !co[0] && !co[1] && !box[2] && !box[3]) {
+      const [fw, fh] = [b.width * 1024, b.height * 1024];
+      if (box[0] <= fw && box[1] <= fh && (box[0] < fw || box[1] < fh)) return { w: b.width * 24, h: b.height * 24, x: 0, y: 0, bib, from: `${from} (full footprint)` };
+    }
+    return { w: box[0] * PX, h: box[1] * PX, x: box[2] * PX, y: box[3] * PX, bib, from };
   }
   if (!b) return null;
   // No bounds: the footprint less its bib rows, around the footprint box centre.
@@ -155,7 +164,7 @@ async function measure() {
     const want = { left: box.x - box.w / 2, right: box.x + box.w / 2, top: box.y - box.h / 2, bottom };
     let frontRight = -Infinity;
     for (const [y, x] of e.cols) if (y >= e.bottom - 3) frontRight = Math.max(frontRight, x);
-    const fill = structure && box.from === 'bounds' && !PROPS.has(a.id);
+    const fill = structure && box.from.startsWith('bounds') && !PROPS.has(a.id);
     out.push({ id: a.id, kind: a.kind, structure, fill, box, want, got: { ...e, frontRight, w: e.right - e.left, h: e.bottom - e.top } });
   }
   measured = out;

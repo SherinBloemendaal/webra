@@ -11,7 +11,6 @@ import { BUILTIN_PACKS, ContentSystem, GRAPHICS } from '../js/content/index.js';
 import { MemoryStore } from '../js/content/store.js';
 import { checkDocument, createRegistry, normalizeValues } from '../js/registry.js';
 import { ORIGINAL_INFO } from '../js/content/atlas.js';
-import { ORIGINAL_BOUNDS } from '../js/content/render-facts.js';
 import { createSettings } from '../js/settings.js';
 import { validateSettingsDocument } from '../../../packages/protocol/src/accounts.js';
 import { buildPng, decodeTestPng } from './content-fixtures.mjs';
@@ -114,15 +113,12 @@ test('placement on the grid: the front edge of a structure sits on its cells (no
         right = Math.max(right, x);
       }
     }
-    // With a bib the apron reaches the footprint's front edge; without one the front is the bottom of the original
-    // sprite (OpenRA's bounds: on the footprint's front for every structure here but the depot, whose pad is centred).
-    const bib = b.footprint.some((row) => /^=+$/.test(row));
-    const ob = ORIGINAL_BOUNDS[id];
-    const box = ob?.decoration ?? (ob?.bounds?.length ? ob.bounds : null);
-    const wantY = bib || !box ? b.height * 12 - co : (box[3] + box[1] / 2) * 24 / 1024;
+    // Every structure here ends on its footprint's front: with a bib the apron reaches it, without one the original
+    // art's box does (bounds smaller than a centred footprint count as the whole footprint, minimal3d-size.test.mjs).
+    const wantY = b.height * 12 - co;
     const frontY = oy - fh / 2 + bottom + 1;
     assert.ok(Math.abs(frontY - wantY) <= 1.5, `${id}: front edge at y ${frontY}, want ${wantY.toFixed(1)}`);
-    const wantHalf = (box ? box[0] : b.width * 1024) * 12 / 1024;
+    const wantHalf = b.width * 12;
     assert.ok(Math.abs(ox - fw / 2 + left + wantHalf) <= 1.5, `${id}: front-left corner at x ${ox - fw / 2 + left}, want ${-wantHalf}`);
     assert.ok(Math.abs(ox - fw / 2 + right + 1 - wantHalf) <= 1.5, `${id}: front-right corner at x ${ox - fw / 2 + right + 1}, want ${wantHalf}`);
     checked.push(id);
@@ -135,7 +131,7 @@ test('team coloured parts come with a team mask, and units have them', async () 
   const kind = new Map(rules.actors.map((a) => [a.id.toUpperCase(), a.kind]));
   // One team area per object: a structure's strip, a soldier's torso, a unit's turret (the 'second' part) or its
   // cargo bed, an aircraft's tail.
-  const withMask = new Set(main.manifest.sprites.filter((s) => s.teamMask && (s.pose ?? 'idle') === 'idle').map((s) => s.actor));
+  const withMask = new Set(main.manifest.sprites.filter((s) => s.teamMask && !s.hidden && (s.pose ?? 'idle') === 'idle').map((s) => s.actor));
   for (const id of ['1TNK', 'POWR', 'FACT', 'E1', 'HELI', 'PT', 'WEAP']) assert.ok(withMask.has(id), `${id} has a team mask`);
   for (const s of main.manifest.sprites) {
     if (!s.teamMask) continue;
