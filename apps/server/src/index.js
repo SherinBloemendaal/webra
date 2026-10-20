@@ -51,7 +51,7 @@ const SESSION_WINDOW_MS = 60 * 60 * 1000;
 const SESSION_BODY_MAX = 1024;
 
 /** The answer while the site setting `onlineSessionsOpen` is off (the game shows its message). */
-export const SESSIONS_CLOSED_MESSAGE = 'New online games are paused for a moment because of heavy load. Games already running go on. Try again in a few minutes, or play a skirmish against the AI.';
+const SESSIONS_CLOSED_MESSAGE = 'New online games are paused for a moment because of heavy load. Games already running go on. Try again in a few minutes, or play a skirmish against the AI.';
 
 async function createSession(ctx) {
   const { request, env } = ctx;

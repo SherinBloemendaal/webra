@@ -157,3 +157,12 @@ test('password hashes: iterations stored per hash, pepper per hash, rehash rules
   // The scheduled handler is wired into the Worker export.
   assert.equal(typeof call, 'function');
 });
+
+test('the Worker entry exports only what workerd accepts: handlers (functions, classes) and the default handler object', async () => {
+  // workerd refuses to start a Worker whose entry module exports anything else (a string, a number).
+  const entry = await import('../src/index.js');
+  for (const [name, value] of Object.entries(entry)) {
+    if (name === 'default') assert.equal(typeof value.fetch, 'function');
+    else assert.equal(typeof value, 'function', `export ${name} must be a function or class`);
+  }
+});
