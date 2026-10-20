@@ -606,12 +606,24 @@ async function purge(ctx, { id }) {
   return noContent();
 }
 
+/**
+ * An admin's password reset link for an account. For a plain user (or the
+ * admin's own account) the link is shown to the admin and, with `send:
+ * true`, also emailed. For another staff account (moderator or admin) the
+ * link is never shown: only `send: true` is accepted and the link goes to
+ * that account's own address, so one admin cannot take over another staff
+ * account by resetting its password (docs/security.md).
+ */
 async function resetLink(ctx, { id }) {
   const body = await ctx.body(['send']);
   const actor = await ctx.requireRole('admin');
   const row = await target(ctx, id);
   if (row.status === 'deleted') throw new HttpError(409, 'conflict', 'Restore the account first.');
   if (body.send !== undefined && typeof body.send !== 'boolean') throw invalid('send', 'send must be true or false.');
+  const otherStaff = row.id !== actor.id && isStaffRole(row.role);
+  if (otherStaff && body.send !== true) {
+    throw forbidden('A reset link for another moderator or admin is only emailed to that account (send: true), never shown.');
+  }
   // Checked before the token exists: a new token replaces the previous link.
   if (body.send === true) {
     if (!row.email) throw new HttpError(409, 'conflict', 'This account has no email address.');
@@ -620,8 +632,9 @@ async function resetLink(ctx, { id }) {
   const { token, expiresAt } = await createEmailToken(ctx.db, row.id, 'reset', null, TOKEN_TTL_MS.adminReset, ctx.now);
   const url = accountLink(ctx.linkOrigin, 'reset', token);
   const sent = body.send === true ? await sendEmail(ctx, row.email, resetMessage(row.username, url, 24, { origin: ctx.linkOrigin })) : false;
-  await audit(ctx.db, { actor, action: 'user.password_reset_link', targetType: 'user', targetId: row.id, targetLabel: row.username, after: { displayed: true, sent, expiresAt } }, ctx.now);
-  return json({ url, expiresAt, sent }, 201);
+  const displayed = !otherStaff;
+  await audit(ctx.db, { actor, action: 'user.password_reset_link', targetType: 'user', targetId: row.id, targetLabel: row.username, after: { displayed, sent, expiresAt } }, ctx.now);
+  return json({ url: displayed ? url : null, expiresAt, sent }, 201);
 }
 
 /** Give the account (and its recent networks) their one-click relay budgets back (relayquota.js). */

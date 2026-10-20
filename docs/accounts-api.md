@@ -1649,7 +1649,11 @@ Moderators can do neither (`403 forbidden`); they can approve a
 The link lives 24 hours. With `send: true` and email available, it is also
 mailed to the account's email (`sent: true`). The audit entry records that
 the link was displayed to the admin (`after.displayed: true`) and whether it
-was sent; a new link replaces the previous one.
+was sent; a new link replaces the previous one. For another staff account
+(a moderator or admin other than the caller) the link is never shown: without
+`send: true` the request is refused (`403 forbidden`, no token is made), and
+with it the answer is `201 { "url": null, "expiresAt", "sent" }` and the
+audit entry has `displayed: false`.
 
 ### 8.7 Settings documents
 

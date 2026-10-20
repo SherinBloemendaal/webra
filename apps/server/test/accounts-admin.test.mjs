@@ -277,6 +277,44 @@ test('delete, restore and purge; reset links; settings documents', async () => {
   assert.equal((await admin.post(`/api/admin/users/${other.user.id}/purge`, { confirm: 'Restorable' })).status, 409, 'only deleted accounts');
 });
 
+test('reset links for other staff are only emailed, never shown; own and plain accounts as before', async () => {
+  const { env, admin, mod, target } = await cast({ email: true });
+  const other = await signup(env, 'Other Admin', { ip: '198.51.100.5' });
+  env.DB.sqlite.prepare('UPDATE users SET email = ? WHERE id = ?').run('other.admin@example.com', other.user.id);
+  promote(env, other.user.id, 'admin');
+  const reset = (id, body) => admin.post(`/api/admin/users/${id}/password-reset`, body);
+  // Another moderator or admin: refused unless the link is emailed to that account.
+  for (const id of [mod.user.id, other.user.id]) {
+    for (const body of [{}, { send: false }]) {
+      const r = await reset(id, body);
+      assert.equal(r.status, 403, JSON.stringify(body));
+      assert.equal(r.body.error.code, 'forbidden');
+    }
+  }
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM email_tokens WHERE purpose = 'reset'")[0].n, 0, 'a refused request makes no token');
+  const sentBefore = env.EMAIL.sent.length;
+  const mailed = await reset(mod.user.id, { send: true });
+  assert.equal(mailed.status, 201, JSON.stringify(mailed.body));
+  assert.equal(mailed.body.url, null, 'the admin never sees the link');
+  assert.equal(mailed.body.sent, true);
+  assert.equal(env.EMAIL.sent.length, sentBefore + 1);
+  assert.equal(env.EMAIL.sent.at(-1).to, 'moddy@example.com');
+  const entry = (await admin.get('/api/admin/audit?action=user.password_reset_link')).body.entries[0];
+  assert.equal(entry.after.displayed, false);
+  assert.equal(entry.after.sent, true);
+  // The emailed link works for the moderator.
+  const token = env.EMAIL.token('moddy@example.com', 'reset');
+  assert.ok(token);
+  assert.equal((await new Browser(env).post('/api/auth/password/reset', { token, password: 'reset by email only' })).status, 200);
+  // The admin's own account and a plain user: the link is shown.
+  const own = await reset(admin.user.id, { send: false });
+  assert.equal(own.status, 201);
+  assert.match(own.body.url, /#reset=[A-Za-z0-9_-]{43}$/);
+  const plain = await reset(target.user.id, { send: false });
+  assert.equal(plain.status, 201);
+  assert.match(plain.body.url, /#reset=[A-Za-z0-9_-]{43}$/);
+});
+
 test('force sign-out and single session revocation', async () => {
   const { admin, target } = await cast();
   const detail = await admin.get(`/api/admin/users/${target.user.id}`);

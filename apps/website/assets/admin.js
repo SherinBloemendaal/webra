@@ -719,14 +719,20 @@ export async function mountAdmin(root, deps = {}) {
   }
 
   function resetLinkDialog(u) {
+    // Another moderator's or admin's link is never shown, only emailed to that account (the server refuses anything else).
+    const otherStaff = u.id !== me.id && u.role !== 'user';
     return openDialog(`Password reset link for ${u.username}`, (body) => {
       const status = statusLine();
       const out = el('div', { class: 'form-stack' });
       const make = (send) => {
-        const b = el('button', { type: 'button', class: send ? 'btn' : 'btn btn-primary', text: send ? 'Create and email it' : 'Create link' });
+        const b = el('button', { type: 'button', class: send && !otherStaff ? 'btn' : 'btn btn-primary', text: send ? 'Create and email it' : 'Create link' });
         b.addEventListener('click', () =>
           busy(b, status, async () => {
             const r = await api.resetLink(u.id, send);
+            if (!r.url) {
+              out.replaceChildren(el('p', { class: 'form-help', text: r.sent ? `A reset link valid until ${formatDateTime(r.expiresAt)} was emailed to ${u.username}.` : 'The email could not be sent (sending failed or the daily email limit is reached). Try again later.' }));
+              return;
+            }
             const input = el('input', { type: 'text', value: r.url, readonly: true, 'aria-label': 'Reset link' });
             out.replaceChildren(input, el('p', { class: 'form-help', text: `Valid until ${formatDateTime(r.expiresAt)}.${r.sent ? ' It was emailed too.' : ' Send it to the player yourself.'}` }));
             input.focus();
@@ -735,7 +741,10 @@ export async function mountAdmin(root, deps = {}) {
         );
         return b;
       };
-      body.append(status.node, el('div', { class: 'form-actions' }, make(false), u.email ? make(true) : null), out);
+      const note = otherStaff
+        ? el('p', { class: 'form-help', text: u.email ? 'This is a staff account: its reset link is only emailed to its own address, never shown here.' : 'This is a staff account without an email address: its reset link can only be emailed, so none can be made.' })
+        : null;
+      body.append(...present(status.node, note, el('div', { class: 'form-actions' }, otherStaff ? null : make(false), u.email ? make(true) : null), out));
     });
   }
 
