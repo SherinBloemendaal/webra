@@ -23,8 +23,8 @@ registerHooks({
   },
 });
 
-const { Session, readAuthHeader } = await import('../src/session.js');
-export { readAuthHeader };
+const { Session, readAuthHeader, MAX_PENDING_PER_IP } = await import('../src/session.js');
+export { readAuthHeader, MAX_PENDING_PER_IP };
 
 // Runtime globals the realtime hub (src/userhub.js) uses: a socket pair
 // (client side, server side) and the auto response pair it registers.
@@ -89,6 +89,11 @@ export class FakeSocket {
     this.att = null;
     /** Hibernation tags given to acceptWebSocket. */
     this.tags = [];
+  }
+
+  /** A socket the Worker answers itself (src/wsrefuse.js) is accepted, not hibernated. */
+  accept() {
+    this.accepted = true;
   }
 
   serializeAttachment(value) {

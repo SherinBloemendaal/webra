@@ -45,7 +45,7 @@ export const DAY = 24 * HOUR;
  * the values here are the D1 fallback.
  */
 export const LIMITS = {
-  signup: [10, HOUR],
+  signup: [40, HOUR],
   loginBurst: [30, MIN15],
   /** Failures per account (or unknown name) from one address: a short lock for that address only. */
   loginFail: [10, MIN15],

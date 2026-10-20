@@ -403,8 +403,8 @@ null.
   in normally (their `status` says what is missing).
 - Throttling (`429` with `retryAfter`; `rate_limited` or `locked`). The login
   is resolved to its account first, so username and email share one budget:
-  - a burst limit per IP (20 per minute through the Workers Rate Limiting
-    binding; 30 per 15 minutes in D1 without it);
+  - a burst limit per IP (60 per minute through the Workers Rate Limiting
+    binding `AUTH_LIMITER`; 30 per 15 minutes in D1 without it);
   - 10 failures per 15 minutes per account (or unknown name) **and IP**:
     that address is locked for that account for the rest of the window;
   - 100 failures per day per IP across all accounts;
@@ -997,7 +997,7 @@ Limits (protocol `constants.js`):
 |----------|-------|
 | `ACCOUNT_REPLAYS_MAX` | 100 replays per account |
 | `ACCOUNT_REPLAYS_BYTES_MAX` | 100 MiB of stored (gzip) files per account |
-| `ACCOUNT_REPLAY_MAX_BYTES` | 16 MiB per uploaded file (UTF-8, before compression) |
+| `ACCOUNT_REPLAY_MAX_BYTES` | 4 MiB per uploaded file (UTF-8, before compression) |
 | `ACCOUNT_REPLAY_RETENTION_MS` | 30 days after the upload |
 
 `Replay` (a list entry):
@@ -1442,11 +1442,12 @@ that is not banned, from an address that is not banned:
   account_required`), and it must have played in the save (`403 forbidden`).
   Saving an online game needs every player signed in.
 - `GET /api/sessions/:id/ws`: the upgrade always succeeds for a well-formed
-  request from the site's origin; the server answers the first `hello` with
-  `error` and closes when the connection may not play: codes
-  `account_required` (no session), `account_inactive`, `banned`,
-  `ip_banned`. With the setting off, anonymous connections play as before
-  and IP bans still apply.
+  request from the site's origin (within the per-address burst limit,
+  section 9). When the connection may not play, the Worker answers the
+  upgrade itself with an `error` message and closes with 1008, without
+  waking the session: codes `account_required` (no session),
+  `account_inactive`, `banned`, `ip_banned`. With the setting off,
+  anonymous connections play as before and IP bans still apply.
 
 Protocol 5 (`PROTOCOL_VERSION`, docs/contracts.md section 4):
 
@@ -1811,15 +1812,19 @@ fix.
 ## 9. Rate limits
 
 Per IP limits key on an HMAC of the address under the secret `IP_HASH_SALT`
-(never the address). Burst limits go through the Workers Rate Limiting
-binding `AUTH_LIMITER` (20 per minute per purpose and address, no D1
-access); without the binding the D1 values in brackets apply. D1 counters
-are read before they are written: a request already over its limit costs no
-write.
+(never the address). Burst limits go through two Workers Rate Limiting
+bindings, per minute, purpose and address, with no D1 access:
+`AUTH_LIMITER` (60 per minute) for the sign-in endpoints (password and
+passkey sign-in, token redemption, Discord start, invite lookups) and
+`APP_LIMITER` (600 per minute) for what a signed-in game calls by itself
+(presence, friends list, realtime connects, session sockets), so many
+players behind one NAT or mobile carrier address keep playing. Without a
+binding the D1 values in brackets apply. D1 counters are read before they
+are written: a request already over its limit costs no write.
 
 | What | Limit |
 |------|-------|
-| Signup (all methods) | 10 per hour per network (IPv4 address, IPv6 /64) |
+| Signup (all methods) | 40 per hour per network (IPv4 address, IPv6 /64) |
 | Password sign-in | burst per IP (30 per 15 minutes); 10 failures per 15 minutes per account and IP; 100 failures per day per IP; escalating account delay (4.3) |
 | Passkey sign-in and options | burst per IP (30 per 15 minutes) |
 | Re-authentication | 10 failures per 15 minutes per account |
@@ -1840,10 +1845,11 @@ write.
 | Friend requests (5.11) | 20 per hour per account |
 | Blocks (5.11) | 30 per hour per account |
 | Friend invites (5.11) | 30 per hour per account |
-| Presence heartbeat (5.11) | burst per IP (120 per hour); stored at most every 45 s per account, a change of away at most every 5 s |
-| Friends list (5.11) | burst per IP (240 per hour) |
-| Realtime connects (5.12) | burst per IP (60 per hour); 16 sockets per account; 10 client messages per socket and minute besides the ping (more closes it with 1008) |
-| Invite codes (docs/contracts.md section 4) | 30 issued codes per network per hour (refused requests do not count); lookups: burst per IP (20 per minute), 30 failed lookups per network per hour (a blocked player's lookups do not count) |
+| Presence heartbeat (5.11) | burst per IP on `APP_LIMITER` (120 per hour); stored at most every 45 s per account, a change of away at most every 5 s |
+| Friends list (5.11) | burst per IP on `APP_LIMITER` (240 per hour) |
+| Realtime connects (5.12) | burst per IP on `APP_LIMITER` (60 per hour); 16 sockets per account; 10 client messages per socket and minute besides the ping (more closes it with 1008) |
+| Session sockets (docs/contracts.md section 4) | burst per IP on `APP_LIMITER` (300 per hour); a refused upgrade (no account, pending account, IP ban) is answered by the Worker with an `error` message and close 1008 and never reaches the session; a session holds at most 8 sockets before their `hello` is answered, 2 of them per address |
+| Invite codes (docs/contracts.md section 4) | 30 issued codes per network per hour (refused requests do not count); lookups: burst per IP (60 per minute on `AUTH_LIMITER`; 20 per minute in D1 without it), 30 failed lookups per network per hour (a blocked player's lookups do not count) |
 | One-click package relay | 8 completed downloads and 24 requests per account per UTC day; 20 completed downloads and 30 requests per network (IPv4 address, IPv6 /64) per hour (7.3) |
 | One-click music relay | 256 MiB and 96 requests per account per UTC day; 64 requests per network per hour (7.3) |
 | One-click movie relay | 1,500 MiB and 288 requests per account per UTC day; 192 requests per network per hour (7.3) |

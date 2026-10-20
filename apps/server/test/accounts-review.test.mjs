@@ -11,6 +11,7 @@ import { discordName } from '../src/accounts/discord.js';
 import { parseCidr } from '../src/accounts/ip.js';
 import { sha256Hex } from '../src/crypto.js';
 import { DEV_IP_SALT } from '../src/ipkey.js';
+import { APP_PURPOSES } from '../src/accounts/context.js';
 
 const clock = new Clock();
 test.after(() => clock.restore());
@@ -162,6 +163,29 @@ test('F4: refused requests write nothing; the rate limiting binding keeps bursts
   assert.equal(r.status, 429);
   assert.equal(env2.DB.rows("SELECT COUNT(*) AS n FROM rate_limits WHERE key LIKE 'passkey%'")[0].n, 0);
   assert.ok(calls.every((k) => /^passkey:[0-9a-f]{64}$/.test(k) && !k.includes('203.0.113.61')), 'binding keys are keyed hashes');
+});
+
+test('burst limits: sign-in purposes count on AUTH_LIMITER, what a signed-in game calls by itself on APP_LIMITER', async () => {
+  const seen = { auth: [], app: [] };
+  const limiter = (name, max) => ({ limit: async ({ key }) => (seen[name].push(key.split(':')[0]), { success: seen[name].filter((p) => p === key.split(':')[0]).length <= max }) });
+  const env = makeEnv({ email: false, vars: { AUTH_LIMITER: limiter('auth', 2), APP_LIMITER: limiter('app', 1000) } });
+  assert.deepEqual([...APP_PURPOSES].sort(), ['friends-list', 'presence', 'realtime', 'session-ws']);
+  const b = await signup(env, 'Nat Player', { ip: '203.0.113.70' });
+  promote(env, b.user.id);
+  await b.post('/api/auth/login', { login: 'nat player', password: PASSWORD });
+  // Many players behind one address: presence and friends lists go on long after sign-in bursts are spent.
+  for (let i = 0; i < 30; i++) {
+    assert.equal((await b.get('/api/account/friends')).status, 200);
+    assert.notEqual((await b.post('/api/account/presence', { away: false })).status, 429);
+  }
+  assert.equal((await b.post('/api/auth/login', { login: 'nat player', password: PASSWORD })).status, 200);
+  assert.equal((await b.post('/api/auth/login', { login: 'nat player', password: PASSWORD })).status, 429, 'the sign-in budget is separate');
+  assert.ok(seen.app.includes('friends-list') && seen.app.includes('presence'));
+  assert.ok(!seen.auth.includes('friends-list') && !seen.auth.includes('presence'));
+  assert.ok(seen.auth.includes('login') && !seen.app.includes('login'));
+  // The session socket counts on APP_LIMITER too.
+  await b.req('GET', `/api/sessions/${'a'.repeat(64)}/ws`, undefined, { headers: { Upgrade: 'websocket' } });
+  assert.ok(seen.app.includes('session-ws'));
 });
 
 test('F4: an active session costs at most one row write per 15 minutes', async () => {

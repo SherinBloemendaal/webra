@@ -345,10 +345,11 @@ as described in docs/security.md and changed in both
 The D1 Free plan allows 100,000 row writes a day, so floods must not turn
 into writes:
 
-- `wrangler.jsonc` binds the Workers Rate Limiting API as `AUTH_LIMITER`
-  (`ratelimits`, 20 requests per minute per purpose and address) for the
-  sign-in, passkey, token and Discord endpoints: those checks never touch
-  D1. Without the binding (for example if the account's plan rejects it:
+- `wrangler.jsonc` binds the Workers Rate Limiting API twice (`ratelimits`,
+  per minute, purpose and address): `AUTH_LIMITER` (60) for the sign-in,
+  passkey, token, Discord and invite lookup endpoints, and `APP_LIMITER`
+  (600) for presence, the friends list, realtime and session sockets (many
+  players behind one NAT): those checks never touch D1. Without a binding (for example if the account's plan rejects it:
   remove the `ratelimits` entry and redeploy) the Worker falls back to D1
   counters that are read before they are written, so refused requests still
   cost no write.
@@ -483,7 +484,7 @@ as soon as step 2 is deployed):
 
    The next deploy builds the game and the website with it and passes it to
    the Worker. Optional variables: `SENTRY_ENVIRONMENT` (default
-   `production`) and `SENTRY_TRACES_SAMPLE_RATE` (default `0.05`).
+   `production`) and `SENTRY_TRACES_SAMPLE_RATE` (default `0.005`).
 3. Optional, for releases, source files and deploy markers: see below.
 
 To turn reporting off again, delete the variable (or set it to `off`) and
@@ -496,7 +497,7 @@ build` and, for the Worker, passed by the deploy workflow as `--var`:
 |------|---------|---------|
 | `SENTRY_DSN` | none: nothing is reported | Where reports go (a public client key, not a secret). `off` is the same as unset. A DSN for another host needs that host in the CSP `connect-src` (`apps/website/_headers` and `apps/server/src/static-headers.js`), or the build stops |
 | `SENTRY_ENVIRONMENT` | `production` in production builds (`WEBRA_ENV=production`), else `dev` | The Sentry environment |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of page loads and Worker requests sent as performance traces (0 to 1) |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.005` | Share of page loads and Worker requests sent as performance traces (0 to 1); Durable Object alarms and WebSocket messages are never traced |
 
 Local builds, `wrangler dev` (`SENTRY_DSN` is empty in `wrangler.jsonc`)
 and the tests report nothing. To try reports locally, build with
