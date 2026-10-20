@@ -282,7 +282,8 @@ test('review 2: restore gives back the Discord account and the verified address 
 
 test('review 1: the Discord signup limit counts per network (an IPv6 /64), not per address', async () => {
   const env = makeEnv({ email: false, discord: true });
-  for (let i = 0; i < 10; i++) await signup(env, `Net Signup ${i}`, { ip: `2001:db8:7:8::${i + 1}` });
+  const { LIMITS } = await import('../src/accounts/routes-auth.js');
+  for (let i = 0; i < LIMITS.signup[0]; i++) await signup(env, `Net Signup ${i}`, { ip: `2001:db8:7:8::${(i + 1).toString(16)}` });
   const b = new Browser(env, { ip: '2001:db8:7:8::ffff' });
   const p = { id: '9200', username: 'rotator', email: 'rotator@example.com', verified: true };
   assert.equal((await flow(b, mockDiscord(p), { mode: 'signup', acceptPrivacy: true })).fragment, 'discord=error&code=rate_limited');

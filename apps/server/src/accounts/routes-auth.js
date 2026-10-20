@@ -211,8 +211,11 @@ async function signup(ctx) {
     if (duplicatePasskey(err)) throw passkeyConflict();
     throw err;
   }
-  // The link (or, when another account verified the address, a notice) goes out after the answer.
-  if (eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
+  // The link (or, when another account verified the address, a notice) goes out after the answer,
+  // only while verification is required: otherwise the player asks for it on the account page
+  // (POST /api/account/email/resend), so a burst of signups does not use up the daily mail budget
+  // (EMAIL_DAILY_LIMIT) that password resets need.
+  if (eff.emailVerificationRequired) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
   // A new account shows up on the admin dashboard (waiting for approval, usually).
   notify(ctx, (env) => publishAdmin(env, { kind: 'user_created', data: { userId: id } }));
   return signIn(ctx, id, 201);

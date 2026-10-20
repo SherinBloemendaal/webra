@@ -291,13 +291,15 @@ test('per-IP sign-in limit', async () => {
   assert.equal(last.body.error.code, 'rate_limited');
 });
 
-test('signup limit per IP', async () => {
+test('signup limit per network: 40 an hour (a school or carrier NAT), then 429', async () => {
+  const { LIMITS } = await import('../src/accounts/routes-auth.js');
+  assert.equal(LIMITS.signup[0], 40);
   const env = makeEnv({ email: false });
-  let last;
-  for (let i = 0; i < 11; i++) {
-    last = await new Browser(env, { ip: '192.0.2.5' }).post('/api/auth/signup', { username: `Player${i}`, email: `player${i}@example.com`, password: PASSWORD, acceptPrivacy: true });
+  const statuses = [];
+  for (let i = 0; i <= LIMITS.signup[0]; i++) {
+    statuses.push((await new Browser(env, { ip: '192.0.2.5' }).post('/api/auth/signup', { username: `Player${i}`, email: `player${i}@example.com`, password: PASSWORD, acceptPrivacy: true })).status);
   }
-  assert.equal(last.status, 429);
+  assert.deepEqual(statuses, [...new Array(LIMITS.signup[0]).fill(201), 429]);
 });
 
 test('sessions: idle and absolute expiry, logout, unknown cookies are cleared', async () => {

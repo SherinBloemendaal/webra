@@ -246,8 +246,13 @@ test('F6: the reviewer repro (r5): no squatting, no reset to unverified addresse
   await setSite(env2, { registration: { emailVerification: false } });
   const claimer = await signup(env2, 'Claimer', { email: 'ceo@bigcorp.example' });
   assert.equal(claimer.user.emailVerified, false);
-  const owner = await new Browser(env2, { ip: '198.51.100.31' }).post('/api/auth/signup', { username: 'Real CEO', email: 'ceo@bigcorp.example', password: PASSWORD, acceptPrivacy: true });
+  const ownerBrowser = new Browser(env2, { ip: '198.51.100.31' });
+  const owner = await ownerBrowser.post('/api/auth/signup', { username: 'Real CEO', email: 'ceo@bigcorp.example', password: PASSWORD, acceptPrivacy: true });
   assert.equal(owner.status, 201, 'unverified claims never block a signup');
+  // Verification is off: no link at signup; each asks for one from the account page.
+  assert.equal(env2.EMAIL.sent.length, 0);
+  assert.equal((await claimer.post('/api/account/email/resend', {})).status, 202);
+  assert.equal((await ownerBrowser.post('/api/account/email/resend', {})).status, 202);
   const sent = env2.EMAIL.sent.length;
   assert.equal((await new Browser(env2).post('/api/auth/password/forgot', { email: 'ceo@bigcorp.example' })).status, 202);
   assert.equal(env2.EMAIL.sent.length, sent, 'no reset link to an unverified address');

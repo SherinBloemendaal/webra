@@ -163,7 +163,7 @@ test('limits: resend per account (hour, day), per network, mail per address (sil
   const statuses = [];
   for (let i = 0; i < 4; i++) statuses.push((await a.post('/api/account/email/resend', {})).status);
   assert.deepEqual(statuses, [202, 202, 202, 429]);
-  // Mail per address: the signup and two resends filled the hour (3), the third resend sent nothing.
+  // Mail per address: three resends filled the hour (3; with verification off the signup itself sends none).
   assert.equal(env.EMAIL.sent.filter((m) => m.to === 'resender@example.com').length, 3);
   // Per day: 10 resends.
   let day = [];
@@ -427,12 +427,13 @@ test('review 1: the per-mailbox mail limit sees through +suffixes and Gmail dots
 
 test('review 1: the signup limit counts per network: rotating addresses inside one IPv6 /64 does not help', async () => {
   const env = makeEnv({ email: false });
+  const { LIMITS } = await import('../src/accounts/routes-auth.js');
   const statuses = [];
-  for (let i = 0; i < 11; i++) {
+  for (let i = 0; i <= LIMITS.signup[0]; i++) {
     const r = await new Browser(env, { ip: `2001:db8:a:b::${(i + 1).toString(16)}` }).post('/api/auth/signup', { username: `Rotator ${i}`, email: `r${i}@example.com`, password: PASSWORD, acceptPrivacy: true });
     statuses.push(r.status);
   }
-  assert.deepEqual(statuses, [...new Array(10).fill(201), 429]);
+  assert.deepEqual(statuses, [...new Array(LIMITS.signup[0]).fill(201), 429]);
   const elsewhere = await new Browser(env, { ip: '2001:db8:a:c::1' }).post('/api/auth/signup', { username: 'Elsewhere', email: 'e@example.com', password: PASSWORD, acceptPrivacy: true });
   assert.equal(elsewhere.status, 201, 'another /64');
 });
@@ -572,7 +573,7 @@ test('review 5: links in mail point at the configured site origin, whatever host
   assert.equal(config.workers_dev, false);
   assert.equal(config.preview_urls, false);
   assert.equal(config.vars.SITE_ORIGIN, 'https://webra.sherin.dev');
-  assert.equal(dailyMailLimit(config.vars), 300);
+  assert.equal(dailyMailLimit(config.vars), 5000, 'room for a launch day (docs/launch.md)');
 });
 
 test('review 6: an admin resend says when the in-use notice went out instead of a link', async () => {
@@ -588,4 +589,29 @@ test('review 6: an admin resend says when the in-use notice went out instead of 
   assert.deepEqual([r2.body.sent, r2.body.notice], [true, false]);
   const entry = env.DB.rows("SELECT after_json FROM audit_log WHERE action = 'user.email_resend' AND target_id = ?", twin.user.id)[0];
   assert.equal(JSON.parse(entry.after_json).notice, true);
+});
+
+test('launch settings (approval and verification off): a signup is active at once, can play, and no mail is sent', async () => {
+  const env = makeEnv();
+  await setSite(env, { registration: { approvalRequired: false, emailVerification: false } });
+  const site = (await new Browser(env).get('/api/site', { csrf: false })).body;
+  assert.equal(site.registration.approvalRequired, false);
+  assert.equal(site.registration.emailVerificationRequired, false);
+  const b = await signup(env, 'Launch Player', { ip: '198.51.100.240' });
+  assert.equal(b.user.status, 'active');
+  assert.equal(b.user.emailVerified, false);
+  assert.equal(env.EMAIL.sent.length, 0, 'no link at signup: the daily mail budget stays for resets');
+  assert.equal(env.DB.rows("SELECT COUNT(*) AS n FROM email_tokens")[0].n, 0);
+  // It plays online at once (onlineRequiresAccount stays on) and loads the game.
+  assert.equal((await b.post('/api/sessions', { name: 'Launch', public: true, maxPlayers: 2, version: '1.0.0' })).status, 201);
+  assert.equal((await b.get('/api/auth/me')).body.user.canPlay, true);
+  // The player may confirm the address later from the account page (then resets work).
+  assert.equal((await b.post('/api/account/email/resend', {})).status, 202);
+  assert.equal(env.EMAIL.sent.length, 1);
+  assert.ok(env.EMAIL.token('launch.player@example.com', 'verify'));
+  // Discord sign-ups with a typed address follow the same rule (covered in accounts-discord); with
+  // verification on again, a signup gets its link at once.
+  await setSite(env, { registration: { emailVerification: true } });
+  await signup(env, 'Strict Player', { ip: '198.51.100.241' });
+  assert.ok(env.EMAIL.token('strict.player@example.com', 'verify'));
 });

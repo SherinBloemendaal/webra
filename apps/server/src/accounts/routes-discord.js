@@ -211,8 +211,9 @@ async function callback(ctx) {
       if (which === 'discord') return back('already_linked');
       throw err;
     }
-    // A typed address is confirmed like any other signup's (the answer does not wait for the mail).
-    if (!verifiedEmail && eff.login.email) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
+    // A typed address is confirmed like any other signup's (the answer does not wait for the mail;
+    // only while verification is required, see signup in routes-auth.js).
+    if (!verifiedEmail && eff.emailVerificationRequired) queueAddressMail(ctx, { userId: id, username, email, purpose: 'verify' });
     notify(ctx, (env) => publishAdmin(env, { kind: 'user_created', data: { userId: id } }));
     user = await userById(ctx.db, id, ctx.now);
   }

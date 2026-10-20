@@ -385,14 +385,18 @@ null.
   username). Discord signup is 4.6.
 - `201 { user }` and a session cookie, also for pending accounts (they can
   verify their email, add login methods and see their status). While email
-  sending is available (`login.email`), the verification mail goes out
-  after the answer (so neither the answer nor its timing depends on it):
-  the link, or, when another account verified the address, a notice without
-  a link (4.3). Without email sending nothing is mailed and the address
-  waits unverified.
+  verification is required (`registration.emailVerificationRequired` of
+  `GET /api/site`: the setting on and email sending available), the
+  verification mail goes out after the answer (so neither the answer nor its
+  timing depends on it): the link, or, when another account verified the
+  address, a notice without a link (4.3). Otherwise nothing is mailed at
+  signup and the address waits unverified; the player can ask for the link
+  from the account page (5.4 `POST /api/account/email/resend`), so a burst
+  of signups does not use up `EMAIL_DAILY_LIMIT`. Password resets need a
+  verified address.
 - Errors: `registration_closed`, `method_disabled`, `invalid` (with `field`),
   `conflict` (`field: username`; never for the email), `ip_banned`,
-  `rate_limited` (10 signups per hour per network: an IPv4 address or an
+  `rate_limited` (40 signups per hour per network: an IPv4 address or an
   IPv6 /64, together with Discord signups).
 
 ### 4.3 Password sign-in
@@ -624,7 +628,8 @@ with PKCE (S256) and `state`, scopes `identify email`, redirect URI
   the signup fails with `email_taken`, which only the owner of that Discord
   inbox can see), else the optional `email` of this request (checked here,
   `400 invalid` with `field: email`; it travels with the OAuth state and is
-  stored unverified with a verification link mailed as in 4.2). With
+  stored unverified, with a verification link mailed as in 4.2: only while
+  verification is required). With
   neither the callback answers `email_required` and creates nothing.
 - `email` is accepted with `signup` only.
 - `link` (signed in, recent re-authentication): link Discord to this account.
