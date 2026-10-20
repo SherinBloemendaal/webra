@@ -76,7 +76,7 @@ test('units turn in 32 facings, soldiers in 8, and every sheet has the size its 
   assert.equal(kind.get('1TNK'), 'vehicle');
 });
 
-test('footprints: a structure sprite stays within its footprint box (height may exceed it)', async () => {
+test('footprints: a structure sprite is as wide as its footprint, plus the lean of its back', async () => {
   const [main] = await builtin();
   for (const a of rules.actors) {
     if (a.kind !== 'building' || !a.building) continue;
@@ -84,14 +84,14 @@ test('footprints: a structure sprite stays within its footprint box (height may 
     if (!s || s.hidden) continue;
     const [w] = s.frameSize;
     const box = a.building.width * 24;
-    // The slab overhangs a tenth of a cell on each side; bridges and tree crowns may reach a little further.
-    assert.ok(w <= box + 2 * 24, `${a.id}: ${w} px wide for a footprint ${box} px wide`);
+    // No slab any more: the front fills the footprint and the back leans east by the ground shear (0.35 px per
+    // px of depth), a little more for a tree crown.
+    assert.ok(w <= box + 0.35 * a.building.height * 24 + 12, `${a.id}: ${w} px wide for a footprint ${box} px wide`);
   }
 });
 
-test('placement on the grid: the front edge of a structure sits exactly on its cells (ground shear anchored there)', async () => {
+test('placement on the grid: the front edge of a structure sits on its cells (no inset slab), its front corners on the footprint\'s sides', async () => {
   const [main] = await builtin();
-  const PITCH = 654 / 1024;
   const checked = [];
   for (const id of ['FACT', 'POWR', 'APWR', 'PROC', 'TENT', 'BARR', 'WEAP', 'FIX', 'DOME', 'HPAD', 'ATEK', 'STEK', 'AFLD', 'KENN', 'PBOX', 'TSLA', 'FCOM', 'HOSP', 'OILB', 'V01']) {
     const a = rules.actors.find((x) => x.id === id);
@@ -100,24 +100,25 @@ test('placement on the grid: the front edge of a structure sits exactly on its c
     const sheet = await decodeTestPng(main.files.get(s.image));
     const [fw, fh] = s.frameSize;
     // The engine draws the sprite's centre at the actor point plus `offset`; the actor point is the footprint
-    // box centre plus center_offset (1/1024 cell), so the box centre is at (0, -center_offset) from it.
+    // box centre plus center_offset (1/1024 cell).
     const [ox, oy] = s.offset ?? [0, 0];
-    const centreY = -((b.center_offset?.[1] ?? 0) * 24) / 1024;
+    const co = (b.center_offset?.[1] ?? 0) * 24 / 1024;
     let bottom = -1;
-    for (let y = fh - 1; y >= 0 && bottom < 0; y--) for (let x = 0; x < fw; x++) if (sheet.rgba[(y * sheet.width + x) * 4 + 3]) bottom = y;
+    for (let y = fh - 1; y >= 0 && bottom < 0; y--) for (let x = 0; x < fw; x++) if (sheet.rgba[(y * sheet.width + x) * 4 + 3] === 255) bottom = y;
     let left = fw;
     let right = -1;
     for (let x = 0; x < fw; x++) {
-      if (sheet.rgba[(bottom * sheet.width + x) * 4 + 3]) {
+      if (sheet.rgba[(bottom * sheet.width + x) * 4 + 3] === 255) {
         left = Math.min(left, x);
         right = Math.max(right, x);
       }
     }
-    // Slab: a tenth of a cell wider than the footprint, 0.18 cell thick, its front edge at the footprint's front.
+    // Every structure here ends on its footprint's front: with a bib the apron reaches it, without one the original
+    // art's box does (bounds smaller than a centred footprint count as the whole footprint, minimal3d-size.test.mjs).
+    const wantY = b.height * 12 - co;
     const frontY = oy - fh / 2 + bottom + 1;
-    const wantY = centreY + (b.height * 12 + 2.4) * PITCH + 0.18 * 24;
     assert.ok(Math.abs(frontY - wantY) <= 1.5, `${id}: front edge at y ${frontY}, want ${wantY.toFixed(1)}`);
-    const wantHalf = b.width * 12 + 2.4;
+    const wantHalf = b.width * 12;
     assert.ok(Math.abs(ox - fw / 2 + left + wantHalf) <= 1.5, `${id}: front-left corner at x ${ox - fw / 2 + left}, want ${-wantHalf}`);
     assert.ok(Math.abs(ox - fw / 2 + right + 1 - wantHalf) <= 1.5, `${id}: front-right corner at x ${ox - fw / 2 + right + 1}, want ${wantHalf}`);
     checked.push(id);
@@ -128,7 +129,9 @@ test('placement on the grid: the front edge of a structure sits exactly on its c
 test('team coloured parts come with a team mask, and units have them', async () => {
   const [main] = await builtin();
   const kind = new Map(rules.actors.map((a) => [a.id.toUpperCase(), a.kind]));
-  const withMask = new Set(main.manifest.sprites.filter((s) => s.teamMask && s.part === 'body').map((s) => s.actor));
+  // One team area per object: a structure's strip, a soldier's torso, a unit's turret (the 'second' part) or its
+  // cargo bed, an aircraft's tail.
+  const withMask = new Set(main.manifest.sprites.filter((s) => s.teamMask && !s.hidden && (s.pose ?? 'idle') === 'idle').map((s) => s.actor));
   for (const id of ['1TNK', 'POWR', 'FACT', 'E1', 'HELI', 'PT', 'WEAP']) assert.ok(withMask.has(id), `${id} has a team mask`);
   for (const s of main.manifest.sprites) {
     if (!s.teamMask) continue;

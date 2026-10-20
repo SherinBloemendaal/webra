@@ -1,11 +1,13 @@
 """Production buildings: barracks, kennel, war factory, service depot, helipad, airstrip, naval yard, sub pen.
 
-Ported from the Productie3D design board to the game's 3/4 camera. Coordinates are cells, see core.Building.
-The camera sees the south faces and the roofs, so doors, ramps and signs face south (+y)."""
+Retexture of 0.21.0: three to six big blocks each, the defining feature kept (the factory's big door, the tent's
+canvas roof, the depot's wrench pad, the helipad's H, the airstrip's runway and tower, the yard's crane over the
+dock, the pen's dark water gate) and one team strip. Coordinates are cells, see core.Building and
+models_buildings_base. The camera sees the south faces and the roofs, so doors, ramps and signs face south (+y)."""
 from core import dcos, dsin
 from specs import BuildingSpec
 
-# Wrench outline of the board (unit square, tip up), laid flat on the depot pad.
+# Wrench outline (unit square, tip up), laid flat on the depot pad.
 WRENCH = [(-0.2, -0.1), (-0.2, -0.28), (-0.08, -0.38), (-0.08, -0.22), (0.08, -0.22), (0.08, -0.38), (0.2, -0.28),
           (0.2, -0.1), (0.07, 0.02), (0.07, 0.42), (0.0, 0.48), (-0.07, 0.42), (-0.07, 0.02)]
 
@@ -15,170 +17,114 @@ def place(pts, cx, cy, s, rot_deg):
     return [(cx + s * (u * c - v * n), cy + s * (u * n + v * c)) for u, v in pts]
 
 
+def _gable_house(b, wall, roof, depth, wall_h, door='darker'):
+    """Walls the full width from the front back `depth` cells, a gable roof (ridge north-south) up to the top of the
+    original sprite, a team band on the east slope and a door in the middle of the south face (4 shapes)."""
+    f, x0, x1 = b.front, b.x0, b.x1
+    y0 = f - depth
+    b.box(x0, y0, x1 - x0, depth, wall_h, wall)
+    rh = b.top(y0) - wall_h
+    b.gable(x0, y0, x1 - x0, depth, rh, roof, wall_h, 'y')
+    b.band(x0, y0, x1 - x0, depth, rh, wall_h, 'y', 'a', 0.25, 0.65, 'T')
+    w = (x1 - x0) * 0.26
+    b.box((x0 + x1 - w) / 2, f - 0.02, w, 0.03, wall_h * 0.85, door)
+
+
 def tent(b):
-    # Canvas tent with a team band over both roof halves, sandbags, a doorway and a flag.
-    b.box(0, 2.5, 2, 0.5, 0.06, 'concrete')
-    b.box(0.2, 0.2, 1.6, 2.1, 0.3, 'canvas')
-    b.gable(0.2, 0.2, 1.6, 2.1, 0.6, 'canvas', 0.3, 'y')
-    b.band(0.2, 0.2, 1.6, 2.1, 0.6, 0.3, 'y', 'a', 0.35, 0.55, 'T')
-    b.band(0.2, 0.2, 1.6, 2.1, 0.6, 0.3, 'y', 'b', 0.35, 0.55, 'T')
-    # Gable end of the roof (south) gets a team triangle too, so the owner is readable from the front.
-    b.poly([(0.7, 2.3, 0.66), (1.3, 2.3, 0.66), (1.0, 2.3, 0.86)], 'T')
-    b.box(0.8, 2.3, 0.4, 0.03, 0.38, 'darker')
-    b.box(0.05, 2.3, 0.6, 0.25, 0.2, 'sand')
-    b.box(1.35, 2.3, 0.6, 0.25, 0.2, 'sand')
-    # Flag pole at the north-east corner: set back a little so the roof does not hide the flag.
-    b.box(1.75, 0.15, 0.06, 0.06, 1.25, 'dark')
-    b.box(1.81, 0.15, 0.35, 0.05, 0.24, 'T', 0.98)
+    # The canvas tent: low walls and a steep canvas roof with a team band, a dark doorway.
+    b.apron('sand')
+    _gable_house(b, 'canvas', 'canvas', 2.0, 0.28)
 
 
 def barr(b):
-    # Brick barracks, tiled gable roof with team stripes, a chimney, team pennant over the door, sandbags.
-    b.box(0, 2.45, 2, 0.55, 0.06, 'concrete')
-    b.box(0.15, 0.25, 1.7, 2.0, 0.55, 'brick')
-    b.gable(0.1, 0.2, 1.8, 2.1, 0.5, 'tiles', 0.55, 'y')
-    for side in ('a', 'b'):
-        b.band(0.1, 0.2, 1.8, 2.1, 0.5, 0.55, 'y', side, 0.2, 0.34, 'T')
-        b.band(0.1, 0.2, 1.8, 2.1, 0.5, 0.55, 'y', side, 0.58, 0.72, 'T')
-    b.box(0.4, 0.55, 0.2, 0.2, 0.75, 'brick', 0.55)
-    b.box(0.38, 0.53, 0.24, 0.24, 0.05, 'dark', 1.3)
-    b.poly([(0.86, 2.26, 0.6), (1.14, 2.26, 0.6), (1.14, 2.26, 0.86), (0.86, 2.26, 0.86)], 'T')
-    b.box(0.78, 2.25, 0.44, 0.04, 0.42, '#6a4a2e')
-    b.box(0.05, 2.5, 0.55, 0.25, 0.2, 'sand')
-    b.box(1.4, 2.5, 0.55, 0.25, 0.2, 'sand')
+    # Brick barracks with a tiled roof and a team band, a door, and the chimney.
+    f = b.front
+    b.apron()
+    _gable_house(b, 'brick', 'tiles', 1.8, 0.45, '#6a4a2e')
+    b.box(0.3, f - 1.55, 0.24, 0.24, b.top(f - 1.55) - 0.1, 'brick')
 
 
 def kenn(b):
-    # Wooden dog house with a team band on the roof, a dark doorway and a red bowl.
-    b.box(0.2, 0.2, 0.6, 0.55, 0.3, 'wood')
-    b.gable(0.15, 0.17, 0.7, 0.6, 0.3, '#8a5a2e', 0.3, 'y')
-    b.band(0.15, 0.17, 0.7, 0.6, 0.3, 0.3, 'y', 'a', 0.0, 0.3, 'T')
-    b.band(0.15, 0.17, 0.7, 0.6, 0.3, 0.3, 'y', 'b', 0.0, 0.3, 'T')
-    b.box(0.4, 0.75, 0.2, 0.03, 0.22, 'darker')
-    b.cyl(0.85, 0.88, 0.09, 0.05, 'red')
+    # The dog house: wooden walls, a roof with a team band, a dark doorway.
+    _gable_house(b, 'wood', '#8a5a2e', 0.9, 0.22)
 
 
 def weap(b):
-    # Hall on an asphalt apron with a team-striped saw-tooth roof, an open door framed in yellow, and a tank on the ramp.
-    b.box(0, 2.15, 3, 0.85, 0.04, 'asphalt')
-    b.flat([(0.3, 2.5), (0.55, 2.7), (0.3, 2.9), (0.3, 2.8), (0.42, 2.7), (0.3, 2.6)], 0.041, 'paint')
-    b.flat([(2.45, 2.5), (2.7, 2.7), (2.45, 2.9), (2.45, 2.8), (2.57, 2.7), (2.45, 2.6)], 0.041, 'paint')
-    b.box(0.1, 0.15, 2.8, 2.0, 1.0, 'wall')
-    b.box(0.1, 0.15, 2.8, 0.1, 0.04, 'T', 1.0)
-    b.box(0.1, 2.05, 2.8, 0.1, 0.04, 'T', 1.0)
-    b.gable(0.4, 0.35, 2.2, 1.5, 0.45, 'steel', 1.0, 'x')
-    b.band(0.4, 0.35, 2.2, 1.5, 0.45, 1.0, 'x', 'a', 0.3, 0.5, 'T')
-    b.band(0.4, 0.35, 2.2, 1.5, 0.45, 1.0, 'x', 'b', 0.3, 0.5, 'T')
-    # Open door in the south wall, yellow frame.
-    b.box(0.7, 2.15, 1.6, 0.02, 0.8, 'darker')
-    b.box(0.6, 2.15, 0.1, 0.05, 0.86, 'yellow')
-    b.box(2.3, 2.15, 0.1, 0.05, 0.86, 'yellow')
-    b.box(0.6, 2.15, 1.8, 0.05, 0.08, 'yellow', 0.86)
-    # A tank rolling out on the ramp: tracks, hull with a team stripe, turret and a barrel pointing south.
-    b.box(1.05, 2.4, 0.2, 0.55, 0.16, 'dark', 0.04)
-    b.box(1.75, 2.4, 0.2, 0.55, 0.16, 'dark', 0.04)
-    b.box(1.15, 2.45, 0.7, 0.45, 0.14, 'steel', 0.1)
-    b.box(1.15, 2.45, 0.7, 0.08, 0.02, 'T', 0.24)
-    b.cyl(1.5, 2.63, 0.17, 0.11, 'steel2', 0.24)
-    b.box(1.46, 2.7, 0.08, 0.42, 0.06, 'dark', 0.28)
+    # Hangar with a gable roof whose eaves carry the team strip, and the big dark door framed in yellow.
+    f, x0, x1 = b.front, b.x0, b.x1
+    b.apron('asphalt')
+    depth = 2.0
+    wall_h = 0.8
+    b.box(x0, f - depth, x1 - x0, depth, wall_h, 'wall')
+    # The ridge (half way back) reaches the top of the original sprite.
+    rh = b.top(f - depth / 2) - wall_h
+    b.gable(x0, f - depth, x1 - x0, depth, rh, 'roof', wall_h, 'x')
+    b.band(x0, f - depth, x1 - x0, depth, rh, wall_h, 'x', 'a', 0.72, 1.0, 'T')
+    b.box(0.5, f - 0.02, 2.0, 0.03, 0.66, 'darker')
+    b.box(0.4, f - 0.03, 2.2, 0.04, 0.1, 'yellow', 0.66)
 
 
 def fix(b):
-    # Hexagonal yellow pad with a big wrench, a gantry on the north side with a team lamp.
-    b.box(0, 0, 3, 3, 0.05, 'concrete')
-    b.cyl(1.5, 1.75, 1.1, 0.08, 'yellow', 0.05, 6)
-    b.cyl(1.5, 1.75, 0.95, 0.01, 'asphalt', 0.13, 6)
-    b.flat(place(WRENCH, 1.5, 1.75, 1.6, -45), 0.145, 'paint')
-    b.box(0.9, 0.1, 1.2, 0.6, 0.6, 'wall', 0.05)
-    b.box(0.9, 0.1, 1.2, 0.08, 0.04, 'T', 0.65)
-    b.box(0.9, 0.62, 1.2, 0.08, 0.04, 'T', 0.65)
-    b.box(0.2, 0.2, 0.15, 0.15, 0.9, 'steel', 0.05)
-    b.box(2.65, 0.2, 0.15, 0.15, 0.9, 'steel', 0.05)
-    b.box(0.2, 0.2, 2.6, 0.15, 0.12, 'yellow', 0.95)
-    b.box(1.4, 0.18, 0.2, 0.2, 0.12, 'T', 0.83)
+    # The service pad over the whole footprint: a yellow octagon with a big wrench, and a workshop with a team strip at
+    # the back.
+    f = b.front
+    b.box(b.x0, 0.0, b.x1 - b.x0, f, 0.05, 'concrete')
+    r = 1.35
+    cy = f - 0.1 - 0.924 * r
+    b.cyl(1.5, cy, r, 0.04, 'yellow', 0.05)
+    b.cyl(1.5, cy, r - 0.18, 0.02, 'asphalt', 0.09)
+    b.flat(place(WRENCH, 1.5, cy + 0.15, 1.5, -45), 0.111, 'paint')
+    b.block(0.8, 0.0, 1.4, 0.45, 'wall')
+    b.box(0.8, 0.37, 1.4, 0.08, 0.04, 'T', b.top(0.0))
 
 
 def hpad(b):
-    # Round pad with a team rim and an H, ring lights, an office hut with a beacon, a red fuel tank and a wind sock.
-    b.box(0, 0, 2, 3, 0.05, 'concrete')
-    b.cyl(1, 1.9, 0.86, 0.01, 'T', 0.05, 16)
-    b.cyl(1, 1.9, 0.78, 0.02, 'asphalt', 0.06, 16)
-    b.box(0.7, 1.55, 0.12, 0.7, 0.01, 'paint', 0.08)
-    b.box(1.18, 1.55, 0.12, 0.7, 0.01, 'paint', 0.08)
-    b.box(0.7, 1.84, 0.6, 0.12, 0.01, 'paint', 0.08)
-    for i in range(8):
-        a = 360.0 * i / 8
-        x, y = 1 + 0.93 * dcos(a), 1.9 + 0.93 * dsin(a)
-        b.cyl(x, y, 0.11, 0.005, 'glow', 0.05, 8, True, 0.35)
-        b.box(x - 0.04, y - 0.04, 0.08, 0.08, 0.06, 'glow', 0.05, emit=True)
-    b.box(0.15, 0.1, 0.9, 0.7, 0.5, 'wall', 0.05)
-    b.box(0.25, 0.8, 0.7, 0.02, 0.15, 'glass', 0.3)
-    b.box(0.15, 0.1, 0.9, 0.7, 0.04, 'T', 0.55)
-    b.cyl(0.6, 0.45, 0.07, 0.1, 'red', 0.59)
-    b.cyl(1.6, 0.45, 0.25, 0.4, 'red', 0.05)
-    b.box(1.78, 2.83, 0.04, 0.04, 0.7, 'paint', 0.05)
-    b.bill(1.8, 2.85, 0.6, [(0, 0.16), (0.42, 0.11), (0.42, 0.04), (0, 0)], '#ff7a1a')
+    # The pad with a team rim and a big H, and the small office behind it.
+    f = b.front
+    b.apron()
+    b.box(b.x0, f - 1.45, b.x1 - b.x0, 1.45, 0.06, 'asphalt')
+    b.cyl(1.0, f - 0.72, 0.7, 0.02, 'T', 0.06, 16)
+    b.box(0.68, f - 1.12, 0.14, 0.8, 0.02, 'paint', 0.08)
+    b.box(1.18, f - 1.12, 0.14, 0.8, 0.02, 'paint', 0.08)
+    b.box(0.68, f - 0.79, 0.64, 0.14, 0.02, 'paint', 0.08)
+    b.block(b.x0, f - 2.0, b.x1 - b.x0, 0.55, 'wall')
 
 
 def afld(b):
-    # Asphalt strip with centre lines, threshold bars, edge lights (green start, red end), a hangar with a team roof band,
-    # a wind sock, and a control tower with a glass cab and a beacon.
-    b.box(0, 0, 3, 2, 0.04, 'asphalt')
-    b.box(0.1, 0.98, 2.8, 0.04, 0.003, 'paint', 0.04)
-    b.box(0.1, 1.86, 2.8, 0.04, 0.003, 'paint', 0.04)
-    for x in (0.75, 1.25, 1.75, 2.25):
-        b.box(x, 1.4, 0.3, 0.05, 0.003, 'paint', 0.04)
-    for y in (1.1, 1.3, 1.5, 1.7):
-        b.box(0.18, y - 0.04, 0.3, 0.08, 0.003, 'paint', 0.04)
-    for i, y in enumerate((0.12, 1.22, 1.42, 1.62)):
-        if i:
-            b.box(-0.16, y, 0.07, 0.07, 0.05, 'blue', 0)
-    for i, x in enumerate((0.1, 0.5, 0.9, 1.3, 1.7, 2.1, 2.5, 2.9)):
-        c = 'green' if i == 0 else 'red' if i == 7 else 'glow'
-        b.box(x - 0.035, 0.89, 0.07, 0.07, 0.05, c, 0.04, emit=True)
-        b.box(x - 0.035, 1.92, 0.07, 0.07, 0.05, c, 0.04, emit=True)
-    b.box(0.1, 0.1, 1.1, 0.65, 0.3, 'steel', 0.04)
-    b.gable(0.1, 0.1, 1.1, 0.65, 0.28, 'steel2', 0.34, 'x')
-    b.band(0.1, 0.1, 1.1, 0.65, 0.28, 0.34, 'x', 'a', 0.3, 0.6, 'T')
-    b.box(0.3, 0.75, 0.7, 0.02, 0.24, 'darker', 0.04)
-    b.box(1.55, 0.3, 0.04, 0.04, 0.6, 'paint', 0.04)
-    b.bill(1.57, 0.32, 0.5, [(0, 0.14), (0.36, 0.1), (0.36, 0.04), (0, 0)], '#ff7a1a')
-    b.box(2.35, 0.1, 0.5, 0.5, 0.95, 'wall', 0.04)
-    b.box(2.3, 0.05, 0.6, 0.6, 0.22, 'glass', 0.99)
-    b.box(2.28, 0.03, 0.64, 0.64, 0.05, 'T', 1.21)
-    b.cyl(2.6, 0.35, 0.06, 0.08, 'glow', 1.26, emit=True)
+    # The runway with its centre line and a hangar with a team strip, and the control tower with its glass cab.
+    f, x0, x1 = b.front, b.x0, b.x1
+    b.box(x0, f - 1.3, x1 - x0, 1.3, 0.04, 'asphalt')
+    b.box(x0 + 0.2, f - 0.68, x1 - x0 - 0.4, 0.08, 0.005, 'paint', 0.04)
+    b.box(x0, f - 2.0, 1.7, 0.7, 0.42, 'steel')
+    b.box(x0, f - 1.38, 1.7, 0.08, 0.04, 'T', 0.42)
+    tower = f - 2.0
+    b.box(2.2, tower, 0.6, 0.6, b.top(tower) - 0.2, 'wall')
+    b.box(2.15, tower, 0.7, 0.7, 0.2, 'glass', b.top(tower) - 0.2)
 
 
 def syrd(b):
-    # U-shaped dock on the water with team quay edges, a crane with a team cab on the west quay, and buoys.
-    b.box(0, 0, 3, 0.7, 0.2, 'concrete')
-    b.box(0.5, 0.62, 2.0, 0.08, 0.02, 'T', 0.2)
-    b.box(0, 0.7, 0.5, 2.3, 0.2, 'concrete')
-    b.box(0.42, 0.7, 0.08, 2.3, 0.02, 'T', 0.2)
-    b.box(0.2, 0.1, 0.9, 0.5, 0.4, 'wall', 0.2)
-    b.box(0.2, 0.1, 0.9, 0.5, 0.04, 'T', 0.6)
-    b.box(1.8, 0.25, 0.15, 0.15, 0.9, 'steel', 0.2)
-    b.box(1.74, 0.2, 0.27, 0.25, 0.18, 'T', 0.95)
-    b.box(1.82, 0.25, 0.12, 1.5, 0.1, 'yellow', 1.13)
-    b.box(1.87, 1.7, 0.02, 0.02, 0.5, 'darker', 0.63)
-    b.cyl(1.5, 2.6, 0.12, 0.14, 'T', -0.04)
-    b.cyl(1.5, 2.6, 0.05, 0.05, 'glow', 0.1, emit=True)
-    b.box(2.5, 0.7, 0.5, 2.3, 0.2, 'concrete')
-    b.box(2.5, 0.7, 0.08, 2.3, 0.02, 'T', 0.2)
-    b.box(0, 2.85, 0.5, 0.15, 0.01, 'yellow', 0.2)
-    b.box(2.5, 2.85, 0.5, 0.15, 0.01, 'yellow', 0.2)
+    # The U-shaped dock over the whole footprint on the water with a team edge, and the crane over the berth.
+    f, x0, x1 = b.front, b.x0, b.x1
+    back = f - 3.0
+    b.box(x0, back, x1 - x0, 0.8, 0.2, 'concrete')
+    b.box(x0, back + 0.8, 0.55, 2.2, 0.2, 'concrete')
+    b.box(x1 - 0.55, back + 0.8, 0.55, 2.2, 0.2, 'concrete')
+    b.box(x0 + 0.55, back + 0.7, x1 - x0 - 1.1, 0.1, 0.02, 'T', 0.2)
+    top = b.top(back + 0.15)
+    b.box(1.8, back + 0.15, 0.2, 0.2, top - 0.14, 'yellow', 0.2)
+    b.box(1.78, back + 0.15, 0.24, 2.0, 0.14, 'yellow', top - 0.14)
 
 
 def spen(b):
-    # Concrete bunker with team stripes over a gabled roof, a team-framed dark opening towards the water, buoys.
-    b.box(0.1, 0.1, 2.8, 2.0, 0.5, 'concrete')
-    b.gable(0.1, 0.1, 2.8, 2.0, 0.45, 'roof', 0.5, 'x')
-    b.band(0.1, 0.1, 2.8, 2.0, 0.45, 0.5, 'x', 'a', 0.25, 0.45, 'T')
-    b.band(0.1, 0.1, 2.8, 2.0, 0.45, 0.5, 'x', 'b', 0.25, 0.45, 'T')
-    b.box(0.85, 2.1, 1.3, 0.05, 0.48, 'T')
-    b.box(0.95, 2.15, 1.1, 0.05, 0.38, '#0e1a22')
-    b.cyl(0.5, 2.6, 0.12, 0.14, 'T', -0.04)
-    b.cyl(2.5, 2.6, 0.12, 0.14, 'T', -0.04)
+    # The concrete pen over the whole footprint with a team band on its roof and the dark water gate in its south face.
+    f, x0, x1 = b.front, b.x0, b.x1
+    depth = 3.0
+    wall_h = 0.8
+    b.box(x0, f - depth, x1 - x0, depth, wall_h, 'concrete')
+    rh = b.top(f - depth / 2) - wall_h
+    b.gable(x0, f - depth, x1 - x0, depth, rh, 'roof', wall_h, 'x')
+    b.band(x0, f - depth, x1 - x0, depth, rh, wall_h, 'x', 'a', 0.75, 1.0, 'T')
+    b.box(0.6, f - 0.02, 1.8, 0.03, 0.68, '#0e1a22')
 
 
 ACTORS = {
@@ -189,8 +135,8 @@ ACTORS = {
     'FIX': BuildingSpec(3, 3, fix),
     'HPAD': BuildingSpec(2, 3, hpad, second_hidden=True),
     'AFLD': BuildingSpec(3, 2, afld, second_hidden=True),
-    'SYRD': BuildingSpec(3, 3, syrd, ground='water'),
-    'SPEN': BuildingSpec(3, 3, spen, ground='water'),
+    'SYRD': BuildingSpec(3, 3, syrd),
+    'SPEN': BuildingSpec(3, 3, spen),
 }
 
 ALIASES = {'AFLD.Ukraine': 'AFLD', 'TENF': 'TENT', 'WEAF': 'WEAP', 'FIXF': 'FIX', 'SYRF': 'SYRD', 'SPEF': 'SPEN'}

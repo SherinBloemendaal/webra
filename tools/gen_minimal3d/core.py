@@ -24,6 +24,7 @@ Coordinates of a model
 - Colours are '#rrggbb' strings or 'T' (the owner's colour: rendered as grey
   into the sheet and set in the team mask; the game tints it).
 """
+import json
 import math
 import os
 import struct
@@ -56,18 +57,22 @@ _L = (-0.55, 0.4, 0.75)
 _LN = math.sqrt(sum(v * v for v in _L))
 LIGHT = tuple(v / _LN for v in _L)
 
-# Named colours: the palette of the design boards (project/buildings3d).
-P = {
-    'concrete': '#bdb7a6', 'wall': '#ddd6c4', 'roof': '#ece6d6', 'steel': '#7d8a96', 'steel2': '#aab7c3',
-    'dark': '#4a5560', 'darker': '#2e3238', 'yellow': '#ffc93c', 'glass': '#6ec6e6', 'orange': '#f2b632',
-    'gold': '#ffd34d', 'glow': '#fff0a0', 'molten': '#ff9a2a', 'copper': '#d07a3a', 'brick': '#c0573e',
-    'wood': '#b0793f', 'paint': '#f4f1e8', 'steam': '#f2f6f8', 'grass': '#6abe4a', 'water': '#3aa0d8',
-    'tiles': '#a8402e', 'asphalt': '#5a5d63', 'canvas': '#a3a55f', 'sand': '#d6c48a', 'red': '#e84a3a',
-    'green': '#5ef08a', 'blue': '#6ab0ff', 'ice': '#7fe0ff', 'ice2': '#e0f8ff', 'dome': '#e4ebf0',
-    'radar': '#4fd067', 'dirt': '#9a8458', 'camo': '#4f8a3a', 'camo2': '#7ab84e', 'field': '#ff5a3a',
-    'shroud': '#1a2a3a', 'rust': '#9a5a3a', 'olive': '#6b7a3c', 'sandy': '#c9ad6a', 'black': '#141414',
-    'skin': '#e8b98c',
-}
+# Named colours: the palette the 2D minimal art and this pack share (apps/game/js/art/shared-palette.js, read as
+# JSON). SHARED holds the whole table (team, shadow, terrain per biome); P the materials by name.
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SHARED_PALETTE_PATH = os.path.join(ROOT, 'apps', 'game', 'js', 'art', 'shared-palette.js')
+
+
+def load_shared_palette(path=SHARED_PALETTE_PATH):
+    """The object literal after `SHARED_PALETTE =` in the shared palette module, parsed as JSON."""
+    with open(path) as f:
+        text = f.read()
+    body = text[text.index('{', text.index('export const SHARED_PALETTE =')):]
+    return json.JSONDecoder().raw_decode(body)[0]
+
+
+SHARED = load_shared_palette()
+P = dict(SHARED['materials'])
 
 
 def hex_rgb(h):
@@ -139,6 +144,21 @@ class Face:
         self.shadow = shadow
 
 
+def shape(fn):
+    """Count a primitive as one shape of the model (Model.shapes, the shape budget), not the ones it is built from."""
+    def wrapped(self, *args, **kwargs):
+        self._depth += 1
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            self._depth -= 1
+            if self._depth == 0:
+                self.shapes += 1
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
 class Model:
     """A list of flat-coloured faces. Use Building or Unit; the primitives are
     the vocabulary of the design boards: box, cyl, vdome, gable, band, beam,
@@ -146,6 +166,9 @@ class Model:
 
     def __init__(self, scale, ysign):
         self.faces = []
+        # Primitives drawn (see `shape`): the shape budget of the models.
+        self.shapes = 0
+        self._depth = 0
         self.s = scale
         self.ys = ysign
         self.mark_shadow = True
@@ -161,6 +184,7 @@ class Model:
                                self.p(*inside) if inside else None, shadow and a >= 0.99))
 
     # -- solids
+    @shape
     def prism(self, xy, h, c, z=0.0, a=1.0, top=True, emit=False):
         """A convex polygon (list of (x, y), any winding) extruded up h from z."""
         n = len(xy)
@@ -174,21 +198,25 @@ class Model:
         if top:
             self._add([(x, y, z + h) for x, y in xy], c, a, emit, False, (cx, cy, z))
 
+    @shape
     def box(self, x, y, w, d, h, c, z=0.0, a=1.0, emit=False):
         """A box with its corner at (x, y), w east, d south, h up, from height z."""
         self.prism([(x, y), (x + w, y), (x + w, y + d), (x, y + d)], h, c, z, a, True, emit)
 
+    @shape
     def cyl(self, cx, cy, r, h, c, z=0.0, n=8, top=True, a=1.0, emit=False):
         """An upright n-sided prism (an octagon by default; round things are octagons)."""
         pts = [(cx + r * dcos(360.0 * (i / n) + 180.0 / n), cy + r * dsin(360.0 * (i / n) + 180.0 / n)) for i in range(n)]
         self.prism(pts, h, c, z, a, top, emit)
 
+    @shape
     def vdome(self, cx, cy, r, h, c, z=0.0, a=1.0, emit=False):
         """A stepped dome: three boxes, each smaller than the one below."""
         self.box(cx - r, cy - r, 2 * r, 2 * r, h * 0.4, c, z, a, emit)
         self.box(cx - r * 0.72, cy - r * 0.72, 1.44 * r, 1.44 * r, h * 0.3, c, z + h * 0.4, a, emit)
         self.box(cx - r * 0.4, cy - r * 0.4, 0.8 * r, 0.8 * r, h * 0.3, c, z + h * 0.7, a, emit)
 
+    @shape
     def pyramid(self, cx, cy, rx, ry, h, c, z=0.0, a=1.0, emit=False):
         """A four-sided pyramid on the rectangle centred (cx, cy), half sizes rx, ry."""
         t = (cx, cy, z + h)
@@ -197,6 +225,7 @@ class Model:
         for i in range(4):
             self._add([k[i], k[(i + 1) % 4], t], c, a, emit, False, inside)
 
+    @shape
     def gable(self, x, y, w, d, rh, c, z=0.0, axis='x', a=1.0, emit=False):
         """A gable roof on the rectangle (x, y, w, d) from height z, ridge rh higher; the ridge runs along `axis`."""
         t = z + rh
@@ -214,6 +243,7 @@ class Model:
             self._add([(x, y + d, z), (x + w, y + d, z), (m, y + d, t)], c, a, emit, False, inside)
             self._add([(x, y, z), (x + w, y, z), (m, y, t)], c, a, emit, False, inside)
 
+    @shape
     def band(self, x, y, w, d, rh, z, axis, side, f0, f1, c, a=1.0, emit=False):
         """A strip on a gable roof (same arguments as gable): side 'a' is the south or east slope, 'b' the other;
         f0 to f1 run from the ridge (0) to the eaves (1)."""
@@ -241,6 +271,7 @@ class Model:
             pts = [(X(f0), y, Z(f0)), (X(f1), y, Z(f1)), (X(f1), y + d, Z(f1)), (X(f0), y + d, Z(f0))]
         self._add(pts, c, a, emit, True, None, shadow=False)
 
+    @shape
     def beam(self, p0, p1, wd, c, a=1.0, emit=False):
         """A square-section beam from p0 to p1 (x, y, z points), wd thick."""
         a0 = self.p(*p0)
@@ -266,6 +297,7 @@ class Model:
         self.faces.append(Face(list(corners[1]), resolve(c), a, emit, False, mid, a >= 0.99))
         self.faces.append(Face(list(corners[0]), resolve(c), a, emit, False, mid, a >= 0.99))
 
+    @shape
     def tube(self, p0, p1, r, c, n=8, a=1.0, emit=False, caps=True):
         """An n-sided round bar (an octagon by default) of radius r from p0 to p1 (x, y, z points): barrels, wheels
         (a short tube along x), rockets, poles. Any direction."""
@@ -297,18 +329,22 @@ class Model:
             self.faces.append(Face(list(ring[0]), col, a, emit, False, mid, a >= 0.99))
 
     # -- flat things
+    @shape
     def flat(self, xy, z, c, a=1.0, emit=False):
         """A horizontal polygon at height z (decals on roofs and the ground)."""
         self._add([(x, y, z) for x, y in xy], c, a, emit, True, None, shadow=False)
 
+    @shape
     def bill(self, cx, cy, z, uv, c, a=1.0, emit=False):
         """A vertical polygon facing south at (cx, cy): points (u east, h up) from the height z (stars, flames, dishes)."""
         self._add([(cx + u, cy, z + h) for u, h in uv], c, a, emit, True, None, shadow=False)
 
+    @shape
     def poly(self, pts, c, a=1.0, emit=False):
         """Any planar polygon of (x, y, z) points, visible from both sides."""
         self._add(pts, c, a, emit, True, None, shadow=False)
 
+    @shape
     def bolt(self, cx, cy, z, uv, wd, c, a=1.0, emit=False):
         """A zigzag of thin bills through the points (u, h): lightning, sparks."""
         for i in range(len(uv) - 1):
@@ -322,6 +358,7 @@ class Model:
     def extend(self, other, dx=0.0, dy=0.0, dz=0.0, yaw=0.0):
         """Add another model's faces, moved by (dx, dy, dz) in this model's units and turned `yaw` degrees clockwise about z first."""
         cs, sn = dcos(yaw), dsin(yaw)
+        self.shapes += other.shapes
         for f in other.faces:
             pts = []
             for (x, y, z) in f.pts:
@@ -334,10 +371,18 @@ class Model:
 
 
 class Building(Model):
-    """A structure on its footprint box w x d cells. `ground` is the colour of the slab under it ('grass',
-    'water', 'concrete', None for no slab)."""
+    """A structure on its footprint box w x d cells, standing on the original sprite's extent.
 
-    def __init__(self, w, d, ground='grass', slab=0.1):
+    `fit` (extents.Box, pixels around the actor point) and `centre` (the actor point from the footprint box centre,
+    pixels) place it: the model's front edge `front` (cells from the box's north edge) lands exactly on the bottom
+    of the original box on screen, its sides on the box's sides (x0, x1), and `top(y)` is the highest a part at y
+    may reach so that the sprite is as high as the original. The ground is foreshortened by PITCH, so the model is
+    moved south by `lift` pixels to keep that front edge on its cells; the bib rows in front of it are drawn by
+    `apron`, stretched to cover them. `ground` (a colour) puts a slab under the footprint (scenes only). `flat`
+    stretches the ground north-south by 1 / PITCH instead, so a flat piece (a bridge deck, a field) lies exactly on its
+    cells like the terrain does; heights are unchanged."""
+
+    def __init__(self, w, d, ground=None, fit=None, centre=(0.0, 0.0), flat=False):
         super().__init__(CELL, 1)
         self.w = w
         self.d = d
@@ -345,14 +390,45 @@ class Building(Model):
         # The model origin is the centre of the footprint box: shift every point.
         self.cx = w / 2
         self.cy = d / 2
-        self.anchor = d / 2 * CELL  # the front edge stays on its cells
+        if fit is None:
+            self.front, self.height = float(d), float(d)
+            self.x0, self.x1 = 0.0, float(w)
+        else:
+            self.front = d / 2 + (centre[1] + fit.bottom) / CELL
+            self.height = fit.h / CELL
+            self.x0 = w / 2 + (centre[0] + fit.x - fit.w / 2) / CELL
+            self.x1 = w / 2 + (centre[0] + fit.x + fit.w / 2) / CELL
+        self.gs = 1 / PITCH if flat else 1.0
+        self.lift = (self.front - self.cy) * CELL * (1 / PITCH - self.gs)
+        self.anchor = (self.front - self.cy) * CELL * self.gs + self.lift  # the front edge stays on its cells
         if ground:
-            self.box(-slab, -slab, w + 2 * slab, d + 2 * slab, 0.18, ground, -0.18)
+            self.box(0, 0, w, d, 0.18, ground, -0.18)
             for f in self.faces:
                 f.shadow = False
 
     def p(self, x, y, z):
-        return ((x - self.cx) * CELL, (y - self.cy) * CELL, z * CELL)
+        return ((x - self.cx) * CELL, (y - self.cy) * CELL * self.gs + self.lift, z * CELL)
+
+    def top(self, y):
+        """The highest z (cells) a part whose back edge is at y may reach: the top of the original sprite."""
+        return self.height - (self.front - y) * PITCH * self.gs
+
+    def block(self, x, y, w, d, c, z=0.0, h=None, a=1.0, emit=False):
+        """A box like `box`; without h it rises to the top of the original sprite at its back edge (`top`)."""
+        if h is None:
+            h = self.top(y) - z
+        self.box(x, y, w, d, h, c, z, a, emit)
+
+    def apron(self, c='concrete', x0=None, x1=None, h=0.04):
+        """The flat bib in front of the structure, from `front` to the footprint's front edge on screen. It is drawn
+        as a parallelogram that undoes the ground shear, so it covers its cells exactly like the original bib."""
+        x0 = self.x0 if x0 is None else x0
+        x1 = self.x1 if x1 is None else x1
+        if self.d - self.front > 0.01:
+            y1 = self.front + (self.d - self.front) / PITCH / self.gs
+            k = -GSHEAR * (y1 - self.front)
+            self.prism([(x0, self.front), (x1, self.front), (x1 + k, y1), (x0 + k, y1)], h, c)
+            self.shapes -= 1  # the bib is ground, not one of the structure's blocks
 
 
 class Unit(Model):

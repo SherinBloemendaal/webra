@@ -6,6 +6,7 @@
     python3 tools/gen_minimal3d/generate.py --preview POWR 1TNK [--scale 4] [--out file.png]
                                                             draw models enlarged side by side (developer aid)
     python3 tools/gen_minimal3d/generate.py --coverage      list rules actors that have no art yet
+    python3 tools/gen_minimal3d/generate.py --budget        print the shape budget per model class (budget.py)
 
 The look and the rules of the models are in core.py; one models_*.py file per category declares the actors.
 """
@@ -16,6 +17,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import budget  # noqa: E402
 import core  # noqa: E402
 import pack  # noqa: E402
 import preview  # noqa: E402
@@ -52,6 +54,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--coverage', action='store_true')
+    ap.add_argument('--budget', action='store_true')
     ap.add_argument('--preview', nargs='+', metavar='ID')
     ap.add_argument('--scale', type=int, default=4)
     ap.add_argument('--out', default='preview.png')
@@ -59,6 +62,15 @@ def main():
     args = ap.parse_args()
     if args.preview:
         return preview_models(args.preview, args.scale, args.out)
+    if args.budget:
+        actors, specials, _aliases = pack.collect()
+        for cls, (n, lo, mean, hi) in budget.report(actors, specials).items():
+            per = ' per cell' if cls == 'per cell' else ''
+            print(f'{cls:10} {n:4} models, {lo:.1f} to {hi:.1f} blocks{per} (mean {mean:.1f}), at most {budget.LIMITS[cls]}')
+        bad = budget.over(actors, specials)
+        for b in bad:
+            print('  over:', b)
+        return 1 if bad else 0
     if args.coverage:
         actors, specials, aliases = pack.collect()
         missing, unknown, bad = pack.coverage(actors, aliases, specials)

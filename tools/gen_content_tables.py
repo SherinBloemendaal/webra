@@ -52,7 +52,9 @@ Output (apps/game/js/content/tables.js, render-facts.js and engine/render.json):
 - CURSOR_ART: OpenRA's cursors (data/source/cursors.yaml) in mouse.shp.
 - GRAPHICS_FILES: every file name the tables can use (what the installer keeps).
 - render-facts.js RENDER_FACTS: what OpenRA draws per actor (the art audit);
-  WEBRA_ACTORS: WebRA's own actors, which OpenRA does not draw at all.
+  WEBRA_ACTORS: WebRA's own actors, which OpenRA does not draw at all;
+  ORIGINAL_BOUNDS: OpenRA's Bounds and DecorationBounds per actor (how big
+  the original sprite looks, for the texture pack size tests).
 - engine/render.json: effect warheads per weapon, muzzle flashes, damage
   smoke and working animations per actor (engine/src/fx.rs).
 
@@ -1466,6 +1468,31 @@ def special_art(seqs, used, explosions):
 FIRE_ROLES = {'burn-s': 'fire-small', 'burn-m': 'fire-medium', 'burn-l': 'fire-large'}
 
 
+def original_bounds(actors):
+    """Per WebRA actor: OpenRA's Selectable/Interactable `Bounds` and `DecorationBounds` ([width, height, x, y]
+    in 1/1024 cell, offsets from the actor's centre), where its rules set them. OpenRA draws health bars and
+    pips around DecorationBounds, so they describe how big the original sprite looks on screen; the texture
+    packs measure their art against them (apps/game/tests/minimal3d-size.test.mjs)."""
+    out = {}
+    for a in actors:
+        tree = rules_of(a.get('source', a['id']))
+        rec = {}
+        for k, (_v, ch) in tree.items():
+            name = k.split('@')[0]
+            if name not in ('Selectable', 'Interactable'):
+                continue
+            for key, field_name in (('Bounds', 'bounds'), ('DecorationBounds', 'decoration')):
+                v = ch.get(key, [''])[0]
+                if v and field_name not in rec:
+                    nums = [int(x) for x in v.replace(' ', '').split(',')]
+                    if len(nums) not in (2, 4):
+                        raise SystemExit(f'{a["id"]}: {name}.{key} needs 2 or 4 values')
+                    rec[field_name] = (nums + [0, 0])[:4]
+        if rec:
+            out[a['id']] = rec
+    return out
+
+
 def render_facts(actors, seqs):
     """Per WebRA actor: [role, image, sequence, has original file] for every
     sequence OpenRA's render traits draw (OpenRA facts, not WebRA's choices)."""
@@ -1857,6 +1884,7 @@ def main():
     specials, explosion_art = special_art(seqs, used, render['explosions'])
     webra = webra_actor_ids()
     facts = render_facts([a for a in actors if a['id'] not in webra], seqs)
+    bounds = original_bounds([a for a in actors if a['id'] not in webra])
     for a in actors:
         if a['id'] in webra:
             if a['id'] in art:
@@ -2092,6 +2120,19 @@ def main():
     ]
     for aid in sorted(facts):
         facts_lines.append(f'  {json.dumps(aid)}: {js(facts[aid])},')
+    facts_lines += [
+        '};',
+        '',
+        '/**',
+        ' * OpenRA\'s Selectable/Interactable Bounds and DecorationBounds per actor',
+        ' * ([width, height, x, y] in 1/1024 cell around the actor\'s centre), where',
+        ' * its rules set them: how big the original sprite looks on screen. The',
+        ' * texture pack size tests measure the built-in art against them.',
+        ' */',
+        'export const ORIGINAL_BOUNDS = {',
+    ]
+    for aid, rec in sorted(bounds.items()):
+        facts_lines.append(f'  {json.dumps(aid)}: {js(rec)},')
     facts_lines += [
         '};',
         '',

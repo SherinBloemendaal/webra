@@ -6,6 +6,7 @@ import json
 import os
 import zipfile
 
+import budget
 import core
 import specs
 
@@ -52,6 +53,10 @@ def collect(only=None):
         for k, v in getattr(mod, 'ACTORS', {}).items():
             if k in actors:
                 raise SystemExit(f'{name}: actor {k} is already declared by another models file')
+            if getattr(v, 'kind', None) == 'building':
+                if v.aid not in (None, k):
+                    raise SystemExit(f'{name}: {k} and {v.aid} share one BuildingSpec; give each its own (it fits its actor)')
+                v.aid = k
             actors[k] = v
         for k, v in getattr(mod, 'SPECIALS', {}).items():
             if k in specials:
@@ -218,6 +223,9 @@ def build(only=None, log=print):
                 log('  unknown: ' + ' '.join(unknown))
             if bad:
                 log('  bad aliases: ' + ' '.join(bad))
+    bad = budget.over(actors, specials)
+    if bad:
+        raise SystemExit('models over their shape budget (budget.py):\n  ' + '\n  '.join(bad))
     log(f'rendering {len(actors)} actors and {len(specials)} specials ...')
     files, sprites, cameos = render_all(actors, specials, log)
     out = {}

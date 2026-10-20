@@ -12,6 +12,7 @@ Nothing here writes files: pack.py does.
 import copy
 
 import core
+import extents
 from core import Building, Unit, Model, Sheet, render
 
 FACINGS = 32
@@ -155,8 +156,8 @@ class BuildingSpec:
 
     kind = 'building'
 
-    def __init__(self, w, d, draw, ground='grass', damage=True, make=True, make_frames=8, second_hidden=False,
-                 shadow=False, cameo_heading=0.0, turret=None, turret_facings=FACINGS, shear=True):
+    def __init__(self, w, d, draw, ground=None, damage=True, make=True, make_frames=8, second_hidden=False,
+                 shadow=False, cameo_heading=0.0, turret=None, turret_facings=FACINGS, shear=True, flat=False):
         self.w, self.d, self.draw = w, d, draw
         self.ground = ground
         self.damage = damage
@@ -169,11 +170,22 @@ class BuildingSpec:
         self.turret_facings = turret_facings
         # False draws without the ground shear (bridges: their deck must meet the unsheared terrain).
         self.shear = shear
+        # True lays the model's ground on its cells unforeshortened (core.Building `flat`: bridge decks, fields).
+        self.flat = flat
+        # The actor id (pack.collect sets it): the model stands on that actor's original extent (extents.py).
+        self.aid = None
 
     def model(self):
-        b = Building(self.w, self.d, self.ground)
+        fit = extents.box(self.aid) if self.aid else None
+        b = Building(self.w, self.d, self.ground, fit, extents.centre_offset(self.aid) if self.aid else (0.0, 0.0), self.flat)
         self.draw(b)
         return b
+
+    def turret_model(self, body):
+        """The turret moved south with the body (Building.lift), so it stays on its mount."""
+        t = Unit()
+        t.extend(self.turret(), dy=-body.lift)
+        return t
 
     def sprites(self):
         m = self.model()
@@ -185,7 +197,7 @@ class BuildingSpec:
             out.append(Sprite(_sheet([make_frames(m, self.make_frames, sh)], 1, self.make_frames), pose='make', frames=self.make_frames, fps=12))
         if self.turret:
             n = self.turret_facings
-            t = self.turret()
+            t = self.turret_model(m)
             # The turret turns about the building's centre and is sheared like the body (same anchor).
             out.append(Sprite(_sheet([[render(t, 360.0 * f / n, anchor=m.anchor, shear=sh)] for f in range(n)], n), part='second', facings=n))
         elif self.second_hidden:
@@ -195,7 +207,7 @@ class BuildingSpec:
     def cameo(self):
         m = self.model()
         if self.turret:
-            m.extend(self.turret())
+            m.extend(self.turret_model(m))
         return cameo_rgba(m, self.cameo_heading, self.shadow)
 
 
