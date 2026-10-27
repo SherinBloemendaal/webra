@@ -6,7 +6,7 @@
   "license": "GPL-3.0-or-later",
   "type": "module",
   "dependencies": {
-    "@sentry/browser": "11.6.0",
+    "@sentry/browser": "11.9.0",
     "@webra/protocol": "*"
   }
 }
