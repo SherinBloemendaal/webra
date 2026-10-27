@@ -43,7 +43,7 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     # Builds nothing: the wasm comes from the CI web job of this run.
-    runs-on: small
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     # The production environment: its protection rules (required reviewers,
@@ -70,13 +70,6 @@ jobs:
       # deploy add the send_email binding. Unset, the Worker sends no email.
       EMAIL_FROM: ${{ vars.EMAIL_FROM }}
     steps:
-      # The self-hosted runner image is a minimal Ubuntu (see ci.yml). git
-      # for the checkout and build-dist.mjs (the commit in version.json).
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
-
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Pushes deploy in order: while this job waited for the previous deploy

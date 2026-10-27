@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: small
+    runs-on: ubuntu-latest
     # Writes the release PR's branch, tags and releases (contents) and opens
     # or updates the release PR (pull-requests). Runs only on pushes to main,
     # never for pull requests.
@@ -25,15 +25,6 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-      # The self-hosted runner image is a minimal Ubuntu (see ci.yml). The lock
-      # file sync needs git (installed before the checkout, so it is a real
-      # clone), a linker, npm and cargo.
-      - name: Install system packages
-        if: steps.release.outputs.pr
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
 
       # release-please bumps the versions in package.json and Cargo.toml but
       # not in the lock files; bring them along on the release PR's branch so

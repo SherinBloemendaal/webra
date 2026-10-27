@@ -18,14 +18,12 @@ on:
 permissions:
   contents: read
 
-# Pull requests (including those from forks) run on GitHub-hosted
-# ubuntu-latest runners: code from a pull request never reaches the
-# self-hosted runners. Pushes (through deploy.yml) and manual runs use the
-# self-hosted ARC runner scale sets (labels small, medium, large, enormous;
-# enormous has at most 3 runners). Their image (ghcr.io/actions/actions-runner)
-# is a minimal Ubuntu and the runners are ephemeral: every job installs the
-# system packages and toolchains it needs (already present on ubuntu-latest,
-# where the same apt-get step is a no-op) and caches through actions/cache.
+# Every job runs on GitHub-hosted ubuntu-latest runners, for pull requests
+# (including those from forks), pushes (through deploy.yml) and manual runs
+# alike; the repository has no self-hosted runners, so code from a pull
+# request never reaches a machine that outlives its job. The image already
+# has git and a C toolchain; every job sets up the language toolchains it
+# needs and caches through actions/cache.
 # Every job reads the repository only (job-level permissions), and every
 # third-party action is pinned to a full commit SHA (Dependabot updates them).
 
@@ -45,16 +43,12 @@ jobs:
   # the protocol tests check that every version file agrees.
   changes:
     name: Changed paths
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'small' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       engine_relevant: ${{ steps.decide.outputs.engine_relevant }}
     steps:
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 2
@@ -84,14 +78,10 @@ jobs:
     needs: changes
     # Fail-safe: only an explicit false skips this job.
     if: needs.changes.outputs.engine_relevant != 'false'
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'enormous' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -116,14 +106,10 @@ jobs:
 
   data:
     name: Rules and tables in sync with data
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'small' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -148,14 +134,10 @@ jobs:
     needs: changes
     # Fail-safe: only an explicit false skips this job.
     if: needs.changes.outputs.engine_relevant != 'false'
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'small' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -167,14 +149,10 @@ jobs:
 
   web:
     name: Web (wasm build, JS checks, API tests)
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'medium' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config git
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:

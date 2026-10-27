@@ -3,13 +3,10 @@
 `.github/workflows/ci.yml` runs on pull requests (not on the release PR's
 `release-please--...` branch), on manual dispatch, and on every push to
 `main` through `deploy.yml`, which calls it as a reusable workflow before it
-deploys (see [deploy.md](deploy.md)). Pushes and manual runs use the
-self-hosted ARC runner scale sets `small`, `medium`, `large` and `enormous`
-(at most three `enormous` runners), with a minimal Ubuntu image: every job
-installs what it needs. Pull requests, including those from forks, run every
-job on GitHub-hosted `ubuntu-latest` runners instead, so code from a pull
-request never runs on the self-hosted runners (the Runner column below is the
-self-hosted label).
+deploys (see [deploy.md](deploy.md)). Every job runs on GitHub-hosted
+`ubuntu-latest` runners, for pull requests (including those from forks),
+pushes and manual runs alike. The repository has no self-hosted runners, so
+code from a pull request never reaches a machine that outlives its job.
 
 Every job has `permissions: contents: read` only (the release job in
 `release.yml` also writes contents and pull requests). Third-party actions are
@@ -20,13 +17,13 @@ and therefore names `toolchain: stable` as an input.
 
 ## Jobs
 
-| Job | Runner | What it checks |
-|---|---|---|
-| Changed paths | small | Decides whether the engine and shader jobs run (below) |
-| Engine | enormous | `cargo fmt`, `cargo clippy` (with tests and examples), `cargo test` (unit tests and doctests; builds every example), a headless AI vs AI match with the example it built |
-| WGSL shaders | small | `cargo run -p shader-check` |
-| Rules and tables | small | Every generator in `tools/` reproduces the committed files |
-| Web | medium | `npm run build:wasm`, the JS checks and the protocol, server, web and tools tests, `test:luastack` |
+| Job | What it checks |
+|---|---|
+| Changed paths | Decides whether the engine and shader jobs run (below) |
+| Engine | `cargo fmt`, `cargo clippy` (with tests and examples), `cargo test` (unit tests and doctests; builds every example), a headless AI vs AI match with the example it built |
+| WGSL shaders | `cargo run -p shader-check` |
+| Rules and tables | Every generator in `tools/` reproduces the committed files |
+| Web | `npm run build:wasm`, the JS checks and the protocol, server, web and tools tests, `test:luastack` |
 
 The engine job builds with the `ci` profile (`Cargo.toml`): release with
 `panic = "unwind"`. Tests need unwinding anyway, so the test binary and the

@@ -86,7 +86,7 @@ dispatch (Actions, Deploy, Run workflow):
    job builds the engine (`npm run build:wasm`, with `WEBRA_GIT_HASH` set to
    the commit) and uploads `apps/game/pkg` as the artifact `webra-pkg` of
    the run.
-2. `deploy` (GitHub environment `production`, a `small` runner): first checks
+2. `deploy` (GitHub environment `production`, an `ubuntu-latest` runner): first checks
    that the commit is still the tip of `main` (`git ls-remote`; when that
    fails, the deploy fails, it never skips silently); when a newer
    commit has arrived meanwhile, every further step is skipped, the job
