@@ -122,6 +122,32 @@ fn hind_is_built_landed_on_the_helipad_then_takes_off() {
 }
 
 #[test]
+fn second_hind_built_on_a_held_helipad_starts_in_the_air_above_it() {
+    let mut w = flat_world();
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    let hind = ty(&w, "HIND");
+    // No rally point: the first Hind stays landed on the pad and holds it.
+    w.queue_order(Order::StartProduction { player: 0, ty: hind, count: 2 });
+    let _ = run_until(&mut w, 4000, |w| w.actors.iter().filter(|a| a.alive && a.ty == hind).count() == 2);
+    let hinds: Vec<usize> = w.actors.iter().enumerate().filter(|(_, a)| a.alive && a.ty == hind).map(|(i, _)| i).collect();
+    let (first, second) = (hinds[0], hinds[1]);
+    let (px, py) = pad_point(&w, pad);
+    assert!(w.actors[first].heli.landed && w.actors[first].altitude == 0, "the first stays landed");
+    assert_eq!(w.actors[first].heli.pad, w.make_ref(pad), "and holds the pad");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(first));
+    let s = &w.actors[second];
+    assert_eq!((s.x, s.y), (px, py), "the second appears above the pad");
+    assert!(!s.heli.landed);
+    assert_eq!(s.altitude, cruise(&w, second), "at cruise altitude");
+    assert_eq!(s.heli.pad, crate::world::NONE, "without a reservation");
+    run(&mut w, 50);
+    assert!(!w.actors[second].heli.landed && w.actors[second].altitude == cruise(&w, second), "it keeps hovering");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(first));
+}
+
+#[test]
 fn helicopters_hover_in_place_and_turn_in_place() {
     let mut w = flat_world();
     let i = heli(&mut w, "MH60", 0, 20, 20);

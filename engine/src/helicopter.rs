@@ -1083,21 +1083,29 @@ impl World {
     }
 
     /// A helicopter just built: it starts landed on its helipad, holding it.
+    /// When the pad is held by another helicopter (one built earlier still
+    /// stands on it) the new one starts at cruise altitude above the pad
+    /// instead, like a plane over a taken airfield (`plane_produced`).
     pub(crate) fn heli_produced(&mut self, u: usize, b: usize) {
         if !self.is_heli(u) {
             return;
         }
         let (x, y) = self.pad_point(b);
+        let me = self.make_ref(u);
+        let free = self.is_rearm_pad_for(u, b) && self.pad_free_for(b, me);
+        let cruise = self.heli_air(u).cruise_altitude;
         let a = &mut self.actors[u];
         a.x = x;
         a.y = y;
         a.px = x;
         a.py = y;
-        a.altitude = 0;
-        a.heli.landed = true;
-        let me = self.make_ref(u);
-        if self.is_rearm_pad_for(u, b) && self.pad_free_for(b, me) {
+        if free {
+            a.altitude = 0;
+            a.heli.landed = true;
             self.reserve_pad(u, b);
+        } else {
+            a.altitude = cruise;
+            a.heli.landed = false;
         }
     }
 
