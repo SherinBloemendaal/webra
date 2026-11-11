@@ -210,3 +210,16 @@ test('the clock blinks "Paused" on one clock: the time shows every other second 
     uninstallDom();
   }
 });
+
+test('the selection details are separated by a visible dot, not by spaces HTML collapses', () => {
+  const { root, sidebar } = make();
+  try {
+    sidebar.setSelection({ type: 'E1', name: 'Minelayer', owner: 0, hp: 250, maxHp: 400, maxRank: 4, rank: 1, xp: 0, nextXp: 200, ability: { ammo: 3, maxAmmo: 5, cloaked: true } });
+    assert.equal(root.querySelector('.sb-sel-detail').textContent, '250 / 400 · Veteran · XP 0/200 · Mines 3/5 · Cloaked');
+    sidebar.setSelection({ type: 'E1', name: 'Rifle Infantry', owner: 1, hp: 50, maxHp: 50, beingCaptured: true });
+    assert.equal(root.querySelector('.sb-sel-detail').textContent, '50 / 50 (enemy) · Being captured');
+    sidebar.dispose();
+  } finally {
+    uninstallDom();
+  }
+});
