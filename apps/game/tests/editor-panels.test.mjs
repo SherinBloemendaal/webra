@@ -282,3 +282,32 @@ test('arrows and Space pan the map, not while a slider, radio, button or a modal
     for (const [n, v] of saved) if (v === undefined) delete globalThis[n];
   }
 });
+
+test('panel tabs: the arrows, Home and End move the focus and open the tab', async () => {
+  const { el, tabKeys } = await import('../editor/js/ui.js');
+  const ids = ['map', 'actors', 'setup', 'online'];
+  const list = el('div', { role: 'tablist' }, ids.map((id) => el('button', { type: 'button', role: 'tab', 'data-tab': id }, id)));
+  document.body.append(list);
+  const opened = [];
+  tabKeys(list, ids, (id) => opened.push(id));
+  const tab = (id) => list.querySelector(`[data-tab="${id}"]`);
+  const press = (target, key) => {
+    const e = new FakeEvent('keydown', { key });
+    target.dispatchEvent(e);
+    return e;
+  };
+  const right = press(tab('map'), 'ArrowRight');
+  assert.ok(right.defaultPrevented && right.propagationStopped, 'the map view does not pan');
+  assert.deepEqual(opened, ['actors']);
+  assert.equal(document.activeElement, tab('actors'));
+  press(tab('actors'), 'End');
+  assert.equal(document.activeElement, tab('online'));
+  press(tab('online'), 'ArrowRight');
+  assert.equal(document.activeElement, tab('map'), 'wraps around');
+  press(tab('map'), 'ArrowLeft');
+  press(tab('online'), 'Home');
+  assert.deepEqual(opened, ['actors', 'online', 'map', 'online', 'map']);
+  const other = press(tab('map'), 'a');
+  assert.equal(other.defaultPrevented, false, 'other keys pass');
+  assert.equal(opened.length, 5);
+});

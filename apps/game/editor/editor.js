@@ -47,7 +47,7 @@ import { LensArt } from '../js/maplens/source.js';
 import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
-import { download, el, selectField, store } from './js/ui.js';
+import { download, el, selectField, store, tabKeys } from './js/ui.js';
 
 const DRAFT_KEY = 'webra.editor.draft';
 /**
@@ -1091,6 +1091,8 @@ function buildPanels() {
     );
     panes.append(el('section', { class: 'pane', id: `pane-${t.id}`, role: 'tabpanel', 'aria-labelledby': `tab-${t.id}`, 'data-pane': t.id, hidden: true }));
   }
+  // Roving focus: only the open tab is in the Tab order, the arrows move between them.
+  tabKeys(tabs, TABS.map((t) => t.id), showTab);
   buildMapPane();
   buildActorsPane();
   buildLayersPane();
