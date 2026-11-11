@@ -34,6 +34,9 @@ pub const MAX_BYTES: usize = 1024 * 1024;
 pub const MIN_SIZE: i32 = 32;
 pub const MAX_SIZE: i32 = 256;
 pub const MAX_ACTORS: usize = 2000;
+/// Spawn points a map has at least and at most.
+pub const MIN_SPAWNS: usize = 2;
+pub const MAX_SPAWNS: usize = 8;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -366,8 +369,8 @@ impl MapData {
         } else {
             None
         };
-        if !(2..=8).contains(&self.spawns.len()) {
-            errors.push("a map needs 2 to 8 spawn points".into());
+        if !(MIN_SPAWNS..=MAX_SPAWNS).contains(&self.spawns.len()) {
+            errors.push(format!("a map needs {MIN_SPAWNS} to {MAX_SPAWNS} spawn points"));
         }
         if let Some(m) = &map {
             // Games start with a Construction Yard on the spawn (World::spawn_start)
@@ -384,7 +387,9 @@ impl MapData {
             // spawn_building refuses taken cells (starts are placed first).
             let spawns_end = 1 + self.spawns.len();
             let mut taken = vec![0usize; m.cells()];
-            for (i, &[x, y]) in self.spawns.iter().enumerate() {
+            // Past MAX_SPAWNS the count is already refused above; checking the
+            // rest would only add one error per spawn.
+            for (i, &[x, y]) in self.spawns.iter().take(MAX_SPAWNS).enumerate() {
                 // Range first: huge coordinates must not reach the offset arithmetic.
                 if !m.contains(x, y) {
                     errors.push(format!("spawn {} is outside the map", i + 1));
@@ -575,8 +580,15 @@ impl MapData {
         if self.players.len() > self.spawns.len() {
             errors.push(format!("players lists {} slots; the map has {} spawns", self.players.len(), self.spawns.len()));
         }
+        // The loops below stop where an error is already certain, so an
+        // oversized list in a 1 MiB file costs neither an error per entry nor
+        // quadratic duplicate checks: more slots than MAX_SPAWNS fail the
+        // slot or spawn count, more than SLOT_LOCKS.len() locks (or option
+        // keys than MAP_OPTIONS) must repeat or name an unknown one within
+        // the first SLOT_LOCKS.len() + 1 (MAP_OPTIONS.len() + 1), more tags
+        // than TAGS_MAX fail the tag count.
         let mut colors = Vec::new();
-        for (i, p) in self.players.iter().enumerate() {
+        for (i, p) in self.players.iter().take(MAX_SPAWNS).enumerate() {
             let w = format!("players[{i}]");
             if !SLOT_FACTIONS.contains(&p.faction.as_str()) {
                 errors.push(format!("{w}.faction is unknown"));
@@ -601,7 +613,7 @@ impl MapData {
             if !SLOT_BOTS.contains(&p.bot.as_str()) {
                 errors.push(format!("{w}.bot must be rush, normal, turtle or naval"));
             }
-            for (k, l) in p.lock.iter().enumerate() {
+            for (k, l) in p.lock.iter().take(SLOT_LOCKS.len() + 1).enumerate() {
                 if !SLOT_LOCKS.contains(&l.as_str()) || p.lock[..k].contains(l) {
                     errors.push(format!("{w}.lock must list faction, team, color or type, each once"));
                 }
@@ -614,7 +626,7 @@ impl MapData {
         if let Some(problem) = self.slots_problem().filter(|_| self.spawns.len() >= 2) {
             errors.push(format!("players: {problem}"));
         }
-        for (k, v) in &self.options {
+        for (k, v) in self.options.iter().take(MAP_OPTIONS.len() + 1) {
             match MAP_OPTIONS.iter().find(|(name, _)| name == k) {
                 None => errors.push(format!("options: {} is not an option a map can set", short(k))),
                 Some((_, values)) => {
@@ -636,7 +648,7 @@ impl MapData {
                 }
             }
         }
-        for (i, k) in self.locked_options.iter().enumerate() {
+        for (i, k) in self.locked_options.iter().take(MAP_OPTIONS.len() + 1).enumerate() {
             if !self.options.contains_key(k) || self.locked_options[..i].contains(k) {
                 errors.push(format!("lockedOptions[{i}] must name an option the map sets in options, once"));
             }
@@ -644,7 +656,7 @@ impl MapData {
         if self.tags.len() > TAGS_MAX {
             errors.push(format!("tags must be a list of at most {TAGS_MAX}"));
         }
-        for (i, t) in self.tags.iter().enumerate() {
+        for (i, t) in self.tags.iter().take(TAGS_MAX).enumerate() {
             let ok = (1..=TAG_MAX).contains(&t.len())
                 && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b' ' || b == b'-')
                 && t.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
@@ -692,8 +704,11 @@ impl MapData {
             errors.push(format!("{what}: {} carries no passengers", short(&a.ty)));
             return;
         };
+        // A list past CARGO_MAX is already refused above; checking every entry
+        // of it would only add one error per entry (a 1 MiB file holds
+        // hundreds of thousands).
         let mut weight = 0;
-        for p in &a.cargo {
+        for p in a.cargo.iter().take(CARGO_MAX) {
             let unit = r.actor_index(p).and_then(|pi| r.actors[pi].unit.as_ref());
             match unit.and_then(|u| u.passenger.as_ref().map(|kind| (kind, u.passenger_weight))) {
                 Some((kind, w)) if cargo.types.iter().any(|ty| ty == kind) => weight += w,

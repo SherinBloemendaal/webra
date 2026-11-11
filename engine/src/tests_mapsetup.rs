@@ -146,6 +146,43 @@ fn actor_state_is_checked_against_the_rules() {
     assert!(ok.validate().ok, "{:?}", ok.validate().errors);
 }
 
+/// Oversized lists are refused once, not once per entry (B-2): a 1 MiB file
+/// can hold hundreds of thousands of entries, and the server validates
+/// uploads with this code.
+#[test]
+fn oversized_lists_yield_a_bounded_error_list() {
+    let big = 10_000;
+    let mut d = data(vec![with(MapActor::new("APC", 0, 22, 10, 0), |a| a.cargo = vec![String::new(); big])]);
+    let e = errors(&d);
+    assert!(has(&e, "at most 16 passengers"), "{e:?}");
+    assert!(e.len() < 30, "{} errors for one transport", e.len());
+
+    d.actors.clear();
+    d.spawns = (0..big as i32).map(|i| [i % 40 + 4, i / 40 % 40 + 4]).collect();
+    let e = errors(&d);
+    assert!(has(&e, "a map needs 2 to 8 spawn points"), "{e:?}");
+    assert!(e.len() < 30, "{} errors for {big} spawns", e.len());
+
+    let mut d = data(vec![]);
+    d.players = vec![MapSlot { faction: "nobody".into(), lock: vec!["x".into(); big], ..MapSlot::default() }; big];
+    d.tags = vec!["!".into(); big];
+    d.locked_options = vec!["x".into(); big];
+    d.options = (0..big).map(|i| (format!("o{i}"), serde_json::json!(1))).collect();
+    let e = errors(&d);
+    for needle in [
+        "players lists",
+        ".faction is unknown",
+        ".lock must list",
+        "tags must be a list",
+        "tags[0] must be",
+        "is not an option",
+        "lockedOptions[0]",
+    ] {
+        assert!(has(&e, needle), "{needle}: {e:?}");
+    }
+    assert!(e.len() < 200, "{} errors for oversized setup lists", e.len());
+}
+
 #[test]
 fn a_game_on_the_map_starts_its_actors_as_the_map_says() {
     let d = data(vec![
