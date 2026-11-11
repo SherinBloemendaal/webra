@@ -439,3 +439,68 @@ test('a waiting account: the approval lands without a click (a realtime hint, el
   await settle(10);
   assert.match(textOf(second.root), /Your account is active/);
 });
+
+test('account page: saving the profile or a first password rebuilds the page from the fresh account', async () => {
+  const server = new MockAccountServer();
+  const u = server.addUser({ username: 'Nopass', email: 'nopass@example.com' });
+  server.signIn(u);
+  server.current().session.reauthUntil = server.now + 600_000;
+  const { root } = await page(server);
+  const menuName = () => textOf(root.querySelector('.account-username'));
+  assert.equal(menuName(), 'Nopass');
+  const profile = () => root.querySelector('[aria-labelledby="section-profile"]');
+  inputByLabel(profile(), /^Username/).value = 'Renamed';
+  submit(profile().querySelector('form'));
+  await settle(20);
+  assert.equal(u.username, 'Renamed');
+  assert.equal(menuName(), 'Renamed', 'the side menu shows the new name');
+  assert.match(textOf(root), /Saved\./);
+  // The form compares against the fresh account: saving again sends nothing.
+  const patches = () => server.requests.filter((r) => r.url === '/api/account' && r.method === 'PATCH').length;
+  const before = patches();
+  submit(profile().querySelector('form'));
+  await settle(10);
+  assert.equal(patches(), before);
+  assert.match(textOf(profile()), /Nothing changed/);
+  // A first password: the part says it is set, and it can be removed.
+  assert.ok(byText(root, 'button', /^Set a password$/));
+  assert.equal(byText(root, 'button', /Remove password/), undefined);
+  inputByLabel(root, /^Password$/).value = 'a long passphrase';
+  submit(byText(root, 'button', /^Set a password$/).closest('form'));
+  await settle(20);
+  assert.equal(u.password, 'a long passphrase');
+  assert.ok(byText(root, 'button', /^Change password$/));
+  assert.ok(byText(root, 'button', /Remove password/));
+  assert.match(textOf(root), /Changed /);
+  assert.match(textOf(root), /Password saved/);
+});
+
+test('account page: the "Sign in to play" card follows the registration settings', async () => {
+  const cases = [
+    [{ open: true, approvalRequired: true }, /an admin approves new accounts first/],
+    [{ open: true, approvalRequired: false }, /create one, it takes a minute/],
+    [{ open: false, approvalRequired: true }, /signing up is closed right now/],
+  ];
+  for (const [registration, re] of cases) {
+    uninstallDom();
+    doc = installDom();
+    const server = new MockAccountServer();
+    Object.assign(server.site.registration, registration);
+    const { root } = await page(server, '', '?returnTo=%2Fplay%2F');
+    const card = textOf(root.querySelector('.gate-card'));
+    assert.match(card, re, JSON.stringify(registration));
+    assert.doesNotMatch(card, /may need/);
+    if (registration.open === false) assert.doesNotMatch(card, /create one/);
+  }
+});
+
+test('a waiting account: "Check again" promises no email, it says the page updates by itself', async () => {
+  const server = new MockAccountServer();
+  const waiting = server.addUser({ username: 'Waiting', password: 'a long passphrase', status: 'pending_approval' });
+  server.signIn(waiting);
+  const { root } = await page(server);
+  click(byText(root, 'button', /Check again/));
+  await settle(10);
+  assert.match(textOf(root), /Still waiting\. This page updates by itself once an admin approves the account/);
+  assert.doesNotMatch(textOf(root), /email once/);
+});
