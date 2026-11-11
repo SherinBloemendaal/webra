@@ -1871,6 +1871,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
     selectionClick: () => audio?.click(),
     gameOver: () => flow.over,
+    // A defeated player watching on gives no orders (replays and spectators: the spectator option).
+    watching: () => watching(),
     // Esc with nothing to cancel. Not while the mouse is released with the
     // release hotkey (js/mouselock.js isDetached): the game plays on until a
     // click into it captures the mouse again; the Menu button still opens it.

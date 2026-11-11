@@ -181,7 +181,8 @@ export class Input {
     this.player = player;
     // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onMenu(), onMode(mode),
     // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text),
-    // selectionClick() (the selection hotkeys' click), gameOver() -> bool },
+    // selectionClick() (the selection hotkeys' click), gameOver() -> bool,
+    // watching() -> bool (a defeated player watching on: no orders, see ordersOff) },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
     // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) },
     // tips (js/hints.js): { onPlainMove(units, worldPoint) }
@@ -396,8 +397,19 @@ export class Input {
     return id === NONE ? null : actorInfo(this.game, id);
   }
 
-  /** Selected units that belong to the local player (cached per selection change). */
+  /**
+   * Whether this view gives no orders: a spectator or replay (`spectator`),
+   * or a defeated player watching on (hooks.watching). The watched player's
+   * actors are then not "own": clicks select, and the order keys, sidebar
+   * modes and support powers do nothing.
+   */
+  ordersOff() {
+    return this.spectator || !!this.hooks.watching?.();
+  }
+
+  /** Selected units that belong to the local player (cached per selection change; none while ordersOff). */
   selectedOwnUnits() {
+    if (this.ordersOff()) return [];
     if (!this.ownUnits) {
       this.ownUnits = this.selection.filter((id) => {
         const info = this.info(id);
@@ -409,7 +421,7 @@ export class Input {
 
   /** The single selected own factory or depot, for rally points. */
   selectedRallyBuilding() {
-    if (this.selection.length !== 1) return null;
+    if (this.selection.length !== 1 || this.ordersOff()) return null;
     const info = this.info(this.selection[0]);
     return info && info.owner === this.player && info.building && info.producer ? this.selection[0] : null;
   }
@@ -474,6 +486,7 @@ export class Input {
 
   /** Target a ready support power: click the map, or drag to set the flight direction. */
   startPowerTargeting(power) {
+    if (this.ordersOff()) return;
     this.placing = null;
     this.attackMove = false;
     this.setMode(null);
@@ -504,6 +517,8 @@ export class Input {
    */
   setMode(mode) {
     const next = MODES.includes(mode) ? mode : null;
+    // Watching: no mode comes on (switching one off still works).
+    if (next && this.ordersOff()) return;
     if (next) {
       this.cancelPlacing();
       this.attackMove = false;
@@ -523,6 +538,7 @@ export class Input {
    * own actors selected repairs them instead (`repairSelection`).
    */
   toggleMode(mode) {
+    if (this.ordersOff()) return;
     if (mode === 'repair' && this.mode !== 'repair' && this.selectedOwn().length) {
       this.repairSelection();
       return;
@@ -679,7 +695,7 @@ export class Input {
 
   /** Deploy selected MCVs, pack up a selected Construction Yard, or unload selected transports. */
   async deploySelection() {
-    if (!this.selection.length) return;
+    if (!this.selection.length || this.ordersOff()) return;
     // Chrono tanks pick a teleport target first (OpenRA PortableChrono deploy);
     // else MCVs, Construction Yards, transports, and ability units (mine, MAD tank, demolition).
     const { teleport, deploy } = await this.ask.deploy_targets(this.player, Uint32Array.from(this.selection));
