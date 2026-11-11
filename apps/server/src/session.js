@@ -226,6 +226,12 @@ export class Session extends DurableObject {
     this.lockstep = null;
     /** Order log of the running game (in memory and Durable Object storage). */
     this.log = null;
+    /**
+     * A resumed save's order log is being rebuilt from the saved orders
+     * (startResumed): its awaits let other events in, which must neither
+     * stream the half-built log nor take the missing relay for a lost game.
+     */
+    this.resumeBuilding = false;
     /** Sockets catching up -> frames broadcast meanwhile (sent after the log). */
     this.syncing = new Map();
     this.syncBucket = new TokenBucket(SYNC_RATE, SYNC_BURST);
@@ -475,6 +481,7 @@ export class Session extends DurableObject {
     const phaseProblem = () => {
       if (this.room.phase === 'lobby') return null;
       if (!spectate) return 'The game has already started. You can join as a spectator.';
+      if (this.resumeBuilding) return 'The game is starting. Try again shortly.';
       return this.canCatchUp() ? null : 'This game can no longer be watched.';
     };
     let problem = phaseProblem();
@@ -610,6 +617,7 @@ export class Session extends DurableObject {
     }
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
+    if (this.resumeBuilding) return this.reject(ws, ERRORS.STATE, 'The game is starting. Try again shortly.', true);
     if (!this.lockstep && !this.room.resumeStart) return this.sessionLost();
     if (!this.canCatchUp()) return this.reject(ws, ERRORS.STATE, 'This game is too long to rejoin.', true);
     // Everything that does not depend on the member's current connection is
@@ -972,21 +980,36 @@ export class Session extends DurableObject {
   async startResumed(client) {
     const chunks = this.room.resume.chunks;
     const start = this.room.start(client, randomInt);
-    this.meta.startedAt = Date.now();
-    await this.ctx.storage.put('meta', this.meta);
-    await this.endInvite();
-    this.log = new OrderLog(this.ctx.storage);
-    for (let i = 0; i < chunks; i++) {
-      const bytes = await this.ctx.storage.get(`resume:${i}`);
-      for (const [tick, orders] of JSON.parse(await gunzip(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)))) this.log.append({ tick, orders });
-      // Sealed log chunks are written before the next one is read: one chunk in memory at a time.
-      await this.log.writing;
-      await this.ctx.storage.delete(`resume:${i}`);
-    }
+    // Before the first await: from here on the room is in its game phase, and
+    // messages, rejoins and alarms that come in during the awaits below
+    // (D1, decompression) must find the log and see that it is being built.
+    const log = new OrderLog(this.ctx.storage);
+    this.log = log;
     this.lockstep = null;
+    this.resumeBuilding = true;
+    try {
+      this.meta.startedAt = Date.now();
+      await this.ctx.storage.put('meta', this.meta);
+      await this.endInvite();
+      for (let i = 0; i < chunks; i++) {
+        // The session ended meanwhile (every player left): nothing to build for.
+        if (this.log !== log) return;
+        const bytes = await this.ctx.storage.get(`resume:${i}`);
+        const frames = JSON.parse(await gunzip(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)));
+        if (this.log !== log) return;
+        for (const [tick, orders] of frames) log.append({ tick, orders });
+        // Sealed log chunks are written before the next one is read: one chunk in memory at a time.
+        await log.writing;
+        await this.ctx.storage.delete(`resume:${i}`);
+      }
+    } finally {
+      this.resumeBuilding = false;
+    }
+    if (this.log !== log || !this.room) return;
     const now = Date.now();
     const until = now + resumeStartMs(start.resume.ticks);
-    for (const s of this.room.seatStates) if (s) s.until = until;
+    // A player who lost its connection meanwhile keeps its reconnect deadline.
+    for (const s of this.room.seatStates) if (s?.state === 'syncing') s.until = until;
     await this.saveRoom();
     await this.syncDirectory();
     await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
@@ -1150,6 +1173,16 @@ export class Session extends DurableObject {
   // ---- Game ----------------------------------------------------------------------------------
 
   async gameMessage(ws, client, msg) {
+    if (this.resumeBuilding) {
+      // A resumed save is being prepared: only chat and leaving make sense now.
+      if (msg.t === C2S.CHAT) return this.chatFrom(ws, client, msg.text, !!msg.team);
+      if (msg.t === C2S.LEAVE) {
+        await this.disconnect(ws, 'left');
+        this.close(ws, CLOSE_NORMAL, 'bye');
+        return;
+      }
+      throw new RoomError('The game is starting.', ERRORS.STATE);
+    }
     if (!this.lockstep && !(this.room.resumeStart && this.log)) {
       // The object was restarted mid-game and lost the in-memory relay.
       await this.sessionLost();
@@ -1473,6 +1506,11 @@ export class Session extends DurableObject {
       if (att.client === null && now - att.since > HELLO_TIMEOUT_MS) this.close(ws, CLOSE_POLICY, 'hello timeout');
     }
     if (this.room.phase === 'game') {
+      if (this.resumeBuilding) {
+        // A resumed save is being prepared (its seats have no deadlines yet): look again shortly.
+        await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
+        return;
+      }
       if (!this.lockstep && !(this.room.resumeStart && this.log)) return this.sessionLost();
       const loading = this.lockstep?.starting ?? false;
       for (const seat of this.lockstep ? this.lockstep.silent(now, DROP_AFTER_MS) : []) {

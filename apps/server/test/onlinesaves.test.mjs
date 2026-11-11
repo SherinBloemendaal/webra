@@ -252,6 +252,82 @@ test('resuming: the file is checked against the record, the players come back by
   valid(guest);
 });
 
+test('starting a resumed save that has an invite code: messages, joins and alarms during the D1 write do not end the session', async () => {
+  const env = makeEnv({ email: false });
+  const accounts = await accountsFor(env);
+  const ctx = await game(env, accounts);
+  const { agreed, result: saved } = await saveGame(ctx);
+  const text = await saveFile(ctx, saved, agreed);
+  const s = await makeSession({ DB: env.DB, maxPlayers: 3 });
+  const sid = wire(env, s.session);
+  const host = s.connect('host', '10.0.0.1', authOf(accounts.host));
+  await s.send(host, hello(s, { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  assert.equal((await accounts.host.req('POST', `/api/sessions/${sid}/resume`, text, { headers: { [MEMBER_HEADER]: `${hw.you}.${hw.key}` } })).status, 200);
+  const guest = s.connect('guest', '10.0.0.2', authOf(accounts.guest));
+  await s.send(guest, hello(s));
+  const gw = guest.take('welcome')[0];
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  const invite = await s.session.newInvite({ member: { client: hw.you, key: hw.key }, account: accounts.host.user, ip: '10.0.0.1' });
+  assert.equal(invite.ok, true);
+  // The invite expiry at the start answers late (a D1 round trip): other events run meanwhile.
+  const waiting = [];
+  const release = () => waiting.splice(0).forEach((r) => r());
+  let reached;
+  const held = new Promise((r) => (reached = r));
+  const real = env.DB;
+  s.session.env.DB = {
+    prepare(sql) {
+      const st = real.prepare(sql);
+      if (!/^UPDATE invite_codes/.test(sql)) return st;
+      return {
+        bind: (...args) => {
+          const b = st.bind(...args);
+          return {
+            run: async () => {
+              reached();
+              await new Promise((r) => waiting.push(r));
+              return b.run();
+            },
+          };
+        },
+      };
+    },
+    batch: (sts) => real.batch(sts),
+  };
+  const starting = s.send(host, { t: 'start' });
+  await held;
+  // A member's message, a watcher, a rejoin and the alarm arrive while the start awaits D1.
+  await s.send(guest, { t: 'chat', text: 'go go' });
+  await s.send(guest, { t: 'ready', ready: false, mapHash: null });
+  assert.equal(guest.last('error').message, 'The game is starting.');
+  const watcher = s.connect('watcher', '10.0.0.3', authOf(accounts.other));
+  await s.send(watcher, hello(s, { spectate: true }));
+  assert.match(watcher.last('error').message, /The game is starting/);
+  assert.equal(watcher.take('start').length, 0, 'no half-built log is streamed');
+  const again = s.connect('again', '10.0.0.2', authOf(accounts.guest));
+  await s.send(again, hello(s, { rejoin: { client: gw.you, key: gw.key } }));
+  assert.match(again.last('error').message, /The game is starting/);
+  await s.session.alarm();
+  release();
+  await starting;
+  s.session.env.DB = real;
+  assert.ok(s.session.room && s.session.meta, 'the session is still there');
+  assert.equal(host.take('error').filter((e) => e.code === 'session_lost').length, 0);
+  assert.equal(host.last('chat').text, 'go go');
+  for (const ws of [host, guest]) {
+    assert.ok(ws.last('start').resume, `${ws.name} got the start`);
+    assert.deepEqual(ws.last('sync'), { t: 'sync', tick: saved.ticks, check: { tick: saved.ticks - 1, hash: saved.hash } });
+  }
+  for (const st of s.session.room.seatStates.filter(Boolean)) assert.equal(st.state, 'syncing', 'nobody was dropped by the alarm');
+  await s.send(host, { t: 'resume' });
+  await s.send(guest, { t: 'resume' });
+  assert.deepEqual(host.take('frame').map((f) => f.tick), [saved.ticks, saved.ticks + 1, saved.ticks + 2]);
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM invite_codes WHERE expires_at > ?1', Date.now())[0].n, 0, 'the code ended');
+  valid(host);
+  valid(guest);
+});
+
 test('online save records: export lists them, 90 days and purging remove them, 20 per account', async () => {
   const env = makeEnv({ email: false });
   const accounts = await accountsFor(env);
