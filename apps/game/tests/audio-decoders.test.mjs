@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { Blowfish, piWords } from '../js/audio/blowfish.js';
 import { decryptKeySource, westwoodPublicKey, parseKeyInteger, modPow } from '../js/audio/mixkey.js';
 import { MixArchive, MixError, mixHash, bytesSource, blobSource } from '../js/audio/mix.js';
-import { decodeAud, imaDecodeNibble, wsDecodeChunk, looksLikeAud, AudError } from '../js/audio/aud.js';
+import { decodeAud, audDuration, imaDecodeNibble, wsDecodeChunk, looksLikeAud, AudError, FORMAT_IMA, FORMAT_WESTWOOD } from '../js/audio/aud.js';
 import { sineSamples, imaEncode, imaAud, wsAud, audFile, buildMix, buildEncryptedMix, testRsaKey, encryptKeySource } from './audio-fixtures.mjs';
 
 const hex = (b) => Buffer.from(b).toString('hex');
@@ -175,6 +175,22 @@ test('Westwood ADPCM decodes every command type', () => {
     Array.from(aud.samples, (s) => Math.round(s * 128 + 128)),
     [10, 20, 30, 128, 128, 128, 100, 120, 117, 125, 126, 124, 123, 123, 124],
   );
+});
+
+test('an .aud header claiming more output than its data can give is rejected before decoding (I-3)', () => {
+  for (const [format, perByte] of [[FORMAT_IMA, 4], [FORMAT_WESTWOOD, 64]]) {
+    const aud = audFile({ format, chunks: [[Uint8Array.from([0x11, 0x22]), 4]] });
+    new DataView(aud.buffer).setUint32(6, 0xfffffffe, true);
+    assert.throws(() => decodeAud(aud), /implausible AUD output size/);
+    assert.throws(() => audDuration(aud), /implausible AUD output size/, 'no absurd length either');
+    assert.equal(looksLikeAud(aud), false);
+    // The bound itself still decodes: the most the data can give.
+    const dataSize = new DataView(aud.buffer).getUint32(2, true);
+    new DataView(aud.buffer).setUint32(6, dataSize * perByte, true);
+    assert.doesNotThrow(() => decodeAud(aud));
+  }
+  const real = imaAud(sineSamples(5000));
+  assert.equal(decodeAud(real).samples.length, 5000, 'a real file still decodes');
 });
 
 test('broken or unsupported .aud files are rejected', () => {

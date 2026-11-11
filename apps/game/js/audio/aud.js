@@ -113,6 +113,10 @@ export function parseAudHeader(bytes) {
   if (header.sampleRate < 2000 || header.sampleRate > 96000) throw new AudError(`implausible AUD sample rate ${header.sampleRate}`);
   if (header.flags & 1) throw new AudError('stereo AUD files are not supported (Red Alert uses mono)');
   if (HEADER + header.dataSize > bytes.length) throw new AudError('AUD file is truncated');
+  // The output must fit what the data can give, so a damaged header cannot
+  // make the decoder allocate gigabytes: IMA gives two 16-bit samples (4
+  // bytes) per data byte, Westwood at most 64 samples (one repeat command).
+  if (header.outputSize > header.dataSize * (header.format === FORMAT_IMA ? 4 : 64)) throw new AudError('implausible AUD output size');
   return header;
 }
 
