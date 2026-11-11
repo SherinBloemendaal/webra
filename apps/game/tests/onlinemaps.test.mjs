@@ -311,11 +311,11 @@ test('online lobby: maps of a newer format or no longer compatible are refused w
     const before = requests.length;
     const newer = JSON.stringify({ ...v1Map(), formatVersion: 4, gameVersion: '2.0.0' });
     await ui.shareFile({ name: 'new.webra-map.json', size: newer.length, text: async () => newer });
-    assert.equal(textOf(root.querySelector('.online-error')), 'This map was made with a newer version of WebRA (2.0, format 4; this version reads format 3). Update the game to play it.');
+    assert.equal(textOf(root.querySelector('.online-error-text')), 'This map was made with a newer version of WebRA (2.0, format 4; this version reads format 3). Update the game to play it.');
     const gone = JSON.stringify(v1Map({ actors: [{ type: 'GONE', owner: -1, x: 3, y: 9 }] }));
     await ui.shareFile({ name: 'gone.webra-map.json', size: gone.length, text: async () => gone });
     assert.equal(
-      textOf(root.querySelector('.online-error')),
+      textOf(root.querySelector('.online-error-text')),
       'This map was made for WebRA 0.9 (format 1) and is no longer compatible with this version. Open it in the map editor and save it again.',
     );
     assert.equal(requests.length, before, 'nothing was uploaded');

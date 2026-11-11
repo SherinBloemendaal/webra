@@ -648,3 +648,27 @@ test('two quick option edits: the second keeps the first; the echo ends the draf
     uninstallDom();
   }
 });
+
+test('the error banner goes once a later action went through, or on Dismiss', async () => {
+  const { ui, lobby } = await hostLobby();
+  ui.conn = { send() {} };
+  // The real send (the fixture's records only): it marks that this client acted.
+  delete ui.send;
+  try {
+    lobby();
+    ui.onServerError({ code: 'forbidden', message: 'That start position is taken.' });
+    assert.equal(ui.banner.hidden, false);
+    lobby();
+    assert.equal(ui.banner.hidden, false, "another member's change: the error stays");
+    ui.send({ t: 'slot', slot: 0, team: 2 });
+    lobby();
+    assert.equal(ui.banner.hidden, true, 'the next action went through');
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    const dismiss = [...ui.banner.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Dismiss message');
+    assert.ok(dismiss);
+    click(dismiss);
+    assert.equal(ui.banner.hidden, true);
+  } finally {
+    uninstallDom();
+  }
+});

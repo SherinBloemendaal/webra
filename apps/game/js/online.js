@@ -703,13 +703,27 @@ export class OnlineUI {
     this.refreshTimer = setInterval(() => this.refresh(), REFRESH_MS);
   }
 
+  /**
+   * The error banner (role=alert): a message, or '' to hide it. It goes once
+   * the player dismisses it or one of this player's later actions went
+   * through (actionWentThrough), so a stale error never reads as current.
+   */
   setError(message, { signIn = false } = {}) {
     if (!this.banner) return;
-    this.banner.textContent = message || '';
+    this.sentSinceError = false;
+    this.banner.textContent = '';
     this.banner.hidden = !message;
-    if (message && signIn && this.ctx.account) {
-      this.banner.append(' ', button('Sign in', 'online-btn-primary', () => this.signIn()));
-    }
+    if (!message) return;
+    this.banner.append(el('span', 'online-error-text', message));
+    if (signIn && this.ctx.account) this.banner.append(button('Sign in', 'online-btn-primary', () => this.signIn()));
+    const dismiss = button('Dismiss', 'online-btn-small online-error-dismiss', () => this.setError(''));
+    dismiss.setAttribute('aria-label', 'Dismiss message');
+    this.banner.append(dismiss);
+  }
+
+  /** The server answered an action this client sent after the banner's error: that error is over. */
+  actionWentThrough() {
+    if (this.sentSinceError && this.banner && !this.banner.hidden) this.setError('');
   }
 
   /** Show an error; account refusals (account_required, banned, ...) get their own text and a sign-in button where it helps. */
@@ -1155,6 +1169,8 @@ export class OnlineUI {
       const hello = { name };
       if (password) hello.password = password;
       if (spectate) hello.spectate = true;
+      // An older error (a failed join) is not about this one.
+      this.setError('');
       await this.connect(session.id, hello);
     } catch (err) {
       if (this.joining === token) this.showProblem(err);
@@ -1172,7 +1188,12 @@ export class OnlineUI {
     const conn = new Connection(id);
     conn
       .on('lobby', (m) => this.onLobby(m))
-      .on('chat', (m) => (this.inGame ? this.gameChat(m) : this.chatLine(m.name, m.text, m.from === null, !!m.team)))
+      .on('chat', (m) => {
+        if (this.inGame) return this.gameChat(m);
+        // This player's own line came back: the chat went through.
+        if (m.from !== null && m.from === this.state?.you) this.actionWentThrough();
+        return this.chatLine(m.name, m.text, m.from === null, !!m.team);
+      })
       .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true, false, 'left'))
       .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
@@ -1380,6 +1401,7 @@ export class OnlineUI {
     if (!this.conn) return false;
     try {
       this.conn.send(msg);
+      this.sentSinceError = true;
       return true;
     } catch (err) {
       this.setError(messageOf(err));
@@ -1521,6 +1543,8 @@ export class OnlineUI {
       this.buildLobby();
       this.loadServerMaps();
     }
+    // An action of this player went through (the server changed the lobby after it).
+    this.actionWentThrough();
     const mapChanged = (this.state.map ? this.state.map.hash : null) !== (m.map ? m.map.hash : null);
     // The options edit on its way arrived, or the lobby changed under it (a new host, another map).
     if (mapChanged || m.hostId !== this.state.hostId || this.draftSettled(m)) this.optionsDraft = null;
