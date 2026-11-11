@@ -10,7 +10,7 @@
   --o-edge: var(--ui-line);
   --o-accent: var(--ui-accent-hi);
   /* Destructive actions (leave, kick): a darker red than the accent. */
-  --o-danger: #8f2a1f;
+  --o-danger: var(--ui-primary-active);
   --o-red-edge: var(--ui-edge);
   position: fixed;
   inset: 0;
@@ -114,7 +114,7 @@
 }
 
 .online-warning {
-  color: #f0c060;
+  color: var(--ui-warn);
 }
 
 /* What a modded map's rules change (js/maprules.js). */
@@ -131,20 +131,20 @@
 .online-cheats {
   margin: 10px 0 0;
   padding: 6px 10px;
-  border: 1px solid #b0412e;
+  border: 1px solid var(--ui-accent);
   border-radius: 2px;
-  background: rgba(176, 65, 46, 0.25);
-  color: #ffb4a2;
+  background: color-mix(in srgb, var(--ui-accent) 25%, transparent);
+  color: var(--ui-accent-hover);
   font-weight: bold;
 }
 
 .online-error {
   margin: 0 0 12px;
   padding: 8px 12px;
-  background: rgba(140, 44, 31, 0.35);
-  border: 1px solid #8c2c1f;
+  background: color-mix(in srgb, var(--ui-primary-active) 35%, transparent);
+  border: 1px solid var(--ui-led-bad-edge);
   border-radius: 2px;
-  color: #ffd9cf;
+  color: var(--ui-accent-hover);
   overflow-wrap: anywhere;
 }
 
@@ -252,9 +252,9 @@
 }
 
 .online-badge-modded {
-  color: #ffd27a;
-  border-color: #8f6a1c;
-  background: rgba(143, 106, 28, 0.25);
+  color: var(--ui-warn);
+  border-color: var(--ui-led-warn-edge);
+  background: color-mix(in srgb, var(--ui-led-warn-edge) 25%, transparent);
 }
 
 .online-badge-you {
@@ -609,7 +609,7 @@
   padding: 2px 8px;
   background: rgba(0, 0, 0, 0.55);
   border-radius: 2px;
-  color: #ffd27a;
+  color: var(--ui-warn);
   overflow-wrap: anywhere;
 }
 
@@ -680,8 +680,8 @@
 }
 
 .online-map-installed {
-  color: #9fd88a;
-  border-color: #3f6e33;
+  color: var(--ui-ok);
+  border-color: var(--ui-led-ok-edge);
 }
 
 .online-map-missing {
@@ -689,8 +689,8 @@
 }
 
 .online-map-declined {
-  color: #ffb4a2;
-  border-color: #b0412e;
+  color: var(--ui-accent-hover);
+  border-color: var(--ui-led-bad-edge);
 }
 
 .online-btn-small {
@@ -714,7 +714,7 @@
   padding: 4px 8px;
   background: rgba(0, 0, 0, 0.7);
   border-radius: 2px;
-  color: #ffd27a;
+  color: var(--ui-warn);
   pointer-events: auto;
 }
 
@@ -1188,7 +1188,7 @@
   place-items: center;
   width: 44px;
   height: 52px;
-  background: #06080a;
+  background: var(--ui-well);
   border: 1px solid var(--ui-edge);
   box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.6);
   font: 600 26px / 1 var(--ui-font-mono);
@@ -1237,7 +1237,7 @@
 .invite-code.is-session .invite-code-input {
   opacity: 1;
   padding: 0 10px;
-  background: #06080a;
+  background: var(--ui-well);
   border: 1px solid var(--ui-edge);
   color: var(--ui-text);
   font: 400 var(--ui-fs-s) / 1 var(--ui-font-mono);
