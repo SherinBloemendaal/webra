@@ -814,3 +814,41 @@ test('replay controller state is mirrored for the replay bar', () => {
   assert.equal(handle.target, 100, 'clamped to the replay');
   assert.ok(ReplayController);
 });
+
+test('commands to a simulation that failed reject quietly: no unhandled rejection per network message or replay button', async () => {
+  const unhandled = [];
+  const onUnhandled = (err) => unhandled.push(err);
+  process.on('unhandledRejection', onUnhandled);
+  const logged = [];
+  const error = console.error;
+  console.error = (...args) => logged.push(args.join(' '));
+  try {
+    const host = { failed: null, on() {}, command: (name) => Promise.reject(new Error(`${name}: the simulation worker failed`)) };
+    const driver = new DriverHandle(host, { send() {} }, { tickMs: TICK_MS });
+    const replay = new ReplayHandle(host, 100);
+    host.failed = 'the simulation worker failed';
+    driver.onFrame({});
+    driver.onLog({});
+    driver.onSync({});
+    driver.onBack(5);
+    driver.reattach({ send() {} });
+    driver.stop();
+    replay.togglePlay();
+    replay.setSpeed(2);
+    replay.seek(10);
+    replay.dispose();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(unhandled, []);
+    assert.deepEqual(logged, [], 'the failure was reported once already (host failed)');
+    // A command that fails while the simulation runs is a real error: logged.
+    host.failed = null;
+    replay.seek(20);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(unhandled, []);
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /seek/);
+  } finally {
+    console.error = error;
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
