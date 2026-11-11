@@ -145,15 +145,28 @@ export async function mapSizeDialog({ width, height, region }) {
   const dy = number(0, -LIMITS.maxSize, LIMITS.maxSize);
   let op = 'resize';
   const buttonFor = (value, label) => el('button', { type: 'submit', value, onclick: () => (op = value) }, label);
+  const resizeButton = buttonFor('resize', 'Resize');
+  const shiftButton = buttonFor('shift', 'Shift');
+  // Enter in a field runs that field's own action (the form's implicit submit would press Resize, the first button).
+  const enterPresses = (input, button) =>
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      button.click();
+    });
+  enterPresses(w, resizeButton);
+  enterPresses(h, resizeButton);
+  enterPresses(dx, shiftButton);
+  enterPresses(dy, shiftButton);
   const result = await modal({
     title: 'Map size and turns',
     wide: true,
     body: [
       el('h2', {}, 'Size'),
       el('div', { class: 'row' }, [el('div', { class: 'grid2' }, [field('Width', w), field('Height', h)]), field('Keep the map at', grid)]),
-      el('div', { class: 'row' }, [buttonFor('resize', 'Resize'), region ? buttonFor('crop', `Crop to the region (${region.x1 - region.x0 + 1} x ${region.y1 - region.y0 + 1})`) : null]),
+      el('div', { class: 'row' }, [resizeButton, region ? buttonFor('crop', `Crop to the region (${region.x1 - region.x0 + 1} x ${region.y1 - region.y0 + 1})`) : null]),
       el('h2', {}, 'Shift'),
-      el('div', { class: 'row' }, [field('Right', dx), field('Down', dy), buttonFor('shift', 'Shift')]),
+      el('div', { class: 'row' }, [field('Right', dx), field('Down', dy), shiftButton]),
       el('h2', {}, 'Turn and mirror'),
       el('div', { class: 'row wrap' }, [buttonFor('rotate90', 'Turn right'), buttonFor('rotate270', 'Turn left'), buttonFor('rotate180', 'Half turn'), buttonFor('flipX', 'Mirror left / right'), buttonFor('flipY', 'Mirror top / bottom')]),
       el('p', { class: 'hint' }, 'Structures keep their look when the map turns; bridges only fit the way they were drawn. Spawns and actors that end up off the map are removed. One undo step.'),

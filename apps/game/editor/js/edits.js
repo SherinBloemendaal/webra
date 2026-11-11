@@ -543,10 +543,12 @@ function applyRegionTransform(tr, x, y, w, h, fw, fh) {
  * (each mirrored or turned like the mode does, owners and facings with it).
  * `layers` picks what is pasted: { terrain, resources, actors }. Cells off
  * the map are cut off; actors that do not fit (off the map, on the wrong
- * ground, overlapping) are skipped. Returns { cells, actors, skipped }.
+ * ground, overlapping) are skipped. Actors of a spawn the map does not have
+ * (copied from a map with more spawns) become neutral. Returns { cells,
+ * actors, skipped, neutral }.
  */
 export function pasteRegion(doc, catalog, clip, x, y, symmetry, layers = { terrain: true, resources: true, actors: true }) {
-  const result = { cells: 0, actors: 0, skipped: 0 };
+  const result = { cells: 0, actors: 0, skipped: 0, neutral: 0 };
   const occupancy = layers.actors ? new Occupancy(doc, catalog) : null;
   for (const p of symmetricPositions(symmetry, x, y, doc.width, doc.height, clip.w, clip.h)) {
     const c = regionUnder(clip, catalog, p.t);
@@ -572,7 +574,13 @@ export function pasteRegion(doc, catalog, clip, x, y, symmetry, layers = { terra
       }
       doc.touchObjects();
       const { dx: _dx, dy: _dy, ...rest } = a;
-      const placed = { ...rest, owner: mirroredOwner(p.t, a.owner, doc.spawns, doc.width, doc.height), x: ax, y: ay };
+      let owner = mirroredOwner(p.t, a.owner, doc.spawns, doc.width, doc.height);
+      // Copied from a map with more spawns (the clipboard and stamps outlive the map): a spawn this map lacks has no player, so neutral.
+      if (owner >= doc.spawns.length) {
+        owner = -1;
+        result.neutral++;
+      }
+      const placed = { ...rest, owner, x: ax, y: ay };
       doc.actors.push(placed);
       occupancy.add(placed);
       result.actors++;

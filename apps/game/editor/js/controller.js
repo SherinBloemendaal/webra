@@ -243,7 +243,10 @@ export class Controller {
         doc.begin('Paste');
         const r = pasteRegion(doc, this.catalog, s.clip, px, py, s.symmetry, s.pasteLayers);
         doc.commit();
-        if (r.skipped) this.hooks.status(`Pasted; ${r.skipped} actor${r.skipped === 1 ? '' : 's'} did not fit and were left out.`);
+        const notes = [];
+        if (r.skipped) notes.push(`${r.skipped} actor${r.skipped === 1 ? '' : 's'} did not fit and were left out`);
+        if (r.neutral) notes.push(`${r.neutral} actor${r.neutral === 1 ? '' : 's'} of spawns this map does not have became neutral`);
+        if (notes.length) this.hooks.status(`Pasted; ${notes.join('; ')}.`);
         break;
       }
     }

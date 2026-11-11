@@ -77,8 +77,9 @@
         <canvas id="view" tabindex="0" aria-label="Map"></canvas>
         <div id="labels" aria-hidden="true"></div>
         <div id="viewbar" aria-label="View"></div>
-        <div id="status" role="status"></div>
-        <!-- Installed tiles being planned for most of the map (editor.js showTilesBusy); the editor stays usable. -->
+        <!-- A read-out of the cell under the pointer, not a live region: it changes with every cell crossed. -->
+        <div id="status"></div>
+        <!-- An .oramap import, or installed tiles being planned for most of the map (editor.js showBusy); the editor stays usable. -->
         <p id="busy" class="busy" hidden><span class="loading-spinner" aria-hidden="true"></span><span class="busy-text" role="status" aria-live="polite"></span></p>
       </main>
 

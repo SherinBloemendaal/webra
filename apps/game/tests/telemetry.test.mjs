@@ -494,3 +494,25 @@ test('the CSP lets the game and the website reach sentry.vitrion.dev and nothing
     assert.equal(/<meta[^>]+Content-Security-Policy/i.test(html), false);
   }
 });
+
+test('the map editor follows the setting and cuts the author name and the names and authors of its maps out of reports', async () => {
+  const { connectEditorTelemetry, noteMapText } = await import('../editor/js/privacy.js');
+  const sdk = fakeSdk();
+  await initTelemetry({ surface: 'game', config: CONFIG, storage: memoryStorage(), win: fakeWindow(), loadSdk: async () => sdk });
+  const registry = createRegistry({ storage: memoryStorage() });
+  registry.set('extra', 'editorAuthor', 'Major Mapmaker');
+  connectEditorTelemetry(registry);
+  noteMapText({ name: 'Doom Valley', author: 'Someone Else', width: 64 });
+  noteMapText([{ id: 'x', name: 'Listed Isles', author: 'Third Person' }, null]);
+  const event = { message: 'Major Mapmaker saved Doom Valley by Someone Else next to Listed Isles of Third Person' };
+  const out = sdk.options.beforeSend(structuredClone(event), {});
+  for (const secret of ['Major Mapmaker', 'Doom Valley', 'Someone Else', 'Listed Isles', 'Third Person']) assert.equal(out.message.includes(secret), false, `leaks ${secret}`);
+  // The setting, live: switched off in the registry, nothing is reported.
+  registry.set('privacy', 'errorReports', false);
+  assert.equal(active(), false);
+  // The editor connects it before it opens the first map, and notes the maps it opens, lists and imports.
+  const src = readFileSync(new URL('../editor/editor.js', import.meta.url), 'utf8');
+  assert.match(src, /async function openFirstMap\(\) \{\n(?:\s*\/\/.*\n)*\s*connectEditorTelemetry\(defaultRegistry\(\)\);/);
+  assert.match(src, /function loadMap\(raw, label, done = null, origin = newOrigin\(\)\) \{\n\s*noteMapText\(raw\);/);
+  assert.match(src, /maps = await listMaps\(\);\n\s*noteMapText\(maps\);/);
+});

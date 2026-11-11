@@ -9,7 +9,7 @@ import { buildMapBin, buildZip, mapYaml, sampleOramap, T } from './oramap-fixtur
 import { crc32, openZip, ZipError, ZIP_LIMITS } from '../js/oramap/zip.js';
 import { MiniYamlError, parseMiniYaml, parseWDist } from '../js/oramap/miniyaml.js';
 import { MapBinError, readMapBin } from '../js/oramap/mapbin.js';
-import { cleanText, convertOramap, nearestColor, ORA_TO_WEBRA_TERRAIN, OramapError, RESOURCE_TYPES, TILESET_BIOMES } from '../js/oramap/convert.js';
+import { cleanText, convertOramap, nearestColor, ORA_TO_WEBRA_TERRAIN, OramapError, RESOURCE_TYPES, TILESET_BIOMES, vetRules } from '../js/oramap/convert.js';
 import { importOramap, isOramapFile } from '../js/oramap/index.js';
 import { BRIDGES, ORA_TERRAIN_LETTERS, PICK_ANY, TILESETS } from '../js/oramap/tables.js';
 import { decodeLayers, TERRAIN } from '../editor/js/mapformat.js';
@@ -847,4 +847,51 @@ test('round trip: rules the engine refuses are dropped one by one and reported',
   assert.equal(report.modded, true);
   const v = engineValidate(json);
   assert.ok(v.ok && v.modded, v.errors.join('; '));
+});
+
+test('rules vetting: one refused field among a hundred costs a few engine checks and drops exactly that field', async () => {
+  const actors = {};
+  for (let k = 0; k < 100; k++) actors[`A${k}`] = { cost: k + 1 };
+  actors.A57.sight = 999;
+  const map = { name: 'Vet', rules: { actors } };
+  const report = { rules: { rejected: [], applied: [{ section: 'actors', id: 'A57', field: 'sight' }, { section: 'actors', id: 'A3', field: 'cost' }] }, modded: true };
+  let calls = 0;
+  // A stand-in for the engine: a sight above 40 is refused, everything else is fine.
+  const validate = (json) => {
+    calls++;
+    const rules = JSON.parse(json).rules;
+    const bad = Object.entries(rules?.actors ?? {}).filter(([, p]) => p.sight > 40);
+    return { ok: !bad.length, errors: bad.map(([id]) => `${id}: sight too large`) };
+  };
+  await vetRules(map, report, validate);
+  assert.ok(calls < 20, `${calls} checks`);
+  assert.deepEqual(report.rules.rejected, ['A57 sight: A57: sight too large']);
+  assert.deepEqual(report.rules.applied, [{ section: 'actors', id: 'A3', field: 'cost' }]);
+  assert.equal(Object.keys(map.rules.actors).length, 100);
+  assert.deepEqual(map.rules.actors.A57, { cost: 58 });
+  assert.equal(report.modded, true);
+  // Every field refused: no rules left, not modded; the checks run out and the rest are dropped too.
+  const all = { name: 'All', rules: { actors: { B1: { sight: 99 }, B2: { sight: 98 }, B3: { sight: 97 } } } };
+  const r2 = { rules: { rejected: [], applied: [] }, modded: true };
+  await vetRules(all, r2, validate, 3);
+  assert.equal(all.rules, null);
+  assert.equal(r2.modded, false);
+  assert.equal(r2.rules.rejected.length, 3);
+  assert.ok(r2.rules.rejected.some((t) => /too many rules to check/.test(t)), r2.rules.rejected.join('; '));
+});
+
+test('convert: a stance or faction named like an Object property (__proto__, constructor) is unknown, not a lookup into the prototype', async () => {
+  const actors = [
+    { type: 'mpspawn', x: 8, y: 8 },
+    { type: 'mpspawn', x: 38, y: 38 },
+    { type: 'e1', owner: 'Multi0', x: 10, y: 12, stance: '__proto__' },
+    { type: 'pbox', x: 25, y: 10, stance: 'constructor' },
+  ];
+  const multi = [['\t\tFaction: __proto__', '\t\tLockFaction: True'], ['\t\tFaction: constructor', '\t\tLockFaction: True', '\t\tTeam: 1']];
+  const { map, json, report } = await importOramap(sampleOramap({ actors, multi }), { baseRules: BASE_RULES, validate: engineValidate });
+  for (const a of map.actors.filter((x) => x.type === 'E1' || x.type === 'PBOX')) assert.equal(a.stance, undefined, `${a.type} keeps the default stance`);
+  assert.equal(report.converted.some((l) => l.startsWith('Health, stances and passengers')), false, 'no actor state was converted');
+  assert.deepEqual(map.players.map((p) => [p.faction, p.team, p.lock]), [['random', 0, []], ['random', 1, []]], 'a random faction, no faction lock');
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
+  assert.ok(engineValidate(json).ok);
 });

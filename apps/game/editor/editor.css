@@ -1004,7 +1004,7 @@ body.editor {
   #topbar .brand .ui-brand-word,
   .map-title,
   #save-state,
-  #topbar .cmd:not(.icon-only):not(.primary) span {
+  #topbar .cmd.has-icon:not(.icon-only):not(.primary) span {
     display: none;
   }
 

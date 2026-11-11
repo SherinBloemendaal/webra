@@ -316,7 +316,96 @@ test('spawns: symmetric add, limit of 8, partners and removal', () => {
   assert.deepEqual(doc.actors.map((a) => a.owner), [-1, 4]);
 });
 
+test('removing a spawn takes its player slot along, undo brings both back', () => {
+  const doc = new MapDoc(createMap({ width: 96, height: 96 }));
+  doc.begin('spawns');
+  doc.touchObjects();
+  doc.spawns = [[4, 4], [40, 40], [80, 80]];
+  doc.touchMeta();
+  doc.meta.players = [{ type: 'ai', faction: 'soviet' }, { type: 'open', faction: 'allies' }, { type: 'closed' }];
+  doc.commit();
+  const slots = doc.toMap().players;
+  doc.begin('Remove spawn');
+  doc.removeSpawn(0);
+  doc.commit();
+  assert.deepEqual(doc.toMap().spawns, [[40, 40], [80, 80]]);
+  assert.deepEqual(doc.toMap().players, slots.slice(1));
+  doc.undo();
+  assert.deepEqual(doc.toMap().players, slots);
+  assert.equal(doc.spawns.length, 3);
+  // A spawn without a slot of its own leaves the slots alone.
+  doc.begin('Remove spawn');
+  doc.touchMeta();
+  doc.meta.players.length = 1;
+  doc.removeSpawn(2);
+  doc.commit();
+  assert.deepEqual(doc.toMap().players, slots.slice(0, 1));
+});
+
+test('the document\'s origin follows replace steps through undo and redo, edits keep it', async () => {
+  const { newOrigin } = await import('../editor/js/doc.js');
+  const doc = newDoc();
+  const published = newOrigin('abc123');
+  doc.origin = published;
+  doc.begin('Paint');
+  doc.setCell(1, 1, TERRAIN.ROCK);
+  doc.commit();
+  assert.equal(doc.source, 'abc123');
+  doc.replace(createMap({ width: 40, height: 32 }), 'Resize map', doc.origin);
+  assert.equal(doc.origin, published, 'a change of the same map keeps it');
+  doc.replace(createMap({ width: 40, height: 32 }), 'New map');
+  assert.equal(doc.source, null, 'another map has no source');
+  assert.notEqual(doc.origin.key, published.key, 'and a key of its own');
+  const fresh = doc.origin;
+  doc.replace(createMap({ width: 40, height: 32 }), 'Open other', newOrigin('other1'));
+  assert.equal(doc.source, 'other1');
+  doc.undo();
+  assert.equal(doc.origin, fresh);
+  doc.undo();
+  doc.undo();
+  assert.equal(doc.origin, published);
+  doc.redo();
+  doc.redo();
+  doc.redo();
+  assert.equal(doc.source, 'other1');
+});
+
+test('replacing the map during an edit drops the edit: undo restores the map as it was before it', () => {
+  const doc = newDoc(40, 32);
+  doc.begin('Setup');
+  doc.setCell(5, 5, TERRAIN.ROCK);
+  doc.commit();
+  const original = doc.toMap();
+  doc.begin('Paint');
+  doc.setCell(39, 31, TERRAIN.WATER);
+  doc.replace(createMap({ width: 32, height: 32 }), 'Open');
+  doc.commit();
+  assert.deepEqual(doc.undoStack.map((e) => e.label), ['Setup', 'Open']);
+  assert.equal(doc.width, 32);
+  doc.undo();
+  assert.deepEqual(doc.toMap(), original);
+});
+
 // ---- Symmetry groups, shapes, regions and map turns -------------------------------------
+test('pasting actors of a spawn this map does not have makes them neutral, so the map stays valid', () => {
+  const four = new MapDoc(createMap({ width: 64, height: 64 }));
+  four.begin('Setup');
+  four.touchObjects();
+  four.spawns = [[2, 2], [50, 2], [2, 50], [50, 50]];
+  placeActor(four, CATALOG, { type: '1TNK', owner: 3, x: 30, y: 30, facing: 0 }, 'none');
+  placeActor(four, CATALOG, { type: '1TNK', owner: 1, x: 31, y: 30, facing: 0 }, 'none');
+  four.commit();
+  const clip = copyRegion(four, CATALOG, 30, 30, 31, 30);
+  const two = newDoc();
+  assert.equal(two.spawns.length, 2);
+  two.begin('Paste');
+  const r = pasteRegion(two, CATALOG, clip, 10, 20, 'none');
+  two.commit();
+  assert.deepEqual([r.actors, r.neutral], [2, 1]);
+  assert.deepEqual(two.actors.map((a) => a.owner), [-1, 1]);
+  assert.deepEqual(validateMap(two.toMap(), { catalog: CATALOG }).errors.filter((e) => /owner/.test(e)), []);
+});
+
 
 import { modeFits, transformCell, SYMMETRY_MODES } from '../editor/js/symmetry.js';
 import { autoShore, clearRegion, copyRegion, ellipseCells, pasteRegion, rectCells, regionFromData, regionToData, thickLineCells, transformRegion } from '../editor/js/edits.js';
@@ -455,6 +544,12 @@ test('map resize, crop, shift and turns keep cells, spawns and actors in step', 
   assert.equal(crop.dropped.actors, 1);
   assert.equal(crop.map.actors.length, 1);
   assert.equal(crop.map.actors[0].owner, 0);
+  // A dropped spawn takes its slot along, the others keep theirs (slots beyond the spawns stay as they are).
+  assert.equal(map.spawns.length, 2);
+  const withSlots = { ...map, players: [{ type: 'ai' }, { type: 'closed' }, { type: 'open' }] };
+  assert.deepEqual(cropMap(withSlots, CATALOG, 0, 0, 31, 39).map.players.map((p) => p.type), ['ai', 'open']);
+  assert.deepEqual(cropMap(withSlots, CATALOG, 32, 0, 63, 39).map.players.map((p) => p.type), ['closed', 'open']);
+  assert.deepEqual(shiftMap(withSlots, CATALOG, 1, 0).map.players, withSlots.players);
   assert.throws(() => resizeMap(map, CATALOG, 8, 8, 0, 0), /Width and height/);
   const shifted = shiftMap(map, CATALOG, 1, 0).map;
   assert.equal(cell(shifted, 1, 0), TERRAIN.ROCK);

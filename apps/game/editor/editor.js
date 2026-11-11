@@ -22,7 +22,7 @@ import { InstalledTiles } from './js/tiles.js';
 import { planInWorker } from '../js/terraintiles.js';
 import { LivePreview } from './js/live.js';
 import { idleTask } from './js/idle.js';
-import { MapDoc } from './js/doc.js';
+import { MapDoc, newOrigin } from './js/doc.js';
 import { EditorView, controlOwnsKeys, isTyping } from './js/view.js';
 import { Controller, teamOf } from './js/controller.js';
 import { COMMANDS, HELP_TEXT, MATERIAL_KEYS, PAINT_LAYERS, TOOLS, actionName } from './js/commands.js';
@@ -47,9 +47,9 @@ import { LensArt } from '../js/maplens/source.js';
 import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
-import { download, el, selectField, store } from './js/ui.js';
-
-const DRAFT_KEY = 'webra.editor.draft';
+import { download, el, selectField, store, tabKeys } from './js/ui.js';
+import { DRAFT_KEY, draftText, draftWins, parseDraft, withRecoveryCopy } from './js/draft.js';
+import { connectEditorTelemetry, noteMapText } from './js/privacy.js';
 /**
  * The last opened file's format version story (js/upgrade.js openMapFile):
  * `notice` (upgraded, or why it is not compatible) stays until the map is
@@ -196,10 +196,14 @@ function motionIsReduced() {
 
 /** The map the editor opens with (js/upgrade.js openMapFile of `?map=`, the draft or a new map), as the document. */
 async function openFirstMap() {
+  // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
+  connectEditorTelemetry(defaultRegistry());
   loadPrefs();
-  const { map: raw, note, edited = false } = await initialMap();
+  const { map: raw, note, edited = false, origin = null } = await initialMap();
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
+  if (first.map && origin) doc.origin = origin;
+  noteMapText(doc.meta);
   // A restored draft with changes not saved to a file stays edited (a saved point no history reaches).
   savedPoint = edited ? { top: {}, time: -1 } : historyPoint();
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
@@ -276,27 +280,31 @@ function applyArt() {
   if (document.querySelector('.palette-item')) renderPaletteIcons();
 }
 
-/** Map to open: `?map=<id>`, else the autosaved draft, else a new map. */
+/**
+ * Map to open: `?map=<id>`, else the autosaved draft, else a new map. The
+ * draft wins over `?map=<id>` when it holds edits of that same published map
+ * (a reload, a restored tab); a draft of another map never does.
+ * `origin`: which map it is and the published map it came from (MapDoc.origin).
+ */
 async function initialMap() {
   const id = new URLSearchParams(location.search).get('map');
+  let draft = null;
+  try {
+    draft = parseDraft(store.get(DRAFT_KEY));
+  } catch {
+    store.remove(DRAFT_KEY);
+  }
+  const restored = (d) => ({ map: d.map, edited: d.edited, origin: d.origin, note: `Restored your draft from ${new Date(d.savedAt).toLocaleString()}.` });
   if (id) {
+    if (draftWins(draft, id)) return restored(draft);
     try {
       const { map } = await fetchMap(id);
-      return { map, note: `Opened published map "${map.name}".` };
+      return { map, origin: newOrigin(id), note: `Opened published map "${map.name}".` };
     } catch (err) {
       return { map: newBlankMap(), note: `Could not open map ${id}: ${err.message}` };
     }
   }
-  const draft = store.get(DRAFT_KEY);
-  if (draft) {
-    try {
-      const { map, savedAt, edited = true } = JSON.parse(draft);
-      new MapDoc(map); // throws on undecodable layers
-      return { map, edited: !!edited, note: `Restored your draft from ${new Date(savedAt).toLocaleString()}.` };
-    } catch {
-      store.remove(DRAFT_KEY);
-    }
-  }
+  if (draft) return restored(draft);
   return { map: newBlankMap(), note: null };
 }
 
@@ -396,7 +404,7 @@ function drawFrame(now) {
   const scene = ctl.scene();
   const actors = state.layers.actors ? preview.sprites(view.viewRect()) : new Float32Array(0);
   view.draw(animClock.uniform(), actors, scene);
-  showTilesBusy(now);
+  showBusy(now);
   placeLabels(state.layers.spawns ? scene.labels : []);
   if (now - minimapTime > 66) {
     minimapTime = now;
@@ -457,7 +465,8 @@ function previewHints() {
 }
 
 /**
- * The busy line over the map (#busy): shown while the worker plans the
+ * The busy line over the map (#busy): shown while an .oramap file is
+ * imported (`importing`, its name), and while the worker plans the
  * installed tiles of most of the map (a map opened, resized or turned to
  * another biome; js/tiles.js standIn), after BUSY_DELAY_MS so a quick plan
  * shows nothing. The editor stays usable meanwhile (the map shows stand-in
@@ -466,15 +475,17 @@ function previewHints() {
 const BUSY_DELAY_MS = 300;
 const BUSY_TEXT = 'Laying the terrain tiles...';
 let busySince = null;
-function showTilesBusy(now) {
+let importing = null;
+function showBusy(now = performance.now()) {
   const busy = !!installedTiles?.busy && installedTiles.standIn;
   busySince = busy ? (busySince ?? now) : null;
-  const show = busy && now - busySince >= BUSY_DELAY_MS;
+  const text = importing !== null ? `Importing ${importing}...` : busy && now - busySince >= BUSY_DELAY_MS ? BUSY_TEXT : '';
   const el = $('#busy');
-  if (!el || el.hidden === !show) return;
-  el.hidden = !show;
+  const line = el?.querySelector('.busy-text');
+  if (!line || (el.hidden === !text && line.textContent === text)) return;
+  el.hidden = !text;
   // The polite status line says it once it shows (a change of visibility alone is not announced).
-  el.querySelector('.busy-text').textContent = show ? BUSY_TEXT : '';
+  line.textContent = text;
 }
 
 /** The original theater files of the biome for the tile worker, read once per art change. */
@@ -547,7 +558,7 @@ function onDocChange(change, { initial = false } = {}) {
     return;
   }
   validationTask.soon();
-  $('#save-state').textContent = 'Unsaved draft...';
+  setSaveState('Unsaved draft...');
   autosaveTask.soon();
 }
 
@@ -570,17 +581,31 @@ function updatePanels() {
 
 function autosave() {
   autosaveTask.cancel();
+  // The name and author as typed, once the typing pauses.
+  noteMapText(doc.meta);
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
-  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"edited":${isEdited()},"map":${doc.snapshot().json}}`);
-  $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
+  const ok = store.set(DRAFT_KEY, draftText({ savedAt: Date.now(), edited: isEdited(), origin: doc.origin, json: doc.snapshot().json }));
+  setSaveState(ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)');
+}
+
+/** The draft's state in the top bar, a polite status: written only when it says something new (not once per edit). */
+function setSaveState(text) {
+  const out = $('#save-state');
+  if (out.textContent !== text) out.textContent = text;
 }
 
 // ---- Recovery copies ------------------------------------------------------------------------
 
 /** The recovery copies as last read or written here (another tab writing them drops it). */
 let recoveryList = null;
+/** The document version and key of the last recovery copy written here (no copy when neither moved). */
+let recoverySaved = null;
 window.addEventListener('storage', (e) => {
-  if (e.key === RECOVERY_KEY || e.key === null) recoveryList = null;
+  if (e.key === RECOVERY_KEY || e.key === null) {
+    recoveryList = null;
+    // Another tab rewrote the copies, maybe without this map's: write it again at the next save.
+    recoverySaved = null;
+  }
 });
 
 function recoveryCopies() {
@@ -596,19 +621,23 @@ function recoveryCopies() {
 
 /**
  * Keep a copy of the map now and then (and when the page goes away): the
- * last few maps worked on, one copy per map name, so a crash, a closed tab
- * or a "New map" too many loses little. Restored from the History tab.
+ * last few maps worked on, one copy per map (its key, MapDoc.origin; copies
+ * from before keys by name), so a crash, a closed tab or a "New map" too
+ * many loses little. Restored from the History tab. Nothing is written
+ * while the document stays as it was copied.
  */
 function saveRecovery() {
   if (!doc) return;
+  const { key } = doc.origin;
+  if (recoverySaved && recoverySaved.version === doc.version && recoverySaved.key === key && !doc.tx) return;
   const map = doc.toMap();
-  const list = recoveryCopies().filter((r) => r.map.name !== map.name);
-  list.unshift({ savedAt: Date.now(), map });
+  const list = withRecoveryCopy(recoveryCopies(), key, map, Date.now());
   recoveryList = null;
   for (let n = Math.min(list.length, RECOVERY_COPIES); n > 0; n--) {
     // Large maps may not fit next to the draft: keep fewer copies.
     if (store.set(RECOVERY_KEY, JSON.stringify(list.slice(0, n)))) {
       recoveryList = list.slice(0, n);
+      recoverySaved = { version: doc.version, key };
       break;
     }
   }
@@ -770,7 +799,7 @@ function fixOpened(p, fix) {
     return;
   }
   p.fixed = fix.label;
-  doc.replace(next, fix.label);
+  doc.replace(next, fix.label, doc.origin);
 }
 
 /** The map list's thumbnail of this map (protocol mapThumbnail, as the server draws it). */
@@ -808,7 +837,7 @@ function renderFairness() {
 /** A button for a command: its icon, its label, and a tooltip with its key. */
 function commandButton(name, { icon, label, text = true, primary = false } = {}) {
   const cmd = COMMANDS.find((c) => c.name === name);
-  const b = el('button', { type: 'button', class: `cmd${primary ? ' primary' : ''}${text ? '' : ' icon-only'}`, 'data-cmd': name, 'aria-label': label ?? cmd.label, onclick: () => run(name) }, [
+  const b = el('button', { type: 'button', class: `cmd${primary ? ' primary' : ''}${text ? '' : ' icon-only'}${icon ? ' has-icon' : ''}`, 'data-cmd': name, 'aria-label': label ?? cmd.label, onclick: () => run(name) }, [
     icon ? editorIcon(icon) : null,
     text ? el('span', {}, label ?? cmd.label) : null,
   ]);
@@ -1091,6 +1120,8 @@ function buildPanels() {
     );
     panes.append(el('section', { class: 'pane', id: `pane-${t.id}`, role: 'tabpanel', 'aria-labelledby': `tab-${t.id}`, 'data-pane': t.id, hidden: true }));
   }
+  // Roving focus: only the open tab is in the Tab order, the arrows move between them.
+  tabKeys(tabs, TABS.map((t) => t.id), showTab);
   buildMapPane();
   buildActorsPane();
   buildLayersPane();
@@ -1480,7 +1511,7 @@ function renderHistory() {
           copies.map((c) =>
             el('li', {}, [
               el('span', {}, `${c.map.name || 'Untitled'}, ${c.map.width} x ${c.map.height}, ${new Date(c.savedAt).toLocaleString()}`),
-              el('button', { type: 'button', class: 'link', onclick: () => loadMap(c.map, `Restore ${c.map.name || 'copy'}`) && toast('Restored. Undo brings back the map you had.') }, 'Restore'),
+              el('button', { type: 'button', class: 'link', onclick: () => loadMap(c.map, `Restore ${c.map.name || 'copy'}`, null, newOrigin(null, c.id)) && toast('Restored. Undo brings back the map you had.') }, 'Restore'),
             ]),
           ),
         )
@@ -1564,14 +1595,22 @@ function buildOnlinePane() {
   pane.append(
     el('h2', {}, 'Publish'),
     el('p', { class: 'hint' }, 'Upload the map so others can play it. Published maps are public and identified by their hash. Only the map data is sent, never pictures or installed graphics.'),
-    el('button', { type: 'button', class: 'primary wide', onclick: () => publish() }, 'Publish map'),
+    el('button', { type: 'button', class: 'primary wide', 'data-publish': '', onclick: () => publish() }, 'Publish map'),
     el('div', { id: 'publish-result' }),
     el('h2', {}, ['Published maps ', el('button', { type: 'button', class: 'link', onclick: () => browse() }, 'Refresh')]),
     el('div', { id: 'browse' }, el('p', { class: 'hint' }, 'Press Refresh to list published maps.')),
   );
 }
 
+/** True while a publish request is on its way: a second press (the other button, the key) sends nothing. */
+let publishing = false;
+function setPublishing(on) {
+  publishing = on;
+  document.querySelectorAll('[data-cmd="publish"], [data-publish]').forEach((b) => (b.disabled = on));
+}
+
 async function publish() {
+  if (publishing) return;
   showTab('online');
   const out = $('#publish-result');
   const { map, engine } = validateNow();
@@ -1582,6 +1621,7 @@ async function publish() {
   }
   if (engine.modded && !confirm(`${MODDED_WARNING}\n\nPublish this MODDED map anyway?`)) return;
   out.replaceChildren(el('p', { class: 'hint' }, 'Publishing...'));
+  setPublishing(true);
   try {
     const version = doc.version;
     const { id, hash, localHash } = await publishMap(map);
@@ -1596,6 +1636,8 @@ async function publish() {
     );
   } catch (err) {
     out.replaceChildren(el('p', { class: 'error' }, err instanceof ApiError ? err.message : `Publishing failed: ${err.message}`));
+  } finally {
+    setPublishing(false);
   }
 }
 
@@ -1605,6 +1647,7 @@ async function browse() {
   let maps;
   try {
     maps = await listMaps();
+    noteMapText(maps);
   } catch (err) {
     box.replaceChildren(el('p', { class: 'error' }, err.message));
     return;
@@ -1633,7 +1676,7 @@ async function browse() {
 async function openPublished(m) {
   try {
     const { map } = await fetchMap(m.id, m.hash);
-    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`)) markSaved();
+    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`, newOrigin(m.id))) markSaved();
   } catch (err) {
     toast(err.message, true);
   }
@@ -1654,8 +1697,11 @@ async function copy(text) {
  * Open a parsed map file (any format version, js/upgrade.js) as one undoable
  * step. `done` is the toast on success; the upgrade notice or the reason a
  * map is not compatible goes with it and stays in the Check tab until saved.
+ * `origin`: which map it is (MapDoc.origin): the document's own for a change
+ * of the same map, a new one (the default) for another map.
  */
-function loadMap(raw, label, done = null) {
+function loadMap(raw, label, done = null, origin = newOrigin()) {
+  noteMapText(raw);
   const next = openMapFile(raw);
   if (!next.map) {
     toast(`Cannot open this map: ${next.error}`, true);
@@ -1663,7 +1709,7 @@ function loadMap(raw, label, done = null) {
   }
   const res = validateMap(next.map, { catalog, rulesBase });
   try {
-    doc.replace(next.map, label);
+    doc.replace(next.map, label, origin);
   } catch (err) {
     toast(`Cannot open this map: ${err.message}`, true);
     return false;
@@ -1698,7 +1744,7 @@ function openFile(file) {
       return;
     }
     if (loadMap(map, `Open ${file.name}`, `Opened ${file.name}.`)) markSaved();
-  });
+  }, (err) => toast(`Could not read ${file.name}: ${err?.message ?? err}`, true));
 }
 
 /**
@@ -1714,6 +1760,9 @@ async function importOramapFile(file) {
     return;
   }
   let result;
+  // The checks of a large modded map take a while: the busy line says an import runs.
+  importing = file.name;
+  showBusy();
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     result = await importOramap(bytes, {
@@ -1724,12 +1773,16 @@ async function importOramapFile(file) {
   } catch (err) {
     showImportReport(err?.report ?? null, null, `Could not import ${file.name}: ${err?.message ?? err}`);
     return;
+  } finally {
+    importing = null;
+    showBusy();
   }
   showImportReport(result.report, result.map, null);
 }
 
 function showImportReport(report, map, failure) {
   $('#import-report')?.remove();
+  noteMapText([map, { name: report?.title }]);
   const open = (withRules) => {
     const m = withRules ? map : { ...map, rules: null };
     loadMap(m, `Import ${report.title}`, `Imported "${report.title}".`);
@@ -1831,6 +1884,11 @@ function cropToRegion() {
 /** Resize, crop, shift, turn or mirror the whole map as one undo step. */
 function applyTransform(choice) {
   const map = doc.toMap();
+  // The same size, or no shift: no undo step for a change that changes nothing.
+  if ((choice.op === 'resize' && choice.width === map.width && choice.height === map.height) || (choice.op === 'shift' && !choice.dx && !choice.dy)) {
+    toast('Nothing to change.');
+    return;
+  }
   let result;
   try {
     if (choice.op === 'resize') {
@@ -1850,7 +1908,8 @@ function applyTransform(choice) {
     return;
   }
   const label = { resize: 'Resize map', crop: 'Crop map', shift: 'Shift map', rotate90: 'Turn map right', rotate270: 'Turn map left', rotate180: 'Turn map', flipX: 'Mirror map', flipY: 'Flip map' }[choice.op];
-  if (loadMap(result.map, label)) {
+  // The same map changed: it stays the same map.
+  if (loadMap(result.map, label, null, doc.origin)) {
     const d = result.dropped;
     const lost = [d.spawns ? `${d.spawns} spawn${d.spawns === 1 ? '' : 's'}` : '', d.actors ? `${d.actors} actor${d.actors === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
     toast(lost ? `${label}: ${lost} off the map were removed. Undo brings them back.` : `${label}.`);
@@ -2017,13 +2076,15 @@ function bindKeys() {
   window.addEventListener('keydown', (e) => {
     if (document.querySelector('dialog[open]')) return;
     if (e.key === 'Escape') {
-      if (!ctl.cancel()) {
-        if (state.tool === 'paste') setTool('region');
-        ctl.selection.clear();
-        ctl.selectedSpawn = -1;
-        ctl.setRegion(null);
-        renderSelection();
-      }
+      // A gesture in progress ends from anywhere.
+      if (ctl.cancel()) return;
+      // Esc that leaves a text field or closes a list is the control's: the selection, region and paste stay.
+      if (isTyping(e) || controlOwnsKeys(e)) return;
+      if (state.tool === 'paste') setTool('region');
+      ctl.selection.clear();
+      ctl.selectedSpawn = -1;
+      ctl.setRegion(null);
+      renderSelection();
       return;
     }
     // Text fields keep their keys (and their own undo).

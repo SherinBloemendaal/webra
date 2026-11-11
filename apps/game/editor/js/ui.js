@@ -49,6 +49,31 @@ function append(node, children) {
   node.append(children instanceof Node ? children : document.createTextNode(String(children)));
 }
 
+/**
+ * Keyboard for a strip of ARIA tabs with roving focus (buttons with
+ * `data-tab`): Left and Right move to the previous or next tab (wrapping),
+ * Home and End to the first or last, and open it at once (automatic
+ * activation, like js/ui/controls.js tabs()). `open(id)` shows the tab.
+ */
+export function tabKeys(tablist, ids, open) {
+  const step = { ArrowRight: 1, ArrowLeft: -1 };
+  tablist.addEventListener('keydown', (e) => {
+    const tab = e.target?.closest?.('[role="tab"]');
+    if (!tab || !ids.length) return;
+    const at = Math.max(0, ids.indexOf(tab.dataset.tab));
+    let to = null;
+    if (step[e.key]) to = ids[(at + step[e.key] + ids.length) % ids.length];
+    else if (e.key === 'Home') to = ids[0];
+    else if (e.key === 'End') to = ids[ids.length - 1];
+    if (to === null) return;
+    // The keys are the tabs': the map view and the shortcuts do not get them.
+    e.preventDefault();
+    e.stopPropagation();
+    open(to);
+    tablist.querySelector(`[data-tab="${to}"]`)?.focus();
+  });
+}
+
 /** Trigger a browser download of a Blob. */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob);

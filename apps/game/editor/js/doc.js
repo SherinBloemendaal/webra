@@ -10,6 +10,19 @@ import { pruneOverrides } from './overrides.js';
 const HISTORY_LIMIT = 200;
 const COALESCE_MS = 1500;
 
+/**
+ * A new document identity (MapDoc.origin): a random `key` that tells this
+ * map from any other one with the same name (the recovery copies), and its
+ * `source`, the id of the published map it was opened from, or null.
+ */
+export function newOrigin(source = null, key = null) {
+  if (typeof key !== 'string' || !key) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return Object.freeze({ key, source: typeof source === 'string' ? source : null });
+}
+
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
 /** Freeze a JSON value and everything in it (a shared snapshot nobody may change). */
@@ -51,6 +64,12 @@ export class MapDoc {
      * gesture's edit shows while it goes on, before its commit.
      */
     this.live = { cells: new Set(), objects: false };
+    /**
+     * Which map this is (newOrigin): its key and the published map it was
+     * opened from. Not part of the map: a replace sets it (undo and redo of
+     * that step put it back), edits keep it.
+     */
+    this.origin = newOrigin();
     this.load(map);
   }
 
@@ -108,7 +127,7 @@ export class MapDoc {
       rules: clone(pruneOverrides(this.rules)),
       // Optional: a temperate map leaves it out (and keeps its identity).
       ...(this.meta.biome && this.meta.biome !== 'temperate' ? { biome: this.meta.biome } : {}),
-      // Slots beyond the spawns are kept while editing (a removed spawn comes back with its slot) but not written.
+      // Slot k belongs to spawn k (removeSpawn takes its slot along); slots beyond the spawns are kept while editing but not written.
       players: clone(this.meta.players.slice(0, this.spawns.length)),
       options: clone(this.meta.options),
       lockedOptions: this.meta.lockedOptions.filter((k) => Object.hasOwn(this.meta.options, k)),
@@ -135,11 +154,24 @@ export class MapDoc {
     return this.snap;
   }
 
-  /** Replace the document with another map as one undoable step. */
-  replace(map, label = 'Load map') {
+  /** The id of the published map the document was opened from, or null. */
+  get source() {
+    return this.origin.source;
+  }
+
+  /**
+   * Replace the document with another map as one undoable step. `origin`:
+   * which map it is (newOrigin; another map gets a new one); a change of the
+   * same map (a resize, a fix) passes the document's own.
+   */
+  replace(map, label = 'Load map', origin = newOrigin()) {
+    // A half made edit (a stroke still going on) is dropped, not kept in `before`, and its cells never land on the new map.
+    if (this.tx) this.rollback();
     const before = this.toMap();
+    const originBefore = this.origin;
     this.load(map);
-    this.push({ label, kind: 'replace', before, after: this.toMap() });
+    this.origin = origin;
+    this.push({ label, kind: 'replace', before, after: this.toMap(), originBefore, originAfter: origin });
     this.emit({ cells: true, objects: true, meta: true, resized: true });
   }
 
@@ -404,6 +436,7 @@ export class MapDoc {
     this.dropLive();
     if (e.kind === 'replace') {
       this.load(e[side]);
+      this.origin = side === 'before' ? e.originBefore : e.originAfter;
       this.emit({ cells: true, objects: true, meta: true, resized: true });
       return;
     }
@@ -435,10 +468,16 @@ export class MapDoc {
 
   /**
    * Remove spawn `k`. Actors it owned become neutral and higher owner indices
-   * shift down, so ownership stays attached to the same spawns.
+   * shift down, so ownership stays attached to the same spawns. Its player
+   * slot goes with it (slot k belongs to spawn k), so the slots of the
+   * spawns after it stay with them; undo brings both back.
    */
   removeSpawn(k) {
     this.touchObjects();
+    if (this.meta.players.length > k) {
+      this.touchMeta();
+      this.meta.players.splice(k, 1);
+    }
     this.spawns.splice(k, 1);
     for (const a of this.actors) {
       if (a.owner === k) a.owner = -1;

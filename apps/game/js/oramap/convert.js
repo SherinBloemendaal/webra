@@ -352,7 +352,7 @@ export function convertOramap(input, opts) {
     const state = {};
     const health = parseInteger(childValue(node.nodes, 'Health'));
     if (health !== null && health >= 1 && health < 100 && info.kind !== 'crate') state.health = health;
-    const stance = OPENRA_STANCES[String(childValue(node.nodes, 'Stance', '')).toLowerCase()];
+    const stance = ownValue(OPENRA_STANCES, String(childValue(node.nodes, 'Stance', '')).toLowerCase());
     if (stance && Array.isArray(info.stance) && info.weapons?.length) state.stance = stance;
     // OpenRA CargoInit (`Cargo: e1, e1, e3`): the passengers a transport starts with, checked like the
     // map editor's passenger list (known types that fit its cargo types and weight, at most 16).
@@ -600,7 +600,7 @@ function slotSetup(refs, spawns, report) {
     const nodes = refs[k];
     const slot = { faction: 'random', team: 0, color: -1, type: 'open', difficulty: 'normal', bot: 'normal', lock: [] };
     if (nodes) {
-      const faction = OPENRA_FACTIONS[String(childValue(nodes, 'Faction', 'Random')).toLowerCase()];
+      const faction = ownValue(OPENRA_FACTIONS, String(childValue(nodes, 'Faction', 'Random')).toLowerCase());
       if (faction) slot.faction = faction;
       if (/^true$/i.test(childValue(nodes, 'LockFaction', 'False')) && faction) slot.lock.push('faction');
       const color = nearestColor(childValue(nodes, 'Color', null), out.map((x) => x.color));
@@ -1186,35 +1186,63 @@ function lobbySetup(lobby, report) {
   return { options, lockedOptions };
 }
 
+/** Checks of the rules between two waits for the next task (the page keeps drawing and taking input). */
+const VET_CHECKS_PER_TASK = 4;
+const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 /**
- * Drop rules overrides the engine refuses, one field at a time. `validate`
- * is the engine's `Game.validate_map` (parsed): a field stays when the map
- * with only that override has no errors the map without rules lacks.
+ * Drop rules overrides the engine refuses. `validate` is the engine's
+ * `Game.validate_map` (parsed): a field stays when the map with it has no
+ * errors the map without rules lacks. The fields are checked together
+ * first, and a refused group is split in halves until each refused field
+ * stands alone (its own error is reported), so one bad field among many
+ * costs a few checks, not one per field. At most `maxChecks` checks; the
+ * fields left then are dropped. Waits for the next task every few checks.
  * Updates the map and report in place.
  */
-export function vetRules(map, report, validate, maxChecks = 200) {
+export async function vetRules(map, report, validate, maxChecks = 200) {
   if (!map.rules || typeof validate !== 'function') return;
-  const without = { ...map, rules: null };
-  const baseline = new Set(validate(JSON.stringify(without)).errors ?? []);
-  const full = validate(JSON.stringify(map));
-  if (!(full.errors ?? []).some((e) => !baseline.has(e))) return;
-  const kept = {};
-  let checks = 0;
+  const baseline = new Set(validate(JSON.stringify({ ...map, rules: null })).errors ?? []);
+  const fields = [];
   for (const [section, entries] of Object.entries(map.rules)) {
     for (const [id, patch] of Object.entries(entries)) {
-      for (const [field, value] of Object.entries(patch)) {
-        const single = { [section]: { [id]: { [field]: value } } };
-        const v = checks++ < maxChecks ? validate(JSON.stringify({ ...map, rules: single })) : { errors: ['too many rules to check'] };
-        const extra = (v.errors ?? []).filter((e) => !baseline.has(e));
-        if (extra.length) {
-          report.rules.rejected.push(`${section === 'weapons' ? 'weapon ' : ''}${id} ${field}: ${cleanText(extra[0], 160)}`);
-          report.rules.applied = report.rules.applied.filter((a) => !(a.section === section && a.id === id && a.field === field));
-        } else {
-          ((kept[section] ??= {})[id] ??= {})[field] = value;
-        }
-      }
+      for (const [field, value] of Object.entries(patch)) fields.push({ section, id, field, value });
     }
   }
-  map.rules = Object.keys(kept).length ? kept : null;
+  const rulesOf = (list) => {
+    const rules = {};
+    for (const f of list) ((rules[f.section] ??= {})[f.id] ??= {})[f.field] = f.value;
+    return rules;
+  };
+  let checks = 0;
+  /** The errors of the map with these overrides that the map without rules lacks; null once the checks ran out. */
+  const extraErrors = async (list) => {
+    if (checks >= maxChecks) return null;
+    if (checks > 0 && checks % VET_CHECKS_PER_TASK === 0) await nextTask();
+    checks++;
+    const v = validate(JSON.stringify({ ...map, rules: rulesOf(list) }));
+    return (v.errors ?? []).filter((e) => !baseline.has(e));
+  };
+  const refused = new Set();
+  const refuse = (f, why) => {
+    refused.add(f);
+    report.rules.rejected.push(`${f.section === 'weapons' ? 'weapon ' : ''}${f.id} ${f.field}: ${cleanText(why, 160)}`);
+    report.rules.applied = report.rules.applied.filter((a) => !(a.section === f.section && a.id === f.id && a.field === f.field));
+  };
+  // `list` was refused with errors `extra`: find the fields that cause them.
+  const split = async (list, extra) => {
+    if (list.length === 1) return refuse(list[0], extra[0]);
+    const mid = list.length >> 1;
+    for (const half of [list.slice(0, mid), list.slice(mid)]) {
+      const e = await extraErrors(half);
+      if (e === null) for (const f of half) refuse(f, 'too many rules to check');
+      else if (e.length) await split(half, e);
+    }
+  };
+  const all = await extraErrors(fields);
+  if (all === null || !all.length) return;
+  await split(fields, all);
+  const kept = fields.filter((f) => !refused.has(f));
+  map.rules = kept.length ? rulesOf(kept) : null;
   report.modded = map.rules !== null;
 }

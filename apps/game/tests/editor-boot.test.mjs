@@ -351,3 +351,48 @@ test('installed tiles say when they stand in for most of the map while a plan ru
 });
 
 const settleTicks = () => new Promise((r) => setTimeout(r, 0));
+
+// ---- The draft and ?map=<id> --------------------------------------------------------------------
+
+test('the draft names its published map: a reload of that map\'s editor link brings back the edits, a draft of another map never wins', async () => {
+  const { draftText, draftWins, parseDraft } = await import('../editor/js/draft.js');
+  const { newOrigin } = await import('../editor/js/doc.js');
+  const { createMap } = await import('../editor/js/mapformat.js');
+  const json = JSON.stringify(createMap({ width: 40, height: 32, name: 'Edited' }));
+  const of = (edited, source) => parseDraft(draftText({ savedAt: 5, edited, origin: newOrigin(source, 'k1'), json }));
+  const draft = of(true, 'abc123');
+  assert.equal(draft.map.name, 'Edited');
+  assert.deepEqual([draft.savedAt, draft.edited, draft.origin.source, draft.origin.key], [5, true, 'abc123', 'k1']);
+  assert.equal(draftWins(draft, 'abc123'), true, 'edits of the same published map');
+  assert.equal(draftWins(draft, 'other1'), false, 'a draft of another map');
+  assert.equal(draftWins(of(false, 'abc123'), 'abc123'), false, 'no edits since it was opened or saved: the published map');
+  assert.equal(draftWins(of(true, null), 'abc123'), false, 'a map not opened from the server');
+  assert.equal(draftWins(null, 'abc123'), false);
+  // A draft written before the source existed: edited, a new key, no source, never wins over a published map.
+  const old = parseDraft(`{"savedAt":3,"map":${json}}`);
+  assert.equal(old.edited, true);
+  assert.equal(old.origin.source, null);
+  assert.match(old.origin.key, /^[0-9a-f]{16}$/);
+  assert.equal(draftWins(old, 'abc123'), false);
+  assert.equal(parseDraft(null), null);
+  assert.throws(() => parseDraft('{"savedAt":1,"map":{"width":40,"height":32,"terrain":"!!"}}'));
+  // The editor asks before it fetches, and writes the document's origin into every draft.
+  const initial = EDITOR_JS.slice(EDITOR_JS.indexOf('async function initialMap()'));
+  assert.ok(initial.indexOf('draftWins(draft, id)') > 0 && initial.indexOf('draftWins(draft, id)') < initial.indexOf('fetchMap(id)'));
+  assert.match(EDITOR_JS, /draftText\(\{ savedAt: Date\.now\(\), edited: isEdited\(\), origin: doc\.origin,/);
+});
+
+test('recovery copies: one per map by its key, so two untitled maps keep a copy each; an unchanged map is not written again', async () => {
+  const { withRecoveryCopy } = await import('../editor/js/draft.js');
+  const untitled = (n) => ({ name: 'Untitled', n });
+  let list = withRecoveryCopy([], 'a', untitled(1), 1);
+  list = withRecoveryCopy(list, 'b', untitled(2), 2);
+  assert.deepEqual(list.map((r) => [r.id, r.map.n]), [['b', 2], ['a', 1]], 'the same name, two maps, two copies');
+  list = withRecoveryCopy(list, 'a', untitled(3), 3);
+  assert.deepEqual(list.map((r) => [r.id, r.map.n]), [['a', 3], ['b', 2]], 'a newer copy of a map replaces its older one');
+  // Copies from before keys: told apart by name.
+  const before = [{ savedAt: 0, map: { name: 'Island' } }, { savedAt: 0, map: { name: 'Untitled' } }];
+  assert.deepEqual(withRecoveryCopy(before, 'c', untitled(4), 4).map((r) => r.map.name), ['Untitled', 'Island']);
+  const save = EDITOR_JS.slice(EDITOR_JS.indexOf('function saveRecovery()'));
+  assert.ok(save.indexOf('recoverySaved.version === doc.version') < save.indexOf('doc.toMap()'), 'checked before the map is serialized');
+});
