@@ -273,3 +273,17 @@ test('music relay: the same account gate as the content relay, before any range 
   assert.equal((await music(b, { 'X-WebRA-Content': '1', Range: 'bytes=0-1,5-6' })).body.error.code, 'account_inactive', 'an inactive flagged account never reaches the relay');
   assert.equal((await b.post('/api/content/ra-scores', {})).status, 405);
 });
+
+test('per address limits count an IPv6 /64 as one network: rotating addresses inside it gains nothing', async () => {
+  const env = makeEnv({ email: false });
+  await setSite(env, { onlineRequiresAccount: false });
+  // Twenty sessions an hour per network, spread over many addresses of one /64.
+  for (let i = 0; i < 20; i++) assert.equal((await create(new Browser(env, { ip: `2001:db8:0:1::${(i + 1).toString(16)}` }))).status, 201, `session ${i}`);
+  const rotated = await create(new Browser(env, { ip: '2001:db8:0:1:ffff:ffff:ffff:ffff' }));
+  assert.equal(rotated.status, 429, 'another address of the same /64 shares the budget');
+  assert.equal((await create(new Browser(env, { ip: '2001:db8:0:2::1' }))).status, 201, 'the next /64 is another network');
+  // IPv4 addresses stay apart: a neighbour is not limited by another's use.
+  for (let i = 0; i < 20; i++) assert.equal((await create(new Browser(env, { ip: '192.0.2.10' }))).status, 201);
+  assert.equal((await create(new Browser(env, { ip: '192.0.2.10' }))).status, 429);
+  assert.equal((await create(new Browser(env, { ip: '192.0.2.11' }))).status, 201);
+});

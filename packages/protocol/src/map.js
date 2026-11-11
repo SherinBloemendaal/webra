@@ -18,7 +18,7 @@
 // installing a map.
 
 import { base64Length, decodeBase64, encodeBase64 } from './base64.js';
-import { excerpt, fail, int, isPlainObject, object, ProtocolError, rawText, utf8Length } from './check.js';
+import { excerpt, fail, int, isPlainObject, object, ProtocolError, rawText, text, utf8Length } from './check.js';
 import { GAME_VERSION } from './version.js';
 import { MAP_UPGRADED_NOTICE, MAP_VERSIONS, incompatibleMapMessage, mapFormatVersionOf, reservedKeyIn, upgradeMap } from './mapversions.js';
 import { canonicalActorState, canonicalSlot, validateActorState, validateLockedOptions, validateMapOptions, validateMapPlayers, validateTags } from './mapsetup.js';
@@ -256,8 +256,15 @@ function validateCurrentMap(input, opts, current) {
     if (input.format === MAP_FORMAT && !hasGems) fail('format 2 maps need a gems layer');
     m.format = input.format;
   });
-  m.name = step(() => rawText(input.name, 1, 64, 'name'));
-  m.author = step(() => rawText(input.author, 1, 64, 'author'));
+  // Kept byte for byte (the hash covers them), and also valid as the display
+  // text lobby and start messages carry (NFC can make text longer).
+  const shown = (v, what) => {
+    rawText(v, 1, 64, what);
+    text(v, 1, 64, what);
+    return v;
+  };
+  m.name = step(() => shown(input.name, 'name'));
+  m.author = step(() => shown(input.author, 'author'));
   m.description = step(() => rawText(input.description ?? '', 0, 500, 'description', true));
   m.width = step(() => int(input.width, MAP_MIN_SIZE, MAP_MAX_SIZE, 'width'));
   m.height = step(() => int(input.height, MAP_MIN_SIZE, MAP_MAX_SIZE, 'height'));

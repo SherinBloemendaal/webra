@@ -238,11 +238,13 @@ export class Lockstep {
 
   /**
    * Take a player out of the game (its connection was lost, or it stalled).
-   * Returns the frames that became complete and `record`, the player's stall
-   * budget to hand back to `rejoin` (null when it was not active).
+   * Returns the frames that became complete, `record`, the player's stall
+   * budget to hand back to `rejoin` (null when it was not active), and
+   * `desync`: the hash comparison of a tick that only waited for this player
+   * (see `hash`; null when there is nothing to tell).
    */
   suspend(player, now = Date.now()) {
-    if (!this.active.has(player)) return { frames: [], record: null };
+    if (!this.active.has(player)) return { frames: [], record: null, desync: null };
     // Count the hold time up to now before it leaves.
     this.track(now);
     const w = this.windows.get(player);
@@ -258,11 +260,17 @@ export class Lockstep {
     this.lastHashTick.delete(player);
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
+    // Ticks that waited only for this player's hash are complete now: compare them.
+    let desync = null;
+    for (const tick of [...this.hashes.keys()].sort((a, b) => a - b)) {
+      const result = this.settle(tick);
+      desync ??= result;
+    }
     // The last seat still loading left: the others begin.
     if (this.loading.delete(player) && this.loading.size === 0) this.begin(now);
     const frames = this.flush(now);
     this.track(now);
-    return { frames, record };
+    return { frames, record, desync };
   }
 
   /**
@@ -426,6 +434,17 @@ export class Lockstep {
     byTick.set(player, hash);
     // Players that stop reporting must not grow memory without bound.
     for (const t of this.hashes.keys()) if (t < this.next - 100 * HASH_INTERVAL) this.hashes.delete(t);
+    return this.settle(tick);
+  }
+
+  /**
+   * Compare the hashes of `tick` once every active player that ran it
+   * reported (`hash` describes the verdict). Returns `{ tick, players }` to
+   * notify, or null (also while reports are missing).
+   */
+  settle(tick) {
+    const byTick = this.hashes.get(tick);
+    if (!byTick || this.desyncTick !== null) return null;
     if (![...this.active].every((p) => this.joinTick.get(p) > tick || byTick.has(p))) return null;
     this.hashes.delete(tick);
     const groups = new Map();

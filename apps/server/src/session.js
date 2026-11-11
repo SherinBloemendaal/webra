@@ -83,6 +83,7 @@ import {
   parseClientMessage,
   PROTOCOL_VERSION,
   RECONNECT_GRACE_MS,
+  REPLAY_MAX_TICKS,
   REJOINABLE_REASONS,
   RESUME_TIMEOUT_MS,
   S2C,
@@ -110,7 +111,7 @@ import { missionDigest, recordSave } from './onlinesaves.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
 import { cheatsAllowed, ordersFitRules } from './validate.js';
-import { inRange, ipRecord } from './accounts/ip.js';
+import { inRange, ipRecord, networkOf } from './accounts/ip.js';
 import { AUTH_HEADER } from './accounts/play.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { logError } from './telemetry.js';
@@ -124,6 +125,10 @@ const HELLO_TIMEOUT_MS = 15 * 1000;
 const MAX_SOCKETS = 24;
 const MAX_PENDING_SOCKETS = 8;
 /**
+ * Per address limits below count by network (accounts/ip.js networkOf: an
+ * IPv4 address, or the /64 of an IPv6 address), so a client cannot multiply
+ * them by rotating addresses inside its own IPv6 network.
+ *
  * Sockets one address may hold before their hello is answered: a script
  * cannot take every pending place of a public lobby (refused accounts never
  * get this far, the Worker answers them itself: src/wsrefuse.js).
@@ -136,7 +141,7 @@ export const MAX_PENDING_PER_IP = 2;
  * one address still fits a full lobby with spectators.
  */
 export const MAX_SOCKETS_PER_IP = 12;
-/** Wrong passwords per IP before a lockout, and the lockout length. */
+/** Wrong passwords (and host or rejoin keys) per network before a lockout, and the lockout length. */
 const PASSWORD_FAILURES = 5;
 const PASSWORD_LOCKOUT_MS = 60 * 1000;
 /** Refused messages before a flooding connection is closed. */
@@ -158,6 +163,14 @@ const CATCH_UP_BYTES_PER_SECOND = LOG_MAX_BYTES / 60;
 const CHAT_RATE = 1;
 const CHAT_BURST = 5;
 const CHAT_FLOOD_LIMIT = 20;
+/**
+ * News a socket catching up gets after `sync` (other news is sent again or
+ * goes out periodically: rematch and save state on `resume`, `waiting`,
+ * `netstat`), and at most how many of them are kept for it (a chat flood
+ * cannot grow the queue; who left or came back is never dropped).
+ */
+const SYNC_NEWS = new Set([S2C.LEFT, S2C.BACK, S2C.CHAT]);
+const SYNC_NEWS_MAX = 200;
 /** Order log frames per `log` message stay below the server message limit. */
 const LOG_MESSAGE_BUDGET = MAX_SERVER_MESSAGE_BYTES - 4 * 1024;
 /** Time a rejoining client gets to fast-forward, per tick of the game so far, and at most. */
@@ -171,6 +184,8 @@ const STALLS_RATE = 0.2;
 const STALLS_BURST = 2;
 /** A directory change that only touches the summary waits this long after the last write. */
 const SUMMARY_WRITE_MS = 10 * 1000;
+/** How often the session's game_presence rows are marked as current (the daily job deletes rows a day old). */
+const PRESENCE_TOUCH_MS = 60 * 60 * 1000;
 /** Reasons after which a member can never come back. */
 const FINAL_REASONS = ['left', 'kicked', 'removed', 'expired'];
 
@@ -192,6 +207,9 @@ const rpcError = (status, code, message) => ({ ok: false, status, code, message 
 const CLOSE_NORMAL = 1000;
 const CLOSE_POLICY = 1008;
 const ACCOUNT_ID_RE = /^[0-9a-f]{32}$/;
+
+/** The network a socket's attachment counts for (sockets accepted before `network` was stored have only `ip`). */
+const networkOfAttachment = (att) => att.network ?? networkOf(att.ip);
 
 /** The Worker's verdict from the upgrade request: { account, refuse } (malformed reads as refused). */
 export function readAuthHeader(request) {
@@ -226,14 +244,31 @@ export class Session extends DurableObject {
     this.lockstep = null;
     /** Order log of the running game (in memory and Durable Object storage). */
     this.log = null;
-    /** Sockets catching up -> frames broadcast meanwhile (sent after the log). */
+    /**
+     * A resumed save's order log is being rebuilt from the saved orders
+     * (startResumed): its awaits let other events in, which must neither
+     * stream the half-built log nor take the missing relay for a lost game.
+     */
+    this.resumeBuilding = false;
+    /**
+     * Sockets catching up -> { entries, news }: frames ({ tick, orders }) and
+     * room news ({ raw }: SYNC_NEWS) broadcast meanwhile, in order, sent
+     * after the log; `news` counts the news entries (at most SYNC_NEWS_MAX).
+     */
     this.syncing = new Map();
     this.syncBucket = new TokenBucket(SYNC_RATE, SYNC_BURST);
     this.catchUpBytes = new TokenBucket(CATCH_UP_BYTES_PER_SECOND, CATCH_UP_BYTES_BURST);
     /** Sockets catching up until they confirm -> { client, role, until }. */
     this.catching = new Map();
     this.buckets = new WeakMap();
+    /**
+     * Sockets whose `hello` is being handled. Its awaits (D1, hashing) let
+     * the same socket's next message in; a second `hello` meanwhile is
+     * ignored, so one socket never joins twice.
+     */
+    this.joining = new WeakSet();
     this.chatBuckets = new WeakMap();
+    /** Wrong passwords and keys by network (networkOf) -> { count, until }. */
     this.failures = new Map();
     this.lastDirectory = null;
     this.lastDirectoryCore = null;
@@ -282,12 +317,12 @@ export class Session extends DurableObject {
   /**
    * Who a map request comes from: a member's `{ client, key }` (its rejoin
    * key), checked like a rejoin (constant time, bound to the account it was
-   * issued to, failures count toward the per-IP lockout). Returns the client
+   * issued to, failures count toward the per network lockout). Returns the client
    * id, or an RPC error.
    */
   async checkMember(member, account, ip) {
     const now = Date.now();
-    const fail = this.failures.get(ip);
+    const fail = this.failures.get(networkOf(ip));
     if (fail && fail.until > now) return rpcError(429, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.');
     const client = member?.client;
     const stored = Number.isInteger(client) && Object.hasOwn(this.room.keys, client) ? this.room.keys[client] : null;
@@ -364,11 +399,17 @@ export class Session extends DurableObject {
       return new Response('Expected a WebSocket upgrade.', { status: 426 });
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const network = networkOf(ip);
     const all = this.ctx.getWebSockets();
     // Waiting for their hello: a refused socket the object is closing (readyState CLOSING) no longer counts.
     const pending = all.filter((ws) => !(ws.readyState > 1)).map((ws) => this.attachment(ws)).filter((att) => !att.client);
-    const fromIp = all.filter((ws) => this.attachment(ws).ip === ip).length;
-    if (all.length >= MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP || pending.length >= MAX_PENDING_SOCKETS || pending.filter((att) => att.ip === ip).length >= MAX_PENDING_PER_IP) {
+    const fromNetwork = all.filter((ws) => networkOfAttachment(this.attachment(ws)) === network).length;
+    if (
+      all.length >= MAX_SOCKETS ||
+      fromNetwork >= MAX_SOCKETS_PER_IP ||
+      pending.length >= MAX_PENDING_SOCKETS ||
+      pending.filter((att) => networkOfAttachment(att) === network).length >= MAX_PENDING_PER_IP
+    ) {
       return new Response('Too many connections.', { status: 429 });
     }
     const pair = new WebSocketPair();
@@ -378,6 +419,7 @@ export class Session extends DurableObject {
     server.serializeAttachment({
       client: null,
       ip,
+      network,
       since: Date.now(),
       busy: false,
       account: auth.account,
@@ -417,8 +459,13 @@ export class Session extends DurableObject {
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     if (att.client === null) {
       if (msg.t !== C2S.HELLO) return this.reject(ws, ERRORS.STATE, 'Say hello first.', true);
-      if (att.busy) return;
-      return this.hello(ws, att, msg);
+      if (att.busy || this.joining.has(ws)) return;
+      this.joining.add(ws);
+      try {
+        return await this.hello(ws, att, msg);
+      } finally {
+        this.joining.delete(ws);
+      }
     }
     if (msg.t === C2S.HELLO) return this.reject(ws, ERRORS.STATE, 'Already joined.', false);
     if (msg.t === C2S.PING) return this.ping(ws, att, msg);
@@ -475,13 +522,14 @@ export class Session extends DurableObject {
     const phaseProblem = () => {
       if (this.room.phase === 'lobby') return null;
       if (!spectate) return 'The game has already started. You can join as a spectator.';
+      if (this.resumeBuilding) return 'The game is starting. Try again shortly.';
       return this.canCatchUp() ? null : 'This game can no longer be watched.';
     };
     let problem = phaseProblem();
     if (problem) return this.reject(ws, ERRORS.STATE, problem, true);
 
     const now = Date.now();
-    const fail = this.failures.get(att.ip);
+    const fail = this.failures.get(networkOf(att.ip));
     if (fail && fail.until > now) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.', true);
 
     att.busy = true;
@@ -512,6 +560,9 @@ export class Session extends DurableObject {
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     problem = phaseProblem();
     if (problem) return this.reject(ws, ERRORS.STATE, problem, true);
+    // This socket joined meanwhile (it is a member already, or was closed).
+    const current = this.attachment(ws);
+    if (current.client !== null || current.gone) return this.reject(ws, ERRORS.STATE, 'Already joined.', false);
     const hostConnected = this.room.hostId !== null && this.socketOf(this.room.hostId) !== null;
     let joined;
     try {
@@ -584,11 +635,11 @@ export class Session extends DurableObject {
   /**
    * `hello` with `rejoin`: a member of the running game comes back with its
    * rejoin key (constant-time compare against the stored SHA-256; failures
-   * count toward the per-IP lockout like wrong passwords).
+   * count toward the per network lockout like wrong passwords).
    */
   async rejoin(ws, att, msg) {
     const now = Date.now();
-    const fail = this.failures.get(att.ip);
+    const fail = this.failures.get(networkOf(att.ip));
     if (fail && fail.until > now) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.', true);
     if (this.room.phase === 'lobby') return this.rejoinLobby(ws, att, msg, now);
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
@@ -610,6 +661,7 @@ export class Session extends DurableObject {
     }
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
+    if (this.resumeBuilding) return this.reject(ws, ERRORS.STATE, 'The game is starting. Try again shortly.', true);
     if (!this.lockstep && !this.room.resumeStart) return this.sessionLost();
     if (!this.canCatchUp()) return this.reject(ws, ERRORS.STATE, 'This game is too long to rejoin.', true);
     // Everything that does not depend on the member's current connection is
@@ -711,10 +763,12 @@ export class Session extends DurableObject {
    * running game. The log is streamed chunk by chunk (one in memory at a
    * time). Frames emitted meanwhile are queued for it (see broadcast) and
    * sent after `sync`; a frame both logged and queued arrives twice, which
-   * clients ignore. So it never misses a frame.
+   * clients ignore. So it never misses a frame. Who left or came back and
+   * chat lines (SYNC_NEWS) are queued the same way, in their order among
+   * the frames.
    */
   async catchUp(ws, client, role) {
-    this.syncing.set(ws, []);
+    this.syncing.set(ws, { entries: [], news: 0 });
     // Counted until the client confirms (see MAX_SYNCING, admitCatchUp);
     // unconfirmed spectators are closed by the alarm.
     this.catching.set(ws, { client, role, until: Date.now() + this.catchUpMs() });
@@ -743,26 +797,32 @@ export class Session extends DurableObject {
       await this.disconnect(ws, 'disconnected');
       return this.reject(ws, ERRORS.INTERNAL, 'Could not load the game. Try again.', true);
     }
-    const queued = this.syncing.get(ws);
+    const queued = this.syncing.get(ws)?.entries;
     this.syncing.delete(ws);
     if (!queued || !this.room || this.attachment(ws).gone) return;
     const pending = this.room.resumeStart;
     if (!this.lockstep && !pending) return;
     // A resumed save whose relay waits for every player: the log ends at the save point.
-    const tick = queued.length > 0 ? queued[0].tick : this.lockstep ? this.lockstep.next : pending.ticks;
+    const first = queued.find((e) => e.raw === undefined);
+    const tick = first ? first.tick : this.lockstep ? this.lockstep.next : pending.ticks;
     const agreed = this.lockstep ? this.lockstep.agreed : { tick: pending.ticks - 1, hash: pending.hash };
     this.send(ws, { t: S2C.SYNC, tick, check: agreed && agreed.tick < tick ? { ...agreed } : null });
-    for (const f of queued) this.send(ws, { t: S2C.FRAME, ...f });
+    for (const e of queued) {
+      if (e.raw !== undefined) this.sendRaw(ws, e.raw);
+      else this.send(ws, { t: S2C.FRAME, ...e });
+    }
   }
 
+  /** A wrong password or key from `ip`: counted for its network. */
   noteFailure(ip, now) {
-    const f = this.failures.get(ip) ?? { count: 0, until: 0 };
+    const key = networkOf(ip);
+    const f = this.failures.get(key) ?? { count: 0, until: 0 };
     f.count++;
     if (f.count >= PASSWORD_FAILURES) {
       f.count = 0;
       f.until = now + PASSWORD_LOCKOUT_MS;
     }
-    this.failures.set(ip, f);
+    this.failures.set(key, f);
     if (this.failures.size > 1000) this.failures.clear();
   }
 
@@ -774,7 +834,10 @@ export class Session extends DurableObject {
       case C2S.SLOT: {
         const { kicked } = room.setSlot(client, msg);
         await this.saveRoom();
-        if (kicked !== null) this.kick(kicked);
+        if (kicked !== null) {
+          this.kick(kicked);
+          await this.forgetPresence(kicked);
+        }
         this.broadcastLobby();
         await this.syncDirectory();
         return;
@@ -783,7 +846,10 @@ export class Session extends DurableObject {
         // The host's bulk edit: every change checked like a `slot` message, all or none.
         const { kicked } = room.setSlots(client, msg.changes);
         await this.saveRoom();
-        for (const k of kicked) this.kick(k);
+        for (const k of kicked) {
+          this.kick(k);
+          await this.forgetPresence(k);
+        }
         this.broadcastLobby();
         await this.syncDirectory();
         return;
@@ -972,21 +1038,36 @@ export class Session extends DurableObject {
   async startResumed(client) {
     const chunks = this.room.resume.chunks;
     const start = this.room.start(client, randomInt);
-    this.meta.startedAt = Date.now();
-    await this.ctx.storage.put('meta', this.meta);
-    await this.endInvite();
-    this.log = new OrderLog(this.ctx.storage);
-    for (let i = 0; i < chunks; i++) {
-      const bytes = await this.ctx.storage.get(`resume:${i}`);
-      for (const [tick, orders] of JSON.parse(await gunzip(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)))) this.log.append({ tick, orders });
-      // Sealed log chunks are written before the next one is read: one chunk in memory at a time.
-      await this.log.writing;
-      await this.ctx.storage.delete(`resume:${i}`);
-    }
+    // Before the first await: from here on the room is in its game phase, and
+    // messages, rejoins and alarms that come in during the awaits below
+    // (D1, decompression) must find the log and see that it is being built.
+    const log = new OrderLog(this.ctx.storage);
+    this.log = log;
     this.lockstep = null;
+    this.resumeBuilding = true;
+    try {
+      this.meta.startedAt = Date.now();
+      await this.ctx.storage.put('meta', this.meta);
+      await this.endInvite();
+      for (let i = 0; i < chunks; i++) {
+        // The session ended meanwhile (every player left): nothing to build for.
+        if (this.log !== log) return;
+        const bytes = await this.ctx.storage.get(`resume:${i}`);
+        const frames = JSON.parse(await gunzip(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)));
+        if (this.log !== log) return;
+        for (const [tick, orders] of frames) log.append({ tick, orders });
+        // Sealed log chunks are written before the next one is read: one chunk in memory at a time.
+        await log.writing;
+        await this.ctx.storage.delete(`resume:${i}`);
+      }
+    } finally {
+      this.resumeBuilding = false;
+    }
+    if (this.log !== log || !this.room) return;
     const now = Date.now();
     const until = now + resumeStartMs(start.resume.ticks);
-    for (const s of this.room.seatStates) if (s) s.until = until;
+    // A player who lost its connection meanwhile keeps its reconnect deadline.
+    for (const s of this.room.seatStates) if (s?.state === 'syncing') s.until = until;
     await this.saveRoom();
     await this.syncDirectory();
     await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
@@ -1045,10 +1126,25 @@ export class Session extends DurableObject {
   /** A `save` message from a player: propose, accept, decline or withdraw. */
   async saveMessage(client, accept, now = Date.now()) {
     const room = this.room;
+    if (accept && !room.saving && this.saveTooLong()) {
+      // No vote for a save that cannot be kept: only the proposer is told.
+      const ws = this.socketOf(client);
+      if (ws) this.send(ws, { t: S2C.SAVE, state: 'cancelled', reason: 'too_long' });
+      return;
+    }
     const reason = accept && !room.saving ? (room.proposeSave(client, now), null) : room.answerSave(client, accept, now);
     await this.saveRoom();
     if (reason) return this.broadcastSaveEnd(reason);
     return this.saveProgress(now);
+  }
+
+  /**
+   * Whether a save agreed now could not be kept: the order log is full, or
+   * the save point lies beyond what a save file holds (REPLAY_MAX_TICKS).
+   */
+  saveTooLong() {
+    if (!this.log || this.log.full || !this.lockstep) return true;
+    return this.room.saveTick(this.lockstep.next + this.lockstep.delay) + 1 > REPLAY_MAX_TICKS;
   }
 
   /** Everyone accepted (and is connected): fix the save point; else tell everyone where it stands. */
@@ -1056,6 +1152,12 @@ export class Session extends DurableObject {
     const room = this.room;
     if (!room?.saving || room.saving.phase !== 'open' || !this.lockstep) return;
     if (room.saveAgreed((c) => this.lockstep.isActive(room.seatOf(c)))) {
+      if (this.saveTooLong()) {
+        // The game grew too long while the players voted.
+        room.cancelSave('too_long', now);
+        await this.saveRoom();
+        return this.broadcastSaveEnd('too_long');
+      }
       const tick = room.agreeSave(this.lockstep.next + this.lockstep.delay, now);
       await this.saveRoom();
       this.broadcast({ t: S2C.SAVE, state: 'agreed', tick });
@@ -1096,7 +1198,8 @@ export class Session extends DurableObject {
 
   /** Store the record of a save after frame `tick`. Returns { id } or a cancel reason. */
   async recordSavePoint(tick, hash, voters, now) {
-    if (!this.log || this.log.full) return 'too_long';
+    // A save file holds at most REPLAY_MAX_TICKS ticks (a resume refuses more).
+    if (!this.log || this.log.full || tick + 1 > REPLAY_MAX_TICKS) return 'too_long';
     // Chunk by chunk: one chunk of the order log in memory at a time.
     const digest = new FramesDigest();
     for await (const chunk of this.log.chunks()) {
@@ -1150,6 +1253,16 @@ export class Session extends DurableObject {
   // ---- Game ----------------------------------------------------------------------------------
 
   async gameMessage(ws, client, msg) {
+    if (this.resumeBuilding) {
+      // A resumed save is being prepared: only chat and leaving make sense now.
+      if (msg.t === C2S.CHAT) return this.chatFrom(ws, client, msg.text, !!msg.team);
+      if (msg.t === C2S.LEAVE) {
+        await this.disconnect(ws, 'left');
+        this.close(ws, CLOSE_NORMAL, 'bye');
+        return;
+      }
+      throw new RoomError('The game is starting.', ERRORS.STATE);
+    }
     if (!this.lockstep && !(this.room.resumeStart && this.log)) {
       // The object was restarted mid-game and lost the in-memory relay.
       await this.sessionLost();
@@ -1206,14 +1319,7 @@ export class Session extends DurableObject {
       case C2S.HASH: {
         const desync = this.lockstep.hash(seat, msg.tick, msg.hash);
         if (this.room.saving?.phase === 'agreed') await this.saveHash(client, msg.tick, msg.hash);
-        if (desync !== null) {
-          // Tell only the players whose state left the majority (all of them without one).
-          const raw = encodeServer({ t: S2C.DESYNC, tick: desync.tick });
-          for (const other of this.ctx.getWebSockets()) {
-            const att = this.attachment(other);
-            if (att.client !== null && !att.gone && desync.players.includes(this.room.seatOf(att.client))) this.sendRaw(other, raw);
-          }
-        }
+        this.tellDesync(desync);
         return;
       }
       case C2S.RESUME: {
@@ -1268,6 +1374,16 @@ export class Session extends DurableObject {
         return;
       default:
         throw new RoomError('The game has already started.', ERRORS.STATE);
+    }
+  }
+
+  /** A hash comparison found a desync: tell only the players whose state left the majority (all of them without one). */
+  tellDesync(desync) {
+    if (desync === null) return;
+    const raw = encodeServer({ t: S2C.DESYNC, tick: desync.tick });
+    for (const other of this.ctx.getWebSockets()) {
+      const att = this.attachment(other);
+      if (att.client !== null && !att.gone && desync.players.includes(this.room.seatOf(att.client))) this.sendRaw(other, raw);
     }
   }
 
@@ -1334,7 +1450,8 @@ export class Session extends DurableObject {
       room.leave(client);
       if (final) room.forgetKey(client);
       await this.saveRoom();
-      if (final) await this.forgetPresence(client);
+      // No longer present either way; a spectator who rejoins is recorded again (rejoin).
+      await this.forgetPresence(client);
       if (name) this.broadcast({ t: S2C.LEFT, player: null, client, name, reason });
       await this.rematchAfterLoss(client, now);
       return;
@@ -1344,10 +1461,12 @@ export class Session extends DurableObject {
     const state = room.seatState(seat);
     const rejoinable = !final && REJOINABLE_REASONS.includes(reason) && this.canCatchUp();
     let frames = [];
+    let desync = null;
     let tell = false;
     if (state === 'active') {
-      const out = this.lockstep ? this.lockstep.suspend(seat, now) : { frames: [], record: null };
+      const out = this.lockstep ? this.lockstep.suspend(seat, now) : { frames: [], record: null, desync: null };
       frames = out.frames;
+      desync = out.desync;
       if (rejoinable) room.suspendSeat(seat, out.record, now, RECONNECT_GRACE_MS);
       else room.endSeat(seat);
       tell = true;
@@ -1363,6 +1482,8 @@ export class Session extends DurableObject {
     // A lost connection that cannot be rejoined (the order log is full) is reported as final.
     if (tell && name) this.broadcast({ t: S2C.LEFT, player: seat, client, name, reason: final || rejoinable ? reason : 'expired' });
     this.emitFrames(frames);
+    // A tick whose hashes only waited for this player is compared now.
+    this.tellDesync(desync);
     if (this.waitingFor !== null) this.updateWaiting(now, { onlyChanges: true });
     await this.endIfOver();
     await this.rematchAfterLoss(client, now);
@@ -1470,9 +1591,14 @@ export class Session extends DurableObject {
     // Sockets that never said hello are closed.
     for (const ws of this.ctx.getWebSockets()) {
       const att = this.attachment(ws);
-      if (att.client === null && now - att.since > HELLO_TIMEOUT_MS) this.close(ws, CLOSE_POLICY, 'hello timeout');
+      if (att.client === null && now - att.since >= HELLO_TIMEOUT_MS) this.close(ws, CLOSE_POLICY, 'hello timeout');
     }
     if (this.room.phase === 'game') {
+      if (this.resumeBuilding) {
+        // A resumed save is being prepared (its seats have no deadlines yet): look again shortly.
+        await this.ctx.storage.setAlarm(now + GAME_ALARM_MS);
+        return;
+      }
       if (!this.lockstep && !(this.room.resumeStart && this.log)) return this.sessionLost();
       const loading = this.lockstep?.starting ?? false;
       for (const seat of this.lockstep ? this.lockstep.silent(now, DROP_AFTER_MS) : []) {
@@ -1558,7 +1684,7 @@ export class Session extends DurableObject {
     if (this.room.memberCount() === 0) {
       const expires = this.meta.createdAt + UNUSED_TTL_MS;
       if (!this.meta.everJoined && now < expires) {
-        await this.ctx.storage.setAlarm(Math.min(expires, now + HELLO_TIMEOUT_MS));
+        await this.ctx.storage.setAlarm(Math.min(expires, now + HELLO_TIMEOUT_MS, this.nextHelloDeadline() ?? Infinity));
         return;
       }
       await this.destroy();
@@ -1566,7 +1692,21 @@ export class Session extends DurableObject {
     }
     await this.syncDirectory(true);
     const back = this.room.nextReturnDeadline();
-    await this.ctx.storage.setAlarm(Math.min(now + HEARTBEAT_MS, back ?? Infinity));
+    // A socket still waiting for its hello is closed at its own deadline, not at the next heartbeat.
+    await this.ctx.storage.setAlarm(Math.min(now + HEARTBEAT_MS, back ?? Infinity, this.nextHelloDeadline() ?? Infinity));
+  }
+
+  /** When the next socket that has not said hello yet (and is not closing) times out, or null. */
+  nextHelloDeadline() {
+    let next = null;
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws.readyState > 1) continue;
+      const att = this.attachment(ws);
+      if (att.client !== null || att.gone) continue;
+      const at = att.since + HELLO_TIMEOUT_MS;
+      if (next === null || at < next) next = at;
+    }
+    return next;
   }
 
   async ensureAlarm(at) {
@@ -1626,6 +1766,24 @@ export class Session extends DurableObject {
         .run();
     } catch (err) {
       logError('presence update failed', err);
+    }
+  }
+
+  /**
+   * Mark the session's game_presence rows as current, at most every
+   * PRESENCE_TOUCH_MS (the lobby heartbeat and the game alarm come here
+   * through syncDirectory): the daily job deletes rows a day old, and a ban
+   * must still find the members of a lobby or game that lasts longer.
+   */
+  async touchPresence(now = Date.now()) {
+    // Kept in `meta` (Durable Object storage), so waking the object does not write D1 again.
+    if (!this.meta || now - (this.meta.presenceAt ?? this.meta.createdAt) < PRESENCE_TOUCH_MS) return;
+    this.meta.presenceAt = now;
+    await this.ctx.storage.put('meta', this.meta);
+    try {
+      await this.env.DB.prepare('UPDATE game_presence SET updated_at = ?2 WHERE session_id = ?1').bind(this.meta.id, now).run();
+    } catch (err) {
+      logError('presence refresh failed', err);
     }
   }
 
@@ -1692,6 +1850,7 @@ export class Session extends DurableObject {
    */
   async syncDirectory(heartbeat = false, now = Date.now()) {
     if (!this.meta || !this.room) return;
+    await this.touchPresence(now);
     const core = {
       id: this.meta.id,
       name: this.meta.name,
@@ -2042,15 +2201,27 @@ export class Session extends DurableObject {
 
   /** Send to every member (or those `to(client)` accepts). */
   broadcast(msg, to = null) {
-    const raw = encodeServer(msg);
+    let raw;
+    try {
+      raw = encodeServer(msg);
+    } catch (err) {
+      // A message the protocol refuses is a server bug: it must not abort the
+      // handler that sends it after the state was already saved.
+      logError(`broadcast of ${msg.t} failed`, err);
+      return;
+    }
     for (const ws of this.ctx.getWebSockets()) {
       const att = this.attachment(ws);
       if (att.client === null || att.gone) continue;
       if (to && !to(att.client)) continue;
       const queue = this.syncing.get(ws);
       if (queue) {
-        // Catching up: frames follow the log, other news is not needed.
-        if (msg.t === S2C.FRAME) queue.push({ tick: msg.tick, orders: msg.orders });
+        // Catching up: frames and SYNC_NEWS follow the log in order; other news is not needed.
+        if (msg.t === S2C.FRAME) queue.entries.push({ tick: msg.tick, orders: msg.orders });
+        else if (SYNC_NEWS.has(msg.t) && (msg.t !== S2C.CHAT || queue.news < SYNC_NEWS_MAX)) {
+          queue.entries.push({ raw });
+          queue.news++;
+        }
         continue;
       }
       this.sendRaw(ws, raw);

@@ -647,3 +647,205 @@ test('upgrades: closed sockets that never finish closing cannot fill the session
   await s.send(everything.at(-1), hello(s, 'Host', { hostKey: s.hostKey }));
   assert.ok(everything.at(-1).last('welcome'));
 });
+
+test('two quick hellos on one anonymous socket join once', async () => {
+  // The username lookup answers on a later tick (a D1 round trip).
+  const slow = {
+    prepare: () => ({
+      bind: () => ({ run: async () => ({}), first: () => new Promise((r) => setTimeout(() => r(null), 5)), all: async () => ({ results: [] }) }),
+    }),
+  };
+  const s = await makeSession({ DB: slow, maxPlayers: 4 });
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const ws = s.connect('twice');
+  await Promise.all([s.send(ws, hello(s, 'Twice')), s.send(ws, hello(s, 'Twice')), s.send(ws, hello(s, 'Twice'))]);
+  assert.equal(ws.take('welcome').length, 1);
+  const lobby = host.last('lobby');
+  assert.equal(lobby.slots.filter((x) => x.type === 'human').length, 2, 'one place for the socket, not one per hello');
+  assert.equal(s.session.room.memberCount(), 2);
+  // A later hello on the joined socket is refused as before.
+  await s.send(ws, hello(s, 'Twice'));
+  assert.equal(ws.last('error').message, 'Already joined.');
+});
+
+test('upgrades and lockouts count an IPv6 /64 as one network', async () => {
+  const s = await makeSession({ maxPlayers: 8, password: 'secret' });
+  s.session.upgraded = (client) => ({ status: 101, webSocket: client });
+  const upgrade = (ip) =>
+    s.session.fetch(new Request('https://session/', { headers: { Upgrade: 'websocket', 'CF-Connecting-IP': ip, 'X-WebRA-Auth': JSON.stringify({ account: null, refuse: null }) } }));
+  for (let i = 0; i < MAX_PENDING_PER_IP; i++) assert.equal((await upgrade(`2001:db8:5:6::${i + 1}`)).status, 101);
+  assert.equal((await upgrade('2001:db8:5:6:aaaa::1')).status, 429, 'a rotated address of the same /64 is not a new budget');
+  assert.equal((await upgrade('2001:db8:5:7::1')).status, 101, 'another /64 gets in');
+  assert.equal((await upgrade('192.0.2.1')).status, 101);
+  assert.equal((await upgrade('192.0.2.2')).status, 101, 'IPv4 neighbours are separate');
+  // Wrong passwords lock out the whole /64, whatever address the next try comes from.
+  for (let i = 0; i < 5; i++) {
+    const ws = s.connect(`guess${i}`, `2001:db8:9:9::${i + 1}`);
+    await s.send(ws, hello(s, 'Guess', { password: 'nope' }));
+    assert.equal(ws.last('error').code, 'bad_password');
+  }
+  const next = s.connect('guess-next', '2001:db8:9:9:1234::1');
+  await s.send(next, hello(s, 'Guess', { password: 'secret' }));
+  assert.equal(next.last('error').code, 'rate_limited');
+  const elsewhere = s.connect('elsewhere', '2001:db8:9:a::1');
+  await s.send(elsewhere, hello(s, 'Other', { password: 'secret' }));
+  assert.ok(elsewhere.last('welcome'));
+});
+
+test('game_presence follows members: a freed slot and a departing spectator lose their rows; long sessions keep theirs current', async () => {
+  const { FakeD1 } = await import('./fake-d1.mjs');
+  const DB = new FakeD1();
+  const s = await makeSession({ DB, maxPlayers: 3 });
+  const rows = () => DB.rows('SELECT client, updated_at FROM game_presence ORDER BY client');
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const guest = s.connect('guest');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const other = s.connect('other');
+  await s.send(other, hello(s, 'Other'));
+  const ow = other.take('welcome')[0];
+  await s.send(host, { t: 'spectators', max: 1 });
+  const eye = s.connect('eye');
+  await s.send(eye, hello(s, 'Eye', { spectate: true }));
+  const ew = eye.take('welcome')[0];
+  assert.equal(rows().length, 4);
+  // The host frees the guest's slot: its row, account and map state go with it.
+  await s.send(host, { t: 'slot', slot: s.session.room.slotOf(gw.you), type: 'open' });
+  assert.equal(guest.last('error').code, 'kicked');
+  assert.ok(!rows().some((r) => r.client === gw.you), 'the kicked player is no longer present');
+  // The bulk edit too.
+  await s.send(host, { t: 'slots', changes: [{ slot: s.session.room.slotOf(ow.you), type: 'ai', difficulty: 'easy' }] });
+  assert.equal(other.last('error').code, 'kicked');
+  assert.ok(!rows().some((r) => r.client === ow.you));
+  // A spectator of the running game whose tab closes is no longer present (it may still rejoin).
+  const guest2 = s.connect('guest2');
+  await s.send(guest2, hello(s, 'Guest Two'));
+  await s.send(guest2, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  assert.ok(host.last('start'));
+  await s.drop(eye);
+  assert.ok(!rows().some((r) => r.client === ew.you), 'the spectator who closed the tab is gone');
+  const back = s.connect('eye-back');
+  await s.send(back, hello(s, 'Eye', { rejoin: { client: ew.you, key: ew.key } }));
+  assert.ok(back.take('welcome')[0]);
+  assert.ok(rows().some((r) => r.client === ew.you), 'and recorded again when it rejoins');
+  // Rows of a session open for hours are kept current (the daily job deletes rows a day old).
+  const later = Date.now() + 2 * 60 * 60 * 1000;
+  await s.session.syncDirectory(false, later);
+  assert.ok(rows().every((r) => r.updated_at === later), JSON.stringify(rows()));
+  const writes = DB.writes;
+  await s.session.syncDirectory(false, later + 1000);
+  assert.equal(DB.writes, writes, 'at most once an hour');
+});
+
+test('a broadcast the protocol refuses is logged and never aborts the handler that saved the change', async (t) => {
+  const s = await makeSession();
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const guest = s.connect('guest');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const logged = t.mock.method(console, 'error', () => {});
+  // A lobby view the protocol would refuse (a server bug, like a map name too long after NFC).
+  const view = s.session.room.lobbyView.bind(s.session.room);
+  s.session.room.lobbyView = () => ({ ...view(), map: { name: 'क़'.repeat(40) } });
+  const before = guest.inbox.length;
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  assert.equal(guest.last('error'), undefined, 'no internal error for the sender');
+  assert.equal(guest.inbox.length, before, 'nothing invalid was sent');
+  assert.ok(logged.mock.calls.some((c) => /broadcast of lobby failed/.test(String(c.arguments[0]))));
+  assert.equal(s.session.room.slots[s.session.room.slotOf(gw.you)].ready, true, 'the change itself was kept');
+  // Chat still flows.
+  await s.send(guest, { t: 'chat', text: 'still here' });
+  assert.equal(host.last('chat').text, 'still here');
+});
+
+test('a socket that never says hello is closed at its own deadline, not at the next lobby heartbeat', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const s = await makeSession();
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const a = s.connect('a');
+  t.mock.timers.tick(14_000);
+  const b = s.connect('b');
+  // The alarm the first silent socket set: it closes, the second one is 1 s old.
+  t.mock.timers.tick(1_000);
+  await s.session.alarm();
+  assert.ok(a.closed, 'the first socket timed out');
+  assert.equal(b.closed, null);
+  const next = s.ctx.storage.alarm;
+  assert.equal(next, b.deserializeAttachment().since + 15_000, 'the next alarm is the second socket\'s deadline');
+  t.mock.timers.tick(next - Date.now());
+  await s.session.alarm();
+  assert.deepEqual(b.closed, { code: 1008, reason: 'hello timeout' });
+  assert.ok(Date.now() - b.deserializeAttachment().since <= 15_000);
+  assert.equal(host.closed, null);
+});
+
+test('a player who drops before reporting a hash lets the others be compared: the desync is told at once', async () => {
+  const s = await makeSession({ maxPlayers: 3 });
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  const guest = s.connect('guest');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const third = s.connect('third');
+  await s.send(third, hello(s, 'Third'));
+  const tw = third.take('welcome')[0];
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  await s.send(third, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  const st = host.last('start');
+  const seat = (w) => st.players.find((p) => p.client === w.you).player;
+  const all = [{ ws: host, seat: seat(hw) }, { ws: guest, seat: seat(gw) }, { ws: third, seat: seat(tw) }];
+  await play(s, all, 0, 27);
+  await s.send(host, { t: 'hash', tick: 25, hash: 'aaaa' });
+  await s.send(guest, { t: 'hash', tick: 25, hash: 'bbbb' });
+  assert.equal(host.last('desync'), undefined, 'waits for the third player');
+  await s.drop(third);
+  assert.deepEqual(host.last('desync'), { t: 'desync', tick: 25 });
+  assert.deepEqual(guest.last('desync'), { t: 'desync', tick: 25 });
+  assertValid(host);
+});
+
+test('a member catching up gets who left and the chat of the catch-up after sync, in order with the frames', async () => {
+  const { s, host, guest, gw, hSeat, gSeat, watchers } = await started({ spectators: 1 });
+  const H = { ws: host, seat: hSeat };
+  const G = { ws: guest, seat: gSeat };
+  await play(s, [H, G], 0, 10);
+  await s.drop(guest);
+  // The order log is read slowly (a long game): other events run while it streams.
+  const log = s.session.log;
+  const chunks = log.chunks.bind(log);
+  let release;
+  let reading;
+  const reached = new Promise((r) => (reading = r));
+  log.chunks = async function* slow() {
+    yield* chunks();
+    reading();
+    await new Promise((r) => (release = r));
+  };
+  const back = s.connect('guest2');
+  const rejoining = s.send(back, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  await reached;
+  await play(s, [H], 10, 12);
+  await s.send(host, { t: 'chat', text: 'welcome back' });
+  await s.send(watchers[0].ws, { t: 'leave' });
+  await play(s, [H], 12, 13);
+  release();
+  await rejoining;
+  const types = back.inbox.map((m) => m.t).filter((t) => ['sync', 'frame', 'chat', 'left'].includes(t));
+  assert.equal(types[0], 'sync', 'news comes after sync');
+  assert.deepEqual(types.filter((t) => t !== 'frame'), ['sync', 'chat', 'left']);
+  const at = (t) => back.inbox.findIndex((m) => m.t === t);
+  const frames = back.inbox.filter((m) => m.t === 'frame').map((m) => m.tick);
+  assert.deepEqual(frames, [13, 14, 15]);
+  assert.ok(back.inbox.findIndex((m) => m.t === 'frame' && m.tick === 14) < at('chat'), 'in the order it happened');
+  assert.ok(at('left') < back.inbox.findIndex((m) => m.t === 'frame' && m.tick === 15));
+  assert.equal(back.last('left').name, 'Watcher 0');
+  assert.equal(back.last('chat').text, 'welcome back');
+  assertValid(back);
+});

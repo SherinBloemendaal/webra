@@ -24,6 +24,7 @@ import { randomHex } from './crypto.js';
 import { engine, EngineTrap } from './engine.js';
 import { HttpError, json, jsonText, readText } from './http.js';
 import { ipSalt } from './ipkey.js';
+import { networkOf } from './accounts/ip.js';
 import { takeQuota } from './quota.js';
 
 export const UPLOAD_LIMIT = 10;
@@ -103,7 +104,7 @@ export async function storeMap(db, p, { listed, uploaderId = null, now = Date.no
 /** `uploaderId`: the signed-in account (stored with the map), or null. */
 export async function uploadMap(request, env, ip, now = Date.now(), uploaderId = null, salt = ipSalt(env, request)) {
   checkJsonType(request);
-  if (!(await takeQuota(env.DB, salt, 'maps', ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, salt, 'maps', networkOf(ip), UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map uploads. Try again later.', { 'retry-after': '3600' });
   }
   const p = await prepareMap(await readText(request, MAP_MAX_BYTES));
@@ -193,7 +194,7 @@ export async function getMapThumbnail(
   { request, ip, salt, exec = null, cache = null, limit = THUMBNAIL_RENDER_LIMIT, judge, versions = MAP_VERSIONS, now = Date.now() } = {},
 ) {
   if (!MAP_ID_RE.test(id)) throw new HttpError(404, 'not_found', 'No such map.');
-  const head = await thumbnailRow(env.DB, id);
+  const head = await mapHead(env.DB, id);
   if (!head || head.listed !== 1) throw new HttpError(404, 'not_found', 'No such map.');
   const etag = `"${head.hash}"`;
   const headers = { 'content-type': 'image/png', 'cache-control': `public, max-age=${THUMBNAIL_MAX_AGE}`, etag, 'x-content-type-options': 'nosniff' };
@@ -206,7 +207,7 @@ export async function getMapThumbnail(
     const hit = await cache.match(key);
     if (hit) return hit;
   }
-  if (!(await takeQuota(env.DB, salt, 'thumb', ip, limit, UPLOAD_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, salt, 'thumb', networkOf(ip), limit, UPLOAD_WINDOW_MS, now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map pictures. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const found = await rowById(env.DB, head.id);
@@ -230,13 +231,6 @@ export async function getMapThumbnail(
   return res;
 }
 
-/** The id, hash and listing of a map by id (or by an id an upgrade merged away), without its JSON. */
-async function thumbnailRow(db, id) {
-  const row = await db.prepare('SELECT id, hash, listed FROM maps WHERE id = ?1').bind(id).first();
-  if (row) return row;
-  return db.prepare('SELECT id, hash, listed FROM maps WHERE hash = (SELECT hash FROM map_aliases WHERE old_id = ?1 LIMIT 1)').bind(id).first();
-}
-
 /** Whether an If-None-Match header names `etag` (or is `*`); weak tags compare equal. */
 function etagMatches(header, etag) {
   if (!header) return false;
@@ -246,23 +240,71 @@ function etagMatches(header, etag) {
   });
 }
 
+/** Downloads of one map counted per network per day (GET /api/maps/<id>): one. */
+export const MAP_DOWNLOAD_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** How long browsers and the edge cache keep a map file (the key names its stored hash). */
+const MAP_MAX_AGE = 3600;
+
 /**
  * A listed map by id (unlisted maps are not found: their sessions serve them).
  * An id an upgrade merged away still finds its map. A map that cannot be
  * upgraded is still served as stored: clients upgrade every map they load
  * and show why this one is not compatible, and the map editor opens it for
  * repair.
+ *
+ * The answer is kept in the edge cache (`cache`, caches.default in the
+ * Worker) under the map's id and stored hash, like its thumbnail, so repeated
+ * downloads read only the row's id and hash. A download is counted once per
+ * network (`network`, under quota `mapdl` with `salt`) and map a day: a
+ * refused count costs one read and no write. `exec` keeps the count and the
+ * cache write alive after the answer.
  */
-export async function getMap(env, ctx, id, { judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
+export async function getMap(env, exec, id, { request = null, network, salt, cache = null, judge, versions = MAP_VERSIONS, now = Date.now() } = {}) {
+  if (typeof network !== 'string' || typeof salt !== 'string') throw new TypeError('getMap needs the network and salt that count downloads');
   if (!MAP_ID_RE.test(id)) throw new HttpError(404, 'not_found', 'No such map.');
-  const found = await rowById(env.DB, id);
+  const head = await mapHead(env.DB, id);
+  if (!head || head.listed !== 1) throw new HttpError(404, 'not_found', 'No such map.');
+  const count = (mapId) => exec.waitUntil(countDownload(env.DB, salt, network, mapId, now));
+  // A row this release still upgrades is read in full (and upgraded) first; its hash changes then.
+  const key = new Request(new URL(`/api/maps/${head.id}?hash=${head.hash}`, request?.url ?? 'https://webra.invalid/').toString());
+  if (cache && !needsUpgrade(head, versions)) {
+    const hit = await cache.match(key);
+    if (hit) {
+      count(head.id);
+      return hit;
+    }
+  }
+  const found = await rowById(env.DB, head.id);
   if (!found || found.listed !== 1) throw new HttpError(404, 'not_found', 'No such map.');
   const row = await upgradeStoredMap(env.DB, found, { judge, versions, now });
   if (!row) throw new HttpError(404, 'not_found', 'No such map.');
-  ctx.waitUntil(env.DB.prepare('UPDATE maps SET downloads = downloads + 1 WHERE id = ?1').bind(row.id).run());
+  count(row.id);
   // A map id names the same map; after a format upgrade a client that cached
   // the old text upgrades it to exactly this.
-  return jsonText(row.json, 200, { 'cache-control': 'public, max-age=3600' });
+  const res = jsonText(row.json, 200, { 'cache-control': `public, max-age=${MAP_MAX_AGE}` });
+  if (cache && !needsUpgrade(row, versions)) {
+    const stored = new Request(new URL(`/api/maps/${row.id}?hash=${row.hash}`, key.url).toString());
+    exec.waitUntil(cache.put(stored, res.clone()).catch((err) => console.error(`map ${row.id}: not cached: ${err?.message ?? err}`)));
+  }
+  return res;
+}
+
+/** One download of map `mapId` from `network`, counted at most once a day per network. */
+async function countDownload(db, salt, network, mapId, now) {
+  try {
+    if (!(await takeQuota(db, salt, 'mapdl', `${network}:${mapId}`, 1, MAP_DOWNLOAD_WINDOW_MS, now))) return;
+    await db.prepare('UPDATE maps SET downloads = downloads + 1 WHERE id = ?1').bind(mapId).run();
+  } catch (err) {
+    console.error(`map ${mapId}: download not counted: ${err?.message ?? err}`);
+  }
+}
+
+/** The id, hash, listing and upgrade state of a map by id (or by an id an upgrade merged away), without its JSON. */
+async function mapHead(db, id) {
+  const cols = 'id, hash, listed, format_version, upgrade_error, upgrade_tried';
+  const row = await db.prepare(`SELECT ${cols} FROM maps WHERE id = ?1`).bind(id).first();
+  if (row) return row;
+  return db.prepare(`SELECT ${cols} FROM maps WHERE hash = (SELECT hash FROM map_aliases WHERE old_id = ?1 LIMIT 1)`).bind(id).first();
 }
 
 // The game setup (map format version 2) comes out of the stored JSON: online rooms apply and enforce it.

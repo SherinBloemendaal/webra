@@ -492,3 +492,34 @@ test('stall log keeps the newest STALL_LOG_MAX entries; totals keep counting', a
   assert.equal(ls.totals.get(0).count, STALL_LOG_MAX + 5);
   assert.equal(ls.stalls.at(-1).tick, STALL_LOG_MAX + 5);
 });
+
+test('a tick whose last missing hash belonged to a player who left is compared at once', () => {
+  const ls = new Lockstep({ players: [0, 1, 2], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (let t = 3; t <= 53; t++) for (const p of [0, 1, 2]) ls.submit(p, t, [], 0);
+  // 1 against 1 at tick 25, the third seat never reports it.
+  assert.equal(ls.hash(0, 25, 'aa'), null);
+  assert.equal(ls.hash(1, 25, 'bb'), null, 'waits for seat 2');
+  const out = ls.suspend(2, 0);
+  assert.deepEqual(out.desync, { tick: 25, players: [0, 1] }, 'nobody can tell who is right: both are told');
+  assert.equal(ls.desyncTick, 25);
+  assert.equal(ls.hashes.size, 0);
+});
+
+test('a player leaving settles waiting ticks in order: the agreed hash moves on, the first outliers are reported', () => {
+  const ls = new Lockstep({ players: [0, 1, 2, 3], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (let t = 3; t <= 78; t++) for (const p of [0, 1, 2, 3]) ls.submit(p, t, [], 0);
+  for (const tick of [25, 50]) {
+    ls.hash(0, tick, 'aa');
+    ls.hash(1, tick, 'aa');
+    ls.hash(2, tick, tick === 25 ? 'cc' : 'aa');
+  }
+  assert.equal(ls.agreed, null);
+  const out = ls.suspend(3, 0);
+  assert.deepEqual(out.desync, { tick: 25, players: [2] });
+  assert.deepEqual(ls.agreed, { tick: 50, hash: 'aa' }, 'rejoining clients check against the newest agreed tick');
+  assert.equal(ls.desyncTick, null);
+  // Nothing waits: a leaving player with nothing pending settles nothing.
+  assert.equal(ls.suspend(2, 0).desync, null);
+});

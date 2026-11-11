@@ -146,6 +146,39 @@ test('saving: different hashes, a decline, anonymous players and spectators all 
   }
 });
 
+test('a game past the longest save file is refused as too long, before and during the vote, without an error', async (t) => {
+  const { REPLAY_MAX_TICKS } = await import('@webra/protocol');
+  const env = makeEnv({ email: false });
+  const accounts = await accountsFor(env);
+  const ctx = await game(env, accounts);
+  const { s, host, guest, H, G } = ctx;
+  await play(s, [H, G], 0, 10);
+  const logged = t.mock.method(console, 'error', () => {});
+  const ls = s.session.lockstep;
+  const real = ls.next;
+  // The relay is past the last tick a save file can hold.
+  ls.next = REPLAY_MAX_TICKS;
+  await s.send(guest, { t: 'save', accept: true });
+  assert.deepEqual(guest.last('save'), { t: 'save', state: 'cancelled', reason: 'too_long' });
+  assert.equal(host.last('save'), undefined, 'nobody else is asked to vote');
+  assert.equal(s.session.room.saving, null);
+  // It grows too long while the players vote.
+  ls.next = real;
+  await s.send(guest, { t: 'save', accept: true });
+  assert.equal(host.last('save').state, 'open');
+  ls.next = REPLAY_MAX_TICKS - 10;
+  await s.send(host, { t: 'save', accept: true });
+  assert.deepEqual([host.last('save').state, host.last('save').reason], ['cancelled', 'too_long']);
+  assert.deepEqual([guest.last('save').state, guest.last('save').reason], ['cancelled', 'too_long']);
+  ls.next = real;
+  // A save point past the limit is never recorded (the file could not be resumed).
+  assert.equal(await s.session.recordSavePoint(REPLAY_MAX_TICKS, 'abcd', [ctx.hw.you, ctx.gw.you], Date.now()), 'too_long');
+  assert.equal(logged.mock.callCount(), 0, 'nothing is reported as an error');
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM online_saves')[0].n, 0);
+  valid(host);
+  valid(guest);
+});
+
 /** The save file a player's client keeps (js/replay.js Recorder.encodeOnlineSave). */
 async function saveFile(ctx, saved, agreed, { player = 0, tamper = false } = {}) {
   const frames = structuredClone((await ctx.s.session.log.read()).filter(([t]) => t <= agreed.tick));
@@ -248,6 +281,82 @@ test('resuming: the file is checked against the record, the players come back by
   const seat = (w) => st.players.find((p) => p.client === w.you).player;
   await play(s, [{ ws: host, seat: seat(hw) }, { ws: guest, seat: seat(gw) }], saved.ticks, saved.ticks + 5);
   assert.deepEqual(guest.take('frame').map((f) => f.tick).slice(-2), [saved.ticks + 6, saved.ticks + 7]);
+  valid(host);
+  valid(guest);
+});
+
+test('starting a resumed save that has an invite code: messages, joins and alarms during the D1 write do not end the session', async () => {
+  const env = makeEnv({ email: false });
+  const accounts = await accountsFor(env);
+  const ctx = await game(env, accounts);
+  const { agreed, result: saved } = await saveGame(ctx);
+  const text = await saveFile(ctx, saved, agreed);
+  const s = await makeSession({ DB: env.DB, maxPlayers: 3 });
+  const sid = wire(env, s.session);
+  const host = s.connect('host', '10.0.0.1', authOf(accounts.host));
+  await s.send(host, hello(s, { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  assert.equal((await accounts.host.req('POST', `/api/sessions/${sid}/resume`, text, { headers: { [MEMBER_HEADER]: `${hw.you}.${hw.key}` } })).status, 200);
+  const guest = s.connect('guest', '10.0.0.2', authOf(accounts.guest));
+  await s.send(guest, hello(s));
+  const gw = guest.take('welcome')[0];
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  const invite = await s.session.newInvite({ member: { client: hw.you, key: hw.key }, account: accounts.host.user, ip: '10.0.0.1' });
+  assert.equal(invite.ok, true);
+  // The invite expiry at the start answers late (a D1 round trip): other events run meanwhile.
+  const waiting = [];
+  const release = () => waiting.splice(0).forEach((r) => r());
+  let reached;
+  const held = new Promise((r) => (reached = r));
+  const real = env.DB;
+  s.session.env.DB = {
+    prepare(sql) {
+      const st = real.prepare(sql);
+      if (!/^UPDATE invite_codes/.test(sql)) return st;
+      return {
+        bind: (...args) => {
+          const b = st.bind(...args);
+          return {
+            run: async () => {
+              reached();
+              await new Promise((r) => waiting.push(r));
+              return b.run();
+            },
+          };
+        },
+      };
+    },
+    batch: (sts) => real.batch(sts),
+  };
+  const starting = s.send(host, { t: 'start' });
+  await held;
+  // A member's message, a watcher, a rejoin and the alarm arrive while the start awaits D1.
+  await s.send(guest, { t: 'chat', text: 'go go' });
+  await s.send(guest, { t: 'ready', ready: false, mapHash: null });
+  assert.equal(guest.last('error').message, 'The game is starting.');
+  const watcher = s.connect('watcher', '10.0.0.3', authOf(accounts.other));
+  await s.send(watcher, hello(s, { spectate: true }));
+  assert.match(watcher.last('error').message, /The game is starting/);
+  assert.equal(watcher.take('start').length, 0, 'no half-built log is streamed');
+  const again = s.connect('again', '10.0.0.2', authOf(accounts.guest));
+  await s.send(again, hello(s, { rejoin: { client: gw.you, key: gw.key } }));
+  assert.match(again.last('error').message, /The game is starting/);
+  await s.session.alarm();
+  release();
+  await starting;
+  s.session.env.DB = real;
+  assert.ok(s.session.room && s.session.meta, 'the session is still there');
+  assert.equal(host.take('error').filter((e) => e.code === 'session_lost').length, 0);
+  assert.equal(host.last('chat').text, 'go go');
+  for (const ws of [host, guest]) {
+    assert.ok(ws.last('start').resume, `${ws.name} got the start`);
+    assert.deepEqual(ws.last('sync'), { t: 'sync', tick: saved.ticks, check: { tick: saved.ticks - 1, hash: saved.hash } });
+  }
+  for (const st of s.session.room.seatStates.filter(Boolean)) assert.equal(st.state, 'syncing', 'nobody was dropped by the alarm');
+  await s.send(host, { t: 'resume' });
+  await s.send(guest, { t: 'resume' });
+  assert.deepEqual(host.take('frame').map((f) => f.tick), [saved.ticks, saved.ticks + 1, saved.ticks + 2]);
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM invite_codes WHERE expires_at > ?1', Date.now())[0].n, 0, 'the code ended');
   valid(host);
   valid(guest);
 });
