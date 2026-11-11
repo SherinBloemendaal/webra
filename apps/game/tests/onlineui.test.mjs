@@ -672,3 +672,21 @@ test('the error banner goes once a later action went through, or on Dismiss', as
     uninstallDom();
   }
 });
+
+test('a lobby that resumes a save: the AI difficulty is locked like the other slot controls', async () => {
+  const { ui, lobby } = await hostLobby();
+  try {
+    const slots = [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'ai', name: 'Normal AI', faction: 'random', color: 2, team: 2, difficulty: 'normal', bot: 'normal' },
+    ];
+    const plate = (key) => ui.slotPlates.find((p) => p.button.dataset.ctl === key);
+    lobby({ slots });
+    assert.equal(plate('1:difficulty').button.disabled, false, 'the host sets it in a new lobby');
+    lobby({ slots, resume: { id: 'r'.repeat(16), title: 'Saved', createdAt: 1, ticks: 100, waiting: [] } });
+    assert.equal(plate('1:bot').button.disabled, true);
+    assert.equal(plate('1:difficulty').button.disabled, true);
+  } finally {
+    uninstallDom();
+  }
+});

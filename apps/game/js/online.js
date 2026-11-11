@@ -2043,7 +2043,8 @@ export class OnlineUI {
           });
           const diff = this.slotPlate(`${i}:difficulty`, DIFFICULTIES.map((d) => [d, LABELS.difficulty[d]]), slot.difficulty, (v) => this.send({ t: 'slot', slot: i, difficulty: v }), {
             label: `Player ${i + 1} difficulty`,
-            disabled: !host,
+            // A resumed save keeps its AI players as saved (the server refuses changes).
+            disabled: !host || Boolean(this.state.resume),
             tip: this.columnTips.playerOnline,
           });
           who.append(bot.root, diff.root);
