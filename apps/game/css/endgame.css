@@ -12,7 +12,7 @@
 
 #gameover[data-outcome] {
   place-items: start center;
-  padding: 32px 16px;
+  padding: calc(32 * var(--ui-px)) calc(16 * var(--ui-px));
   overflow-x: hidden;
   background:
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 24px),
@@ -34,7 +34,7 @@
 
 .endgame-card {
   position: relative;
-  width: min(1100px, 100%);
+  width: min(calc(1100 * var(--ui-px)), 100%);
   padding: 0;
   background: none;
   border: 0;
@@ -47,7 +47,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: calc(24 * var(--ui-px));
 }
 
 #gameover[data-outcome='defeat'] .endgame-body {
@@ -137,14 +137,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: calc(6 * var(--ui-px));
   text-align: center;
 }
 
 .endgame-kicker {
   margin: 0;
   color: var(--endgame-accent);
-  font: 600 16px/1.2 var(--ui-font-display);
+  font: 600 calc(16 * var(--ui-px))/1.2 var(--ui-font-display);
   letter-spacing: 0.3em;
   text-transform: uppercase;
   animation: endgame-fade 0.5s 0.9s both;
@@ -196,7 +196,7 @@
 }
 
 .endgame-card .endgame-text {
-  margin: 4px 0 0;
+  margin: calc(4 * var(--ui-px)) 0 0;
   max-width: var(--ui-measure);
   color: var(--ui-text-2);
   animation: endgame-fade 0.5s 1s both;
@@ -205,10 +205,10 @@
 .endgame-replay {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8 * var(--ui-px));
   margin: 0;
   color: var(--ui-muted);
-  font-size: 14px;
+  font-size: var(--ui-fs-label);
   animation: endgame-fade 0.5s 1.1s both;
 }
 
@@ -231,16 +231,16 @@
 
 .endgame-table {
   width: 100%;
-  min-width: 640px;
+  min-width: calc(640 * var(--ui-px));
   border-collapse: collapse;
 }
 
 .endgame-table thead th {
-  padding: 12px 16px;
+  padding: calc(12 * var(--ui-px)) calc(16 * var(--ui-px));
   background: var(--ui-metal-1);
   border-bottom: 1px solid var(--ui-edge);
   color: var(--ui-muted);
-  font: 600 13px/1.2 var(--ui-font-display);
+  font: 600 var(--ui-fs-m)/1.2 var(--ui-font-display);
   letter-spacing: var(--ui-track-label);
   text-align: left;
   text-transform: uppercase;
@@ -248,13 +248,13 @@
 
 .endgame-table td,
 .endgame-table tbody th {
-  padding: 8px 16px;
+  padding: calc(8 * var(--ui-px)) calc(16 * var(--ui-px));
   border-top: 1px solid var(--ui-line-soft);
   text-align: left;
 }
 
 .endgame-table .num {
-  font: 14px/1.3 var(--ui-font-mono);
+  font: var(--ui-fs-label)/1.3 var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -265,10 +265,10 @@
 
 /* A team's head: its name, "Winner" in green (the word says it too). */
 .endgame-team th {
-  padding: 8px 16px;
+  padding: calc(8 * var(--ui-px)) calc(16 * var(--ui-px));
   background: var(--ui-metal-0);
   color: var(--ui-muted);
-  font: 700 14px/1.2 var(--ui-font-display);
+  font: 700 var(--ui-fs-label)/1.2 var(--ui-font-display);
   letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
@@ -280,20 +280,20 @@
 .endgame-who {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 180px;
-  padding-left: 12px;
+  gap: calc(2 * var(--ui-px));
+  min-width: calc(180 * var(--ui-px));
+  padding-left: calc(12 * var(--ui-px));
   border-left: 6px solid var(--player-color, var(--ui-neutral));
 }
 
 .endgame-name {
-  font: 600 16px/1.2 var(--ui-font);
+  font: 600 calc(16 * var(--ui-px))/1.2 var(--ui-font);
   color: var(--ui-text);
 }
 
 .endgame-sub {
   color: var(--ui-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--ui-px));
   font-weight: 400;
 }
 
@@ -305,7 +305,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12 * var(--ui-px));
   animation: endgame-fade 0.5s 1.4s both;
 }
 
@@ -313,37 +313,40 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: calc(10 * var(--ui-px));
+  padding: calc(10 * var(--ui-px)) calc(14 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-line);
 }
 
 .endgame-rematch-title {
-  font: 700 15px/1 var(--ui-font-display);
+  font: 700 var(--ui-fs-l)/1 var(--ui-font-display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .endgame-rematch-text {
   color: var(--ui-muted);
-  font-size: 14px;
+  font-size: var(--ui-fs-label);
 }
 
 .endgame-rematch-lamps {
   display: flex;
-  gap: 4px;
+  gap: calc(4 * var(--ui-px));
 }
 
 .endgame-buttons {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: calc(10 * var(--ui-px));
   margin-left: auto;
 }
 
+/* .menu-card button (css/style.css) gives every card button the full width: here they sit in a row
+   (same specificity, this file comes later). Phones give each its own row below. */
 .endgame-buttons button {
+  width: auto;
   min-height: max(44px, var(--ctl-row, 44px));
   margin: 0;
 }
@@ -352,7 +355,7 @@
 
 @media (max-width: 600px) {
   #gameover[data-outcome] {
-    padding: 20px 16px;
+    padding: calc(20 * var(--ui-px)) calc(16 * var(--ui-px));
   }
 
   .endgame-buttons {
@@ -608,7 +611,7 @@
 }
 
 .stats-card h1 {
-  font-size: 28px;
+  font-size: calc(28 * var(--ui-px));
 }
 
 .stats-head {
@@ -618,8 +621,8 @@
 .stats-ranking {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 0;
+  gap: calc(6 * var(--ui-px));
+  margin: calc(10 * var(--ui-px)) 0 0;
   padding: 0;
   list-style: none;
   counter-reset: rank;
@@ -629,8 +632,8 @@
   counter-increment: rank;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
+  gap: calc(8 * var(--ui-px));
+  padding: calc(4 * var(--ui-px)) calc(8 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   border-left: 4px solid var(--player-color, var(--ui-accent));
@@ -655,7 +658,7 @@
 }
 
 .stats-badge {
-  padding: 0 5px;
+  padding: 0 calc(5 * var(--ui-px));
   background: var(--ui-ok);
   color: #06120a;
   border-radius: var(--ui-radius);
@@ -671,17 +674,17 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
-  gap: 16px;
-  margin-top: 14px;
+  grid-template-columns: minmax(calc(180 * var(--ui-px)), calc(220 * var(--ui-px))) minmax(0, 1fr);
+  gap: calc(16 * var(--ui-px));
+  margin-top: calc(14 * var(--ui-px));
 }
 
 .stats-tabs {
   align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px;
+  gap: calc(2 * var(--ui-px));
+  padding: calc(8 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
 }
@@ -689,17 +692,17 @@
 .menu-card button.stats-tab {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(10 * var(--ui-px));
   width: 100%;
   min-height: max(38px, var(--ctl-row, 38px));
   margin: 0;
-  padding: 0 12px calc(2 * var(--ui-cap-nudge));
+  padding: 0 calc(12 * var(--ui-px)) calc(2 * var(--ui-cap-nudge));
   background: transparent;
   border: 1px solid transparent;
   border-radius: 0;
   box-shadow: none;
   color: var(--ui-text-2);
-  font: 700 15px/1.1 var(--ui-font-display);
+  font: 700 var(--ui-fs-l)/1.1 var(--ui-font-display);
   letter-spacing: 0.1em;
   text-align: left;
   text-transform: uppercase;
@@ -734,10 +737,10 @@
 
 /* A team's head row in the tables ("Team 1 · Winner": the word says it too). */
 .stats-table tr.stats-team th {
-  padding-top: 8px;
+  padding-top: calc(8 * var(--ui-px));
   background: var(--ui-metal-0);
   color: var(--ui-muted);
-  font: 700 13px/1.2 var(--ui-font-display);
+  font: 700 var(--ui-fs-m)/1.2 var(--ui-font-display);
   letter-spacing: var(--ui-track-label);
   text-align: left;
   text-transform: uppercase;
@@ -751,34 +754,34 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  margin-bottom: 10px;
+  gap: calc(8 * var(--ui-px)) calc(12 * var(--ui-px));
+  margin-bottom: calc(10 * var(--ui-px));
 }
 
 .stats-graph-label {
   color: var(--ui-muted);
-  font: 600 14px/1.2 var(--ui-font-display);
+  font: 600 var(--ui-fs-label)/1.2 var(--ui-font-display);
   letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
 
 .stats-graph-select {
-  min-width: min(260px, 100%);
+  min-width: min(calc(260 * var(--ui-px)), 100%);
 }
 
 /* ---- Network tab (js/netstats.js, the NetStats board) ---- */
 
 .net-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(calc(180 * var(--ui-px)), 1fr));
+  gap: calc(10 * var(--ui-px));
 }
 
 .net-tile {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
+  gap: calc(4 * var(--ui-px));
+  padding: calc(12 * var(--ui-px)) calc(14 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
 }
@@ -787,19 +790,19 @@
 .net-title {
   margin: 0;
   color: var(--ui-muted);
-  font: 600 13px/1.2 var(--ui-font-display);
+  font: 600 var(--ui-fs-m)/1.2 var(--ui-font-display);
   letter-spacing: var(--ui-track-label);
   text-transform: uppercase;
 }
 
 .net-title {
   color: var(--ui-text);
-  font-size: 18px;
+  font-size: calc(18 * var(--ui-px));
   font-weight: 700;
 }
 
 .net-tile-value {
-  font: 600 24px/1.2 var(--ui-font-mono);
+  font: 600 calc(24 * var(--ui-px))/1.2 var(--ui-font-mono);
   color: var(--ui-text);
 }
 
@@ -821,7 +824,7 @@
 
 .net-tile-hint {
   color: var(--ui-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--ui-px));
 }
 
 .net-chart,
@@ -829,9 +832,9 @@
 .net-stalls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 16px;
+  gap: calc(8 * var(--ui-px));
+  margin-top: calc(16 * var(--ui-px));
+  padding: calc(16 * var(--ui-px));
   background: var(--ui-panel);
   border: 1px solid var(--ui-edge);
   box-shadow: var(--ui-bevel);
@@ -842,7 +845,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: calc(10 * var(--ui-px));
 }
 
 .net-legend-stall::before {
@@ -872,7 +875,7 @@
 
 .net-axis {
   fill: var(--ui-dim);
-  font: 11px var(--ui-font-mono);
+  font: var(--ui-fs-s) var(--ui-font-mono);
 }
 
 .net-stall {
@@ -886,7 +889,7 @@
 
 .net-stall-label {
   fill: var(--ui-bad);
-  font: 600 12px var(--ui-font-display);
+  font: 600 calc(12 * var(--ui-px)) var(--ui-font-display);
 }
 
 .net-line {
@@ -897,7 +900,7 @@
 .net-note {
   margin: 0;
   color: var(--ui-muted);
-  font-size: 13px;
+  font-size: var(--ui-fs-m);
 }
 
 .net-note:empty {
@@ -907,23 +910,23 @@
 .net-lower {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: calc(16 * var(--ui-px));
 }
 
 .net-players {
-  flex: 1.5 1 480px;
+  flex: 1.5 1 calc(480 * var(--ui-px));
   min-width: 0;
 }
 
 .net-stalls {
-  flex: 1 1 300px;
+  flex: 1 1 calc(300 * var(--ui-px));
   min-width: 0;
 }
 
 .net-quality {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6 * var(--ui-px));
 }
 
 .stats-table tr.net-row-poor {
@@ -935,34 +938,34 @@
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 4px;
+  gap: calc(4 * var(--ui-px));
 }
 
 .menu-card button.net-stall-row {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) auto;
+  grid-template-columns: calc(54 * var(--ui-px)) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: calc(10 * var(--ui-px));
   width: 100%;
   min-height: max(42px, var(--ctl-row, 42px));
   margin: 0;
-  padding: 0 10px;
+  padding: 0 calc(10 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   text-align: left;
   text-transform: none;
   letter-spacing: 0;
-  font: 400 14px/1.3 var(--ui-font);
+  font: 400 var(--ui-fs-label)/1.3 var(--ui-font);
 }
 
 .net-stall-at {
   color: var(--ui-muted);
-  font: 13px var(--ui-font-mono);
+  font: var(--ui-fs-m) var(--ui-font-mono);
 }
 
 .net-stall-len {
   color: var(--ui-bad);
-  font: 13px var(--ui-font-mono);
+  font: var(--ui-fs-m) var(--ui-font-mono);
 }
 
 @media (forced-colors: active) {
@@ -988,7 +991,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px 0 4px;
+  padding: calc(12 * var(--ui-px)) 0 calc(4 * var(--ui-px));
 }
 
 /* Wide tables scroll sideways inside the card (phones), never the page. */
@@ -1008,12 +1011,12 @@
   caption-side: top;
   text-align: left;
   color: var(--ui-muted);
-  padding-bottom: 4px;
+  padding-bottom: calc(4 * var(--ui-px));
 }
 
 .stats-table th,
 .stats-table td {
-  padding: 4px 8px;
+  padding: calc(4 * var(--ui-px)) calc(8 * var(--ui-px));
   border-bottom: 1px solid var(--ui-line);
   text-align: left;
   white-space: nowrap;
@@ -1037,19 +1040,19 @@
 
 .stats-player {
   border-left: 4px solid var(--player-color, transparent);
-  padding-left: 8px;
+  padding-left: calc(8 * var(--ui-px));
   font-weight: 600;
 }
 
 .stats-lists {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(calc(220 * var(--ui-px)), 1fr));
+  gap: calc(10 * var(--ui-px));
+  margin-top: calc(14 * var(--ui-px));
 }
 
 .stats-list {
-  padding: 8px 10px;
+  padding: calc(8 * var(--ui-px)) calc(10 * var(--ui-px));
   background: var(--ui-metal-0);
   border: 1px solid var(--ui-edge);
   border-radius: var(--ui-radius);
@@ -1057,7 +1060,7 @@
 }
 
 .menu-card .stats-list h2 {
-  margin: 0 0 6px;
+  margin: 0 0 calc(6 * var(--ui-px));
   color: var(--ui-text);
   font-size: var(--ui-fs-s);
 }
@@ -1072,8 +1075,8 @@
 .stats-types li {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  padding: 2px 0;
+  gap: calc(10 * var(--ui-px));
+  padding: calc(2 * var(--ui-px)) 0;
   border-bottom: 1px dotted var(--ui-line);
 }
 
@@ -1084,7 +1087,7 @@
 
 .menu-card label.stats-graph-pick {
   justify-content: flex-start;
-  margin: 0 0 8px;
+  margin: 0 0 calc(8 * var(--ui-px));
 }
 
 .stats-graph {
@@ -1112,8 +1115,8 @@
   left: var(--tip-x, 0);
   transform: translateX(10px);
   display: grid;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: calc(2 * var(--ui-px));
+  padding: calc(6 * var(--ui-px)) calc(8 * var(--ui-px));
   background: rgba(6, 8, 11, 0.92);
   border: 1px solid var(--ui-edge);
   border-top: 2px solid var(--ui-accent);
@@ -1133,14 +1136,14 @@
 
 .stats-tip-row {
   border-left: 3px solid var(--player-color, transparent);
-  padding-left: 5px;
+  padding-left: calc(5 * var(--ui-px));
 }
 
 .stats-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin: 8px 0 0;
+  gap: calc(4 * var(--ui-px)) calc(14 * var(--ui-px));
+  margin: calc(8 * var(--ui-px)) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--ui-fs-m);
@@ -1151,13 +1154,13 @@
   display: inline-block;
   width: 14px;
   height: 3px;
-  margin-right: 6px;
+  margin-right: calc(6 * var(--ui-px));
   vertical-align: middle;
   background: var(--player-color, #fff);
 }
 
 .stats-graph-table {
-  margin-top: 10px;
+  margin-top: calc(10 * var(--ui-px));
 }
 
 .stats-graph-table summary {
@@ -1175,9 +1178,9 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
+  gap: calc(8 * var(--ui-px));
+  margin-top: calc(12 * var(--ui-px));
+  padding-top: calc(10 * var(--ui-px));
   border-top: 1px solid var(--ui-line);
 }
 
@@ -1192,16 +1195,16 @@
 
 @media (max-width: 560px) {
   .menu-card.stats-card {
-    padding: 16px 12px 14px;
+    padding: calc(16 * var(--ui-px)) calc(12 * var(--ui-px)) calc(14 * var(--ui-px));
   }
 
   .stats-card h1 {
-    font-size: 22px;
+    font-size: calc(22 * var(--ui-px));
   }
 
   .stats-table th,
   .stats-table td {
-    padding: 3px 6px;
+    padding: calc(3 * var(--ui-px)) calc(6 * var(--ui-px));
   }
 
   .stats-actions {

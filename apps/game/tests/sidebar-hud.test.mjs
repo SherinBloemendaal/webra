@@ -182,3 +182,44 @@ test('cameo tooltips: the quick tip of the item while the Quick tips setting is 
     uninstallDom();
   }
 });
+
+test('the clock blinks "Paused" on one clock: the time shows every other second while paused', () => {
+  const realDate = Date.now;
+  const realPerf = globalThis.performance;
+  let perf = 5000;
+  Date.now = () => 1.7e12;
+  Object.defineProperty(globalThis, 'performance', { value: { now: () => perf }, configurable: true, writable: true });
+  try {
+    const { root, sidebar } = make();
+    sidebar.update(state({ tick: 25 * 65 }));
+    sidebar.setPaused(true);
+    const clock = root.querySelector('.sb-clock-text');
+    assert.equal(clock.textContent, 'Paused');
+    perf += 1000;
+    sidebar.updateClock();
+    assert.equal(clock.textContent, '01:05', 'the time in the off second');
+    perf += 1000;
+    sidebar.updateClock();
+    assert.equal(clock.textContent, 'Paused');
+    sidebar.setPaused(false);
+    assert.equal(clock.textContent, '01:05');
+    sidebar.dispose();
+  } finally {
+    Date.now = realDate;
+    Object.defineProperty(globalThis, 'performance', { value: realPerf, configurable: true, writable: true });
+    uninstallDom();
+  }
+});
+
+test('the selection details are separated by a visible dot, not by spaces HTML collapses', () => {
+  const { root, sidebar } = make();
+  try {
+    sidebar.setSelection({ type: 'E1', name: 'Minelayer', owner: 0, hp: 250, maxHp: 400, maxRank: 4, rank: 1, xp: 0, nextXp: 200, ability: { ammo: 3, maxAmmo: 5, cloaked: true } });
+    assert.equal(root.querySelector('.sb-sel-detail').textContent, '250 / 400 · Veteran · XP 0/200 · Mines 3/5 · Cloaked');
+    sidebar.setSelection({ type: 'E1', name: 'Rifle Infantry', owner: 1, hp: 50, maxHp: 50, beingCaptured: true });
+    assert.equal(root.querySelector('.sb-sel-detail').textContent, '50 / 50 (enemy) · Being captured');
+    sidebar.dispose();
+  } finally {
+    uninstallDom();
+  }
+});

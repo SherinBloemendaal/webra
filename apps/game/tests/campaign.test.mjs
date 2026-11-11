@@ -13,7 +13,7 @@ import { MissionFeed } from '../js/sim/proxy.js';
 import { newGame, ReplayController } from '../js/replay.js';
 import { parseReplay } from '../js/protocol.js';
 import { campaignRecord, missionRecord, saveRestart, takeRestart } from '../js/restart.js';
-import { campaignNext, campaignStates, chapterOf, CampaignProgress, findMission, missionStatus, nextMission } from '../js/campaign/progress.js';
+import { campaignNext, campaignStates, chapterOf, CampaignProgress, DIFFICULTY_ORDER, findMission, missionStatus, nextMission } from '../js/campaign/progress.js';
 import { MissionView, movieTitle, objectiveLabel } from '../js/campaign/view.js';
 import { CampaignMenu, campaignCount, missionKicker, missionLabel, optionLabel, SEGMENTED_MAX, stateText } from '../js/campaign/menu.js';
 import { dialogContent, DIALOGS, EndGameFlow } from '../js/endgame.js';
@@ -109,6 +109,31 @@ test('progress lives in the settings registry', () => {
   assert.equal(stateText({ mission: allMissions()[2], won: null, open: true }, allMissions()[2]), 'Next');
   assert.equal(stateText({ mission: allMissions()[2], won: null, open: true }, null), '');
   assert.equal(optionLabel(allMissions()[1], 'difficulty', 'tough'), 'Real tough guy');
+});
+
+test('a win on an easier difficulty keeps the harder one', () => {
+  const p = new CampaignProgress(createRegistry({ storage: memoryStorage() }));
+  p.won('m', 'hard');
+  p.won('m', 'easy');
+  assert.equal(p.get().m, 'hard');
+  p.won('n', 'easy');
+  p.won('n', 'hard');
+  assert.equal(p.get().n, 'hard');
+  p.won('o', null);
+  p.won('o', 'normal');
+  assert.equal(p.get().o, 'normal');
+  p.won('o', null);
+  assert.equal(p.get().o, 'normal');
+});
+
+test('the difficulty ranking follows the order of every mission\'s difficulty option', () => {
+  for (const m of allMissions()) {
+    const values = m.options?.difficulty?.values?.map(([v]) => v);
+    if (!values) continue;
+    const at = values.map((v) => DIFFICULTY_ORDER.indexOf(v));
+    assert.ok(at.every((i) => i >= 0), `${m.id}: ${values}`);
+    assert.deepEqual(at, [...at].sort((a, b) => a - b), `${m.id}: easiest first`);
+  }
 });
 
 test('restart records start a mission again or bring back the campaign screen', () => {

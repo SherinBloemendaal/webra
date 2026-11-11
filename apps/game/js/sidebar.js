@@ -105,9 +105,6 @@ export class Sidebar {
     this.playerId = playerId;
     this.callbacks = callbacks;
     this.ticksPerSecond = options.ticksPerSecond || 25;
-    // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game is paused (setPaused).
-    this.now = options.now ?? (() => Date.now());
-    this.clockStart = this.now();
     this.paused = false;
     this.hotkeys = options.hotkeys ?? null;
     this.teamRgb = TEAM_COLORS[playerId % TEAM_COLORS.length];
@@ -137,6 +134,8 @@ export class Sidebar {
     this.creditsLast = 0;
     // The clock of animation frames (requestAnimationFrame times); tests pass their own.
     this.now = options.now ?? (() => performance.now());
+    // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game is paused (setPaused), on the same clock.
+    this.clockStart = this.now();
     this.creditsRest = 0;
     /** What dispose() takes down: listeners on the root (it outlives the game), subscriptions, watchers. */
     this.offs = [];
@@ -1069,30 +1068,32 @@ export class Sidebar {
     setVar(this.selHpFill, '--hp', frac.toFixed(4));
     this.selHpFill.classList.toggle('mid', frac <= 0.5 && frac > 0.25);
     this.selHpFill.classList.toggle('low', frac <= 0.25);
-    let detail = `${Math.ceil(hp)} / ${max}`;
-    if (shownOwner !== undefined && shownOwner !== this.playerId) detail += info.neutral ? '  (neutral)' : '  (enemy)';
+    // The details, each its own part: HTML would collapse spaces between them into one.
+    const own = info.owner === this.playerId;
+    const parts = [`${Math.ceil(hp)} / ${max}`];
+    if (shownOwner !== undefined && shownOwner !== this.playerId) parts[0] += info.neutral ? ' (neutral)' : ' (enemy)';
     // Veterancy (engine actor_json().rank / xp): rank for everyone, experience for own units.
-    const vet = veterancyText(info, info.owner === this.playerId);
-    if (vet) detail += `   ${vet}`;
+    const vet = veterancyText(info, own);
+    if (vet) parts.push(vet);
     // Desert heat (engine actor_json().heat / overheated, engine/src/weather.rs).
     const heat = heatText(info);
-    if (heat && info.owner === this.playerId) detail += `   ${heat}`;
+    if (heat && own) parts.push(heat);
     // Ability state (engine actor_json().ability).
     const ab = info.ability;
-    if (ab && info.owner === this.playerId) {
-      if (ab.maxAmmo !== undefined) detail += `   Mines ${ab.ammo}/${ab.maxAmmo}`;
-      if (ab.chargeMax !== undefined) detail += ab.charge >= ab.chargeMax ? '   Chrono ready' : `   Chrono ${Math.floor((100 * ab.charge) / ab.chargeMax)}%`;
-      if (ab.cloaked) detail += '   Cloaked';
-      if (ab.deployed) detail += `   Detonates in ${Math.ceil(ab.detonatesIn / 25)} s`;
+    if (ab && own) {
+      if (ab.maxAmmo !== undefined) parts.push(`Mines ${ab.ammo}/${ab.maxAmmo}`);
+      if (ab.chargeMax !== undefined) parts.push(ab.charge >= ab.chargeMax ? 'Chrono ready' : `Chrono ${Math.floor((100 * ab.charge) / ab.chargeMax)}%`);
+      if (ab.cloaked) parts.push('Cloaked');
+      if (ab.deployed) parts.push(`Detonates in ${Math.ceil(ab.detonatesIn / 25)} s`);
     }
     // Infantry (engine/src/infantry.rs): disguise, captures, C4, power outages.
-    if (info.disguise && info.owner === this.playerId) detail += `   Disguised as ${this.actors.get(info.disguise.type)?.name ?? info.disguise.type}`;
-    if (info.beingCaptured) detail += '   Being captured';
-    if (info.demolished) detail += '   C4 planted';
-    if (info.powerOutage > 0) detail += `   Power outage ${Math.ceil(info.powerOutage / 25)} s`;
+    if (info.disguise && own) parts.push(`Disguised as ${this.actors.get(info.disguise.type)?.name ?? info.disguise.type}`);
+    if (info.beingCaptured) parts.push('Being captured');
+    if (info.demolished) parts.push('C4 planted');
+    if (info.powerOutage > 0) parts.push(`Power outage ${Math.ceil(info.powerOutage / 25)} s`);
     // Tech buildings: what capturing gives (OpenRA TooltipDescription, picked by main.js selectionInfo).
-    if (info.description) detail += `   ${info.description}`;
-    setText(this.selDetailEl, detail);
+    if (info.description) parts.push(info.description);
+    setText(this.selDetailEl, parts.join(' · '));
   }
 
   /** The control group number of the selection ("Group 2"), or none. */
@@ -1192,7 +1193,7 @@ export function veterancyText(info, own) {
     if (own && !elite) parts.push(`XP ${info.xp}/${info.nextXp}`);
   }
   if (info?.prone) parts.push('Prone');
-  return parts.join('  ');
+  return parts.join(' · ');
 }
 
 /**

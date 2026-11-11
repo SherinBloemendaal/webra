@@ -291,6 +291,76 @@ test('Load game: a delete runs once, a failed one says why, focus goes to the ne
   }
 });
 
+test('Load game: a store that fails says why and gives the Load button back; a second click waits', async () => {
+  const doc = installDom();
+  try {
+    const { mountRecordEntries } = await import('../js/records.js');
+    let loads = 0;
+    let release;
+    const store = {
+      list: async () => [save(1)],
+      load: async () => {
+        loads++;
+        await new Promise((r) => (release = r));
+        throw new Error('storage is blocked');
+      },
+    };
+    const root = doc.createElement('div');
+    mountRecordEntries(root, { version: 'test', canPlay: () => true, showError: () => {}, onLoadSave() {}, onWatchReplay() {}, store });
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Load game'));
+    await settle(20);
+    const dialog = doc.body.querySelector('dialog');
+    const go = dialog.querySelector('.records-detail .records-main-action');
+    click(go);
+    assert.equal(go.disabled, true);
+    // A double click on the row while it loads starts nothing more.
+    dialog.querySelector('.records-row').dispatchEvent(new FakeEvent('dblclick'));
+    assert.equal(loads, 1);
+    release();
+    await settle(10);
+    assert.match(textOf(dialog.querySelector('.records-status')), /This save cannot be loaded: storage is blocked\./);
+    assert.equal(go.disabled, false);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('Replays: a double click downloads once; a list refresh keeps an open delete question', async () => {
+  const doc = installDom();
+  try {
+    const { mountRecordEntries } = await import('../js/records.js');
+    let downloads = 0;
+    let hint = null;
+    const replay = { id: 'r1', title: 'Ore Lord', engine: 'test', ticks: 250, playedAt: 1000, players: [], mapName: 'Ore Lord', mode: 'skirmish', bytes: 10 };
+    const api = {
+      replays: async () => ({ replays: [replay], usage: { count: 1, bytes: 10 }, limits: { count: 100, bytes: 100 * 1024 * 1024, retentionMs: 30 * 86400000 } }),
+      downloadReplay: async () => {
+        downloads++;
+        await new Promise(() => {});
+      },
+    };
+    const realtime = { subscribe: (_kind, fn) => ((hint = fn), () => {}) };
+    const root = doc.createElement('div');
+    mountRecordEntries(root, { version: 'test', canPlay: () => true, showError: () => {}, onLoadSave() {}, onWatchReplay() {}, store: { list: async () => [] }, accountReplays: { available: () => true, api, realtime } });
+    click([...root.querySelectorAll('button')].find((b) => b.textContent === 'Replays'));
+    await settle(20);
+    const dialog = doc.body.querySelector('dialog');
+    const detail = () => dialog.querySelector('.records-detail');
+    click(detail().querySelector('.records-delete-ask'));
+    assert.ok(detail().querySelector('.records-delete-question'));
+    await hint();
+    await settle(10);
+    assert.ok(detail().querySelector('.records-delete-question'), 'the question stays');
+    const row = dialog.querySelector('.records-row');
+    row.dispatchEvent(new FakeEvent('dblclick'));
+    row.dispatchEvent(new FakeEvent('dblclick'));
+    await settle(5);
+    assert.equal(downloads, 1, 'one download');
+  } finally {
+    uninstallDom();
+  }
+});
+
 test('Replays: the account\'s storage as a bar, and an empty list says how replays get there', async () => {
   const doc = installDom();
   try {

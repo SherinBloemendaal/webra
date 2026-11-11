@@ -95,11 +95,11 @@ test('in lockstep the cheat is an order that goes on the wire', () => {
 
 test('the selection panel names the rank and shows experience of own units', () => {
   const unit = (rank, xp, nextXp, prone = false) => ({ rank, maxRank: 4, xp, nextXp, prone });
-  assert.equal(veterancyText(unit(0, 50, 200), true), 'Rookie  XP 50/200');
-  assert.equal(veterancyText(unit(2, 450, 800), true), 'Veteran II  XP 450/800');
+  assert.equal(veterancyText(unit(0, 50, 200), true), 'Rookie · XP 50/200');
+  assert.equal(veterancyText(unit(2, 450, 800), true), 'Veteran II · XP 450/800');
   assert.equal(veterancyText(unit(3, 900, 1600), false), 'Veteran III');
   assert.equal(veterancyText(unit(4, 1600, 1600), true), 'Elite');
-  assert.equal(veterancyText(unit(1, 200, 400, true), false), 'Veteran  Prone');
+  assert.equal(veterancyText(unit(1, 200, 400, true), false), 'Veteran · Prone');
   assert.equal(veterancyText({ maxRank: 0, rank: 0, xp: 0, nextXp: 0, prone: false }, true), '');
   assert.equal(veterancyText(null, true), '');
 });

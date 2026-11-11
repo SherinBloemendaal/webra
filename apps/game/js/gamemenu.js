@@ -349,6 +349,16 @@ function el(tag, className, text) {
   return e;
 }
 
+/** A name as part of an element id: letters, digits, '_' and '-' only. */
+function idPart(name) {
+  return String(name).replace(/[^A-Za-z0-9_-]/g, '-');
+}
+
+/** The id of a hotkey row's button (`kind`: 'change', 'clear' or 'reset'). */
+function keyButtonId(action, kind) {
+  return `game-menu-key-${idPart(action)}-${kind}`;
+}
+
 function button(text, className, onClick) {
   const b = el('button', className, text);
   b.type = 'button';
@@ -585,6 +595,8 @@ export class GameMenu {
       if (inside && t.closest('[role="listbox"], .ui-sp-panel')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      // A held Esc acts once: its auto-repeat would toggle the menu (or walk back through its pages) at the key repeat rate.
+      if (e.repeat) return;
       // An open help tip closes first.
       if (closeOpenTip()) return;
       if (this.view === 'main') this.close();
@@ -625,6 +637,7 @@ export class GameMenu {
     else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'guide' && this.opts.guide) this.renderGuidePage(c);
     else if (this.view === 'guideReset' && this.opts.guide) this.renderGuideReset(c);
+    else if (this.view === 'keysReset') this.renderKeysReset(c);
     else if (this.view === 'network' && this.net) this.renderNetwork(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
@@ -643,8 +656,14 @@ export class GameMenu {
     }
     const list = c.querySelector('.game-menu-scroll:not([hidden])');
     if (list) list.scrollTop = scroll;
-    if (focusId) c.querySelector(`#${focusId}`)?.focus({ preventScroll: true });
-    if (!same || !c.contains(document.activeElement)) (c.querySelector('.ui-btn-primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
+    if (focusId) {
+      // A control the change disabled (a hotkey row's Reset) hands focus to its row's next control.
+      let again = c.querySelector(`#${focusId}`);
+      if (again?.disabled && again.dataset.fallback) again = c.querySelector(`#${again.dataset.fallback}`);
+      again?.focus({ preventScroll: true });
+    }
+    // A page may name its own first focus (a confirm page: Back, never the action it asks about).
+    if (!same || !c.contains(document.activeElement)) (c.querySelector('[data-autofocus]') ?? c.querySelector('.ui-btn-primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
   }
 
   // ---- Main page -------------------------------------------------------------------
@@ -739,14 +758,35 @@ export class GameMenu {
     if (this.isOpen) this.render();
   }
 
-  /** A confirm step: title, text, the main action and Back (to the menu, or `back`). */
+  /**
+   * A confirm step: title, text, the main action and Back (to the menu, or `back`).
+   * Focus starts on Back, and the action ignores the auto-repeat of a held Enter
+   * (a button clicks on every keydown of Enter): a key held on the button that
+   * opened this page never answers it. Space clicks on its release only.
+   */
   confirm(c, title, text, action, actionLabel, backLabel = 'Back', back = () => this.show('main')) {
     c.append(pageHead(title, null));
     const body = el('div', 'gm-confirm');
     body.append(el('p', 'gm-text', text));
     const row = el('div', 'ui-dialog-actions');
-    const main = button(actionLabel, 'ui-btn ui-btn-primary', action);
-    row.append(button(backLabel, 'ui-btn ui-btn-ghost', back), main);
+    let repeated = false;
+    const main = button(actionLabel, 'ui-btn ui-btn-primary', () => {
+      if (repeated) return;
+      action();
+    });
+    main.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') repeated = !!e.repeat;
+    });
+    // The key's release, a pointer or focus moving away ends the held key.
+    const release = () => {
+      repeated = false;
+    };
+    main.addEventListener('keyup', release);
+    main.addEventListener('pointerdown', release);
+    main.addEventListener('blur', release);
+    const backButton = button(backLabel, 'ui-btn ui-btn-ghost', back);
+    backButton.dataset.autofocus = '';
+    row.append(backButton, main);
     body.append(row);
     c.append(body);
     return c;
@@ -893,6 +933,26 @@ export class GameMenu {
     );
   }
 
+  /** Reset all hotkeys, asked first: the player's own keys are lost. Back returns to the Hotkeys tab. */
+  renderKeysReset(c) {
+    const signedIn = this.opts.syncStatus?.()?.signedIn === true;
+    this.confirm(
+      c,
+      'Reset all hotkeys',
+      `Reset every hotkey to its default? Your own keys are lost.${signedIn ? ' Your account takes this over, so your other devices get the default keys too.' : ''}`,
+      () => {
+        this.opts.hotkeys.reset();
+        this.view = 'settings';
+        this.settingsTab = 'hotkeys';
+        this.message = 'Every hotkey is back to its default.';
+        this.render();
+      },
+      'Reset all hotkeys',
+      'Back',
+      () => this.show('settings', 'hotkeys'),
+    );
+  }
+
   renderNetwork(c) {
     const status = el('p', 'gm-status');
     status.append(led('warn'), el('span', null, 'Online: the game goes on while this menu is open.'));
@@ -967,8 +1027,9 @@ export class GameMenu {
   /** Put back the settings of one tab. */
   resetSection(tab) {
     const s = this.opts.settings;
+    // Every hotkey at once: asked first (renderKeysReset).
     if (tab === 'hotkeys') {
-      this.opts.hotkeys.reset();
+      this.show('keysReset');
       return;
     }
     for (const key of SECTION_SETTINGS[tab] ?? []) s.reset(key);
@@ -1182,6 +1243,10 @@ export class GameMenu {
         head.append(el('h2', 'gm-section-title', g.group));
         const changed = g.actions.some((a) => !a.readonly && JSON.stringify(a.keys) !== JSON.stringify(a.defaults));
         const resetGroup = button('Reset group', 'ui-btn ui-btn-sm ui-btn-ghost', () => this.resetGroup(g.actions));
+        // Stable ids: the redraw after a change finds the focused button again (render).
+        resetGroup.id = `game-menu-keygroup-reset-${idPart(g.group)}`;
+        const first = g.actions.find((a) => !a.readonly);
+        if (first) resetGroup.dataset.fallback = keyButtonId(first.name, 'change');
         resetGroup.disabled = !changed;
         head.append(resetGroup);
         main.append(head, this.keyRows(g.actions));
@@ -1228,15 +1293,19 @@ export class GameMenu {
       if (a.readonly) {
         row.classList.add('game-menu-fixed');
       } else {
-        row.append(
-          button(waiting ? 'Cancel' : 'Change', 'ui-btn ui-btn-sm game-menu-mini', () => {
-            this.capture = waiting ? null : a.name;
-            this.message = '';
-            this.render();
-          }),
-          button('Clear', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.unbind(a.name)),
-        );
+        // Stable ids: the redraw after a change keeps focus on the row's button (render).
+        const change = button(waiting ? 'Cancel' : 'Change', 'ui-btn ui-btn-sm game-menu-mini', () => {
+          this.capture = waiting ? null : a.name;
+          this.message = '';
+          this.render();
+        });
+        change.id = keyButtonId(a.name, 'change');
+        const clear = button('Clear', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.unbind(a.name));
+        clear.id = keyButtonId(a.name, 'clear');
+        row.append(change, clear);
         const resetBtn = button('Reset', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.reset(a.name));
+        resetBtn.id = keyButtonId(a.name, 'reset');
+        resetBtn.dataset.fallback = change.id;
         resetBtn.disabled = !changed;
         row.append(resetBtn);
       }

@@ -452,6 +452,65 @@ test('sync: Take the tour again on one device clears the tour on another without
   assert.equal(server.settingsDocs.get(user.id).settings.guide.resetAt ?? 0, 0);
 });
 
+test('sync: a realtime hint that arrives during an upload loads the account once the upload is done', async () => {
+  let pulls = 0;
+  let version = 1;
+  let release = null;
+  const api = {
+    settings: async () => {
+      pulls++;
+      return { version, settings: {} };
+    },
+    putSettings: (_v, doc) =>
+      new Promise((resolve) => {
+        release = () => resolve({ version: ++version, settings: doc });
+      }),
+  };
+  const registry = createRegistry({ storage: memoryStorage() });
+  const timers = fakeTimers();
+  const sync = new SettingsSync({ api, registry, storage: memoryStorage(), timers });
+  await sync.start({ id: 'u1' });
+  assert.equal(pulls, 1);
+  registry.set('audio', 'master', 0.4);
+  await timers.fire();
+  assert.ok(release, 'the upload runs and is held');
+  const hinted = sync.remoteChanged(7);
+  release();
+  await hinted;
+  assert.equal(pulls, 2, 'the hint is not lost: one load after the upload');
+  // A hint for the version the upload itself made needs no load.
+  registry.set('audio', 'master', 0.5);
+  release = null;
+  await timers.fire();
+  const own = sync.remoteChanged(version + 1);
+  release();
+  await own;
+  assert.equal(sync.state.version, version);
+  assert.equal(pulls, 2, 'the version this device now has');
+  sync.stop();
+});
+
+test('merge: campaign progress keeps every mission won on either device, on the harder difficulty', () => {
+  const values = (progress) => normalizeValues({ extra: { campaignProgress: progress } }).values;
+  const base = values({});
+  const r = mergeSettings({ base, local: values({ a: 'hard' }), remote: values({ b: 'easy' }) });
+  assert.deepEqual(r.merged.extra.campaignProgress, { a: 'hard', b: 'easy' });
+  assert.equal(r.conflicts.length, 0);
+  // Without a base (a device that won missions before it first synced): the union, no conflict.
+  const noBase = mergeSettings({ base: null, local: values({ a: 'hard', c: '' }), remote: values({ b: 'easy' }) });
+  assert.deepEqual(noBase.merged.extra.campaignProgress, { a: 'hard', b: 'easy', c: '' });
+  assert.equal(noBase.conflicts.length, 0);
+  // A mission both won: the harder difficulty, whichever side has it.
+  const both = mergeSettings({ base: values({ a: 'easy' }), local: values({ a: 'normal', b: 'tough' }), remote: values({ a: 'hard', b: 'normal' }) });
+  assert.deepEqual(both.merged.extra.campaignProgress, { a: 'hard', b: 'tough' });
+  const plain = mergeSettings({ base: null, local: values({ a: '' }), remote: values({ a: 'easy' }) });
+  assert.deepEqual(plain.merged.extra.campaignProgress, { a: 'easy' });
+  // Data stored before: a document without the setting merges as an empty progress.
+  const old = mergeSettings({ base: null, local: values({ a: 'normal' }), remote: normalizeValues({}).values });
+  assert.deepEqual(old.merged.extra.campaignProgress, { a: 'normal' });
+  assert.equal(old.conflicts.length, 0);
+});
+
 test('merge: one-sided changes win, both-sided different values conflict, no base means every difference', () => {
   const base = normalizeValues({}).values;
   const local = normalizeValues({ audio: { master: 0.1, music: 0.3 } }).values;

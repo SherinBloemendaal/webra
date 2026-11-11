@@ -27,6 +27,7 @@
 #game-menu .game-menu-card.gm-view-exit,
 #game-menu .game-menu-card.gm-view-restart,
 #game-menu .game-menu-card.gm-view-surrender,
+#game-menu .game-menu-card.gm-view-keysReset,
 #game-menu .game-menu-card.gm-view-music {
   width: min(calc(560 * var(--ui-px)), 100%);
 }

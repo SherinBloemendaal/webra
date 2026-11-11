@@ -269,10 +269,9 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
   });
   const byPlayer = new Map(rows.map((r) => [r.player, r]));
   const winners = rows.filter((r) => r.s.won);
-  const over = report.winner !== null && report.winner !== undefined;
-  const result = over
-    ? `${winners.map((r) => r.name).join(' and ') || 'Nobody'} ${winners.length === 1 ? 'wins' : 'win'}`
-    : 'The game is still on';
+  // Over with a winner, or without one (`endTick`: the time limit can end a game where everyone lost).
+  const over = (report.winner !== null && report.winner !== undefined) || (report.endTick !== null && report.endTick !== undefined) || !!report.gameOver;
+  const result = !over ? 'The game is still on' : winners.length ? `${winners.map((r) => r.name).join(' and ')} ${winners.length === 1 ? 'wins' : 'win'}` : 'Nobody won';
   const ranking = rows
     .slice()
     .sort((a, b) => b.s.score - a.s.score || a.player - b.player)
@@ -284,6 +283,8 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
     if (!h || !h.earned.length) return 0;
     return rateSeries(history.ticks, h.earned, tps).at(-1);
   };
+  // The time a player was in the game: a defeated player's actions per minute stop at the defeat.
+  const playedFor = (s) => (s.defeated && !s.won && s.defeatedAt !== null && s.defeatedAt !== undefined ? Math.min(elapsed, s.defeatedAt) : elapsed);
   const status = (s) => (s.won ? 'Won' : s.defeated ? `Defeated ${s.defeatedAt !== null && s.defeatedAt !== undefined ? formatDuration(s.defeatedAt, tps) : ''}`.trim() : 'Playing');
   const table = (columns, cells) => ({ columns, rows: rows.map((r) => ({ player: r.player, cells: cells(r.s, r) })) });
   const tables = {
@@ -298,7 +299,7 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
       formatMoney(s.assetsLost),
       // OpenRA's EXPERIENCE (PlayerStatistics.Experience, the player's PlayerExperience), with the units' promotions.
       `${fmtInt(s.experience)} (${s.promotions} ${s.promotions === 1 ? 'promotion' : 'promotions'})`,
-      s.isAi ? 'AI' : String(actionsPerMinute(s.orders, elapsed, tps)),
+      s.isAi ? 'AI' : String(actionsPerMinute(s.orders, playedFor(s), tps)),
     ]),
     economy: table(['Cash', 'Income per minute', 'Earned', 'Harvested ore', 'Harvested gems', 'Spent', 'Of which repairs', 'Sold'], (s) => [
       formatMoney(s.funds),
@@ -698,6 +699,8 @@ export class StatsScreen {
   /** Open (on `tab`) and load the newest numbers. */
   async open(tab = null) {
     if (tab) this.tab = tab;
+    // Opening (or opening on another tab) shows the screen anew, whatever the report.
+    this.renderedKey = undefined;
     const was = this.isOpen;
     this.root.hidden = false;
     if (!was) {
@@ -734,8 +737,9 @@ export class StatsScreen {
     this.setReport(report);
   }
 
-  /** Show `report` (parsed `observer_report`). */
+  /** Show `report` (parsed `observer_report`). A report of the moment already shown changes nothing on the screen. */
   setReport(report) {
+    if (this.renderedKey !== undefined && this.renderedKey === this.reportKey(report)) return;
     this.report = report;
     this.shaped = shapeReport(report, { players: this.opts.players, rules: this.opts.rules, localPlayer: this.opts.localPlayer ?? null });
     // An open select list stays open while the live numbers come in: the next render waits for it.
@@ -743,21 +747,68 @@ export class StatsScreen {
     this.render();
   }
 
+  /**
+   * What the screen shows of `report`: the moment of the game (a paused or
+   * finished game reports the same tick again) and whether the Network tab's
+   * stalls open the replay.
+   */
+  reportKey(report) {
+    return JSON.stringify([report?.tick, report?.winner, report?.endTick, report?.gameOver, this.opts.canOpenReplay?.() ?? null]);
+  }
+
   renderLoading(text = 'Loading the statistics...') {
+    this.renderedKey = undefined;
     this.card.replaceChildren(el('h1', null, 'Statistics'), el('p', 'tagline', text), this.actionRow());
   }
 
   actionRow() {
     const row = el('div', 'stats-actions');
-    for (const a of this.opts.actions ?? []) row.append(button(a.label, null, () => a.run()));
-    row.append(button('Close', 'primary', () => this.close()));
+    (this.opts.actions ?? []).forEach((a, i) => {
+      const b = button(a.label, null, () => a.run());
+      b.dataset.focus = `action-${i}`;
+      row.append(b);
+    });
+    const close = button('Close', 'primary', () => this.close());
+    close.dataset.focus = 'close';
+    row.append(close);
     return row;
+  }
+
+  /**
+   * Where keyboard focus is in the card, to find it again after a rebuild:
+   * the element's id, its data-focus name, else its path of child positions.
+   */
+  focusMark() {
+    const a = document.activeElement;
+    if (!a || a === this.card || !this.card.contains(a)) return null;
+    if (a.id) return { id: a.id };
+    if (a.dataset?.focus) return { focus: a.dataset.focus };
+    const path = [];
+    for (let n = a; n && n !== this.card; n = n.parentNode) path.unshift([...n.parentNode.children].indexOf(n));
+    return { path, tag: a.tagName };
+  }
+
+  /** The element of the rebuilt card that `mark` (focusMark) names, or null. */
+  findMark(mark) {
+    if (!mark) return null;
+    if (mark.id) return this.card.querySelector(`#${mark.id}`);
+    if (mark.focus) return this.card.querySelector(`[data-focus="${mark.focus}"]`);
+    let n = this.card;
+    for (const i of mark.path) {
+      n = n?.children?.[i];
+      if (!n) return null;
+    }
+    return n.tagName === mark.tag ? n : null;
   }
 
   render() {
     const d = this.shaped;
+    this.renderedKey = this.reportKey(this.report);
     const focusTab = this.card.contains(document.activeElement) && document.activeElement?.getAttribute?.('role') === 'tab';
+    const focus = this.focusMark();
     const scroll = this.card.querySelector('.stats-panel')?.scrollTop ?? 0;
+    // The graph's data table stays open, and its tooltip at the same moment, while the live numbers come in.
+    const graphWas = this.graphView ? { graph: this.graph, open: !!this.graphView.tableBox.open, tick: this.graphView.hover >= 0 ? this.graphView.data?.ticks[this.graphView.hover] : null } : null;
     const head = el('header', 'stats-head');
     head.append(el('h1', null, 'Statistics'), el('p', 'tagline', `${d.result}. Game time ${d.duration}.`));
     const ranking = el('ol', 'stats-ranking');
@@ -802,10 +853,14 @@ export class StatsScreen {
     body.append(tabs, panel);
     this.card.replaceChildren(head, body, this.actionRow());
     panel.scrollTop = scroll;
+    const gv = this.graphView;
+    if (gv && graphWas?.graph === this.graph) gv.tableBox.open = graphWas.open;
     // Sized by the layout now that it is on the page.
-    this.graphView?.draw();
+    gv?.draw();
+    if (gv?.layout && graphWas?.graph === this.graph && graphWas.tick !== null && graphWas.tick !== undefined) gv.setHover(nearestIndex(gv.data.ticks, graphWas.tick));
     if (focusTab) this.card.querySelector(`#stats-tab-${this.tab}`)?.focus({ preventScroll: true });
-    else if (!this.card.contains(document.activeElement)) this.card.querySelector('.stats-tab[aria-selected="true"]')?.focus({ preventScroll: true });
+    else this.findMark(focus)?.focus({ preventScroll: true });
+    if (!this.card.contains(document.activeElement)) this.card.querySelector('.stats-tab[aria-selected="true"]')?.focus({ preventScroll: true });
   }
 
   /** Arrow keys (up and down, left and right), Home and End move between tabs (WAI-ARIA tabs). */

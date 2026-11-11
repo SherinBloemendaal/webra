@@ -198,7 +198,7 @@ test('ui scale css: the chrome is sized in --ui-px, scaled for the game screen, 
     assert.match(scoped[1], new RegExp(`${token}: calc\\(\\d+ \\* var\\(--ui-px\\)\\)`), token);
   }
   assert.match(scoped[1], /font-size: calc\(14 \* var\(--ui-px\)\)/, 'inherited text scales too');
-  for (const id of ['#app', '#game-menu', '#ui-tooltip', '#gameover', '#toast', '#audio-panel', '#content-panel', '#release-notes']) assert.ok(scoped[0].includes(id), id);
+  for (const id of ['#app', '#game-menu', '#ui-tooltip', '#gameover', '#stats-screen', '#toast', '#audio-panel', '#content-panel', '#release-notes']) assert.ok(scoped[0].includes(id), id);
   assert.ok(!scoped[0].includes('#menu,') && !scoped[0].includes('#menu {'), 'the lobby keeps its size');
   // Touch screens keep 44 px targets at any UI scale.
   const touch = CSS('touch.css');

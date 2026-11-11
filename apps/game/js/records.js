@@ -286,7 +286,10 @@ export class RecordBrowser {
     this.empty.hidden = items.length > 0;
     this.list.hidden = items.length === 0;
     const keep = items.some((i) => i.key === this.selected) ? this.selected : (items[0]?.key ?? null);
-    this.select(keep, false);
+    // A redraw (another device's change) leaves an open "Delete ...?" question of the same row alone.
+    if (keep !== null && keep === this.selected && this.detail.querySelector('.records-delete-question')) {
+      for (const row of this.rows()) row.setAttribute('aria-current', String(row.dataset.key === String(keep)));
+    } else this.select(keep, false);
     if (this.refocus) {
       this.refocus = false;
       const row = this.rows().find((r) => r.dataset.key === String(keep));
@@ -425,11 +428,21 @@ async function replaysDialog(ctx) {
       const browser = new RecordBrowser({ label: 'Replays in your account', empty: 'No replays in your account yet. Games you finish or leave are saved here while "Save replays to my account" is on (game menu, Settings).' });
       account.append(usage, browser.root);
 
+      // One replay loads at a time (a double click on a row twice starts no second download).
+      let busy = false;
       const watch = async (r, b) => {
-        if (b) b.disabled = true;
+        if (busy) return;
+        busy = true;
+        const main = b ?? browser.detail.querySelector('.records-main-action');
+        if (main) main.disabled = true;
         say('Loading the replay...');
-        const o = await openAccountReplay(api, r.id, ctx.version);
-        if (b) b.disabled = false;
+        let o;
+        try {
+          o = await openAccountReplay(api, r.id, ctx.version);
+        } finally {
+          busy = false;
+          if (main) main.disabled = false;
+        }
         if (!o.ok) return say(o.error);
         close(o.replay);
       };
@@ -541,10 +554,22 @@ async function loadDialog(store, ctx) {
       const onlinePanel = el('div', 'records-panel');
       onlinePanel.append(el('p', 'records-muted records-panel-note', 'Online games are resumed with their players: host it again from Play online, Resume a saved game.'), online.root);
 
+      // One save loads at a time; a store that fails (blocked storage) says so and gives the button back.
+      let busy = false;
       const load = async (s, b) => {
-        if (b) b.disabled = true;
-        const r = await store.load(s.id, ctx.version);
-        if (b) b.disabled = false;
+        if (busy) return;
+        busy = true;
+        const main = b ?? (s.mode === 'online' ? online : local).detail.querySelector('.records-main-action');
+        if (main) main.disabled = true;
+        let r;
+        try {
+          r = await store.load(s.id, ctx.version);
+        } catch (err) {
+          r = { ok: false, error: err?.message ?? String(err) };
+        } finally {
+          busy = false;
+          if (main) main.disabled = false;
+        }
         if (!r.ok) return say(`This save cannot be loaded: ${r.error}.`);
         if (r.replay.mode === 'online') return say('This is a saved online game: resume it with its players from Play online.');
         close(r.replay);
