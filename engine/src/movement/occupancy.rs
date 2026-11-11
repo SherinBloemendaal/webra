@@ -9,6 +9,12 @@
 //! rebuilt at the start of every tick from the units' cells (snapping units
 //! that other code placed, `World::occupancy_begin_tick`) and kept current
 //! as units step during the tick.
+//!
+//! A landed aircraft holds the whole cell it stands on too (OpenRA
+//! Aircraft.OccupiedCells while at ground level), but it is not driven by
+//! this model and is not in the table: the queries read it from the spatial
+//! hash (`World::landed_aircraft_at`), so it holds the cell exactly while it
+//! is landed there and never outlives a take off, death or removal.
 
 use crate::movement::{MoveResult, MovementModel};
 use crate::rules::Kind;
@@ -166,17 +172,47 @@ impl World {
         self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].shares_cell)
     }
 
-    /// OpenRA Mobile movable: a unit that can be asked to move (it has a speed).
+    /// OpenRA Mobile movable: a unit that can be asked to move (it has a
+    /// speed). Aircraft have no Mobile: a landed one is never asked to make
+    /// way (Locomotor.IsBlockedBy treats it as immovable).
     pub(crate) fn is_movable(&self, i: usize) -> bool {
-        self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| u.speed > 0)
+        self.actors[i].kind != Kind::Aircraft && self.rules.actors[self.actors[i].ty as usize].unit.as_ref().is_some_and(|u| u.speed > 0)
     }
 
-    /// The occupants of `cell` other than `i` that still hold it.
-    pub(crate) fn others_at(&self, cell: u32, i: usize) -> impl Iterator<Item = Occupant> + '_ {
-        self.occupancy.at(cell).iter().copied().filter(move |o| {
-            let j = o.actor as usize;
-            j != i && self.occupies_cells(j)
+    /// The landed aircraft that holds `cell` (OpenRA Aircraft.OccupiedCells
+    /// of an aircraft at ground level, in the ActorMap), if any: alive, in
+    /// the world, on the ground and standing in `cell`. Aircraft on a
+    /// structure's pad (helipad, airfield, service depot) are left out:
+    /// those cells keep whatever the structure lets through. Read from the
+    /// spatial hash, which lists every unit in the world by the cell it
+    /// stood in at the last rebuild (twice a tick); the aircraft's own
+    /// state is checked now, so one that took off, died, left the world or
+    /// was moved since holds nothing.
+    pub(crate) fn landed_aircraft_at(&self, cell: u32) -> Option<usize> {
+        let ci = cell as usize;
+        if !self.hash_aircraft || ci + 1 >= self.hash_start.len() || self.building_at.get(ci).is_none_or(|&b| b != NONE) {
+            return None;
+        }
+        self.units_in_cell(ci).iter().map(|&u| u as usize).find(|&u| {
+            let a = &self.actors[u];
+            a.alive && a.kind == Kind::Aircraft && a.altitude == 0 && !a.air.parachute && a.in_world() && self.cell_at(a.x, a.y) == cell
         })
+    }
+
+    /// The occupants of `cell` other than `i` that still hold it: the units
+    /// of the table, and a landed aircraft on the whole cell
+    /// (`landed_aircraft_at`).
+    pub(crate) fn others_at(&self, cell: u32, i: usize) -> impl Iterator<Item = Occupant> + '_ {
+        let landed = self.landed_aircraft_at(cell).filter(|&j| j != i);
+        self.occupancy
+            .at(cell)
+            .iter()
+            .copied()
+            .filter(move |o| {
+                let j = o.actor as usize;
+                j != i && self.occupies_cells(j)
+            })
+            .chain(landed.map(|j| Occupant { actor: j as u32, sub: FULL_CELL }))
     }
 
     /// Whether the terrain (and structures) of `cell` let unit `i` in: its

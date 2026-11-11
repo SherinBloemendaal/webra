@@ -1130,9 +1130,11 @@ impl World {
         }
     }
 
-    /// `notify_blockers` of one blocker `o`.
+    /// `notify_blockers` of one blocker `o`. A landed aircraft holds its
+    /// cell without being in this model (`landed_aircraft_at`) and is never
+    /// asked to make way.
     fn notify_one(&mut self, o: usize, owner: u8, from: u32) {
-        if !self.are_allies(self.actors[o].owner, owner) {
+        if !self.occupies_cells(o) || !self.are_allies(self.actors[o].owner, owner) {
             return;
         }
         if self.idle_on_cell(o) {

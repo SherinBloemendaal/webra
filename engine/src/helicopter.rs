@@ -893,6 +893,13 @@ impl World {
                 return false;
             }
         }
+        // OpenRA movement model: nor a unit that holds the cell while it
+        // steps into it from a neighbouring one (it stands in that one yet).
+        // A landed helicopter holds the whole cell, so the two never meet
+        // on it (movement/occupancy.rs `landed_aircraft_at`).
+        if self.cell_moves() && self.others_at(ci as u32, i).next().is_some() {
+            return false;
+        }
         // Other helicopters on their way down to this cell: landing, or
         // coming down to unload on their chosen spot.
         !self.actors.iter().enumerate().any(|(j, o)| {

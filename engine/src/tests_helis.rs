@@ -722,3 +722,158 @@ fn attack_moving_helicopters_out_of_ammo_fly_on_without_resupplying() {
     assert_eq!(w.actors[i].target, crate::world::NONE);
     let _ = tank;
 }
+
+// ---- Landed helicopters hold their cell (OpenRA movement model) -------------
+
+/// A helicopter of player 0 landed on cell (cx, cy) by a Deploy order.
+fn landed_heli(w: &mut World, id: &str, cx: i32, cy: i32) -> usize {
+    let i = heli(w, id, 0, cx, cy);
+    w.queue_order(Order::Deploy { player: 0, ids: r(w, i) });
+    run_until(w, 200, |w| w.actors[i].heli.landed);
+    assert_eq!(w.cell_of(w.actors[i].x, w.actors[i].y), (cx, cy));
+    i
+}
+
+/// OpenRA Aircraft.OccupiedCells: a landed aircraft is in the ActorMap,
+/// and without Mobile it blocks at every BlockedByActor level, for allies
+/// too, so a move onto its cell ends next to it.
+#[test]
+fn a_tank_ordered_onto_a_landed_chinook_stops_next_to_it() {
+    use crate::movement::occupancy::Blocking;
+    let mut w = flat_world();
+    let tran = landed_heli(&mut w, "TRAN", 20, 20);
+    let cell = w.map.idx(20, 20) as u32;
+    // A tank of the Chinook's own player: it would be asked aside if it could move.
+    let tank = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(14), cell_center(20), 0);
+    run(&mut w, 1);
+    for check in [Blocking::Immovable, Blocking::Stationary, Blocking::All] {
+        assert!(w.blocked_by(tank, tran, check), "blocks under {check:?}");
+        assert!(!w.can_enter_cell(tank, cell, check), "the cell is taken under {check:?}");
+    }
+    assert!(!w.is_movable(tran), "never asked to make way");
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tank), x: cell_center(20), y: cell_center(20), attack_move: false });
+    for _ in 0..300 {
+        w.step();
+        assert_ne!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (20, 20), "the tank drove onto the Chinook");
+    }
+    let (tx, ty_) = w.cell_of(w.actors[tank].x, w.actors[tank].y);
+    assert!((tx - 20).abs() <= 1 && (ty_ - 20).abs() <= 1, "stopped next to it, at ({tx}, {ty_})");
+    assert_eq!(w.actors[tank].activity, Activity::Idle);
+    let a = &w.actors[tran];
+    assert!(a.heli.landed && (a.x, a.y) == (cell_center(20), cell_center(20)), "the Chinook stayed where it landed");
+}
+
+/// Rock along column 24, open only at the rows `gaps`, and a helicopter
+/// landed in the gap at (24, 20).
+fn wall_with_landed_heli(gaps: &[i32]) -> (World, usize) {
+    let mut w = flat_world();
+    for y in 0..48 {
+        if !gaps.contains(&y) {
+            let c = w.map.idx(24, y);
+            w.map.terrain[c] = Terrain::Rock;
+        }
+    }
+    w.reset_passability();
+    let hind = landed_heli(&mut w, "HIND", 24, 20);
+    (w, hind)
+}
+
+/// A landed helicopter in a pass one cell wide holds it shut like any unit
+/// that cannot move (OpenRA Move.PopPath): without another way the tank
+/// waits in front of it and gives up, and once the helicopter takes off
+/// the way is open; with another way the tank drives round.
+#[test]
+fn a_landed_helicopter_holds_a_pass_until_it_takes_off() {
+    let (mut w, hind) = wall_with_landed_heli(&[20]);
+    let tank = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(18), cell_center(20), 0);
+    run(&mut w, 1);
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tank), x: cell_center(30), y: cell_center(20), attack_move: false });
+    for _ in 0..300 {
+        w.step();
+        let (tx, _) = w.cell_of(w.actors[tank].x, w.actors[tank].y);
+        assert!(tx < 24, "the tank got past the landed helicopter");
+    }
+    assert_eq!(w.actors[tank].activity, Activity::Idle, "gave up in front of it");
+    assert!(w.actors[hind].heli.landed);
+    w.queue_order(Order::Deploy { player: 0, ids: r(&w, hind) });
+    run_until(&mut w, 100, |w| w.actors[hind].altitude > 0);
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tank), x: cell_center(30), y: cell_center(20), attack_move: false });
+    run_until(&mut w, 400, |w| w.cell_of(w.actors[tank].x, w.actors[tank].y) == (30, 20));
+
+    // A second gap further south: round the helicopter through that one.
+    let (mut w, hind) = wall_with_landed_heli(&[20, 26]);
+    let tank = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(18), cell_center(20), 0);
+    run(&mut w, 1);
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tank), x: cell_center(30), y: cell_center(20), attack_move: false });
+    let mut through = Vec::new();
+    for _ in 0..600 {
+        w.step();
+        let c = w.cell_of(w.actors[tank].x, w.actors[tank].y);
+        if c.0 == 24 && through.last() != Some(&c) {
+            through.push(c);
+        }
+        if c == (30, 20) {
+            break;
+        }
+    }
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (30, 20), "arrived");
+    assert!(w.actors[hind].heli.landed);
+    assert_eq!(through, vec![(24, 26)], "drove round through the other gap");
+}
+
+/// The cell is held only while the aircraft is landed there: taking off,
+/// dying or leaving the world frees it (nothing is left behind).
+#[test]
+fn a_departed_or_destroyed_helicopter_frees_its_cell() {
+    let mut w = flat_world();
+    let tank = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(14), cell_center(30), 0);
+    // Takes off.
+    let hind = landed_heli(&mut w, "HIND", 20, 20);
+    let c = w.map.idx(20, 20) as u32;
+    assert_eq!(w.landed_aircraft_at(c), Some(hind));
+    assert_eq!(w.others_at(c, tank).count(), 1);
+    w.queue_order(Order::Deploy { player: 0, ids: r(&w, hind) });
+    run_until(&mut w, 100, |w| w.actors[hind].altitude > 0);
+    assert_eq!(w.landed_aircraft_at(c), None, "took off");
+    assert!(w.can_enter_cell(tank, c, crate::movement::occupancy::Blocking::All));
+    // Flies away and lands elsewhere: the old cell stays free, the new one is held.
+    w.queue_order(Order::Land { player: 0, ids: r(&w, hind), x: cell_center(26), y: cell_center(20) });
+    run_until(&mut w, 300, |w| w.actors[hind].heli.landed);
+    let c2 = w.map.idx(26, 20) as u32;
+    assert_eq!(w.landed_aircraft_at(c), None);
+    assert_eq!(w.landed_aircraft_at(c2), Some(hind));
+    // Destroyed on the ground.
+    w.kill(hind);
+    assert_eq!(w.landed_aircraft_at(c2), None, "dead");
+    run(&mut w, 2);
+    assert_eq!(w.landed_aircraft_at(c2), None);
+    assert!(w.others_at(c2, tank).all(|o| o.actor as usize != hind));
+    // A Chinook that lands, then is removed from the world.
+    let tran = landed_heli(&mut w, "TRAN", 20, 24);
+    let c3 = w.map.idx(20, 24) as u32;
+    assert_eq!(w.landed_aircraft_at(c3), Some(tran));
+    w.actors[tran].carrier = w.make_ref(tank);
+    assert!(!w.actors[tran].in_world());
+    assert_eq!(w.landed_aircraft_at(c3), None, "out of the world");
+    w.actors[tran].carrier = crate::world::NONE;
+    // The tank drives onto the first cell, which is free again.
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tank), x: cell_center(20), y: cell_center(20), attack_move: false });
+    run_until(&mut w, 300, |w| w.cell_of(w.actors[tank].x, w.actors[tank].y) == (20, 20));
+}
+
+/// A helicopter does not touch down on a cell a ground unit is stepping
+/// into (it holds the cell before it stands in it), like two units racing
+/// for one cell: the helicopter picks another.
+#[test]
+fn a_helicopter_does_not_land_on_a_cell_a_unit_steps_into() {
+    let mut w = flat_world();
+    let hind = heli(&mut w, "HIND", 0, 30, 30);
+    let tank = w.spawn_unit(ty(&w, "3TNK"), 0, cell_center(19), cell_center(20), 0);
+    run(&mut w, 1);
+    w.queue_order(Order::Move { player: 0, ids: r(&w, tank), x: cell_center(20), y: cell_center(20), attack_move: false });
+    let to = w.map.idx(20, 20) as u32;
+    run_until(&mut w, 100, |w| w.actors[tank].mv.to == to && w.actors[tank].mv.from != to);
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (19, 20), "still in the cell it leaves");
+    assert!(!w.heli_can_land(hind, 20, 20), "the cell is taken");
+    assert!(w.heli_can_land(hind, 21, 20));
+}
