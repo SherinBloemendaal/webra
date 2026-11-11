@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CLOSE_GRACE_MS, closeDuration, FirstFrameGuard, LOADING_FADE_MS, LOADING_MIN_MS, LoadingScreen, loadingPlan, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
+import { CLOSE_GRACE_MS, closeDuration, FirstFrameGuard, LOADING_FADE_MS, LOADING_MIN_MS, LoadingScreen, loadingPlan, showGameStopped, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
 import { Events } from '../js/sim/host.js';
 import { FakeEvent } from './dom-fixtures.mjs';
 import { PerfTrace } from '../js/perfcapture.js';
@@ -197,6 +197,22 @@ test('over a game that cannot go on: its own title, and a second way out beside 
   uninstallDom();
 });
 
+test('a game that stopped after its first frame: a lasting notice over it, Back to the menu runs the way back', () => {
+  const { root, screen } = setup();
+  screen.begin(loadingPlan('skirmish'));
+  screen.done();
+  let back = 0;
+  showGameStopped(screen, 'the simulation worker crashed', () => back++);
+  assert.equal(root.hidden, false, 'shown over the battlefield, and it stays');
+  assert.equal(textOf(root.querySelector('h1')), 'The game stopped');
+  assert.equal(textOf(root.querySelector('[role="alert"]')), 'The game stopped: the simulation worker crashed');
+  const button = root.querySelector('button');
+  assert.equal(button.textContent, 'Back to the menu');
+  click(button);
+  assert.equal(back, 1);
+  uninstallDom();
+});
+
 test('"Reduce motion" stills the spinner, the bar and the entrance (the setting, and the browser\'s in the stylesheet)', () => {
   const { root, screen } = setup({ reduced: true });
   screen.begin(loadingPlan('replay'));
@@ -366,7 +382,7 @@ test('a frame that throws before the first one is drawn ends the start; once dra
     assert.throws(() => ok.run(() => {
       throw new Error('later');
     }), /later/);
-    assert.equal(ok.fail('the worker stopped later'), false, 'after the first frame the toast says it, not the screen');
+    assert.equal(ok.fail('the worker stopped later'), false, 'after the first frame the guard leaves it to main.js (gameStopped, showGameStopped)');
     assert.equal(root.hidden, true);
     assert.equal(stops, 1);
   } finally {

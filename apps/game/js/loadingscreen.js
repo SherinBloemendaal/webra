@@ -433,6 +433,16 @@ export class LoadingScreen {
  * the menu instead of a screen that loads forever. `closed` resolves when
  * the screen is gone after the first frame: the game starts then.
  */
+/**
+ * A game that stopped after its first frame (an engine error, a crashed
+ * simulation worker, a loop that keeps throwing): `screen` (a LoadingScreen)
+ * says so over the frozen battlefield until the player goes back to the
+ * menu (`back`), instead of a toast that goes while the game looks hung.
+ */
+export function showGameStopped(screen, message, back) {
+  screen.fail(`The game stopped: ${message}`, { title: 'The game stopped', label: 'Back to the menu', run: back });
+}
+
 export class FirstFrameGuard {
   /**
    * @param {{ screen: LoadingScreen, stop: () => void, back: () => void }} o

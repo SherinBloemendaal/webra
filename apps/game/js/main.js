@@ -113,7 +113,7 @@ import { TargetLines, withTargetLines } from './targetlines.js';
 import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
-import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
+import { FirstFrameGuard, LoadingScreen, loadingPlan, showGameStopped } from './loadingscreen.js';
 import { BOOT_WAIT_MS, bootScreen } from './bootscreen.js';
 import { LoadingBoard, boundKeyText, colorCss, describeStart } from './loadingboard.js';
 import { GameSession, GameStart } from './gamesession.js';
@@ -2468,7 +2468,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
       // The graphics device is gone ("Save first" showed the menu): nothing to go back to but the notice.
-      if (!open && graphicsLost) showGraphicsLost();
+      if (!open && graphicsLost && !leaving) showGraphicsLost();
     },
     uiScale,
     renderRatio: () => renderer.pixelRatio(),
@@ -2657,10 +2657,25 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   scope.add(() => {
     if (gameGraphicsLost === onGraphicsLost) gameGraphicsLost = null;
   });
-  // Before the first frame the loading screen says so (with the way back to the menu), else a toast.
+  /**
+   * The game cannot go on after its first frame (the simulation failed, or
+   * every frame throws): the loop stops, input and the mouse capture let go,
+   * an online session is told the player left, and the loading screen's error
+   * view stays over the frozen battlefield with the way back to the menu.
+   */
+  const gameStopped = (message) => {
+    leaving = true;
+    stopped = true;
+    cancelAnimationFrame(rafId);
+    input.setSuspended(true);
+    mouseCapture?.setBlocked(true);
+    online?.onQuit();
+    showGameStopped(loader, message, () => location.reload());
+  };
+  // Before the first frame the loading screen says so (with the way back to the menu), else gameStopped.
   host.on('failed', (message) => {
     leaving = true;
-    if (!firstFrame.fail(`The game stopped while it started: ${message}`)) showToast(`The game stopped: ${message}`);
+    if (!firstFrame.fail(`The game stopped while it started: ${message}`)) gameStopped(message);
   });
   const download = recordActions.find((a) => a.id === 'replay');
   /** The statistics screen's buttons (the rematch button follows the proposal). */
@@ -2826,11 +2841,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Every frame threw for about a second (FAILING_FRAMES): the game cannot go on. It stops,
     // the error is reported once, and the player is told, as for a simulation that failed (host 'failed').
     onFailing: (err) => {
-      leaving = true;
-      stopped = true;
-      cancelAnimationFrame(rafId);
       reportError(err, { source: 'frame' });
-      showToast(`The game stopped: ${err?.message ?? err}`);
+      gameStopped(err?.message ?? err);
     },
   });
   // The screen's parts in the frame: one that throws is reported once and the game goes on without it.
