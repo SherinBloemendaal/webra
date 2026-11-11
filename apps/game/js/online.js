@@ -508,6 +508,11 @@ export class OnlineUI {
     this.saves = ctx.saves ?? SaveStore.browser();
     this.refreshTimer = 0;
     this.inGame = false;
+    /**
+     * The join, host or rejoin in progress (a token object) or null: one at a
+     * time, and a welcome that arrives after the player went back is left at once.
+     */
+    this.joining = null;
     this.root.classList.add('online');
     const rejoin = loadRejoin();
     if (rejoin) this.rejoinAfterReload(rejoin);
@@ -531,7 +536,7 @@ export class OnlineUI {
 
   /** Join from the friends screen: leave a lobby this player is in first. */
   async joinElsewhere(session, o = {}) {
-    if (this.inGame) return;
+    if (this.inGame || this.joining) return;
     if (this.conn && this.state?.session.id === session.id) return;
     if (this.conn) this.showBrowser();
     await this.join(session, o);
@@ -543,12 +548,48 @@ export class OnlineUI {
     const page = el('div', 'online-page');
     page.append(el('h1', 'online-title', 'Rejoining your session...'), el('p', 'online-muted', 'Reconnecting to the server.'));
     this.root.append(page);
+    const token = this.beginJoin();
+    if (!token) return;
     try {
       await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true });
     } catch (err) {
       clearRejoin();
-      this.showBrowser(`Could not rejoin: ${messageOf(err)}`);
+      if (this.joining === token) this.showBrowser(`Could not rejoin: ${messageOf(err)}`);
+    } finally {
+      this.endJoin(token);
     }
+  }
+
+  /** Start a join, host or rejoin: its token, or null while another one runs. */
+  beginJoin() {
+    if (this.joining) return null;
+    const token = {};
+    this.joining = token;
+    this.renderJoining();
+    return token;
+  }
+
+  /** The join of `token` is over (joined, failed or cancelled); a newer one keeps running. */
+  endJoin(token) {
+    if (this.joining !== token) return;
+    this.joining = null;
+    this.renderJoining();
+  }
+
+  /** The server browser while a join runs: Join and Spectate off, "Joining..." in the status line. */
+  renderJoining() {
+    if (this.state || !this.sessionList?.isConnected) return;
+    this.renderDetail();
+    this.renderListStatus();
+  }
+
+  renderListStatus() {
+    if (!this.listStatus) return;
+    const total = this.sessions?.length ?? 0;
+    const shown = this.sessionRows?.length ?? 0;
+    this.listStatus.textContent = this.joining
+      ? 'Joining...'
+      : this.listError || (!total ? 'No public sessions right now. Host one!' : !shown ? 'No session matches the search or filter.' : `${shown} of ${total} sessions`);
   }
 
   // ---- Server browser ------------------------------------------------------------
@@ -749,7 +790,7 @@ export class OnlineUI {
       this.renderSessions();
     } catch (err) {
       this.listError = messageOf(err);
-      if (this.listStatus) this.listStatus.textContent = this.listError;
+      this.renderListStatus();
     }
   }
 
@@ -812,8 +853,7 @@ export class OnlineUI {
       table.append(row);
       this.sessionRows.push(row);
     }
-    const total = this.sessions?.length ?? 0;
-    this.listStatus.textContent = this.listError || (!total ? 'No public sessions right now. Host one!' : !shown.length ? 'No session matches the search or filter.' : `${shown.length} of ${total} sessions`);
+    this.renderListStatus();
     this.renderDetail();
     if (focused) this.sessionRows.find((r) => r.tabIndex === 0)?.focus();
   }
@@ -841,7 +881,8 @@ export class OnlineUI {
     else if (e.key === 'End') next = rows.length - 1;
     else if (e.key === 'Enter') {
       e.preventDefault();
-      this.joinSelected();
+      // Holding Enter joins once.
+      if (!e.repeat) this.joinSelected();
       return;
     } else return;
     e.preventDefault();
@@ -899,10 +940,10 @@ export class OnlineUI {
     }
     const actions = el('div', 'online-detail-actions');
     const watch = button('Spectate', null, () => this.join(s, { spectate: true }));
-    watch.disabled = !d.canWatch;
+    watch.disabled = !d.canWatch || Boolean(this.joining);
     if (d.watchTitle) watch.title = d.watchTitle;
     const join = button(d.locked ? 'Join (password)' : 'Join game', 'online-btn-primary', () => this.join(s));
-    join.disabled = !d.canJoin;
+    join.disabled = !d.canJoin || Boolean(this.joining);
     if (d.joinTitle) join.title = d.joinTitle;
     actions.append(watch, join);
     box.append(actions);
@@ -938,6 +979,7 @@ export class OnlineUI {
    * `resume`: the text and parsed replay of an online save to continue in it.
    */
   async hostDialog(resume = null) {
+    if (this.joining) return;
     const name = this.playerName();
     if (!name) return;
     const saved = resume?.replay ?? null;
@@ -1013,11 +1055,15 @@ export class OnlineUI {
       { className: 'online-host-dialog' },
     );
     if (!input) return;
+    const token = this.beginJoin();
+    if (!token) return;
     try {
       const body = { name: input.name, public: input.public, maxPlayers: input.maxPlayers, version: this.ctx.version };
       if (input.password) body.password = input.password;
       const { id, hostKey } = await api.createSession(body);
-      await this.connect(id, { name, hostKey });
+      // Back before the session existed: nothing to join.
+      if (this.joining !== token) return;
+      if (!(await this.connect(id, { name, hostKey }))) return;
       // The first lobby messages: what the dialog set beyond the session itself.
       if (input.spectators !== DEFAULT_MAX_SPECTATORS) this.send({ t: 'spectators', max: input.spectators });
       if (input.map !== 'generated') await this.pickMap(input.map);
@@ -1025,7 +1071,9 @@ export class OnlineUI {
       if (!input.public && !resume) this.newInvite();
       if (resume) await this.loadResume(resume.text);
     } catch (err) {
-      this.showProblem(err);
+      if (this.joining === token) this.showProblem(err);
+    } finally {
+      this.endJoin(token);
     }
   }
 
@@ -1077,6 +1125,17 @@ export class OnlineUI {
   async join(session, { spectate = false } = {}) {
     const name = this.playerName();
     if (!name) return;
+    // One join at a time (a double click, a held Enter): from the password prompt to the welcome.
+    const token = this.beginJoin();
+    if (!token) return;
+    try {
+      await this.joinWith(token, session, name, spectate);
+    } finally {
+      this.endJoin(token);
+    }
+  }
+
+  async joinWith(token, session, name, spectate) {
     let password;
     if (session.locked !== false) {
       const prompt = session.locked === null ? 'Password (leave empty if none)' : 'Password';
@@ -1090,7 +1149,7 @@ export class OnlineUI {
         pass.addEventListener('keydown', (e) => e.key === 'Enter' && close(pass.value));
         body.append(field(prompt, pass), actions);
       });
-      if (password === null) return;
+      if (password === null || this.joining !== token) return;
     }
     try {
       const hello = { name };
@@ -1098,13 +1157,15 @@ export class OnlineUI {
       if (spectate) hello.spectate = true;
       await this.connect(session.id, hello);
     } catch (err) {
-      this.showProblem(err);
+      if (this.joining === token) this.showProblem(err);
     }
   }
 
   /**
    * Open a session connection. `rejoin`: coming back into a running game
    * (after a reload, or `reconnect` when this page still has its game).
+   * False when the join was given up (Back) before the welcome came: the
+   * connection is left again and nothing else happens.
    */
   async connect(id, hello, { rejoin = false, reconnect = false } = {}) {
     if (!rejoin && !this.account?.user) saveName(hello.name);
@@ -1124,7 +1185,13 @@ export class OnlineUI {
       .on('rematch', (m) => this.onRematch(m))
       .on('save', (m) => this.onSave(m))
       .on('close', (reason) => this.onClose(reason, conn));
+    const token = this.joining;
     const welcome = await conn.open({ version: this.ctx.version, ...hello });
+    if (!reconnect && token !== this.joining) {
+      // The player went back (or left) while this join waited for its welcome.
+      conn.leave();
+      return false;
+    }
     clearInterval(this.refreshTimer);
     this.conn = conn;
     // Protocol 5: the server says which name this member got (the username when signed in).
@@ -1141,7 +1208,7 @@ export class OnlineUI {
       this.driver.reattach(conn);
       this.reconnecting = false;
       this.gameLine('Reconnected. Catching up...', true);
-      return;
+      return true;
     }
     this.state = {
       you: welcome.you,
@@ -1166,6 +1233,7 @@ export class OnlineUI {
       this.buildLobby();
       this.loadServerMaps();
     }
+    return true;
   }
 
   /** Route a game network message to the driver, or keep it until the game exists. */
@@ -1181,6 +1249,8 @@ export class OnlineUI {
   }
 
   leaveSession() {
+    // A join still waiting for its welcome leaves as soon as it arrives (connect).
+    this.joining = null;
     clearInterval(this.refreshTimer);
     clearInterval(this.inviteTimer);
     clearRejoin();

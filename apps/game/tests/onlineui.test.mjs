@@ -523,3 +523,61 @@ test('a refused action in the game does not stop the reconnect after a later dro
     uninstallDom();
   }
 });
+
+test('joining: one join at a time, and a welcome after Back is left at once', async () => {
+  const lobbies = [];
+  const { root, ui } = await bareUi({ name: 'Ivan', buildLobby: () => lobbies.push(1), loadServerMaps() {}, attachNet() {} });
+  ui.ctx.onBack = () => {};
+  const storage = globalThis.sessionStorage;
+  globalThis.sessionStorage = memoryStorage();
+  try {
+    await withFakeSocket(async () => {
+      const { loadRejoin } = await import('../js/online.js');
+      ui.sessionList = root.appendChild(document.createElement('div'));
+      ui.detailBox = root.appendChild(document.createElement('aside'));
+      ui.listStatus = root.appendChild(document.createElement('p'));
+      ui.browse = { filter: 'all', query: '', hideFull: false, selected: null };
+      ui.sessions = SESSIONS;
+      ui.renderSessions();
+      const open = SESSIONS[0];
+      const welcome = { ...WELCOME, session: { ...WELCOME.session, id: open.id }, key: 'K'.repeat(43) };
+      // A double click on Join: one connection.
+      FakeSocket.all = [];
+      const first = ui.join(open);
+      const second = ui.join(open);
+      await settle();
+      assert.equal(FakeSocket.all.length, 1);
+      assert.equal(ui.listStatus.textContent, 'Joining...');
+      assert.deepEqual([...ui.detailBox.querySelectorAll('button')].map((b) => b.disabled), [true, true], 'Join and Spectate wait');
+      // Holding Enter on the row joins nothing more.
+      ui.sessionKey({ key: 'Enter', repeat: true, preventDefault() {} });
+      await settle();
+      assert.equal(FakeSocket.all.length, 1);
+      FakeSocket.last.connect();
+      FakeSocket.last.deliver(welcome);
+      await Promise.all([first, second]);
+      assert.equal(lobbies.length, 1);
+      assert.ok(ui.conn, 'joined');
+      assert.equal(ui.joining, null);
+      // Join, then Back before the welcome: the late welcome is left, nothing is kept.
+      ui.leaveSession();
+      ui.state = null;
+      const late = ui.join(open);
+      await settle();
+      const ws = FakeSocket.last;
+      assert.equal(FakeSocket.all.length, 2);
+      ui.back();
+      ws.connect();
+      ws.deliver(welcome);
+      await late;
+      assert.equal(ws.sent.at(-1).t, 'leave', 'the late connection is left');
+      assert.equal(ws.readyState, 3);
+      assert.equal(loadRejoin(), null, 'no rejoin key');
+      assert.equal(ui.conn, null);
+      assert.equal(lobbies.length, 1, 'no lobby built');
+    });
+  } finally {
+    globalThis.sessionStorage = storage;
+    uninstallDom();
+  }
+});

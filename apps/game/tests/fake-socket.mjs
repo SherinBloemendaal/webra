@@ -12,6 +12,8 @@
 export class FakeSocket {
   static OPEN = 1;
   static last = null;
+  /** Every socket made, oldest first (tests reset it). */
+  static all = [];
   constructor(url) {
     this.url = url;
     this.readyState = 0;
@@ -19,6 +21,7 @@ export class FakeSocket {
     this.sent = [];
     this.closes = 0;
     FakeSocket.last = this;
+    FakeSocket.all.push(this);
   }
   addEventListener(type, fn) {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
