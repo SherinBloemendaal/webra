@@ -51,6 +51,12 @@ export class MapDoc {
      * gesture's edit shows while it goes on, before its commit.
      */
     this.live = { cells: new Set(), objects: false };
+    /**
+     * Where the document came from: the id of the published map it was
+     * opened from, or null. Not part of the map: a replace sets it (undo and
+     * redo of that step put it back), edits keep it.
+     */
+    this.source = null;
     this.load(map);
   }
 
@@ -135,11 +141,17 @@ export class MapDoc {
     return this.snap;
   }
 
-  /** Replace the document with another map as one undoable step. */
-  replace(map, label = 'Load map') {
+  /**
+   * Replace the document with another map as one undoable step. `source`:
+   * where the new map came from (see `source`); a change of the same map (a
+   * resize, a fix) passes the document's own.
+   */
+  replace(map, label = 'Load map', source = null) {
     const before = this.toMap();
+    const sourceBefore = this.source;
     this.load(map);
-    this.push({ label, kind: 'replace', before, after: this.toMap() });
+    this.source = source;
+    this.push({ label, kind: 'replace', before, after: this.toMap(), sourceBefore, sourceAfter: source });
     this.emit({ cells: true, objects: true, meta: true, resized: true });
   }
 
@@ -404,6 +416,7 @@ export class MapDoc {
     this.dropLive();
     if (e.kind === 'replace') {
       this.load(e[side]);
+      this.source = (side === 'before' ? e.sourceBefore : e.sourceAfter) ?? null;
       this.emit({ cells: true, objects: true, meta: true, resized: true });
       return;
     }

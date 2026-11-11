@@ -342,6 +342,30 @@ test('removing a spawn takes its player slot along, undo brings both back', () =
   assert.deepEqual(doc.toMap().players, slots.slice(0, 1));
 });
 
+test('the document\'s source follows replace steps through undo and redo, edits keep it', () => {
+  const doc = newDoc();
+  doc.source = 'abc123';
+  doc.begin('Paint');
+  doc.setCell(1, 1, TERRAIN.ROCK);
+  doc.commit();
+  assert.equal(doc.source, 'abc123');
+  doc.replace(createMap({ width: 40, height: 32 }), 'Resize map', doc.source);
+  assert.equal(doc.source, 'abc123', 'a change of the same map keeps it');
+  doc.replace(createMap({ width: 40, height: 32 }), 'New map');
+  assert.equal(doc.source, null, 'another map has none');
+  doc.replace(createMap({ width: 40, height: 32 }), 'Open other', 'other1');
+  assert.equal(doc.source, 'other1');
+  doc.undo();
+  assert.equal(doc.source, null);
+  doc.undo();
+  doc.undo();
+  assert.equal(doc.source, 'abc123');
+  doc.redo();
+  doc.redo();
+  doc.redo();
+  assert.equal(doc.source, 'other1');
+});
+
 // ---- Symmetry groups, shapes, regions and map turns -------------------------------------
 
 import { modeFits, transformCell, SYMMETRY_MODES } from '../editor/js/symmetry.js';

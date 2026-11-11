@@ -48,8 +48,7 @@ import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, selectField, store, tabKeys } from './js/ui.js';
-
-const DRAFT_KEY = 'webra.editor.draft';
+import { DRAFT_KEY, draftText, draftWins, parseDraft } from './js/draft.js';
 /**
  * The last opened file's format version story (js/upgrade.js openMapFile):
  * `notice` (upgraded, or why it is not compatible) stays until the map is
@@ -197,9 +196,10 @@ function motionIsReduced() {
 /** The map the editor opens with (js/upgrade.js openMapFile of `?map=`, the draft or a new map), as the document. */
 async function openFirstMap() {
   loadPrefs();
-  const { map: raw, note, edited = false } = await initialMap();
+  const { map: raw, note, edited = false, source = null } = await initialMap();
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
+  if (first.map) doc.source = source;
   // A restored draft with changes not saved to a file stays edited (a saved point no history reaches).
   savedPoint = edited ? { top: {}, time: -1 } : historyPoint();
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
@@ -276,27 +276,31 @@ function applyArt() {
   if (document.querySelector('.palette-item')) renderPaletteIcons();
 }
 
-/** Map to open: `?map=<id>`, else the autosaved draft, else a new map. */
+/**
+ * Map to open: `?map=<id>`, else the autosaved draft, else a new map. The
+ * draft wins over `?map=<id>` when it holds edits of that same published map
+ * (a reload, a restored tab); a draft of another map never does.
+ * `source`: the published map the document came from (MapDoc.source).
+ */
 async function initialMap() {
   const id = new URLSearchParams(location.search).get('map');
+  let draft = null;
+  try {
+    draft = parseDraft(store.get(DRAFT_KEY));
+  } catch {
+    store.remove(DRAFT_KEY);
+  }
+  const restored = (d) => ({ map: d.map, edited: d.edited, source: d.source, note: `Restored your draft from ${new Date(d.savedAt).toLocaleString()}.` });
   if (id) {
+    if (draftWins(draft, id)) return restored(draft);
     try {
       const { map } = await fetchMap(id);
-      return { map, note: `Opened published map "${map.name}".` };
+      return { map, source: id, note: `Opened published map "${map.name}".` };
     } catch (err) {
       return { map: newBlankMap(), note: `Could not open map ${id}: ${err.message}` };
     }
   }
-  const draft = store.get(DRAFT_KEY);
-  if (draft) {
-    try {
-      const { map, savedAt, edited = true } = JSON.parse(draft);
-      new MapDoc(map); // throws on undecodable layers
-      return { map, edited: !!edited, note: `Restored your draft from ${new Date(savedAt).toLocaleString()}.` };
-    } catch {
-      store.remove(DRAFT_KEY);
-    }
-  }
+  if (draft) return restored(draft);
   return { map: newBlankMap(), note: null };
 }
 
@@ -571,7 +575,7 @@ function updatePanels() {
 function autosave() {
   autosaveTask.cancel();
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
-  const ok = store.set(DRAFT_KEY, `{"savedAt":${Date.now()},"edited":${isEdited()},"map":${doc.snapshot().json}}`);
+  const ok = store.set(DRAFT_KEY, draftText({ savedAt: Date.now(), edited: isEdited(), source: doc.source, json: doc.snapshot().json }));
   $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
 }
 
@@ -770,7 +774,7 @@ function fixOpened(p, fix) {
     return;
   }
   p.fixed = fix.label;
-  doc.replace(next, fix.label);
+  doc.replace(next, fix.label, doc.source);
 }
 
 /** The map list's thumbnail of this map (protocol mapThumbnail, as the server draws it). */
@@ -1635,7 +1639,7 @@ async function browse() {
 async function openPublished(m) {
   try {
     const { map } = await fetchMap(m.id, m.hash);
-    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`)) markSaved();
+    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`, m.id)) markSaved();
   } catch (err) {
     toast(err.message, true);
   }
@@ -1656,8 +1660,10 @@ async function copy(text) {
  * Open a parsed map file (any format version, js/upgrade.js) as one undoable
  * step. `done` is the toast on success; the upgrade notice or the reason a
  * map is not compatible goes with it and stays in the Check tab until saved.
+ * `source`: the published map it came from (MapDoc.source), the document's
+ * own for a change of the same map, null for any other map.
  */
-function loadMap(raw, label, done = null) {
+function loadMap(raw, label, done = null, source = null) {
   const next = openMapFile(raw);
   if (!next.map) {
     toast(`Cannot open this map: ${next.error}`, true);
@@ -1665,7 +1671,7 @@ function loadMap(raw, label, done = null) {
   }
   const res = validateMap(next.map, { catalog, rulesBase });
   try {
-    doc.replace(next.map, label);
+    doc.replace(next.map, label, source);
   } catch (err) {
     toast(`Cannot open this map: ${err.message}`, true);
     return false;
@@ -1852,7 +1858,8 @@ function applyTransform(choice) {
     return;
   }
   const label = { resize: 'Resize map', crop: 'Crop map', shift: 'Shift map', rotate90: 'Turn map right', rotate270: 'Turn map left', rotate180: 'Turn map', flipX: 'Mirror map', flipY: 'Flip map' }[choice.op];
-  if (loadMap(result.map, label)) {
+  // The same map changed: it keeps its source.
+  if (loadMap(result.map, label, null, doc.source)) {
     const d = result.dropped;
     const lost = [d.spawns ? `${d.spawns} spawn${d.spawns === 1 ? '' : 's'}` : '', d.actors ? `${d.actors} actor${d.actors === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
     toast(lost ? `${label}: ${lost} off the map were removed. Undo brings them back.` : `${label}.`);
