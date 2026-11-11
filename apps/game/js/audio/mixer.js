@@ -102,10 +102,16 @@ export class Mixer {
     const list = this.active[bus];
     const limit = VOICE_LIMITS[bus] ?? 8;
     if (list.length >= limit) {
-      // Steal the quietest voice, unless the new one is quieter still.
-      let q = 0;
-      for (let i = 1; i < list.length; i++) if (list[i].gain < list[q].gain) q = i;
-      if (list[q].gain >= gain) return null;
+      // A voice that is fading out is on its way out: cut it short first.
+      // Otherwise steal the quietest voice, unless the new one is quieter
+      // still. stop() takes the handle off the list at once, so further
+      // sounds in the same frame see the freed slot and not a stopped voice.
+      let q = list.findIndex((h) => h.fading);
+      if (q < 0) {
+        q = 0;
+        for (let i = 1; i < list.length; i++) if (list[i].gain < list[q].gain) q = i;
+        if (list[q].gain >= gain) return null;
+      }
       list[q].stop();
     }
     const ctx = this.ctx;
@@ -130,11 +136,20 @@ export class Mixer {
     tail.connect(this.buses[bus]);
     let resolveEnded;
     const startedAt = ctx.currentTime;
+    // Leaves the bus's voice count at once; the ended event, which frees the
+    // nodes, only comes later as a task.
+    const release = () => {
+      const i = list.indexOf(handle);
+      if (i >= 0) list.splice(i, 1);
+    };
     const handle = {
       gain,
+      /** True once fadeOut was called: the voice is ending and may be cut short for a new one. */
+      fading: false,
       position: () => offset + (ctx.currentTime - startedAt) * rate,
       ended: new Promise((r) => (resolveEnded = r)),
       stop: () => {
+        release();
         try {
           src.stop();
         } catch {
@@ -143,6 +158,7 @@ export class Mixer {
       },
       /** Fade to silence over `seconds`, then stop (ended resolves then). */
       fadeOut: (seconds) => {
+        handle.fading = true;
         const t = ctx.currentTime;
         try {
           g.gain.cancelScheduledValues(t);
@@ -155,8 +171,7 @@ export class Mixer {
       },
     };
     src.onended = () => {
-      const i = list.indexOf(handle);
-      if (i >= 0) list.splice(i, 1);
+      release();
       src.disconnect();
       tail.disconnect();
       if (tail !== g) g.disconnect();

@@ -50,6 +50,7 @@ import { installFromFiles, installedSummary, categoryOf } from '../js/audio/inst
 import { MemoryStore } from '../js/audio/store.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { shuffle, Jukebox } from '../js/audio/music.js';
+import { Mixer, VOICE_LIMITS } from '../js/audio/mixer.js';
 import { AudioSystem, FOG_VISIBLE, CLICKABLE, holdsGameAudio } from '../js/audio/index.js';
 import { sineSamples, imaAud, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
 
@@ -1013,6 +1014,137 @@ test('music hotkeys: stop stays stopped, pause resumes where it was, previous go
   await j.togglePause();
   assert.equal(j.stoppedByUser, false, 'pause after stop starts a track');
   assert.ok(j.handle);
+});
+
+/**
+ * A running Mixer on a fake AudioContext. Like a browser, a stopped source
+ * fires its ended event later, as a task: `fireEnded()` delivers the pending ones.
+ */
+function fakeMixer() {
+  const pending = [];
+  const param = () => ({ value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, cancelScheduledValues() {}, setTargetAtTime() {} });
+  const node = () => ({ gain: param(), connect() {}, disconnect() {} });
+  const sources = [];
+  const ctx = {
+    state: 'running',
+    currentTime: 0,
+    createGain: node,
+    createBufferSource() {
+      const src = {
+        playbackRate: param(),
+        stopped: false,
+        connect() {},
+        disconnect() {},
+        start() {},
+        stop() {
+          if (src.stopped) return;
+          src.stopped = true;
+          pending.push(src);
+        },
+      };
+      sources.push(src);
+      return src;
+    },
+  };
+  const mixer = new Mixer();
+  mixer.ctx = ctx;
+  mixer.buses = { master: node(), effects: node(), voices: node(), music: node() };
+  const fireEnded = () => {
+    for (const src of pending.splice(0)) src.onended?.();
+  };
+  return { mixer, sources, fireEnded };
+}
+
+test('the voice limit holds within one frame: a stolen voice frees its slot at once (G-6)', () => {
+  const { mixer, sources, fireEnded } = fakeMixer();
+  const buffer = { duration: 1 };
+  for (let i = 0; i < VOICE_LIMITS.effects; i++) assert.ok(mixer.play(buffer, { gain: 0.1 }), 'fills the effects bus');
+  // A large battle: many louder sounds in the same frame, before any ended event.
+  for (let i = 0; i < 20; i++) assert.ok(mixer.play(buffer, { gain: 0.9 }), 'a louder sound steals a quiet voice');
+  assert.equal(mixer.active.effects.length, VOICE_LIMITS.effects, 'never more voices than the limit');
+  assert.equal(sources.filter((s) => !s.stopped).length, VOICE_LIMITS.effects, 'never more sources sounding than the limit');
+  assert.equal(mixer.active.effects.filter((h) => h.gain === 0.9).length, 20);
+  assert.equal(mixer.play(buffer, { gain: 0.05 }), null, 'a quieter sound than every voice is refused');
+  fireEnded();
+  assert.equal(mixer.active.effects.length, VOICE_LIMITS.effects, 'the late ended events change nothing');
+});
+
+test('the music bus takes a new track while two others fade out (G-6)', () => {
+  const { mixer } = fakeMixer();
+  const buffer = { duration: 100 };
+  const a = mixer.play(buffer, { bus: 'music', gain: 1 });
+  a.fadeOut(1.5);
+  const b = mixer.play(buffer, { bus: 'music', gain: 1 });
+  b.fadeOut(1.5);
+  const c = mixer.play(buffer, { bus: 'music', gain: 1 });
+  assert.ok(c, 'a fading track makes room for the new one');
+  assert.equal(mixer.active.music.length, VOICE_LIMITS.music);
+  assert.ok(mixer.active.music.includes(c));
+  b.stop();
+  assert.equal(mixer.active.music.includes(b), false, 'a stopped track leaves the bus at once');
+  assert.ok(mixer.play(buffer, { bus: 'music', gain: 1 }), 'so the next one plays');
+});
+
+test('a track the mixer refuses does not show as playing; a damaged track is skipped (G-7)', async () => {
+  const played = [];
+  let refuse = false;
+  const mixer = {
+    ready: true,
+    buffer: (samples, rate) => ({ samples, rate, duration: samples.length / rate }),
+    play: (buffer, { onEnded }) => {
+      if (refuse) return null;
+      const h = { buffer, onEnded, stopped: false, stop: () => (h.stopped = true), position: () => 0 };
+      played.push(h);
+      return h;
+    },
+  };
+  const store = new MemoryStore();
+  const files = PLAYLIST.slice(0, 3).map((t) => t.file);
+  await store.putAll([
+    { name: files[0], bytes: new Uint8Array([1, 2, 3]) }, // not an AUD file
+    { name: files[1], bytes: tone(64) },
+    { name: files[2], bytes: tone(64) },
+  ]);
+  const mode = { shuffle: false, repeat: 'all' };
+  const j = new Jukebox(mixer, async () => store, () => {}, () => new Map(), () => true, () => mode);
+  assert.equal(await j.refresh(), 3);
+  await j.next();
+  assert.equal(played.length, 1, 'the broken first track is skipped');
+  assert.equal(played[0].buffer.samples.length, 64);
+  assert.equal(j.playing, PLAYLIST[1].title, 'the second track plays');
+  assert.equal(j.current, 1);
+
+  refuse = true;
+  await j.next();
+  assert.equal(j.handle, null);
+  assert.equal(j.playing, null, 'nothing shows as playing when the mixer refused the track');
+  assert.equal(j.wanted, true, 'the music is still wanted, so the next sync starts it');
+  refuse = false;
+  await j.start();
+  assert.ok(j.handle, 'starts again once the mixer takes it');
+  assert.ok(j.playing);
+});
+
+test('a playlist of only damaged tracks stops instead of trying them forever, also with repeat one (G-7)', async () => {
+  const store = new MemoryStore();
+  const files = PLAYLIST.slice(0, 3).map((t) => t.file);
+  await store.putAll(files.map((name) => ({ name, bytes: new Uint8Array([1, 2, 3]) })));
+  const mixer = { ready: true, buffer: () => ({ duration: 1 }), play: () => assert.fail('nothing can play') };
+  const mode = { shuffle: false, repeat: 'one' };
+  const j = new Jukebox(mixer, async () => store, () => {}, () => new Map(), () => true, () => mode);
+  await j.refresh();
+  const loads = [];
+  const get = store.get.bind(store);
+  store.get = (name) => (loads.push(name), get(name));
+  await j.next();
+  assert.equal(j.finished, true);
+  assert.equal(j.playing, null);
+  assert.deepEqual(loads, files, 'each track tried once, the broken one not repeated');
+  // "Next track" tries again.
+  loads.length = 0;
+  await j.next();
+  assert.equal(loads.length, 3);
+  assert.equal(j.finished, true);
 });
 
 test('mute and the music commands go through the audio system', () => {

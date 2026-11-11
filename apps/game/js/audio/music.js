@@ -67,6 +67,8 @@ export class Jukebox {
     this.fadeIn = 0;
     /** Seconds per track file, once known (the AUD header, a texture pack track's length, a played track). */
     this.lengths = new Map();
+    /** Playlist tracks in a row that could not be loaded (a damaged or missing file); at tracks.length the playlist stops. */
+    this.failures = 0;
   }
 
   /** Refresh the installed track list from the store. */
@@ -180,9 +182,10 @@ export class Jukebox {
    * `ended`: the last track played to its end (repeat one plays it again);
    * otherwise the player asked for the next track.
    */
-  pick(ended) {
+  pick(ended, failed = false) {
     const { repeat } = this.mode();
-    if (ended && repeat === 'one' && this.current >= 0) return this.current;
+    // A track that could not be loaded is not repeated: the next one is tried.
+    if (ended && !failed && repeat === 'one' && this.current >= 0) return this.current;
     if (this.pos >= this.order.length) {
       if (ended && repeat === 'off') return -1;
       this.order = playOrder(this.tracks.length, this.mode().shuffle, this.random, this.order[this.order.length - 1]);
@@ -193,9 +196,11 @@ export class Jukebox {
 
   /**
    * Play the next track. `ended` is set when the previous one played to its
-   * end; "Next track" (the player) always plays one, also after a finished playlist.
+   * end, `failed` when it could not be loaded; "Next track" (the player)
+   * always plays one, also after a finished playlist.
    */
-  async next({ ended = false } = {}) {
+  async next({ ended = false, failed = false } = {}) {
+    if (!failed) this.failures = 0;
     this.stoppedByUser = false;
     this.paused = null;
     this.background = null;
@@ -209,7 +214,7 @@ export class Jukebox {
       this.order = playOrder(this.tracks.length, this.mode().shuffle, this.random, this.current);
       this.pos = 0;
     }
-    const index = this.pick(ended);
+    const index = this.pick(ended, failed);
     if (index < 0) {
       this.finished = true;
       this.playing = null;
@@ -232,6 +237,7 @@ export class Jukebox {
     this.paused = null;
     this.background = null;
     this.finished = false;
+    this.failures = 0;
     const token = ++this.token;
     const old = this.handle;
     this.handle = null;
@@ -248,12 +254,28 @@ export class Jukebox {
     await this.startTrack(index, token);
   }
 
-  /** Load and play track `index` unless another request (`token`) came in meanwhile. */
+  /**
+   * Load and play track `index` unless another request (`token`) came in
+   * meanwhile. A track that cannot be loaded is skipped; when every track of
+   * the playlist failed in a row, the playlist stops (finished) instead of
+   * trying them again and again.
+   */
   async startTrack(index, token) {
     const track = this.tracks[index];
     // A texture pack's track plays at once (no await: the handle exists before anything else asks).
     const buffer = this.packBuffer(track) ?? (await this.load(track, token));
-    if (!buffer || token !== this.token) return;
+    if (token !== this.token) return;
+    if (!buffer) {
+      this.failures++;
+      if (this.failures >= this.tracks.length) {
+        this.finished = true;
+        this.playing = null;
+        this.onChange();
+        return;
+      }
+      await this.next({ ended: true, failed: true });
+      return;
+    }
     if (buffer.duration) this.lengths.set(track.file, buffer.duration);
     this.play(track, buffer, token);
   }
@@ -307,8 +329,7 @@ export class Jukebox {
       this.onChange();
       return false;
     }
-    this.play(track, buffer, token);
-    return true;
+    return this.play(track, buffer, token);
   }
 
   /** Seconds into the playing or paused track (0 when none). */
@@ -359,13 +380,13 @@ export class Jukebox {
   /**
    * Play `buffer` of `track` from `offset` seconds, at the track's
    * VolumeModifier; when it ends, the next track follows (a background track
-   * starts again).
+   * starts again). Returns false when the mixer refused it (the audio stopped
+   * meanwhile, or the music bus is full): nothing shows as playing then, and
+   * the music is still wanted, so the next sync starts it again.
    */
   play(track, buffer, token, offset = 0) {
     this.wanted = true;
     this.stoppedByUser = false;
-    this.playing = track.title;
-    this.buffer = buffer;
     const fadeIn = this.fadeIn;
     this.fadeIn = 0;
     this.handle = this.mixer.play(buffer, {
@@ -379,6 +400,17 @@ export class Jukebox {
         else this.next({ ended: true });
       },
     });
+    if (!this.handle) {
+      this.fadeIn = fadeIn;
+      this.playing = null;
+      if (this.background === track) this.background = null;
+      this.onChange();
+      return false;
+    }
+    this.failures = 0;
+    this.playing = track.title;
+    this.buffer = buffer;
     this.onChange();
+    return true;
   }
 }
