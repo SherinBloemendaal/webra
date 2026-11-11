@@ -4,4 +4,4 @@
 // three agree. Map files record it as `gameVersion` (docs/contracts.md
 // section 2, "Map versions").
 
-export const GAME_VERSION = '0.22.1'; // x-release-please-version
+export const GAME_VERSION = '0.22.2'; // x-release-please-version
