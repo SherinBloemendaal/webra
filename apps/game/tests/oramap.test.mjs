@@ -879,3 +879,19 @@ test('rules vetting: one refused field among a hundred costs a few engine checks
   assert.equal(r2.rules.rejected.length, 3);
   assert.ok(r2.rules.rejected.some((t) => /too many rules to check/.test(t)), r2.rules.rejected.join('; '));
 });
+
+test('convert: a stance or faction named like an Object property (__proto__, constructor) is unknown, not a lookup into the prototype', async () => {
+  const actors = [
+    { type: 'mpspawn', x: 8, y: 8 },
+    { type: 'mpspawn', x: 38, y: 38 },
+    { type: 'e1', owner: 'Multi0', x: 10, y: 12, stance: '__proto__' },
+    { type: 'pbox', x: 25, y: 10, stance: 'constructor' },
+  ];
+  const multi = [['\t\tFaction: __proto__', '\t\tLockFaction: True'], ['\t\tFaction: constructor', '\t\tLockFaction: True', '\t\tTeam: 1']];
+  const { map, json, report } = await importOramap(sampleOramap({ actors, multi }), { baseRules: BASE_RULES, validate: engineValidate });
+  for (const a of map.actors.filter((x) => x.type === 'E1' || x.type === 'PBOX')) assert.equal(a.stance, undefined, `${a.type} keeps the default stance`);
+  assert.equal(report.converted.some((l) => l.startsWith('Health, stances and passengers')), false, 'no actor state was converted');
+  assert.deepEqual(map.players.map((p) => [p.faction, p.team, p.lock]), [['random', 0, []], ['random', 1, []]], 'a random faction, no faction lock');
+  assert.ok(report.validation.ok, report.validation.errors.join('; '));
+  assert.ok(engineValidate(json).ok);
+});

@@ -352,7 +352,7 @@ export function convertOramap(input, opts) {
     const state = {};
     const health = parseInteger(childValue(node.nodes, 'Health'));
     if (health !== null && health >= 1 && health < 100 && info.kind !== 'crate') state.health = health;
-    const stance = OPENRA_STANCES[String(childValue(node.nodes, 'Stance', '')).toLowerCase()];
+    const stance = ownValue(OPENRA_STANCES, String(childValue(node.nodes, 'Stance', '')).toLowerCase());
     if (stance && Array.isArray(info.stance) && info.weapons?.length) state.stance = stance;
     // OpenRA CargoInit (`Cargo: e1, e1, e3`): the passengers a transport starts with, checked like the
     // map editor's passenger list (known types that fit its cargo types and weight, at most 16).
@@ -600,7 +600,7 @@ function slotSetup(refs, spawns, report) {
     const nodes = refs[k];
     const slot = { faction: 'random', team: 0, color: -1, type: 'open', difficulty: 'normal', bot: 'normal', lock: [] };
     if (nodes) {
-      const faction = OPENRA_FACTIONS[String(childValue(nodes, 'Faction', 'Random')).toLowerCase()];
+      const faction = ownValue(OPENRA_FACTIONS, String(childValue(nodes, 'Faction', 'Random')).toLowerCase());
       if (faction) slot.faction = faction;
       if (/^true$/i.test(childValue(nodes, 'LockFaction', 'False')) && faction) slot.lock.push('faction');
       const color = nearestColor(childValue(nodes, 'Color', null), out.map((x) => x.color));
