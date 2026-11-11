@@ -1226,6 +1226,7 @@ export class OnlineUI {
       invite: null,
     };
     this.lobbyClients = null;
+    this.optionsDraft = null;
     if (inviteId()) history.replaceState(null, '', location.pathname);
     clearInviteFromLocation();
     if (rejoin || welcome.role === 'spectator') this.pendingNet = [];
@@ -1251,6 +1252,7 @@ export class OnlineUI {
   leaveSession() {
     // A join still waiting for its welcome leaves as soon as it arrives (connect).
     this.joining = null;
+    this.optionsDraft = null;
     clearInterval(this.refreshTimer);
     clearInterval(this.inviteTimer);
     clearRejoin();
@@ -1298,6 +1300,10 @@ export class OnlineUI {
 
   onServerError(m) {
     this.seedPending = null;
+    // A refused options edit: the lobby's options count again, and the controls show them.
+    const drafted = this.optionsDraft !== null && this.optionsDraft !== undefined;
+    this.optionsDraft = null;
+    if (drafted && !this.inGame && this.slotBox && this.state?.options) this.renderOptions();
     // A refused bulk edit is reported in the bulk bar, where it was applied.
     if (this.bulkWait && !this.inGame) return this.settleBulk({ error: m.message });
     const refusal = onlineRefusal(m.code, m.message);
@@ -1369,11 +1375,15 @@ export class OnlineUI {
     return this.state && this.state.hostId === this.state.you;
   }
 
+  /** Send a lobby message; false when it was invalid (the banner says why) or there is no connection. */
   send(msg) {
+    if (!this.conn) return false;
     try {
-      this.conn?.send(msg);
+      this.conn.send(msg);
+      return true;
     } catch (err) {
       this.setError(messageOf(err));
+      return false;
     }
   }
 
@@ -1512,6 +1522,8 @@ export class OnlineUI {
       this.loadServerMaps();
     }
     const mapChanged = (this.state.map ? this.state.map.hash : null) !== (m.map ? m.map.hash : null);
+    // The options edit on its way arrived, or the lobby changed under it (a new host, another map).
+    if (mapChanged || m.hostId !== this.state.hostId || this.draftSettled(m)) this.optionsDraft = null;
     this.lobbySounds(m, mapChanged);
     Object.assign(this.state, {
       slots: m.slots,
@@ -2097,13 +2109,24 @@ export class OnlineUI {
     if (focusKey) this.slotPlates.find((p) => p.button.dataset.ctl === focusKey && !p.button.disabled)?.button.focus();
   }
 
-  /** Send the options with `patch` applied (host only; the server checks). */
+  /**
+   * Send the options with `patch` applied (host only; the server checks).
+   * Every `options` message carries all options, so an edit made before the
+   * lobby echoed the previous one builds on what was sent (optionsDraft), not
+   * on the older lobby: two quick edits keep both.
+   */
   sendOptions(patch) {
-    const options = { ...this.state.options, ...patch };
+    const options = { ...(this.optionsDraft ?? this.state.options), ...patch };
     // A game mode never changes what the lobby map locks (the server would refuse it).
     const setup = this.state.map?.setup;
     for (const k of setup?.lockedOptions ?? []) options[k] = setup.options[k];
-    this.send({ t: 'options', options });
+    if (this.send({ t: 'options', options })) this.optionsDraft = options;
+  }
+
+  /** The options the lobby `m` shows hold every value of the draft: the server took it. */
+  draftSettled(m) {
+    const d = this.optionsDraft;
+    return !d || Object.keys(d).every((k) => JSON.stringify(d[k]) === JSON.stringify(m.options?.[k]));
   }
 
   /** The Game options panel: built once per lobby, renderOptions shows the current values. */
@@ -2160,7 +2183,8 @@ export class OnlineUI {
   }
 
   renderOptions() {
-    const o = this.state.options;
+    // An edit on its way shows as sent until the lobby has it (sendOptions).
+    const o = this.optionsDraft ?? this.state.options;
     if (!o || !this.optionControls) return;
     // A resumed save keeps its options.
     const host = this.isHost && !this.state.resume;
@@ -2282,7 +2306,7 @@ export class OnlineUI {
       controls.append(unload);
     }
     if (!st.map && !st.mission) {
-      const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) => this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }), {
+      const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) => this.sendOptions({ mapSize: Number(v) }), {
         label: 'Map size',
         small: false,
       });
@@ -2293,14 +2317,14 @@ export class OnlineUI {
       seed.value = String(st.options.seed);
       seed.addEventListener('change', () => {
         const n = Number(seed.value.trim());
-        if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.send({ t: 'options', options: { ...st.options, seed: n } });
+        if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.sendOptions({ seed: n });
         else seed.value = String(st.options.seed);
       });
       const dice = button('New seed', 'online-dice', () => {
         // The loader shows until the lobby has the new seed and its map is made.
         this.seedPending = randomSeed();
         busy(dice);
-        this.send({ t: 'options', options: { ...st.options, seed: this.seedPending } });
+        this.sendOptions({ seed: this.seedPending });
       });
       const busy = (b) => {
         b.disabled = true;

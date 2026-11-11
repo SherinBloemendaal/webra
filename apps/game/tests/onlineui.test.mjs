@@ -5,7 +5,7 @@
 // server, no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installDom, memoryStorage, uninstallDom, click, settle, textOf, typeInto } from './dom-fixtures.mjs';
+import { check, FakeEvent, installDom, memoryStorage, uninstallDom, click, settle, textOf, typeInto } from './dom-fixtures.mjs';
 import { FakeSocket, WELCOME, withFakeSocket } from './fake-socket.mjs';
 import {
   connectionCell,
@@ -578,6 +578,73 @@ test('joining: one join at a time, and a welcome after Back is left at once', as
     });
   } finally {
     globalThis.sessionStorage = storage;
+    uninstallDom();
+  }
+});
+
+/** A host's lobby drawn by js/online.js (no server): `sent` collects what it sends; `lobby(patch)` delivers a lobby message. */
+async function hostLobby({ state = {}, ...extra } = {}) {
+  const sent = [];
+  const { root, ui } = await bareUi({
+    installed: new Map(),
+    mapStatus: { hash: null, text: '', ok: true },
+    serverMaps: [],
+    libraryMaps: [],
+    library: { list: async () => [] },
+    member: { client: 1, key: 'K'.repeat(43) },
+    send: (m) => sent.push(m) > 0,
+    netq: { players: new Map(), self: null, testAgain() {} },
+    state: { you: 1, hostId: 1, session: { id: 'a'.repeat(64), name: 'Lobby', public: true, locked: false }, role: 'player', slots: [], spectators: [], maxSpectators: 2, options: null, map: null, lobbySeen: false, invite: null, ...state },
+    ...extra,
+  });
+  ui.ctx.Game = { map_preview_styled: (seed, size) => new Uint8Array(size * size * 4) };
+  ui.buildLobby();
+  const { DEFAULT_OPTIONS } = await import('../js/protocol.js');
+  const base = {
+    slots: [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'human', client: 3, name: 'Ivan', faction: 'russia', color: 1, team: 2, ready: false },
+    ],
+    options: { ...DEFAULT_OPTIONS },
+    map: null,
+    hostId: 1,
+    spectators: [],
+    maxSpectators: 2,
+  };
+  const lobby = (patch = {}) => ui.onLobby({ ...structuredClone(base), ...patch });
+  return { root, ui, sent, lobby, DEFAULT_OPTIONS };
+}
+
+test('two quick option edits: the second keeps the first; the echo ends the draft, a refusal drops it', async () => {
+  const { ui, sent, lobby, DEFAULT_OPTIONS } = await hostLobby();
+  try {
+    lobby();
+    const crates = !DEFAULT_OPTIONS.crates;
+    const fog = !DEFAULT_OPTIONS.fog;
+    check(ui.optionControls.crates, crates);
+    // No lobby message in between (a slow connection): fog builds on the crates edit.
+    check(ui.optionControls.fog, fog);
+    const last = sent.at(-1);
+    assert.equal(last.t, 'options');
+    assert.deepEqual([last.options.crates, last.options.fog], [crates, fog]);
+    // Another member's change arrives first: the draft stays, the switches show what was sent.
+    lobby();
+    assert.equal(ui.optionControls.crates.checked, crates);
+    check(ui.optionControls.shortGame, !DEFAULT_OPTIONS.shortGame);
+    assert.equal(sent.at(-1).options.crates, crates);
+    // The echo of the last edit: the lobby's options count again.
+    lobby({ options: { ...sent.at(-1).options } });
+    assert.equal(ui.optionsDraft, null);
+    // The seed is an options edit too: it keeps an edit on its way.
+    check(ui.optionControls.crates, !crates);
+    const seed = ui.mapBox.querySelector('.online-seed').querySelector('input');
+    seed.value = '12345';
+    seed.dispatchEvent(new FakeEvent('change'));
+    assert.deepEqual([sent.at(-1).options.seed, sent.at(-1).options.crates], [12345, !crates]);
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    assert.equal(ui.optionsDraft, null, 'refused: no draft');
+    assert.equal(ui.optionControls.crates.checked, crates, 'the switch shows the lobby again');
+  } finally {
     uninstallDom();
   }
 });
