@@ -644,20 +644,33 @@ async function initLobbies() {
   const refresh = document.querySelector('[data-refresh]');
   let timer = 0;
   let loading = false;
+  // What the list shows now (lobbiesKey, 'empty', or null after an error or the skeleton):
+  // a refresh with the same answer leaves the cards alone, so focus and screen readers stay put.
+  let shown = null;
 
   const schedule = () => {
     clearTimeout(timer);
-    if (document.visibilityState === 'visible') timer = setTimeout(() => load(false), LOBBY_REFRESH_MS);
+    if (document.visibilityState === 'visible') timer = setTimeout(() => load('auto'), LOBBY_REFRESH_MS);
   };
 
   initJoinCode();
 
-  const load = async (showSkeleton) => {
+  /**
+   * `mode`: 'first' (skeleton), 'manual' (the Refresh button) or 'auto' (the timer and
+   * coming back to the tab). An automatic refresh says nothing: the status line is not
+   * announced and does not flip to "Looking for open games...".
+   */
+  const load = async (mode) => {
     if (loading) return;
     loading = true;
     refresh.disabled = true;
-    if (showSkeleton) renderLoading(list, 3);
-    status.textContent = 'Looking for open games...';
+    const quiet = mode === 'auto';
+    status.setAttribute('aria-live', quiet ? 'off' : 'polite');
+    if (mode === 'first') {
+      renderLoading(list, 3);
+      shown = null;
+    }
+    if (!quiet) status.textContent = 'Looking for open games...';
     try {
       const [data, info] = await Promise.all([getJson('/api/sessions'), siteVersion()]);
       if (!Array.isArray(data)) throw new ApiError('The server sent an unexpected answer.');
@@ -666,21 +679,33 @@ async function initLobbies() {
       const ourVersion = info && typeof info.build === 'string' ? info.build : null;
       const count = `${sessions.length} open ${sessions.length === 1 ? 'game' : 'games'}`;
       status.textContent = `${count}. Updated ${timeFormat.format(new Date())}.`;
-      if (sessions.length === 0) {
-        renderEmpty(
-          list,
-          'No open games right now',
-          'Host one yourself and share the link, or check back in a minute. This list refreshes by itself.',
-          el('a', { class: 'btn btn-accent', href: '/play/', text: 'Host a game' }),
-        );
-      } else {
-        list.removeAttribute('aria-busy');
-        list.replaceChildren(...sessions.map((s) => lobbyCard(s, ourVersion)));
+      const key = sessions.length === 0 ? 'empty' : lobbiesKey(sessions, ourVersion);
+      if (key !== shown) {
+        // The card that had the keyboard focus gets it back after the rebuild (by its heading id).
+        const focused = list.contains(document.activeElement) ? document.activeElement.closest('li')?.getAttribute('aria-labelledby') : null;
+        if (sessions.length === 0) {
+          renderEmpty(
+            list,
+            'No open games right now',
+            'Host one yourself and share the link, or check back in a minute. This list refreshes by itself.',
+            el('a', { class: 'btn btn-accent', href: '/play/', text: 'Host a game' }),
+          );
+        } else {
+          list.removeAttribute('aria-busy');
+          list.replaceChildren(...sessions.map((s) => lobbyCard(s, ourVersion)));
+        }
+        shown = key;
+        if (focused) {
+          // Its Join link, or (the game is gone or cannot be joined now) the Refresh button next to the list.
+          const card = [...list.children].find((li) => li.getAttribute('aria-labelledby') === focused);
+          (card?.querySelector('a[href]') ?? refresh).focus();
+        }
       }
     } catch (err) {
+      shown = null;
       status.textContent = '';
       const message = err instanceof ApiError ? err.message : 'Something went wrong.';
-      renderProblem(list, 'Could not load the game list', message, () => load(true), LOCAL_DEV_HINT);
+      renderProblem(list, 'Could not load the game list', message, () => load('first'), LOCAL_DEV_HINT);
       if (!(err instanceof ApiError)) console.error(err);
     } finally {
       loading = false;
@@ -689,12 +714,18 @@ async function initLobbies() {
     }
   };
 
-  refresh.addEventListener('click', () => load(false));
+  refresh.addEventListener('click', () => load('manual'));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') load(false);
+    if (document.visibilityState === 'visible') load('auto');
     else clearTimeout(timer);
   });
-  await load(true);
+  await load('first');
+}
+
+/** What the lobby cards show (lobbyCard), as one string: equal strings draw equal cards. */
+function lobbiesKey(sessions, ourVersion) {
+  const map = (s) => (s.map && typeof s.map === 'object' ? [s.map.name ?? null, Boolean(s.map.modded)] : null);
+  return JSON.stringify([ourVersion, sessions.map((s) => [s.id, s.name ?? null, s.host ?? null, s.players ?? null, s.maxPlayers ?? null, Boolean(s.locked), s.version ?? null, map(s)])]);
 }
 
 /**

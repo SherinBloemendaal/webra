@@ -443,9 +443,13 @@ otherwise). Limits: 5 per hour per IP, 3 per hour per mailbox (4.3).
 `POST /api/auth/password/reset` `{ "token": "...", "password": "..." }`:
 sets the password, marks the email verified (the link proved it), revokes
 every session of the account and signs in (`200 { user }`). Bad, used or
-expired tokens: `401 bad_credentials`. A banned account: `403 banned` (the
-password is still changed). Limit: 20 token redemptions per 15 minutes per
-IP.
+expired tokens: `401 bad_credentials`. A refused password (`400 invalid`,
+for example the username or the address) does not use the link up: the same
+link works for the next try; it is used up only by a successful reset. A
+banned account: `403 banned` (the password is still changed). Needs
+`login.password` on (`403 method_disabled` otherwise, and the link stays
+valid); `login.email` is not needed, so a link an admin made (8.2) works
+without email sending. Limit: 20 token redemptions per 15 minutes per IP.
 
 `POST /api/auth/email/verify` `{ "token": "..." }`: confirms a verification
 or email change link (no session needed: the link proves the inbox, and it
@@ -1716,7 +1720,7 @@ Expired IP bans are deleted 90 days after they end.
 
 ```json
 {
-  "users": { "total": 0, "byStatus": { "pending_email": 0, "pending_approval": 0, "active": 0, "banned": 0, "deleted": 0 }, "byRole": { "user": 0, "moderator": 0, "admin": 0 }, "newLast7Days": 0 },
+  "users": { "total": 0, "byStatus": { "pending_email": 0, "pending_approval": 0, "active": 0, "banned": 0, "deleted": 0 }, "byRole": { "user": 0, "moderator": 0, "admin": 0 }, "newLast7Days": 0, "emailUnverified": 0 },
   "sessions": { "active": 0 },
   "games": { "lobbies": 0, "running": 0 },
   "maps": { "total": 0 },
@@ -1725,6 +1729,10 @@ Expired IP bans are deleted 90 days after they end.
   "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false }
 }
 ```
+
+`users.emailUnverified` counts accounts (not deleted) with an address that
+was never confirmed, whatever their status: without required verification
+they are `active`, so `byStatus.pending_email` does not show them.
 
 `games` counts the public session directory (private lobbies are not listed
 anywhere).

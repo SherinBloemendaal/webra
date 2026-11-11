@@ -149,7 +149,8 @@ export function openDialog(title, build, { wide = false } = {}) {
     });
     build(body, close);
     document.body.append(overlay);
-    (body.querySelector('input, select, textarea, button') ?? closeButton).focus();
+    // A control marked data-autofocus wins (the safe choice in a danger confirmation), else the first one.
+    (body.querySelector('[data-autofocus]') ?? body.querySelector('input, select, textarea, button') ?? closeButton).focus();
   });
 }
 
@@ -157,7 +158,8 @@ export function openDialog(title, build, { wide = false } = {}) {
 export function confirmDialog(title, message, { confirmText = 'Confirm', danger = false } = {}) {
   return openDialog(title, (body, close) => {
     const yes = el('button', { type: 'button', class: danger ? 'btn btn-danger' : 'btn btn-primary', text: confirmText });
-    const no = el('button', { type: 'button', class: 'btn', text: 'Cancel' });
+    // A destructive action never sits under the first Enter or Space: Cancel takes the focus.
+    const no = el('button', { type: 'button', class: 'btn', text: 'Cancel', 'data-autofocus': danger });
     yes.addEventListener('click', () => close(true));
     no.addEventListener('click', () => close(false));
     body.append(el('p', { text: message }), el('div', { class: 'form-actions' }, yes, no));

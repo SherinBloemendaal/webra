@@ -282,7 +282,7 @@ export async function mountAccountPage(root, deps = {}) {
           'div',
           { class: 'state-card state-on gate-card', role: 'status' },
           el('div', { class: 'state-card-head' }, el('span', { class: 'lamp', 'aria-hidden': 'true' }), el('strong', { text: 'Sign in to play' })),
-          el('p', { text: 'The game needs a WebRA account. Sign in, or create one; new accounts may need an admin to approve them first. Your link opens once you are in.' }),
+          el('p', { text: gateText(session.site) }),
         ),
       );
     }
@@ -293,6 +293,18 @@ export async function mountAccountPage(root, deps = {}) {
     else if (tab === 'signup') panel.append(signUpForm(methods));
     else panel.append(forgotForm());
     view.append(el('div', { class: 'panel form-card' }, list, panel));
+  }
+
+  /** The "Sign in to play" card's text, from the site settings: whether signing up is open and needs an approval. */
+  function gateText(site) {
+    const reg = site?.registration;
+    const how =
+      reg?.open === false
+        ? 'Sign in to go on; signing up is closed right now.'
+        : reg?.approvalRequired
+          ? 'Sign in, or create one; an admin approves new accounts first.'
+          : 'Sign in, or create one, it takes a minute.';
+    return `The game needs a WebRA account. ${how} Your link opens once you are in.`;
   }
 
   /**
@@ -522,13 +534,13 @@ export async function mountAccountPage(root, deps = {}) {
     const status = statusLine();
     const email = field('Email', el('input', { type: 'email', autocomplete: 'email', required: true, maxlength: String(EMAIL_MAX) }));
     const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Send reset link' });
-    const form = el('form', { class: 'form-stack', novalidate: true }, status.node, el('p', { class: 'form-help', text: 'We email a link to choose a new password, if an account has this email.' }), email.row, el('div', { class: 'form-actions' }, submit));
+    const form = el('form', { class: 'form-stack', novalidate: true }, status.node, el('p', { class: 'form-help', text: 'We email a link to choose a new password, if an account has confirmed this email.' }), email.row, el('div', { class: 'form-actions' }, submit));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!email.input.value.trim()) return status.show('Enter your email.', 'error');
       await busy(submit, status, async () => {
         await api.forgotPassword(email.input.value.trim());
-        status.show('If an account has this email, a reset link is on its way. It works for one hour.', 'ok');
+        status.show('If an account has confirmed this email, a reset link is on its way. It works for one hour. No mail? The address may not be confirmed: sign in another way, or ask an admin.', 'ok');
       }, errorText);
     });
     return form;
@@ -713,7 +725,7 @@ export async function mountAccountPage(root, deps = {}) {
         session.user = r.user;
         if (r.user.status !== 'active') {
           if (r.user.status !== user.status) return renderAccount();
-          if (!quiet) s.show('Still waiting. You get an email once the account is active.', 'info');
+          if (!quiet) s.show(r.user.status === 'pending_email' ? 'Still waiting for the address to be confirmed. Follow the link in the email; this page goes on by itself once it is.' : 'Still waiting. This page updates by itself once an admin approves the account; you can also come back later and sign in.', 'info');
           return;
         }
         if (goOn()) return;
@@ -802,7 +814,9 @@ export async function mountAccountPage(root, deps = {}) {
       await busy(save, status, async () => {
         const r = await api.updateProfile(patch);
         session.user = r.user;
-        status.show('Saved.', 'ok');
+        // Rebuilt from the fresh account: the side menu, the help lines and this form's comparison.
+        await renderAccount();
+        notice.show('Saved.', 'ok');
       }, errorText);
     });
     return section('Profile', el('p', { class: 'form-help', text: `Account created ${formatDateTime(user.createdAt)}.` }), status.node, form, emailSection(user));
@@ -864,8 +878,9 @@ export async function mountAccountPage(root, deps = {}) {
       await busy(save, status, async () => {
         const r = await withReauth(() => api.changePassword({ newPassword: next.input.value }));
         session.user = r.user;
-        status.show('Password saved. Your other devices are signed out.', 'ok');
-        form.reset?.();
+        // Rebuilt from the fresh account: the part's state, its buttons and the side menu.
+        await renderAccount();
+        notice.show('Password saved. Your other devices are signed out.', 'ok');
       }, errorText);
     });
     const remove = has ? el('button', { type: 'button', class: 'btn btn-small btn-danger', text: 'Remove password' }) : null;
