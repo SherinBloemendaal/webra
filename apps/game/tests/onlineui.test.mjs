@@ -753,3 +753,29 @@ test('New seed is ready again after the server refuses it', async () => {
     uninstallDom();
   }
 });
+
+test('lobby chat: Enter while an input method composes sends nothing; a player reading back is not moved', async () => {
+  const { ui, sent, lobby } = await hostLobby();
+  try {
+    lobby();
+    const input = ui.root.querySelector('.online-chat').querySelector('input');
+    input.value = 'こんにちは';
+    input.dispatchEvent(new FakeEvent('keydown', { key: 'Enter', isComposing: true }));
+    input.dispatchEvent(new FakeEvent('keydown', { key: 'Enter', keyCode: 229 }));
+    assert.equal(sent.filter((m) => m.t === 'chat').length, 0);
+    input.dispatchEvent(new FakeEvent('keydown', { key: 'Enter' }));
+    assert.deepEqual(sent.at(-1), { t: 'chat', text: 'こんにちは' });
+    const log = ui.chatLog;
+    Object.assign(log, { scrollHeight: 1000, clientHeight: 200, scrollTop: 300 });
+    ui.chatLine('Ivan', 'hi');
+    assert.equal(log.scrollTop, 300, 'scrolled up: stays');
+    ui.chatLine('Kara', 'mine', false, false, 'chat', { own: true });
+    assert.equal(log.scrollTop, 1000, 'own line: to the end');
+    log.scrollTop = 830;
+    log.scrollHeight = 1040;
+    ui.chatLine(null, 'Ivan is ready.', true);
+    assert.equal(log.scrollTop, 1040, 'at the end: follows');
+  } finally {
+    uninstallDom();
+  }
+});

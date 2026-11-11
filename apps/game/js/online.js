@@ -1192,8 +1192,9 @@ export class OnlineUI {
       .on('chat', (m) => {
         if (this.inGame) return this.gameChat(m);
         // This player's own line came back: the chat went through.
-        if (m.from !== null && m.from === this.state?.you) this.actionWentThrough();
-        return this.chatLine(m.name, m.text, m.from === null, !!m.team);
+        const own = m.from !== null && m.from === this.state?.you;
+        if (own) this.actionWentThrough();
+        return this.chatLine(m.name, m.text, m.from === null, !!m.team, undefined, { own });
       })
       .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true, false, 'left'))
       .on('back', (m) => this.onBack(m))
@@ -1486,6 +1487,8 @@ export class OnlineUI {
     chatInput.placeholder = 'Message the lobby';
     chatInput.setAttribute('aria-label', 'Message the lobby');
     chatInput.addEventListener('keydown', (e) => {
+      // Enter that confirms an input method's composition (Japanese, Chinese, Korean) does not send.
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key !== 'Enter' || !chatInput.value.trim()) return;
       this.send({ t: 'chat', text: chatInput.value });
       chatInput.value = '';
@@ -2653,20 +2656,24 @@ export class OnlineUI {
    * (`sound`: 'chat' ChatLine, 'option' LobbyOptionChanged for system lines,
    * 'left' PlayerLeft); in a game every line plays ChatLine (gameLine).
    */
-  chatLine(name, textValue, system = false, team = false, sound = name ? 'chat' : 'option') {
+  /** A lobby chat line; `own`: this player's line (the log always shows it). */
+  chatLine(name, textValue, system = false, team = false, sound = name ? 'chat' : 'option', { own = false } = {}) {
     if (this.inGame) {
       this.gameLine(name ? `${team ? '[Team] ' : ''}${name}: ${textValue}` : textValue);
       return;
     }
     if (sound === 'chat') this.ctx.sounds?.chatLine();
     else this.ctx.sounds?.lobby(sound);
-    if (!this.chatLog) return;
+    const log = this.chatLog;
+    if (!log) return;
+    // A player who scrolled up to read stays there; at the end, the log follows the new line.
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
     const line = el('div', system ? 'online-chat-line online-chat-system' : 'online-chat-line');
     if (name) line.append(el('strong', null, `${name}: `));
     line.append(document.createTextNode(textValue));
-    this.chatLog.append(line);
-    while (this.chatLog.childElementCount > CHAT_LINES) this.chatLog.firstElementChild.remove();
-    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+    log.append(line);
+    while (log.childElementCount > CHAT_LINES) log.firstElementChild.remove();
+    if (atEnd || own) log.scrollTop = log.scrollHeight;
   }
 
   /** The community map list and the host's own maps, for the map picker. */
