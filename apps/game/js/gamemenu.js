@@ -349,6 +349,16 @@ function el(tag, className, text) {
   return e;
 }
 
+/** A name as part of an element id: letters, digits, '_' and '-' only. */
+function idPart(name) {
+  return String(name).replace(/[^A-Za-z0-9_-]/g, '-');
+}
+
+/** The id of a hotkey row's button (`kind`: 'change', 'clear' or 'reset'). */
+function keyButtonId(action, kind) {
+  return `game-menu-key-${idPart(action)}-${kind}`;
+}
+
 function button(text, className, onClick) {
   const b = el('button', className, text);
   b.type = 'button';
@@ -645,7 +655,12 @@ export class GameMenu {
     }
     const list = c.querySelector('.game-menu-scroll:not([hidden])');
     if (list) list.scrollTop = scroll;
-    if (focusId) c.querySelector(`#${focusId}`)?.focus({ preventScroll: true });
+    if (focusId) {
+      // A control the change disabled (a hotkey row's Reset) hands focus to its row's next control.
+      let again = c.querySelector(`#${focusId}`);
+      if (again?.disabled && again.dataset.fallback) again = c.querySelector(`#${again.dataset.fallback}`);
+      again?.focus({ preventScroll: true });
+    }
     // A page may name its own first focus (a confirm page: Back, never the action it asks about).
     if (!same || !c.contains(document.activeElement)) (c.querySelector('[data-autofocus]') ?? c.querySelector('.ui-btn-primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
   }
@@ -1206,6 +1221,10 @@ export class GameMenu {
         head.append(el('h2', 'gm-section-title', g.group));
         const changed = g.actions.some((a) => !a.readonly && JSON.stringify(a.keys) !== JSON.stringify(a.defaults));
         const resetGroup = button('Reset group', 'ui-btn ui-btn-sm ui-btn-ghost', () => this.resetGroup(g.actions));
+        // Stable ids: the redraw after a change finds the focused button again (render).
+        resetGroup.id = `game-menu-keygroup-reset-${idPart(g.group)}`;
+        const first = g.actions.find((a) => !a.readonly);
+        if (first) resetGroup.dataset.fallback = keyButtonId(first.name, 'change');
         resetGroup.disabled = !changed;
         head.append(resetGroup);
         main.append(head, this.keyRows(g.actions));
@@ -1252,15 +1271,19 @@ export class GameMenu {
       if (a.readonly) {
         row.classList.add('game-menu-fixed');
       } else {
-        row.append(
-          button(waiting ? 'Cancel' : 'Change', 'ui-btn ui-btn-sm game-menu-mini', () => {
-            this.capture = waiting ? null : a.name;
-            this.message = '';
-            this.render();
-          }),
-          button('Clear', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.unbind(a.name)),
-        );
+        // Stable ids: the redraw after a change keeps focus on the row's button (render).
+        const change = button(waiting ? 'Cancel' : 'Change', 'ui-btn ui-btn-sm game-menu-mini', () => {
+          this.capture = waiting ? null : a.name;
+          this.message = '';
+          this.render();
+        });
+        change.id = keyButtonId(a.name, 'change');
+        const clear = button('Clear', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.unbind(a.name));
+        clear.id = keyButtonId(a.name, 'clear');
+        row.append(change, clear);
         const resetBtn = button('Reset', 'ui-btn ui-btn-sm ui-btn-ghost game-menu-mini', () => reg.reset(a.name));
+        resetBtn.id = keyButtonId(a.name, 'reset');
+        resetBtn.dataset.fallback = change.id;
         resetBtn.disabled = !changed;
         row.append(resetBtn);
       }
