@@ -455,6 +455,43 @@ fn a_plane_ordered_again_on_the_pad_keeps_it_and_nobody_else_is_called() {
 }
 
 #[test]
+fn a_plane_stopped_on_the_pad_takes_off_and_frees_it() {
+    let mut w = arena(MovementModel::WebRA);
+    let fix = depot(&mut w);
+    let planes = damaged(&mut w, "MIG", 2, 8);
+    send(&mut w, &planes, fix);
+    let on_pad = |w: &World| planes.iter().copied().find(|&p| w.actors[p].altitude == 0 && w.on_repair_pad(p));
+    let mut holder = None;
+    for _ in 0..25 * 60 {
+        w.step();
+        holder = on_pad(&w);
+        if holder.is_some() {
+            break;
+        }
+    }
+    let p = holder.expect("a plane lands on the pad");
+    w.queue_order(Order::Stop { player: 0, ids: vec![w.make_ref(p)] });
+    for _ in 0..3 {
+        w.step();
+    }
+    assert_eq!(w.actors[p].activity, Activity::Idle);
+    assert!(w.actors[p].altitude > 0, "the stopped plane leaves the ground");
+    assert!(!w.on_repair_pad(p) || w.actors[p].altitude > 0);
+    // The other plane gets the pad without landing on top of it.
+    let other = planes.iter().copied().find(|&o| o != p).unwrap();
+    let mut called = false;
+    for _ in 0..25 * 30 {
+        w.step();
+        assert!(!(w.actors[p].altitude == 0 && w.on_repair_pad(p)), "the stopped plane does not land on the pad again");
+        if w.actors[other].altitude == 0 && w.on_repair_pad(other) {
+            called = true;
+            break;
+        }
+    }
+    assert!(called, "the next plane in line is repaired");
+}
+
+#[test]
 fn ordering_a_unit_in_line_to_the_same_depot_again_keeps_its_place() {
     for model in MovementModel::ALL {
         let mut w = arena(model);

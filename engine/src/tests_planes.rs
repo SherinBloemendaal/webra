@@ -210,6 +210,113 @@ fn planes_resume_their_attack_once_rearmed_by_default() {
 }
 
 #[test]
+fn a_fresh_attack_order_to_a_rearming_plane_goes_with_the_rounds_left() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    let max = w.max_ammo(p);
+    w.actors[p].air.spent = max - 2;
+    let (tx, ty_) = open_ground(&w, 18);
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 1, tx, ty_, 0);
+    w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
+    w.update_vision();
+    run(&mut w, 5);
+    assert_eq!(w.actors[p].air.phase, Phase::Parked, "rearming without orders");
+    w.queue_order(Order::Attack { player: 0, ids: vec![w.make_ref(p)], target: w.make_ref(tank) });
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Flying, "takes off at once");
+    assert!(w.ammo_left(p) < max, "without waiting for the full pool");
+    // A dry plane still waits for the rearm before it goes.
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[p].air.spent = max;
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 1, tx, ty_, 0);
+    w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
+    w.update_vision();
+    w.queue_order(Order::Attack { player: 0, ids: vec![w.make_ref(p)], target: w.make_ref(tank) });
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Parked, "an empty plane rearms first");
+    let mut left = false;
+    for _ in 0..2000 {
+        w.step();
+        if w.actors[p].air.phase != Phase::Parked {
+            left = true;
+            break;
+        }
+    }
+    assert!(left, "and goes once full");
+    assert_eq!(w.ammo_left(p), max);
+}
+
+#[test]
+fn plane_left_without_its_airfield_takes_off_and_attacks_with_the_rounds_left() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[p].air.spent = 3;
+    let (tx, ty_) = open_ground(&w, 18);
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 1, tx, ty_, 0);
+    w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
+    w.update_vision();
+    w.kill(afld);
+    w.step();
+    w.queue_order(Order::Attack { player: 0, ids: vec![w.make_ref(p)], target: w.make_ref(tank) });
+    run(&mut w, 2);
+    assert_ne!(w.actors[p].air.phase, Phase::Parked, "took off without a full pool");
+    let left = w.ammo_left(p);
+    let hp0 = w.actors[tank].hp;
+    let mut fired = false;
+    for _ in 0..1500 {
+        w.step();
+        if w.ammo_left(p) < left || !w.actors[tank].alive || w.actors[tank].hp < hp0 {
+            fired = true;
+            break;
+        }
+    }
+    assert!(fired, "the plane attacks with what it has");
+}
+
+#[test]
+fn plane_left_without_its_airfield_flies_to_another_one() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let other = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[p].air.spent = 3;
+    w.kill(afld);
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Returning, "short of ammo: looks for another airfield");
+    let mut landed = false;
+    for _ in 0..2000 {
+        w.step();
+        if w.actors[p].air.phase == Phase::Parked {
+            landed = true;
+            break;
+        }
+    }
+    assert!(landed, "landed again");
+    assert_eq!((w.actors[p].x, w.actors[p].y), (w.actors[other].x, w.actors[other].y), "on the other airfield");
+    assert_eq!(w.actors[p].air.base, w.make_ref(other));
+    run(&mut w, 400);
+    assert_eq!(w.ammo_left(p), w.max_ammo(p), "rearmed there");
+    assert_eq!(w.actors[p].air.phase, Phase::Parked, "and stays");
+}
+
+#[test]
+fn full_plane_on_a_captured_airfield_takes_off_and_circles() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[afld].owner = 1;
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Flying, "no host: airborne");
+    assert_eq!(w.actors[p].air.base, crate::world::NONE);
+    run(&mut w, 100);
+    assert!(w.actors[p].altitude > 0, "it does not land on the enemy airfield");
+}
+
+#[test]
 fn ground_weapons_hit_landed_planes_only() {
     let mut w = game("soviet");
     let afld = place(&mut w, 0, "AFLD");
