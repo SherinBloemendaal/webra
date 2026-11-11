@@ -359,6 +359,55 @@ test('the statistics screen: tabs, graphs with their data table, actions, Esc cl
   }
 });
 
+test('the live statistics screen keeps focus, the open data table and its place while the numbers come in', async () => {
+  installDom();
+  let screen = null;
+  try {
+    const game = playedGame(25 * 60);
+    const rules = JSON.parse(game.rules_json());
+    const root = document.createElement('section');
+    document.body.append(root);
+    screen = new StatsScreen(root, {
+      load: async () => JSON.parse(game.observer_report()),
+      players: PLAYERS,
+      rules,
+      localPlayer: 0,
+      actions: [{ label: 'Play again', run() {} }],
+    });
+    await screen.open('graphs');
+    const close = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Close');
+    close.focus();
+    // The same moment again (a paused or finished game): nothing is rebuilt.
+    await screen.refresh();
+    assert.equal(document.activeElement, close, 'the same Close button keeps focus');
+    assert.ok(root.contains(close), 'and is still on the screen');
+    // A new moment rebuilds the screen: focus finds the new Close button, the data table stays open.
+    root.querySelector('details').open = true;
+    for (let t = 0; t < 50; t++) game.tick();
+    await screen.refresh();
+    assert.equal(root.contains(close), false, 'rebuilt');
+    assert.equal(document.activeElement.textContent, 'Close', 'focus on the new Close button');
+    assert.equal(root.querySelector('details').open, true, 'the data table stays open');
+    // The data table's summary keeps focus too (no id: found by its place in the card).
+    root.querySelector('details summary').focus();
+    for (let t = 0; t < 50; t++) game.tick();
+    await screen.refresh();
+    assert.equal(document.activeElement, root.querySelector('details summary'));
+    const action = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Play again');
+    action.focus();
+    for (let t = 0; t < 50; t++) game.tick();
+    await screen.refresh();
+    assert.equal(document.activeElement.textContent, 'Play again');
+    // Opening on another tab still shows that tab, also for the same report.
+    screen.close();
+    await screen.open('basic');
+    assert.equal(root.querySelector('[aria-selected="true"]').textContent, 'Basic');
+  } finally {
+    screen?.dispose();
+    uninstallDom();
+  }
+});
+
 // ---- Restart ------------------------------------------------------------------------------
 
 test('restart settings: stored per tab, taken once, malformed ones dropped', () => {
