@@ -761,3 +761,25 @@ test('a broadcast the protocol refuses is logged and never aborts the handler th
   await s.send(guest, { t: 'chat', text: 'still here' });
   assert.equal(host.last('chat').text, 'still here');
 });
+
+test('a socket that never says hello is closed at its own deadline, not at the next lobby heartbeat', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const s = await makeSession();
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const a = s.connect('a');
+  t.mock.timers.tick(14_000);
+  const b = s.connect('b');
+  // The alarm the first silent socket set: it closes, the second one is 1 s old.
+  t.mock.timers.tick(1_000);
+  await s.session.alarm();
+  assert.ok(a.closed, 'the first socket timed out');
+  assert.equal(b.closed, null);
+  const next = s.ctx.storage.alarm;
+  assert.equal(next, b.deserializeAttachment().since + 15_000, 'the next alarm is the second socket\'s deadline');
+  t.mock.timers.tick(next - Date.now());
+  await s.session.alarm();
+  assert.deepEqual(b.closed, { code: 1008, reason: 'hello timeout' });
+  assert.ok(Date.now() - b.deserializeAttachment().since <= 15_000);
+  assert.equal(host.closed, null);
+});

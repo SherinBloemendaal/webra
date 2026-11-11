@@ -1543,7 +1543,7 @@ export class Session extends DurableObject {
     // Sockets that never said hello are closed.
     for (const ws of this.ctx.getWebSockets()) {
       const att = this.attachment(ws);
-      if (att.client === null && now - att.since > HELLO_TIMEOUT_MS) this.close(ws, CLOSE_POLICY, 'hello timeout');
+      if (att.client === null && now - att.since >= HELLO_TIMEOUT_MS) this.close(ws, CLOSE_POLICY, 'hello timeout');
     }
     if (this.room.phase === 'game') {
       if (this.resumeBuilding) {
@@ -1636,7 +1636,7 @@ export class Session extends DurableObject {
     if (this.room.memberCount() === 0) {
       const expires = this.meta.createdAt + UNUSED_TTL_MS;
       if (!this.meta.everJoined && now < expires) {
-        await this.ctx.storage.setAlarm(Math.min(expires, now + HELLO_TIMEOUT_MS));
+        await this.ctx.storage.setAlarm(Math.min(expires, now + HELLO_TIMEOUT_MS, this.nextHelloDeadline() ?? Infinity));
         return;
       }
       await this.destroy();
@@ -1644,7 +1644,21 @@ export class Session extends DurableObject {
     }
     await this.syncDirectory(true);
     const back = this.room.nextReturnDeadline();
-    await this.ctx.storage.setAlarm(Math.min(now + HEARTBEAT_MS, back ?? Infinity));
+    // A socket still waiting for its hello is closed at its own deadline, not at the next heartbeat.
+    await this.ctx.storage.setAlarm(Math.min(now + HEARTBEAT_MS, back ?? Infinity, this.nextHelloDeadline() ?? Infinity));
+  }
+
+  /** When the next socket that has not said hello yet (and is not closing) times out, or null. */
+  nextHelloDeadline() {
+    let next = null;
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws.readyState > 1) continue;
+      const att = this.attachment(ws);
+      if (att.client !== null || att.gone) continue;
+      const at = att.since + HELLO_TIMEOUT_MS;
+      if (next === null || at < next) next = at;
+    }
+    return next;
   }
 
   async ensureAlarm(at) {
