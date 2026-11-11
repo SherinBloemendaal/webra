@@ -1321,7 +1321,10 @@ export class OnlineUI {
   }
 
   onServerError(m) {
+    // A refused New seed: the button is ready again (it is drawn with the panel).
+    const seeding = Number.isInteger(this.seedPending);
     this.seedPending = null;
+    if (seeding && !this.inGame && this.slotBox && this.state) this.renderMap();
     // A refused options edit: the lobby's options count again, and the controls show them.
     const drafted = this.optionsDraft !== null && this.optionsDraft !== undefined;
     this.optionsDraft = null;

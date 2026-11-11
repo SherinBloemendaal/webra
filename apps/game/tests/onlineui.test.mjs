@@ -732,3 +732,24 @@ test('a lobby update keeps the focus in the spectator panel and a seed being typ
     uninstallDom();
   }
 });
+
+test('New seed is ready again after the server refuses it', async () => {
+  const { ui, sent, lobby } = await hostLobby();
+  try {
+    lobby();
+    const dice = () => [...ui.mapBox.querySelectorAll('button')].find((b) => b.classList.contains('online-dice'));
+    click(dice());
+    assert.equal(sent.at(-1).t, 'options');
+    assert.deepEqual([dice().disabled, dice().textContent], [true, 'Generating...']);
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    assert.deepEqual([dice().disabled, dice().textContent], [false, 'New seed']);
+    // Also while a bulk edit waits (its bar reports the refusal).
+    click(dice());
+    ui.bulkWait = { pending: true };
+    ui.settleBulk = () => {};
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    assert.deepEqual([dice().disabled, dice().textContent], [false, 'New seed']);
+  } finally {
+    uninstallDom();
+  }
+});
