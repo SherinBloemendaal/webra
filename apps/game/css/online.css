@@ -148,15 +148,24 @@
   overflow-wrap: anywhere;
 }
 
+/* The shared button (patterns.css .ui-btn): raised metal, Barlow Condensed
+   capitals at the UI scale, a pressed bevel. */
 .online-btn {
-  padding: calc(7px - var(--ui-cap-nudge)) 14px calc(7px + var(--ui-cap-nudge));
-  background: linear-gradient(180deg, var(--ui-metal-4), var(--ui-metal-2));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  box-sizing: border-box;
+  min-height: max(var(--ctl-row, 2.25rem), 2.5em);
+  padding: 0 1.25em calc(2 * var(--ui-cap-nudge));
+  background: var(--ui-raised);
   color: var(--ui-text);
   border: 1px solid var(--ui-edge);
   box-shadow: var(--ui-bevel);
-  border-radius: 2px;
-  font: 700 12px var(--ui-font);
-  letter-spacing: 1px;
+  border-radius: var(--ui-radius);
+  font: 700 1em / 1.1 var(--ui-font-display);
+  letter-spacing: var(--ui-track-button);
+  text-align: center;
   text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
@@ -177,12 +186,19 @@
 }
 
 .online-btn:hover:not(:disabled) {
-  filter: brightness(1.2);
+  background: var(--ui-raised-hover);
+}
+
+.online-btn:active:not(:disabled) {
+  box-shadow: var(--ui-bevel-in);
+}
+
+.online-btn-danger:hover:not(:disabled) {
+  background: var(--ui-primary);
 }
 
 .online-btn-primary:hover:not(:disabled) {
   background: var(--ui-primary-fill-hover);
-  filter: none;
 }
 
 .online-btn-primary:active:not(:disabled) {
@@ -194,7 +210,7 @@
 }
 
 .online-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -696,8 +712,8 @@
 .online-btn-small {
   margin-left: 6px;
   padding: 0 6px calc(2 * var(--ui-cap-nudge));
-  min-height: 0;
-  font-size: 11px;
+  min-height: 2em;
+  font-size: 0.85em;
   /* Its height is its line: Barlow's normal line height (1.2) less the
      nudge below, so the capitals sit in the middle at the same height. */
   line-height: calc(1.2em - 2 * var(--ui-cap-nudge));
