@@ -1126,6 +1126,10 @@ pub struct World {
     /// another owner may take) clears that until the next rebuild.
     pub(crate) hash_owners: Vec<u32>,
     pub(crate) hash_owners_valid: bool,
+    /// Whether the spatial hash lists an aircraft at all (in the air or
+    /// landed), so the cell movement model looks for landed aircraft only
+    /// when there are some (movement/occupancy.rs `landed_aircraft_at`).
+    pub(crate) hash_aircraft: bool,
     pub terrain_dirty: bool,
     /// Per actor: pressed against a friendly unit that moved in the last
     /// crowd separation, so it waits in a queue rather than being blocked for
@@ -1493,6 +1497,7 @@ impl World {
             hash_items: Vec::new(),
             hash_owners: vec![0; cells],
             hash_owners_valid: true,
+            hash_aircraft: false,
             terrain_dirty: true,
             jammed: Vec::new(),
             svc_index: Default::default(),
@@ -2167,6 +2172,7 @@ impl World {
         self.hash_owners.resize(cells, 0);
         let mut cell_of = std::mem::take(&mut self.hash_items);
         cell_of.clear();
+        self.hash_aircraft = false;
         for a in &self.actors {
             // Mines are tracked per cell by abilities.rs, husks and crates by
             // `leftover_at` (husks.rs, crates.rs): not in the unit hash.
@@ -2174,6 +2180,7 @@ impl World {
                 let ci = self.cell_index(a.x, a.y);
                 counts[ci] += 1;
                 self.hash_owners[ci] |= owner_bit(a.owner);
+                self.hash_aircraft |= a.kind == Kind::Aircraft;
                 cell_of.push(ci as u32);
             } else {
                 cell_of.push(NONE);
