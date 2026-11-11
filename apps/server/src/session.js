@@ -175,6 +175,8 @@ const STALLS_RATE = 0.2;
 const STALLS_BURST = 2;
 /** A directory change that only touches the summary waits this long after the last write. */
 const SUMMARY_WRITE_MS = 10 * 1000;
+/** How often the session's game_presence rows are marked as current (the daily job deletes rows a day old). */
+const PRESENCE_TOUCH_MS = 60 * 60 * 1000;
 /** Reasons after which a member can never come back. */
 const FINAL_REASONS = ['left', 'kicked', 'removed', 'expired'];
 
@@ -813,7 +815,10 @@ export class Session extends DurableObject {
       case C2S.SLOT: {
         const { kicked } = room.setSlot(client, msg);
         await this.saveRoom();
-        if (kicked !== null) this.kick(kicked);
+        if (kicked !== null) {
+          this.kick(kicked);
+          await this.forgetPresence(kicked);
+        }
         this.broadcastLobby();
         await this.syncDirectory();
         return;
@@ -822,7 +827,10 @@ export class Session extends DurableObject {
         // The host's bulk edit: every change checked like a `slot` message, all or none.
         const { kicked } = room.setSlots(client, msg.changes);
         await this.saveRoom();
-        for (const k of kicked) this.kick(k);
+        for (const k of kicked) {
+          this.kick(k);
+          await this.forgetPresence(k);
+        }
         this.broadcastLobby();
         await this.syncDirectory();
         return;
@@ -1398,7 +1406,8 @@ export class Session extends DurableObject {
       room.leave(client);
       if (final) room.forgetKey(client);
       await this.saveRoom();
-      if (final) await this.forgetPresence(client);
+      // No longer present either way; a spectator who rejoins is recorded again (rejoin).
+      await this.forgetPresence(client);
       if (name) this.broadcast({ t: S2C.LEFT, player: null, client, name, reason });
       await this.rematchAfterLoss(client, now);
       return;
@@ -1698,6 +1707,24 @@ export class Session extends DurableObject {
     }
   }
 
+  /**
+   * Mark the session's game_presence rows as current, at most every
+   * PRESENCE_TOUCH_MS (the lobby heartbeat and the game alarm come here
+   * through syncDirectory): the daily job deletes rows a day old, and a ban
+   * must still find the members of a lobby or game that lasts longer.
+   */
+  async touchPresence(now = Date.now()) {
+    // Kept in `meta` (Durable Object storage), so waking the object does not write D1 again.
+    if (!this.meta || now - (this.meta.presenceAt ?? this.meta.createdAt) < PRESENCE_TOUCH_MS) return;
+    this.meta.presenceAt = now;
+    await this.ctx.storage.put('meta', this.meta);
+    try {
+      await this.env.DB.prepare('UPDATE game_presence SET updated_at = ?2 WHERE session_id = ?1').bind(this.meta.id, now).run();
+    } catch (err) {
+      logError('presence refresh failed', err);
+    }
+  }
+
   async forgetPresence(client) {
     if (!this.meta) return;
     try {
@@ -1761,6 +1788,7 @@ export class Session extends DurableObject {
    */
   async syncDirectory(heartbeat = false, now = Date.now()) {
     if (!this.meta || !this.room) return;
+    await this.touchPresence(now);
     const core = {
       id: this.meta.id,
       name: this.meta.name,

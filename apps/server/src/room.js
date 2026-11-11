@@ -340,17 +340,20 @@ export class Room {
     }
     this.spectators = this.spectators.filter((s) => s.client !== client);
     // Leaving a lobby is final: joining again goes through the password check.
-    if (this.phase === 'lobby') {
-      this.forgetKey(client);
-      delete this.accounts[client];
-      delete this.mapStates[client];
-      delete this.returning[client];
-    }
+    if (this.phase === 'lobby') this.forgetMember(client);
     if (this.hostId !== client) return null;
     // The longest-seated human (lowest slot) inherits the host role, else the first spectator.
     const next = this.phase === 'lobby' ? (this.slots.find((s) => s.type === 'human') ?? this.spectators[0]) : null;
     this.hostId = next ? next.client : null;
     return this.hostId;
+  }
+
+  /** A member left the lobby for good (left, or its slot was taken by the host): its key, account, map state and return go. */
+  forgetMember(client) {
+    this.forgetKey(client);
+    delete this.accounts[client];
+    delete this.mapStates[client];
+    delete this.returning[client];
   }
 
   /** Store the SHA-256 (hex) of a member's rejoin key. */
@@ -532,6 +535,8 @@ export class Room {
     this.keepLocks(before);
     // Another player count makes another generated map: its picks go.
     this.keepSpawnsFor(field);
+    // A player whose slot the host freed or replaced is no longer a member.
+    if (result.kicked !== null) this.forgetMember(result.kicked);
     return result;
   }
 
@@ -560,6 +565,7 @@ export class Room {
     }
     this.keepLocks(before);
     this.keepSpawnsFor(field);
+    for (const k of kicked) this.forgetMember(k);
     return { kicked };
   }
 

@@ -692,3 +692,50 @@ test('upgrades and lockouts count an IPv6 /64 as one network', async () => {
   await s.send(elsewhere, hello(s, 'Other', { password: 'secret' }));
   assert.ok(elsewhere.last('welcome'));
 });
+
+test('game_presence follows members: a freed slot and a departing spectator lose their rows; long sessions keep theirs current', async () => {
+  const { FakeD1 } = await import('./fake-d1.mjs');
+  const DB = new FakeD1();
+  const s = await makeSession({ DB, maxPlayers: 3 });
+  const rows = () => DB.rows('SELECT client, updated_at FROM game_presence ORDER BY client');
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const guest = s.connect('guest');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const other = s.connect('other');
+  await s.send(other, hello(s, 'Other'));
+  const ow = other.take('welcome')[0];
+  await s.send(host, { t: 'spectators', max: 1 });
+  const eye = s.connect('eye');
+  await s.send(eye, hello(s, 'Eye', { spectate: true }));
+  const ew = eye.take('welcome')[0];
+  assert.equal(rows().length, 4);
+  // The host frees the guest's slot: its row, account and map state go with it.
+  await s.send(host, { t: 'slot', slot: s.session.room.slotOf(gw.you), type: 'open' });
+  assert.equal(guest.last('error').code, 'kicked');
+  assert.ok(!rows().some((r) => r.client === gw.you), 'the kicked player is no longer present');
+  // The bulk edit too.
+  await s.send(host, { t: 'slots', changes: [{ slot: s.session.room.slotOf(ow.you), type: 'ai', difficulty: 'easy' }] });
+  assert.equal(other.last('error').code, 'kicked');
+  assert.ok(!rows().some((r) => r.client === ow.you));
+  // A spectator of the running game whose tab closes is no longer present (it may still rejoin).
+  const guest2 = s.connect('guest2');
+  await s.send(guest2, hello(s, 'Guest Two'));
+  await s.send(guest2, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  assert.ok(host.last('start'));
+  await s.drop(eye);
+  assert.ok(!rows().some((r) => r.client === ew.you), 'the spectator who closed the tab is gone');
+  const back = s.connect('eye-back');
+  await s.send(back, hello(s, 'Eye', { rejoin: { client: ew.you, key: ew.key } }));
+  assert.ok(back.take('welcome')[0]);
+  assert.ok(rows().some((r) => r.client === ew.you), 'and recorded again when it rejoins');
+  // Rows of a session open for hours are kept current (the daily job deletes rows a day old).
+  const later = Date.now() + 2 * 60 * 60 * 1000;
+  await s.session.syncDirectory(false, later);
+  assert.ok(rows().every((r) => r.updated_at === later), JSON.stringify(rows()));
+  const writes = DB.writes;
+  await s.session.syncDirectory(false, later + 1000);
+  assert.equal(DB.writes, writes, 'at most once an hour');
+});
