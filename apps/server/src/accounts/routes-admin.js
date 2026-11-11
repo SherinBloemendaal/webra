@@ -9,6 +9,7 @@ import {
   ACCOUNT_STATUSES,
   applyGuideAction,
   BAN_REASON_MAX,
+  DEFAULT_SITE_SETTINGS,
   emailKey,
   flagsToMask,
   GUIDE_ACTIONS,
@@ -845,10 +846,15 @@ async function getSite(ctx) {
   return siteView(ctx);
 }
 
+/** The top-level keys PATCH /api/admin/site accepts: every site setting. */
+const SITE_SETTING_KEYS = Object.freeze(Object.keys(DEFAULT_SITE_SETTINGS));
+
 async function patchSite(ctx) {
   const actor = await ctx.requireRole('admin');
   const expected = ifMatchVersion(ctx.request);
-  const body = await ctx.body(['registration', 'login', 'onlineRequiresAccount', 'gameRequiresAccount', 'contentRelay', 'motd']);
+  // Every top-level site setting may be patched (the admin page sends them all);
+  // mergeSiteSettings validates each value. Taken from the protocol so the list cannot drift.
+  const body = await ctx.body(SITE_SETTING_KEYS);
   const site = await loadSite(ctx.db);
   if (site.version !== expected) {
     throw new HttpError(412, 'version_conflict', 'The site settings changed meanwhile. Reload and try again.', { etag: `"v${site.version}"` }, {

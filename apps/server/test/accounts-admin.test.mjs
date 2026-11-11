@@ -353,6 +353,45 @@ test('site settings: versioned edits, validation, audit, effect on signup', asyn
   assert.equal(entry.after.registration.open, false);
 });
 
+test('site settings: the kill switch and live updates can be patched', async () => {
+  const { env, admin } = await cast();
+  const r = await admin.patch('/api/admin/site', { onlineSessionsOpen: false, realtime: false }, { headers: { 'If-Match': '"v0"' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.settings.onlineSessionsOpen, false);
+  assert.equal(r.body.settings.realtime, false);
+  const after = (await admin.get('/api/admin/site')).body.settings;
+  assert.equal(after.onlineSessionsOpen, false);
+  assert.equal(after.realtime, false);
+  assert.equal(after.registration.open, true, 'merge keeps the rest');
+  assert.equal((await new Browser(env).get('/api/site')).status, 200);
+});
+
+test('site settings: the exact body the admin page saves is accepted', async () => {
+  const { env, admin } = await cast();
+  // Same shape as the submit handler in apps/website/assets/admin.js (renderSite).
+  const patch = {
+    registration: { open: false, approvalRequired: false, emailVerification: false },
+    login: { password: true, email: false, discord: false, passkey: true },
+    gameRequiresAccount: false,
+    onlineRequiresAccount: false,
+    onlineSessionsOpen: false,
+    contentRelay: false,
+    realtime: false,
+    motd: 'Back at eight',
+  };
+  const r = await admin.patch('/api/admin/site', patch, { headers: { 'If-Match': '"v0"' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const saved = (await admin.get('/api/admin/site')).body.settings;
+  assert.equal(saved.version, 1);
+  for (const [k, v] of Object.entries(patch)) assert.deepEqual(saved[k], v, k);
+  const pub = (await new Browser(env).get('/api/site')).body;
+  assert.equal(pub.motd, 'Back at eight');
+  const again = await admin.patch('/api/admin/site', { ...patch, onlineSessionsOpen: true, realtime: true }, { headers: { 'If-Match': '"v1"' } });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.settings.onlineSessionsOpen, true);
+  assert.equal(again.body.settings.realtime, true);
+});
+
 test('audit log filters and stats', async () => {
   const { admin, mod, target, user } = await cast();
   await mod.post(`/api/admin/users/${target.user.id}/approve`, {});
