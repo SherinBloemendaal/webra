@@ -1981,7 +1981,8 @@ checks, `Game.player_count()`. Players: 2..8, `team` per player (0 = free for
 all); `player_json` has `won`, `defeated` and `team`.
 
 Observers (engine/src/observer.rs): `Game.observer_player()` (255) passed to
-`build_render`, `build_render_records` and `fog_ptr` renders the whole map with every actor live (no
+`build_render`, `build_render_records` and `fog_ptr` (and to the radar's
+`radar_state` and `minimap_blips`, see Radar minimap below) renders the whole map with every actor live (no
 ghosts, no owner-only decorations); 254 (engine/src/combined.rs, OpenRA's "All
 players" view) renders what every non-neutral player sees together: cells any
 of them sees, structures any of them remembers, fog where any explored, gap
@@ -3343,7 +3344,19 @@ enemy radar jammer (`jams_radar`, OpenRA `ProximityExternalCondition@JAMMER`,
 18c0) in range. Blips are empty while it is offline; enemy actors appear only
 while visible and not cloaked, enemy structures also as remembered ghosts,
 and nothing hostile within range of an enemy jammer. Terrain and fog come
-from `terrain_ptr` and `fog_ptr`.
+from `terrain_ptr` and `fog_ptr`. Viewers (spectators, replays, a defeated
+player watching on) have a radar too, which follows the observed view
+(OpenRA's observer radar): one player's as that player sees it, or the
+spectator views, whose radar is always online: `observer_player()` (255)
+lists every structure and unit with no fog, cloak or jammer filtering and no
+ghosts (its `fog_ptr` is all visible), 254 (combined) every player's own
+actors plus what any of them sees or remembers, with the combined fog. Both
+only set the render flags (and swap slot 0's vision, as the combined render
+does) for the length of the call: no simulation state, hash, save or wire
+change. The client has one radar: in the sidebar for players, in the
+observer panel's slot for viewers (js/observer.js `radarSlot`, moved there
+with `Minimap.mount` when a player starts watching), where clicks only move
+the camera (`Input.ordersOff`).
 
 Radar input is client side and adds no order kinds (OpenRA RadarWidget): a
 left click on the radar is a click on that world spot (`Input.radarClick`),

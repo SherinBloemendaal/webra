@@ -21,6 +21,14 @@
 // selected (or a mode on) a tap gives the order and a drag moves the
 // camera; with nothing selected a touch moves the camera at once.
 //
+// Spectators, replays and a defeated player who watches on have no sidebar:
+// their radar sits with the observer panel (js/observer.js radarSlot, moved
+// there with `mount`) and follows the observed view (`setView`): one
+// player's radar as that player sees it, or the whole map and all players'
+// vision together, whose radar the engine always has online
+// (engine/src/minimap.rs, the observer and combined pseudo players). They
+// give no orders (js/input.js ordersOff), so their clicks only move the camera.
+//
 // Cost: one pixel per cell on a small canvas scaled up by CSS. The picture is
 // rebuilt a few times per second (one pass over the cells plus one per blip);
 // every frame only the camera rectangle moves.
@@ -228,11 +236,12 @@ function el(tag, className) {
 
 export class Minimap {
   /**
-   * @param {HTMLElement} parent the sidebar's radar slot (#radar, js/sidebar.js)
+   * @param {HTMLElement | null} parent the sidebar's radar slot (#radar, js/sidebar.js), or the observer
+   *   panel's (js/observer.js radarSlot); null: placed later with `mount`, and not refreshed until then
    * @param {object} o
    * @param {object} o.game Game (orders go through it, so pass the audio-watched one)
    * @param {(player: number) => Uint8Array | null} o.fog the player's fog bytes (game handle `fog_bytes`, js/sim/proxy.js); null until known
-   * @param {number} o.player local player
+   * @param {number} o.player whose radar it shows: the local player, or the observed view (`setView`)
    * @param {object} o.input js/input.js Input (camera, selection, order flash)
    * @param {number[][]} o.colors team colours (TEAM_COLORS, may be reordered in place)
    * @param {string} [o.biome] the map's biome (terrain colours)
@@ -293,7 +302,8 @@ export class Minimap {
     layer.append(this.canvas, this.pingCanvas, this.camera);
     this.screen.append(this.staticCanvas, layer);
     this.root.append(this.screen, this.label);
-    parent.prepend(this.root);
+    this.parent = parent ?? null;
+    this.parent?.prepend(this.root);
     this.setLabel(radarLabel(this.state));
 
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -320,6 +330,32 @@ export class Minimap {
     this.resizer?.disconnect();
     this.resizer = null;
     this.root.remove();
+    this.parent = null;
+  }
+
+  /**
+   * Move the radar into `parent` (the observer panel's slot when a player
+   * starts watching, js/main.js): the same radar, sized to its new box. A
+   * pointer pressed on it is let go.
+   */
+  mount(parent) {
+    if (parent === this.parent) return;
+    this.press = null;
+    this.hover = null;
+    parent.prepend(this.root);
+    this.parent = parent;
+    this.fit();
+  }
+
+  /**
+   * Show `player`'s radar: a player index, or the spectator views
+   * (js/observer.js OBSERVER_VIEW, COMBINED_VIEW), which the engine answers
+   * for. Asked again at once; the picture opens or closes from where it is.
+   */
+  setView(player) {
+    if (player === this.player) return;
+    this.player = player;
+    this.lastRefresh = -Infinity;
   }
 
   /** Size the picture to the largest map-shaped rectangle in the radar box. */
@@ -454,6 +490,8 @@ export class Minimap {
    * `pingTime`: the simulation clock (ms, js/simclock.js) the radar pings run on.
    */
   frame(now, pingTime = now) {
+    // Not on the page yet: a viewer's radar waits for the observer panel's slot.
+    if (!this.parent) return;
     if (now - this.lastRefresh >= REFRESH_MS) {
       this.lastRefresh = now;
       this.refresh(now);

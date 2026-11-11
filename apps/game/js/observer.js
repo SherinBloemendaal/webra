@@ -185,13 +185,16 @@ export class ObserverPanel {
    *   paintCameo?(canvas: HTMLCanvasElement, actor: object, teamRgb: number[]): void,
    *   paintPower?(canvas: HTMLCanvasElement, icon: string): void,
    *   iconBacking?: { width: number, height: number },
+   *   compact?: boolean,
    * }} opts
    *   `onStats`: a Statistics button that opens the full statistics screen (js/stats.js);
    *   `panel`: the statistics panel shown first (PANELS);
    *   `actors`: rules_json actors (rules order), for the icon panels;
-   *   `paintCameo` / `paintPower`: draw an icon's picture (js/cameo.js), at `iconBacking` pixels
+   *   `paintCameo` / `paintPower`: draw an icon's picture (js/cameo.js), at `iconBacking` pixels;
+   *   `compact`: a phone layout (js/layout.js), see `radarSlot`
    */
-  constructor(parent, { players, view = OBSERVER_VIEW, onView, onStats = null, panel = 'basic', actors = [], ticksPerSecond = 25, lowPowerModifier = 100, paintCameo = () => {}, paintPower = () => {}, iconBacking }) {
+  constructor(parent, { players, view = OBSERVER_VIEW, onView, onStats = null, panel = 'basic', actors = [], ticksPerSecond = 25, lowPowerModifier = 100, paintCameo = () => {}, paintPower = () => {}, iconBacking, compact = false }) {
+    this.parent = parent;
     this.players = players;
     this.onView = onView;
     this.view = view;
@@ -253,8 +256,23 @@ export class ObserverPanel {
     this.graph.setAttribute('role', 'img');
     this.root.append(head, this.table, this.graph);
     parent.append(this.root);
+    this.head = head;
+    // The radar (js/minimap.js, mounted here by js/main.js): the viewers'
+    // only one, since they have no sidebar. A corner panel of its own on
+    // the battlefield; on phones a row of this panel under the view buttons,
+    // so it never covers the panel, the replay bar or the chat (css/records.css).
+    this.radarSlot = el('div', 'observer-radar');
+    this.setCompact(compact);
     this.setView(view, false);
     this.showPanel(panel);
+  }
+
+  /** Phone layouts (js/layout.js) put the radar in the panel under the view buttons, others in its corner. */
+  setCompact(compact) {
+    if (!!compact === this.compact) return;
+    this.compact = !!compact;
+    if (this.compact) this.head.after(this.radarSlot);
+    else this.parent.append(this.radarSlot);
   }
 
   setView(view, notify = true) {
@@ -459,6 +477,7 @@ export class ObserverPanel {
     this.dropLayout();
     for (const tip of this.viewTips) tip.detach();
     this.viewTips = [];
+    this.radarSlot.remove();
     this.root.remove();
   }
 }

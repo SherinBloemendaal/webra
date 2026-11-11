@@ -243,9 +243,11 @@ export class TouchControls {
    * that spot of the battlefield would give (js/input.js radarClick), with
    * the action bar's substitutes: Add queues it (Shift), Force force attacks
    * what is there. Resolves with true when it was an order; false lets the
-   * radar move the camera there instead.
+   * radar move the camera there instead. Viewers and a defeated player
+   * watching on give no orders (js/input.js ordersOff): their taps move the camera.
    */
   async radarTap(w) {
+    if (this.input.ordersOff()) return false;
     if (this.force) {
       const ordered = await this.forceAttackAt(w);
       if (ordered && !this.queue) this.force = false;
@@ -259,6 +261,7 @@ export class TouchControls {
 
   /** Whether a radar tap may give an order (else it moves the camera at once): units selected or a mode on. */
   radarMayOrder() {
+    if (this.input.ordersOff()) return false;
     return this.force || this.input.radarMayOrder();
   }
 
