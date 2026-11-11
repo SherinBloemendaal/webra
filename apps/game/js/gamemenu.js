@@ -585,6 +585,8 @@ export class GameMenu {
       if (inside && t.closest('[role="listbox"], .ui-sp-panel')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      // A held Esc acts once: its auto-repeat would toggle the menu (or walk back through its pages) at the key repeat rate.
+      if (e.repeat) return;
       // An open help tip closes first.
       if (closeOpenTip()) return;
       if (this.view === 'main') this.close();
@@ -644,7 +646,8 @@ export class GameMenu {
     const list = c.querySelector('.game-menu-scroll:not([hidden])');
     if (list) list.scrollTop = scroll;
     if (focusId) c.querySelector(`#${focusId}`)?.focus({ preventScroll: true });
-    if (!same || !c.contains(document.activeElement)) (c.querySelector('.ui-btn-primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
+    // A page may name its own first focus (a confirm page: Back, never the action it asks about).
+    if (!same || !c.contains(document.activeElement)) (c.querySelector('[data-autofocus]') ?? c.querySelector('.ui-btn-primary') ?? c.querySelector('button'))?.focus({ preventScroll: true });
   }
 
   // ---- Main page -------------------------------------------------------------------
@@ -739,14 +742,35 @@ export class GameMenu {
     if (this.isOpen) this.render();
   }
 
-  /** A confirm step: title, text, the main action and Back (to the menu, or `back`). */
+  /**
+   * A confirm step: title, text, the main action and Back (to the menu, or `back`).
+   * Focus starts on Back, and the action ignores the auto-repeat of a held Enter
+   * (a button clicks on every keydown of Enter): a key held on the button that
+   * opened this page never answers it. Space clicks on its release only.
+   */
   confirm(c, title, text, action, actionLabel, backLabel = 'Back', back = () => this.show('main')) {
     c.append(pageHead(title, null));
     const body = el('div', 'gm-confirm');
     body.append(el('p', 'gm-text', text));
     const row = el('div', 'ui-dialog-actions');
-    const main = button(actionLabel, 'ui-btn ui-btn-primary', action);
-    row.append(button(backLabel, 'ui-btn ui-btn-ghost', back), main);
+    let repeated = false;
+    const main = button(actionLabel, 'ui-btn ui-btn-primary', () => {
+      if (repeated) return;
+      action();
+    });
+    main.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') repeated = !!e.repeat;
+    });
+    // The key's release, a pointer or focus moving away ends the held key.
+    const release = () => {
+      repeated = false;
+    };
+    main.addEventListener('keyup', release);
+    main.addEventListener('pointerdown', release);
+    main.addEventListener('blur', release);
+    const backButton = button(backLabel, 'ui-btn ui-btn-ghost', back);
+    backButton.dataset.autofocus = '';
+    row.append(backButton, main);
     body.append(row);
     c.append(body);
     return c;

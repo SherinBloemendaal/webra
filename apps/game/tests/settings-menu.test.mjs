@@ -61,7 +61,7 @@ function runMixer(audio) {
   return audio.mixer.buses;
 }
 
-function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = true } = {}) {
+function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = true, opts = {} } = {}) {
   const registry = createRegistry({ storage: memoryStorage() });
   const settings = createSettings(registry);
   const hotkeys = new HotkeyRegistry(settings);
@@ -91,6 +91,7 @@ function setup({ win = fakeWindow(), withAudio = true, onContent, pointerLock = 
     onContent,
     onLeave() {},
     onExit() {},
+    ...opts,
   });
   menu.open();
   menu.show('settings');
@@ -598,4 +599,67 @@ test('controls page: Right click in the build menu, OpenRA by default, with help
   assert.match(HELP['settings.buildRightClick'], /stack/);
   assert.match(HELP['controls.production'], /whether you have the credits or not/);
   assert.ok(textOf(root).includes(HELP['controls.production']), 'the build menu note is on the page');
+});
+
+test('confirm pages: focus starts on Back, and a held Enter neither answers the question nor reaches it', () => {
+  let surrendered = 0;
+  let left = 0;
+  const { root, menu } = setup({
+    opts: {
+      surrender: { shown: () => true, enabled: () => true, run: () => surrendered++ },
+      onLeave: () => left++,
+    },
+  });
+  const enter = (b, repeat) => {
+    b.dispatchEvent(new FakeEvent('keydown', { key: 'Enter', repeat }));
+    // A button clicks on every keydown of Enter, the repeats included.
+    b.click();
+  };
+  menu.show('main');
+  const open = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Surrender');
+  enter(open, false);
+  assert.equal(menu.view, 'surrender');
+  assert.equal(doc.activeElement.textContent, 'Stay', 'focus is on Stay, not on Surrender');
+  // The held key moved on to the page's action (a Tab while holding it): its repeats are ignored.
+  const action = [...root.querySelectorAll('.gm-confirm button')].find((b) => b.textContent === 'Surrender');
+  enter(action, true);
+  assert.equal(surrendered, 0, 'a repeated Enter does not surrender');
+  action.dispatchEvent(new FakeEvent('keyup', { key: 'Enter' }));
+  enter(action, false);
+  assert.equal(surrendered, 1, 'a fresh press does');
+  menu.open();
+  menu.show('leave');
+  assert.equal(doc.activeElement.textContent, 'Back');
+  const leave = [...root.querySelectorAll('.gm-confirm button')].find((b) => b.textContent === 'Leave');
+  enter(leave, true);
+  assert.equal(left, 0);
+  leave.dispatchEvent(new FakeEvent('pointerdown'));
+  click(leave);
+  assert.equal(left, 1, 'a mouse click answers at once');
+});
+
+test('a held Esc acts once: its auto-repeat neither closes the menu nor walks back through its pages', () => {
+  const listeners = [];
+  globalThis.window.addEventListener = (type, fn) => listeners.push([type, fn]);
+  globalThis.Element = globalThis.HTMLElement;
+  try {
+    const { menu } = setup();
+    const onKey = listeners.find(([t]) => t === 'keydown')[1];
+    const esc = (repeat) => {
+      const e = Object.assign(new FakeEvent('keydown', { key: 'Escape', repeat }), { target: doc.body });
+      onKey(e);
+      return e;
+    };
+    const held = esc(true);
+    assert.equal(menu.view, 'settings', 'a repeat keeps the page');
+    assert.equal(held.defaultPrevented, true, 'and does not reach the game');
+    esc(false);
+    assert.equal(menu.view, 'main');
+    esc(true);
+    assert.equal(menu.isOpen, true, 'a repeat keeps the menu open');
+    esc(false);
+    assert.equal(menu.isOpen, false);
+  } finally {
+    delete globalThis.Element;
+  }
 });
