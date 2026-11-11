@@ -637,6 +637,7 @@ export class GameMenu {
     else if (this.view === 'music') this.renderMusic(c);
     else if (this.view === 'guide' && this.opts.guide) this.renderGuidePage(c);
     else if (this.view === 'guideReset' && this.opts.guide) this.renderGuideReset(c);
+    else if (this.view === 'keysReset') this.renderKeysReset(c);
     else if (this.view === 'network' && this.net) this.renderNetwork(c);
     else if (this.view === 'leave' || this.view === 'exit') this.renderConfirm(c, this.view);
     else if (this.view === 'restart') this.renderRestart(c);
@@ -932,6 +933,26 @@ export class GameMenu {
     );
   }
 
+  /** Reset all hotkeys, asked first: the player's own keys are lost. Back returns to the Hotkeys tab. */
+  renderKeysReset(c) {
+    const signedIn = this.opts.syncStatus?.()?.signedIn === true;
+    this.confirm(
+      c,
+      'Reset all hotkeys',
+      `Reset every hotkey to its default? Your own keys are lost.${signedIn ? ' Your account takes this over, so your other devices get the default keys too.' : ''}`,
+      () => {
+        this.opts.hotkeys.reset();
+        this.view = 'settings';
+        this.settingsTab = 'hotkeys';
+        this.message = 'Every hotkey is back to its default.';
+        this.render();
+      },
+      'Reset all hotkeys',
+      'Back',
+      () => this.show('settings', 'hotkeys'),
+    );
+  }
+
   renderNetwork(c) {
     const status = el('p', 'gm-status');
     status.append(led('warn'), el('span', null, 'Online: the game goes on while this menu is open.'));
@@ -1006,8 +1027,9 @@ export class GameMenu {
   /** Put back the settings of one tab. */
   resetSection(tab) {
     const s = this.opts.settings;
+    // Every hotkey at once: asked first (renderKeysReset).
     if (tab === 'hotkeys') {
-      this.opts.hotkeys.reset();
+      this.show('keysReset');
       return;
     }
     for (const key of SECTION_SETTINGS[tab] ?? []) s.reset(key);

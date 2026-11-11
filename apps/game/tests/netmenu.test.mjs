@@ -322,6 +322,31 @@ test('hotkeys tab: Change, Clear and Reset keep keyboard focus on their row', ()
   menu.dispose();
 });
 
+test('hotkeys tab: Reset all hotkeys asks first and changes nothing until confirmed', () => {
+  const { menu, root, hotkeys } = menuWith();
+  hotkeys.registerAction('guard', ['D'], () => {}, { label: 'Guard', group: 'Unit Commands' });
+  menu.open();
+  menu.show('controls');
+  hotkeys.rebind('guard', 'G');
+  const resetAll = () => [...root.querySelectorAll('.gm-foot button')].find((b) => b.textContent === 'Reset all hotkeys');
+  click(resetAll());
+  assert.equal(menu.view, 'keysReset');
+  assert.match(textOf(root), /Reset every hotkey to its default\?/);
+  assert.deepEqual(hotkeys.bindingsFor('guard'), ['G'], 'nothing changed yet');
+  assert.equal(doc.activeElement.textContent, 'Back');
+  click(doc.activeElement);
+  assert.equal(menu.view, 'settings');
+  assert.equal(root.querySelector('#game-menu-tab-hotkeys').getAttribute('aria-selected'), 'true', 'Back returns to the Hotkeys tab');
+  assert.deepEqual(hotkeys.bindingsFor('guard'), ['G']);
+  click(resetAll());
+  click([...root.querySelectorAll('.gm-confirm button')].find((b) => b.textContent === 'Reset all hotkeys'));
+  assert.deepEqual(hotkeys.bindingsFor('guard'), ['D']);
+  assert.equal(menu.view, 'settings');
+  assert.equal(root.querySelector('#game-menu-tab-hotkeys').getAttribute('aria-selected'), 'true');
+  assert.match(textOf(root), /Every hotkey is back to its default/);
+  menu.dispose();
+});
+
 test('sync line: saved in this browser, synced, syncing, offline, not synced', () => {
   assert.match(syncLine(null).text, /Saved in this browser/);
   assert.deepEqual(syncLine({ signedIn: true, status: 'synced' }), { text: 'Synced to your account', led: 'ok' });
