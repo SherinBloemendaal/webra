@@ -269,10 +269,9 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
   });
   const byPlayer = new Map(rows.map((r) => [r.player, r]));
   const winners = rows.filter((r) => r.s.won);
-  const over = report.winner !== null && report.winner !== undefined;
-  const result = over
-    ? `${winners.map((r) => r.name).join(' and ') || 'Nobody'} ${winners.length === 1 ? 'wins' : 'win'}`
-    : 'The game is still on';
+  // Over with a winner, or without one (`endTick`: the time limit can end a game where everyone lost).
+  const over = (report.winner !== null && report.winner !== undefined) || (report.endTick !== null && report.endTick !== undefined) || !!report.gameOver;
+  const result = !over ? 'The game is still on' : winners.length ? `${winners.map((r) => r.name).join(' and ')} ${winners.length === 1 ? 'wins' : 'win'}` : 'Nobody won';
   const ranking = rows
     .slice()
     .sort((a, b) => b.s.score - a.s.score || a.player - b.player)
