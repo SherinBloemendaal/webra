@@ -83,6 +83,7 @@ import {
   parseClientMessage,
   PROTOCOL_VERSION,
   RECONNECT_GRACE_MS,
+  REPLAY_MAX_TICKS,
   REJOINABLE_REASONS,
   RESUME_TIMEOUT_MS,
   S2C,
@@ -1107,10 +1108,25 @@ export class Session extends DurableObject {
   /** A `save` message from a player: propose, accept, decline or withdraw. */
   async saveMessage(client, accept, now = Date.now()) {
     const room = this.room;
+    if (accept && !room.saving && this.saveTooLong()) {
+      // No vote for a save that cannot be kept: only the proposer is told.
+      const ws = this.socketOf(client);
+      if (ws) this.send(ws, { t: S2C.SAVE, state: 'cancelled', reason: 'too_long' });
+      return;
+    }
     const reason = accept && !room.saving ? (room.proposeSave(client, now), null) : room.answerSave(client, accept, now);
     await this.saveRoom();
     if (reason) return this.broadcastSaveEnd(reason);
     return this.saveProgress(now);
+  }
+
+  /**
+   * Whether a save agreed now could not be kept: the order log is full, or
+   * the save point lies beyond what a save file holds (REPLAY_MAX_TICKS).
+   */
+  saveTooLong() {
+    if (!this.log || this.log.full || !this.lockstep) return true;
+    return this.room.saveTick(this.lockstep.next + this.lockstep.delay) + 1 > REPLAY_MAX_TICKS;
   }
 
   /** Everyone accepted (and is connected): fix the save point; else tell everyone where it stands. */
@@ -1118,6 +1134,12 @@ export class Session extends DurableObject {
     const room = this.room;
     if (!room?.saving || room.saving.phase !== 'open' || !this.lockstep) return;
     if (room.saveAgreed((c) => this.lockstep.isActive(room.seatOf(c)))) {
+      if (this.saveTooLong()) {
+        // The game grew too long while the players voted.
+        room.cancelSave('too_long', now);
+        await this.saveRoom();
+        return this.broadcastSaveEnd('too_long');
+      }
       const tick = room.agreeSave(this.lockstep.next + this.lockstep.delay, now);
       await this.saveRoom();
       this.broadcast({ t: S2C.SAVE, state: 'agreed', tick });
@@ -1158,7 +1180,8 @@ export class Session extends DurableObject {
 
   /** Store the record of a save after frame `tick`. Returns { id } or a cancel reason. */
   async recordSavePoint(tick, hash, voters, now) {
-    if (!this.log || this.log.full) return 'too_long';
+    // A save file holds at most REPLAY_MAX_TICKS ticks (a resume refuses more).
+    if (!this.log || this.log.full || tick + 1 > REPLAY_MAX_TICKS) return 'too_long';
     // Chunk by chunk: one chunk of the order log in memory at a time.
     const digest = new FramesDigest();
     for await (const chunk of this.log.chunks()) {

@@ -146,6 +146,39 @@ test('saving: different hashes, a decline, anonymous players and spectators all 
   }
 });
 
+test('a game past the longest save file is refused as too long, before and during the vote, without an error', async (t) => {
+  const { REPLAY_MAX_TICKS } = await import('@webra/protocol');
+  const env = makeEnv({ email: false });
+  const accounts = await accountsFor(env);
+  const ctx = await game(env, accounts);
+  const { s, host, guest, H, G } = ctx;
+  await play(s, [H, G], 0, 10);
+  const logged = t.mock.method(console, 'error', () => {});
+  const ls = s.session.lockstep;
+  const real = ls.next;
+  // The relay is past the last tick a save file can hold.
+  ls.next = REPLAY_MAX_TICKS;
+  await s.send(guest, { t: 'save', accept: true });
+  assert.deepEqual(guest.last('save'), { t: 'save', state: 'cancelled', reason: 'too_long' });
+  assert.equal(host.last('save'), undefined, 'nobody else is asked to vote');
+  assert.equal(s.session.room.saving, null);
+  // It grows too long while the players vote.
+  ls.next = real;
+  await s.send(guest, { t: 'save', accept: true });
+  assert.equal(host.last('save').state, 'open');
+  ls.next = REPLAY_MAX_TICKS - 10;
+  await s.send(host, { t: 'save', accept: true });
+  assert.deepEqual([host.last('save').state, host.last('save').reason], ['cancelled', 'too_long']);
+  assert.deepEqual([guest.last('save').state, guest.last('save').reason], ['cancelled', 'too_long']);
+  ls.next = real;
+  // A save point past the limit is never recorded (the file could not be resumed).
+  assert.equal(await s.session.recordSavePoint(REPLAY_MAX_TICKS, 'abcd', [ctx.hw.you, ctx.gw.you], Date.now()), 'too_long');
+  assert.equal(logged.mock.callCount(), 0, 'nothing is reported as an error');
+  assert.equal(env.DB.rows('SELECT COUNT(*) AS n FROM online_saves')[0].n, 0);
+  valid(host);
+  valid(guest);
+});
+
 /** The save file a player's client keeps (js/replay.js Recorder.encodeOnlineSave). */
 async function saveFile(ctx, saved, agreed, { player = 0, tamper = false } = {}) {
   const frames = structuredClone((await ctx.s.session.log.read()).filter(([t]) => t <= agreed.tick));

@@ -1223,8 +1223,13 @@ export class Room {
    * next frame the server sends plus the order delay, so no player ran it).
    * Returns it.
    */
+  /** The save point for a save agreed when frame `from` is the earliest a player can still run: the next hash tick. */
+  saveTick(from) {
+    return Math.ceil(from / HASH_INTERVAL) * HASH_INTERVAL;
+  }
+
   agreeSave(from, now) {
-    const tick = Math.ceil(from / HASH_INTERVAL) * HASH_INTERVAL;
+    const tick = this.saveTick(from);
     this.saving = { phase: 'agreed', tick, hashes: {}, voters: this.saveVoters(), until: now + SAVE_HASH_MS };
     return tick;
   }
