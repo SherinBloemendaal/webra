@@ -51,8 +51,9 @@ import { MemoryStore } from '../js/audio/store.js';
 import { SoundBank } from '../js/audio/bank.js';
 import { shuffle, Jukebox } from '../js/audio/music.js';
 import { Mixer, VOICE_LIMITS } from '../js/audio/mixer.js';
+import { checkFile } from '../js/content/install.js';
 import { AudioSystem, FOG_VISIBLE, CLICKABLE, holdsGameAudio } from '../js/audio/index.js';
-import { sineSamples, imaAud, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
+import { sineSamples, imaAud, audFile, buildMix, buildEncryptedMix, testRsaKey } from './audio-fixtures.mjs';
 
 const wasm = fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url));
 initSync({ module: readFileSync(wasm) });
@@ -834,6 +835,44 @@ test('installed originals replace synthesized sounds unless switched off', async
   assert.ok(b.buffer.samples.length > 1000);
   assert.equal(bank.resolve(fireSound('M1Carbine'), () => 0).original, false, 'missing originals fall back');
   assert.equal(bank.resolve({ synth: null, originals: ['nothing.aud'] }), null);
+});
+
+test('a broken or empty installed original falls back to another candidate or our own sound (I-2)', async () => {
+  const empty = audFile({ chunks: [[new Uint8Array(0), 0]] });
+  assert.equal(checkFile('empty.aud', empty), 'empty AUD sound', 'the install refuses an AUD without samples');
+  assert.equal(checkFile('good.aud', tone()), null);
+  const store = new MemoryStore();
+  await store.putAll([
+    { name: 'broken.aud', bytes: new Uint8Array([...tone().subarray(0, 12), 1, 2, 3, 4, 5, 6, 7, 8]) }, // a bad chunk
+    { name: 'empty.aud', bytes: empty },
+    { name: 'good.aud', bytes: tone() },
+  ]);
+  // Like the real mixer: no buffer for zero samples.
+  const mixer = { ctx: { sampleRate: 22050 }, buffer: (samples, rate) => (samples.length ? { samples, rate } : null) };
+  const bank = new SoundBank(mixer, () => ({ original: true }));
+  await bank.loadInstalled(store);
+  const synth = fireSound('90mm').synth;
+  for (const name of ['broken.aud', 'empty.aud']) {
+    const sound = { synth, originals: [name], openra: true };
+    for (let i = 0; i < 3; i++) {
+      const r = bank.resolve(sound, () => 0);
+      assert.ok(r, `${name}: not silent`);
+      assert.equal(r.original, false, `${name}: our own sound plays`);
+    }
+    assert.equal(bank.keepsOriginal(sound), false, `${name} no longer counts as installed`);
+    const layered = bank.resolveAll({ ...sound, layered: true }, () => 0);
+    assert.equal(layered.length, 1, `${name}: a layered cue falls back too`);
+  }
+  // One broken and one good candidate: whichever is picked, the good one plays.
+  const bank2 = new SoundBank(mixer, () => ({ original: true }));
+  await bank2.loadInstalled(store);
+  const mixed = { synth, originals: ['broken.aud', 'empty.aud', 'good.aud'], openra: true };
+  for (const pick of [0, 0.5, 0.99]) {
+    const r = bank2.resolve(mixed, () => pick);
+    assert.equal(r.original, true);
+    assert.equal(r.buffer.samples.length, 400, 'the good file');
+  }
+  assert.equal(bank2.keepsOriginal(mixed), true, 'a cue with a good original keeps it');
 });
 
 // ---- Structures: placing, deploying, packing up ----------------------------------------------------

@@ -89,23 +89,28 @@ export class SoundBank {
     return (sound.originals ?? []).every((n) => OPENRA_MADE.has(n));
   }
 
-  /** Installed candidates of a sound, when originals are on. */
+  /**
+   * Installed candidates of a sound, when originals are on. A file that gave
+   * no buffer (it does not decode, decodes to nothing, or has a sample rate
+   * the browser refuses) does not count: the cue plays another candidate or
+   * falls back to our own sound instead of staying silent.
+   */
   installed(sound) {
     if (!this.prefs().original || !sound.originals?.length) return [];
-    return sound.originals.filter((n) => this.originals.has(n));
+    return sound.originals.filter((n) => this.originals.has(n) && this.decoded.get(n) !== null);
   }
 
   originalBuffer(name) {
     if (!this.decoded.has(name)) {
+      if (!this.mixer.ctx) return null; // not unlocked yet: try again later
       let buf = null;
       try {
         // Decoded on first use, on the main thread: the performance capture times it (js/perfcapture.js).
         const { sampleRate, samples } = perfTrace.span('audio.decode', () => decodeAud(this.originals.get(name)), { name });
         buf = this.mixer.buffer(samples, sampleRate);
       } catch {
-        buf = null; // checked at install time; a broken record just falls back to the synthesized sound
+        buf = null; // checked at install time; a broken record no longer counts as installed (`installed`)
       }
-      if (!buf && !this.mixer.ctx) return null; // not unlocked yet: try again later
       this.decoded.set(name, buf);
     }
     return this.decoded.get(name);
@@ -168,9 +173,11 @@ export class SoundBank {
     if (packed.length) return { buffer: packed[Math.floor(random() * packed.length)], rate: 1, original: false, pack: true };
     const own = this.packBuffer(sound.synth);
     if (own) return { buffer: own, rate: 1, original: false, pack: true };
+    // A picked original that gives no buffer: try the other installed ones.
     const names = this.installed(sound);
-    if (names.length) {
-      const buffer = this.originalBuffer(names[Math.floor(random() * names.length)]);
+    while (names.length) {
+      const [name] = names.splice(Math.floor(random() * names.length), 1);
+      const buffer = this.originalBuffer(name);
       if (buffer) return { buffer, rate: 1, original: true };
     }
     if (!sound.synth || this.keepsOriginal(sound)) return null;
