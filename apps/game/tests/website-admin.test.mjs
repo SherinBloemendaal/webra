@@ -724,3 +724,15 @@ test('dashboard: an admin hint reloads the table (same page and filters) and the
   assert.match(textOf(root.querySelector('.pager')), /of 33/, 'the newcomer counts');
   assert.match(textOf(root.querySelector('.drawer')), /Renamed Live/, 'the open detail of that user loaded again');
 });
+
+test('dashboard overview: the pending_email tile says what it counts; unconfirmed addresses have a tile of their own', async () => {
+  const server = new MockAccountServer();
+  const { mod, users } = seed(server);
+  users[5].emailVerified = true;
+  server.signIn(mod);
+  const { root } = await dashboard(server, '#overview');
+  const tiles = new Map([...root.querySelectorAll('.stat')].map((t) => [textOf(t.querySelector('.stat-label')), textOf(t.querySelector('.stat-value'))]));
+  assert.equal(tiles.get('Waiting for email'), '0');
+  assert.equal(tiles.get('Email not confirmed'), '29', 'active accounts with an unconfirmed address count too');
+  assert.equal(tiles.has('Email not verified'), false);
+});

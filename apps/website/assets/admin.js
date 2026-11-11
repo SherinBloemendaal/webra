@@ -236,10 +236,12 @@ export async function mountAdmin(root, deps = {}) {
             { class: 'stats', 'aria-label': 'Overview' },
             tile('Users', s.users.total, '#users'),
             tile('Waiting for approval', pending, '#users?status=pending_approval'),
-            tile('Email not verified', s.users.byStatus.pending_email ?? 0, '#users?status=pending_email'),
+            tile('Waiting for email', s.users.byStatus.pending_email ?? 0, '#users?status=pending_email'),
             tile('Active', s.users.byStatus.active ?? 0, '#users?status=active'),
             tile('Banned', s.users.byStatus.banned ?? 0, '#users?status=banned'),
             tile('New in 7 days', s.users.newLast7Days),
+            // Every account with an unconfirmed address (active ones too, when verification is not required).
+            Number.isFinite(s.users.emailUnverified) ? tile('Email not confirmed', s.users.emailUnverified) : null,
             tile('Signed-in sessions', s.sessions.active),
             tile('Open lobbies', s.games.lobbies),
             tile('Running games', s.games.running),

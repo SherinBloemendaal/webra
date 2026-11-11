@@ -1720,7 +1720,7 @@ Expired IP bans are deleted 90 days after they end.
 
 ```json
 {
-  "users": { "total": 0, "byStatus": { "pending_email": 0, "pending_approval": 0, "active": 0, "banned": 0, "deleted": 0 }, "byRole": { "user": 0, "moderator": 0, "admin": 0 }, "newLast7Days": 0 },
+  "users": { "total": 0, "byStatus": { "pending_email": 0, "pending_approval": 0, "active": 0, "banned": 0, "deleted": 0 }, "byRole": { "user": 0, "moderator": 0, "admin": 0 }, "newLast7Days": 0, "emailUnverified": 0 },
   "sessions": { "active": 0 },
   "games": { "lobbies": 0, "running": 0 },
   "maps": { "total": 0 },
@@ -1729,6 +1729,10 @@ Expired IP bans are deleted 90 days after they end.
   "email": { "sentToday": 0, "dailyLimit": 300, "limitReached": false }
 }
 ```
+
+`users.emailUnverified` counts accounts (not deleted) with an address that
+was never confirmed, whatever their status: without required verification
+they are `active`, so `byStatus.pending_email` does not show them.
 
 `games` counts the public session directory (private lobbies are not listed
 anywhere).

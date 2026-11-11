@@ -934,6 +934,9 @@ async function stats(ctx) {
       byStatus,
       byRole,
       newLast7Days: await one('SELECT COUNT(*) AS n FROM users WHERE created_at > ?1', now - 7 * 24 * 60 * 60 * 1000),
+      // Accounts with an address that was never confirmed, whatever their status (without
+      // required verification they are active, so byStatus.pending_email does not show them).
+      emailUnverified: await one("SELECT COUNT(*) AS n FROM users WHERE status != 'deleted' AND email IS NOT NULL AND email_verified = 0"),
     },
     sessions: { active: await one('SELECT COUNT(*) AS n FROM auth_sessions WHERE expires_at > ?1 AND last_used_at > ?2', now, now - 14 * 24 * 60 * 60 * 1000) },
     games: {

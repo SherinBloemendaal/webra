@@ -393,7 +393,7 @@ test('site settings: the exact body the admin page saves is accepted', async () 
 });
 
 test('audit log filters and stats', async () => {
-  const { admin, mod, target, user } = await cast();
+  const { env, admin, mod, target, user } = await cast();
   await mod.post(`/api/admin/users/${target.user.id}/approve`, {});
   await admin.post(`/api/admin/users/${user.user.id}/ban`, { reason: 'test' });
   const all = await admin.get('/api/admin/audit');
@@ -408,6 +408,13 @@ test('audit log filters and stats', async () => {
   assert.deepEqual(stats.body.users.byRole, { user: 2, moderator: 1, admin: 1 });
   assert.equal(stats.body.users.byStatus.banned, 1);
   assert.equal(stats.body.users.byStatus.active, 3);
+  // Unconfirmed addresses are counted whatever the status (here active accounts, none pending_email).
+  env.DB.sqlite.exec("UPDATE users SET email_verified = CASE WHEN username IN ('Moddy', 'Plain') THEN 0 ELSE 1 END");
+  const unconfirmed = (await mod.get('/api/admin/stats')).body.users;
+  assert.equal(unconfirmed.byStatus.pending_email, 0);
+  assert.equal(unconfirmed.emailUnverified, 2);
+  env.DB.sqlite.exec("UPDATE users SET email = NULL WHERE username = 'Plain'");
+  assert.equal((await mod.get('/api/admin/stats')).body.users.emailUnverified, 1, 'no address: nothing to confirm');
   assert.equal(stats.body.bans.accounts, 1);
   assert.deepEqual(stats.body.services, { email: false, discord: false, replays: true, realtime: true });
   assert.ok(stats.body.sessions.active >= 3);

@@ -581,7 +581,7 @@ export class MockAccountServer {
           byRole[x.role]++;
         }
         return reply(200, {
-          users: { total: all.length, byStatus, byRole, newLast7Days: all.length },
+          users: { total: all.length, byStatus, byRole, newLast7Days: all.length, emailUnverified: all.filter((x) => x.email && !x.emailVerified && x.status !== 'deleted').length },
           sessions: { active: this.sessions.size },
           games: { lobbies: 2, running: 1 },
           maps: { total: 7 },
