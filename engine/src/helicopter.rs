@@ -162,11 +162,14 @@ impl World {
     }
 
     /// A pad is free when nobody holds it, or the holder is `me`, or the
-    /// holder is gone or no longer heading for it (reservations clear lazily).
+    /// holder is gone, no longer heading for it, or no longer of the pad's
+    /// owner (a captured pad; reservations clear lazily).
     fn pad_free_for(&self, b: usize, me: u32) -> bool {
         match self.resolve(self.actors[b].dock_user) {
             None => true,
-            Some(u) => self.make_ref(u) == me || self.actors[u].heli.pad != self.make_ref(b),
+            Some(u) => {
+                self.make_ref(u) == me || self.actors[u].heli.pad != self.make_ref(b) || self.actors[u].owner != self.actors[b].owner
+            }
         }
     }
 
@@ -335,7 +338,10 @@ impl World {
     }
 
     /// A helicopter standing on an own helipad keeps it reserved and reloads;
-    /// on a service depot it gets repaired when damaged.
+    /// on a service depot it gets repaired when damaged. On a structure that
+    /// is no longer its own (captured) or gone it gives the reservation up
+    /// and takes off (OpenRA Reservable on an owner change: the aircraft
+    /// UnReserve with takeOff).
     fn heli_landed_service(&mut self, i: usize) {
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         let b = self.building_at[ci];
@@ -344,6 +350,8 @@ impl World {
         }
         let b = b as usize;
         if !self.actors[b].alive || self.actors[b].owner != self.actors[i].owner {
+            self.release_pad(i);
+            self.actors[i].heli.landed = false;
             return;
         }
         let me = self.make_ref(i);

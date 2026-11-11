@@ -280,6 +280,32 @@ fn empty_helicopter_returns_to_the_helipad_reloads_and_takes_off() {
     assert!(w.resolve(w.actors[pad].dock_user).is_none(), "pad free again");
 }
 
+/// OpenRA Reservable on an owner change: the old owner's helicopter on a
+/// captured helipad gives it up and takes off, so the new owner can use it.
+#[test]
+fn a_captured_helipad_is_freed_for_its_new_owner() {
+    let mut w = flat_world();
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.update_power();
+    let old = heli(&mut w, "HIND", 0, 10, 10);
+    w.heli_produced(old, pad);
+    run(&mut w, 5);
+    assert!(w.actors[old].heli.landed);
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(old));
+    w.capture(pad, 1, None);
+    let new = heli(&mut w, "HIND", 1, 24, 20);
+    w.actors[new].heli.ammo_used = 24;
+    w.queue_order(Order::ReturnToBase { player: 1, ids: r(&w, new) });
+    run(&mut w, 2);
+    assert!(!w.actors[old].heli.landed, "the old owner's helicopter takes off");
+    assert_eq!(w.actors[old].heli.pad, crate::world::NONE, "and gives the pad up");
+    run_until(&mut w, 800, |w| w.actors[new].heli.landed);
+    let (px, py) = pad_point(&w, pad);
+    assert_eq!((w.actors[new].x, w.actors[new].y), (px, py), "landed on the captured pad");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(new));
+    assert!(w.actors[old].altitude > 0, "the old helicopter hovers");
+}
+
 #[test]
 fn return_to_base_with_full_ammo_waits_near_the_helipad() {
     let mut w = flat_world();
