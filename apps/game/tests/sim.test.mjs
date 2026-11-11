@@ -814,3 +814,67 @@ test('replay controller state is mirrored for the replay bar', () => {
   assert.equal(handle.target, 100, 'clamped to the replay');
   assert.ok(ReplayController);
 });
+
+test('commands to a simulation that failed reject quietly: no unhandled rejection per network message or replay button', async () => {
+  const unhandled = [];
+  const onUnhandled = (err) => unhandled.push(err);
+  process.on('unhandledRejection', onUnhandled);
+  const logged = [];
+  const error = console.error;
+  console.error = (...args) => logged.push(args.join(' '));
+  try {
+    const host = { failed: null, on() {}, command: (name) => Promise.reject(new Error(`${name}: the simulation worker failed`)) };
+    const driver = new DriverHandle(host, { send() {} }, { tickMs: TICK_MS });
+    const replay = new ReplayHandle(host, 100);
+    host.failed = 'the simulation worker failed';
+    driver.onFrame({});
+    driver.onLog({});
+    driver.onSync({});
+    driver.onBack(5);
+    driver.reattach({ send() {} });
+    driver.stop();
+    replay.togglePlay();
+    replay.setSpeed(2);
+    replay.seek(10);
+    replay.dispose();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(unhandled, []);
+    assert.deepEqual(logged, [], 'the failure was reported once already (host failed)');
+    // A command that fails while the simulation runs is a real error: logged.
+    host.failed = null;
+    replay.seek(20);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(unhandled, []);
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /seek/);
+  } finally {
+    console.error = error;
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('pausing keeps the frame between its two ticks (no snap forward, no snap back); a debug step shows the stepped tick', async () => {
+  const host = await newHost('direct');
+  await host.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  const step = (paused, dt) => host.step({ dt, paused, view: 0, rect: [0, 0, 1536, 1536] });
+  // Half a tick past the last one.
+  step(false, TICK_MS * 2.5);
+  const tick = host.game.tick_count();
+  assert.equal(step(false, 0).alpha, 0.5);
+  for (let i = 0; i < 5; i++) assert.equal(step(true, 250).alpha, 0.5, 'paused: the same picture');
+  const going = step(false, 0);
+  assert.deepEqual([going.ticks, going.alpha], [0, 0.5], 'resumed: from where it stood');
+  assert.equal(host.game.tick_count(), tick);
+  // The debug menu's single step while paused: the stepped tick itself.
+  step(true, 250);
+  assert.equal(await host.command('debugStep'), true);
+  assert.equal(host.game.tick_count(), tick + 1);
+  assert.equal(step(true, 250).alpha, 1);
+  assert.equal(step(true, 250).alpha, 1);
+  // Going on: one tick at once, the picture moves on from the stepped tick.
+  const after = step(false, 0);
+  assert.deepEqual([after.ticks, after.alpha], [1, 0]);
+  assert.equal(host.game.tick_count(), tick + 2);
+  assert.equal(step(true, 250).alpha, 0, 'a later pause keeps that frame too');
+  host.dispose();
+});

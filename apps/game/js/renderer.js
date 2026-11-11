@@ -75,6 +75,23 @@ export function packGlobals({ width, height, camera, zoom, time, mapW, mapH, ani
   return g;
 }
 
+/**
+ * The canvas size for a `cssW` x `cssH` CSS px view at pixel ratio `dpr`:
+ * `{ width, height, ratio }`. A side may not exceed `limit` (the device's
+ * maxTextureDimension2D: the swap chain texture is that size), so on a very
+ * wide or dense screen the ratio drops for both sides alike, keeping the
+ * aspect ratio; `ratio` is the one used (draw multiplies the zoom with it).
+ */
+export function canvasSize(cssW, cssH, dpr, limit) {
+  const fit = Math.min(1, limit / Math.max(1, cssW * dpr), limit / Math.max(1, cssH * dpr));
+  const ratio = dpr * fit;
+  return {
+    width: Math.min(limit, Math.max(1, Math.floor(cssW * ratio))),
+    height: Math.min(limit, Math.max(1, Math.floor(cssH * ratio))),
+    ratio,
+  };
+}
+
 export class Renderer {
   static async create(canvas) {
     if (!navigator.gpu) throw new Error('WebGPU is not available in this browser.');
@@ -111,9 +128,26 @@ export class Renderer {
     this.maxTextureSize = device.limits?.maxTextureDimension2D ?? 8192;
     // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
     this.pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+    /**
+     * Canvas pixels per CSS pixel of the last resize (draw): the pixel ratio,
+     * or less where the canvas had to stay within the device's texture limit.
+     * 1 until the first draw sizes the canvas.
+     */
+    this.canvasRatio = 1;
+    /**
+     * Why the device was lost (its message, or its reason), or null while it
+     * works. Every WebGPU call after a loss does nothing, so the battlefield
+     * stays black: js/main.js tells the player (onLost) and offers a reload.
+     */
+    this.lost = null;
+    /** Called once when the device is lost by itself (not by destroy()): (info: GPUDeviceLostInfo) => void. */
+    this.onLost = null;
     device.lost.then((info) => {
       console.error('WebGPU device lost:', info.message);
       this.timer.disable(`device lost: ${info.message}`);
+      if (info.reason === 'destroyed') return;
+      this.lost = info.message || `reason: ${info.reason}`;
+      this.onLost?.(info);
     });
     /** The adapter the device came from (Renderer.create), for gpuInfo(). */
     this.adapter = null;
@@ -419,15 +453,15 @@ export class Renderer {
     this[capKey] = cap;
   }
 
+  /** Size the canvas for its CSS size at the pixel ratio (within the device's limit, canvasSize); returns the ratio used. */
   resize() {
-    const dpr = this.pixelRatio();
-    const w = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
-    const h = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
+    const { width: w, height: h, ratio } = canvasSize(this.canvas.clientWidth, this.canvas.clientHeight, this.pixelRatio(), this.maxTextureSize);
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
     }
-    return dpr;
+    this.canvasRatio = ratio;
+    return ratio;
   }
 
   /**

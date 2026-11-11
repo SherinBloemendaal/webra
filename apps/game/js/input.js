@@ -181,7 +181,8 @@ export class Input {
     this.player = player;
     // { onSelectionChanged(ids, { byPlayer }), onPlaced(), onCancelPlace(), onMenu(), onMode(mode),
     // lastEvent() -> { x, y } | null (radar pings, js/radarpings.js), feedback(text),
-    // selectionClick() (the selection hotkeys' click), gameOver() -> bool },
+    // selectionClick() (the selection hotkeys' click), gameOver() -> bool,
+    // watching() -> bool (a defeated player watching on: no orders, see ordersOff) },
     // command bar (js/commandbar.js): { commandMouseDown(w, e), commandClick(w, mods),
     // commandCursor(w, mods), cancelCommand(), queuesAttackMove(shift) },
     // tips (js/hints.js): { onPlainMove(units, worldPoint) }
@@ -268,10 +269,21 @@ export class Input {
     return cameraBounds(this.canvas.clientWidth / this.camera.zoom, this.canvas.clientHeight / this.camera.zoom, this.mapPx.w, this.mapPx.h);
   }
 
-  clampCamera() {
+  /** Keep the camera within the map; `pan`: the middle button pan moved it (see rebasePan). */
+  clampCamera({ pan = false } = {}) {
     const b = this.bounds();
     this.camera.x = Math.min(Math.max(this.camera.x, b.minX), b.maxX);
     this.camera.y = Math.min(Math.max(this.camera.y, b.minY), b.maxY);
+    if (!pan) this.rebasePan();
+  }
+
+  /**
+   * The camera moved by something else than a middle button pan under way
+   * (the wheel, zoom and scroll keys, a bookmark, a jump): the pan goes on
+   * from here, so its next move does not undo that and jump the view.
+   */
+  rebasePan() {
+    if (this.pan) this.pan = { x: this.mouse.x, y: this.mouse.y, cx: this.camera.x, cy: this.camera.y };
   }
 
   /** Zoom to `zoom` (within the game scale's limits), keeping the view centre in place. */
@@ -369,6 +381,35 @@ export class Input {
     if (c.length === 2) this.centerOn(c[0], c[1]);
   }
 
+  /**
+   * Centre the camera on the selected actors of any owner (OpenRA's "jump to
+   * selection": a spectator's selection, an enemy structure). The engine's
+   * units_center counts one owner's actors, so it is asked once per owner of
+   * the actors in the world, and the answers are averaged weighted by how
+   * many each one holds: the mean position of them all.
+   */
+  async centerOnSelection(ids) {
+    const byOwner = new Map();
+    for (const id of ids) {
+      const info = this.info(id);
+      if (!info?.inWorld) continue;
+      byOwner.set(info.owner, (byOwner.get(info.owner) ?? []).concat(id));
+    }
+    const owners = [...byOwner];
+    const centers = await Promise.all(owners.map(([owner, list]) => this.ask.units_center(owner, Uint32Array.from(list))));
+    let x = 0;
+    let y = 0;
+    let n = 0;
+    centers.forEach((c, i) => {
+      if (c.length !== 2) return;
+      const count = owners[i][1].length;
+      x += c[0] * count;
+      y += c[1] * count;
+      n += count;
+    });
+    if (n) this.centerOn(x / n, y / n);
+  }
+
   // ---- Selection ----------------------------------------------------------------
 
   setSelection(ids) {
@@ -396,8 +437,19 @@ export class Input {
     return id === NONE ? null : actorInfo(this.game, id);
   }
 
-  /** Selected units that belong to the local player (cached per selection change). */
+  /**
+   * Whether this view gives no orders: a spectator or replay (`spectator`),
+   * or a defeated player watching on (hooks.watching). The watched player's
+   * actors are then not "own": clicks select, and the order keys, sidebar
+   * modes and support powers do nothing.
+   */
+  ordersOff() {
+    return this.spectator || !!this.hooks.watching?.();
+  }
+
+  /** Selected units that belong to the local player (cached per selection change; none while ordersOff). */
   selectedOwnUnits() {
+    if (this.ordersOff()) return [];
     if (!this.ownUnits) {
       this.ownUnits = this.selection.filter((id) => {
         const info = this.info(id);
@@ -409,7 +461,7 @@ export class Input {
 
   /** The single selected own factory or depot, for rally points. */
   selectedRallyBuilding() {
-    if (this.selection.length !== 1) return null;
+    if (this.selection.length !== 1 || this.ordersOff()) return null;
     const info = this.info(this.selection[0]);
     return info && info.owner === this.player && info.building && info.producer ? this.selection[0] : null;
   }
@@ -474,7 +526,9 @@ export class Input {
 
   /** Target a ready support power: click the map, or drag to set the flight direction. */
   startPowerTargeting(power) {
-    this.placing = null;
+    if (this.ordersOff()) return;
+    // Through cancelPlacing, so the sidebar and the touch controls leave placement too.
+    this.cancelPlacing();
     this.attackMove = false;
     this.setMode(null);
     // Superweapons have their own targeting (abilities: Chronosphere source then
@@ -504,6 +558,8 @@ export class Input {
    */
   setMode(mode) {
     const next = MODES.includes(mode) ? mode : null;
+    // Watching: no mode comes on (switching one off still works).
+    if (next && this.ordersOff()) return;
     if (next) {
       this.cancelPlacing();
       this.attackMove = false;
@@ -523,6 +579,7 @@ export class Input {
    * own actors selected repairs them instead (`repairSelection`).
    */
   toggleMode(mode) {
+    if (this.ordersOff()) return;
     if (mode === 'repair' && this.mode !== 'repair' && this.selectedOwn().length) {
       this.repairSelection();
       return;
@@ -679,12 +736,16 @@ export class Input {
 
   /** Deploy selected MCVs, pack up a selected Construction Yard, or unload selected transports. */
   async deploySelection() {
-    if (!this.selection.length) return;
+    if (!this.selection.length || this.ordersOff()) return;
     // Chrono tanks pick a teleport target first (OpenRA PortableChrono deploy);
     // else MCVs, Construction Yards, transports, and ability units (mine, MAD tank, demolition).
     const { teleport, deploy } = await this.ask.deploy_targets(this.player, Uint32Array.from(this.selection));
     if (teleport.length) {
+      // Teleport targeting replaces the order generator in force (placement, a power, a sidebar mode).
+      this.cancelPlacing();
       this.cancelPower();
+      this.cancelTargeting();
+      this.setMode(null);
       this.targeting = { kind: 'teleport', ids: Array.from(teleport) };
       this.attackMove = false;
       return;
@@ -791,6 +852,8 @@ export class Input {
     on(window, 'blur', () => {
       this.keys.clear();
       this.hotkeys.releaseAll();
+      // A button held while the focus left comes up where the page never hears it: nothing stays dragged.
+      this.abortDrags();
     });
   }
 
@@ -825,6 +888,7 @@ export class Input {
   }
 
   onMouseDown(e) {
+    this.syncModifiers(e);
     if (this.suspended) return;
     const p = this.local(e);
     const w = this.toWorld(p.x, p.y);
@@ -963,7 +1027,46 @@ export class Input {
     this.hooks.onPlaced();
   }
 
+  /**
+   * The modifier keys from a mouse event's own flags: a keyup the page never
+   * saw (an OS shortcut that took it, a screenshot key) leaves no Ctrl, Alt,
+   * Shift or Cmd behind in `keys`, so the cursor shows what a click does.
+   * The touch controls' fake events (js/touch.js, pointerType 'touch') say
+   * nothing about the keyboard.
+   */
+  syncModifiers(e) {
+    if (typeof e.ctrlKey !== 'boolean' || e.pointerType === 'touch') return;
+    for (const [k, held] of [
+      ['Control', e.ctrlKey],
+      ['Meta', !!e.metaKey],
+      ['Alt', !!e.altKey],
+      ['Shift', !!e.shiftKey],
+    ]) {
+      if (held) this.keys.add(k);
+      else this.keys.delete(k);
+    }
+  }
+
+  /**
+   * A mouse move whose `buttons` no longer hold the button of a drag or pan:
+   * it came up outside the page (another window, a system dialog) and its
+   * mouseup never arrived, so the box or pan ends without acting. Only real
+   * and virtual moves (js/mouselock.js) carry `buttons`; the touch
+   * controls' fake events do not and keep their drags.
+   */
+  dropReleased(e) {
+    if (e.type !== 'mousemove' || typeof e.buttons !== 'number') return;
+    if (this.pan && !(e.buttons & 4)) this.pan = null;
+    if (e.buttons & 1) return;
+    this.drag = null;
+    this.modeDrag = null;
+    this.mineDrag = null;
+    this.powerDrag = null;
+  }
+
   onMouseMove(e) {
+    this.syncModifiers(e);
+    this.dropReleased(e);
     this.trackWindowMouse(e);
     const p = this.local(e);
     this.mouse.x = p.x;
@@ -971,7 +1074,7 @@ export class Input {
     if (this.pan) {
       this.camera.x = this.pan.cx - (p.x - this.pan.x) / this.camera.zoom;
       this.camera.y = this.pan.cy - (p.y - this.pan.y) / this.camera.zoom;
-      this.clampCamera();
+      this.clampCamera({ pan: true });
     }
     if (this.drag) {
       this.drag.ex = p.x;
@@ -1164,6 +1267,8 @@ export class Input {
     if (e.key === 'Escape') {
       // Esc cancels the current mode first; with nothing to cancel it opens the game menu.
       e.preventDefault();
+      // Held down: the key repeat neither cancels more nor opens and closes the menu over and over.
+      if (e.repeat) return;
       if (!this.cancelMode()) this.hooks.onMenu?.();
       return;
     }
@@ -1394,13 +1499,19 @@ export class Input {
       const at = this.hooks.lastEvent?.();
       if (at) this.centerOn(at.x, at.y);
     });
-    reg('toSelection', 'ToSelection', () => this.centerOnUnits(this.selection));
+    reg('toSelection', 'ToSelection', () => this.centerOnSelection(this.selection));
     reg('selectAll', 'SelectAllUnits', (e) => this.selectAllUnits(e));
     reg('selectByType', 'SelectUnitsByType', () => this.selectUnitsByType());
     reg('cycleHarvesters', 'CycleHarvesters', () => this.cycleHarvesters());
     // Unit commands.
     reg('attackMove', 'AttackMove', () => {
-      if (this.selectedOwnUnits().length) this.attackMove = true;
+      if (!this.selectedOwnUnits().length) return;
+      // A new order generator replaces the one in force (OpenRA): no placement, power or mode left underneath.
+      this.cancelPlacing();
+      this.cancelPower();
+      this.cancelTargeting();
+      this.setMode(null);
+      this.attackMove = true;
     });
     reg('stop', 'Stop', () => {
       if (this.selectedOwnUnits().length) this.game.order_stop(this.player, units());
@@ -1460,6 +1571,7 @@ export class Input {
     const b = this.bounds();
     if (dx) this.camera.x = dx < 0 ? b.minX : b.maxX;
     if (dy) this.camera.y = dy < 0 ? b.minY : b.maxY;
+    this.rebasePan();
   }
 
   /** Game menu open or closed: input stops and held keys are released. */
@@ -1468,12 +1580,23 @@ export class Input {
     if (!on) return;
     this.keys.clear();
     this.hotkeys.releaseAll();
+    this.abortDrags();
+    this.edgeScroll = null;
+  }
+
+  /**
+   * Drop every press in progress without committing it: the box selection,
+   * the middle button pan, a minefield, a repair or sell box and a support
+   * power's direction drag, and an open box chooser or sell confirmation.
+   * The mouse capture letting go (js/mouselock.js onAbort) calls it before
+   * the held buttons come up, so that mouseup finds nothing to commit.
+   */
+  abortDrags() {
     this.drag = null;
     this.pan = null;
     this.mineDrag = null;
     this.modeDrag = null;
     this.powerDrag = null;
-    this.edgeScroll = null;
     this.dropBoxChoice();
   }
 

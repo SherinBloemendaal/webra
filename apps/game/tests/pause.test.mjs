@@ -18,7 +18,7 @@ test('the simulation clock follows ticks and interpolation, and stands still wit
   assert.equal(clock.update(0, 0), 0);
   assert.equal(clock.update(10, 0.5), 420);
   assert.equal(clock.seconds, 0.42);
-  // Paused: the same tick frame after frame (a paused local game draws alpha 1).
+  // Paused: the same tick frame after frame (here at alpha 1, as after a debug step while paused).
   for (let i = 0; i < 100; i++) clock.update(10, 1);
   assert.equal(clock.ms, 440);
   // Going on: alpha starts below 1 again, the clock does not run backwards.

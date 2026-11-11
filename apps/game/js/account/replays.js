@@ -120,7 +120,9 @@ export function uploadsWanted({ user, site, enabled }) {
  * The upload queue. `onEvent` hears `{ type: 'uploaded', replay, duplicate,
  * evicted }`, `{ type: 'failed', message }` (given up),
  * `{ type: 'unavailable', message }` (this server keeps no replays) and
- * `{ type: 'too_large' }` (not queued).
+ * `{ type: 'too_large' }` (not queued), each with the `key` of the replay it
+ * is about: rows of earlier games upload too (oldest first), so a game's
+ * end of game dialog listens to its own key only (GameReplay.key).
  */
 export class ReplayUploads {
   /**
@@ -146,7 +148,7 @@ export class ReplayUploads {
    */
   async add({ userId, key, text, result = 'unknown' }) {
     if (new TextEncoder().encode(text).byteLength > ACCOUNT_REPLAY_MAX_BYTES) {
-      this.onEvent({ type: 'too_large' });
+      this.onEvent({ type: 'too_large', key });
       return false;
     }
     await this.queue.remove(key);
@@ -239,7 +241,7 @@ export class ReplayUploads {
     try {
       const r = await this.api.uploadReplay(row.text, row.result);
       await this.queue.remove(row.key);
-      this.onEvent({ type: 'uploaded', replay: r.replay, duplicate: !!r.duplicate, evicted: r.evicted ?? 0 });
+      this.onEvent({ type: 'uploaded', key: row.key, replay: r.replay, duplicate: !!r.duplicate, evicted: r.evicted ?? 0 });
       return 'done';
     } catch (err) {
       const status = err instanceof AccountError ? err.status : -1;
@@ -253,7 +255,7 @@ export class ReplayUploads {
       }
       if (status === 503 && code === 'unavailable') {
         await this.queue.remove(row.key);
-        this.onEvent({ type: 'unavailable', message: err.message });
+        this.onEvent({ type: 'unavailable', key: row.key, message: err.message });
         return 'done';
       }
       const passing = status === 0 || status === 429 || status >= 500 || status === -1;
@@ -265,7 +267,7 @@ export class ReplayUploads {
         return 'retry';
       }
       await this.queue.remove(row.key);
-      this.onEvent({ type: 'failed', message: err?.message ?? String(err) });
+      this.onEvent({ type: 'failed', key: row.key, message: err?.message ?? String(err) });
       return 'done';
     }
   }
@@ -348,6 +350,8 @@ export class GameReplay {
     this.enabled = enabled;
     this.timers = timers;
     this.queued = null;
+    /** This game's key in the upload queue (its events carry it), once queued; null before or when not wanted. */
+    this.key = null;
   }
 
   /** The game ended: queue its replay in the background. */
@@ -375,6 +379,7 @@ export class GameReplay {
       return this.queued;
     }
     const key = `${user.id}:${this.recorder.start.createdAt}:${this.recorder.start.title}`;
+    this.key = key;
     this.queued = this.recorder
       .encode('replay')
       .then(({ text }) => this.uploads.add({ userId: user.id, key, text, result }))

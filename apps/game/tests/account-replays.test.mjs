@@ -422,3 +422,45 @@ test('a replay link survives the sign-in: kept for the tab until it opens', () =
   assert.equal(replayLink('#replay=../etc', store), null);
   assert.equal(replayLink(`#replay=${id}`, null), id, 'blocked storage: this page only');
 });
+
+test("upload events carry their replay's key: a game hears its own, not an earlier game's retried upload", async () => {
+  const api = fakeApi([new AccountError(0, 'offline', 'The WebRA server cannot be reached.')]);
+  const { u, events, timers, advance } = uploads(api);
+  u.start('u1');
+  // An earlier game's replay failed while offline and waits for its retry.
+  await u.add({ userId: 'u1', key: 'u1:1:Earlier', text: 'old', result: 'lost' });
+  await timers.fire();
+  assert.deepEqual(events, []);
+  // This game ends: its replay is queued behind the older one.
+  const game = new GameReplay({ recorder: recorder('new'), uploads: u, account: () => ({ user: active, site }), enabled: () => true });
+  assert.equal(game.key, null, 'not queued yet');
+  assert.equal(await game.ended('won'), true);
+  assert.equal(game.key, 'u1:5:Skirmish');
+  advance(RETRY_BASE_MS);
+  await timers.fire();
+  assert.deepEqual(
+    events.map((e) => [e.type, e.key]),
+    [
+      ['uploaded', 'u1:1:Earlier'],
+      ['uploaded', 'u1:5:Skirmish'],
+    ],
+    'oldest first, each with its key',
+  );
+  assert.deepEqual(events.filter((e) => e.key === game.key).map((e) => e.type), ['uploaded'], "this game's own result");
+  // Failures, refusals and a too large replay say whose they are too.
+  const big = uploads(fakeApi([new AccountError(422, 'invalid', 'Invalid replay: bad.'), new AccountError(503, 'unavailable', 'No replays here.')]));
+  big.u.start('u1');
+  await big.u.add({ userId: 'u1', key: 'k-big', text: 'x'.repeat(ACCOUNT_REPLAY_MAX_BYTES + 1) });
+  await big.u.add({ userId: 'u1', key: 'k-bad', text: 'x' });
+  await big.timers.fire();
+  await big.u.add({ userId: 'u1', key: 'k-none', text: 'y' });
+  await big.timers.fire();
+  assert.deepEqual(
+    big.events.map((e) => [e.type, e.key]),
+    [
+      ['too_large', 'k-big'],
+      ['failed', 'k-bad'],
+      ['unavailable', 'k-none'],
+    ],
+  );
+});

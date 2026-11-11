@@ -113,7 +113,7 @@ import { TargetLines, withTargetLines } from './targetlines.js';
 import { WorldTooltip } from './worldtooltip.js';
 import { environmentFacts, optionFacts, PerfRecorder, perfTrace, saveText, settingsFacts, START_CAPTURE_SECONDS } from './perfcapture.js';
 import { Disposer } from './disposer.js';
-import { FirstFrameGuard, LoadingScreen, loadingPlan } from './loadingscreen.js';
+import { FirstFrameGuard, LoadingScreen, loadingPlan, showGameStopped } from './loadingscreen.js';
 import { BOOT_WAIT_MS, bootScreen } from './bootscreen.js';
 import { LoadingBoard, boundKeyText, colorCss, describeStart } from './loadingboard.js';
 import { GameSession, GameStart } from './gamesession.js';
@@ -137,6 +137,11 @@ let wasm;
 /** The engine compiled once: the page and the simulation worker instantiate it. */
 let wasmModule = null;
 let renderer;
+/**
+ * What the running game does when the graphics device is lost (runGame sets
+ * it, its scope clears it); without a game the start menu says so.
+ */
+let gameGraphicsLost = null;
 /** js/replay.js and js/records.js (recording, saves, replays), or null when they failed to load. */
 let records = null;
 // Sound (js/audio): synthesized by default, original files when the player installed them.
@@ -279,6 +284,14 @@ async function boot() {
     }
   }
   setTags({ renderer: renderer ? 'webgpu' : 'unavailable' });
+  if (renderer) {
+    // The device went (driver reset, GPU process crash, sleep): nothing draws any more until the page reloads.
+    renderer.onLost = () => {
+      const text = graphicsLostText(renderer.lost);
+      if (gameGraphicsLost) gameGraphicsLost(text);
+      else lobby.showError(text);
+    };
+  }
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   const onlineOpen = setupOnline(lobby, gpuError);
@@ -1579,6 +1592,12 @@ function recorderOf({ host, info }) {
 // screen, the simulation, GPU resources, sound) goes into `scope`
 // (js/disposer.js), which takes it down again for a restart in place.
 function start(host, opts) {
+  // A device lost in the menu draws nothing: no game starts on it.
+  if (renderer.lost) {
+    host.dispose();
+    loadFail(null, graphicsLostText(renderer.lost));
+    return;
+  }
   const scope = new Disposer();
   try {
     runGame(host, opts, scope);
@@ -1781,7 +1800,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     observer?.repaintIcons();
   }));
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
-  const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const weather = new WeatherFx({ reducedMotion: motionIsReduced(), lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
   // Reduce motion (the setting, and the browser's for 'auto') and Low quality apply at once.
@@ -1871,6 +1889,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // The selection hotkeys: OpenRA's ClickSound, and nothing once the game is over (World.IsGameOver).
     selectionClick: () => audio?.click(),
     gameOver: () => flow.over,
+    // A defeated player watching on gives no orders (replays and spectators: the spectator option).
+    watching: () => watching(),
     // Esc with nothing to cancel. Not while the mouse is released with the
     // release hotkey (js/mouselock.js isDetached): the game plays on until a
     // click into it captures the mouse again; the Menu button still opens it.
@@ -1985,7 +2005,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     colorOf: (owner) => cssColor(TEAM_COLORS[owner]),
     nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
     line: (text) => chatLog.system(text),
-    reduced: () => motionReduced(settings.get('reduceMotion'), reducedMotion),
+    // Read each time: the setting and the browser's preference both change during a game.
+    reduced: motionIsReduced,
     onLost: (owner) => lost.add(owner),
   }));
   // Chat and system lines (js/chatlog.js) and the chat panel (js/chatpanel.js)
@@ -2268,6 +2289,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // up), so there the menu opens over the running game. The debug menu can
   // also pause a local game without the menu (`paused` is declared above).
   let leaving = false;
+  /** Why the graphics device was lost (js/renderer.js), or null: see onGraphicsLost below. */
+  let graphicsLost = null;
   /**
    * Before the game goes (leave, exit, rematch: the page reloads or goes;
    * restart, next mission: in place): the game's replay is queued for the
@@ -2367,6 +2390,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         onEscape: () => {
           if (!input.suspended && !input.cancelMode()) menu.open();
         },
+        onAbort: () => input.abortDrags(),
       }))
     : null;
   // The game menu's Game info (js/gameinfo.js): the scores come from the
@@ -2443,6 +2467,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       menuPaused = isPaused;
       updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
+      // The graphics device is gone ("Save first" showed the menu): nothing to go back to but the notice.
+      if (!open && graphicsLost && !leaving) showGraphicsLost();
     },
     uiScale,
     renderRatio: () => renderer.pixelRatio(),
@@ -2606,10 +2632,50 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     },
     back: () => location.reload(),
   });
-  // Before the first frame the loading screen says so (with the way back to the menu), else a toast.
+  // The graphics device was lost (js/renderer.js onLost): the battlefield stays
+  // black, so the loading screen's error view says so over it with a reload.
+  // A local game pauses behind it (the game menu opens); its simulation still
+  // runs, so where it can be saved, "Save first" shows the game menu (Save
+  // game) and the notice comes back when the menu closes.
+  const canSaveLocally = !online && !replay && recordActions.some((a) => a.id === 'save');
+  const showGraphicsLost = () => {
+    mouseCapture?.setBlocked(true);
+    loader.fail(canSaveLocally ? `${graphicsLost} The game is paused: save it from the game menu first to go on with it after the reload.` : graphicsLost, {
+      title: 'Graphics device lost',
+      label: 'Reload',
+      run: leave,
+      other: canSaveLocally ? { label: 'Save first', run: () => loader.close() } : null,
+    });
+  };
+  const onGraphicsLost = (text) => {
+    if (leaving || graphicsLost) return;
+    graphicsLost = text;
+    if (!online) menu.open();
+    showGraphicsLost();
+  };
+  gameGraphicsLost = onGraphicsLost;
+  scope.add(() => {
+    if (gameGraphicsLost === onGraphicsLost) gameGraphicsLost = null;
+  });
+  /**
+   * The game cannot go on after its first frame (the simulation failed, or
+   * every frame throws): the loop stops, input and the mouse capture let go,
+   * an online session is told the player left, and the loading screen's error
+   * view stays over the frozen battlefield with the way back to the menu.
+   */
+  const gameStopped = (message) => {
+    leaving = true;
+    stopped = true;
+    cancelAnimationFrame(rafId);
+    input.setSuspended(true);
+    mouseCapture?.setBlocked(true);
+    online?.onQuit();
+    showGameStopped(loader, message, () => location.reload());
+  };
+  // Before the first frame the loading screen says so (with the way back to the menu), else gameStopped.
   host.on('failed', (message) => {
     leaving = true;
-    if (!firstFrame.fail(`The game stopped while it started: ${message}`)) showToast(`The game stopped: ${message}`);
+    if (!firstFrame.fail(`The game stopped while it started: ${message}`)) gameStopped(message);
   });
   const download = recordActions.find((a) => a.id === 'replay');
   /** The statistics screen's buttons (the rematch button follows the proposal). */
@@ -2700,7 +2766,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   let replayWatched = false;
   replayNotice = (e) => {
     const state = { uploaded: e.duplicate ? null : 'saved', failed: 'failed', too_large: 'failed', unavailable: null }[e.type];
-    if (state === undefined || !replayWatched) return;
+    // Rows of earlier games upload from the same queue: only this game's own key counts here.
+    if (state === undefined || !replayWatched || e.key !== accountReplay?.key) return;
     replayState = state;
     endDialog.render();
   };
@@ -2775,11 +2842,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Every frame threw for about a second (FAILING_FRAMES): the game cannot go on. It stops,
     // the error is reported once, and the player is told, as for a simulation that failed (host 'failed').
     onFailing: (err) => {
-      leaving = true;
-      stopped = true;
-      cancelAnimationFrame(rafId);
       reportError(err, { source: 'frame' });
-      showToast(`The game stopped: ${err?.message ?? err}`);
+      gameStopped(err?.message ?? err);
     },
   });
   // The screen's parts in the frame: one that throws is reported once and the game goes on without it.
@@ -2910,8 +2974,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
     weather.advance(simSeconds, dt / 1000);
-    // The view's CSS px² from the drawn size (no layout read per frame).
-    const ratio = renderer.pixelRatio();
+    // The view's CSS px² from the drawn size (no layout read per frame), at the ratio it was drawn with.
+    const ratio = renderer.canvasRatio;
     const cssArea = (canvas.width * canvas.height) / (ratio * ratio);
     const fx = { ...weather.uniforms(simSeconds, [v.x0, v.y0, v.x1, v.y1], input.camera.zoom, cssArea), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
@@ -3236,6 +3300,11 @@ boot().catch((err) => {
   bootScreen.fail(err);
   throw err;
 });
+
+/** What the player is told when the graphics device is lost (js/renderer.js `lost`). */
+function graphicsLostText(reason) {
+  return `The graphics device was lost (${reason}). Reload the page to continue.`;
+}
 
 /** Short message over the battlefield (for example when fullscreen is refused). */
 function showToast(text) {

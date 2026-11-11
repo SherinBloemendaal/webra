@@ -347,6 +347,19 @@ function concat(a, b) {
 // ---- Driver, replay and recorder handles ------------------------------------------------------
 
 /**
+ * A command whose answer nobody waits for (network frames, replay buttons,
+ * stop). Once the simulation failed every command rejects, and the host's
+ * 'failed' event has told the player and the error reports already, so
+ * those rejections are not reported again (one per network message);
+ * any other failure is logged.
+ */
+function send(host, name, args = []) {
+  host.command(name, args).catch((err) => {
+    if (!host.failed) console.error(`Simulation command ${name} failed:`, err?.message ?? err);
+  });
+}
+
+/**
  * The online driver as js/online.js sees it: network messages go to the
  * LockstepDriver where the simulation runs, its state comes back with each
  * frame (`update`). Sends from the driver arrive through the host's `send`
@@ -395,19 +408,19 @@ export class DriverHandle {
   }
 
   onFrame(frame) {
-    this.host.command('net', ['frame', frame]);
+    send(this.host, 'net', ['frame', frame]);
   }
 
   onLog(msg) {
-    this.host.command('net', ['log', msg]);
+    send(this.host, 'net', ['log', msg]);
   }
 
   onSync(msg) {
-    this.host.command('net', ['sync', msg]);
+    send(this.host, 'net', ['sync', msg]);
   }
 
   onBack(tick) {
-    this.host.command('back', [tick]);
+    send(this.host, 'back', [tick]);
   }
 
   /** A new connection after a reconnect: the old one's late sends are dropped. */
@@ -416,12 +429,12 @@ export class DriverHandle {
     this.epoch++;
     this.catchingUp = true;
     this.waitingSync = true;
-    this.host.command('reattach', [this.epoch]);
+    send(this.host, 'reattach', [this.epoch]);
   }
 
   stop() {
     this.stopped = true;
-    this.host.command('stop');
+    send(this.host, 'stop');
   }
 }
 
@@ -456,22 +469,22 @@ export class ReplayHandle {
   togglePlay() {
     // Shown at once; the next frame brings the controller's own state.
     this.playing = this.ended ? true : !this.playing;
-    this.host.command('togglePlay');
+    send(this.host, 'togglePlay');
   }
 
   setSpeed(speed) {
     this.speed = speed;
-    this.host.command('setSpeed', [speed]);
+    send(this.host, 'setSpeed', [speed]);
   }
 
   seek(ticks) {
     this.seeking = true;
     this.target = Math.max(0, Math.min(this.length, Math.round(ticks)));
-    this.host.command('seek', [ticks]);
+    send(this.host, 'seek', [ticks]);
   }
 
   dispose() {
-    this.host.command('dispose');
+    send(this.host, 'dispose');
   }
 }
 

@@ -370,11 +370,13 @@ export class LoadingScreen {
   }
 
   /**
-   * The start failed: the screen says why (an alert) and offers `label`,
-   * which runs `run` (by default the screen closes, back to where the start
-   * came from).
+   * The start failed: the screen says why (an alert) under `title` and
+   * offers `label`, which runs `run` (by default the screen closes, back to
+   * where the start came from), and `other` ({ label, run }) beside it when
+   * given. A game that cannot go on (it stopped, the graphics device was
+   * lost) uses the same screen over the battlefield, with its own title.
    */
-  fail(message, { label = 'Back', run = null } = {}) {
+  fail(message, { title = 'Could not start', label = 'Back', run = null, other = null } = {}) {
     const doc = this.doc;
     this.finishClose?.(false);
     // A failed start never starts its game: its `closed` stays pending, also after Back.
@@ -386,8 +388,8 @@ export class LoadingScreen {
     this.root.classList.add('is-failed');
     this.root.hidden = false;
     this.cover();
-    const title = el(doc, 'h1', 'loading-title', 'Could not start');
-    title.id = 'loading-title';
+    const heading = el(doc, 'h1', 'loading-title', title);
+    heading.id = 'loading-title';
     const text = el(doc, 'p', 'loading-error', message);
     text.setAttribute('role', 'alert');
     const back = el(doc, 'button', 'loading-back primary', label);
@@ -396,7 +398,15 @@ export class LoadingScreen {
       if (run) run();
       else this.close();
     });
-    this.card.replaceChildren(title, text, back);
+    if (other) {
+      // A second way out next to it (`other`: { label, run }), for example a game that can still be saved first.
+      const second = el(doc, 'button', 'loading-other', other.label);
+      second.type = 'button';
+      second.addEventListener('click', () => other.run());
+      const actions = el(doc, 'div', 'loading-actions');
+      actions.append(back, second);
+      this.card.replaceChildren(heading, text, actions);
+    } else this.card.replaceChildren(heading, text, back);
     back.focus?.({ preventScroll: true });
   }
 
@@ -423,6 +433,16 @@ export class LoadingScreen {
  * the menu instead of a screen that loads forever. `closed` resolves when
  * the screen is gone after the first frame: the game starts then.
  */
+/**
+ * A game that stopped after its first frame (an engine error, a crashed
+ * simulation worker, a loop that keeps throwing): `screen` (a LoadingScreen)
+ * says so over the frozen battlefield until the player goes back to the
+ * menu (`back`), instead of a toast that goes while the game looks hung.
+ */
+export function showGameStopped(screen, message, back) {
+  screen.fail(`The game stopped: ${message}`, { title: 'The game stopped', label: 'Back to the menu', run: back });
+}
+
 export class FirstFrameGuard {
   /**
    * @param {{ screen: LoadingScreen, stop: () => void, back: () => void }} o

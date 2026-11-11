@@ -135,6 +135,9 @@ function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr 
   const t = clock();
   const hints = [];
   const escapes = [];
+  // onAbort calls, logged next to the mouseups the window sees (`seen`) to check the order.
+  let onAbort = () => {};
+  const aborts = [];
   // Timers the capture sets (the focus check after the browser let go): run by `flush`.
   const pending = [];
   const flush = () => pending.splice(0).forEach((fn) => fn());
@@ -150,6 +153,10 @@ function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr 
     isFullscreen: () => fs,
     onHint: (text) => hints.push(text),
     onEscape: () => escapes.push(t.now()),
+    onAbort: () => {
+      aborts.push(seen.length);
+      onAbort();
+    },
     later: (fn) => pending.push(fn),
     makeEvent: (type, init) => new FakeEvent(type, init),
   });
@@ -175,7 +182,8 @@ function page({ fullscreen = false, rawSupport = 'full', settingsInit = {}, dpr 
     fs = on;
     capture.fullscreenChanged(on);
   };
-  return { app, view, sidebar, card, chat, list, panel, row, radar, menuButton, outside, capture, settings, hotkeys, requests, grant, refuse, browserExit, exits: () => exits, real, clickInto, hints, escapes, seen, t, setFullscreen, flush, pending };
+  const setOnAbort = (fn) => (onAbort = fn);
+  return { app, view, sidebar, card, chat, list, panel, row, radar, menuButton, outside, capture, settings, hotkeys, requests, grant, refuse, browserExit, exits: () => exits, real, clickInto, hints, escapes, aborts, setOnAbort, seen, t, setFullscreen, flush, pending };
 }
 
 /** Events of `types` dispatched at `el`, recorded as [type, details]. */
@@ -195,6 +203,13 @@ function lockAt(p, x = 100, y = 100) {
   p.real('mouseup', { clientX: x, clientY: y, buttons: 0 }, p.view);
   p.grant();
   assert.equal(p.capture.state, 'locked');
+}
+
+/** Lock again after any way of letting go: unblocked, the browser's cooldown waited out. */
+function relock(p, x = 100, y = 100) {
+  p.capture.setBlocked(false);
+  p.t.advance(RELOCK_COOLDOWN_MS + ESC_GUARD_MS + 1);
+  lockAt(p, x, y);
 }
 
 /** The release key of this platform (RELEASE_MOUSE_KEYS), as the keydown a keyboard sends: Option+E on macOS is a dead key, its code is still KeyE. */
@@ -908,6 +923,25 @@ test('release: held buttons come up without a click, hover leaves, the :hover ma
   assert.equal(doc.querySelectorAll('[data-vactive]').length, 0);
 });
 
+test('release with a button held: onAbort comes before the button comes up; with none held it does not come', () => {
+  const p = page();
+  for (const letGo of [() => p.capture.toggle(), () => p.capture.setBlocked(true), () => p.browserExit(), () => p.setFullscreen(false)]) {
+    relock(p);
+    move(p, 0, 0);
+    p.real('mousedown', { button: 0, buttons: 1 });
+    const before = p.seen.length;
+    p.aborts.length = 0;
+    letGo();
+    assert.deepEqual(p.aborts, [before], 'once, before anything reached the window');
+    assert.deepEqual(p.seen.slice(before).map(([type, how]) => `${type} ${how}`), ['mouseup virtual'], 'then the button comes up');
+  }
+  relock(p);
+  move(p, 0, 0);
+  p.aborts.length = 0;
+  p.capture.toggle();
+  assert.deepEqual(p.aborts, [], 'no button held: nothing to abort');
+});
+
 test('a press that captures: its button comes up through the virtual pointer and clicks', () => {
   const p = page({ fullscreen: true });
   const card = record(p.card, ['mouseup', 'click']);
@@ -1076,8 +1110,9 @@ test('edge scrolling with the OS cursor: measured against the window, over the s
 test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, focus and the release hotkey', async () => {
   const p = page();
   const { input } = await withInput(p);
-  const atRightEdge = () => {
-    realMove(p, 999, 50, p.card);
+  // `buttons`: the buttons the move reports held (a drag's button stays down while it moves).
+  const atRightEdge = (buttons = 0) => {
+    p.real('mousemove', { clientX: 999, clientY: 50, buttons }, p.card);
     input.update(0.1);
     return input.edgeScroll;
   };
@@ -1102,7 +1137,7 @@ test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, 
   // A box selection under way.
   p.real('mousedown', { clientX: 400, clientY: 300, button: 0, buttons: 1 }, p.view);
   assert.ok(input.drag);
-  assert.equal(atRightEdge(), null);
+  assert.equal(atRightEdge(1), null);
   p.real('mouseup', { clientX: 999, clientY: 50, button: 0, buttons: 0 }, p.card);
   assert.ok(atRightEdge());
   // A touch (js/touch.js) and the window without the input focus (OpenRA WindowHasInputFocus).
@@ -1184,6 +1219,67 @@ test('box selection, orders and the wheel through js/input.js with the virtual p
   const zoom = input.camera.zoom;
   p.real('wheel', { deltaY: -200 });
   assert.ok(input.camera.zoom > zoom);
+});
+
+test('letting go of the capture mid-drag commits nothing: a sell box, a support power, a minefield, a box selection', async () => {
+  const p = page();
+  const { input, boxes } = await withInput(p);
+  const orders = [];
+  Object.assign(input.game, {
+    sell_box: () => Uint32Array.from([7]),
+    sell_value: () => 300,
+    sell_buildings: (_p, ids) => orders.push(['sell', Array.from(ids)]),
+    activate_power: (...args) => orders.push(['power', ...args]),
+    has_minelayer: () => true,
+    order_lay_mines: () => orders.push(['mines']),
+  });
+  input.ask = new Proxy({}, { get: (_t, name) => async (...args) => input.game[name](...args) });
+  p.setOnAbort(() => input.abortDrags());
+  lockAt(p, 100, 100);
+  await new Promise((r) => setImmediate(r));
+  move(p, 0, 0);
+  // Sell mode: a box over one structure (sold without asking), then Esc lets go of the mouse.
+  input.setMode('sell');
+  p.real('mousedown', { button: 0, buttons: 1 });
+  move(p, 80, 60);
+  assert.ok(input.modeDrag, 'the box is open');
+  p.browserExit();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(input.modeDrag, null);
+  assert.deepEqual(orders, [], 'nothing sold');
+  input.setMode(null);
+  // A support power with its target picked, then a dialog opens.
+  relock(p);
+  move(p, 0, 0);
+  input.startPowerTargeting({ key: 'spy', name: 'Spy plane', kind: 'SpyPlanePower' });
+  p.real('mousedown', { button: 0, buttons: 1 });
+  assert.ok(input.powerDrag);
+  p.capture.setBlocked(true);
+  assert.equal(input.powerDrag, null);
+  assert.ok(input.power, 'still targeting: the next click picks a target again');
+  input.cancelPower();
+  // A minefield with Ctrl and a plain box selection, released with the hotkey.
+  relock(p);
+  await new Promise((r) => setImmediate(r));
+  input.setSelection([3]);
+  input.ownUnits = [3];
+  move(p, 0, 0);
+  p.real('mousedown', { button: 0, buttons: 1, ctrlKey: true });
+  assert.ok(input.mineDrag);
+  p.capture.toggle();
+  assert.equal(input.mineDrag, null);
+  input.setSelection([]);
+  relock(p);
+  await new Promise((r) => setImmediate(r));
+  move(p, 0, 0);
+  p.real('mousedown', { button: 0, buttons: 1 });
+  move(p, 100, 50);
+  assert.ok(input.drag);
+  p.capture.toggle();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(input.drag, null);
+  assert.deepEqual(boxes, [], 'no box selected');
+  assert.deepEqual(orders, [], 'no power fired, no mines laid');
 });
 
 // ---- A hidden page and the focus (js/background.js, js/main.js) ------------------------------

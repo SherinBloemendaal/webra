@@ -167,12 +167,18 @@ test('frame loop: one throw goes on; FAILING_FRAMES in a row stop the game and r
   assert.equal(raf.pending(), 0, 'stopped: no next frame');
 });
 
-test('main.js: a failing loop stops the game, reports with source frame and says so; a game over sound cannot skip missionWon', () => {
+test('main.js: a failing loop stops the game, reports with source frame and says so until the player leaves; a game over sound cannot skip missionWon', () => {
   const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
   const at = main.indexOf('onFailing: (err) => {');
   assert.ok(at > 0);
   const body = main.slice(at, main.indexOf('},', at));
-  for (const part of [/stopped = true;/, /cancelAnimationFrame\(rafId\);/, /reportError\(err, \{ source: 'frame' \}\);/, /showToast\(`The game stopped: \$\{err\?\.message \?\? err\}`\);/]) assert.match(body, part);
+  for (const part of [/reportError\(err, \{ source: 'frame' \}\);/, /gameStopped\(err\?\.message \?\? err\);/]) assert.match(body, part);
+  // gameStopped: the loop stops, input and the mouse let go, online is told, and the notice stays (js/loadingscreen.js showGameStopped).
+  const stop = main.slice(main.indexOf('const gameStopped = (message) => {'));
+  const stopBody = stop.slice(0, stop.indexOf('};'));
+  for (const part of [/stopped = true;/, /cancelAnimationFrame\(rafId\);/, /input\.setSuspended\(true\);/, /mouseCapture\?\.setBlocked\(true\);/, /online\?\.onQuit\(\);/, /showGameStopped\(loader, message, /]) assert.match(stopBody, part);
+  assert.match(main, /if \(!firstFrame\.fail\(`The game stopped while it started: \$\{message\}`\)\) gameStopped\(message\);/, 'a simulation that fails later stops the same way');
+  assert.doesNotMatch(main, /showToast\(`The game stopped/, 'no toast that goes after 4 seconds');
   assert.match(main, /safe\('sound defeat', \(\) => audio\?\.gameOver\(false\)\)/);
   assert.match(main, /safe\('sound victory', \(\) => audio\?\.gameOver\(true\)\)/);
   // Every guarded call site has its own name, so each failure is reported.

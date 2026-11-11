@@ -57,7 +57,7 @@ function fakeGame(world = WORLD) {
 }
 
 /** The input on a 800 x 600 view of the top left of a 64 x 64 map (1536 x 1536 px). */
-async function makeInput({ spectator = false, game = fakeGame(), over = false } = {}) {
+async function makeInput({ spectator = false, game = fakeGame(), over = false, watching = null } = {}) {
   globalThis.window ??= { addEventListener() {} };
   const { Input } = await import('../js/input.js');
   const canvas = { clientWidth: 800, clientHeight: 600, style: {}, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
@@ -68,6 +68,7 @@ async function makeInput({ spectator = false, game = fakeGame(), over = false } 
     feedback: (t) => log.feedback.push(t),
     selectionClick: () => log.clicks++,
     gameOver: () => over,
+    ...(watching ? { watching } : {}),
   };
   const input = new Input(canvas, game, { actors: [] }, 0, hooks, { hotkeys, settings: createSettings(), spectator });
   input.camera.zoom = 1;
@@ -245,4 +246,93 @@ test("Q's modifiers reach the priority when it is bound with one (OpenRA passes 
   press('KeyQ', 'œ', { altKey: true });
   await settle();
   assert.deepEqual(mods, [[false, false], [true, false], [false, true]]);
+});
+
+test('spectators, replays and a defeated player watching on: clicks select the watched player\'s actors and give no orders', async () => {
+  for (const opts of [{ spectator: true }, { watching: () => true }]) {
+    const game = fakeGame();
+    const orders = [];
+    Object.assign(game, {
+      // Player 0's units would move there, or attack the enemy rifleman.
+      cursor_action: () => 1,
+      deploy_state: () => 0,
+      order_smart: (...args) => orders.push(args),
+      set_rally: (...args) => orders.push(args),
+      deploy_targets: () => ({ teleport: Uint32Array.from([1]), deploy: Uint32Array.from([1]) }),
+      deploy: (...args) => orders.push(args),
+    });
+    const { input, hotkeys } = await makeInput({ ...opts, game });
+    const smart = [];
+    input.hooks.onSmartOrder = (action) => smart.push(action);
+    input.setSelection([1]);
+    assert.deepEqual(input.selectedOwnUnits(), [], 'the watched player\'s units are not "own"');
+    assert.equal(await input.finishClick({ x: 120, y: 160 }, {}), false);
+    assert.deepEqual(input.selection, [7], "another player's unit is selected");
+    input.setSelection([1]);
+    assert.equal(await input.finishClick({ x: 600, y: 600 }, {}), false);
+    assert.deepEqual(input.selection, [], 'the ground clears the selection');
+    // A single selected factory of the watched player gives no rally order.
+    input.setSelection([6]);
+    game.actor_json = (id) => (WORLD[id] ? JSON.stringify({ id, type: WORLD[id].type, owner: WORLD[id].owner, building: id === 6, producer: id === 6, carrier: NONE }) : 'null');
+    assert.equal(input.selectedRallyBuilding(), null);
+    assert.deepEqual(orders, []);
+    assert.deepEqual(smart, []);
+    assert.equal(input.orderFlash, undefined, 'no order marker');
+    // Sidebar modes, attack move, deploy and support powers stay off.
+    input.setSelection([1]);
+    input.toggleMode('sell');
+    input.setMode('repair');
+    assert.equal(input.mode, null);
+    if (!opts.spectator) {
+      // A spectator has no attack move key; a defeated player still has it registered.
+      hotkeys.handle({ code: 'KeyA', key: 'a', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, target: { tagName: 'BODY' }, preventDefault() {} });
+      assert.equal(input.attackMove, false);
+    }
+    await input.deploySelection();
+    assert.equal(input.targeting, null);
+    input.startPowerTargeting({ key: 'spy', name: 'Spy plane', kind: 'SpyPlanePower' });
+    assert.equal(input.power, null);
+    assert.deepEqual(orders, []);
+  }
+});
+
+test('a player who is not watching still gives orders with their selection', async () => {
+  const game = fakeGame();
+  const orders = [];
+  Object.assign(game, { cursor_action: () => 1, deploy_state: () => 0, order_smart: (...args) => orders.push(args) });
+  const { input } = await makeInput({ game, watching: () => false });
+  input.setSelection([1]);
+  assert.equal(await input.finishClick({ x: 600, y: 600 }, {}), true);
+  assert.equal(orders.length, 1);
+  assert.deepEqual(input.selection, [1]);
+  input.toggleMode('sell');
+  assert.equal(input.mode, 'sell');
+});
+
+test('jump to selection (Home) centres on any owner\'s actors: a spectator\'s, an enemy\'s, a mixed selection', async () => {
+  const game = fakeGame();
+  const asked = [];
+  // The engine's units_center: the mean of `player`'s actors among `ids` (others are skipped).
+  game.units_center = (player, ids) => {
+    asked.push([player, Array.from(ids)]);
+    const own = Array.from(ids).filter((id) => WORLD[id]?.owner === player);
+    if (!own.length) return new Float32Array(0);
+    return Float32Array.from([own.reduce((s, id) => s + WORLD[id].x, 0) / own.length, own.reduce((s, id) => s + WORLD[id].y, 0) / own.length]);
+  };
+  for (const spectator of [true, false]) {
+    const { input, key } = await makeInput({ spectator, game });
+    input.watchAll = spectator;
+    const centred = [];
+    input.centerOn = (x, y) => centred.push([x, y]);
+    input.setSelection([8]);
+    key('Home', 'Home');
+    await settle();
+    assert.deepEqual(centred, [[1500, 1500]], "the other player's tank");
+    // Two riflemen of player 0 and one of player 1: the mean of all three.
+    input.setSelection([1, 2, 7]);
+    key('Home', 'Home');
+    await settle();
+    assert.deepEqual(centred[1], [120, 120]);
+    assert.deepEqual(asked.slice(-2), [[0, [1, 2]], [1, [7]]], 'once per owner');
+  }
 });
