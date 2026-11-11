@@ -123,14 +123,20 @@ export const WEAPON_SYNTH = {
   Demolish: [null, 'explosion_large'],
 };
 
-/** Memoize a sound lookup: battles ask for the same few sounds thousands of times. */
-function cached(fn) {
+/**
+ * Memoize a sound lookup: battles ask for the same few sounds thousands of
+ * times. A "no sound" answer (null) is remembered too: most shooters have no
+ * charge sound and most actors no damaged or crush sound.
+ */
+export function cached(fn) {
   const cache = new Map();
   return (...args) => {
     const key = args.join('|');
-    let v = cache.get(key);
-    if (!v) cache.set(key, (v = Object.freeze(fn(...args))));
-    return v;
+    if (cache.has(key)) return cache.get(key);
+    const v = fn(...args);
+    const out = v && typeof v === 'object' ? Object.freeze(v) : v;
+    cache.set(key, out);
+    return out;
   };
 }
 

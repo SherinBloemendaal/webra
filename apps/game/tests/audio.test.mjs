@@ -43,6 +43,8 @@ import {
   rearmSound,
   spokenText,
   QUEUE_NAMES,
+  cached,
+  fireChargeSound,
 } from '../js/audio/catalog.js';
 import { WEAPON_SOUNDS, ACTOR_SOUNDS, SPEECH, SOUND_NOTIFICATIONS, MUSIC_TRACKS } from '../js/audio/catalog-data.js';
 import { RECIPES, render } from '../js/audio/synth.js';
@@ -115,6 +117,20 @@ const ev = (...events) => events.flat();
 const fire = (w, x, y, owner = 0) => [EV.FIRE, w, x, y, owner, 0];
 
 // ---- Catalog ----------------------------------------------------------------------
+
+test('sound lookups are computed once per key, a "no sound" answer too (I-4)', () => {
+  let calls = 0;
+  const lookup = cached((id) => (calls++, id === 'tsla' ? { synth: null, originals: ['x.aud'] } : null));
+  assert.equal(lookup('e1'), null);
+  assert.equal(lookup('e1'), null);
+  assert.equal(calls, 1, 'null is remembered');
+  const a = lookup('tsla');
+  assert.equal(lookup('tsla'), a, 'the same object');
+  assert.ok(Object.isFrozen(a));
+  assert.equal(calls, 2);
+  assert.equal(fireChargeSound('e1'), null, 'a rifleman has no charge sound');
+  assert.equal(fireChargeSound('e1'), null);
+});
 
 test('every engine weapon has a sound class, and synthesized sounds exist for all of them', () => {
   for (const w of engineRules.weapons) assert.ok(WEAPON_SYNTH[w.name], `${w.name} has a sound class`);
