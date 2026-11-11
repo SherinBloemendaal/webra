@@ -21,6 +21,7 @@ import {
   radarLabel,
   revealAt,
 } from '../js/minimap.js';
+import { COMBINED_VIEW, OBSERVER_VIEW } from '../js/observer.js';
 import { initSync, Game } from '../pkg/webra_sim.js';
 
 const wasmPath = fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url));
@@ -197,6 +198,26 @@ test('engine: low power switches the radar off', () => {
   assert.equal(game.minimap_blips(0).length, 0);
 });
 
+test('engine: the spectator views always have their radar online and see what they should', () => {
+  // No radar dome anywhere; player 1's tank stands far from player 0.
+  const game = Game.from_map(mapWith([['2TNK', 0, 12, 12], ['3TNK', 1, 40, 40]]), OPTIONS);
+  for (let i = 0; i < 3; i++) game.tick();
+  assert.equal(Game.observer_player(), OBSERVER_VIEW, 'the client and the engine agree on the observer id');
+  assert.equal(game.radar_state(0), RADAR.NONE);
+  assert.equal(game.radar_state(OBSERVER_VIEW), RADAR.ONLINE);
+  assert.equal(game.radar_state(COMBINED_VIEW), RADAR.ONLINE);
+  const tanks = (blips) => blips.filter(([, , w, h, o]) => w === 1 && h === 1 && o <= 1).map(([x, y, , , o]) => `${o}@${x},${y}`);
+  const hash = game.state_hash();
+  // Player 0's radar is offline; the whole map shows both tanks (and the starting MCVs), and all
+  // players together too, since each player sees its own units.
+  assert.equal(game.minimap_blips(0).length, 0);
+  for (const view of [OBSERVER_VIEW, COMBINED_VIEW]) {
+    const seen = tanks(blipsOf(game, view));
+    assert.ok(seen.includes('0@12,12') && seen.includes('1@40,40'), `view ${view}: ${seen}`);
+  }
+  assert.equal(game.state_hash(), hash, 'reading the spectator radar does not change the simulation');
+});
+
 // ---- The sidebar widget, with a tiny stand-in for the DOM ---------------------------
 
 function fakeElement(tag) {
@@ -332,5 +353,67 @@ test('widget: offline radar ignores clicks; online it moves the camera and order
   assert.ok(mm.root.classList.contains('static'));
   mm.canvas.listeners.pointerdown(pointer(0, 64, 64));
   assert.equal(calls.length, 0);
+  delete globalThis.document;
+});
+
+test('widget: setView switches the player the radar asks the game for; the observer view asks with the observer id', () => {
+  globalThis.document = { createElement: fakeElement };
+  const asked = [];
+  const game = {
+    map_width: () => 64,
+    map_height: () => 64,
+    radar_state: (p) => (asked.push(['radar_state', p]), p === 1 ? RADAR.NONE : RADAR.ONLINE),
+    minimap_blips: (p) => (asked.push(['minimap_blips', p]), new Int32Array(0)),
+  };
+  const fog = (p) => (asked.push(['fog', p]), new Uint8Array(64 * 64).fill(255));
+  const input = { suspended: false, viewRect: () => ({ x0: 0, y0: 0, x1: 240, y1: 240 }), heldMods: () => ({}), radarCursor: () => '' };
+  const mm = new Minimap(fakeElement('aside'), { game, fog, player: 0, input, colors: COLORS });
+  // The fake canvas has no 2D context: give the picture somewhere to go.
+  mm.image = { data: new Uint8ClampedArray(64 * 64 * 4) };
+  mm.ctx = { putImageData() {} };
+  mm.frame(0);
+  assert.deepEqual(asked, [['radar_state', 0], ['minimap_blips', 0], ['fog', 0]]);
+  // Watching player 1, who has no radar: asked at once, offline.
+  asked.length = 0;
+  mm.setView(1);
+  mm.frame(10);
+  assert.deepEqual(asked, [['radar_state', 1]], 'no blips or fog while that radar is offline');
+  assert.equal(mm.label.textContent, 'No radar');
+  // The whole map and all players together: the engine's pseudo players.
+  asked.length = 0;
+  mm.setView(OBSERVER_VIEW);
+  mm.frame(20);
+  assert.deepEqual(asked, [['radar_state', OBSERVER_VIEW], ['minimap_blips', OBSERVER_VIEW], ['fog', OBSERVER_VIEW]]);
+  asked.length = 0;
+  mm.setView(COMBINED_VIEW);
+  mm.frame(30);
+  assert.deepEqual(asked, [['radar_state', COMBINED_VIEW], ['minimap_blips', COMBINED_VIEW], ['fog', COMBINED_VIEW]]);
+  // The same view again changes nothing: the next refresh comes on its own clock.
+  asked.length = 0;
+  mm.setView(COMBINED_VIEW);
+  mm.frame(40);
+  assert.deepEqual(asked, []);
+  delete globalThis.document;
+});
+
+test('widget: a radar made without a place waits for mount, then moves with it (one radar, never a hidden one)', () => {
+  globalThis.document = { createElement: fakeElement };
+  let asked = 0;
+  const game = { map_width: () => 64, map_height: () => 64, radar_state: () => (asked++, RADAR.ONLINE), minimap_blips: () => new Int32Array(0) };
+  const input = { suspended: false, viewRect: () => ({ x0: 0, y0: 0, x1: 240, y1: 240 }), heldMods: () => ({}), radarCursor: () => '' };
+  const mm = new Minimap(null, { game, fog: () => null, player: OBSERVER_VIEW, input, colors: COLORS });
+  mm.frame(0);
+  assert.equal(asked, 0, 'not on the page: not refreshed');
+  const sidebar = fakeElement('div');
+  mm.mount(sidebar);
+  assert.equal(sidebar.children[0], mm.root);
+  mm.frame(1);
+  assert.equal(asked, 1);
+  // A defeated player starts watching: the same radar moves to the observer panel's slot.
+  const slot = fakeElement('div');
+  mm.press = { id: 1 };
+  mm.mount(slot);
+  assert.equal(slot.children[0], mm.root);
+  assert.equal(mm.press, null, 'a press on the old place is let go');
   delete globalThis.document;
 });

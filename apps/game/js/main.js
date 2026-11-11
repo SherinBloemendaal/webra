@@ -70,7 +70,7 @@ import { importOramap } from './oramap/index.js';
 import { Minimap } from './minimap.js';
 import { mountReleaseNotes } from './releasenotes-dialog.js';
 import { TouchControls } from './touch.js';
-import { Layout, hudText, renderPixelRatio } from './layout.js';
+import { Layout, hudText, isCompact, renderPixelRatio } from './layout.js';
 import { attachHudTooltips } from './hudtips.js';
 import { hideTooltip } from './ui/tooltip.js';
 import { UiScale, gameScaleFor, resolveGameScale, screenOf, watchPixelRatio } from './scale.js';
@@ -1939,19 +1939,26 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   ));
   applyRelationshipColors();
   // Radar minimap in the sidebar's radar slot (js/minimap.js); the stress
-  // test leaves the slot empty, which shows "Radar offline".
+  // test leaves the slot empty, which shows "Radar offline". Spectators and
+  // replays have no sidebar: their radar goes into the observer panel's slot
+  // when the panel is mounted below (mountObserver), and shows the observed view.
   const minimap = stress
     ? null
-    : scope.own(new Minimap($('radar'), {
+    : scope.own(new Minimap(viewer ? null : $('radar'), {
         game: ui,
         fog: (p) => game.fog_bytes(p),
-        player,
+        player: view.player,
         input,
         colors: TEAM_COLORS,
         biome: sky.biome,
         pings,
-        // OpenRA IngameRadarDisplayLogic: RadarUp and RadarDown for the player (spectators have no radar of their own).
-        onRadar: viewer ? null : (online) => audio?.radar(online),
+        // OpenRA IngameRadarDisplayLogic: RadarUp and RadarDown for the player (spectators have no radar of their own,
+        // and a defeated player watching on hears none for the views it switches between).
+        onRadar: viewer
+          ? null
+          : (online) => {
+              if (!spectating) audio?.radar(online);
+            },
         // Finger taps on the radar go through the touch controls (Add, Force; js/touch.js), made below.
         touch: {
           radarTap: (w) => (touch ? touch.radarTap(w) : input.radarClick(w, {})),
@@ -2197,6 +2204,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // Observer panel and replay controls (js/observer.js, js/records.js).
   let observer = null;
   let replayBar = null;
+  // Phones put the viewers' radar in the observer panel, other screens in a corner of its own (js/observer.js setCompact).
+  layout.onChange = (mode) => observer?.setCompact(isCompact(mode));
   // End-game statistics (js/stats.js): at the end, for spectators and replays, from the menu once out.
   const statsScreen = stress
     ? null
@@ -2224,6 +2233,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       view: view.player,
       onView: (v) => {
         view.player = v;
+        // The radar follows the view: one player's radar as they see it, or the spectators' own (js/minimap.js setView).
+        minimap?.setView(v);
         // The whole map and all players' vision together are no player's view.
         const all = v === OBSERVER_VIEW || v === COMBINED_VIEW;
         input.player = all ? (viewer ? 0 : player) : v;
@@ -2241,7 +2252,10 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         ctx.drawImage(powerIconArt(icon, canvas.width, canvas.height), 0, 0);
       },
       iconBacking: cameoBacking(OBSERVER_ICON_CSS.width, OBSERVER_ICON_CSS.height, window.devicePixelRatio),
+      compact: layout.compact,
     });
+    // The one radar of the game moves to the panel's slot: the sidebar is hidden for viewers (css/records.css).
+    minimap?.mount(observer.radarSlot);
   };
   // The observer panel is mounted now or after a defeat (enterSpectator).
   scope.add(() => observer?.remove());
@@ -2708,6 +2722,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     commandBar.root.hidden = true;
     $('app').classList.add('viewer');
     view.player = OBSERVER_VIEW;
+    minimap?.setView(OBSERVER_VIEW);
     if (!observer) mountObserver();
     else observer.setView(OBSERVER_VIEW, false);
   };

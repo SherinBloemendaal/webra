@@ -983,7 +983,7 @@ export class Input {
    * tap there (js/touch.js radarTap); otherwise a touch pans at once.
    */
   radarMayOrder() {
-    if (this.suspended || this.spectator || this.placing) return false;
+    if (this.suspended || this.ordersOff() || this.placing) return false;
     return !!(this.power || this.mode || this.targeting || this.attackMove || this.selectedOwnUnits().length || this.selectedRallyBuilding() !== null);
   }
 
@@ -998,12 +998,13 @@ export class Input {
    * (left, as on the battlefield) and a touch tap come here: the radar's
    * other buttons move the camera (OpenRA RadarWidget). Selecting, deploying
    * and placing structures stay on the battlefield (OpenRA places where the
-   * mouse is, not at the radar spot); spectators and replays give no orders.
+   * mouse is, not at the radar spot); spectators, replays and a defeated
+   * player watching on give no orders (ordersOff).
    * Resolves with true when the click was an order; false leaves it to the
    * radar, which moves the camera there.
    */
   async radarClick(w, mods = {}) {
-    if (this.suspended || this.spectator || this.placing) return false;
+    if (this.suspended || this.ordersOff() || this.placing) return false;
     const e = { shiftKey: !!mods.shift, ctrlKey: !!mods.ctrl, metaKey: false, altKey: !!mods.alt };
     if (this.pressAction(w, e, null)) {
       // A down and an up at one spot: a support power without a direction, a one-cell minefield.
@@ -1745,10 +1746,10 @@ export class Input {
    * (OpenRA RadarWidget.GetCursor): the cursor a left click there would get
    * on the battlefield, in its radar variant ("move-minimap" ...) when the
    * installed cursors have one; the plain arrow where a click moves the
-   * camera (no order there, spectators, placing a structure).
+   * camera (no order there, spectators and players watching on, placing a structure).
    */
   radarCursor(w, mods) {
-    const cursor = this.suspended || this.spectator ? CURSORS.select : this.cursorAt(w, mods, { radar: true });
+    const cursor = this.suspended || this.ordersOff() ? CURSORS.select : this.cursorAt(w, mods, { radar: true });
     return minimapCursor(cursor);
   }
 

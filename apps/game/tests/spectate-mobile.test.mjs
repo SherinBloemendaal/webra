@@ -14,6 +14,7 @@ import { ObserverPanel, COMBINED_VIEW, OBSERVER_VIEW } from '../js/observer.js';
 import { chatIntroLine } from '../js/online.js';
 import { touchUi } from '../js/touch.js';
 import { chatTip } from '../js/hudtips.js';
+import { Minimap } from '../js/minimap.js';
 
 const read = (path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
 const CSS_DIR = fileURLToPath(new URL('../css/', import.meta.url));
@@ -179,4 +180,65 @@ test('the observer panel works by taps: every view is a button, the statistics a
   assert.equal(buttons[3].getAttribute('aria-pressed'), 'true');
   assert.equal(panel.root.querySelector('select').getAttribute('aria-label'), 'Statistics');
   uninstallDom();
+});
+
+test('viewers have a visible radar of their own: a corner well on the battlefield, a row of the observer panel on phones', () => {
+  // The sidebar (and its radar slot) stays hidden for viewers.
+  assert.equal(exact('#app.viewer #sidebar')[0]?.[1].display, 'none !important');
+  const corner = RULES.filter(([s, , q]) => s === '.observer-radar' && !q)[0][1];
+  assert.equal(corner.position, 'absolute');
+  assert.equal(corner.right, 'calc(8 * var(--ui-px))', 'the right edge: the observer panel is top right, the chat bottom left');
+  assert.match(corner.bottom, /var\(--replay-bar-height, 0px\)/, 'above the replay bar however many rows it wraps to');
+  assert.equal(corner['z-index'], '6', 'under the chat (z-index 20) and the notifications (25)');
+  // Theme tokens only, no colours of its own.
+  for (const [sel, decls] of RULES.filter(([s]) => s.includes('observer-radar'))) {
+    for (const [k, v] of Object.entries(decls)) assert.doesNotMatch(v, /#[0-9a-f]{3,8}\b|rgba?\(/i, `${sel} ${k}: ${v}`);
+  }
+  assert.equal(corner.background, 'var(--ui-metal-0)');
+  // At most 200 px: right of the 560 px notification lines on a 1024 px window, smaller on short and narrow ones.
+  assert.equal(corner.width, 'calc(200 * var(--ui-px))');
+  assert.equal(RULES.find(([s, , q]) => s === '.observer-radar' && q === '(max-height: 760px)')?.[1].width, 'calc(150 * var(--ui-px))');
+  assert.equal(RULES.find(([s, , q]) => s === '.observer-radar' && q === '(max-width: 960px)')?.[1].width, 'calc(120 * var(--ui-px))');
+  // Phones: in the panel's flow (it scrolls with it), never over the replay bar or the chat.
+  const [[, row]] = exact('.observer-panel > .observer-radar');
+  assert.equal(row.position, 'relative');
+  assert.equal(row.bottom, 'auto');
+
+  const doc = installDom();
+  const field = doc.createElement('main');
+  doc.body.append(field);
+  const players = [
+    { name: 'Ann', color: [1, 0, 0] },
+    { name: 'Bo', color: [0, 0, 1] },
+  ];
+  const panel = new ObserverPanel(field, { players, view: OBSERVER_VIEW, onView: () => {} });
+  const game = { map_width: () => 64, map_height: () => 64, radar_state: () => 1, minimap_blips: () => new Int32Array(0) };
+  const input = { suspended: false, viewRect: () => ({ x0: 0, y0: 0, x1: 240, y1: 240 }), heldMods: () => ({}), radarCursor: () => '' };
+  const radar = new Minimap(null, { game, fog: () => null, player: OBSERVER_VIEW, input, colors: [] });
+  radar.mount(panel.radarSlot);
+  // Desktop: the slot is the battlefield's, outside the panel; the radar is in it.
+  assert.equal(panel.radarSlot.parentNode, field);
+  assert.equal(panel.radarSlot.firstChild, radar.root);
+  assert.equal(field.querySelectorAll('.mm').length, 1, 'one radar');
+  // Phones: the slot moves under the view buttons, with the radar in it.
+  panel.setCompact(true);
+  assert.equal(panel.radarSlot.parentNode, panel.root);
+  const kids = [...panel.root.childNodes];
+  assert.equal(kids[kids.indexOf(panel.root.querySelector('.observer-views')) + 1], panel.radarSlot);
+  assert.equal(panel.radarSlot.firstChild, radar.root);
+  panel.setCompact(false);
+  assert.equal(panel.radarSlot.parentNode, field);
+  // Taking the panel down takes the radar with it.
+  panel.remove();
+  assert.equal(field.querySelectorAll('.mm').length, 0);
+  radar.dispose();
+  uninstallDom();
+  // The game makes one radar: in the sidebar for players, in this slot for viewers (and for a
+  // defeated player once it watches on), following the observed view.
+  const main = read('../js/main.js');
+  assert.match(main, /new Minimap\(viewer \? null : \$\('radar'\)/);
+  assert.equal(main.match(/new Minimap\(/g).length, 1);
+  assert.match(main, /minimap\?\.mount\(observer\.radarSlot\)/);
+  assert.match(main, /minimap\?\.setView\(v\)/);
+  assert.match(main, /minimap\?\.setView\(OBSERVER_VIEW\);\n\s*if \(!observer\) mountObserver\(\);/, 'a defeated player: the whole map, then the panel');
 });

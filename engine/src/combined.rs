@@ -1,8 +1,8 @@
 //! The spectator "All players" view (OpenRA ObserverCombinedView): what every
 //! player sees together, with fog and remembered structures, instead of the
 //! whole map without shroud (`observer::OBSERVER`). Render only, like the
-//! other spectator view: `Game::build_render`, `build_render_records` and
-//! `fog_ptr` take `COMBINED` as the player.
+//! other spectator view: `Game::build_render`, `build_render_records`,
+//! `fog_ptr`, `radar_state` and `minimap_blips` take `COMBINED` as the player.
 //!
 //! The render paths read one player's vision, so for the length of a render
 //! call slot 0's vision, explored cells, remembered structures and gap
@@ -15,7 +15,8 @@
 use crate::world::World;
 use std::collections::BTreeMap;
 
-/// Player index of the combined view for `Game::build_render` and `Game::fog_ptr`.
+/// Player index of the combined view for `Game::build_render`, `Game::fog_ptr`
+/// and the radar (`Game::radar_state`, `Game::minimap_blips`).
 pub const COMBINED: u8 = 254;
 
 impl World {

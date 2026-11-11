@@ -17,8 +17,9 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
-/// Player index meaning "observer" for `Game::build_render` and `Game::fog_ptr`:
-/// the whole map, every actor live.
+/// Player index meaning "observer" for `Game::build_render`, `Game::fog_ptr`
+/// and the radar (`Game::radar_state`, `Game::minimap_blips`): the whole map,
+/// every actor live.
 pub const OBSERVER: u8 = 255;
 
 /// Ticks between two samples of the statistics history (5 s of game time).
@@ -697,9 +698,9 @@ impl World {
 
 #[wasm_bindgen]
 impl Game {
-    /// Player index of the observer (spectators, replays) for `build_render`
-    /// and `fog_ptr`: the whole map with every actor live. No other method
-    /// takes it.
+    /// Player index of the observer (spectators, replays) for `build_render`,
+    /// `build_render_records`, `fog_ptr`, `radar_state` and `minimap_blips`:
+    /// the whole map with every actor live. No other method takes it.
     pub fn observer_player() -> u8 {
         OBSERVER
     }

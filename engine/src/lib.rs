@@ -815,19 +815,34 @@ impl Game {
 
     // ---- Radar minimap (minimap.rs, apps/game/js/minimap.js) ----------------
 
-    /// 0: no radar structure, 1: online, 2: jammed, 3: low power.
+    /// 0: no radar structure, 1: online, 2: jammed, 3: low power. The
+    /// spectator views (`observer_player()`, `combined::COMBINED`) always
+    /// have their radar online.
     pub fn radar_state(&self, player: u8) -> u8 {
+        if player == observer::OBSERVER || player == combined::COMBINED {
+            return minimap::RadarState::Online as u8;
+        }
         self.world.radar_state(player) as u8
     }
 
     /// Radar blips `player` may see, `[cell x, cell y, width, height, owner]`
-    /// each (owner 255: neutral); empty while the radar is offline. Read only.
-    pub fn minimap_blips(&self, player: u8) -> Vec<i32> {
-        if player as usize >= self.world.players.len() {
-            return Vec::new();
-        }
+    /// each (owner 255: neutral); empty while the radar is offline. For
+    /// `observer_player()` every structure and unit on the map, for
+    /// `combined::COMBINED` what any player sees (minimap.rs
+    /// `spectator_minimap_blips`). Read only: the spectator views set their
+    /// render flags (and swap slot 0's vision for the combined one) for the
+    /// length of the call, as `build_render` does, and restore them.
+    pub fn minimap_blips(&mut self, player: u8) -> Vec<i32> {
         let mut out = Vec::new();
-        self.world.minimap_blips(player, &mut out);
+        if player == observer::OBSERVER {
+            self.world.render_all = true;
+            self.world.spectator_minimap_blips(&mut out);
+            self.world.render_all = false;
+        } else if player == combined::COMBINED {
+            self.world.with_combined_view(|w| w.spectator_minimap_blips(&mut out));
+        } else if (player as usize) < self.world.players.len() {
+            self.world.minimap_blips(player, &mut out);
+        }
         out
     }
 
