@@ -530,20 +530,6 @@ code {
   color: var(--ui-primary-disabled-text);
 }
 
-/* A quiet action: an outline with accent text. */
-.btn-ghost {
-  background: transparent;
-  border-color: var(--ui-metal-4);
-  box-shadow: none;
-  color: var(--accent-hi);
-}
-
-.btn-ghost:hover {
-  background: var(--ui-metal-1);
-  border-color: var(--accent);
-  color: var(--accent-hover);
-}
-
 .btn-small {
   min-height: 36px;
   padding: 0 12px calc(2 * var(--ui-cap-nudge));
