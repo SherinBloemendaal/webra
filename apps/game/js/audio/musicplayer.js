@@ -14,6 +14,7 @@ import { installedSummary } from './install.js';
 import { MUSIC_SOURCE_HINT } from './catalog.js';
 import { GROUPS } from '../registry.js';
 import { led, segmented, setLed, slider, syncSliderFill, toggle } from '../ui/controls.js';
+import { holdPage } from '../ui/modal.js';
 
 /** Milliseconds between two updates of the elapsed time. */
 export const TIME_UPDATE_MS = 250;
@@ -286,11 +287,16 @@ export function mountMusicPanel(panel, audio, opts = {}) {
   panel.hidden = true;
   let player = null;
   let opener = null;
+  // While open, the page behind is inert: Tab stays in the dialog (aria-modal).
+  let release = null;
   const shut = () => {
     if (panel.hidden) return;
     panel.hidden = true;
     player?.dispose();
     player = null;
+    // The page first, so the focus can go back to it.
+    release?.();
+    release = null;
     opener?.focus?.();
     opener = null;
   };
@@ -318,6 +324,7 @@ export function mountMusicPanel(panel, audio, opts = {}) {
             : undefined,
         });
       }
+      if (panel.hidden) release = holdPage(panel);
       panel.hidden = false;
       close.focus();
     },

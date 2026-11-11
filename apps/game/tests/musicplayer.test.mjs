@@ -325,3 +325,38 @@ test('the Sound dialog gives the focus back to the entry that opened it, not the
   click(soundPanel.querySelector('.audio-close'));
   assert.equal(doc.activeElement, button);
 });
+
+test('the Sound and Music dialogs hold the page: what is behind them is inert while they are open (I-6)', async () => {
+  const { audio } = await audioWith({ tracks: 1 });
+  const button = doc.createElement('button');
+  const start = doc.createElement('button'); // a start screen button behind the backdrop
+  const off = doc.createElement('div');
+  off.inert = true; // inert already, for its own reasons
+  const soundPanel = doc.createElement('section');
+  const musicPanel = doc.createElement('section');
+  soundPanel.hidden = true;
+  doc.body.append(start, off, button, soundPanel, musicPanel);
+  const music = mountMusicPanel(musicPanel, audio);
+  mountAudioPanel(button, soundPanel, audio, { onMusicPlayer: () => music.open(button) });
+  click(button);
+  assert.equal(start.inert, true, 'Tab cannot leave the Sound dialog');
+  assert.equal(button.inert, true);
+  assert.equal(musicPanel.inert, true);
+  assert.ok(!soundPanel.inert, 'the dialog itself stays usable');
+  click([...soundPanel.querySelectorAll('button')].find((b) => b.textContent === 'Music player...'));
+  assert.equal(musicPanel.hidden, false);
+  assert.ok(!musicPanel.inert, 'the Music dialog is usable');
+  assert.equal(soundPanel.inert, true, 'the closed Sound dialog is behind it now');
+  assert.equal(start.inert, true);
+  musicPanel.dispatchEvent(new FakeEvent('keydown', { key: 'Escape' }));
+  assert.equal(musicPanel.hidden, true);
+  for (const n of [start, button, soundPanel, musicPanel]) assert.ok(!n.inert, 'closing gives the page back');
+  assert.equal(off.inert, true, 'what was inert before stays inert');
+  assert.equal(doc.activeElement, button);
+  // Closing the Sound dialog itself gives the page back too.
+  click(button);
+  assert.equal(start.inert, true);
+  soundPanel.dispatchEvent(new FakeEvent('keydown', { key: 'Escape' }));
+  assert.ok(!start.inert);
+  assert.equal(off.inert, true);
+});

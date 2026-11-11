@@ -12,6 +12,7 @@ import { MUSIC_SOURCE_HINT } from './catalog.js';
 import { DEFAULT_PREFS } from './prefs.js';
 import { GROUPS } from '../registry.js';
 import { segmented, slider, syncSliderFill, toggle } from '../ui/controls.js';
+import { holdPage } from '../ui/modal.js';
 import { labelWithHelp } from '../infotip.js';
 
 /** Controls that get a "?" with `help: true` (texts: js/help.js `audio.<key>`). */
@@ -278,14 +279,20 @@ export function mountAudioPanel(button, panel, audio, opts = {}) {
   // click does not focus a button in Safari and Firefox on macOS): this
   // button, or the start screen's More, Sound and music entry (js/startmenu.js).
   let opener = null;
+  // While open, the page behind is inert: Tab stays in the dialog (aria-modal).
+  let release = null;
   function open(on, from = null) {
     if (on === !panel.hidden) return;
     panel.hidden = !on;
     button.setAttribute('aria-expanded', String(on));
     if (on) {
       opener = from ?? (document.activeElement && document.activeElement !== document.body ? document.activeElement : null);
+      release = holdPage(panel);
       close.focus();
     } else {
+      // The page first, so the focus can go back to it.
+      release?.();
+      release = null;
       const back = opener instanceof HTMLElement && opener.isConnected ? opener : button;
       opener = null;
       back.focus();
