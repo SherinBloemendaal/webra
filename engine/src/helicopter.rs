@@ -162,11 +162,14 @@ impl World {
     }
 
     /// A pad is free when nobody holds it, or the holder is `me`, or the
-    /// holder is gone or no longer heading for it (reservations clear lazily).
+    /// holder is gone, no longer heading for it, or no longer of the pad's
+    /// owner (a captured pad; reservations clear lazily).
     fn pad_free_for(&self, b: usize, me: u32) -> bool {
         match self.resolve(self.actors[b].dock_user) {
             None => true,
-            Some(u) => self.make_ref(u) == me || self.actors[u].heli.pad != self.make_ref(b),
+            Some(u) => {
+                self.make_ref(u) == me || self.actors[u].heli.pad != self.make_ref(b) || self.actors[u].owner != self.actors[b].owner
+            }
         }
     }
 
@@ -335,7 +338,10 @@ impl World {
     }
 
     /// A helicopter standing on an own helipad keeps it reserved and reloads;
-    /// on a service depot it gets repaired when damaged.
+    /// on a service depot it gets repaired when damaged. On a structure that
+    /// is no longer its own (captured) or gone it gives the reservation up
+    /// and takes off (OpenRA Reservable on an owner change: the aircraft
+    /// UnReserve with takeOff).
     fn heli_landed_service(&mut self, i: usize) {
         let ci = self.cell_index(self.actors[i].x, self.actors[i].y);
         let b = self.building_at[ci];
@@ -344,6 +350,8 @@ impl World {
         }
         let b = b as usize;
         if !self.actors[b].alive || self.actors[b].owner != self.actors[i].owner {
+            self.release_pad(i);
+            self.actors[i].heli.landed = false;
             return;
         }
         let me = self.make_ref(i);
@@ -885,12 +893,13 @@ impl World {
                 return false;
             }
         }
-        // Other helicopters on their way down to this cell.
+        // Other helicopters on their way down to this cell: landing, or
+        // coming down to unload on their chosen spot.
         !self.actors.iter().enumerate().any(|(j, o)| {
             j != i
                 && o.alive
                 && o.kind == Kind::Aircraft
-                && o.heli.task == HeliTask::Land
+                && (o.heli.task == HeliTask::Land || (o.activity == Activity::Unload && o.heli.unload_spot && !o.heli.landed))
                 && self.cell_index(o.heli.land_x, o.heli.land_y) == ci
         })
     }
@@ -1083,21 +1092,29 @@ impl World {
     }
 
     /// A helicopter just built: it starts landed on its helipad, holding it.
+    /// When the pad is held by another helicopter (one built earlier still
+    /// stands on it) the new one starts at cruise altitude above the pad
+    /// instead, like a plane over a taken airfield (`plane_produced`).
     pub(crate) fn heli_produced(&mut self, u: usize, b: usize) {
         if !self.is_heli(u) {
             return;
         }
         let (x, y) = self.pad_point(b);
+        let me = self.make_ref(u);
+        let free = self.is_rearm_pad_for(u, b) && self.pad_free_for(b, me);
+        let cruise = self.heli_air(u).cruise_altitude;
         let a = &mut self.actors[u];
         a.x = x;
         a.y = y;
         a.px = x;
         a.py = y;
-        a.altitude = 0;
-        a.heli.landed = true;
-        let me = self.make_ref(u);
-        if self.is_rearm_pad_for(u, b) && self.pad_free_for(b, me) {
+        if free {
+            a.altitude = 0;
+            a.heli.landed = true;
             self.reserve_pad(u, b);
+        } else {
+            a.altitude = cruise;
+            a.heli.landed = false;
         }
     }
 

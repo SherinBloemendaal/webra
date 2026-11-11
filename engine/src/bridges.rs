@@ -299,7 +299,7 @@ impl BridgeLayer {
     }
 }
 
-use crate::world::World;
+use crate::world::{World, NONE};
 
 impl World {
     /// The template of bridge actor type `ty` on this map's biome.
@@ -582,7 +582,10 @@ impl World {
 
     /// OpenRA Bridge.KillUnitsOnBridge: units on the span's cells that
     /// cannot be on that ground die (tanks on a fallen bridge, a ship under
-    /// a repaired one). Aircraft in the air fly on.
+    /// a repaired one). Aircraft in the air fly on. In the cell movement
+    /// model a unit in the middle of a step is on both cells of the step
+    /// (OpenRA's ActorMap lists it on both): one driving onto the span from
+    /// the shore dies with it although its centre is still on the shore.
     fn kill_units_on_bridge(&mut self, b: usize) {
         let cells: Vec<usize> = self.neutral.bridges.bridges[b].cells.iter().map(|c| c.2).collect();
         let doomed: Vec<usize> = (0..self.actors.len())
@@ -593,21 +596,40 @@ impl World {
                 if !self.occupies_cell(i) {
                     return false;
                 }
-                let ci = self.cell_index(a.x, a.y);
-                if !cells.contains(&ci) {
-                    return false;
+                let mut on = [self.cell_index(a.x, a.y), usize::MAX, usize::MAX];
+                if self.cell_moves() && self.occupies_cells(i) {
+                    for (k, (c, _)) in self.held_cells(i).into_iter().enumerate() {
+                        if c != NONE {
+                            on[k + 1] = c as usize;
+                        }
+                    }
                 }
                 // OpenRA CanExistInCell: the terrain must be open to its
                 // locomotor (a landed helicopter needs ground to stand on).
-                let t = self.map.terrain[ci];
-                match self.domain_of(i) {
-                    crate::rules::Domain::Air => !t.passable(),
-                    _ => !self.terrain_open_to(a.ty as usize, t),
-                }
+                on.into_iter().filter(|ci| cells.contains(ci)).any(|ci| {
+                    let t = self.map.terrain[ci];
+                    match self.domain_of(i) {
+                        crate::rules::Domain::Air => !t.passable(),
+                        _ => !self.terrain_open_to(a.ty as usize, t),
+                    }
+                })
             })
             .collect();
         for i in doomed {
             self.kill(i);
+        }
+        // A wreck lying on the span goes with it when it cannot lie on the
+        // new ground (Husk.AllowedTerrain, as when a husk is created): no
+        // wreck on open water, and the river under a fallen span stays open
+        // to ships. `husk_cell_freed` restores the cell's passability.
+        for ci in cells {
+            let Some(h) = self.husk_at(ci) else { continue };
+            let Some(info) = self.rules.actors[self.actors[h].ty as usize].options.husk.as_ref() else { continue };
+            let names = crate::crates::terrain_names(self, ci);
+            if !info.allowed_terrain.is_empty() && !info.allowed_terrain.iter().any(|t| names.contains(&t.as_str())) {
+                self.remove(h);
+                self.husk_cell_freed(h);
+            }
         }
     }
 

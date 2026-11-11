@@ -341,7 +341,7 @@ impl World {
     }
 
     /// The cells unit `i` holds (OpenRA Mobile.OccupiedCells).
-    fn held_cells(&self, i: usize) -> [(u32, u8); 2] {
+    pub(crate) fn held_cells(&self, i: usize) -> [(u32, u8); 2] {
         let m = &self.actors[i].mv;
         if m.from == m.to || self.shares_cell(i) {
             [(m.to, m.to_sub), (NONE, 0)]

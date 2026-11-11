@@ -608,14 +608,16 @@ impl World {
                 let d = self.player_detail(p as u8);
                 let mut units = BTreeMap::new();
                 let mut structures = BTreeMap::new();
-                for a in &self.actors {
+                for (i, a) in self.actors.iter().enumerate() {
                     if !a.alive || a.owner as usize != p || a.hp <= 0 {
                         continue;
                     }
-                    match a.kind {
-                        Kind::Building => *structures.entry(a.ty).or_insert(0u32) += 1,
-                        Kind::Mine => {}
-                        _ => *units.entry(a.ty).or_insert(0u32) += 1,
+                    // Units as `army_counts` counts them: no wrecks, mines or
+                    // crates, and no support power aircraft passing over.
+                    if a.kind == Kind::Building {
+                        *structures.entry(a.ty).or_insert(0u32) += 1;
+                    } else if a.is_unit() && !self.is_support_aircraft(i) {
+                        *units.entry(a.ty).or_insert(0u32) += 1;
                     }
                 }
                 let o = v.as_object_mut().expect("object");

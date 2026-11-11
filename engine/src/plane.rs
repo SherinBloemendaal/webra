@@ -100,6 +100,12 @@ pub struct AirState {
     pub overshoot: bool,
     /// Explicit "return to base" order; cleared by any new order.
     pub rtb: bool,
+    /// Sent home out of ammo with its attack kept (AbortOnResupply false),
+    /// or given an attack while parked without ammo: on the airfield it
+    /// waits for the full pool before it goes. A new
+    /// order or the take-off clears it, so a fresh attack order to a parked
+    /// plane with rounds left takes off at once (OpenRA cancels the resupply).
+    pub resume_after_rearm: bool,
     /// Support power aircraft: job, target point and camera.
     pub mission: Mission,
     pub tx: i32,
@@ -130,6 +136,7 @@ impl Default for AirState {
             base: NONE,
             overshoot: false,
             rtb: false,
+            resume_after_rearm: false,
             mission: Mission::None,
             tx: 0,
             ty: 0,
@@ -150,6 +157,7 @@ impl AirState {
     pub fn new_order(&mut self) {
         self.rtb = false;
         self.overshoot = false;
+        self.resume_after_rearm = false;
         if self.phase == Phase::Returning {
             self.phase = Phase::Flying;
         }
@@ -163,7 +171,6 @@ struct Flight {
     turn: i32,
     cruise: i32,
     climb: i32,
-    max_ammo: i32,
     reload_delay: i32,
     reload_count: i32,
     crash_velocity: i32,
@@ -196,7 +203,6 @@ impl World {
             turn: u.turn_speed.max(1),
             cruise: ac.cruise_altitude,
             climb: (speed * facing_vec(MAX_PITCH).0 / 1024).max(1),
-            max_ammo: ac.ammo,
             reload_delay: ac.reload_delay.max(1),
             reload_count: ac.reload_count.max(1),
             crash_velocity: ac.crash_velocity,
@@ -431,29 +437,41 @@ impl World {
     }
 
     fn tick_parked(&mut self, i: usize) {
-        let f = self.flight(i);
         let on_base = self.resolve(self.actors[i].air.base).filter(|&b| self.is_rearm_base_for(i, b));
-        let full = match on_base {
-            Some(b) => {
-                // The airfield's rearm animation while there is ammo to load (fx.rs).
-                if self.actors[i].air.spent > 0 {
-                    self.note_service(b);
-                }
-                self.rearm_step(i)
+        let Some(b) = on_base else {
+            // No airfield under it any more (destroyed, sold or captured, or
+            // a stopped repair left it on the depot pad): a plane cannot stay
+            // landed without a host (OpenRA takes off). Short of ammo and
+            // with no order that keeps it busy, it looks for another airfield
+            // (`tick_returning` circles while none is free); an attack goes
+            // on with the rounds left (`tick_flying` sends it home when dry).
+            let short = self.actors[i].air.spent > 0;
+            self.take_off(i);
+            if short && !matches!(self.actors[i].activity, Activity::Attack | Activity::Move) {
+                self.actors[i].air.phase = Phase::Returning;
             }
-            None => {
-                self.actors[i].air.base = NONE;
-                self.ammo_left(i) >= f.max_ammo
-            }
+            return;
         };
+        // The airfield's rearm animation while there is ammo to load (fx.rs).
+        if self.actors[i].air.spent > 0 {
+            self.note_service(b);
+        }
+        let dry = self.ammo_left(i) == 0;
+        let full = self.rearm_step(i);
         match self.actors[i].activity {
             Activity::Move => self.take_off(i),
             Activity::Attack => {
                 // OpenRA ReturnToBase then resume (AbortOnResupply false):
                 // take off again once fully rearmed (to where the target was
-                // last seen when the airfield does not see it).
+                // last seen when the airfield does not see it). A fresh
+                // attack order goes with the rounds left; given to a dry
+                // plane it waits for the full rearm too, as OpenRA's
+                // FlyAttack sends a plane without ammo to resupply first.
                 if self.plane_target(i).is_some() || self.plane_last_seen(i).is_some() {
-                    if full {
+                    if dry {
+                        self.actors[i].air.resume_after_rearm = true;
+                    }
+                    if full || (!self.actors[i].air.resume_after_rearm && self.ammo_left(i) > 0) {
                         self.take_off(i);
                     }
                 } else {
@@ -472,6 +490,7 @@ impl World {
         a.air.phase = Phase::Flying;
         a.air.base = NONE; // OpenRA releases the reservation on take-off
         a.air.rearm_timer = 0;
+        a.air.resume_after_rearm = false;
         let f = self.flight(i);
         self.fly_forward(i, &f, f.cruise, true);
     }
@@ -492,6 +511,8 @@ impl World {
                         a.target = NONE;
                         a.air.overshoot = false;
                         a.waypoints.clear();
+                    } else {
+                        self.actors[i].air.resume_after_rearm = true;
                     }
                     self.actors[i].air.phase = Phase::Returning;
                     self.tick_returning(i);
@@ -1006,7 +1027,13 @@ impl World {
         let d = dist(x, y, tx, ty);
         match a.air.mission {
             Mission::SpyPlane => {
-                if !a.air.camera_done && d <= f.speed {
+                // At the target, or once it is no longer ahead: each tick's
+                // step is truncated, so on a long flight the path can drift
+                // sideways by more than a tick of flight and never come
+                // within `f.speed` of the point.
+                let (vx, vy) = facing_vec(a.facing);
+                let passed = vx as i64 * (tx - x) as i64 + vy as i64 * (ty - y) as i64 <= 0;
+                if !a.air.camera_done && (d <= f.speed || passed) {
                     self.place_camera(i);
                 }
             }
@@ -1057,13 +1084,19 @@ impl World {
             }
             Mission::None => {}
         }
-        // Gone once it left the map again.
+        // Gone once it left the map again, or once it is beyond the cordon
+        // and flying away from the map, so it can never come in: a wing
+        // plane of a squad flying along a map edge (SquadOffset sideways)
+        // may pass wholly outside the map.
         let a = &mut self.actors[i];
         let m = SUPPORT_CORDON;
-        let inside_map = a.x >= 0 && a.y >= 0 && a.x < self.map.width * CELL && a.y < self.map.height * CELL;
+        let (w, h) = (self.map.width * CELL, self.map.height * CELL);
+        let inside_map = a.x >= 0 && a.y >= 0 && a.x < w && a.y < h;
+        let (vx, vy) = facing_vec(a.facing);
+        let never_in = (a.x < -m && vx <= 0) || (a.x >= w + m && vx >= 0) || (a.y < -m && vy <= 0) || (a.y >= h + m && vy >= 0);
         if inside_map {
             a.air.entered = true;
-        } else if a.air.entered && (a.x < -m || a.y < -m || a.x >= self.map.width * CELL + m || a.y >= self.map.height * CELL + m) {
+        } else if never_in || (a.air.entered && (a.x < -m || a.y < -m || a.x >= w + m || a.y >= h + m)) {
             self.remove(i);
         }
     }

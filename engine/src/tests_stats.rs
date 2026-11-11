@@ -287,3 +287,24 @@ fn defeated_players_cannot_give_orders() {
     let frame = serde_json::to_string(&vec![(0u8, vec![serde_json::to_value(&o).unwrap()])]).unwrap();
     assert_eq!(g.apply_frame(&frame).unwrap(), 1);
 }
+
+/// The report's current army counts what `army_counts` counts: a wreck of
+/// the player's own tank and a support plane passing over are no units.
+#[test]
+fn the_reports_units_leave_out_wrecks_and_support_aircraft() {
+    let mut w = flat_world();
+    let tank = unit(&mut w, "2TNK", 0, 20, 20);
+    let _jeep = unit(&mut w, "JEEP", 0, 24, 20);
+    w.kill(tank);
+    let husk = w.husk_at(w.map.idx(20, 20)).expect("a wreck");
+    assert_eq!(w.actors[husk].owner, 0, "the wreck is the victim's");
+    let u2 = unit(&mut w, "U2", 0, 30, 30);
+    w.actors[u2].air.mission = crate::plane::Mission::SpyPlane;
+    let r = report(&w);
+    let units = r["players"][0]["units"].as_object().unwrap();
+    assert_eq!(units.get("JEEP"), Some(&serde_json::json!(1)));
+    assert!(!units.contains_key("2TNK"), "the tank died");
+    let husk_id = &w.rules.actors[w.actors[husk].ty as usize].id;
+    assert!(!units.contains_key(husk_id.as_str()), "no wreck among the units");
+    assert!(!units.contains_key("U2"), "no support plane among the units");
+}

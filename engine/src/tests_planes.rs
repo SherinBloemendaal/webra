@@ -210,6 +210,113 @@ fn planes_resume_their_attack_once_rearmed_by_default() {
 }
 
 #[test]
+fn a_fresh_attack_order_to_a_rearming_plane_goes_with_the_rounds_left() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    let max = w.max_ammo(p);
+    w.actors[p].air.spent = max - 2;
+    let (tx, ty_) = open_ground(&w, 18);
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 1, tx, ty_, 0);
+    w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
+    w.update_vision();
+    run(&mut w, 5);
+    assert_eq!(w.actors[p].air.phase, Phase::Parked, "rearming without orders");
+    w.queue_order(Order::Attack { player: 0, ids: vec![w.make_ref(p)], target: w.make_ref(tank) });
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Flying, "takes off at once");
+    assert!(w.ammo_left(p) < max, "without waiting for the full pool");
+    // A dry plane still waits for the rearm before it goes.
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[p].air.spent = max;
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 1, tx, ty_, 0);
+    w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
+    w.update_vision();
+    w.queue_order(Order::Attack { player: 0, ids: vec![w.make_ref(p)], target: w.make_ref(tank) });
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Parked, "an empty plane rearms first");
+    let mut left = false;
+    for _ in 0..2000 {
+        w.step();
+        if w.actors[p].air.phase != Phase::Parked {
+            left = true;
+            break;
+        }
+    }
+    assert!(left, "and goes once full");
+    assert_eq!(w.ammo_left(p), max);
+}
+
+#[test]
+fn plane_left_without_its_airfield_takes_off_and_attacks_with_the_rounds_left() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[p].air.spent = 3;
+    let (tx, ty_) = open_ground(&w, 18);
+    let tank = w.spawn_unit(ty(&w, "1TNK"), 1, tx, ty_, 0);
+    w.add_reveal(0, tx, ty_, 3 * CELL, 100_000);
+    w.update_vision();
+    w.kill(afld);
+    w.step();
+    w.queue_order(Order::Attack { player: 0, ids: vec![w.make_ref(p)], target: w.make_ref(tank) });
+    run(&mut w, 2);
+    assert_ne!(w.actors[p].air.phase, Phase::Parked, "took off without a full pool");
+    let left = w.ammo_left(p);
+    let hp0 = w.actors[tank].hp;
+    let mut fired = false;
+    for _ in 0..1500 {
+        w.step();
+        if w.ammo_left(p) < left || !w.actors[tank].alive || w.actors[tank].hp < hp0 {
+            fired = true;
+            break;
+        }
+    }
+    assert!(fired, "the plane attacks with what it has");
+}
+
+#[test]
+fn plane_left_without_its_airfield_flies_to_another_one() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let other = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[p].air.spent = 3;
+    w.kill(afld);
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Returning, "short of ammo: looks for another airfield");
+    let mut landed = false;
+    for _ in 0..2000 {
+        w.step();
+        if w.actors[p].air.phase == Phase::Parked {
+            landed = true;
+            break;
+        }
+    }
+    assert!(landed, "landed again");
+    assert_eq!((w.actors[p].x, w.actors[p].y), (w.actors[other].x, w.actors[other].y), "on the other airfield");
+    assert_eq!(w.actors[p].air.base, w.make_ref(other));
+    run(&mut w, 400);
+    assert_eq!(w.ammo_left(p), w.max_ammo(p), "rearmed there");
+    assert_eq!(w.actors[p].air.phase, Phase::Parked, "and stays");
+}
+
+#[test]
+fn full_plane_on_a_captured_airfield_takes_off_and_circles() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let p = parked_plane(&mut w, "YAK", afld);
+    w.actors[afld].owner = 1;
+    run(&mut w, 2);
+    assert_eq!(w.actors[p].air.phase, Phase::Flying, "no host: airborne");
+    assert_eq!(w.actors[p].air.base, crate::world::NONE);
+    run(&mut w, 100);
+    assert!(w.actors[p].altitude > 0, "it does not land on the enemy airfield");
+}
+
+#[test]
 fn ground_weapons_hit_landed_planes_only() {
     let mut w = game("soviet");
     let afld = place(&mut w, 0, "AFLD");
@@ -350,6 +457,79 @@ fn spy_plane_reveals_the_target_and_leaves() {
     assert_eq!(w.players[0].explored[ci], 1);
     assert!(w.resolve(id).is_none(), "flew off the map");
     assert_eq!(w.losses[0], 0, "leaving is not a loss");
+}
+
+/// A path that misses the target point by more than a tick of flight (the
+/// per tick truncation drifts on long flights over large maps) still
+/// places the camera, once the target is behind the plane.
+#[test]
+fn spy_plane_places_its_camera_when_its_path_passes_beside_the_target() {
+    let mut w = game("soviet");
+    place(&mut w, 0, "AFLD");
+    run(&mut w, 1);
+    charge_all(&mut w, 0);
+    let (tx, ty_) = (cell_center(w.map.width / 2), cell_center(w.map.height / 2));
+    w.queue_order(Order::SupportPower {
+        player: 0,
+        key: "AirstrikePower@spyplane".into(),
+        x: tx,
+        y: ty_,
+        x2: Some(tx + 10 * CELL),
+        y2: Some(ty_),
+    });
+    run(&mut w, 1);
+    let u2 = of_type(&w, 0, "U2")[0];
+    assert_eq!(w.actors[u2].facing, 256, "flies east");
+    // The camera point lies two cells beside the flight line.
+    let (cx, cy) = (tx, ty_ + 2 * CELL);
+    w.actors[u2].air.ty = cy;
+    let ci = w.cell_index(cx, cy);
+    let id = w.make_ref(u2);
+    let mut placed_at = None;
+    for _ in 0..600 {
+        w.step();
+        let Some(u) = w.resolve(id) else { break };
+        if placed_at.is_none() && w.actors[u].air.camera_done {
+            placed_at = Some(w.actors[u].x);
+        }
+    }
+    let x = placed_at.expect("the camera was placed");
+    assert!(x >= cx && x < cx + 2 * CELL, "as the plane passed the target");
+    assert_ne!(w.players[0].explored[ci], 0, "the camera's point was revealed");
+}
+
+/// A squad flying along a map edge: the wing plane on the outer side never
+/// comes inside the map. It is removed once beyond the cordon and flying
+/// away, like the planes that crossed the map.
+#[test]
+fn support_planes_whose_path_misses_the_map_are_removed() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let mut info = w.rules.actors[w.actors[afld].ty as usize]
+        .abilities
+        .support_powers
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|p| p.key == "AirstrikePower@spyplane")
+        .unwrap()
+        .clone();
+    info.squad_size = 3;
+    info.squad_offset = vec![-1536, 1536];
+    let (tx, ty_) = (cell_center(w.map.width / 2), cell_center(0));
+    let planes = w.launch_air_power(0, &info, 0, tx, ty_, Some((tx + 10 * CELL, ty_))).expect("launched");
+    assert_eq!(planes.len(), 3);
+    let ids: Vec<u32> = planes.iter().map(|&p| w.make_ref(p)).collect();
+    let outside = planes.iter().filter(|&&p| w.actors[p].y < 0).count();
+    assert_eq!(outside, 1, "one wing plane flies beside the map");
+    for _ in 0..2000 {
+        w.step();
+        if ids.iter().all(|&r| w.resolve(r).is_none()) {
+            break;
+        }
+    }
+    assert!(ids.iter().all(|&r| w.resolve(r).is_none()), "every plane of the squad is gone");
+    assert!(!w.actors.iter().any(|a| a.alive && a.air.mission != Mission::None));
 }
 
 #[test]

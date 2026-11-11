@@ -122,6 +122,32 @@ fn hind_is_built_landed_on_the_helipad_then_takes_off() {
 }
 
 #[test]
+fn second_hind_built_on_a_held_helipad_starts_in_the_air_above_it() {
+    let mut w = flat_world();
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.refresh_tokens();
+    w.update_power();
+    let hind = ty(&w, "HIND");
+    // No rally point: the first Hind stays landed on the pad and holds it.
+    w.queue_order(Order::StartProduction { player: 0, ty: hind, count: 2 });
+    let _ = run_until(&mut w, 4000, |w| w.actors.iter().filter(|a| a.alive && a.ty == hind).count() == 2);
+    let hinds: Vec<usize> = w.actors.iter().enumerate().filter(|(_, a)| a.alive && a.ty == hind).map(|(i, _)| i).collect();
+    let (first, second) = (hinds[0], hinds[1]);
+    let (px, py) = pad_point(&w, pad);
+    assert!(w.actors[first].heli.landed && w.actors[first].altitude == 0, "the first stays landed");
+    assert_eq!(w.actors[first].heli.pad, w.make_ref(pad), "and holds the pad");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(first));
+    let s = &w.actors[second];
+    assert_eq!((s.x, s.y), (px, py), "the second appears above the pad");
+    assert!(!s.heli.landed);
+    assert_eq!(s.altitude, cruise(&w, second), "at cruise altitude");
+    assert_eq!(s.heli.pad, crate::world::NONE, "without a reservation");
+    run(&mut w, 50);
+    assert!(!w.actors[second].heli.landed && w.actors[second].altitude == cruise(&w, second), "it keeps hovering");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(first));
+}
+
+#[test]
 fn helicopters_hover_in_place_and_turn_in_place() {
     let mut w = flat_world();
     let i = heli(&mut w, "MH60", 0, 20, 20);
@@ -252,6 +278,32 @@ fn empty_helicopter_returns_to_the_helipad_reloads_and_takes_off() {
     run(&mut w, 30);
     assert_eq!(w.actors[i].altitude, cruise(&w, i), "took off after resupply");
     assert!(w.resolve(w.actors[pad].dock_user).is_none(), "pad free again");
+}
+
+/// OpenRA Reservable on an owner change: the old owner's helicopter on a
+/// captured helipad gives it up and takes off, so the new owner can use it.
+#[test]
+fn a_captured_helipad_is_freed_for_its_new_owner() {
+    let mut w = flat_world();
+    let pad = w.spawn_building(ty(&w, "HPAD"), 0, 10, 10).unwrap();
+    w.update_power();
+    let old = heli(&mut w, "HIND", 0, 10, 10);
+    w.heli_produced(old, pad);
+    run(&mut w, 5);
+    assert!(w.actors[old].heli.landed);
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(old));
+    w.capture(pad, 1, None);
+    let new = heli(&mut w, "HIND", 1, 24, 20);
+    w.actors[new].heli.ammo_used = 24;
+    w.queue_order(Order::ReturnToBase { player: 1, ids: r(&w, new) });
+    run(&mut w, 2);
+    assert!(!w.actors[old].heli.landed, "the old owner's helicopter takes off");
+    assert_eq!(w.actors[old].heli.pad, crate::world::NONE, "and gives the pad up");
+    run_until(&mut w, 800, |w| w.actors[new].heli.landed);
+    let (px, py) = pad_point(&w, pad);
+    assert_eq!((w.actors[new].x, w.actors[new].y), (px, py), "landed on the captured pad");
+    assert_eq!(w.actors[pad].dock_user, w.make_ref(new));
+    assert!(w.actors[old].altitude > 0, "the old helicopter hovers");
 }
 
 #[test]
@@ -519,6 +571,39 @@ fn chinook_lands_to_load_and_unload_infantry() {
     assert!((tx - 32).abs() <= 3 && (ty_ - 30).abs() <= 3, "unloaded at the destination");
     run(&mut w, 120);
     assert!(!w.actors[tran].heli.landed && w.actors[tran].altitude > 0, "took off after unloading");
+}
+
+#[test]
+fn two_chinooks_unloading_together_land_on_different_cells() {
+    let mut w = flat_world();
+    let trans: Vec<usize> = (0..2).map(|_| heli(&mut w, "TRAN", 0, 20, 20)).collect();
+    for &t in &trans {
+        let s = w.spawn_unit(ty(&w, "E1"), 0, cell_center(20), cell_center(20), 0);
+        assert!(w.load_passenger(t, s));
+    }
+    run(&mut w, 2);
+    let ids: Vec<u32> = trans.iter().map(|&t| w.make_ref(t)).collect();
+    w.queue_order(Order::Deploy { player: 0, ids });
+    let mut landed_cells = [None, None];
+    for _ in 0..300 {
+        w.step();
+        let cells: Vec<Option<(i32, i32)>> =
+            trans.iter().map(|&t| w.actors[t].heli.landed.then(|| w.cell_of(w.actors[t].x, w.actors[t].y))).collect();
+        if let (Some(a), Some(b)) = (cells[0], cells[1]) {
+            assert_ne!(a, b, "both Chinooks stand on one cell");
+        }
+        for k in 0..2 {
+            if landed_cells[k].is_none() {
+                landed_cells[k] = cells[k];
+            }
+        }
+        if trans.iter().all(|&t| w.passengers(t).is_empty()) {
+            break;
+        }
+    }
+    assert!(trans.iter().all(|&t| w.passengers(t).is_empty()), "both unloaded");
+    assert!(landed_cells.iter().all(Option::is_some));
+    assert_ne!(landed_cells[0], landed_cells[1], "on cells of their own");
 }
 
 #[test]
