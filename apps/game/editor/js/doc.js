@@ -165,6 +165,8 @@ export class MapDoc {
    * same map (a resize, a fix) passes the document's own.
    */
   replace(map, label = 'Load map', origin = newOrigin()) {
+    // A half made edit (a stroke still going on) is dropped, not kept in `before`, and its cells never land on the new map.
+    if (this.tx) this.rollback();
     const before = this.toMap();
     const originBefore = this.origin;
     this.load(map);

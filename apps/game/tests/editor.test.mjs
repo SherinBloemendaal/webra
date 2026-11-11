@@ -370,6 +370,22 @@ test('the document\'s origin follows replace steps through undo and redo, edits 
   assert.equal(doc.source, 'other1');
 });
 
+test('replacing the map during an edit drops the edit: undo restores the map as it was before it', () => {
+  const doc = newDoc(40, 32);
+  doc.begin('Setup');
+  doc.setCell(5, 5, TERRAIN.ROCK);
+  doc.commit();
+  const original = doc.toMap();
+  doc.begin('Paint');
+  doc.setCell(39, 31, TERRAIN.WATER);
+  doc.replace(createMap({ width: 32, height: 32 }), 'Open');
+  doc.commit();
+  assert.deepEqual(doc.undoStack.map((e) => e.label), ['Setup', 'Open']);
+  assert.equal(doc.width, 32);
+  doc.undo();
+  assert.deepEqual(doc.toMap(), original);
+});
+
 // ---- Symmetry groups, shapes, regions and map turns -------------------------------------
 test('pasting actors of a spawn this map does not have makes them neutral, so the map stays valid', () => {
   const four = new MapDoc(createMap({ width: 64, height: 64 }));
