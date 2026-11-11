@@ -690,3 +690,45 @@ test('a lobby that resumes a save: the AI difficulty is locked like the other sl
     uninstallDom();
   }
 });
+
+test('a lobby update keeps the focus in the spectator panel and a seed being typed', async () => {
+  const { ui, sent, lobby } = await hostLobby();
+  try {
+    lobby();
+    // The keyboard on the stepper's "+": its own change comes back as a lobby update.
+    const inc = ui.spectatorBox.querySelector('.ui-stepper-inc');
+    inc.focus();
+    click(inc);
+    assert.deepEqual(sent.at(-1), { t: 'spectators', max: 3 });
+    lobby({ maxSpectators: 3 });
+    const inc2 = ui.spectatorBox.querySelector('.ui-stepper-inc');
+    assert.notEqual(inc2, inc, 'drawn again');
+    assert.equal(document.activeElement, inc2);
+    click(inc2);
+    assert.deepEqual(sent.at(-1), { t: 'spectators', max: 4 }, 'a second press works');
+    // Play / Spectate keeps it too.
+    const toggle = [...ui.spectatorBox.querySelectorAll('button')].find((b) => b.textContent === 'Spectate');
+    toggle.focus();
+    lobby({ maxSpectators: 4 });
+    assert.equal(document.activeElement.dataset.key, 'spec:toggle');
+    // Typing a seed when someone readies up: the text and the focus stay.
+    const seed = ui.mapBox.querySelector('.online-seed').querySelector('input');
+    seed.focus();
+    seed.value = '12';
+    lobby({ maxSpectators: 4, slots: [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'human', client: 3, name: 'Ivan', faction: 'russia', color: 1, team: 2, ready: true },
+    ] });
+    const seed2 = ui.mapBox.querySelector('.online-seed').querySelector('input');
+    assert.notEqual(seed2, seed);
+    assert.equal(seed2.value, '12');
+    assert.equal(document.activeElement, seed2);
+    // Load map file keeps it as well.
+    const load = [...ui.mapBox.querySelectorAll('button')].find((b) => b.textContent === 'Load map file');
+    load.focus();
+    lobby({ maxSpectators: 4 });
+    assert.equal(document.activeElement.dataset.key, 'map:load');
+  } finally {
+    uninstallDom();
+  }
+});

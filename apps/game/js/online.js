@@ -1877,6 +1877,9 @@ export class OnlineUI {
     const box = this.spectatorBox;
     if (!box) return;
     const st = this.state;
+    // The control with the focus keeps it across the lobby update (the stepper's own change comes back as one).
+    const active = globalThis.document?.activeElement;
+    const focusKey = box.contains(active) ? (active.dataset?.key ?? null) : null;
     box.textContent = '';
     const title = el('h2', 'online-panel-title', `Spectators (${st.spectators.length} / ${st.maxSpectators})`);
     title.append(this.spectatorTip.root);
@@ -1893,6 +1896,7 @@ export class OnlineUI {
       if (this.isHost && sp.client !== st.you) {
         const remove = button('Remove', 'online-btn-small', () => this.send({ t: 'kick', client: sp.client }));
         remove.setAttribute('aria-label', `Remove ${sp.name}`);
+        remove.dataset.key = `spec:remove:${sp.client}`;
         row.append(remove);
       }
       list.append(row);
@@ -1913,6 +1917,9 @@ export class OnlineUI {
         onChange: (v) => this.send({ t: 'spectators', max: Number(v) }),
       });
       describedBy(places.field, this.spectatorTip);
+      places.field.dataset.key = 'spec:field';
+      places.dec.dataset.key = 'spec:dec';
+      places.inc.dataset.key = 'spec:inc';
       const row = el('div', 'online-field');
       row.append(label, places.root);
       controls.append(row);
@@ -1920,8 +1927,14 @@ export class OnlineUI {
     const watching = st.role === 'spectator';
     const toggle = button(watching ? 'Play' : 'Spectate', null, () => this.send({ t: 'spectate', on: !watching }));
     toggle.disabled = watching ? !st.slots.some((x) => x.type === 'open') : st.spectators.length >= st.maxSpectators;
+    toggle.dataset.key = 'spec:toggle';
     controls.append(toggle);
     box.append(controls);
+    if (focusKey) {
+      const find = (key) => [...box.querySelectorAll('[data-key]')].find((e) => e.dataset.key === key && !e.disabled);
+      // A stepper end turns its button off: the value keeps the focus then.
+      (find(focusKey) ?? (/^spec:(dec|inc)$/.test(focusKey) ? find('spec:field') : null))?.focus();
+    }
   }
 
   /** The slots as js/lobby-bulk.js sees them: the lobby map's locks and which one is you. */
@@ -2246,14 +2259,46 @@ export class OnlineUI {
     for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && !MISSION_SELECT_OPTIONS.includes(key);
   }
 
+  /**
+   * The Battlefield panel, drawn again on every lobby update: the control
+   * with the focus keeps it (by its data-key, or the spawn marker by its
+   * place), and a seed being typed keeps its text and caret.
+   */
   renderMap() {
+    const box = this.mapBox;
+    const doc = globalThis.document;
+    const active = doc?.activeElement ?? null;
+    const inside = !!active && box.contains(active);
+    // New seed turns itself off while the map is made (the browser drops the focus then):
+    // it gets the focus back once it is on again, unless the player went elsewhere.
+    const idle = !active || active === doc?.body;
+    if (!inside && !idle) this.mapRefocus = null;
+    const focusKey = inside ? (active.dataset?.key ?? null) : idle ? (this.mapRefocus ?? null) : null;
+    this.mapRefocus = null;
+    const typing =
+      inside && active === this.seedField ? { value: active.value, start: active.selectionStart ?? null, end: active.selectionEnd ?? null } : null;
+    // A marker with focus keeps it across the lobby update.
+    const refocus = this.spawnLayer?.buttons.indexOf(active) ?? -1;
+    this.seedField = null;
+    this.drawMap(refocus);
+    if (typing && this.seedField) {
+      const seed = this.seedField;
+      seed.value = typing.value;
+      seed.focus();
+      if (typing.start !== null && typeof seed.setSelectionRange === 'function') seed.setSelectionRange(typing.start, typing.end ?? typing.start);
+    } else if (focusKey) {
+      const target = [...box.querySelectorAll('[data-key]')].find((e) => e.dataset.key === focusKey);
+      if (target && !target.disabled) target.focus();
+      else if (target) this.mapRefocus = focusKey;
+    }
+  }
+
+  drawMap(refocus) {
     const box = this.mapBox;
     const st = this.state;
     this.previewBusy = false;
     box.textContent = '';
     box.append(el('h2', 'online-panel-title', 'Battlefield'));
-    // A marker with focus keeps it across the lobby update.
-    const refocus = this.spawnLayer?.buttons.indexOf(globalThis.document?.activeElement) ?? -1;
     const frame = el('div', 'online-preview-frame');
     const canvas = el('canvas', 'online-preview');
     canvas.setAttribute('role', 'img');
@@ -2324,6 +2369,7 @@ export class OnlineUI {
     const current = st.mission ? `mission:${st.mission.id}` : st.map ? (st.map.shared ? `mine:${st.map.hash}` : `community:${st.map.id}`) : 'generated';
     this.mapPicker?.destroy();
     const source = select(this.mapChoices(current), current, (v) => this.pickMap(v), { grouped: true, label: 'Map', small: false });
+    source.button.dataset.key = 'map:source';
     this.mapPicker = source;
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
@@ -2331,6 +2377,7 @@ export class OnlineUI {
     if (st.map || st.mission) {
       const unload = button(st.mission ? 'Leave mission' : 'Unload map', null, () => this.pickMap('generated'));
       unload.title = 'Go back to the generated map and its seed';
+      unload.dataset.key = 'map:unload';
       controls.append(unload);
     }
     if (!st.map && !st.mission) {
@@ -2338,22 +2385,27 @@ export class OnlineUI {
         label: 'Map size',
         small: false,
       });
+      size.button.dataset.key = 'map:size';
       const seedRow = el('div', 'online-seed');
       const seed = el('input', 'online-input');
       seed.inputMode = 'numeric';
       seed.maxLength = 10;
       seed.value = String(st.options.seed);
+      seed.dataset.key = 'map:seed';
+      this.seedField = seed;
       seed.addEventListener('change', () => {
         const n = Number(seed.value.trim());
         if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.sendOptions({ seed: n });
         else seed.value = String(st.options.seed);
       });
       const dice = button('New seed', 'online-dice', () => {
+        if (globalThis.document?.activeElement === dice) this.mapRefocus = 'map:dice';
         // The loader shows until the lobby has the new seed and its map is made.
         this.seedPending = randomSeed();
         busy(dice);
         this.sendOptions({ seed: this.seedPending });
       });
+      dice.dataset.key = 'map:dice';
       const busy = (b) => {
         b.disabled = true;
         b.setAttribute('aria-busy', 'true');
@@ -2376,6 +2428,7 @@ export class OnlineUI {
     });
     const load = button('Load map file', null, () => file.click());
     load.title = 'Share a .webra-map.json file or an OpenRA .oramap map with this lobby';
+    load.dataset.key = 'map:load';
     if (st.mission) {
       box.append(controls);
       return;
@@ -2410,6 +2463,7 @@ export class OnlineUI {
         small: false,
       });
       control.setDisabled(!host);
+      control.button.dataset.key = `mission:${key}`;
       this.missionPlates.push(control);
       box.append(field(label, control));
     }
