@@ -95,7 +95,8 @@ export function checkFile(name, bytes) {
       return null;
     }
     if (!looksLikeAud(bytes)) return 'not an AUD sound';
-    decodeAud(bytes); // reject files we could not play later
+    // Reject files we could not play later.
+    if (decodeAud(bytes).samples.length === 0) return 'empty AUD sound';
     return null;
   } catch (err) {
     return err.message;
