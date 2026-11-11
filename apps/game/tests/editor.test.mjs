@@ -342,24 +342,28 @@ test('removing a spawn takes its player slot along, undo brings both back', () =
   assert.deepEqual(doc.toMap().players, slots.slice(0, 1));
 });
 
-test('the document\'s source follows replace steps through undo and redo, edits keep it', () => {
+test('the document\'s origin follows replace steps through undo and redo, edits keep it', async () => {
+  const { newOrigin } = await import('../editor/js/doc.js');
   const doc = newDoc();
-  doc.source = 'abc123';
+  const published = newOrigin('abc123');
+  doc.origin = published;
   doc.begin('Paint');
   doc.setCell(1, 1, TERRAIN.ROCK);
   doc.commit();
   assert.equal(doc.source, 'abc123');
-  doc.replace(createMap({ width: 40, height: 32 }), 'Resize map', doc.source);
-  assert.equal(doc.source, 'abc123', 'a change of the same map keeps it');
+  doc.replace(createMap({ width: 40, height: 32 }), 'Resize map', doc.origin);
+  assert.equal(doc.origin, published, 'a change of the same map keeps it');
   doc.replace(createMap({ width: 40, height: 32 }), 'New map');
-  assert.equal(doc.source, null, 'another map has none');
-  doc.replace(createMap({ width: 40, height: 32 }), 'Open other', 'other1');
+  assert.equal(doc.source, null, 'another map has no source');
+  assert.notEqual(doc.origin.key, published.key, 'and a key of its own');
+  const fresh = doc.origin;
+  doc.replace(createMap({ width: 40, height: 32 }), 'Open other', newOrigin('other1'));
   assert.equal(doc.source, 'other1');
   doc.undo();
-  assert.equal(doc.source, null);
+  assert.equal(doc.origin, fresh);
   doc.undo();
   doc.undo();
-  assert.equal(doc.source, 'abc123');
+  assert.equal(doc.origin, published);
   doc.redo();
   doc.redo();
   doc.redo();

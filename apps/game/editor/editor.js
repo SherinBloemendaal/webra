@@ -22,7 +22,7 @@ import { InstalledTiles } from './js/tiles.js';
 import { planInWorker } from '../js/terraintiles.js';
 import { LivePreview } from './js/live.js';
 import { idleTask } from './js/idle.js';
-import { MapDoc } from './js/doc.js';
+import { MapDoc, newOrigin } from './js/doc.js';
 import { EditorView, controlOwnsKeys, isTyping } from './js/view.js';
 import { Controller, teamOf } from './js/controller.js';
 import { COMMANDS, HELP_TEXT, MATERIAL_KEYS, PAINT_LAYERS, TOOLS, actionName } from './js/commands.js';
@@ -48,7 +48,7 @@ import { MapLens } from '../js/maplens/lens.js';
 import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, selectField, store, tabKeys } from './js/ui.js';
-import { DRAFT_KEY, draftText, draftWins, parseDraft } from './js/draft.js';
+import { DRAFT_KEY, draftText, draftWins, parseDraft, withRecoveryCopy } from './js/draft.js';
 /**
  * The last opened file's format version story (js/upgrade.js openMapFile):
  * `notice` (upgraded, or why it is not compatible) stays until the map is
@@ -196,10 +196,10 @@ function motionIsReduced() {
 /** The map the editor opens with (js/upgrade.js openMapFile of `?map=`, the draft or a new map), as the document. */
 async function openFirstMap() {
   loadPrefs();
-  const { map: raw, note, edited = false, source = null } = await initialMap();
+  const { map: raw, note, edited = false, origin = null } = await initialMap();
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
-  if (first.map) doc.source = source;
+  if (first.map && origin) doc.origin = origin;
   // A restored draft with changes not saved to a file stays edited (a saved point no history reaches).
   savedPoint = edited ? { top: {}, time: -1 } : historyPoint();
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
@@ -280,7 +280,7 @@ function applyArt() {
  * Map to open: `?map=<id>`, else the autosaved draft, else a new map. The
  * draft wins over `?map=<id>` when it holds edits of that same published map
  * (a reload, a restored tab); a draft of another map never does.
- * `source`: the published map the document came from (MapDoc.source).
+ * `origin`: which map it is and the published map it came from (MapDoc.origin).
  */
 async function initialMap() {
   const id = new URLSearchParams(location.search).get('map');
@@ -290,12 +290,12 @@ async function initialMap() {
   } catch {
     store.remove(DRAFT_KEY);
   }
-  const restored = (d) => ({ map: d.map, edited: d.edited, source: d.source, note: `Restored your draft from ${new Date(d.savedAt).toLocaleString()}.` });
+  const restored = (d) => ({ map: d.map, edited: d.edited, origin: d.origin, note: `Restored your draft from ${new Date(d.savedAt).toLocaleString()}.` });
   if (id) {
     if (draftWins(draft, id)) return restored(draft);
     try {
       const { map } = await fetchMap(id);
-      return { map, source: id, note: `Opened published map "${map.name}".` };
+      return { map, origin: newOrigin(id), note: `Opened published map "${map.name}".` };
     } catch (err) {
       return { map: newBlankMap(), note: `Could not open map ${id}: ${err.message}` };
     }
@@ -575,7 +575,7 @@ function updatePanels() {
 function autosave() {
   autosaveTask.cancel();
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
-  const ok = store.set(DRAFT_KEY, draftText({ savedAt: Date.now(), edited: isEdited(), source: doc.source, json: doc.snapshot().json }));
+  const ok = store.set(DRAFT_KEY, draftText({ savedAt: Date.now(), edited: isEdited(), origin: doc.origin, json: doc.snapshot().json }));
   $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
 }
 
@@ -583,8 +583,14 @@ function autosave() {
 
 /** The recovery copies as last read or written here (another tab writing them drops it). */
 let recoveryList = null;
+/** The document version and key of the last recovery copy written here (no copy when neither moved). */
+let recoverySaved = null;
 window.addEventListener('storage', (e) => {
-  if (e.key === RECOVERY_KEY || e.key === null) recoveryList = null;
+  if (e.key === RECOVERY_KEY || e.key === null) {
+    recoveryList = null;
+    // Another tab rewrote the copies, maybe without this map's: write it again at the next save.
+    recoverySaved = null;
+  }
 });
 
 function recoveryCopies() {
@@ -600,19 +606,23 @@ function recoveryCopies() {
 
 /**
  * Keep a copy of the map now and then (and when the page goes away): the
- * last few maps worked on, one copy per map name, so a crash, a closed tab
- * or a "New map" too many loses little. Restored from the History tab.
+ * last few maps worked on, one copy per map (its key, MapDoc.origin; copies
+ * from before keys by name), so a crash, a closed tab or a "New map" too
+ * many loses little. Restored from the History tab. Nothing is written
+ * while the document stays as it was copied.
  */
 function saveRecovery() {
   if (!doc) return;
+  const { key } = doc.origin;
+  if (recoverySaved && recoverySaved.version === doc.version && recoverySaved.key === key && !doc.tx) return;
   const map = doc.toMap();
-  const list = recoveryCopies().filter((r) => r.map.name !== map.name);
-  list.unshift({ savedAt: Date.now(), map });
+  const list = withRecoveryCopy(recoveryCopies(), key, map, Date.now());
   recoveryList = null;
   for (let n = Math.min(list.length, RECOVERY_COPIES); n > 0; n--) {
     // Large maps may not fit next to the draft: keep fewer copies.
     if (store.set(RECOVERY_KEY, JSON.stringify(list.slice(0, n)))) {
       recoveryList = list.slice(0, n);
+      recoverySaved = { version: doc.version, key };
       break;
     }
   }
@@ -774,7 +784,7 @@ function fixOpened(p, fix) {
     return;
   }
   p.fixed = fix.label;
-  doc.replace(next, fix.label, doc.source);
+  doc.replace(next, fix.label, doc.origin);
 }
 
 /** The map list's thumbnail of this map (protocol mapThumbnail, as the server draws it). */
@@ -1486,7 +1496,7 @@ function renderHistory() {
           copies.map((c) =>
             el('li', {}, [
               el('span', {}, `${c.map.name || 'Untitled'}, ${c.map.width} x ${c.map.height}, ${new Date(c.savedAt).toLocaleString()}`),
-              el('button', { type: 'button', class: 'link', onclick: () => loadMap(c.map, `Restore ${c.map.name || 'copy'}`) && toast('Restored. Undo brings back the map you had.') }, 'Restore'),
+              el('button', { type: 'button', class: 'link', onclick: () => loadMap(c.map, `Restore ${c.map.name || 'copy'}`, null, newOrigin(null, c.id)) && toast('Restored. Undo brings back the map you had.') }, 'Restore'),
             ]),
           ),
         )
@@ -1639,7 +1649,7 @@ async function browse() {
 async function openPublished(m) {
   try {
     const { map } = await fetchMap(m.id, m.hash);
-    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`, m.id)) markSaved();
+    if (loadMap(map, `Open ${m.name}`, `Opened "${map.name}".`, newOrigin(m.id))) markSaved();
   } catch (err) {
     toast(err.message, true);
   }
@@ -1660,10 +1670,10 @@ async function copy(text) {
  * Open a parsed map file (any format version, js/upgrade.js) as one undoable
  * step. `done` is the toast on success; the upgrade notice or the reason a
  * map is not compatible goes with it and stays in the Check tab until saved.
- * `source`: the published map it came from (MapDoc.source), the document's
- * own for a change of the same map, null for any other map.
+ * `origin`: which map it is (MapDoc.origin): the document's own for a change
+ * of the same map, a new one (the default) for another map.
  */
-function loadMap(raw, label, done = null, source = null) {
+function loadMap(raw, label, done = null, origin = newOrigin()) {
   const next = openMapFile(raw);
   if (!next.map) {
     toast(`Cannot open this map: ${next.error}`, true);
@@ -1671,7 +1681,7 @@ function loadMap(raw, label, done = null, source = null) {
   }
   const res = validateMap(next.map, { catalog, rulesBase });
   try {
-    doc.replace(next.map, label, source);
+    doc.replace(next.map, label, origin);
   } catch (err) {
     toast(`Cannot open this map: ${err.message}`, true);
     return false;
@@ -1863,8 +1873,8 @@ function applyTransform(choice) {
     return;
   }
   const label = { resize: 'Resize map', crop: 'Crop map', shift: 'Shift map', rotate90: 'Turn map right', rotate270: 'Turn map left', rotate180: 'Turn map', flipX: 'Mirror map', flipY: 'Flip map' }[choice.op];
-  // The same map changed: it keeps its source.
-  if (loadMap(result.map, label, null, doc.source)) {
+  // The same map changed: it stays the same map.
+  if (loadMap(result.map, label, null, doc.origin)) {
     const d = result.dropped;
     const lost = [d.spawns ? `${d.spawns} spawn${d.spawns === 1 ? '' : 's'}` : '', d.actors ? `${d.actors} actor${d.actors === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
     toast(lost ? `${label}: ${lost} off the map were removed. Undo brings them back.` : `${label}.`);

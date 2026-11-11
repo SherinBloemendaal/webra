@@ -10,6 +10,19 @@ import { pruneOverrides } from './overrides.js';
 const HISTORY_LIMIT = 200;
 const COALESCE_MS = 1500;
 
+/**
+ * A new document identity (MapDoc.origin): a random `key` that tells this
+ * map from any other one with the same name (the recovery copies), and its
+ * `source`, the id of the published map it was opened from, or null.
+ */
+export function newOrigin(source = null, key = null) {
+  if (typeof key !== 'string' || !key) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return Object.freeze({ key, source: typeof source === 'string' ? source : null });
+}
+
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
 /** Freeze a JSON value and everything in it (a shared snapshot nobody may change). */
@@ -52,11 +65,11 @@ export class MapDoc {
      */
     this.live = { cells: new Set(), objects: false };
     /**
-     * Where the document came from: the id of the published map it was
-     * opened from, or null. Not part of the map: a replace sets it (undo and
-     * redo of that step put it back), edits keep it.
+     * Which map this is (newOrigin): its key and the published map it was
+     * opened from. Not part of the map: a replace sets it (undo and redo of
+     * that step put it back), edits keep it.
      */
-    this.source = null;
+    this.origin = newOrigin();
     this.load(map);
   }
 
@@ -141,17 +154,22 @@ export class MapDoc {
     return this.snap;
   }
 
+  /** The id of the published map the document was opened from, or null. */
+  get source() {
+    return this.origin.source;
+  }
+
   /**
-   * Replace the document with another map as one undoable step. `source`:
-   * where the new map came from (see `source`); a change of the same map (a
-   * resize, a fix) passes the document's own.
+   * Replace the document with another map as one undoable step. `origin`:
+   * which map it is (newOrigin; another map gets a new one); a change of the
+   * same map (a resize, a fix) passes the document's own.
    */
-  replace(map, label = 'Load map', source = null) {
+  replace(map, label = 'Load map', origin = newOrigin()) {
     const before = this.toMap();
-    const sourceBefore = this.source;
+    const originBefore = this.origin;
     this.load(map);
-    this.source = source;
-    this.push({ label, kind: 'replace', before, after: this.toMap(), sourceBefore, sourceAfter: source });
+    this.origin = origin;
+    this.push({ label, kind: 'replace', before, after: this.toMap(), originBefore, originAfter: origin });
     this.emit({ cells: true, objects: true, meta: true, resized: true });
   }
 
@@ -416,7 +434,7 @@ export class MapDoc {
     this.dropLive();
     if (e.kind === 'replace') {
       this.load(e[side]);
-      this.source = (side === 'before' ? e.sourceBefore : e.sourceAfter) ?? null;
+      this.origin = side === 'before' ? e.originBefore : e.originAfter;
       this.emit({ cells: true, objects: true, meta: true, resized: true });
       return;
     }
