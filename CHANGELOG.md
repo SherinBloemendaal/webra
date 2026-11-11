@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.22.2](https://github.com/SherinBloemendaal/webra/compare/v0.22.1...v0.22.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **engine:** answer the radar for the whole map and all players views ([bfc3e3f](https://github.com/SherinBloemendaal/webra/commit/bfc3e3f1487e8f669c3d0e60e118445e42f8375b))
+* **engine:** lift landed helicopters out of a friendly unit's way ([3d0c07f](https://github.com/SherinBloemendaal/webra/commit/3d0c07fc3ac33cfe8927b921fb73e393e534c01c))
+* **engine:** stop ground units driving through landed helicopters ([0ef913c](https://github.com/SherinBloemendaal/webra/commit/0ef913caa690692bd6af8c76099422b3e83eed31))
+* **game:** give spectators, replays and watching players a visible radar ([70601b1](https://github.com/SherinBloemendaal/webra/commit/70601b1c8d4f113fe40d270936b8f603b1b2349e))
+
 ## [0.22.1](https://github.com/SherinBloemendaal/webra/compare/v0.22.0...v0.22.1) (2026-11-11)
 
 
