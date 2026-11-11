@@ -279,8 +279,7 @@ impl Game {
                 return Err(JsError::new(&format!("unknown faction {f}")));
             }
         }
-        let size = map_size.clamp(48, 512);
-        let world = World::new(seed as u64, size, &[(faction, false), (ai_faction, true)]);
+        let world = World::new(seed as u64, gen_size(map_size), &[(faction, false), (ai_faction, true)]);
         Ok(Game::wrap(world))
     }
 
@@ -376,9 +375,10 @@ impl Game {
     /// standard, extra, oilonly, oilrush): the tech buildings the map gets.
     pub fn generated_map_with(seed: u32, size: i32, players: u32, style: &str, biome: &str, tech: &str) -> Result<String, JsError> {
         let tech = parse_tech_buildings(tech)?;
-        let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
+        let size = gen_size(size);
+        let players = gen_players(players);
         let (style, biome) = (parse_style(style)?, parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)));
-        let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style);
+        let m = map::Map::generate_styled(size, size, seed as u64, 12, players, style);
         let resolved = style.resolve(seed as u64);
         let name = format!("Random {players}p #{seed}");
         let description = format!("Generated map: {}, {}", resolved.name(), biome.name());
@@ -411,17 +411,17 @@ impl Game {
     /// Lobby preview of a generated map with a style and biome (names as in
     /// `generated_map_styled`): RGBA, one pixel per cell, spawns marked.
     pub fn map_preview_styled(seed: u32, size: i32, players: u32, style: &str, biome: &str) -> Result<Vec<u8>, JsError> {
-        let size = size.clamp(48, 512);
+        let size = gen_size(size);
         let (style, biome) = (parse_style(style)?, parse_biome(biome)?.unwrap_or_else(|| weather::Biome::random(seed as u64)));
-        Ok(preview_rgba(&map::Map::generate_styled(size, size, seed as u64, 12, players as usize, style), biome))
+        Ok(preview_rgba(&map::Map::generate_styled(size, size, seed as u64, 12, gen_players(players), style), biome))
     }
 
     /// The start positions of a generated map, as `generated_map_styled`
     /// places them, flat (x0, y0, x1, y1, ...). Only the map is generated (no
     /// actors, no map file): the lobby previews' markers (js/mappreview.js).
     pub fn map_spawns_styled(seed: u32, size: i32, players: u32, style: &str) -> Result<Vec<i32>, JsError> {
-        let size = size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE);
-        let m = map::Map::generate_styled(size, size, seed as u64, 12, players as usize, parse_style(style)?);
+        let size = gen_size(size);
+        let m = map::Map::generate_styled(size, size, seed as u64, 12, gen_players(players), parse_style(style)?);
         Ok(m.spawns.iter().flat_map(|&(x, y)| [x, y]).collect())
     }
 
@@ -1990,7 +1990,6 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
     let rules = rules::Rules::load();
     let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
     let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
-    let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
     // Newer options: absent means the default, anything else must be a known name.
     let name = |k: &str, d: &str| -> Result<String, String> {
         match v.get(k) {
@@ -2001,7 +2000,15 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
     };
     let mut players = Vec::new();
     for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| "options.players missing".to_string())? {
-        let kind = p.get("type").and_then(|t| t.as_str()).unwrap_or("human");
+        // Absent or null (tools, tests): a human. Anything else must be a slot
+        // type, so a slot a newer lobby adds is refused instead of played.
+        let kind = match p.get("type") {
+            None | Some(serde_json::Value::Null) => "human",
+            Some(t) => t
+                .as_str()
+                .filter(|t| ["human", "ai", "open", "closed"].contains(t))
+                .ok_or_else(|| "players[].type must be human, ai, open or closed".to_string())?,
+        };
         if kind == "closed" || kind == "open" {
             continue;
         }
@@ -2009,11 +2016,16 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         if rules.faction_index(&faction).is_none() {
             return Err(format!("unknown faction {}", faction.chars().take(24).collect::<String>()));
         }
+        // An AI's difficulty: absent or null is Normal. Humans have none (ignored).
         let ai = match kind {
-            "ai" => Some(match p.get("difficulty").and_then(|d| d.as_str()).unwrap_or("normal") {
-                "easy" => AiDifficulty::Easy,
-                "hard" => AiDifficulty::Hard,
-                _ => AiDifficulty::Normal,
+            "ai" => Some(match p.get("difficulty") {
+                None | Some(serde_json::Value::Null) => AiDifficulty::Normal,
+                Some(d) => match d.as_str() {
+                    Some("easy") => AiDifficulty::Easy,
+                    Some("normal") => AiDifficulty::Normal,
+                    Some("hard") => AiDifficulty::Hard,
+                    _ => return Err("players[].difficulty must be easy, normal or hard".to_string()),
+                },
             }),
             _ => None,
         };
@@ -2050,16 +2062,20 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
     if !(2..=8).contains(&players.len()) {
         return Err("a game needs 2 to 8 players".to_string());
     }
-    let tech = text("techLevel", "unrestricted");
+    let tech = name("techLevel", "unrestricted")?;
     let options = GameOptions {
         starting_cash: num("startingCash", 5000).clamp(0, 1_000_000) as i32,
-        starting_units: match text("startingUnits", "mcv").as_str() {
+        starting_units: match name("startingUnits", "mcv")?.as_str() {
+            "mcv" => StartingUnits::Mcv,
             "light" => StartingUnits::Light,
             "heavy" => StartingUnits::Heavy,
             "base" => StartingUnits::Base,
-            _ => StartingUnits::Mcv,
+            _ => return Err("options.startingUnits must be mcv, light, heavy or base".to_string()),
         },
-        tech_level: rules::TECH_LEVELS.iter().position(|t| *t == tech).unwrap_or(4),
+        tech_level: rules::TECH_LEVELS
+            .iter()
+            .position(|t| *t == tech)
+            .ok_or_else(|| format!("options.techLevel must be {}", rules::TECH_LEVELS.join(", ")))?,
         fog: flag("fog", true),
         explored: flag("explored", false),
         build_radius: flag("buildRadius", true),
@@ -2087,10 +2103,11 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         tick_ms: match name("gameSpeed", "normal")?.as_str() {
             "slowest" => 80,
             "slower" => 50,
+            "normal" => 40,
             "fast" => 35,
             "faster" => 30,
             "fastest" => 20,
-            _ => 40,
+            _ => return Err("options.gameSpeed must be slowest, slower, normal, fast, faster or fastest".to_string()),
         },
         bounty: flag("bounty", false),
         separate_team_spawns: flag("separateTeamSpawns", true),
@@ -2104,7 +2121,25 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         factory_loss: world::FactoryLoss::from_name(&name("factoryLoss", "webra")?)
             .ok_or_else(|| "options.factoryLoss must be openra or webra".to_string())?,
     };
-    Ok(ParsedOptions { seed: num("seed", 1).max(0) as u64, map_size: (num("mapSize", 96) as i32).clamp(48, 512), players, options })
+    Ok(ParsedOptions {
+        seed: num("seed", 1).max(0) as u64,
+        map_size: gen_size(num("mapSize", 96).clamp(i32::MIN as i64, i32::MAX as i64) as i32),
+        players,
+        options,
+    })
+}
+
+/// The size of a generated map, the same in every function that generates
+/// one (games, previews, spawn markers, exported map files): the map file's
+/// range, so a generated game can always be exported as a valid map file. The
+/// lobbies offer 64 to 160, the editor's generator 32 to 256.
+fn gen_size(size: i32) -> i32 {
+    size.clamp(mapdata::MIN_SIZE, mapdata::MAX_SIZE)
+}
+
+/// The players a generated map is made for: 2 to 8 spawns.
+fn gen_players(players: u32) -> usize {
+    players.clamp(mapdata::MIN_SPAWNS as u32, mapdata::MAX_SPAWNS as u32) as usize
 }
 
 fn parse_tech_buildings(s: &str) -> Result<mapgen::settlements::TechBuildings, JsError> {

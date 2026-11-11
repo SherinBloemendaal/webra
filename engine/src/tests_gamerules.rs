@@ -564,3 +564,43 @@ fn games_with_every_option_stay_deterministic() {
     assert_eq!(a.state_hash(), b.state_hash());
     assert!(crates > 0, "the spawner dropped crates");
 }
+
+/// The older lobby options refuse unknown values like the newer ones (B-4):
+/// a value a newer lobby adds must not start a different game than the
+/// lobby showed. Absent keys keep their defaults (tools, older callers).
+#[test]
+fn older_lobby_options_refuse_unknown_values() {
+    let options = |slot: &str, top: &str| {
+        format!(
+            r#"{{"seed":3,"mapSize":64{top},"players":[{{"slot":0,"faction":"england"{slot}}},{{"slot":1,"type":"ai","faction":"russia"}}]}}"#
+        )
+    };
+    let o = crate::parse_options(&options("", "")).unwrap();
+    assert_eq!(o.players.len(), 2);
+    assert!(o.players[0].ai.is_none(), "no type: a human");
+    assert_eq!(o.players[1].ai, Some(AiDifficulty::Normal), "no difficulty: normal");
+    assert_eq!((o.options.starting_units, o.options.tech_level, o.options.tick_ms), (StartingUnits::Mcv, 4, 40));
+    let ai = |difficulty: &str| crate::parse_options(&options(&format!(r#","type":"ai","difficulty":{difficulty}"#), ""));
+    assert_eq!(ai("\"hard\"").unwrap().players[0].ai, Some(AiDifficulty::Hard));
+    assert_eq!(ai("null").unwrap().players[0].ai, Some(AiDifficulty::Normal));
+    let closed = crate::parse_options(
+        r#"{"seed":3,"mapSize":64,"players":[{"type":"closed"},{"type":"open"},{"type":"human","faction":"england"},{"type":"ai","faction":"russia"}]}"#,
+    );
+    assert_eq!(closed.unwrap().players.len(), 2, "open and closed slots are left out");
+    for (good, top) in [(r#""base""#, "startingUnits"), (r#""infonly""#, "techLevel"), (r#""slowest""#, "gameSpeed")] {
+        assert!(crate::parse_options(&options("", &format!(r#","{top}":{good}"#))).is_ok(), "{top}");
+    }
+    for (slot, top, needle) in [
+        (r#","type":"observer""#, "", "type"),
+        (r#","type":3"#, "", "type"),
+        ("", r#","startingUnits":"army""#, "startingUnits"),
+        ("", r#","techLevel":"future""#, "techLevel"),
+        ("", r#","gameSpeed":"warp""#, "gameSpeed"),
+        ("", r#","gameSpeed":2"#, "gameSpeed"),
+    ] {
+        let e = crate::parse_options(&options(slot, top)).err().unwrap_or_else(|| panic!("{slot}{top} was accepted"));
+        assert!(e.contains(needle), "{needle}: {e}");
+    }
+    let e = ai("\"brutal\"").err().expect("unknown difficulty");
+    assert!(e.contains("difficulty"), "{e}");
+}

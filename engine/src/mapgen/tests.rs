@@ -6,9 +6,11 @@ use super::metrics::measure;
 use super::MapStyle;
 use crate::map::{Map, Terrain};
 
+/// The generated map sizes the lobbies offer for this many players
+/// (apps/game/js/lobby-state.js MAP_SIZES from `minMapSize`).
 fn sizes(players: usize) -> &'static [i32] {
     if players <= 4 {
-        &[64, 96, 128]
+        &[64, 96, 128, 160]
     } else {
         &[96, 128, 160]
     }
