@@ -311,3 +311,24 @@ test('panel tabs: the arrows, Home and End move the focus and open the tab', asy
   assert.equal(other.defaultPrevented, false, 'other keys pass');
   assert.equal(opened.length, 5);
 });
+
+test('map size dialog: Enter in a shift field shifts, Enter in a size field resizes', async () => {
+  const { mapSizeDialog } = await import('../editor/js/dialogs.js');
+  const run = async (field, value) => {
+    const done = mapSizeDialog({ width: 64, height: 40, region: null });
+    const dialog = document.querySelector('dialog');
+    const [w, h, dx, dy] = [...dialog.querySelectorAll('input[type="number"]')];
+    const input = { w, h, dx, dy }[field];
+    input.value = value;
+    const e = new FakeEvent('keydown', { key: 'Enter' });
+    input.dispatchEvent(e);
+    assert.ok(e.defaultPrevented, 'no implicit submit through the first button');
+    // The pressed submit button closes the dialog with its value (the browser's method="dialog").
+    dialog.returnValue = 'x';
+    dialog.dispatchEvent(new FakeEvent('close'));
+    return done;
+  };
+  assert.deepEqual(await run('dx', '3'), { op: 'shift', dx: 3, dy: 0 });
+  assert.deepEqual(await run('dy', '-2'), { op: 'shift', dx: 0, dy: -2 });
+  assert.deepEqual(await run('w', '80'), { op: 'resize', width: 80, height: 40, anchorX: 0.5, anchorY: 0.5 });
+});

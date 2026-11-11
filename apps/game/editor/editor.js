@@ -1839,6 +1839,11 @@ function cropToRegion() {
 /** Resize, crop, shift, turn or mirror the whole map as one undo step. */
 function applyTransform(choice) {
   const map = doc.toMap();
+  // The same size, or no shift: no undo step for a change that changes nothing.
+  if ((choice.op === 'resize' && choice.width === map.width && choice.height === map.height) || (choice.op === 'shift' && !choice.dx && !choice.dy)) {
+    toast('Nothing to change.');
+    return;
+  }
   let result;
   try {
     if (choice.op === 'resize') {
