@@ -885,12 +885,13 @@ impl World {
                 return false;
             }
         }
-        // Other helicopters on their way down to this cell.
+        // Other helicopters on their way down to this cell: landing, or
+        // coming down to unload on their chosen spot.
         !self.actors.iter().enumerate().any(|(j, o)| {
             j != i
                 && o.alive
                 && o.kind == Kind::Aircraft
-                && o.heli.task == HeliTask::Land
+                && (o.heli.task == HeliTask::Land || (o.activity == Activity::Unload && o.heli.unload_spot && !o.heli.landed))
                 && self.cell_index(o.heli.land_x, o.heli.land_y) == ci
         })
     }

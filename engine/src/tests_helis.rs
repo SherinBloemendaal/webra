@@ -548,6 +548,39 @@ fn chinook_lands_to_load_and_unload_infantry() {
 }
 
 #[test]
+fn two_chinooks_unloading_together_land_on_different_cells() {
+    let mut w = flat_world();
+    let trans: Vec<usize> = (0..2).map(|_| heli(&mut w, "TRAN", 0, 20, 20)).collect();
+    for &t in &trans {
+        let s = w.spawn_unit(ty(&w, "E1"), 0, cell_center(20), cell_center(20), 0);
+        assert!(w.load_passenger(t, s));
+    }
+    run(&mut w, 2);
+    let ids: Vec<u32> = trans.iter().map(|&t| w.make_ref(t)).collect();
+    w.queue_order(Order::Deploy { player: 0, ids });
+    let mut landed_cells = [None, None];
+    for _ in 0..300 {
+        w.step();
+        let cells: Vec<Option<(i32, i32)>> =
+            trans.iter().map(|&t| w.actors[t].heli.landed.then(|| w.cell_of(w.actors[t].x, w.actors[t].y))).collect();
+        if let (Some(a), Some(b)) = (cells[0], cells[1]) {
+            assert_ne!(a, b, "both Chinooks stand on one cell");
+        }
+        for k in 0..2 {
+            if landed_cells[k].is_none() {
+                landed_cells[k] = cells[k];
+            }
+        }
+        if trans.iter().all(|&t| w.passengers(t).is_empty()) {
+            break;
+        }
+    }
+    assert!(trans.iter().all(|&t| w.passengers(t).is_empty()), "both unloaded");
+    assert!(landed_cells.iter().all(Option::is_some));
+    assert_ne!(landed_cells[0], landed_cells[1], "on cells of their own");
+}
+
+#[test]
 fn passengers_die_when_the_chinook_is_shot_down() {
     let mut w = flat_world();
     let tran = heli(&mut w, "TRAN", 0, 20, 20);
