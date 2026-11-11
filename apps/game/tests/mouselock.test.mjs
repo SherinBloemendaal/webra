@@ -1110,8 +1110,9 @@ test('edge scrolling with the OS cursor: measured against the window, over the s
 test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, focus and the release hotkey', async () => {
   const p = page();
   const { input } = await withInput(p);
-  const atRightEdge = () => {
-    realMove(p, 999, 50, p.card);
+  // `buttons`: the buttons the move reports held (a drag's button stays down while it moves).
+  const atRightEdge = (buttons = 0) => {
+    p.real('mousemove', { clientX: 999, clientY: 50, buttons }, p.card);
     input.update(0.1);
     return input.edgeScroll;
   };
@@ -1136,7 +1137,7 @@ test('edge scrolling holds for menus, dialogs, drags, the radar, typing, touch, 
   // A box selection under way.
   p.real('mousedown', { clientX: 400, clientY: 300, button: 0, buttons: 1 }, p.view);
   assert.ok(input.drag);
-  assert.equal(atRightEdge(), null);
+  assert.equal(atRightEdge(1), null);
   p.real('mouseup', { clientX: 999, clientY: 50, button: 0, buttons: 0 }, p.card);
   assert.ok(atRightEdge());
   // A touch (js/touch.js) and the window without the input focus (OpenRA WindowHasInputFocus).

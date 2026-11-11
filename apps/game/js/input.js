@@ -841,6 +841,8 @@ export class Input {
     on(window, 'blur', () => {
       this.keys.clear();
       this.hotkeys.releaseAll();
+      // A button held while the focus left comes up where the page never hears it: nothing stays dragged.
+      this.abortDrags();
     });
   }
 
@@ -875,6 +877,7 @@ export class Input {
   }
 
   onMouseDown(e) {
+    this.syncModifiers(e);
     if (this.suspended) return;
     const p = this.local(e);
     const w = this.toWorld(p.x, p.y);
@@ -1013,7 +1016,46 @@ export class Input {
     this.hooks.onPlaced();
   }
 
+  /**
+   * The modifier keys from a mouse event's own flags: a keyup the page never
+   * saw (an OS shortcut that took it, a screenshot key) leaves no Ctrl, Alt,
+   * Shift or Cmd behind in `keys`, so the cursor shows what a click does.
+   * The touch controls' fake events (js/touch.js, pointerType 'touch') say
+   * nothing about the keyboard.
+   */
+  syncModifiers(e) {
+    if (typeof e.ctrlKey !== 'boolean' || e.pointerType === 'touch') return;
+    for (const [k, held] of [
+      ['Control', e.ctrlKey],
+      ['Meta', !!e.metaKey],
+      ['Alt', !!e.altKey],
+      ['Shift', !!e.shiftKey],
+    ]) {
+      if (held) this.keys.add(k);
+      else this.keys.delete(k);
+    }
+  }
+
+  /**
+   * A mouse move whose `buttons` no longer hold the button of a drag or pan:
+   * it came up outside the page (another window, a system dialog) and its
+   * mouseup never arrived, so the box or pan ends without acting. Only real
+   * and virtual moves (js/mouselock.js) carry `buttons`; the touch
+   * controls' fake events do not and keep their drags.
+   */
+  dropReleased(e) {
+    if (e.type !== 'mousemove' || typeof e.buttons !== 'number') return;
+    if (this.pan && !(e.buttons & 4)) this.pan = null;
+    if (e.buttons & 1) return;
+    this.drag = null;
+    this.modeDrag = null;
+    this.mineDrag = null;
+    this.powerDrag = null;
+  }
+
   onMouseMove(e) {
+    this.syncModifiers(e);
+    this.dropReleased(e);
     this.trackWindowMouse(e);
     const p = this.local(e);
     this.mouse.x = p.x;

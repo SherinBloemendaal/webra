@@ -127,3 +127,71 @@ test('chrono tank teleport targeting replaces placement and a sidebar mode', asy
   assert.equal(input.placing, null);
   assert.equal(input.targeting.kind, 'teleport');
 });
+
+/** A mouse event at view point (x, y): real and virtual ones carry `buttons` and the modifier flags. */
+const mouse = (type, x, y, extra = {}) => ({ type, clientX: x, clientY: y, button: 0, buttons: 0, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, preventDefault() {}, ...extra });
+/** js/touch.js's fake event: no type, no buttons. */
+const touchFake = (x, y) => ({ button: 0, clientX: x, clientY: y, pointerType: 'touch', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {} });
+
+test('a button that came up outside the page: a window blur or a move without it ends the box and the pan', async () => {
+  const { input, fire } = await makeInput();
+  // Box selection, then the focus leaves with the button down (alt-tab): no box follows the mouse afterwards.
+  input.onMouseDown(mouse('mousedown', 100, 100, { buttons: 1 }));
+  input.onMouseMove(mouse('mousemove', 200, 150, { buttons: 1 }));
+  assert.ok(input.drag, 'a held button keeps the box');
+  fire('blur', {});
+  assert.equal(input.drag, null);
+  // Middle button pan, released over another window: the next move has no middle button.
+  input.onMouseDown(mouse('mousedown', 300, 300, { button: 1, buttons: 4 }));
+  input.onMouseMove(mouse('mousemove', 310, 300, { buttons: 4 }));
+  assert.ok(input.pan);
+  const cam = { ...input.camera };
+  input.onMouseMove(mouse('mousemove', 400, 300, { buttons: 0 }));
+  assert.equal(input.pan, null);
+  assert.equal(input.camera.x, cam.x, 'the camera no longer follows the mouse');
+  // A box whose left button came up outside: dropped, no selection on the next mouseup.
+  input.onMouseDown(mouse('mousedown', 100, 100, { buttons: 1 }));
+  input.onMouseMove(mouse('mousemove', 300, 300, { buttons: 0 }));
+  assert.equal(input.drag, null);
+  // A pan with the left button still held in the move keeps the pan only while the middle one is down too.
+  input.onMouseDown(mouse('mousedown', 300, 300, { button: 1, buttons: 4 }));
+  input.onMouseMove(mouse('mousemove', 320, 300, { buttons: 5 }));
+  assert.ok(input.pan);
+  input.onMouseUp(mouse('mouseup', 320, 300, { button: 1 }));
+  // A sell box: the mouseup itself (buttons 0) still commits it.
+  input.setMode('sell');
+  let boxes = 0;
+  input.boxSell = () => boxes++;
+  input.onMouseDown(mouse('mousedown', 100, 100, { buttons: 1 }));
+  input.onMouseMove(mouse('mousemove', 200, 200, { buttons: 1 }));
+  input.onMouseUp(mouse('mouseup', 200, 200));
+  assert.equal(boxes, 1);
+  input.setMode(null);
+});
+
+test("the touch controls' fake events carry no buttons: their box drag goes on", async () => {
+  const { input } = await makeInput();
+  input.onMouseMove(touchFake(100, 100));
+  input.onMouseDown(touchFake(100, 100));
+  input.onMouseMove(touchFake(250, 200));
+  assert.ok(input.drag);
+  assert.deepEqual([input.drag.ex, input.drag.ey], [250, 200]);
+});
+
+test('a missed modifier keyup: the next mouse event says the key is up, and the cursor follows', async () => {
+  const { input, keydown } = await makeInput();
+  keydown('Control', { ctrlKey: true });
+  assert.equal(input.heldMods().ctrl, true);
+  // The keyup went to an OS shortcut: the next move has ctrlKey false.
+  input.onMouseMove(mouse('mousemove', 100, 100));
+  assert.equal(input.heldMods().ctrl, false);
+  keydown('Shift', { shiftKey: true });
+  input.onMouseDown(mouse('mousedown', 100, 100, { button: 2, buttons: 2 }));
+  assert.equal(input.heldMods().shift, false, 'a press syncs them too');
+  // Held keys the event reports are added (Cmd counts as Ctrl).
+  input.onMouseMove(mouse('mousemove', 100, 100, { metaKey: true, altKey: true }));
+  assert.deepEqual(input.heldMods(), { ctrl: true, alt: true, shift: false });
+  // A touch fake says nothing about the keyboard.
+  input.onMouseMove(touchFake(100, 100));
+  assert.deepEqual(input.heldMods(), { ctrl: true, alt: true, shift: false });
+});
