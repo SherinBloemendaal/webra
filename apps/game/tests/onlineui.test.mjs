@@ -5,7 +5,8 @@
 // server, no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installDom, uninstallDom, click, settle, textOf, typeInto } from './dom-fixtures.mjs';
+import { check, FakeEvent, installDom, memoryStorage, uninstallDom, click, settle, textOf, typeInto } from './dom-fixtures.mjs';
+import { FakeSocket, WELCOME, withFakeSocket } from './fake-socket.mjs';
 import {
   connectionCell,
   connectionWarning,
@@ -477,6 +478,303 @@ test('join with a code: the field is left alone while an input method composes',
     assert.equal(input.value, 'k7q2', 'not rewritten while composing');
     input.dispatchEvent(new FakeEvent('compositionend'));
     assert.equal(input.value, 'K7Q-2');
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('a refused action in the game does not stop the reconnect after a later drop', async () => {
+  const { ui } = await bareUi();
+  const storage = globalThis.sessionStorage;
+  globalThis.sessionStorage = memoryStorage();
+  try {
+    await withFakeSocket(async () => {
+      const { Connection } = await import('../js/net.js');
+      const { saveRejoin, loadRejoin } = await import('../js/online.js');
+      const lines = [];
+      const reconnects = [];
+      Object.assign(ui, { inGame: true, gameLine: (text) => lines.push(text), reconnect: (reason) => reconnects.push(reason) });
+      const drop = async (fatal) => {
+        saveRejoin({ id: 'a'.repeat(64), client: 2, key: 'K'.repeat(43), name: 'Ivan' });
+        const conn = new Connection('a'.repeat(64));
+        conn.on('error', (m) => ui.onServerError(m)).on('close', (reason) => ui.onClose(reason, conn));
+        const opened = conn.open({ version: V, name: 'Ivan' });
+        const ws = FakeSocket.last;
+        ws.connect();
+        ws.deliver(WELCOME);
+        await opened;
+        ui.conn = conn;
+        // The host clicks Rematch twice: the second is refused, the game goes on.
+        ws.deliver({ t: 'error', code: 'bad_state', message: 'A rematch is already proposed.' });
+        ws.deliver({ t: 'frame', tick: 40, orders: [] });
+        if (fatal) ws.deliver({ t: 'error', code: 'kicked', message: 'The host removed you from the session.' });
+        ws.close();
+      };
+      await drop(false);
+      assert.deepEqual(reconnects, [null], 'a network drop reconnects');
+      assert.ok(loadRejoin(), 'the rejoin key stays for the reconnect');
+      await drop(true);
+      assert.equal(reconnects.length, 1, 'a fatal error does not');
+      assert.equal(loadRejoin(), null);
+      assert.equal(lines.at(-1), 'Disconnected: The host removed you from the session.. The game cannot continue.');
+    });
+  } finally {
+    globalThis.sessionStorage = storage;
+    uninstallDom();
+  }
+});
+
+test('joining: one join at a time, and a welcome after Back is left at once', async () => {
+  const lobbies = [];
+  const { root, ui } = await bareUi({ name: 'Ivan', buildLobby: () => lobbies.push(1), loadServerMaps() {}, attachNet() {} });
+  ui.ctx.onBack = () => {};
+  const storage = globalThis.sessionStorage;
+  globalThis.sessionStorage = memoryStorage();
+  try {
+    await withFakeSocket(async () => {
+      const { loadRejoin } = await import('../js/online.js');
+      ui.sessionList = root.appendChild(document.createElement('div'));
+      ui.detailBox = root.appendChild(document.createElement('aside'));
+      ui.listStatus = root.appendChild(document.createElement('p'));
+      ui.browse = { filter: 'all', query: '', hideFull: false, selected: null };
+      ui.sessions = SESSIONS;
+      ui.renderSessions();
+      const open = SESSIONS[0];
+      const welcome = { ...WELCOME, session: { ...WELCOME.session, id: open.id }, key: 'K'.repeat(43) };
+      // A double click on Join: one connection.
+      FakeSocket.all = [];
+      const first = ui.join(open);
+      const second = ui.join(open);
+      await settle();
+      assert.equal(FakeSocket.all.length, 1);
+      assert.equal(ui.listStatus.textContent, 'Joining...');
+      assert.deepEqual([...ui.detailBox.querySelectorAll('button')].map((b) => b.disabled), [true, true], 'Join and Spectate wait');
+      // Holding Enter on the row joins nothing more.
+      ui.sessionKey({ key: 'Enter', repeat: true, preventDefault() {} });
+      await settle();
+      assert.equal(FakeSocket.all.length, 1);
+      FakeSocket.last.connect();
+      FakeSocket.last.deliver(welcome);
+      await Promise.all([first, second]);
+      assert.equal(lobbies.length, 1);
+      assert.ok(ui.conn, 'joined');
+      assert.equal(ui.joining, null);
+      // Join, then Back before the welcome: the late welcome is left, nothing is kept.
+      ui.leaveSession();
+      ui.state = null;
+      const late = ui.join(open);
+      await settle();
+      const ws = FakeSocket.last;
+      assert.equal(FakeSocket.all.length, 2);
+      ui.back();
+      ws.connect();
+      ws.deliver(welcome);
+      await late;
+      assert.equal(ws.sent.at(-1).t, 'leave', 'the late connection is left');
+      assert.equal(ws.readyState, 3);
+      assert.equal(loadRejoin(), null, 'no rejoin key');
+      assert.equal(ui.conn, null);
+      assert.equal(lobbies.length, 1, 'no lobby built');
+    });
+  } finally {
+    globalThis.sessionStorage = storage;
+    uninstallDom();
+  }
+});
+
+/** A host's lobby drawn by js/online.js (no server): `sent` collects what it sends; `lobby(patch)` delivers a lobby message. */
+async function hostLobby({ state = {}, ...extra } = {}) {
+  const sent = [];
+  const { root, ui } = await bareUi({
+    installed: new Map(),
+    mapStatus: { hash: null, text: '', ok: true },
+    serverMaps: [],
+    libraryMaps: [],
+    library: { list: async () => [] },
+    member: { client: 1, key: 'K'.repeat(43) },
+    send: (m) => sent.push(m) > 0,
+    netq: { players: new Map(), self: null, testAgain() {} },
+    state: { you: 1, hostId: 1, session: { id: 'a'.repeat(64), name: 'Lobby', public: true, locked: false }, role: 'player', slots: [], spectators: [], maxSpectators: 2, options: null, map: null, lobbySeen: false, invite: null, ...state },
+    ...extra,
+  });
+  ui.ctx.Game = { map_preview_styled: (seed, size) => new Uint8Array(size * size * 4) };
+  ui.buildLobby();
+  const { DEFAULT_OPTIONS } = await import('../js/protocol.js');
+  const base = {
+    slots: [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'human', client: 3, name: 'Ivan', faction: 'russia', color: 1, team: 2, ready: false },
+    ],
+    options: { ...DEFAULT_OPTIONS },
+    map: null,
+    hostId: 1,
+    spectators: [],
+    maxSpectators: 2,
+  };
+  const lobby = (patch = {}) => ui.onLobby({ ...structuredClone(base), ...patch });
+  return { root, ui, sent, lobby, DEFAULT_OPTIONS };
+}
+
+test('two quick option edits: the second keeps the first; the echo ends the draft, a refusal drops it', async () => {
+  const { ui, sent, lobby, DEFAULT_OPTIONS } = await hostLobby();
+  try {
+    lobby();
+    const crates = !DEFAULT_OPTIONS.crates;
+    const fog = !DEFAULT_OPTIONS.fog;
+    check(ui.optionControls.crates, crates);
+    // No lobby message in between (a slow connection): fog builds on the crates edit.
+    check(ui.optionControls.fog, fog);
+    const last = sent.at(-1);
+    assert.equal(last.t, 'options');
+    assert.deepEqual([last.options.crates, last.options.fog], [crates, fog]);
+    // Another member's change arrives first: the draft stays, the switches show what was sent.
+    lobby();
+    assert.equal(ui.optionControls.crates.checked, crates);
+    check(ui.optionControls.shortGame, !DEFAULT_OPTIONS.shortGame);
+    assert.equal(sent.at(-1).options.crates, crates);
+    // The echo of the last edit: the lobby's options count again.
+    lobby({ options: { ...sent.at(-1).options } });
+    assert.equal(ui.optionsDraft, null);
+    // The seed is an options edit too: it keeps an edit on its way.
+    check(ui.optionControls.crates, !crates);
+    const seed = ui.mapBox.querySelector('.online-seed').querySelector('input');
+    seed.value = '12345';
+    seed.dispatchEvent(new FakeEvent('change'));
+    assert.deepEqual([sent.at(-1).options.seed, sent.at(-1).options.crates], [12345, !crates]);
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    assert.equal(ui.optionsDraft, null, 'refused: no draft');
+    assert.equal(ui.optionControls.crates.checked, crates, 'the switch shows the lobby again');
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('the error banner goes once a later action went through, or on Dismiss', async () => {
+  const { ui, lobby } = await hostLobby();
+  ui.conn = { send() {} };
+  // The real send (the fixture's records only): it marks that this client acted.
+  delete ui.send;
+  try {
+    lobby();
+    ui.onServerError({ code: 'forbidden', message: 'That start position is taken.' });
+    assert.equal(ui.banner.hidden, false);
+    lobby();
+    assert.equal(ui.banner.hidden, false, "another member's change: the error stays");
+    ui.send({ t: 'slot', slot: 0, team: 2 });
+    lobby();
+    assert.equal(ui.banner.hidden, true, 'the next action went through');
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    const dismiss = [...ui.banner.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Dismiss message');
+    assert.ok(dismiss);
+    click(dismiss);
+    assert.equal(ui.banner.hidden, true);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('a lobby that resumes a save: the AI difficulty is locked like the other slot controls', async () => {
+  const { ui, lobby } = await hostLobby();
+  try {
+    const slots = [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'ai', name: 'Normal AI', faction: 'random', color: 2, team: 2, difficulty: 'normal', bot: 'normal' },
+    ];
+    const plate = (key) => ui.slotPlates.find((p) => p.button.dataset.ctl === key);
+    lobby({ slots });
+    assert.equal(plate('1:difficulty').button.disabled, false, 'the host sets it in a new lobby');
+    lobby({ slots, resume: { id: 'r'.repeat(16), title: 'Saved', createdAt: 1, ticks: 100, waiting: [] } });
+    assert.equal(plate('1:bot').button.disabled, true);
+    assert.equal(plate('1:difficulty').button.disabled, true);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('a lobby update keeps the focus in the spectator panel and a seed being typed', async () => {
+  const { ui, sent, lobby } = await hostLobby();
+  try {
+    lobby();
+    // The keyboard on the stepper's "+": its own change comes back as a lobby update.
+    const inc = ui.spectatorBox.querySelector('.ui-stepper-inc');
+    inc.focus();
+    click(inc);
+    assert.deepEqual(sent.at(-1), { t: 'spectators', max: 3 });
+    lobby({ maxSpectators: 3 });
+    const inc2 = ui.spectatorBox.querySelector('.ui-stepper-inc');
+    assert.notEqual(inc2, inc, 'drawn again');
+    assert.equal(document.activeElement, inc2);
+    click(inc2);
+    assert.deepEqual(sent.at(-1), { t: 'spectators', max: 4 }, 'a second press works');
+    // Play / Spectate keeps it too.
+    const toggle = [...ui.spectatorBox.querySelectorAll('button')].find((b) => b.textContent === 'Spectate');
+    toggle.focus();
+    lobby({ maxSpectators: 4 });
+    assert.equal(document.activeElement.dataset.key, 'spec:toggle');
+    // Typing a seed when someone readies up: the text and the focus stay.
+    const seed = ui.mapBox.querySelector('.online-seed').querySelector('input');
+    seed.focus();
+    seed.value = '12';
+    lobby({ maxSpectators: 4, slots: [
+      { type: 'human', client: 1, name: 'Kara', faction: 'england', color: 0, team: 1, ready: false },
+      { type: 'human', client: 3, name: 'Ivan', faction: 'russia', color: 1, team: 2, ready: true },
+    ] });
+    const seed2 = ui.mapBox.querySelector('.online-seed').querySelector('input');
+    assert.notEqual(seed2, seed);
+    assert.equal(seed2.value, '12');
+    assert.equal(document.activeElement, seed2);
+    // Load map file keeps it as well.
+    const load = [...ui.mapBox.querySelectorAll('button')].find((b) => b.textContent === 'Load map file');
+    load.focus();
+    lobby({ maxSpectators: 4 });
+    assert.equal(document.activeElement.dataset.key, 'map:load');
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('New seed is ready again after the server refuses it', async () => {
+  const { ui, sent, lobby } = await hostLobby();
+  try {
+    lobby();
+    const dice = () => [...ui.mapBox.querySelectorAll('button')].find((b) => b.classList.contains('online-dice'));
+    click(dice());
+    assert.equal(sent.at(-1).t, 'options');
+    assert.deepEqual([dice().disabled, dice().textContent], [true, 'Generating...']);
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    assert.deepEqual([dice().disabled, dice().textContent], [false, 'New seed']);
+    // Also while a bulk edit waits (its bar reports the refusal).
+    click(dice());
+    ui.bulkWait = { pending: true };
+    ui.settleBulk = () => {};
+    ui.onServerError({ code: 'rate_limited', message: 'Slow down.' });
+    assert.deepEqual([dice().disabled, dice().textContent], [false, 'New seed']);
+  } finally {
+    uninstallDom();
+  }
+});
+
+test('lobby chat: Enter while an input method composes sends nothing; a player reading back is not moved', async () => {
+  const { ui, sent, lobby } = await hostLobby();
+  try {
+    lobby();
+    const input = ui.root.querySelector('.online-chat').querySelector('input');
+    input.value = 'こんにちは';
+    input.dispatchEvent(new FakeEvent('keydown', { key: 'Enter', isComposing: true }));
+    input.dispatchEvent(new FakeEvent('keydown', { key: 'Enter', keyCode: 229 }));
+    assert.equal(sent.filter((m) => m.t === 'chat').length, 0);
+    input.dispatchEvent(new FakeEvent('keydown', { key: 'Enter' }));
+    assert.deepEqual(sent.at(-1), { t: 'chat', text: 'こんにちは' });
+    const log = ui.chatLog;
+    Object.assign(log, { scrollHeight: 1000, clientHeight: 200, scrollTop: 300 });
+    ui.chatLine('Ivan', 'hi');
+    assert.equal(log.scrollTop, 300, 'scrolled up: stays');
+    ui.chatLine('Kara', 'mine', false, false, 'chat', { own: true });
+    assert.equal(log.scrollTop, 1000, 'own line: to the end');
+    log.scrollTop = 830;
+    log.scrollHeight = 1040;
+    ui.chatLine(null, 'Ivan is ready.', true);
+    assert.equal(log.scrollTop, 1040, 'at the end: follows');
   } finally {
     uninstallDom();
   }

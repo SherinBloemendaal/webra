@@ -328,3 +328,9 @@ test('theme: every stylesheet token in use is defined', () => {
   // The shared patterns sheet works on the website too (it can load it from /lib/css/patterns.css).
   assert.deepEqual(check([...SITE_CSS, 'apps/game/css/controls.css', 'apps/game/css/patterns.css']), []);
 });
+
+test('theme: the online screens take their state colours from the tokens (no hex but white and black)', () => {
+  const css = stripComments(read('apps/game/css/online.css'));
+  const hex = [...css.matchAll(/#[0-9a-f]{3,8}\b/gi)].map((m) => m[0].toLowerCase()).filter((h) => !['#fff', '#ffffff', '#000', '#000000'].includes(h));
+  assert.deepEqual(hex, []);
+});

@@ -494,7 +494,7 @@
   display: grid;
   gap: 4px;
   font: 12px/1.4 system-ui, sans-serif;
-  color: #dfe6d4;
+  color: var(--ui-text);
 }
 
 .observer-views {
@@ -580,7 +580,7 @@
   width: 18px;
   height: 12px;
   border: 1px solid #000;
-  background: #4a4f45;
+  background: var(--ui-metal-3);
 }
 
 .observer-flag[data-faction=''] {
@@ -617,7 +617,7 @@
   flex: none;
   width: 40px;
   height: 30px;
-  background: #0f1317;
+  background: var(--ui-metal-0);
 }
 
 .observer-icon-art {
@@ -655,15 +655,15 @@
 }
 
 .observer-icon-ready .observer-icon-text {
-  color: #9dff8a;
+  color: var(--ui-ok);
 }
 
 .observer-icon-hold .observer-icon-text {
-  color: #ffd27a;
+  color: var(--ui-warn);
 }
 
 .observer-icon-paused .observer-icon-text {
-  color: #ff5a4a;
+  color: var(--ui-bad);
 }
 
 /* Counts: how many tabs build it (top centre), or how many units (army: top right). */

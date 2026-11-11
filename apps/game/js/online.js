@@ -75,7 +75,7 @@ import {
   optionLocked,
   slotLocked,
 } from './protocol.js';
-import { api, ApiError, Connection } from './net.js';
+import { api, ApiError, Connection, OPEN_TIMEOUT_MS } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { reportMessage } from './telemetry/index.js';
 import { onlineRefusal } from './account/ui.js';
@@ -508,6 +508,11 @@ export class OnlineUI {
     this.saves = ctx.saves ?? SaveStore.browser();
     this.refreshTimer = 0;
     this.inGame = false;
+    /**
+     * The join, host or rejoin in progress (a token object) or null: one at a
+     * time, and a welcome that arrives after the player went back is left at once.
+     */
+    this.joining = null;
     this.root.classList.add('online');
     const rejoin = loadRejoin();
     if (rejoin) this.rejoinAfterReload(rejoin);
@@ -531,7 +536,7 @@ export class OnlineUI {
 
   /** Join from the friends screen: leave a lobby this player is in first. */
   async joinElsewhere(session, o = {}) {
-    if (this.inGame) return;
+    if (this.inGame || this.joining) return;
     if (this.conn && this.state?.session.id === session.id) return;
     if (this.conn) this.showBrowser();
     await this.join(session, o);
@@ -543,12 +548,48 @@ export class OnlineUI {
     const page = el('div', 'online-page');
     page.append(el('h1', 'online-title', 'Rejoining your session...'), el('p', 'online-muted', 'Reconnecting to the server.'));
     this.root.append(page);
+    const token = this.beginJoin();
+    if (!token) return;
     try {
       await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true });
     } catch (err) {
       clearRejoin();
-      this.showBrowser(`Could not rejoin: ${messageOf(err)}`);
+      if (this.joining === token) this.showBrowser(`Could not rejoin: ${messageOf(err)}`);
+    } finally {
+      this.endJoin(token);
     }
+  }
+
+  /** Start a join, host or rejoin: its token, or null while another one runs. */
+  beginJoin() {
+    if (this.joining) return null;
+    const token = {};
+    this.joining = token;
+    this.renderJoining();
+    return token;
+  }
+
+  /** The join of `token` is over (joined, failed or cancelled); a newer one keeps running. */
+  endJoin(token) {
+    if (this.joining !== token) return;
+    this.joining = null;
+    this.renderJoining();
+  }
+
+  /** The server browser while a join runs: Join and Spectate off, "Joining..." in the status line. */
+  renderJoining() {
+    if (this.state || !this.sessionList?.isConnected) return;
+    this.renderDetail();
+    this.renderListStatus();
+  }
+
+  renderListStatus() {
+    if (!this.listStatus) return;
+    const total = this.sessions?.length ?? 0;
+    const shown = this.sessionRows?.length ?? 0;
+    this.listStatus.textContent = this.joining
+      ? 'Joining...'
+      : this.listError || (!total ? 'No public sessions right now. Host one!' : !shown ? 'No session matches the search or filter.' : `${shown} of ${total} sessions`);
   }
 
   // ---- Server browser ------------------------------------------------------------
@@ -662,13 +703,27 @@ export class OnlineUI {
     this.refreshTimer = setInterval(() => this.refresh(), REFRESH_MS);
   }
 
+  /**
+   * The error banner (role=alert): a message, or '' to hide it. It goes once
+   * the player dismisses it or one of this player's later actions went
+   * through (actionWentThrough), so a stale error never reads as current.
+   */
   setError(message, { signIn = false } = {}) {
     if (!this.banner) return;
-    this.banner.textContent = message || '';
+    this.sentSinceError = false;
+    this.banner.textContent = '';
     this.banner.hidden = !message;
-    if (message && signIn && this.ctx.account) {
-      this.banner.append(' ', button('Sign in', 'online-btn-primary', () => this.signIn()));
-    }
+    if (!message) return;
+    this.banner.append(el('span', 'online-error-text', message));
+    if (signIn && this.ctx.account) this.banner.append(button('Sign in', 'online-btn-primary', () => this.signIn()));
+    const dismiss = button('Dismiss', 'online-btn-small online-error-dismiss', () => this.setError(''));
+    dismiss.setAttribute('aria-label', 'Dismiss message');
+    this.banner.append(dismiss);
+  }
+
+  /** The server answered an action this client sent after the banner's error: that error is over. */
+  actionWentThrough() {
+    if (this.sentSinceError && this.banner && !this.banner.hidden) this.setError('');
   }
 
   /** Show an error; account refusals (account_required, banned, ...) get their own text and a sign-in button where it helps. */
@@ -749,7 +804,7 @@ export class OnlineUI {
       this.renderSessions();
     } catch (err) {
       this.listError = messageOf(err);
-      if (this.listStatus) this.listStatus.textContent = this.listError;
+      this.renderListStatus();
     }
   }
 
@@ -812,8 +867,7 @@ export class OnlineUI {
       table.append(row);
       this.sessionRows.push(row);
     }
-    const total = this.sessions?.length ?? 0;
-    this.listStatus.textContent = this.listError || (!total ? 'No public sessions right now. Host one!' : !shown.length ? 'No session matches the search or filter.' : `${shown.length} of ${total} sessions`);
+    this.renderListStatus();
     this.renderDetail();
     if (focused) this.sessionRows.find((r) => r.tabIndex === 0)?.focus();
   }
@@ -841,7 +895,8 @@ export class OnlineUI {
     else if (e.key === 'End') next = rows.length - 1;
     else if (e.key === 'Enter') {
       e.preventDefault();
-      this.joinSelected();
+      // Holding Enter joins once.
+      if (!e.repeat) this.joinSelected();
       return;
     } else return;
     e.preventDefault();
@@ -899,10 +954,10 @@ export class OnlineUI {
     }
     const actions = el('div', 'online-detail-actions');
     const watch = button('Spectate', null, () => this.join(s, { spectate: true }));
-    watch.disabled = !d.canWatch;
+    watch.disabled = !d.canWatch || Boolean(this.joining);
     if (d.watchTitle) watch.title = d.watchTitle;
     const join = button(d.locked ? 'Join (password)' : 'Join game', 'online-btn-primary', () => this.join(s));
-    join.disabled = !d.canJoin;
+    join.disabled = !d.canJoin || Boolean(this.joining);
     if (d.joinTitle) join.title = d.joinTitle;
     actions.append(watch, join);
     box.append(actions);
@@ -938,6 +993,7 @@ export class OnlineUI {
    * `resume`: the text and parsed replay of an online save to continue in it.
    */
   async hostDialog(resume = null) {
+    if (this.joining) return;
     const name = this.playerName();
     if (!name) return;
     const saved = resume?.replay ?? null;
@@ -1013,11 +1069,15 @@ export class OnlineUI {
       { className: 'online-host-dialog' },
     );
     if (!input) return;
+    const token = this.beginJoin();
+    if (!token) return;
     try {
       const body = { name: input.name, public: input.public, maxPlayers: input.maxPlayers, version: this.ctx.version };
       if (input.password) body.password = input.password;
       const { id, hostKey } = await api.createSession(body);
-      await this.connect(id, { name, hostKey });
+      // Back before the session existed: nothing to join.
+      if (this.joining !== token) return;
+      if (!(await this.connect(id, { name, hostKey }))) return;
       // The first lobby messages: what the dialog set beyond the session itself.
       if (input.spectators !== DEFAULT_MAX_SPECTATORS) this.send({ t: 'spectators', max: input.spectators });
       if (input.map !== 'generated') await this.pickMap(input.map);
@@ -1025,7 +1085,9 @@ export class OnlineUI {
       if (!input.public && !resume) this.newInvite();
       if (resume) await this.loadResume(resume.text);
     } catch (err) {
-      this.showProblem(err);
+      if (this.joining === token) this.showProblem(err);
+    } finally {
+      this.endJoin(token);
     }
   }
 
@@ -1077,6 +1139,17 @@ export class OnlineUI {
   async join(session, { spectate = false } = {}) {
     const name = this.playerName();
     if (!name) return;
+    // One join at a time (a double click, a held Enter): from the password prompt to the welcome.
+    const token = this.beginJoin();
+    if (!token) return;
+    try {
+      await this.joinWith(token, session, name, spectate);
+    } finally {
+      this.endJoin(token);
+    }
+  }
+
+  async joinWith(token, session, name, spectate) {
     let password;
     if (session.locked !== false) {
       const prompt = session.locked === null ? 'Password (leave empty if none)' : 'Password';
@@ -1090,28 +1163,39 @@ export class OnlineUI {
         pass.addEventListener('keydown', (e) => e.key === 'Enter' && close(pass.value));
         body.append(field(prompt, pass), actions);
       });
-      if (password === null) return;
+      if (password === null || this.joining !== token) return;
     }
     try {
       const hello = { name };
       if (password) hello.password = password;
       if (spectate) hello.spectate = true;
+      // An older error (a failed join) is not about this one.
+      this.setError('');
       await this.connect(session.id, hello);
     } catch (err) {
-      this.showProblem(err);
+      if (this.joining === token) this.showProblem(err);
     }
   }
 
   /**
    * Open a session connection. `rejoin`: coming back into a running game
    * (after a reload, or `reconnect` when this page still has its game).
+   * False when the join was given up (Back) before the welcome came: the
+   * connection is left again and nothing else happens. `timeoutMs`: how long
+   * to wait for the welcome (net.js OPEN_TIMEOUT_MS by default).
    */
-  async connect(id, hello, { rejoin = false, reconnect = false } = {}) {
+  async connect(id, hello, { rejoin = false, reconnect = false, timeoutMs = OPEN_TIMEOUT_MS } = {}) {
     if (!rejoin && !this.account?.user) saveName(hello.name);
     const conn = new Connection(id);
     conn
       .on('lobby', (m) => this.onLobby(m))
-      .on('chat', (m) => (this.inGame ? this.gameChat(m) : this.chatLine(m.name, m.text, m.from === null, !!m.team)))
+      .on('chat', (m) => {
+        if (this.inGame) return this.gameChat(m);
+        // This player's own line came back: the chat went through.
+        const own = m.from !== null && m.from === this.state?.you;
+        if (own) this.actionWentThrough();
+        return this.chatLine(m.name, m.text, m.from === null, !!m.team, undefined, { own });
+      })
       .on('left', (m) => this.chatLine(null, leftText(m, this.inGame), true, false, 'left'))
       .on('back', (m) => this.onBack(m))
       .on('error', (m) => this.onServerError(m))
@@ -1124,7 +1208,13 @@ export class OnlineUI {
       .on('rematch', (m) => this.onRematch(m))
       .on('save', (m) => this.onSave(m))
       .on('close', (reason) => this.onClose(reason, conn));
-    const welcome = await conn.open({ version: this.ctx.version, ...hello });
+    const token = this.joining;
+    const welcome = await conn.open({ version: this.ctx.version, ...hello }, { timeoutMs });
+    if (!reconnect && token !== this.joining) {
+      // The player went back (or left) while this join waited for its welcome.
+      conn.leave();
+      return false;
+    }
     clearInterval(this.refreshTimer);
     this.conn = conn;
     // Protocol 5: the server says which name this member got (the username when signed in).
@@ -1141,7 +1231,7 @@ export class OnlineUI {
       this.driver.reattach(conn);
       this.reconnecting = false;
       this.gameLine('Reconnected. Catching up...', true);
-      return;
+      return true;
     }
     this.state = {
       you: welcome.you,
@@ -1159,6 +1249,7 @@ export class OnlineUI {
       invite: null,
     };
     this.lobbyClients = null;
+    this.optionsDraft = null;
     if (inviteId()) history.replaceState(null, '', location.pathname);
     clearInviteFromLocation();
     if (rejoin || welcome.role === 'spectator') this.pendingNet = [];
@@ -1166,6 +1257,7 @@ export class OnlineUI {
       this.buildLobby();
       this.loadServerMaps();
     }
+    return true;
   }
 
   /** Route a game network message to the driver, or keep it until the game exists. */
@@ -1181,6 +1273,9 @@ export class OnlineUI {
   }
 
   leaveSession() {
+    // A join still waiting for its welcome leaves as soon as it arrives (connect).
+    this.joining = null;
+    this.optionsDraft = null;
     clearInterval(this.refreshTimer);
     clearInterval(this.inviteTimer);
     clearRejoin();
@@ -1227,7 +1322,14 @@ export class OnlineUI {
   }
 
   onServerError(m) {
+    // A refused New seed: the button is ready again (it is drawn with the panel).
+    const seeding = Number.isInteger(this.seedPending);
     this.seedPending = null;
+    if (seeding && !this.inGame && this.slotBox && this.state) this.renderMap();
+    // A refused options edit: the lobby's options count again, and the controls show them.
+    const drafted = this.optionsDraft !== null && this.optionsDraft !== undefined;
+    this.optionsDraft = null;
+    if (drafted && !this.inGame && this.slotBox && this.state?.options) this.renderOptions();
     // A refused bulk edit is reported in the bulk bar, where it was applied.
     if (this.bulkWait && !this.inGame) return this.settleBulk({ error: m.message });
     const refusal = onlineRefusal(m.code, m.message);
@@ -1268,7 +1370,9 @@ export class OnlineUI {
       if (!this.reconnecting) return;
       wait = Math.min(wait * 2, 8000);
       try {
-        await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true, reconnect: true });
+        // One attempt never outlasts the grace period (the server drops the player after it).
+        const timeoutMs = Math.max(1, Math.min(OPEN_TIMEOUT_MS, deadline - Date.now()));
+        await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true, reconnect: true, timeoutMs });
         return;
       } catch (err) {
         last = err;
@@ -1299,11 +1403,16 @@ export class OnlineUI {
     return this.state && this.state.hostId === this.state.you;
   }
 
+  /** Send a lobby message; false when it was invalid (the banner says why) or there is no connection. */
   send(msg) {
+    if (!this.conn) return false;
     try {
-      this.conn?.send(msg);
+      this.conn.send(msg);
+      this.sentSinceError = true;
+      return true;
     } catch (err) {
       this.setError(messageOf(err));
+      return false;
     }
   }
 
@@ -1378,6 +1487,8 @@ export class OnlineUI {
     chatInput.placeholder = 'Message the lobby';
     chatInput.setAttribute('aria-label', 'Message the lobby');
     chatInput.addEventListener('keydown', (e) => {
+      // Enter that confirms an input method's composition (Japanese, Chinese, Korean) does not send.
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key !== 'Enter' || !chatInput.value.trim()) return;
       this.send({ t: 'chat', text: chatInput.value });
       chatInput.value = '';
@@ -1441,7 +1552,11 @@ export class OnlineUI {
       this.buildLobby();
       this.loadServerMaps();
     }
+    // An action of this player went through (the server changed the lobby after it).
+    this.actionWentThrough();
     const mapChanged = (this.state.map ? this.state.map.hash : null) !== (m.map ? m.map.hash : null);
+    // The options edit on its way arrived, or the lobby changed under it (a new host, another map).
+    if (mapChanged || m.hostId !== this.state.hostId || this.draftSettled(m)) this.optionsDraft = null;
     this.lobbySounds(m, mapChanged);
     Object.assign(this.state, {
       slots: m.slots,
@@ -1768,6 +1883,9 @@ export class OnlineUI {
     const box = this.spectatorBox;
     if (!box) return;
     const st = this.state;
+    // The control with the focus keeps it across the lobby update (the stepper's own change comes back as one).
+    const active = globalThis.document?.activeElement;
+    const focusKey = box.contains(active) ? (active.dataset?.key ?? null) : null;
     box.textContent = '';
     const title = el('h2', 'online-panel-title', `Spectators (${st.spectators.length} / ${st.maxSpectators})`);
     title.append(this.spectatorTip.root);
@@ -1784,6 +1902,7 @@ export class OnlineUI {
       if (this.isHost && sp.client !== st.you) {
         const remove = button('Remove', 'online-btn-small', () => this.send({ t: 'kick', client: sp.client }));
         remove.setAttribute('aria-label', `Remove ${sp.name}`);
+        remove.dataset.key = `spec:remove:${sp.client}`;
         row.append(remove);
       }
       list.append(row);
@@ -1804,6 +1923,9 @@ export class OnlineUI {
         onChange: (v) => this.send({ t: 'spectators', max: Number(v) }),
       });
       describedBy(places.field, this.spectatorTip);
+      places.field.dataset.key = 'spec:field';
+      places.dec.dataset.key = 'spec:dec';
+      places.inc.dataset.key = 'spec:inc';
       const row = el('div', 'online-field');
       row.append(label, places.root);
       controls.append(row);
@@ -1811,8 +1933,14 @@ export class OnlineUI {
     const watching = st.role === 'spectator';
     const toggle = button(watching ? 'Play' : 'Spectate', null, () => this.send({ t: 'spectate', on: !watching }));
     toggle.disabled = watching ? !st.slots.some((x) => x.type === 'open') : st.spectators.length >= st.maxSpectators;
+    toggle.dataset.key = 'spec:toggle';
     controls.append(toggle);
     box.append(controls);
+    if (focusKey) {
+      const find = (key) => [...box.querySelectorAll('[data-key]')].find((e) => e.dataset.key === key && !e.disabled);
+      // A stepper end turns its button off: the value keeps the focus then.
+      (find(focusKey) ?? (/^spec:(dec|inc)$/.test(focusKey) ? find('spec:field') : null))?.focus();
+    }
   }
 
   /** The slots as js/lobby-bulk.js sees them: the lobby map's locks and which one is you. */
@@ -1934,7 +2062,8 @@ export class OnlineUI {
           });
           const diff = this.slotPlate(`${i}:difficulty`, DIFFICULTIES.map((d) => [d, LABELS.difficulty[d]]), slot.difficulty, (v) => this.send({ t: 'slot', slot: i, difficulty: v }), {
             label: `Player ${i + 1} difficulty`,
-            disabled: !host,
+            // A resumed save keeps its AI players as saved (the server refuses changes).
+            disabled: !host || Boolean(this.state.resume),
             tip: this.columnTips.playerOnline,
           });
           who.append(bot.root, diff.root);
@@ -2027,13 +2156,24 @@ export class OnlineUI {
     if (focusKey) this.slotPlates.find((p) => p.button.dataset.ctl === focusKey && !p.button.disabled)?.button.focus();
   }
 
-  /** Send the options with `patch` applied (host only; the server checks). */
+  /**
+   * Send the options with `patch` applied (host only; the server checks).
+   * Every `options` message carries all options, so an edit made before the
+   * lobby echoed the previous one builds on what was sent (optionsDraft), not
+   * on the older lobby: two quick edits keep both.
+   */
   sendOptions(patch) {
-    const options = { ...this.state.options, ...patch };
+    const options = { ...(this.optionsDraft ?? this.state.options), ...patch };
     // A game mode never changes what the lobby map locks (the server would refuse it).
     const setup = this.state.map?.setup;
     for (const k of setup?.lockedOptions ?? []) options[k] = setup.options[k];
-    this.send({ t: 'options', options });
+    if (this.send({ t: 'options', options })) this.optionsDraft = options;
+  }
+
+  /** The options the lobby `m` shows hold every value of the draft: the server took it. */
+  draftSettled(m) {
+    const d = this.optionsDraft;
+    return !d || Object.keys(d).every((k) => JSON.stringify(d[k]) === JSON.stringify(m.options?.[k]));
   }
 
   /** The Game options panel: built once per lobby, renderOptions shows the current values. */
@@ -2090,7 +2230,8 @@ export class OnlineUI {
   }
 
   renderOptions() {
-    const o = this.state.options;
+    // An edit on its way shows as sent until the lobby has it (sendOptions).
+    const o = this.optionsDraft ?? this.state.options;
     if (!o || !this.optionControls) return;
     // A resumed save keeps its options.
     const host = this.isHost && !this.state.resume;
@@ -2124,14 +2265,46 @@ export class OnlineUI {
     for (const [key] of SELECT_OPTIONS) this.optionRows[key].hidden = mission && !MISSION_SELECT_OPTIONS.includes(key);
   }
 
+  /**
+   * The Battlefield panel, drawn again on every lobby update: the control
+   * with the focus keeps it (by its data-key, or the spawn marker by its
+   * place), and a seed being typed keeps its text and caret.
+   */
   renderMap() {
+    const box = this.mapBox;
+    const doc = globalThis.document;
+    const active = doc?.activeElement ?? null;
+    const inside = !!active && box.contains(active);
+    // New seed turns itself off while the map is made (the browser drops the focus then):
+    // it gets the focus back once it is on again, unless the player went elsewhere.
+    const idle = !active || active === doc?.body;
+    if (!inside && !idle) this.mapRefocus = null;
+    const focusKey = inside ? (active.dataset?.key ?? null) : idle ? (this.mapRefocus ?? null) : null;
+    this.mapRefocus = null;
+    const typing =
+      inside && active === this.seedField ? { value: active.value, start: active.selectionStart ?? null, end: active.selectionEnd ?? null } : null;
+    // A marker with focus keeps it across the lobby update.
+    const refocus = this.spawnLayer?.buttons.indexOf(active) ?? -1;
+    this.seedField = null;
+    this.drawMap(refocus);
+    if (typing && this.seedField) {
+      const seed = this.seedField;
+      seed.value = typing.value;
+      seed.focus();
+      if (typing.start !== null && typeof seed.setSelectionRange === 'function') seed.setSelectionRange(typing.start, typing.end ?? typing.start);
+    } else if (focusKey) {
+      const target = [...box.querySelectorAll('[data-key]')].find((e) => e.dataset.key === focusKey);
+      if (target && !target.disabled) target.focus();
+      else if (target) this.mapRefocus = focusKey;
+    }
+  }
+
+  drawMap(refocus) {
     const box = this.mapBox;
     const st = this.state;
     this.previewBusy = false;
     box.textContent = '';
     box.append(el('h2', 'online-panel-title', 'Battlefield'));
-    // A marker with focus keeps it across the lobby update.
-    const refocus = this.spawnLayer?.buttons.indexOf(globalThis.document?.activeElement) ?? -1;
     const frame = el('div', 'online-preview-frame');
     const canvas = el('canvas', 'online-preview');
     canvas.setAttribute('role', 'img');
@@ -2202,6 +2375,7 @@ export class OnlineUI {
     const current = st.mission ? `mission:${st.mission.id}` : st.map ? (st.map.shared ? `mine:${st.map.hash}` : `community:${st.map.id}`) : 'generated';
     this.mapPicker?.destroy();
     const source = select(this.mapChoices(current), current, (v) => this.pickMap(v), { grouped: true, label: 'Map', small: false });
+    source.button.dataset.key = 'map:source';
     this.mapPicker = source;
     const controls = el('div', 'online-option-grid');
     controls.append(field('Map', source, 'onlineMap'));
@@ -2209,29 +2383,35 @@ export class OnlineUI {
     if (st.map || st.mission) {
       const unload = button(st.mission ? 'Leave mission' : 'Unload map', null, () => this.pickMap('generated'));
       unload.title = 'Go back to the generated map and its seed';
+      unload.dataset.key = 'map:unload';
       controls.append(unload);
     }
     if (!st.map && !st.mission) {
-      const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) => this.send({ t: 'options', options: { ...st.options, mapSize: Number(v) } }), {
+      const size = select(MAP_SIZES.map((v) => [v, `${LABELS.mapSize[v]} (${v} x ${v})`]), st.options.mapSize, (v) => this.sendOptions({ mapSize: Number(v) }), {
         label: 'Map size',
         small: false,
       });
+      size.button.dataset.key = 'map:size';
       const seedRow = el('div', 'online-seed');
       const seed = el('input', 'online-input');
       seed.inputMode = 'numeric';
       seed.maxLength = 10;
       seed.value = String(st.options.seed);
+      seed.dataset.key = 'map:seed';
+      this.seedField = seed;
       seed.addEventListener('change', () => {
         const n = Number(seed.value.trim());
-        if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.send({ t: 'options', options: { ...st.options, seed: n } });
+        if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.sendOptions({ seed: n });
         else seed.value = String(st.options.seed);
       });
       const dice = button('New seed', 'online-dice', () => {
+        if (globalThis.document?.activeElement === dice) this.mapRefocus = 'map:dice';
         // The loader shows until the lobby has the new seed and its map is made.
         this.seedPending = randomSeed();
         busy(dice);
-        this.send({ t: 'options', options: { ...st.options, seed: this.seedPending } });
+        this.sendOptions({ seed: this.seedPending });
       });
+      dice.dataset.key = 'map:dice';
       const busy = (b) => {
         b.disabled = true;
         b.setAttribute('aria-busy', 'true');
@@ -2254,6 +2434,7 @@ export class OnlineUI {
     });
     const load = button('Load map file', null, () => file.click());
     load.title = 'Share a .webra-map.json file or an OpenRA .oramap map with this lobby';
+    load.dataset.key = 'map:load';
     if (st.mission) {
       box.append(controls);
       return;
@@ -2288,6 +2469,7 @@ export class OnlineUI {
         small: false,
       });
       control.setDisabled(!host);
+      control.button.dataset.key = `mission:${key}`;
       this.missionPlates.push(control);
       box.append(field(label, control));
     }
@@ -2474,20 +2656,24 @@ export class OnlineUI {
    * (`sound`: 'chat' ChatLine, 'option' LobbyOptionChanged for system lines,
    * 'left' PlayerLeft); in a game every line plays ChatLine (gameLine).
    */
-  chatLine(name, textValue, system = false, team = false, sound = name ? 'chat' : 'option') {
+  /** A lobby chat line; `own`: this player's line (the log always shows it). */
+  chatLine(name, textValue, system = false, team = false, sound = name ? 'chat' : 'option', { own = false } = {}) {
     if (this.inGame) {
       this.gameLine(name ? `${team ? '[Team] ' : ''}${name}: ${textValue}` : textValue);
       return;
     }
     if (sound === 'chat') this.ctx.sounds?.chatLine();
     else this.ctx.sounds?.lobby(sound);
-    if (!this.chatLog) return;
+    const log = this.chatLog;
+    if (!log) return;
+    // A player who scrolled up to read stays there; at the end, the log follows the new line.
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
     const line = el('div', system ? 'online-chat-line online-chat-system' : 'online-chat-line');
     if (name) line.append(el('strong', null, `${name}: `));
     line.append(document.createTextNode(textValue));
-    this.chatLog.append(line);
-    while (this.chatLog.childElementCount > CHAT_LINES) this.chatLog.firstElementChild.remove();
-    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+    log.append(line);
+    while (log.childElementCount > CHAT_LINES) log.firstElementChild.remove();
+    if (atEnd || own) log.scrollTop = log.scrollHeight;
   }
 
   /** The community map list and the host's own maps, for the map picker. */

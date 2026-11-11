@@ -11,7 +11,7 @@
   justify-content: center;
   overflow: hidden;
   background: #060807;
-  border: 1px solid var(--sb-edge, #3a4346);
+  border: 1px solid var(--ui-line);
   border-radius: 3px;
 }
 
@@ -85,7 +85,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--sb-dim, #8b9288);
+  color: var(--ui-muted);
   text-shadow: 0 1px 2px #000;
   pointer-events: none;
 }
