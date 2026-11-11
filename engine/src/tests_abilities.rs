@@ -697,6 +697,52 @@ fn teleported(w: &mut World) -> Vec<Vec<i32>> {
 }
 
 #[test]
+fn a_chronoshifted_tank_in_a_transport_returns_once_unloaded() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let key = "ChronoshiftPower@chronoshift";
+    superweapon(&mut w, 0, "PDOX", 8, 50, key);
+    let tank = passive(&mut w, "2TNK", 0, 20, 20);
+    run(&mut w, 1);
+    power(&mut w, 0, key, (40, 30), Some((20, 20)));
+    run(&mut w, 1);
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (40, 30));
+    let lst = passive(&mut w, "LST", 0, 42, 30);
+    assert!(w.load_passenger(lst, tank));
+    w.sound.set_enabled(true);
+    teleported(&mut w);
+    run(&mut w, 450);
+    assert!(w.actors[tank].ab.chrono_return.is_some(), "a passenger keeps its return for later");
+    assert!(teleported(&mut w).is_empty(), "no chronoshift inside the transport");
+    let exit = w.map.idx(42, 31);
+    assert_eq!(w.unload_passenger(lst, exit), Some(tank));
+    run(&mut w, 1);
+    assert!(w.actors[tank].ab.chrono_return.is_none());
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (20, 20), "back at its origin");
+    assert_eq!(teleported(&mut w).len(), 2);
+}
+
+#[test]
+fn teleport_and_lay_mines_orders_skip_passengers() {
+    let mut w = flat_world(["germany", "soviet"]);
+    let ct = unit(&mut w, "CTNK", 0, 20, 30);
+    let lst = passive(&mut w, "LST", 0, 22, 30);
+    assert!(w.load_passenger(lst, ct));
+    w.sound.set_enabled(true);
+    let ids = refs(&w, &[ct]);
+    w.queue_order(Order::Teleport { player: 0, ids, x: cell_center(30), y: cell_center(30) });
+    run(&mut w, 1);
+    assert_eq!(w.actors[ct].ab.chrono_charge, 0, "the charge is not spent");
+    assert!(teleported(&mut w).is_empty(), "no chronoshift from inside the transport");
+    let mnly = unit(&mut w, "MNLY", 0, 24, 30);
+    assert!(w.load_passenger(lst, mnly));
+    let ids = refs(&w, &[mnly]);
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 30, y0: 34, x1: 32, y1: 34 });
+    run(&mut w, 1);
+    assert_ne!(w.actors[mnly].activity, Activity::Ability, "a passenger lays no mines");
+    assert!(w.actors[mnly].ab.minefield.is_empty());
+}
+
+#[test]
 fn germany_gets_the_advanced_chronoshift() {
     let mut w = flat_world(["germany", "soviet"]);
     superweapon(&mut w, 0, "PDOX", 8, 50, "ChronoshiftPower@advancedchronoshift");

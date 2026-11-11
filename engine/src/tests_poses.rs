@@ -121,6 +121,13 @@ fn harvesters_report_harvesting_and_docking() {
     w.actors[i].harv = HarvState::ToOre;
     w.actors[i].px -= 50;
     assert_eq!(pose_of(&w, body), Some((Pose::Move as u32, 0)));
+    // Ordered away: the harvest states no longer pick the pose.
+    w.actors[i].activity = Activity::Move;
+    w.actors[i].harv = HarvState::Unloading;
+    assert_eq!(pose_of(&w, body), Some((Pose::Move as u32, 0)));
+    w.actors[i].px = w.actors[i].x;
+    w.actors[i].harv = HarvState::Harvesting;
+    assert_eq!(pose_of(&w, body), Some((Pose::Idle as u32, 0)));
 }
 
 #[test]

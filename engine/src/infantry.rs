@@ -466,6 +466,7 @@ impl World {
     /// it, and repairs by players who are not allied to the new owner end.
     pub fn change_owner(&mut self, i: usize, owner: u8, cancel: bool) {
         self.release_dock(i);
+        let old = self.actors[i].owner;
         let stance = self.initial_stance(self.actors[i].ty, owner);
         let a = &mut self.actors[i];
         a.owner = owner;
@@ -475,6 +476,11 @@ impl World {
         a.rally = None;
         a.refinery = NONE;
         a.inf.disguise = None;
+        // The old owner's primary mark would stand next to the new owner's
+        // own primary of that type (primary.rs keeps one per owner).
+        if a.kind == Kind::Building {
+            a.primary = false;
+        }
         if cancel || a.kind == Kind::Building {
             a.target = NONE;
             a.target_seen = None;
@@ -492,6 +498,17 @@ impl World {
         for p in self.passengers(i) {
             self.actors[p].owner = owner;
             self.actors[p].stance = self.initial_stance(self.actors[p].ty, owner);
+        }
+        // Attacks on `i` that were aimed at an enemy and now hit a friend end
+        // (a smart attack order is stored as forced, which accepts any owner):
+        // units finish the attack on their next tick, defences pick anew.
+        let me = self.make_ref(i);
+        for u in 0..self.actors.len() {
+            let ua = &self.actors[u];
+            if ua.alive && ua.target == me && self.are_allies(ua.owner, owner) && self.are_enemies(ua.owner, old) {
+                self.actors[u].target = NONE;
+                self.actors[u].target_seen = None;
+            }
         }
         self.tokens_dirty = true;
         // The spatial hash's owners per cell no longer cover this one (combat.rs scans).
@@ -770,8 +787,10 @@ impl World {
     /// Units that are not pushed around by the crowd: dogs in the air and
     /// units walking into (or out of) their Enter target.
     pub(crate) fn passes_through(&self, i: usize) -> bool {
-        let s = &self.actors[i].inf;
-        s.leap.is_some() || s.enter.as_ref().is_some_and(|e| matches!(e.phase, EnterPhase::Entering | EnterPhase::Exiting))
+        let a = &self.actors[i];
+        a.inf.leap.is_some()
+            || (a.activity == Activity::Enter
+                && a.inf.enter.as_ref().is_some_and(|e| matches!(e.phase, EnterPhase::Entering | EnterPhase::Exiting)))
     }
 
     /// Whether unit `i` stands next to actor `t` (an adjacent cell).

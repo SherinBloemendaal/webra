@@ -2412,6 +2412,15 @@ impl World {
         // The move under way ends; a step already begun is finished (movement/cellmove.rs).
         self.actors[i].mv.cancel();
         self.actors[i].mv.order_near = crate::movement::cellmove::ORDER_NEAR_ENOUGH;
+        // A walk into or out of an Enter target (infantry.rs) ends with the
+        // new order; `order_enter` sets its own Enter after this call.
+        self.actors[i].inf.enter = None;
+        // An unload cut short: the truck leaves the dock (its dock pose ends)
+        // and later looks for ore or a refinery afresh.
+        if self.actors[i].harv == HarvState::Unloading {
+            self.note_dock(i, false);
+            self.actors[i].harv = HarvState::Search;
+        }
         let me = self.make_ref(i);
         if let Some(r) = self.resolve(self.actors[i].refinery) {
             if self.actors[r].dock_user == me {

@@ -361,6 +361,91 @@ fn tanya_blows_up_a_structure_with_c4_and_walks_out() {
     assert_eq!(w.actors[e7].activity, Activity::Idle);
 }
 
+/// Run until unit `i` walks its Enter target in `phase`.
+fn run_until_phase(w: &mut World, i: usize, phase: crate::infantry::EnterPhase) {
+    for _ in 0..600 {
+        if w.actors[i].inf.enter.as_ref().is_some_and(|e| e.phase == phase) {
+            return;
+        }
+        w.step();
+    }
+    panic!("never reached {phase:?}");
+}
+
+#[test]
+fn a_move_order_while_tanya_walks_out_ends_her_enter_walk() {
+    let mut w = flat_world();
+    let weap = building(&mut w, "WEAP", 1, 30, 30);
+    let e7 = passive(&mut w, "E7", 0, 31, 36);
+    smart(&mut w, 0, &[e7], weap);
+    run_until_phase(&mut w, e7, crate::infantry::EnterPhase::Exiting);
+    assert!(w.passes_through(e7), "walking out through the footprint");
+    let ids = vec![w.make_ref(e7)];
+    let (x, y) = (cell_center(31), cell_center(45));
+    w.queue_order(Order::Move { player: 0, ids, x, y, attack_move: false });
+    w.step();
+    assert!(w.actors[e7].inf.enter.is_none(), "the new order ends the Enter walk");
+    assert!(!w.passes_through(e7));
+    assert!(w.occupies_cells(e7), "she holds her cell again");
+}
+
+#[test]
+fn a_stop_order_while_an_engineer_walks_in_ends_his_enter_walk() {
+    let mut w = flat_world();
+    let barr = building(&mut w, "BARR", 1, 30, 30);
+    let e6 = unit(&mut w, "E6", 0, 30, 36);
+    smart(&mut w, 0, &[e6], barr);
+    run_until_phase(&mut w, e6, crate::infantry::EnterPhase::Entering);
+    assert!(w.passes_through(e6));
+    let ids = vec![w.make_ref(e6)];
+    w.queue_order(Order::Stop { player: 0, ids });
+    w.step();
+    assert!(w.actors[e6].inf.enter.is_none(), "the new order ends the Enter walk");
+    assert!(!w.passes_through(e6));
+    assert!(w.occupies_cells(e6), "he holds his cell again");
+    run(&mut w, 300);
+    assert_eq!(w.actors[barr].owner, 1, "the stopped engineer does not capture");
+}
+
+#[test]
+fn tanks_stop_shooting_a_structure_their_side_captured() {
+    let mut w = flat_world();
+    let powr = building(&mut w, "POWR", 1, 30, 30);
+    let tank = unit(&mut w, "2TNK", 0, 31, 38);
+    let full = w.actors[powr].hp;
+    smart(&mut w, 0, &[tank], powr);
+    for _ in 0..300 {
+        w.step();
+        if w.actors[powr].hp < full {
+            break;
+        }
+    }
+    assert!(w.actors[powr].hp < full, "the tank opened fire");
+    w.capture(powr, 0, None);
+    run(&mut w, 10);
+    assert_eq!(w.actors[tank].target, crate::world::NONE);
+    assert_eq!(w.actors[tank].activity, Activity::Idle);
+    // Shells already in the air land; nothing more is fired.
+    run(&mut w, 40);
+    let hp = w.actors[powr].hp;
+    run(&mut w, 150);
+    assert_eq!(w.actors[powr].hp, hp, "no more shots at the captured structure");
+}
+
+#[test]
+fn a_captured_primary_factory_loses_its_primary_mark() {
+    let mut w = flat_world();
+    let own = building(&mut w, "WEAP", 0, 10, 10);
+    let theirs = building(&mut w, "WEAP", 1, 30, 30);
+    assert!(w.toggle_primary(own));
+    assert!(w.toggle_primary(theirs));
+    w.capture(theirs, 0, None);
+    w.refresh_tokens();
+    assert!(!w.actors[theirs].primary, "the old owner's mark goes");
+    assert!(w.actors[own].primary);
+    assert_eq!(w.most_likely_producer(0, crate::rules::QueueType::Vehicle), Some(own), "units leave the player's own primary");
+}
+
 #[test]
 fn iron_curtain_defuses_c4() {
     let mut w = flat_world();
