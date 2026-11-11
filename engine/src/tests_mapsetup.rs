@@ -360,3 +360,29 @@ fn a_map_full_of_structures_relabels_the_cells_once() {
     assert_eq!(many.pass.component[many.map.idx(10, 10)], many.pass.component[many.map.idx(10, 30)], "one side");
     assert_eq!(none.pass.component[none.map.idx(10, 10)], none.pass.component[none.map.idx(40, 10)]);
 }
+
+/// Every function that generates a map clamps its size the same way (B-3):
+/// the preview, its spawn markers, the exported map file and a game from the
+/// lobby options agree for any size a caller passes.
+#[test]
+fn generated_map_sizes_agree_across_the_api() {
+    for size in [16, 40, 300, 600] {
+        let file = MapData::parse(
+            &crate::Game::generated_map_styled(5, size, 2, "land", "temperate").unwrap_or_else(|_| panic!("built-in names")),
+        )
+        .unwrap();
+        assert_eq!(file.width, file.height);
+        assert!((crate::mapdata::MIN_SIZE..=crate::mapdata::MAX_SIZE).contains(&file.width), "{size}: a map file's size");
+        let preview = crate::Game::map_preview_styled(5, size, 2, "land", "temperate").unwrap_or_else(|_| panic!("built-in names"));
+        assert_eq!(preview.len() / 4, (file.width * file.height) as usize, "{size}: preview");
+        let spawns = crate::Game::map_spawns_styled(5, size, 2, "land").unwrap_or_else(|_| panic!("built-in style"));
+        assert_eq!(spawns, file.spawns.iter().flatten().copied().collect::<Vec<_>>(), "{size}: spawn markers");
+        let options = format!(r#"{{"seed":5,"mapSize":{size},"players":[{{"faction":"england"}},{{"type":"ai","faction":"russia"}}]}}"#);
+        assert_eq!(crate::parse_options(&options).unwrap().map_size, file.width, "{size}: game");
+    }
+    // The name names the players the map was made for.
+    let file =
+        MapData::parse(&crate::Game::generated_map_styled(5, 64, 12, "land", "temperate").unwrap_or_else(|_| panic!("built-in names")))
+            .unwrap();
+    assert_eq!((file.name.as_str(), file.spawns.len()), ("Random 8p #5", 8));
+}

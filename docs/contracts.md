@@ -784,7 +784,13 @@ engine treats a missing key as `standard`. Game modes include it; a mode
 saved before it existed takes `standard`.
 `Game.generated_map_with(seed, size, players, style, biome, techBuildings)`
 exports such a map file (`generated_map_styled` is the same with
-`standard`). `cheats` is the "Debug menu"
+`standard`). Every engine function that generates a map (`from_options`,
+the previews, `map_spawns_styled`, the exports) clamps the size to the map
+file's 32 to 256 cells and the players to 2 to 8, so a preview, its spawn
+markers, the exported file and the game always agree. The engine treats a
+missing slot `type` as `human`, a missing `difficulty` as `normal`, and
+missing `startingUnits`, `techLevel` and `gameSpeed` as `mcv`,
+`unrestricted` and `normal`; it refuses unknown values of all five. `cheats` is the "Debug menu"
 option (OpenRA's `cheats`, default off): only then do the debug menu's cheat
 orders work (section 5). `reusableEngineers` is OpenRA's "Reusable
 Engineers" (default off): engineers capture from next to a structure after
