@@ -812,7 +812,7 @@ function renderFairness() {
 /** A button for a command: its icon, its label, and a tooltip with its key. */
 function commandButton(name, { icon, label, text = true, primary = false } = {}) {
   const cmd = COMMANDS.find((c) => c.name === name);
-  const b = el('button', { type: 'button', class: `cmd${primary ? ' primary' : ''}${text ? '' : ' icon-only'}`, 'data-cmd': name, 'aria-label': label ?? cmd.label, onclick: () => run(name) }, [
+  const b = el('button', { type: 'button', class: `cmd${primary ? ' primary' : ''}${text ? '' : ' icon-only'}${icon ? ' has-icon' : ''}`, 'data-cmd': name, 'aria-label': label ?? cmd.label, onclick: () => run(name) }, [
     icon ? editorIcon(icon) : null,
     text ? el('span', {}, label ?? cmd.label) : null,
   ]);
