@@ -2973,8 +2973,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     // Weather (js/weather-fx.js) and heat shimmer from the same frame.
     const canvas = $('view');
     weather.advance(simSeconds, dt / 1000);
-    // The view's CSS px² from the drawn size (no layout read per frame).
-    const ratio = renderer.pixelRatio();
+    // The view's CSS px² from the drawn size (no layout read per frame), at the ratio it was drawn with.
+    const ratio = renderer.canvasRatio;
     const cssArea = (canvas.width * canvas.height) / (ratio * ratio);
     const fx = { ...weather.uniforms(simSeconds, [v.x0, v.y0, v.x1, v.y1], input.camera.zoom, cssArea), heat: f.heatCount ? f.heat() : null, heatCount: f.heatCount ?? 0 };
     // Camera shake (js/battlefx.js) moves the picture, not the camera the input uses.
