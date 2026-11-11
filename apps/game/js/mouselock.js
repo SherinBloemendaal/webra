@@ -678,6 +678,7 @@ export class MouseCapture {
    *   isFullscreen?(): boolean,
    *   onHint?(text: string): void,  the "Mouse captured" notice (a toast)
    *   onEscape?(): void,  Esc that the browser kept while it let go, when Esc also opens the menu
+   *   onAbort?(): void,  the lock lets go with a button held: drags in progress end uncommitted, before the button comes up
    *   doc?: Document, win?: Window, now?(): number, makeEvent?(type: string, init: object): Event,
    *   later?(fn: Function, ms: number): void,  setTimeout (tests run it by hand)
    *   mac?: boolean,
@@ -916,6 +917,10 @@ export class MouseCapture {
     const p = this.pointer;
     this.pointer = null;
     if (activePointer === p) activePointer = null;
+    // The held buttons come up below (end): the game drops what they were
+    // dragging first, so letting go (Esc, a dialog, blur) never commits a
+    // sell box, a support power or a minefield.
+    if (p?.pressed.size) this.opts.onAbort?.();
     p?.end();
     this.real.buttons = 0;
     this.real.target = null;

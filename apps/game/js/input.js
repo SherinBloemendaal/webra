@@ -1468,12 +1468,23 @@ export class Input {
     if (!on) return;
     this.keys.clear();
     this.hotkeys.releaseAll();
+    this.abortDrags();
+    this.edgeScroll = null;
+  }
+
+  /**
+   * Drop every press in progress without committing it: the box selection,
+   * the middle button pan, a minefield, a repair or sell box and a support
+   * power's direction drag, and an open box chooser or sell confirmation.
+   * The mouse capture letting go (js/mouselock.js onAbort) calls it before
+   * the held buttons come up, so that mouseup finds nothing to commit.
+   */
+  abortDrags() {
     this.drag = null;
     this.pan = null;
     this.mineDrag = null;
     this.modeDrag = null;
     this.powerDrag = null;
-    this.edgeScroll = null;
     this.dropBoxChoice();
   }
 

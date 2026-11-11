@@ -2367,6 +2367,7 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
         onEscape: () => {
           if (!input.suspended && !input.cancelMode()) menu.open();
         },
+        onAbort: () => input.abortDrags(),
       }))
     : null;
   // The game menu's Game info (js/gameinfo.js): the scores come from the
