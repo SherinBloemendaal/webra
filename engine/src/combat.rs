@@ -418,8 +418,9 @@ impl World {
         let tclass = self.target_class(t);
         let usable: Vec<usize> = info.weapons.iter().copied().filter(|&w| self.rules.weapons[w].can_target_class(tclass)).collect();
         if usable.is_empty() {
-            self.actors[i].target = NONE;
-            self.actors[i].activity = Activity::Idle;
+            // No weapon reaches the target's class any more (an aircraft took
+            // off or landed): back to guarding or the attack-move, else idle.
+            self.attack_over(i);
             return;
         }
         let range = usable.iter().map(|&w| self.rules.weapons[w].range).max().unwrap();

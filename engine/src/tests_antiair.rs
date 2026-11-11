@@ -428,6 +428,56 @@ fn attack_cursor_and_smart_orders_on_aircraft() {
     assert!(w.can_attack_actor(tank, heli));
 }
 
+/// A landed Hind that ground units engaged on their own takes off: they can
+/// no longer hit it and go back to what they were doing (OpenRA Attack
+/// ends, the attack-move or guard goes on).
+#[test]
+fn units_resume_their_attack_move_or_guard_when_their_target_takes_off() {
+    for guard in [false, true] {
+        let mut w = sky(14);
+        let heli = quiet_flyer(&mut w, "HIND", 1, 33, 33);
+        w.queue_order(Order::Land { player: 1, ids: vec![w.make_ref(heli)], x: cell_center(33), y: cell_center(33) });
+        run(&mut w, 100);
+        assert!(w.actors[heli].heli.landed);
+        let tank = spawn(&mut w, "2TNK", 0, 33, 30);
+        w.actors[tank].reload = [1_000_000; MAX_WEAPONS];
+        if guard {
+            let ward = spawn(&mut w, "2TNK", 0, 34, 30);
+            w.actors[ward].reload = [1_000_000; MAX_WEAPONS];
+            w.queue_order(Order::Guard { player: 0, ids: vec![w.make_ref(tank)], target: w.make_ref(ward) });
+        } else {
+            let ids = vec![w.make_ref(tank)];
+            w.queue_order(Order::Move { player: 0, ids, x: cell_center(33), y: cell_center(50), attack_move: true });
+        }
+        let href = w.make_ref(heli);
+        let mut engaged = false;
+        for _ in 0..300 {
+            w.step();
+            if w.actors[tank].target == href {
+                engaged = true;
+                break;
+            }
+        }
+        assert!(engaged, "guard {guard}: the tank engages the landed Hind");
+        w.queue_order(Order::Deploy { player: 1, ids: vec![href] });
+        let mut over = false;
+        for _ in 0..100 {
+            w.step();
+            if w.actors[heli].altitude > 0 && w.actors[tank].target == NONE {
+                over = true;
+                break;
+            }
+        }
+        assert!(over, "guard {guard}: the attack ends once the Hind flies");
+        if guard {
+            assert_eq!(w.actors[tank].activity, Activity::Guard, "back to guarding");
+        } else {
+            assert_eq!(w.actors[tank].activity, Activity::Move, "on with the attack-move");
+            assert!(w.actors[tank].attack_move);
+        }
+    }
+}
+
 /// An attack order on an aircraft out of range: the rocket soldier on
 /// HoldFire walks into Redeye range and downs it; a tank given the same
 /// order ignores it (no weapon can hit it) and keeps what it was doing.
