@@ -852,3 +852,29 @@ test('commands to a simulation that failed reject quietly: no unhandled rejectio
     process.off('unhandledRejection', onUnhandled);
   }
 });
+
+test('pausing keeps the frame between its two ticks (no snap forward, no snap back); a debug step shows the stepped tick', async () => {
+  const host = await newHost('direct');
+  await host.start({ kind: 'skirmish', options: OPTIONS, map: null, player: 0, recorder: null, tickMs: TICK_MS });
+  const step = (paused, dt) => host.step({ dt, paused, view: 0, rect: [0, 0, 1536, 1536] });
+  // Half a tick past the last one.
+  step(false, TICK_MS * 2.5);
+  const tick = host.game.tick_count();
+  assert.equal(step(false, 0).alpha, 0.5);
+  for (let i = 0; i < 5; i++) assert.equal(step(true, 250).alpha, 0.5, 'paused: the same picture');
+  const going = step(false, 0);
+  assert.deepEqual([going.ticks, going.alpha], [0, 0.5], 'resumed: from where it stood');
+  assert.equal(host.game.tick_count(), tick);
+  // The debug menu's single step while paused: the stepped tick itself.
+  step(true, 250);
+  assert.equal(await host.command('debugStep'), true);
+  assert.equal(host.game.tick_count(), tick + 1);
+  assert.equal(step(true, 250).alpha, 1);
+  assert.equal(step(true, 250).alpha, 1);
+  // Going on: one tick at once, the picture moves on from the stepped tick.
+  const after = step(false, 0);
+  assert.deepEqual([after.ticks, after.alpha], [1, 0]);
+  assert.equal(host.game.tick_count(), tick + 2);
+  assert.equal(step(true, 250).alpha, 0, 'a later pause keeps that frame too');
+  host.dispose();
+});

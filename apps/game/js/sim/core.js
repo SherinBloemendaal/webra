@@ -83,6 +83,11 @@ export class SimCore {
     this.recorder = null;
     this.tickMs = 40;
     this.acc = 0;
+    /**
+     * The debug menu stepped a tick while paused ('debugStep'): the paused
+     * frames show that tick itself (alpha 1) until the game goes on.
+     */
+    this.steppedPaused = false;
     this.simMs = 0;
     this.hidden = false;
     /**
@@ -416,6 +421,7 @@ export class SimCore {
         else this.game.tick();
         this.tableDirty = true;
         this.renderEpoch++;
+        this.steppedPaused = true;
         return true;
       case 'stateHash':
         return this.game.state_hash();
@@ -567,7 +573,10 @@ export class SimCore {
     const tickMs = this.tickMs;
     const dt = req.dt;
     const paused = !!req.paused;
-    let alpha = paused ? 1 : this.acc / tickMs;
+    // Paused, the frame stays where it was between the last two ticks (no
+    // snap to the newest one, no snap back on resume); after a debug step it
+    // shows the stepped tick.
+    let alpha = paused && this.steppedPaused ? 1 : this.acc / tickMs;
     let simFrameMs = 0;
     let ticks = 0;
     // The slowest tick of this step, while a capture records (the lockstep
@@ -596,6 +605,11 @@ export class SimCore {
       }
       ticks = g.tick_count() - before;
     } else if (!paused) {
+      if (this.steppedPaused) {
+        // Going on after a debug step: one tick at once, so the picture moves on from the stepped tick, not back.
+        this.steppedPaused = false;
+        this.acc = tickMs;
+      }
       this.acc += dt;
       const t0 = this.now();
       while (this.acc >= tickMs && ticks < MAX_TICKS_PER_FRAME) {
