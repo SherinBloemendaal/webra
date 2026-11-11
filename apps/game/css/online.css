@@ -667,6 +667,17 @@
   display: inline-flex;
   gap: 6px;
   align-items: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Names are up to 24 characters without a space: they wrap inside their
+   cell instead of pushing the badges and the row's controls out. */
+.online-player-name,
+.online-detail-name,
+.online-invite-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ---- Lobby maps (shared maps, install question, who has the map) ---------- */
