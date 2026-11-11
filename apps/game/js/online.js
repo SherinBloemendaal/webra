@@ -75,7 +75,7 @@ import {
   optionLocked,
   slotLocked,
 } from './protocol.js';
-import { api, ApiError, Connection } from './net.js';
+import { api, ApiError, Connection, OPEN_TIMEOUT_MS } from './net.js';
 import { defaultRegistry } from './registry.js';
 import { reportMessage } from './telemetry/index.js';
 import { onlineRefusal } from './account/ui.js';
@@ -1181,9 +1181,10 @@ export class OnlineUI {
    * Open a session connection. `rejoin`: coming back into a running game
    * (after a reload, or `reconnect` when this page still has its game).
    * False when the join was given up (Back) before the welcome came: the
-   * connection is left again and nothing else happens.
+   * connection is left again and nothing else happens. `timeoutMs`: how long
+   * to wait for the welcome (net.js OPEN_TIMEOUT_MS by default).
    */
-  async connect(id, hello, { rejoin = false, reconnect = false } = {}) {
+  async connect(id, hello, { rejoin = false, reconnect = false, timeoutMs = OPEN_TIMEOUT_MS } = {}) {
     if (!rejoin && !this.account?.user) saveName(hello.name);
     const conn = new Connection(id);
     conn
@@ -1207,7 +1208,7 @@ export class OnlineUI {
       .on('save', (m) => this.onSave(m))
       .on('close', (reason) => this.onClose(reason, conn));
     const token = this.joining;
-    const welcome = await conn.open({ version: this.ctx.version, ...hello });
+    const welcome = await conn.open({ version: this.ctx.version, ...hello }, { timeoutMs });
     if (!reconnect && token !== this.joining) {
       // The player went back (or left) while this join waited for its welcome.
       conn.leave();
@@ -1365,7 +1366,9 @@ export class OnlineUI {
       if (!this.reconnecting) return;
       wait = Math.min(wait * 2, 8000);
       try {
-        await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true, reconnect: true });
+        // One attempt never outlasts the grace period (the server drops the player after it).
+        const timeoutMs = Math.max(1, Math.min(OPEN_TIMEOUT_MS, deadline - Date.now()));
+        await this.connect(record.id, { name: record.name, rejoin: { client: record.client, key: record.key } }, { rejoin: true, reconnect: true, timeoutMs });
         return;
       } catch (err) {
         last = err;

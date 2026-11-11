@@ -6,10 +6,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
-import { Connection, LockstepDriver, packOrders, splitOrders } from '../js/net.js';
+import { ApiError, Connection, LockstepDriver, OPEN_TIMEOUT_MS, packOrders, splitOrders } from '../js/net.js';
 import { encodeClient, MAX_MESSAGE_BYTES, parseClientMessage } from '../js/protocol.js';
 import { Lockstep } from '../../server/src/lockstep.js';
 import { FakeSocket, WELCOME, withFakeSocket } from './fake-socket.mjs';
+import { FakeTimers } from './fake-timers.mjs';
 
 initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 
@@ -153,6 +154,45 @@ function harness(players) {
   deliver(relay.initialFrames());
   return { relay, clients, hashes };
 }
+
+test('a socket that connects but never answers: open gives up after OPEN_TIMEOUT_MS and closes it', () =>
+  withFakeSocket(async () => {
+    const timers = new FakeTimers();
+    const conn = new Connection('a'.repeat(64), { timers });
+    const closes = [];
+    conn.on('close', (reason) => closes.push(reason));
+    const opened = conn.open({ version: '0.17.0', name: 'Ivan' });
+    const ws = FakeSocket.last;
+    ws.connect();
+    timers.advance(OPEN_TIMEOUT_MS - 1);
+    assert.equal(ws.closes, 0, 'still waiting');
+    timers.advance(1);
+    await assert.rejects(opened, (err) => err instanceof ApiError && err.code === 'timeout' && err.message === 'The server did not answer in time.');
+    assert.equal(ws.closes, 1);
+    assert.deepEqual(closes, ['The server did not answer in time.']);
+    // A welcome after that is not taken.
+    const welcomes = [];
+    conn.on('welcome', (m) => welcomes.push(m));
+    ws.deliver(WELCOME);
+    assert.deepEqual(welcomes, []);
+  }));
+
+test('open takes a shorter timeout (a reconnect near the end of its grace period); a welcome in time clears it', () =>
+  withFakeSocket(async () => {
+    const timers = new FakeTimers();
+    const late = new Connection('a'.repeat(64), { timers });
+    const lateOpen = late.open({ version: '0.17.0', name: 'Ivan' }, { timeoutMs: 2500 });
+    timers.advance(2500);
+    await assert.rejects(lateOpen, { code: 'timeout' });
+    const conn = new Connection('a'.repeat(64), { timers });
+    const opened = conn.open({ version: '0.17.0', name: 'Ivan' });
+    FakeSocket.last.connect();
+    FakeSocket.last.deliver(WELCOME);
+    assert.equal((await opened).you, 2);
+    assert.equal(timers.jobs.size, 0, 'no timer left');
+    timers.advance(OPEN_TIMEOUT_MS);
+    assert.equal(FakeSocket.last.closes, 0);
+  }));
 
 test('two engines stay in sync through the relay while issuing different orders', () => {
   const { clients, hashes } = harness([0, 1]);

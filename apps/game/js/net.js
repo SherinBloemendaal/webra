@@ -122,11 +122,19 @@ export const api = {
 // ---- WebSocket ------------------------------------------------------------------
 
 /**
+ * How long open() waits for the welcome (a socket that connects but never
+ * answers: a stalled network, a captive portal) before it gives up.
+ */
+export const OPEN_TIMEOUT_MS = 10_000;
+
+/**
  * One session connection. Every incoming message is validated with the
  * protocol package; invalid server messages close the connection.
+ * `timers`: setTimeout and clearTimeout (tests pass fake ones).
  */
 export class Connection {
-  constructor(sessionId) {
+  constructor(sessionId, { timers = globalThis } = {}) {
+    this.timers = timers;
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
     this.url = `${scheme}//${location.host}/api/sessions/${encodeURIComponent(sessionId)}/ws`;
     this.handlers = new Map();
@@ -153,29 +161,45 @@ export class Connection {
     if (fn) fn(value);
   }
 
-  /** Open the socket and say hello; resolves with the `welcome` message. */
-  open(hello) {
+  /**
+   * Open the socket and say hello; resolves with the `welcome` message.
+   * Rejects with code 'timeout' (and closes the socket) when no answer came
+   * within `timeoutMs`.
+   */
+  open(hello, { timeoutMs = OPEN_TIMEOUT_MS } = {}) {
     return new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(this.url);
       this.ws = ws;
+      // After an invalid message or the timeout the socket is closing: nothing after it counts.
+      let dead = false;
+      const timer = this.timers.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        dead = true;
+        this.closeReason = 'The server did not answer in time.';
+        reject(new ApiError(0, 'timeout', this.closeReason));
+        ws.close();
+      }, timeoutMs);
+      const settle = () => {
+        settled = true;
+        this.timers.clearTimeout(timer);
+      };
       ws.addEventListener('open', () => {
         try {
           this.send({ t: C2S.HELLO, protocol: PROTOCOL_VERSION, ...hello });
         } catch (err) {
-          settled = true;
+          settle();
           reject(err);
           ws.close();
         }
       });
-      // After an invalid message the socket is closing: nothing after it counts (or clears closeReason).
-      let invalid = false;
       ws.addEventListener('message', (e) => {
-        if (invalid) return;
+        if (dead) return;
         const r = parseServerMessage(e.data);
         if (!r.ok) {
           console.error('Invalid server message:', r.message);
-          invalid = true;
+          dead = true;
           this.closeReason = 'The server sent an invalid message.';
           this.closeCode = null;
           ws.close();
@@ -186,12 +210,12 @@ export class Connection {
         noteUserText(msg);
         if (!settled) {
           if (msg.t === S2C.WELCOME) {
-            settled = true;
+            settle();
             resolve(msg);
             return;
           }
           if (msg.t === S2C.ERROR) {
-            settled = true;
+            settle();
             reject(new ApiError(0, msg.code, msg.message));
             return;
           }
@@ -209,7 +233,7 @@ export class Connection {
       ws.addEventListener('close', () => {
         this.closed = true;
         if (!settled) {
-          settled = true;
+          settle();
           reject(new ApiError(0, 'closed', this.closeReason || 'Could not join the session.'));
         }
         this.emit('close', this.closeReason);
