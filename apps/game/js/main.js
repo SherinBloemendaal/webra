@@ -2766,7 +2766,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   let replayWatched = false;
   replayNotice = (e) => {
     const state = { uploaded: e.duplicate ? null : 'saved', failed: 'failed', too_large: 'failed', unavailable: null }[e.type];
-    if (state === undefined || !replayWatched) return;
+    // Rows of earlier games upload from the same queue: only this game's own key counts here.
+    if (state === undefined || !replayWatched || e.key !== accountReplay?.key) return;
     replayState = state;
     endDialog.render();
   };
