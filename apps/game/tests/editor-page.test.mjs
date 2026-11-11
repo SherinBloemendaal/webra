@@ -86,3 +86,17 @@ test('the editor module graph: every relative import names a file that exists', 
   // Shaders the renderer fetches relative to the base.
   for (const m of read('js/renderer.js').matchAll(/'(terrain|sprite|fog|rect|line|weather|sky|heat)'/g)) assert.ok(existsSync(join(GAME, `shaders/${m[1]}.wgsl`)), m[1]);
 });
+
+test('Esc in a text field or an open list leaves the field, not the selection, region or paste (a gesture still ends)', () => {
+  const src = read('editor/editor.js');
+  const body = src.slice(src.indexOf('function bindKeys()'), src.indexOf('// ---- Status and toasts'));
+  const esc = body.slice(body.indexOf("if (e.key === 'Escape')"));
+  const at = (s) => {
+    const i = esc.indexOf(s);
+    assert.ok(i >= 0, `${s} in the Esc branch`);
+    return i;
+  };
+  assert.ok(at('if (ctl.cancel()) return;') < at('if (isTyping(e) || controlOwnsKeys(e)) return;'));
+  assert.ok(at('if (isTyping(e) || controlOwnsKeys(e)) return;') < at('ctl.setRegion(null);'));
+  assert.ok(at('if (isTyping(e) || controlOwnsKeys(e)) return;') < at("setTool('region')"));
+});

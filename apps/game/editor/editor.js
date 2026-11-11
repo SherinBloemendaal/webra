@@ -2031,13 +2031,15 @@ function bindKeys() {
   window.addEventListener('keydown', (e) => {
     if (document.querySelector('dialog[open]')) return;
     if (e.key === 'Escape') {
-      if (!ctl.cancel()) {
-        if (state.tool === 'paste') setTool('region');
-        ctl.selection.clear();
-        ctl.selectedSpawn = -1;
-        ctl.setRegion(null);
-        renderSelection();
-      }
+      // A gesture in progress ends from anywhere.
+      if (ctl.cancel()) return;
+      // Esc that leaves a text field or closes a list is the control's: the selection, region and paste stay.
+      if (isTyping(e) || controlOwnsKeys(e)) return;
+      if (state.tool === 'paste') setTool('region');
+      ctl.selection.clear();
+      ctl.selectedSpawn = -1;
+      ctl.setRegion(null);
+      renderSelection();
       return;
     }
     // Text fields keep their keys (and their own undo).
