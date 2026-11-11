@@ -49,6 +49,7 @@ import { gameScaleFor } from '../js/scale.js';
 import { countOverrides } from './js/overrides.js';
 import { download, el, selectField, store, tabKeys } from './js/ui.js';
 import { DRAFT_KEY, draftText, draftWins, parseDraft, withRecoveryCopy } from './js/draft.js';
+import { connectEditorTelemetry, noteMapText } from './js/privacy.js';
 /**
  * The last opened file's format version story (js/upgrade.js openMapFile):
  * `notice` (upgraded, or why it is not compatible) stays until the map is
@@ -195,11 +196,14 @@ function motionIsReduced() {
 
 /** The map the editor opens with (js/upgrade.js openMapFile of `?map=`, the draft or a new map), as the document. */
 async function openFirstMap() {
+  // Error reports (js/telemetry, started by js/telemetry/boot.js) follow the "Send error reports" setting.
+  connectEditorTelemetry(defaultRegistry());
   loadPrefs();
   const { map: raw, note, edited = false, origin = null } = await initialMap();
   const first = openMapFile(raw);
   doc = new MapDoc(first.map ?? newBlankMap());
   if (first.map && origin) doc.origin = origin;
+  noteMapText(doc.meta);
   // A restored draft with changes not saved to a file stays edited (a saved point no history reaches).
   savedPoint = edited ? { top: {}, time: -1 } : historyPoint();
   opened = { notice: first.notice ?? null, problems: first.problems ?? [] };
@@ -577,6 +581,8 @@ function updatePanels() {
 
 function autosave() {
   autosaveTask.cancel();
+  // The name and author as typed, once the typing pauses.
+  noteMapText(doc.meta);
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
   const ok = store.set(DRAFT_KEY, draftText({ savedAt: Date.now(), edited: isEdited(), origin: doc.origin, json: doc.snapshot().json }));
   setSaveState(ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)');
@@ -1641,6 +1647,7 @@ async function browse() {
   let maps;
   try {
     maps = await listMaps();
+    noteMapText(maps);
   } catch (err) {
     box.replaceChildren(el('p', { class: 'error' }, err.message));
     return;
@@ -1694,6 +1701,7 @@ async function copy(text) {
  * of the same map, a new one (the default) for another map.
  */
 function loadMap(raw, label, done = null, origin = newOrigin()) {
+  noteMapText(raw);
   const next = openMapFile(raw);
   if (!next.map) {
     toast(`Cannot open this map: ${next.error}`, true);
@@ -1774,6 +1782,7 @@ async function importOramapFile(file) {
 
 function showImportReport(report, map, failure) {
   $('#import-report')?.remove();
+  noteMapText([map, { name: report?.title }]);
   const open = (withRules) => {
     const m = withRules ? map : { ...map, rules: null };
     loadMap(m, `Import ${report.title}`, `Imported "${report.title}".`);
