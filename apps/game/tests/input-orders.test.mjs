@@ -223,3 +223,19 @@ test('the wheel, zoom keys and jumps during a middle button pan: the pan goes on
   input.onMouseMove(mouse('mousemove', 381, 300, { buttons: 4 }));
   assert.ok(input.camera.x > edge);
 });
+
+test('Esc held down: the first press opens the menu (or cancels), its key repeats do nothing', async () => {
+  const { input, log, keydown } = await makeInput();
+  let prevented = 0;
+  keydown('Escape');
+  assert.equal(log.menu, 1);
+  for (let i = 0; i < 5; i++) keydown('Escape', { repeat: true, preventDefault: () => prevented++ });
+  assert.equal(log.menu, 1, 'no menu per repeat');
+  assert.equal(prevented, 5, 'the repeats are still kept from the browser');
+  // A mode: the first Esc ends it, the repeats do not go on to the menu.
+  input.setMode('sell');
+  keydown('Escape');
+  keydown('Escape', { repeat: true });
+  assert.equal(input.mode, null);
+  assert.equal(log.menu, 1);
+});

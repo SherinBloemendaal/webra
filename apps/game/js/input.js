@@ -1267,6 +1267,8 @@ export class Input {
     if (e.key === 'Escape') {
       // Esc cancels the current mode first; with nothing to cancel it opens the game menu.
       e.preventDefault();
+      // Held down: the key repeat neither cancels more nor opens and closes the menu over and over.
+      if (e.repeat) return;
       if (!this.cancelMode()) this.hooks.onMenu?.();
       return;
     }
