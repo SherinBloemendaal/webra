@@ -106,6 +106,26 @@ test('invalid maps report problems', () => {
   assert.equal(validateMap([]).ok, false);
 });
 
+test('a name or author that grows past 64 characters under NFC is refused: lobby messages could not carry it', async () => {
+  const { validMapRef } = await import('../src/index.js');
+  // U+0958 normalises to two code points (U+0915 U+093C).
+  const grows = '\u0958'.repeat(40);
+  assert.equal(Array.from(grows).length, 40);
+  assert.equal(Array.from(grows.normalize('NFC')).length, 80);
+  for (const field of ['name', 'author']) {
+    const r = validateMap(makeMap(32, 32, { [field]: grows }));
+    assert.equal(r.ok, false, field);
+    assert.ok(r.errors.some((e) => new RegExp(`${field} must be at most 64`).test(e)), r.errors.join('; '));
+  }
+  // What the map file accepts the lobby accepts too.
+  const fits = '\u0958'.repeat(32);
+  const ok = parseMap(JSON.stringify(makeMap(32, 32, { name: fits, author: fits })));
+  assert.equal(ok.ok, true, ok.errors?.join('; '));
+  assert.equal(ok.map.name, fits, 'kept byte for byte');
+  const ref = { id: '0123456789abcdef', hash: 'a'.repeat(64), name: ok.map.name, modded: false, players: 2, author: ok.map.author, width: 32, height: 32, bytes: 100, shared: false };
+  assert.doesNotThrow(() => validMapRef(ref, 'map', true));
+});
+
 /** A format 2 map: makeMap plus gems on the given cells (density 3 unless set). */
 function gemMap(cells = { [32 * 20 + 20]: 3 }, extra = {}) {
   const gems = Buffer.alloc(32 * 32);
