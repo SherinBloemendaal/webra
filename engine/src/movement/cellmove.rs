@@ -912,8 +912,10 @@ impl World {
                 return Pop::Stop;
             }
         }
-        // No point waiting for what cannot move (an enemy, terrain, a structure).
-        if !self.can_step(i, cur, next) || !self.can_enter_cell(i, next, Blocking::Immovable) {
+        // No point waiting for what cannot move (an enemy, terrain, a
+        // structure), but for a friend's landed helicopter that takes off
+        // when asked (`helicopter_makes_way`).
+        if !self.can_step(i, cur, next) || (!self.can_enter_cell(i, next, Blocking::Immovable) && !self.helicopter_makes_way(i, next)) {
             if ahead {
                 self.reroute(i);
             }
@@ -1119,6 +1121,22 @@ impl World {
                 self.notify_one(o, owner, from);
             }
         }
+        // A landed aircraft holds the cell outside the table (occupancy.rs).
+        if let Some(h) = self.landed_aircraft_at(cell).filter(|&h| h != i) {
+            self.notify_one(h, owner, from);
+        }
+    }
+
+    /// Whether the only thing that keeps unit `i` out of `cell` for good is
+    /// a landed helicopter of a friend that takes off when asked (OpenRA
+    /// Aircraft.OnNotifyBlockingMove): `i` asks it (`notify_blocker`) and
+    /// waits for the cell to clear instead of looking for another way. It
+    /// still blocks as an immovable unit (Locomotor.IsBlockedBy).
+    fn helicopter_makes_way(&self, i: usize, cell: u32) -> bool {
+        let Some(h) = self.landed_aircraft_at(cell).filter(|&h| h != i) else { return false };
+        self.are_allies(self.actors[h].owner, self.actors[i].owner)
+            && self.heli_makes_way(h)
+            && !self.others_at(cell, i).any(|o| o.actor as usize != h && self.blocked_by(i, o.actor as usize, Blocking::Immovable))
     }
 
     /// OpenRA Mobile.OnNotifyBlockingMove of each of `blockers`, asked by
@@ -1131,10 +1149,18 @@ impl World {
     }
 
     /// `notify_blockers` of one blocker `o`. A landed aircraft holds its
-    /// cell without being in this model (`landed_aircraft_at`) and is never
-    /// asked to make way.
+    /// cell without being in this model (`landed_aircraft_at`): a friend's
+    /// helicopter takes off when it may (OpenRA
+    /// Aircraft.OnNotifyBlockingMove, `heli_make_way`), anything else stays.
     fn notify_one(&mut self, o: usize, owner: u8, from: u32) {
-        if !self.occupies_cells(o) || !self.are_allies(self.actors[o].owner, owner) {
+        if !self.are_allies(self.actors[o].owner, owner) {
+            return;
+        }
+        if self.actors[o].kind == crate::rules::Kind::Aircraft {
+            self.heli_make_way(o);
+            return;
+        }
+        if !self.occupies_cells(o) {
             return;
         }
         if self.idle_on_cell(o) {

@@ -1085,8 +1085,9 @@ impl World {
         }
         let shares = self.rules.actors[ty as usize].unit.as_ref().is_some_and(|u| self.rules.locomotors[u.locomotor].shares_cell);
         if self.cell_moves() {
-            let held: Vec<crate::movement::occupancy::Occupant> =
-                self.occupancy.at(cell).iter().copied().filter(|o| self.occupies_cells(o.actor as usize)).collect();
+            // The units of the table and a landed aircraft (which takes off
+            // for a friend once `select_exit` notified it).
+            let held: Vec<crate::movement::occupancy::Occupant> = self.others_at(cell, usize::MAX).collect();
             if shares {
                 return held.iter().all(|o| o.sub != crate::movement::occupancy::FULL_CELL)
                     && (1..crate::movement::occupancy::SUB_CELL_OFFSETS.len() as u8).any(|s| held.iter().all(|o| o.sub != s));

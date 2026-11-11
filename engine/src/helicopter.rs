@@ -1034,6 +1034,46 @@ impl World {
         self.order_land(&[i], x, y);
     }
 
+    /// OpenRA Aircraft.OnNotifyBlockingMove: whether landed helicopter `i`
+    /// takes off when a friendly unit finds it in its way (`heli_make_way`).
+    /// Only one with nothing to do on open ground: not on a structure (a
+    /// helipad, airfield or service depot it is reserved on, rearmed or
+    /// repaired at), not landing, unloading or on any other task or order,
+    /// and not waiting for passengers who are on their way in (OpenRA's
+    /// passengers enter from the next cell; their transport stays down).
+    /// It still blocks as an immovable unit until it has lifted off
+    /// (movement/occupancy.rs `landed_aircraft_at`).
+    pub(crate) fn heli_makes_way(&self, i: usize) -> bool {
+        let a = &self.actors[i];
+        if !(a.alive
+            && a.in_world()
+            && self.is_heli(i)
+            && a.heli.landed
+            && a.altitude == 0
+            && a.activity == Activity::Idle
+            && a.heli.task == HeliTask::None
+            && a.waypoints.is_empty()
+            && self.building_at[self.cell_index(a.x, a.y)] == NONE)
+        {
+            return false;
+        }
+        let me = self.make_ref(i);
+        !self.actors.iter().any(|p| p.alive && p.in_world() && p.activity == Activity::Board && p.board_target == me)
+    }
+
+    /// Landed helicopter `i` takes off out of a friendly unit's way (OpenRA
+    /// Aircraft.OnNotifyBlockingMove queues TakeOff), as the Deploy key does
+    /// (`heli_deploy`): it climbs straight up and hovers there, idle.
+    pub(crate) fn heli_make_way(&mut self, i: usize) {
+        if !self.heli_makes_way(i) {
+            return;
+        }
+        self.release_dock(i);
+        let a = &mut self.actors[i];
+        a.target = NONE;
+        a.heli.landed = false;
+    }
+
     /// For the Deploy button: 1 can land or take off now, 2 nowhere to land here.
     pub fn heli_deploy_state(&self, i: usize) -> u8 {
         if self.actors[i].heli.landed {
