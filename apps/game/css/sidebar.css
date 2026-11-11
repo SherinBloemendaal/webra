@@ -251,7 +251,7 @@ body.touch #sidebar .sb-tool-fullscreen:disabled {
 }
 
 #sidebar .sb-credits.up {
-  color: #fff3c4;
+  color: color-mix(in srgb, var(--ui-money) 40%, #fff);
 }
 
 #sidebar .sb-credits.down {
@@ -346,16 +346,16 @@ body.touch #sidebar .sb-tool-fullscreen:disabled {
   right: 1px;
   bottom: 1px;
   height: calc(var(--fill, 0) * (100% - 2 * var(--ui-px)));
-  background: linear-gradient(0deg, #2a7a3a, var(--ui-ok));
+  background: linear-gradient(0deg, var(--ui-led-ok-edge), var(--ui-ok));
   transition: height 0.3s ease;
 }
 
 #sidebar .sb-power.tight .sb-power-fill {
-  background: linear-gradient(0deg, #8a6d10, var(--ui-warn));
+  background: linear-gradient(0deg, var(--ui-led-warn-edge), var(--ui-warn));
 }
 
 #sidebar .sb-power.low .sb-power-fill {
-  background: linear-gradient(0deg, #7d1c12, var(--ui-bad));
+  background: linear-gradient(0deg, var(--ui-led-bad-edge), var(--ui-bad));
 }
 
 /* Marker for the produced capacity: a white line wider than the bar (InGame board). */
@@ -589,7 +589,7 @@ body.touch #sidebar .sb-tool-fullscreen:disabled {
   width: calc(11 * var(--ui-px));
   height: calc(8 * var(--ui-px));
   pointer-events: none;
-  background: #f2c94c;
+  background: var(--ui-money);
   clip-path: polygon(0 55%, 50% 0, 100% 55%, 100% 100%, 50% 45%, 0 100%);
 }
 
@@ -965,5 +965,5 @@ body.touch #sidebar .sb-card .sb-req:not([hidden]) {
 }
 
 body.touch #sidebar .sb-card.exclusive .sb-req {
-  color: #ff9a88;
+  color: var(--ui-accent-hi);
 }
