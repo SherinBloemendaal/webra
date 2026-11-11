@@ -723,6 +723,17 @@ test('a lobby update keeps the focus in the spectator panel and a seed being typ
     assert.notEqual(seed2, seed);
     assert.equal(seed2.value, '12');
     assert.equal(document.activeElement, seed2);
+    // The text was put back by script, so the browser fires no change: leaving the field sends it.
+    const before = sent.length;
+    seed.dispatchEvent({ type: 'blur' });
+    assert.equal(sent.length, before, 'the replaced field commits nothing');
+    seed2.dispatchEvent({ type: 'blur' });
+    assert.equal(sent.length, before + 1);
+    assert.equal(sent.at(-1).t, 'options');
+    assert.equal(sent.at(-1).options.seed, 12);
+    // Tab fires change and blur: the seed goes out once.
+    seed2.dispatchEvent({ type: 'change' });
+    assert.equal(sent.length, before + 1);
     // Load map file keeps it as well.
     const load = [...ui.mapBox.querySelectorAll('button')].find((b) => b.textContent === 'Load map file');
     load.focus();

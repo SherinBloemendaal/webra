@@ -2399,10 +2399,22 @@ export class OnlineUI {
       seed.value = String(st.options.seed);
       seed.dataset.key = 'map:seed';
       this.seedField = seed;
-      seed.addEventListener('change', () => {
-        const n = Number(seed.value.trim());
-        if (/^\d{1,10}$/.test(seed.value.trim()) && n <= SEED_MAX) this.sendOptions({ seed: n });
+      // A lobby update rebuilds this field and puts a seed being typed back by script; the browser
+      // then fires no `change` unless another key follows. So leaving the field and Enter commit too.
+      const commitSeed = () => {
+        // A field the panel already replaced commits nothing (its text moved to the new one).
+        if (this.seedField !== seed) return;
+        const text = seed.value.trim();
+        // Already what the lobby has, or what was just sent (change and blur both fire on Tab).
+        if (text === String((this.optionsDraft ?? st.options).seed)) return;
+        const n = Number(text);
+        if (/^\d{1,10}$/.test(text) && n <= SEED_MAX) this.sendOptions({ seed: n });
         else seed.value = String(st.options.seed);
+      };
+      seed.addEventListener('change', commitSeed);
+      seed.addEventListener('blur', commitSeed);
+      seed.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing) commitSeed();
       });
       const dice = button('New seed', 'online-dice', () => {
         if (globalThis.document?.activeElement === dice) this.mapRefocus = 'map:dice';
