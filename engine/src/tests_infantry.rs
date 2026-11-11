@@ -408,6 +408,31 @@ fn a_stop_order_while_an_engineer_walks_in_ends_his_enter_walk() {
 }
 
 #[test]
+fn tanks_stop_shooting_a_structure_their_side_captured() {
+    let mut w = flat_world();
+    let powr = building(&mut w, "POWR", 1, 30, 30);
+    let tank = unit(&mut w, "2TNK", 0, 31, 38);
+    let full = w.actors[powr].hp;
+    smart(&mut w, 0, &[tank], powr);
+    for _ in 0..300 {
+        w.step();
+        if w.actors[powr].hp < full {
+            break;
+        }
+    }
+    assert!(w.actors[powr].hp < full, "the tank opened fire");
+    w.capture(powr, 0, None);
+    run(&mut w, 10);
+    assert_eq!(w.actors[tank].target, crate::world::NONE);
+    assert_eq!(w.actors[tank].activity, Activity::Idle);
+    // Shells already in the air land; nothing more is fired.
+    run(&mut w, 40);
+    let hp = w.actors[powr].hp;
+    run(&mut w, 150);
+    assert_eq!(w.actors[powr].hp, hp, "no more shots at the captured structure");
+}
+
+#[test]
 fn iron_curtain_defuses_c4() {
     let mut w = flat_world();
     let powr = building(&mut w, "POWR", 1, 30, 30);

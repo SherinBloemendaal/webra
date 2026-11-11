@@ -466,6 +466,7 @@ impl World {
     /// it, and repairs by players who are not allied to the new owner end.
     pub fn change_owner(&mut self, i: usize, owner: u8, cancel: bool) {
         self.release_dock(i);
+        let old = self.actors[i].owner;
         let stance = self.initial_stance(self.actors[i].ty, owner);
         let a = &mut self.actors[i];
         a.owner = owner;
@@ -492,6 +493,17 @@ impl World {
         for p in self.passengers(i) {
             self.actors[p].owner = owner;
             self.actors[p].stance = self.initial_stance(self.actors[p].ty, owner);
+        }
+        // Attacks on `i` that were aimed at an enemy and now hit a friend end
+        // (a smart attack order is stored as forced, which accepts any owner):
+        // units finish the attack on their next tick, defences pick anew.
+        let me = self.make_ref(i);
+        for u in 0..self.actors.len() {
+            let ua = &self.actors[u];
+            if ua.alive && ua.target == me && self.are_allies(ua.owner, owner) && self.are_enemies(ua.owner, old) {
+                self.actors[u].target = NONE;
+                self.actors[u].target_seen = None;
+            }
         }
         self.tokens_dirty = true;
         // The spatial hash's owners per cell no longer cover this one (combat.rs scans).
