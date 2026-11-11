@@ -1880,17 +1880,17 @@ impl World {
             let i = i as usize;
             let a = self.actors[i].clone();
             if a.kind == Kind::Building {
-                let b = self.rules.actors[a.ty as usize].building.as_ref().unwrap();
-                for &(dx, dy, c) in &b.footprint {
+                let footprint = self.rules.actors[a.ty as usize].building.as_ref().unwrap().footprint.clone();
+                for &(dx, dy, c) in &footprint {
                     if c == FootCell::Empty {
                         continue;
                     }
                     let ci = self.map.idx(a.cx + dx, a.cy + dy);
                     if self.building_at[ci] == i as u32 {
                         self.building_at[ci] = NONE;
-                        self.pass.set_blocked(ci, !self.map.terrain[ci].passable());
-                        self.pass_water.set_blocked(ci, !self.map.terrain[ci].ship_passable());
-                        self.pass_landing.set_blocked(ci, !self.map.terrain[ci].landing_passable());
+                        // Terrain and a husk lying on a passable footprint
+                        // cell (a depot pad, a bib) that keeps blocking it.
+                        self.set_cell_passability(ci);
                         self.pass.set_crush(ci, 0);
                     }
                 }

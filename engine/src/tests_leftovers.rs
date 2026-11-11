@@ -606,3 +606,25 @@ fn maps_place_crates_and_husks_in_their_cells() {
     assert!(w.pass.blocked[w.map.idx(31, 30)]);
     assert_eq!(w.actors[h].facing, 256);
 }
+
+/// A wreck on a passable footprint cell (the depot's pad) keeps blocking it
+/// when the structure goes; only the wreck leaving frees the cell.
+#[test]
+fn a_husk_on_a_depot_pad_keeps_blocking_when_the_depot_goes() {
+    let mut w = world();
+    let fix = w.spawn_building(ty(&w, "FIX"), 0, 20, 20).unwrap();
+    let pad = w.repair_pad_cell(fix) as usize;
+    assert!(!w.pass.blocked[pad], "units drive onto the pad");
+    let husk = ty(&w, "2TNK.Husk") as usize;
+    let (x, y) = w.cell_point(pad as u32);
+    let h = w.place_husk(husk, 1, x, y, 0, 0);
+    assert!(w.pass.blocked[pad], "the wreck blocks the pad");
+    w.remove(fix);
+    w.cleanup_dead();
+    assert_eq!(w.building_at[pad], crate::world::NONE);
+    assert_eq!(w.husk_at(pad), Some(h));
+    assert!(w.pass.blocked[pad], "the wreck still blocks its cell");
+    w.remove(h);
+    w.cleanup_dead();
+    assert!(!w.pass.blocked[pad], "free once the wreck is gone");
+}
