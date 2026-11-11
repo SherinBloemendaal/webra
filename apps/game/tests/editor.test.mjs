@@ -367,6 +367,25 @@ test('the document\'s source follows replace steps through undo and redo, edits 
 });
 
 // ---- Symmetry groups, shapes, regions and map turns -------------------------------------
+test('pasting actors of a spawn this map does not have makes them neutral, so the map stays valid', () => {
+  const four = new MapDoc(createMap({ width: 64, height: 64 }));
+  four.begin('Setup');
+  four.touchObjects();
+  four.spawns = [[2, 2], [50, 2], [2, 50], [50, 50]];
+  placeActor(four, CATALOG, { type: '1TNK', owner: 3, x: 30, y: 30, facing: 0 }, 'none');
+  placeActor(four, CATALOG, { type: '1TNK', owner: 1, x: 31, y: 30, facing: 0 }, 'none');
+  four.commit();
+  const clip = copyRegion(four, CATALOG, 30, 30, 31, 30);
+  const two = newDoc();
+  assert.equal(two.spawns.length, 2);
+  two.begin('Paste');
+  const r = pasteRegion(two, CATALOG, clip, 10, 20, 'none');
+  two.commit();
+  assert.deepEqual([r.actors, r.neutral], [2, 1]);
+  assert.deepEqual(two.actors.map((a) => a.owner), [-1, 1]);
+  assert.deepEqual(validateMap(two.toMap(), { catalog: CATALOG }).errors.filter((e) => /owner/.test(e)), []);
+});
+
 
 import { modeFits, transformCell, SYMMETRY_MODES } from '../editor/js/symmetry.js';
 import { autoShore, clearRegion, copyRegion, ellipseCells, pasteRegion, rectCells, regionFromData, regionToData, thickLineCells, transformRegion } from '../editor/js/edits.js';
