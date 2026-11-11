@@ -24,6 +24,7 @@ import { randomHex } from './crypto.js';
 import { engine, EngineTrap } from './engine.js';
 import { HttpError, json, jsonText, readText } from './http.js';
 import { ipSalt } from './ipkey.js';
+import { networkOf } from './accounts/ip.js';
 import { takeQuota } from './quota.js';
 
 export const UPLOAD_LIMIT = 10;
@@ -103,7 +104,7 @@ export async function storeMap(db, p, { listed, uploaderId = null, now = Date.no
 /** `uploaderId`: the signed-in account (stored with the map), or null. */
 export async function uploadMap(request, env, ip, now = Date.now(), uploaderId = null, salt = ipSalt(env, request)) {
   checkJsonType(request);
-  if (!(await takeQuota(env.DB, salt, 'maps', ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, salt, 'maps', networkOf(ip), UPLOAD_LIMIT, UPLOAD_WINDOW_MS, now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map uploads. Try again later.', { 'retry-after': '3600' });
   }
   const p = await prepareMap(await readText(request, MAP_MAX_BYTES));
@@ -206,7 +207,7 @@ export async function getMapThumbnail(
     const hit = await cache.match(key);
     if (hit) return hit;
   }
-  if (!(await takeQuota(env.DB, salt, 'thumb', ip, limit, UPLOAD_WINDOW_MS, now))) {
+  if (!(await takeQuota(env.DB, salt, 'thumb', networkOf(ip), limit, UPLOAD_WINDOW_MS, now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map pictures. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const found = await rowById(env.DB, head.id);

@@ -7,6 +7,7 @@ import { clientIp, HttpError, rateLimited, readJson, withCookies } from '../http
 import { clearQuota, countQuota, peekQuota, takeQuota, windowRemaining } from '../quota.js';
 import { ipSalt, keyedHash } from '../ipkey.js';
 import { findIpBan } from './bans.js';
+import { networkOf } from './ip.js';
 import { effective, loadSite } from './site.js';
 import { hasRecentReauth, loadSession, signOutCookies } from './sessions.js';
 import { banOf, effectiveStatus } from './users.js';
@@ -77,6 +78,15 @@ export class RequestContext {
 
   get db() {
     return this.env.DB;
+  }
+
+  /**
+   * The requester's network for per address limits: its IPv4 address, or the
+   * /64 of its IPv6 address (ip.js networkOf), so rotating addresses inside
+   * one IPv6 network does not multiply a budget.
+   */
+  get network() {
+    return networkOf(this.ip);
   }
 
   async site() {
@@ -169,8 +179,9 @@ export class RequestContext {
   }
 
   /**
-   * Per-IP burst limit. Two Workers Rate Limiting bindings (wrangler.jsonc
-   * `ratelimits`) cost no D1 access at all: AUTH_LIMITER (a low limit per
+   * Per network burst limit (an IPv4 address or an IPv6 /64, `network`).
+   * Two Workers Rate Limiting bindings (wrangler.jsonc `ratelimits`) cost no
+   * D1 access at all: AUTH_LIMITER (a low limit per
    * minute, purpose and address) guards the sign-in endpoints, APP_LIMITER (a
    * high one) the calls every signed-in player makes on its own (presence,
    * friends list, realtime and session sockets), so many players behind one
@@ -180,12 +191,12 @@ export class RequestContext {
   async burst(purpose, fallback) {
     const limiter = APP_PURPOSES.has(purpose) ? this.env.APP_LIMITER : this.env.AUTH_LIMITER;
     if (limiter && typeof limiter.limit === 'function') {
-      const key = `${purpose}:${await keyedHash(this.salt(), 'burst', this.ip)}`;
+      const key = `${purpose}:${await keyedHash(this.salt(), 'burst', this.network)}`;
       const { success } = await limiter.limit({ key });
       if (!success) throw rateLimited(60, 'Too many requests from your network. Try again in a minute.');
       return;
     }
-    await this.limit(`${purpose}-ip`, this.ip, ...fallback, 'Too many requests from your network. Try again later.');
+    await this.limit(`${purpose}-ip`, this.network, ...fallback, 'Too many requests from your network. Try again later.');
   }
 
   /** Units counted so far in the current window of a D1 limit (a read only). */

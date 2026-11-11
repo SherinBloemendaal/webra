@@ -24,7 +24,6 @@ import pkg from '../package.json' with { type: 'json' };
 import { checkCsrf, checkOrigin, errorResponse, HttpError, json, jsonText, readJson, readText, withCookies } from './http.js';
 import { listSessions, onlineCounts, pruneSessions } from './directory.js';
 import { blockedBySessionMember, lookupInviteCode } from './invites.js';
-import { networkOf } from './accounts/ip.js';
 import { checkJsonType, getMap, getMapThumbnail, listMaps, prepareMap, SESSION_MAP_GET_LIMIT, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, uploadMap } from './maps.js';
 import { countQuota, peekQuota, pruneQuotas, takeQuota } from './quota.js';
 import { validateCreateSession } from './validate.js';
@@ -59,7 +58,7 @@ async function createSession(ctx) {
   const input = validateCreateSession(value);
   if (!(await ctx.eff()).onlineSessionsOpen) throw new HttpError(503, 'sessions_closed', SESSIONS_CLOSED_MESSAGE, { 'retry-after': '300' }, { retryAfter: 300 });
   await requirePlay(ctx);
-  if (!(await takeQuota(env.DB, ctx.salt(), 'sessions', ctx.ip, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
+  if (!(await takeQuota(env.DB, ctx.salt(), 'sessions', ctx.network, SESSION_LIMIT, SESSION_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many sessions created. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const id = env.SESSION.newUniqueId();
@@ -170,7 +169,7 @@ async function sessionMapGet(ctx, id) {
   const member = memberOf(ctx.request);
   const stub = sessionStub(ctx.env, id);
   const account = await requirePlay(ctx);
-  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'mapget', ctx.ip, SESSION_MAP_GET_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'mapget', ctx.network, SESSION_MAP_GET_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map downloads. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const r = rpcResult(await stub.memberMap({ member, account, ip: ctx.ip, hash }));
@@ -187,7 +186,7 @@ async function sessionMapShare(ctx, id) {
   const member = memberOf(ctx.request);
   const stub = sessionStub(ctx.env, id);
   const account = await requirePlay(ctx);
-  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'maps', ctx.ip, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'maps', ctx.network, UPLOAD_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many map uploads. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const prepared = await prepareMap(await readText(ctx.request, MAP_MAX_BYTES));
@@ -211,7 +210,7 @@ async function sessionInvite(ctx, id) {
   const member = memberOf(ctx.request);
   const stub = sessionStub(ctx.env, id);
   const account = await requirePlay(ctx);
-  const network = networkOf(ctx.ip);
+  const network = ctx.network;
   if ((await peekQuota(ctx.env.DB, ctx.salt(), 'invites', network, UPLOAD_WINDOW_MS, ctx.now)) >= INVITE_LIMIT) {
     throw new HttpError(429, 'rate_limited', 'Too many invite codes. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
@@ -228,7 +227,7 @@ async function sessionInvite(ctx, id) {
  */
 async function inviteLookup(ctx, raw) {
   await ctx.burst('invite', [20, 60 * 1000]);
-  const network = networkOf(ctx.ip);
+  const network = ctx.network;
   await ctx.assertNotLocked('invite-miss', network, INVITE_MISS_LIMIT, UPLOAD_WINDOW_MS);
   const code = normalizeInviteCode(raw);
   const r = code ? await lookupInviteCode(ctx.env.DB, code, ctx.now) : { status: 'unknown' };
@@ -291,7 +290,7 @@ async function sessionResume(ctx, id) {
   const stub = sessionStub(ctx.env, id);
   const account = await requirePlay(ctx);
   if (!account) throw new HttpError(403, 'account_required', 'Resuming an online game needs a signed-in account.');
-  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'resume', ctx.ip, RESUME_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
+  if (!(await takeQuota(ctx.env.DB, ctx.salt(), 'resume', ctx.network, RESUME_LIMIT, UPLOAD_WINDOW_MS, ctx.now))) {
     throw new HttpError(429, 'rate_limited', 'Too many resumed games. Try again later.', { 'retry-after': '3600' }, { retryAfter: 3600 });
   }
   const declared = ctx.request.headers.get('Content-Length');

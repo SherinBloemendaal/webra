@@ -668,3 +668,27 @@ test('two quick hellos on one anonymous socket join once', async () => {
   await s.send(ws, hello(s, 'Twice'));
   assert.equal(ws.last('error').message, 'Already joined.');
 });
+
+test('upgrades and lockouts count an IPv6 /64 as one network', async () => {
+  const s = await makeSession({ maxPlayers: 8, password: 'secret' });
+  s.session.upgraded = (client) => ({ status: 101, webSocket: client });
+  const upgrade = (ip) =>
+    s.session.fetch(new Request('https://session/', { headers: { Upgrade: 'websocket', 'CF-Connecting-IP': ip, 'X-WebRA-Auth': JSON.stringify({ account: null, refuse: null }) } }));
+  for (let i = 0; i < MAX_PENDING_PER_IP; i++) assert.equal((await upgrade(`2001:db8:5:6::${i + 1}`)).status, 101);
+  assert.equal((await upgrade('2001:db8:5:6:aaaa::1')).status, 429, 'a rotated address of the same /64 is not a new budget');
+  assert.equal((await upgrade('2001:db8:5:7::1')).status, 101, 'another /64 gets in');
+  assert.equal((await upgrade('192.0.2.1')).status, 101);
+  assert.equal((await upgrade('192.0.2.2')).status, 101, 'IPv4 neighbours are separate');
+  // Wrong passwords lock out the whole /64, whatever address the next try comes from.
+  for (let i = 0; i < 5; i++) {
+    const ws = s.connect(`guess${i}`, `2001:db8:9:9::${i + 1}`);
+    await s.send(ws, hello(s, 'Guess', { password: 'nope' }));
+    assert.equal(ws.last('error').code, 'bad_password');
+  }
+  const next = s.connect('guess-next', '2001:db8:9:9:1234::1');
+  await s.send(next, hello(s, 'Guess', { password: 'secret' }));
+  assert.equal(next.last('error').code, 'rate_limited');
+  const elsewhere = s.connect('elsewhere', '2001:db8:9:a::1');
+  await s.send(elsewhere, hello(s, 'Other', { password: 'secret' }));
+  assert.ok(elsewhere.last('welcome'));
+});

@@ -110,7 +110,7 @@ import { missionDigest, recordSave } from './onlinesaves.js';
 import { TokenBucket } from './ratelimit.js';
 import { Room, RoomError } from './room.js';
 import { cheatsAllowed, ordersFitRules } from './validate.js';
-import { inRange, ipRecord } from './accounts/ip.js';
+import { inRange, ipRecord, networkOf } from './accounts/ip.js';
 import { AUTH_HEADER } from './accounts/play.js';
 import ENGINE_RULES from '../../../engine/rules.json' with { type: 'json' };
 import { logError } from './telemetry.js';
@@ -124,6 +124,10 @@ const HELLO_TIMEOUT_MS = 15 * 1000;
 const MAX_SOCKETS = 24;
 const MAX_PENDING_SOCKETS = 8;
 /**
+ * Per address limits below count by network (accounts/ip.js networkOf: an
+ * IPv4 address, or the /64 of an IPv6 address), so a client cannot multiply
+ * them by rotating addresses inside its own IPv6 network.
+ *
  * Sockets one address may hold before their hello is answered: a script
  * cannot take every pending place of a public lobby (refused accounts never
  * get this far, the Worker answers them itself: src/wsrefuse.js).
@@ -136,7 +140,7 @@ export const MAX_PENDING_PER_IP = 2;
  * one address still fits a full lobby with spectators.
  */
 export const MAX_SOCKETS_PER_IP = 12;
-/** Wrong passwords per IP before a lockout, and the lockout length. */
+/** Wrong passwords (and host or rejoin keys) per network before a lockout, and the lockout length. */
 const PASSWORD_FAILURES = 5;
 const PASSWORD_LOCKOUT_MS = 60 * 1000;
 /** Refused messages before a flooding connection is closed. */
@@ -193,6 +197,9 @@ const CLOSE_NORMAL = 1000;
 const CLOSE_POLICY = 1008;
 const ACCOUNT_ID_RE = /^[0-9a-f]{32}$/;
 
+/** The network a socket's attachment counts for (sockets accepted before `network` was stored have only `ip`). */
+const networkOfAttachment = (att) => att.network ?? networkOf(att.ip);
+
 /** The Worker's verdict from the upgrade request: { account, refuse } (malformed reads as refused). */
 export function readAuthHeader(request) {
   const refused = { account: null, refuse: { code: ERRORS.FORBIDDEN, message: 'Could not check your account. Reload the page.' } };
@@ -246,6 +253,7 @@ export class Session extends DurableObject {
      */
     this.joining = new WeakSet();
     this.chatBuckets = new WeakMap();
+    /** Wrong passwords and keys by network (networkOf) -> { count, until }. */
     this.failures = new Map();
     this.lastDirectory = null;
     this.lastDirectoryCore = null;
@@ -294,12 +302,12 @@ export class Session extends DurableObject {
   /**
    * Who a map request comes from: a member's `{ client, key }` (its rejoin
    * key), checked like a rejoin (constant time, bound to the account it was
-   * issued to, failures count toward the per-IP lockout). Returns the client
+   * issued to, failures count toward the per network lockout). Returns the client
    * id, or an RPC error.
    */
   async checkMember(member, account, ip) {
     const now = Date.now();
-    const fail = this.failures.get(ip);
+    const fail = this.failures.get(networkOf(ip));
     if (fail && fail.until > now) return rpcError(429, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.');
     const client = member?.client;
     const stored = Number.isInteger(client) && Object.hasOwn(this.room.keys, client) ? this.room.keys[client] : null;
@@ -376,11 +384,17 @@ export class Session extends DurableObject {
       return new Response('Expected a WebSocket upgrade.', { status: 426 });
     }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const network = networkOf(ip);
     const all = this.ctx.getWebSockets();
     // Waiting for their hello: a refused socket the object is closing (readyState CLOSING) no longer counts.
     const pending = all.filter((ws) => !(ws.readyState > 1)).map((ws) => this.attachment(ws)).filter((att) => !att.client);
-    const fromIp = all.filter((ws) => this.attachment(ws).ip === ip).length;
-    if (all.length >= MAX_SOCKETS || fromIp >= MAX_SOCKETS_PER_IP || pending.length >= MAX_PENDING_SOCKETS || pending.filter((att) => att.ip === ip).length >= MAX_PENDING_PER_IP) {
+    const fromNetwork = all.filter((ws) => networkOfAttachment(this.attachment(ws)) === network).length;
+    if (
+      all.length >= MAX_SOCKETS ||
+      fromNetwork >= MAX_SOCKETS_PER_IP ||
+      pending.length >= MAX_PENDING_SOCKETS ||
+      pending.filter((att) => networkOfAttachment(att) === network).length >= MAX_PENDING_PER_IP
+    ) {
       return new Response('Too many connections.', { status: 429 });
     }
     const pair = new WebSocketPair();
@@ -390,6 +404,7 @@ export class Session extends DurableObject {
     server.serializeAttachment({
       client: null,
       ip,
+      network,
       since: Date.now(),
       busy: false,
       account: auth.account,
@@ -499,7 +514,7 @@ export class Session extends DurableObject {
     if (problem) return this.reject(ws, ERRORS.STATE, problem, true);
 
     const now = Date.now();
-    const fail = this.failures.get(att.ip);
+    const fail = this.failures.get(networkOf(att.ip));
     if (fail && fail.until > now) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.', true);
 
     att.busy = true;
@@ -605,11 +620,11 @@ export class Session extends DurableObject {
   /**
    * `hello` with `rejoin`: a member of the running game comes back with its
    * rejoin key (constant-time compare against the stored SHA-256; failures
-   * count toward the per-IP lockout like wrong passwords).
+   * count toward the per network lockout like wrong passwords).
    */
   async rejoin(ws, att, msg) {
     const now = Date.now();
-    const fail = this.failures.get(att.ip);
+    const fail = this.failures.get(networkOf(att.ip));
     if (fail && fail.until > now) return this.reject(ws, ERRORS.RATE_LIMITED, 'Too many attempts. Try again later.', true);
     if (this.room.phase === 'lobby') return this.rejoinLobby(ws, att, msg, now);
     if (this.room.phase !== 'game') return this.reject(ws, ERRORS.STATE, 'The game is not running.', true);
@@ -777,14 +792,16 @@ export class Session extends DurableObject {
     for (const f of queued) this.send(ws, { t: S2C.FRAME, ...f });
   }
 
+  /** A wrong password or key from `ip`: counted for its network. */
   noteFailure(ip, now) {
-    const f = this.failures.get(ip) ?? { count: 0, until: 0 };
+    const key = networkOf(ip);
+    const f = this.failures.get(key) ?? { count: 0, until: 0 };
     f.count++;
     if (f.count >= PASSWORD_FAILURES) {
       f.count = 0;
       f.until = now + PASSWORD_LOCKOUT_MS;
     }
-    this.failures.set(ip, f);
+    this.failures.set(key, f);
     if (this.failures.size > 1000) this.failures.clear();
   }
 
