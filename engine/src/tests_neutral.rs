@@ -512,6 +512,10 @@ fn captures_are_announced_to_both_sides() {
 /// A river across the map (rows 20 and 21) with a BRIDGE1 template stamped
 /// at (29, 20): its deck runs from the north bank to the south bank.
 fn bridge_world() -> World {
+    bridge_world_with(opts())
+}
+
+fn bridge_world_with(options: GameOptions) -> World {
     let rules = crate::rules::Rules::load();
     let t = rules.actors[rules.actor_index("BRIDGE1").unwrap()].world.bridge.as_ref().unwrap().templates["temperate"].clone();
     world_with(
@@ -525,7 +529,7 @@ fn bridge_world() -> World {
             stamp(m, &t.healthy, 29, 20);
         },
         vec![actor("BRIDGE1", 29, 20)],
-        opts(),
+        options,
     )
 }
 
@@ -605,6 +609,82 @@ fn a_falling_bridge_takes_a_descending_paratrooper_along() {
     assert_eq!(w.bridge_look(br), Some(BridgeLook::Destroyed));
     assert!(!w.actors[e1].alive, "the paratrooper fell with the bridge");
     assert!(w.actors[heli].alive, "the helicopter flies on");
+}
+
+/// In the cell movement model a tank in the first half of its step from the
+/// shore onto the span holds the span's cell already (OpenRA's ActorMap
+/// lists it on both cells): it falls with the span although its centre is
+/// still on the shore. One tick earlier, wholly on the shore, it lives.
+#[test]
+fn a_tank_driving_onto_a_falling_span_falls_with_it() {
+    let options = GameOptions { movement: crate::movement::MovementModel::OpenRA, ..opts() };
+    let mut w = bridge_world_with(options);
+    let br = find(&w, "BRIDGE1")[0];
+    let max = w.actors[br].hp;
+    let mut fallen_world = w.clone();
+    fallen_world.damage(br, max);
+    let b = w.bridge_of(br).unwrap();
+    let fallen: Vec<usize> =
+        w.neutral.bridges.bridges[b].cells.iter().map(|c| c.2).filter(|&c| !w.pass.blocked[c] && fallen_world.pass.blocked[c]).collect();
+    assert!(!fallen.is_empty(), "the span's deck goes down");
+    let deck = deck_cells(&w, b);
+    let x = deck[0] as i32 % w.map.width;
+    let tank = unit(&mut w, "2TNK", 0, x, 10);
+    let ids = vec![w.make_ref(tank)];
+    w.queue_order(Order::Move { player: 0, ids, x: cell_center(x), y: cell_center(40), attack_move: false });
+    let mut before = None;
+    let mut stepping = false;
+    for _ in 0..600 {
+        let snapshot = w.clone();
+        w.step();
+        let a = &w.actors[tank];
+        let centre = w.cell_index(a.x, a.y);
+        if !fallen.contains(&centre) && fallen.contains(&(a.mv.to as usize)) {
+            stepping = true;
+            before = Some(snapshot);
+            break;
+        }
+    }
+    assert!(stepping, "the tank starts its step onto the span");
+    w.damage(br, max);
+    assert_eq!(w.bridge_look(br), Some(BridgeLook::Destroyed));
+    assert!(!w.actors[tank].alive, "the tank entering the span fell");
+    // Control: the tick before, it held only shore cells and survives.
+    let mut w = before.unwrap();
+    let a = &w.actors[tank];
+    assert!(!fallen.contains(&w.cell_index(a.x, a.y)) && !fallen.contains(&(a.mv.from as usize)) && !fallen.contains(&(a.mv.to as usize)));
+    w.damage(br, max);
+    assert!(w.actors[tank].alive, "a tank on the shore lives");
+}
+
+/// A wreck on a span cell that turns to water when the span falls goes down
+/// with it (Husk.AllowedTerrain, OpenRA CanExistInCell), and ships pass.
+#[test]
+fn a_wreck_on_a_falling_span_goes_down_and_leaves_the_water_open() {
+    let mut w = long_bridge_world();
+    let br1 = find(&w, "BR1")[0];
+    let span = find(&w, "BR3")[0];
+    let b = w.bridge_of(span).unwrap();
+    let mut fallen_world = w.clone();
+    fallen_world.damage(br1, w.actors[br1].hp);
+    let gap: Vec<usize> = fallen_world.neutral.bridges.bridges[b]
+        .cells
+        .iter()
+        .map(|c| c.2)
+        .filter(|&c| fallen_world.map.terrain[c] == Terrain::Water)
+        .collect();
+    let ci = gap.iter().copied().find(|&c| w.map.terrain[c] != Terrain::Water).expect("a deck cell that turns to water");
+    let husk = ty(&w, "2TNK.Husk") as usize;
+    let h = w.place_husk(husk, 0, cell_center(ci as i32 % w.map.width), cell_center(ci as i32 / w.map.width), 0, 0);
+    assert_eq!(w.husk_at(ci), Some(h));
+    // A wreck elsewhere is left alone.
+    let other = w.place_husk(husk, 0, cell_center(40), cell_center(40), 0, 0);
+    w.damage(br1, w.actors[br1].hp);
+    assert_eq!(w.bridge_look(span), Some(BridgeLook::DestroyedNorth));
+    assert_eq!(w.map.terrain[ci], Terrain::Water);
+    assert!(w.husk_at(ci).is_none() && !w.actors[h].alive, "the wreck went down with the span");
+    assert!(!w.pass_water.blocked[ci], "ships pass where the span was");
+    assert!(w.actors[other].alive && w.husk_at(w.map.idx(40, 40)) == Some(other));
 }
 
 #[test]
