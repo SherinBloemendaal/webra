@@ -46,6 +46,20 @@ export async function createEmailToken(db, userId, purpose, email, ttlMs, now = 
 }
 
 /**
+ * Look a token up without using it: the row when it exists, has one of
+ * `purposes` and has not expired, else null. For checks that may still
+ * refuse the request (a new password the server rejects) before the token
+ * is used up with consumeEmailToken.
+ */
+export async function peekEmailToken(db, token, purposes, now = Date.now()) {
+  if (typeof token !== 'string' || !TOKEN_RE.test(token)) return null;
+  const hash = await sha256Hex(token);
+  const row = await db.prepare('SELECT * FROM email_tokens WHERE token_hash = ?1').bind(hash).first();
+  if (!row || !timingSafeEqual(fromHex(row.token_hash), fromHex(hash)) || !purposes.includes(row.purpose) || row.expires_at <= now) return null;
+  return row;
+}
+
+/**
  * Use a token: it is deleted whatever happens next (single use). Returns the
  * row when it existed, had one of `purposes` and had not expired, else null.
  * The row is found by the token's hash (an attacker controls no part of

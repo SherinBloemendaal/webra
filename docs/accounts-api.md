@@ -443,9 +443,13 @@ otherwise). Limits: 5 per hour per IP, 3 per hour per mailbox (4.3).
 `POST /api/auth/password/reset` `{ "token": "...", "password": "..." }`:
 sets the password, marks the email verified (the link proved it), revokes
 every session of the account and signs in (`200 { user }`). Bad, used or
-expired tokens: `401 bad_credentials`. A banned account: `403 banned` (the
-password is still changed). Limit: 20 token redemptions per 15 minutes per
-IP.
+expired tokens: `401 bad_credentials`. A refused password (`400 invalid`,
+for example the username or the address) does not use the link up: the same
+link works for the next try; it is used up only by a successful reset. A
+banned account: `403 banned` (the password is still changed). Needs
+`login.password` on (`403 method_disabled` otherwise, and the link stays
+valid); `login.email` is not needed, so a link an admin made (8.2) works
+without email sending. Limit: 20 token redemptions per 15 minutes per IP.
 
 `POST /api/auth/email/verify` `{ "token": "..." }`: confirms a verification
 or email change link (no session needed: the link proves the inbox, and it

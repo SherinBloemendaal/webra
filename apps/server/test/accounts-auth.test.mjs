@@ -362,12 +362,15 @@ test('password reset by email: generic answer, single use, sessions revoked, ver
   assert.equal(env.EMAIL.sent.filter((m) => m.to === 'nobody@example.com').length, 0);
   const weak = await other.post('/api/auth/password/reset', { token, password: 'short' });
   assert.equal(weak.status, 400);
-  // The failed attempt used the token (single use): ask again.
-  assert.equal((await other.post('/api/auth/password/reset', { token, password: 'a brand new passphrase' })).status, 401);
-  await other.post('/api/auth/password/forgot', { email: 'yuri@example.com' });
-  const token2 = env.EMAIL.token('yuri@example.com', 'reset');
-  const ok = await other.post('/api/auth/password/reset', { token: token2, password: 'a brand new passphrase' });
+  // A rule only the server knows (the password is the account's address) is refused too.
+  const own = await other.post('/api/auth/password/reset', { token, password: 'yuri@example.com' });
+  assert.equal(own.status, 400);
+  assert.equal(own.body.error.field, 'password');
+  // A refused password does not use the link up: the same link works for the next try.
+  const ok = await other.post('/api/auth/password/reset', { token, password: 'a brand new passphrase' });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  // Single use: a successful reset used it.
+  assert.equal((await other.post('/api/auth/password/reset', { token, password: 'yet another passphrase' })).status, 401);
   assert.equal(ok.body.user.emailVerified, true, 'the link proved the address');
   assert.equal((await owner.get('/api/auth/me')).body.user, null, 'every other session was revoked');
   assert.equal((await new Browser(env).post('/api/auth/login', { login: 'yuri', password: 'a brand new passphrase' })).status, 200);
@@ -381,6 +384,25 @@ test('password reset by email: generic answer, single use, sessions revoked, ver
   const statuses = [];
   for (let i = 0; i < 4; i++) statuses.push((await new Browser(env, { ip: `203.0.113.${60 + i}` }).post('/api/auth/password/forgot', { email: 'yuri@example.com' })).status);
   assert.deepEqual(statuses, [202, 202, 202, 429]);
+});
+
+test('password reset: closed while password sign-in is off, the link survives', async () => {
+  const env = makeEnv();
+  const owner = await signup(env, 'Volkov');
+  await owner.post('/api/auth/email/verify', { token: env.EMAIL.token('volkov@example.com', 'verify') });
+  const other = new Browser(env, { ip: '203.0.113.70' });
+  assert.equal((await other.post('/api/auth/password/forgot', { email: 'volkov@example.com' })).status, 202);
+  const token = env.EMAIL.token('volkov@example.com', 'reset');
+  assert.ok(token);
+  await setSite(env, { login: { password: false } });
+  const off = await other.post('/api/auth/password/reset', { token, password: 'a brand new passphrase' });
+  assert.equal(off.status, 403);
+  assert.equal(off.body.error.code, 'method_disabled');
+  assert.equal((await other.get('/api/auth/me')).body.user, null, 'no session through a switched-off method');
+  // Email links being off does not matter (admin-made links work without email sending).
+  await setSite(env, { login: { password: true, email: false } });
+  const ok = await other.post('/api/auth/password/reset', { token, password: 'a brand new passphrase' });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
 });
 
 test('re-authentication: needed for sensitive actions, rotates the session, locks after failures', async () => {

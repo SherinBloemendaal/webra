@@ -13,7 +13,7 @@ import { HttpError, json } from '../http.js';
 import { randomToken, sha256Hex } from '../crypto.js';
 import { bannedError, check, invalid } from './context.js';
 import { rotate, selfView, signIn, statusAfterVerification } from './common.js';
-import { accountLink, consumeEmailToken, createEmailToken, resetMessage, sendEmail, TOKEN_TTL_MS } from './email.js';
+import { accountLink, consumeEmailToken, createEmailToken, peekEmailToken, resetMessage, sendEmail, TOKEN_TTL_MS } from './email.js';
 import { mailboxKey, queueAddressMail } from './verification.js';
 import { networkOf } from './ip.js';
 import { dummyVerify, hashAccountPassword, verifyAccountPassword } from './password.js';
@@ -308,12 +308,20 @@ async function reset(ctx) {
   await ctx.assertIpAllowed();
   await ctx.burst('token', LIMITS.tokenBurst);
   if (typeof body.password !== 'string') throw invalid('password', 'Choose a new password.');
-  const t = await consumeEmailToken(ctx.db, body.token, ['reset'], ctx.now);
-  const row = t ? await userById(ctx.db, t.user_id, ctx.now) : null;
-  if (!row || row.status === 'deleted' || (t.email !== null && t.email !== row.email)) throw badCredentials('This link is invalid or has expired.');
-  const pw = check(() => validNewPassword(body.password, { username: row.username, email: row.email }));
-  const h = await hashAccountPassword(pw, ctx.env);
+  // A reset sets a password and signs in with it: closed while password sign-in is off.
+  // Email links are not required, admin-made links work without email sending.
   const eff = await ctx.eff();
+  if (!eff.login.password) throw methodDisabled('a password');
+  // Looked at first and used only once the new password is accepted: a refused
+  // password (the username, the address) keeps the link working for another try.
+  const peeked = await peekEmailToken(ctx.db, body.token, ['reset'], ctx.now);
+  const row = peeked ? await userById(ctx.db, peeked.user_id, ctx.now) : null;
+  if (!row || row.status === 'deleted' || (peeked.email !== null && peeked.email !== row.email)) throw badCredentials('This link is invalid or has expired.');
+  const pw = check(() => validNewPassword(body.password, { username: row.username, email: row.email }));
+  // Single use: only the request that deletes the token goes on.
+  const t = await consumeEmailToken(ctx.db, body.token, ['reset'], ctx.now);
+  if (!t || t.user_id !== row.id) throw badCredentials('This link is invalid or has expired.');
+  const h = await hashAccountPassword(pw, ctx.env);
   const verified = t.email !== null && row.email !== null && row.email_verified === 1;
   const status = verified ? statusAfterVerification(row, eff) : row.status;
   await ctx.db.batch([
