@@ -60,6 +60,12 @@ test('api: errors carry code, message, field and extras; offline and non-JSON an
   const e2 = await limited.login({ login: 'x', password: 'y' }).catch((e) => e);
   assert.equal(e2.detail.retryAfter, 120);
   assert.equal(errorText(e2), 'Slow down. Try again in 2 minutes.');
+  // The server's own vague wait is replaced by the exact one, not followed by it.
+  const vague = (message, code = 'rate_limited', retryAfter = 720) => errorText(new AccountError(429, code, message, { retryAfter }));
+  assert.equal(vague('Too many requests. Try again later.'), 'Too many requests. Try again in 12 minutes.');
+  assert.equal(vague('Too many requests from your network. Try again in a minute.', 'rate_limited', 45), 'Too many requests from your network. Try again in 45 seconds.');
+  assert.equal(vague('You asked for several links already. Try again tomorrow.', 'rate_limited', 7200), 'You asked for several links already. Try again in 2 hours.');
+  assert.equal(vague('Too many failed attempts. Try again later.', 'locked'), 'Too many failed attempts. Try again in 12 minutes.');
   assert.equal(formatWait(30), '30 seconds');
   assert.equal(formatWait(7200), '2 hours');
 });

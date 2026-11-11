@@ -229,6 +229,9 @@ export class AccountApi {
   audit = (query = {}) => this.get(`/api/admin/audit${queryString(query)}`);
 }
 
+/** The server's general wait at the end of a 429 message, replaced by the exact one from Retry-After. */
+const VAGUE_WAIT_RE = /\s*Try again (later|in a minute|tomorrow)\.$/;
+
 /** Text for an error a player sees, with what to do next where it helps. */
 export function errorText(err) {
   if (!(err instanceof AccountError)) return err?.message ?? String(err);
@@ -240,7 +243,8 @@ export function errorText(err) {
     }
     case 'rate_limited':
     case 'locked':
-      return d.retryAfter ? `${err.message} Try again in ${formatWait(d.retryAfter)}.` : err.message;
+      // The exact wait replaces the server's own vague one ("Try again later."), never both.
+      return d.retryAfter ? `${err.message.replace(VAGUE_WAIT_RE, '')} Try again in ${formatWait(d.retryAfter)}.` : err.message;
     default:
       return err.message;
   }
