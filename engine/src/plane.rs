@@ -1027,7 +1027,13 @@ impl World {
         let d = dist(x, y, tx, ty);
         match a.air.mission {
             Mission::SpyPlane => {
-                if !a.air.camera_done && d <= f.speed {
+                // At the target, or once it is no longer ahead: each tick's
+                // step is truncated, so on a long flight the path can drift
+                // sideways by more than a tick of flight and never come
+                // within `f.speed` of the point.
+                let (vx, vy) = facing_vec(a.facing);
+                let passed = vx as i64 * (tx - x) as i64 + vy as i64 * (ty - y) as i64 <= 0;
+                if !a.air.camera_done && (d <= f.speed || passed) {
                     self.place_camera(i);
                 }
             }
@@ -1078,13 +1084,19 @@ impl World {
             }
             Mission::None => {}
         }
-        // Gone once it left the map again.
+        // Gone once it left the map again, or once it is beyond the cordon
+        // and flying away from the map, so it can never come in: a wing
+        // plane of a squad flying along a map edge (SquadOffset sideways)
+        // may pass wholly outside the map.
         let a = &mut self.actors[i];
         let m = SUPPORT_CORDON;
-        let inside_map = a.x >= 0 && a.y >= 0 && a.x < self.map.width * CELL && a.y < self.map.height * CELL;
+        let (w, h) = (self.map.width * CELL, self.map.height * CELL);
+        let inside_map = a.x >= 0 && a.y >= 0 && a.x < w && a.y < h;
+        let (vx, vy) = facing_vec(a.facing);
+        let never_in = (a.x < -m && vx <= 0) || (a.x >= w + m && vx >= 0) || (a.y < -m && vy <= 0) || (a.y >= h + m && vy >= 0);
         if inside_map {
             a.air.entered = true;
-        } else if a.air.entered && (a.x < -m || a.y < -m || a.x >= self.map.width * CELL + m || a.y >= self.map.height * CELL + m) {
+        } else if never_in || (a.air.entered && (a.x < -m || a.y < -m || a.x >= w + m || a.y >= h + m)) {
             self.remove(i);
         }
     }

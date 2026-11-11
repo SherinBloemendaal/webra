@@ -459,6 +459,79 @@ fn spy_plane_reveals_the_target_and_leaves() {
     assert_eq!(w.losses[0], 0, "leaving is not a loss");
 }
 
+/// A path that misses the target point by more than a tick of flight (the
+/// per tick truncation drifts on long flights over large maps) still
+/// places the camera, once the target is behind the plane.
+#[test]
+fn spy_plane_places_its_camera_when_its_path_passes_beside_the_target() {
+    let mut w = game("soviet");
+    place(&mut w, 0, "AFLD");
+    run(&mut w, 1);
+    charge_all(&mut w, 0);
+    let (tx, ty_) = (cell_center(w.map.width / 2), cell_center(w.map.height / 2));
+    w.queue_order(Order::SupportPower {
+        player: 0,
+        key: "AirstrikePower@spyplane".into(),
+        x: tx,
+        y: ty_,
+        x2: Some(tx + 10 * CELL),
+        y2: Some(ty_),
+    });
+    run(&mut w, 1);
+    let u2 = of_type(&w, 0, "U2")[0];
+    assert_eq!(w.actors[u2].facing, 256, "flies east");
+    // The camera point lies two cells beside the flight line.
+    let (cx, cy) = (tx, ty_ + 2 * CELL);
+    w.actors[u2].air.ty = cy;
+    let ci = w.cell_index(cx, cy);
+    let id = w.make_ref(u2);
+    let mut placed_at = None;
+    for _ in 0..600 {
+        w.step();
+        let Some(u) = w.resolve(id) else { break };
+        if placed_at.is_none() && w.actors[u].air.camera_done {
+            placed_at = Some(w.actors[u].x);
+        }
+    }
+    let x = placed_at.expect("the camera was placed");
+    assert!(x >= cx && x < cx + 2 * CELL, "as the plane passed the target");
+    assert_ne!(w.players[0].explored[ci], 0, "the camera's point was revealed");
+}
+
+/// A squad flying along a map edge: the wing plane on the outer side never
+/// comes inside the map. It is removed once beyond the cordon and flying
+/// away, like the planes that crossed the map.
+#[test]
+fn support_planes_whose_path_misses_the_map_are_removed() {
+    let mut w = game("soviet");
+    let afld = place(&mut w, 0, "AFLD");
+    let mut info = w.rules.actors[w.actors[afld].ty as usize]
+        .abilities
+        .support_powers
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|p| p.key == "AirstrikePower@spyplane")
+        .unwrap()
+        .clone();
+    info.squad_size = 3;
+    info.squad_offset = vec![-1536, 1536];
+    let (tx, ty_) = (cell_center(w.map.width / 2), cell_center(0));
+    let planes = w.launch_air_power(0, &info, 0, tx, ty_, Some((tx + 10 * CELL, ty_))).expect("launched");
+    assert_eq!(planes.len(), 3);
+    let ids: Vec<u32> = planes.iter().map(|&p| w.make_ref(p)).collect();
+    let outside = planes.iter().filter(|&&p| w.actors[p].y < 0).count();
+    assert_eq!(outside, 1, "one wing plane flies beside the map");
+    for _ in 0..2000 {
+        w.step();
+        if ids.iter().all(|&r| w.resolve(r).is_none()) {
+            break;
+        }
+    }
+    assert!(ids.iter().all(|&r| w.resolve(r).is_none()), "every plane of the squad is gone");
+    assert!(!w.actors.iter().any(|a| a.alive && a.air.mission != Mission::None));
+}
+
 #[test]
 fn paratroopers_drop_and_land_near_the_target() {
     let mut w = game("soviet");
