@@ -283,6 +283,8 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
     if (!h || !h.earned.length) return 0;
     return rateSeries(history.ticks, h.earned, tps).at(-1);
   };
+  // The time a player was in the game: a defeated player's actions per minute stop at the defeat.
+  const playedFor = (s) => (s.defeated && !s.won && s.defeatedAt !== null && s.defeatedAt !== undefined ? Math.min(elapsed, s.defeatedAt) : elapsed);
   const status = (s) => (s.won ? 'Won' : s.defeated ? `Defeated ${s.defeatedAt !== null && s.defeatedAt !== undefined ? formatDuration(s.defeatedAt, tps) : ''}`.trim() : 'Playing');
   const table = (columns, cells) => ({ columns, rows: rows.map((r) => ({ player: r.player, cells: cells(r.s, r) })) });
   const tables = {
@@ -297,7 +299,7 @@ export function shapeReport(report, { players = [], rules = null, localPlayer = 
       formatMoney(s.assetsLost),
       // OpenRA's EXPERIENCE (PlayerStatistics.Experience, the player's PlayerExperience), with the units' promotions.
       `${fmtInt(s.experience)} (${s.promotions} ${s.promotions === 1 ? 'promotion' : 'promotions'})`,
-      s.isAi ? 'AI' : String(actionsPerMinute(s.orders, elapsed, tps)),
+      s.isAi ? 'AI' : String(actionsPerMinute(s.orders, playedFor(s), tps)),
     ]),
     economy: table(['Cash', 'Income per minute', 'Earned', 'Harvested ore', 'Harvested gems', 'Spent', 'Of which repairs', 'Sold'], (s) => [
       formatMoney(s.funds),

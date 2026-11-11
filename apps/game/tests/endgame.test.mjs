@@ -285,6 +285,11 @@ test('a real engine report shapes into every tab, the score ranking and the grap
   const over = { ...report, winner: 1, endTick: report.tick, players: report.players.map((p) => ({ ...p, won: p.player === 1, defeated: p.player !== 1 })) };
   assert.equal(shapeReport(over, { players: PLAYERS }).result, 'Ivan wins');
   assert.equal(shapeReport(over, { players: PLAYERS }).ranking.find((r) => r.player === 1).won, true);
+  // A defeated player's actions per minute count the time until the defeat.
+  const tps = report.ticksPerSecond ?? 25;
+  const apmCol = shapeReport(report, { players: PLAYERS }).tables.basic.columns.indexOf('Actions per minute');
+  const out = { ...report, tick: tps * 60 * 30, endTick: null, winner: null, players: report.players.map((p) => (p.player === 0 ? { ...p, isAi: false, orders: 600, defeated: true, won: false, defeatedAt: tps * 60 * 10 } : p)) };
+  assert.equal(shapeReport(out, { players: PLAYERS }).tables.basic.rows.find((r) => r.player === 0).cells[apmCol], '60');
   // Over without a winner (the time limit, everyone lost): the end of the game, not "still on".
   const none = shapeReport({ ...report, winner: null, endTick: report.tick, players: report.players.map((p) => ({ ...p, won: false })) }, { players: PLAYERS });
   assert.equal(none.over, true);
