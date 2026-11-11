@@ -300,3 +300,44 @@ test('mountFriends: a request or invite hint shows a toast while the screen is c
     uninstallDom();
   }
 });
+
+test('friends screen: an action on its way runs once; its button is off until the answer', async () => {
+  const { root, s, store } = await screen();
+  try {
+    s.open();
+    // The store answers when the test says so.
+    const answers = [];
+    store.request = (who) => {
+      store.calls.push(['request', who]);
+      return new Promise((resolve) => answers.push(() => resolve({ request: {} })));
+    };
+    store.accept = (who) => {
+      store.calls.push(['accept', who]);
+      return new Promise((resolve, reject) => answers.push(() => reject(new Error('The request is gone.'))));
+    };
+    const form = root.querySelector('.friends-add');
+    const send = form.querySelector('button');
+    typeInto(form.querySelector('input'), 'Ivan2');
+    submit(form);
+    submit(form);
+    assert.deepEqual(store.calls.filter((c) => c[0] === 'request'), [['request', 'Ivan2']], 'Enter twice: one request');
+    assert.equal(send.disabled, true);
+    answers.shift()();
+    await settle();
+    assert.equal(send.disabled, false);
+    assert.equal(textOf(root.querySelector('.friends-status')), 'Request sent to Ivan2.');
+    // Accept twice (and the list drawn again meanwhile): one call, the new button stays off.
+    const accept = () => [...root.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Accept Viper');
+    click(accept());
+    s.renderLists();
+    assert.equal(accept().disabled, true);
+    click(accept());
+    assert.equal(store.calls.filter((c) => c[0] === 'accept').length, 1);
+    answers.shift()();
+    await settle();
+    assert.equal(accept().disabled, false, 'refused: it can be pressed again');
+    assert.equal(textOf(root.querySelector('.friends-status')), 'The request is gone.');
+  } finally {
+    uninstallDom();
+  }
+});

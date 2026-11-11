@@ -194,6 +194,9 @@ function btn(label, className, onClick) {
   return b;
 }
 
+/** The data-key of the Add a friend form's Send button. */
+const ADD_KEY = 'add:send';
+
 /** The privacy switches: the `social` settings (js/registry.js), which the server reads from the synced settings. */
 const PRIVACY = [
   ['showOnline', 'Show me as online', 'Friends see when you are around.'],
@@ -225,6 +228,8 @@ export class FriendsScreen {
     this.error = null;
     this.menuFor = null;
     this.shown = false;
+    /** Keys (data-key) of the actions on their way: each runs once, its button stays off meanwhile. */
+    this.busy = new Set();
     this.offChange = this.store.on('change', (doc) => {
       this.doc = doc;
       this.error = null;
@@ -306,13 +311,43 @@ export class FriendsScreen {
     this.status.classList.toggle('is-bad', bad);
   }
 
-  async act(fn, done) {
+  /**
+   * Run an action and say how it went. `key`: the data-key of its control;
+   * a second press while the first is on its way does nothing (it would
+   * answer "already requested" and read as a failure), and the control is off.
+   */
+  async act(fn, done, key = null) {
+    if (key !== null) {
+      if (this.busy.has(key)) return;
+      this.busy.add(key);
+      const b = this.byKey(key);
+      if (b) this.keepBusy(b);
+    }
     try {
       await fn();
       if (done) this.say(done);
     } catch (err) {
       this.say(err?.message ?? String(err), true);
+    } finally {
+      if (key !== null) {
+        this.busy.delete(key);
+        // Its control comes back as the list says (the Send button of the form is always on).
+        if (key === ADD_KEY) {
+          const send = this.byKey(ADD_KEY);
+          if (send) {
+            send.disabled = false;
+            send.removeAttribute('aria-busy');
+          }
+        } else this.renderLists();
+      }
     }
+  }
+
+  /** A control (with its data-key) whose action is on its way stays off. */
+  keepBusy(b) {
+    if (!this.busy.has(b.dataset.key)) return;
+    b.disabled = true;
+    b.setAttribute('aria-busy', 'true');
   }
 
   render() {
@@ -384,16 +419,21 @@ export class FriendsScreen {
     name.maxLength = 64;
     const send = btn('Send', 'ui-btn-primary');
     send.type = 'submit';
+    send.dataset.key = ADD_KEY;
     form.append(name, send);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const who = name.value.trim();
       if (!who) return;
-      this.act(async () => {
-        const r = await this.store.request(who);
-        name.value = '';
-        this.say(r?.friend ? `${who} had asked you already: you are friends now.` : `Request sent to ${who}.`);
-      });
+      this.act(
+        async () => {
+          const r = await this.store.request(who);
+          name.value = '';
+          this.say(r?.friend ? `${who} had asked you already: you are friends now.` : `Request sent to ${who}.`);
+        },
+        null,
+        ADD_KEY,
+      );
     });
     add.append(addTitle, form, el('p', 'friends-hint', 'They get a request and appear in your list once they accept.'));
     this.requestBox = el('section', 'friends-card ui-panel');
@@ -466,8 +506,9 @@ export class FriendsScreen {
         if (inv.locked) row.append(badge('locked', 'Password'));
         const join = btn('Join', 'ui-btn-primary ui-btn-sm', () => this.join({ id: inv.session, name: inv.text, locked: inv.locked }, { spectate: false, code: inv.code }));
         join.dataset.key = `invite-join:${inv.username}`;
-        const dismiss = btn('Dismiss', 'ui-btn-sm', () => this.act(() => this.store.dismissInvite(inv.username)));
+        const dismiss = btn('Dismiss', 'ui-btn-sm', () => this.act(() => this.store.dismissInvite(inv.username), null, dismiss.dataset.key));
         dismiss.dataset.key = `invite-dismiss:${inv.username}`;
+        this.keepBusy(dismiss);
         row.append(join, dismiss);
         this.inviteBox.append(row);
       }
@@ -483,11 +524,13 @@ export class FriendsScreen {
       const row = el('div', 'friends-request');
       const text = el('span', 'friends-request-text');
       text.append(el('span', 'friends-request-name', r.name), el('span', 'friends-request-note', r.note));
-      const accept = btn('Accept', 'ui-btn-primary ui-btn-sm', () => this.act(() => this.store.accept(r.username), `${r.name} is your friend now.`));
+      const accept = btn('Accept', 'ui-btn-primary ui-btn-sm', () => this.act(() => this.store.accept(r.username), `${r.name} is your friend now.`, accept.dataset.key));
       accept.dataset.key = `accept:${r.username}`;
+      this.keepBusy(accept);
       accept.setAttribute('aria-label', `Accept ${r.name}`);
-      const ignore = btn('Ignore', 'ui-btn-sm', () => this.act(() => this.store.ignore(r.username), `Ignored ${r.name}'s request.`));
+      const ignore = btn('Ignore', 'ui-btn-sm', () => this.act(() => this.store.ignore(r.username), `Ignored ${r.name}'s request.`, ignore.dataset.key));
       ignore.dataset.key = `ignore:${r.username}`;
+      this.keepBusy(ignore);
       ignore.setAttribute('aria-label', `Ignore ${r.name}`);
       row.append(text, accept, ignore);
       this.requestBox.append(row);
@@ -496,8 +539,9 @@ export class FriendsScreen {
       const row = el('div', 'friends-request friends-request-sent');
       const text = el('span', 'friends-request-text');
       text.append(el('span', 'friends-request-name', r.name), el('span', 'friends-request-note', r.note));
-      const withdraw = btn('Withdraw', 'ui-btn-sm ui-btn-ghost', () => this.act(() => this.store.withdraw(r.username), `Withdrew the request to ${r.name}.`));
+      const withdraw = btn('Withdraw', 'ui-btn-sm ui-btn-ghost', () => this.act(() => this.store.withdraw(r.username), `Withdrew the request to ${r.name}.`, withdraw.dataset.key));
       withdraw.dataset.key = `withdraw:${r.username}`;
+      this.keepBusy(withdraw);
       withdraw.setAttribute('aria-label', `Withdraw the request to ${r.name}`);
       row.append(text, withdraw);
       this.requestBox.append(row);
@@ -510,8 +554,9 @@ export class FriendsScreen {
       const ul = el('ul', 'friends-blocked-list');
       for (const b of v.blocked) {
         const li = el('li', 'friends-blocked-row');
-        const un = btn('Unblock', 'ui-btn-sm ui-btn-ghost', () => this.act(() => this.store.unblock(b.username), `Unblocked ${b.name}.`));
+        const un = btn('Unblock', 'ui-btn-sm ui-btn-ghost', () => this.act(() => this.store.unblock(b.username), `Unblocked ${b.name}.`, un.dataset.key));
         un.dataset.key = `unblock:${b.username}`;
+        this.keepBusy(un);
         un.setAttribute('aria-label', `Unblock ${b.name}`);
         li.append(el('span', null, b.name), un);
         ul.append(li);
@@ -538,6 +583,7 @@ export class FriendsScreen {
       b.disabled = a.disabled;
       if (a.title) b.title = a.title;
       b.dataset.key = `${a.id}:${p.username}`;
+      this.keepBusy(b);
       b.setAttribute('aria-label', `${a.label}: ${p.name}`);
       actions.append(b);
     }
@@ -576,12 +622,12 @@ export class FriendsScreen {
     menu.append(
       item('Remove friend', async () => {
         if (await confirmChoice('Remove friend', `Remove ${p.name} from your friends? You can send a new request later.`, { yes: 'Remove', danger: true })) {
-          await this.act(() => this.store.remove(p.username), `${p.name} is no longer your friend.`);
+          await this.act(() => this.store.remove(p.username), `${p.name} is no longer your friend.`, `remove:${p.username}`);
         } else this.renderLists();
       }),
       item('Block', async () => {
         if (await confirmChoice('Block player', `Block ${p.name}? They are removed from your friends and can no longer send you requests, invite you or join a lobby you are in.`, { yes: 'Block', danger: true })) {
-          await this.act(() => this.store.block(p.username), `Blocked ${p.name}.`);
+          await this.act(() => this.store.block(p.username), `Blocked ${p.name}.`, `block:${p.username}`);
         } else this.renderLists();
       }),
     );
@@ -603,7 +649,7 @@ export class FriendsScreen {
     else if (id === 'invite') {
       const lobby = this.ctx.lobby?.();
       if (!lobby) return;
-      this.act(() => this.store.invite(p.username, lobby.session), `Invited ${p.name}. They see it in their friends list.`);
+      this.act(() => this.store.invite(p.username, lobby.session), `Invited ${p.name}. They see it in their friends list.`, `invite:${p.username}`);
     }
   }
 
