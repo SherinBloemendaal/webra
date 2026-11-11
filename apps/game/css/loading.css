@@ -343,12 +343,13 @@
 }
 
 /* Every step has a lamp: lit red while it runs (blinking), green when done;
-   the word and aria-current say it too. */
+   the word and aria-current say it too. Steps to come are muted, not dim:
+   readable text (4.5:1 on the screen), the lamp marks the running one. */
 .loading-step {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--ui-dim);
+  color: var(--ui-muted);
   font-size: 14px;
 }
 
@@ -472,7 +473,7 @@
 
 .loading-tip-count {
   margin: 0;
-  color: var(--ui-dim);
+  color: var(--ui-muted);
   font: 12px/1.3 var(--ui-font-mono);
 }
 
