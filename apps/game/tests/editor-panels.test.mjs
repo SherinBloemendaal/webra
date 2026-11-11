@@ -225,3 +225,60 @@ test('a click on the map that closes an open select list does not edit the map',
   press();
   assert.equal(downs.length, 1, 'the next press paints');
 });
+
+test('arrows and Space pan the map, not while a slider, radio, button or a modal dialog has them; a lost focus ends pan mode', async () => {
+  uninstallDom();
+  installDom({ windowEvents: true });
+  const saved = ['HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement'].map((n) => [n, globalThis[n]]);
+  for (const [n] of saved) globalThis[n] ??= class {};
+  try {
+    const { EditorView } = await import('../editor/js/view.js');
+    const canvas = document.createElement('canvas');
+    const view = new EditorView(canvas, {}, { down() {}, move() {}, up() {}, leave() {}, cancel() {} });
+    const slider = document.createElement('input');
+    slider.setAttribute('type', 'range');
+    const radio = document.createElement('input');
+    radio.setAttribute('type', 'radio');
+    const button = document.createElement('button');
+    const tab = document.createElement('button');
+    tab.setAttribute('role', 'tab');
+    document.body.append(canvas, slider, radio, button, tab);
+    const press = (target, key, code = key) => {
+      const e = new FakeEvent('keydown', { key, code });
+      target.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    for (const t of [slider, radio, tab]) {
+      assert.equal(press(t, 'ArrowRight'), false, `${t.getAttribute('type') ?? t.getAttribute('role')} keeps its arrows`);
+    }
+    assert.equal(view.keys.size, 0);
+    assert.equal(press(button, ' ', 'Space'), false, 'Space presses the button');
+    assert.equal(view.spaceDown, false);
+    assert.equal(press(button, 'ArrowLeft'), true, 'a plain button has no arrows of its own: the map pans');
+    window.dispatchEvent(new FakeEvent('keyup', { key: 'ArrowLeft', code: 'ArrowLeft' }));
+    assert.equal(press(canvas, 'ArrowRight'), true);
+    assert.ok(view.keys.has('ArrowRight'));
+    window.dispatchEvent(new FakeEvent('keyup', { key: 'ArrowRight', code: 'ArrowRight' }));
+    // A modal dialog: the map behind it does not move.
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    document.body.append(dialog);
+    assert.equal(press(document.body, 'ArrowDown'), false);
+    assert.equal(view.keys.size, 0);
+    dialog.remove();
+    // Space held on the map, then the window loses the focus: no pan cursor left behind.
+    assert.equal(press(canvas, ' ', 'Space'), true);
+    assert.ok(canvas.classList.contains('can-pan'));
+    window.dispatchEvent(new FakeEvent('blur', { bubbles: false }));
+    assert.equal(view.spaceDown, false);
+    assert.equal(canvas.classList.contains('can-pan'), false);
+    // A middle button pan cut off by a lost focus ends too.
+    canvas.dispatchEvent(new FakeEvent('pointerdown', { button: 1, pointerId: 3, clientX: 5, clientY: 5, pointerType: 'mouse' }));
+    assert.ok(view.pan && canvas.classList.contains('panning'));
+    window.dispatchEvent(new FakeEvent('blur', { bubbles: false }));
+    assert.equal(view.pan, null);
+    assert.equal(canvas.classList.contains('panning'), false);
+  } finally {
+    for (const [n, v] of saved) if (v === undefined) delete globalThis[n];
+  }
+});

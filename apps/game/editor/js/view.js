@@ -307,7 +307,7 @@ export class EditorView {
       { passive: false },
     );
     window.addEventListener('keydown', (e) => {
-      if (isTyping(e)) return;
+      if (!viewTakesKey(e)) return;
       if (e.key.startsWith('Arrow')) {
         this.keys.add(e.key);
         e.preventDefault();
@@ -325,9 +325,15 @@ export class EditorView {
         c.classList.remove('can-pan');
       }
     });
+    // The window lost the focus: keyup and pointerup may never come, so pan mode and a drag pan end here.
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.spaceDown = false;
+      c.classList.remove('can-pan', 'panning');
+      if (this.pan) {
+        if (c.hasPointerCapture?.(this.pan.id)) c.releasePointerCapture(this.pan.id);
+        this.pan = null;
+      }
     });
   }
 
@@ -374,6 +380,26 @@ export function isTyping(e) {
   // A select plate (js/ui/controls.js): its button and its open list take letters and arrows, like a native select.
   // So does a stepper (arrows step it). Tabs do not: the shortcuts work right after a tab is clicked.
   return !!t?.closest?.('.ui-select-plate, .ui-sp-panel, [role="listbox"], [role="spinbutton"]');
+}
+
+/** Controls that use the arrow keys themselves: sliders, radio groups, tabs, lists and menus. */
+const ARROW_CONTROLS = 'input[type="range"], input[type="radio"], [role="slider"], [role="radio"], [role="radiogroup"], [role="tab"], [role="tablist"], [role="option"], [role="menu"], [role="menuitem"], [role="combobox"]';
+/** Controls that Space presses, checks or types into. */
+const SPACE_CONTROLS = 'button, input, textarea, select, summary, a[href], [contenteditable], [role="button"], [role="tab"], [role="checkbox"], [role="switch"], [role="radio"], [role="option"], [role="menuitem"]';
+
+/**
+ * True when an Arrow key or Space should move the map view: not while the
+ * user types, not while a modal dialog is open (the map is behind it), and
+ * not when the focused control uses that key itself (a slider or radio
+ * group steps with the arrows, a button or checkbox is pressed with Space).
+ */
+export function viewTakesKey(e) {
+  if (isTyping(e)) return false;
+  if (document.querySelector('dialog[open]')) return false;
+  const t = e.target;
+  if (e.key?.startsWith('Arrow')) return !t?.closest?.(ARROW_CONTROLS);
+  if (e.code === 'Space') return !t?.closest?.(SPACE_CONTROLS);
+  return true;
 }
 
 /** The keys tabs and steppers use themselves (js/ui/controls.js). */
