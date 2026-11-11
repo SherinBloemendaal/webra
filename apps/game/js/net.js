@@ -132,7 +132,13 @@ export class Connection {
     this.handlers = new Map();
     this.closed = false;
     this.closeReason = null;
-    /** Code of the last `error` message (why the server closed, if it did). */
+    /**
+     * Code of the newest `error` message while no other message came after it:
+     * why the server closed, if it did. The server sends a fatal error as the
+     * last message before it closes the socket; an error followed by any other
+     * message only refused one action (a taken start position, a second
+     * rematch) and is forgotten, so a later network drop still reconnects.
+     */
     this.closeCode = null;
   }
 
@@ -162,11 +168,16 @@ export class Connection {
           ws.close();
         }
       });
+      // After an invalid message the socket is closing: nothing after it counts (or clears closeReason).
+      let invalid = false;
       ws.addEventListener('message', (e) => {
+        if (invalid) return;
         const r = parseServerMessage(e.data);
         if (!r.ok) {
           console.error('Invalid server message:', r.message);
+          invalid = true;
           this.closeReason = 'The server sent an invalid message.';
+          this.closeCode = null;
           ws.close();
           return;
         }
@@ -188,6 +199,10 @@ export class Connection {
         if (msg.t === S2C.ERROR) {
           this.closeReason = msg.message;
           this.closeCode = msg.code;
+        } else {
+          // The connection went on after that error: it did not end it (see closeCode).
+          this.closeReason = null;
+          this.closeCode = null;
         }
         this.emit(msg.t, msg);
       });

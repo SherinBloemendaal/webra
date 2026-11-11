@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initSync, Game } from '../pkg/webra_sim.js';
-import { LockstepDriver, packOrders, splitOrders } from '../js/net.js';
+import { Connection, LockstepDriver, packOrders, splitOrders } from '../js/net.js';
 import { encodeClient, MAX_MESSAGE_BYTES, parseClientMessage } from '../js/protocol.js';
 import { Lockstep } from '../../server/src/lockstep.js';
+import { FakeSocket, WELCOME, withFakeSocket } from './fake-socket.mjs';
 
 initSync({ module: readFileSync(fileURLToPath(new URL('../pkg/webra_sim_bg.wasm', import.meta.url))) });
 
@@ -33,6 +34,68 @@ test('large selections are split and packed under the message limits', () => {
   assert.ok(ticks >= 2, 'spread over several ticks');
   assert.equal(sent.at(-1).o, 'stop', 'order preserved');
 });
+
+// ---- Connection ---------------------------------------------------------------------------------
+
+test('a refused action does not make a later drop final: the error is forgotten once the connection goes on', () =>
+  withFakeSocket(async () => {
+    const conn = new Connection('a'.repeat(64));
+    const closes = [];
+    const errors = [];
+    conn.on('close', (reason) => closes.push([reason, conn.closeCode])).on('error', (m) => errors.push(m.code));
+    const opened = conn.open({ version: '0.17.0', name: 'Ivan' });
+    const ws = FakeSocket.last;
+    ws.connect();
+    assert.equal(ws.sent[0].t, 'hello');
+    ws.deliver(WELCOME);
+    await opened;
+    // A start position that was just taken: refused, the socket stays open.
+    ws.deliver({ t: 'error', code: 'forbidden', message: 'That start position is taken.' });
+    assert.deepEqual(errors, ['forbidden']);
+    assert.deepEqual([conn.closeCode, conn.closeReason], ['forbidden', 'That start position is taken.']);
+    // Anything else after it: that error did not end the connection.
+    ws.deliver({ t: 'pong', n: 1, at: 1000 });
+    assert.deepEqual([conn.closeCode, conn.closeReason], [null, null]);
+    // The network drops: no reason, no final code.
+    ws.close();
+    assert.deepEqual(closes, [[null, null]]);
+  }));
+
+test('a fatal error is the last message before the close: its code and reason stay', () =>
+  withFakeSocket(async () => {
+    const conn = new Connection('a'.repeat(64));
+    const closes = [];
+    conn.on('close', (reason) => closes.push([reason, conn.closeCode]));
+    const opened = conn.open({ version: '0.17.0', name: 'Ivan' });
+    const ws = FakeSocket.last;
+    ws.connect();
+    ws.deliver(WELCOME);
+    await opened;
+    ws.deliver({ t: 'pong', n: 1, at: 1000 });
+    ws.deliver({ t: 'error', code: 'kicked', message: 'The host removed you from the session.' });
+    ws.close();
+    assert.deepEqual(closes, [['The host removed you from the session.', 'kicked']]);
+  }));
+
+test('an invalid server message closes the connection; nothing after it clears the reason', () =>
+  withFakeSocket(async () => {
+    const conn = new Connection('a'.repeat(64));
+    const closes = [];
+    conn.on('close', (reason) => closes.push([reason, conn.closeCode]));
+    const opened = conn.open({ version: '0.17.0', name: 'Ivan' });
+    const ws = FakeSocket.last;
+    ws.connect();
+    ws.deliver(WELCOME);
+    await opened;
+    const log = console.error;
+    console.error = () => {};
+    try {
+      ws.fire('message', { data: '{"t":"nonsense"}' });
+    } finally {
+      console.error = log;
+    }
+    assert.deepEqual(closes, [['The server sent an invalid message.', null]]);
+  }));
 
 const OPTIONS = {
   seed: 77,

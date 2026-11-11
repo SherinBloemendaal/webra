@@ -5,7 +5,8 @@
 // server, no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installDom, uninstallDom, click, settle, textOf, typeInto } from './dom-fixtures.mjs';
+import { installDom, memoryStorage, uninstallDom, click, settle, textOf, typeInto } from './dom-fixtures.mjs';
+import { FakeSocket, WELCOME, withFakeSocket } from './fake-socket.mjs';
 import {
   connectionCell,
   connectionWarning,
@@ -478,6 +479,47 @@ test('join with a code: the field is left alone while an input method composes',
     input.dispatchEvent(new FakeEvent('compositionend'));
     assert.equal(input.value, 'K7Q-2');
   } finally {
+    uninstallDom();
+  }
+});
+
+test('a refused action in the game does not stop the reconnect after a later drop', async () => {
+  const { ui } = await bareUi();
+  const storage = globalThis.sessionStorage;
+  globalThis.sessionStorage = memoryStorage();
+  try {
+    await withFakeSocket(async () => {
+      const { Connection } = await import('../js/net.js');
+      const { saveRejoin, loadRejoin } = await import('../js/online.js');
+      const lines = [];
+      const reconnects = [];
+      Object.assign(ui, { inGame: true, gameLine: (text) => lines.push(text), reconnect: (reason) => reconnects.push(reason) });
+      const drop = async (fatal) => {
+        saveRejoin({ id: 'a'.repeat(64), client: 2, key: 'K'.repeat(43), name: 'Ivan' });
+        const conn = new Connection('a'.repeat(64));
+        conn.on('error', (m) => ui.onServerError(m)).on('close', (reason) => ui.onClose(reason, conn));
+        const opened = conn.open({ version: V, name: 'Ivan' });
+        const ws = FakeSocket.last;
+        ws.connect();
+        ws.deliver(WELCOME);
+        await opened;
+        ui.conn = conn;
+        // The host clicks Rematch twice: the second is refused, the game goes on.
+        ws.deliver({ t: 'error', code: 'bad_state', message: 'A rematch is already proposed.' });
+        ws.deliver({ t: 'frame', tick: 40, orders: [] });
+        if (fatal) ws.deliver({ t: 'error', code: 'kicked', message: 'The host removed you from the session.' });
+        ws.close();
+      };
+      await drop(false);
+      assert.deepEqual(reconnects, [null], 'a network drop reconnects');
+      assert.ok(loadRejoin(), 'the rejoin key stays for the reconnect');
+      await drop(true);
+      assert.equal(reconnects.length, 1, 'a fatal error does not');
+      assert.equal(loadRejoin(), null);
+      assert.equal(lines.at(-1), 'Disconnected: The host removed you from the session.. The game cannot continue.');
+    });
+  } finally {
+    globalThis.sessionStorage = storage;
     uninstallDom();
   }
 });
