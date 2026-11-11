@@ -1278,14 +1278,7 @@ export class Session extends DurableObject {
       case C2S.HASH: {
         const desync = this.lockstep.hash(seat, msg.tick, msg.hash);
         if (this.room.saving?.phase === 'agreed') await this.saveHash(client, msg.tick, msg.hash);
-        if (desync !== null) {
-          // Tell only the players whose state left the majority (all of them without one).
-          const raw = encodeServer({ t: S2C.DESYNC, tick: desync.tick });
-          for (const other of this.ctx.getWebSockets()) {
-            const att = this.attachment(other);
-            if (att.client !== null && !att.gone && desync.players.includes(this.room.seatOf(att.client))) this.sendRaw(other, raw);
-          }
-        }
+        this.tellDesync(desync);
         return;
       }
       case C2S.RESUME: {
@@ -1340,6 +1333,16 @@ export class Session extends DurableObject {
         return;
       default:
         throw new RoomError('The game has already started.', ERRORS.STATE);
+    }
+  }
+
+  /** A hash comparison found a desync: tell only the players whose state left the majority (all of them without one). */
+  tellDesync(desync) {
+    if (desync === null) return;
+    const raw = encodeServer({ t: S2C.DESYNC, tick: desync.tick });
+    for (const other of this.ctx.getWebSockets()) {
+      const att = this.attachment(other);
+      if (att.client !== null && !att.gone && desync.players.includes(this.room.seatOf(att.client))) this.sendRaw(other, raw);
     }
   }
 
@@ -1417,10 +1420,12 @@ export class Session extends DurableObject {
     const state = room.seatState(seat);
     const rejoinable = !final && REJOINABLE_REASONS.includes(reason) && this.canCatchUp();
     let frames = [];
+    let desync = null;
     let tell = false;
     if (state === 'active') {
-      const out = this.lockstep ? this.lockstep.suspend(seat, now) : { frames: [], record: null };
+      const out = this.lockstep ? this.lockstep.suspend(seat, now) : { frames: [], record: null, desync: null };
       frames = out.frames;
+      desync = out.desync;
       if (rejoinable) room.suspendSeat(seat, out.record, now, RECONNECT_GRACE_MS);
       else room.endSeat(seat);
       tell = true;
@@ -1436,6 +1441,8 @@ export class Session extends DurableObject {
     // A lost connection that cannot be rejoined (the order log is full) is reported as final.
     if (tell && name) this.broadcast({ t: S2C.LEFT, player: seat, client, name, reason: final || rejoinable ? reason : 'expired' });
     this.emitFrames(frames);
+    // A tick whose hashes only waited for this player is compared now.
+    this.tellDesync(desync);
     if (this.waitingFor !== null) this.updateWaiting(now, { onlyChanges: true });
     await this.endIfOver();
     await this.rematchAfterLoss(client, now);

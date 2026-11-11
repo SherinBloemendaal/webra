@@ -783,3 +783,30 @@ test('a socket that never says hello is closed at its own deadline, not at the n
   assert.ok(Date.now() - b.deserializeAttachment().since <= 15_000);
   assert.equal(host.closed, null);
 });
+
+test('a player who drops before reporting a hash lets the others be compared: the desync is told at once', async () => {
+  const s = await makeSession({ maxPlayers: 3 });
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const hw = host.take('welcome')[0];
+  const guest = s.connect('guest');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const third = s.connect('third');
+  await s.send(third, hello(s, 'Third'));
+  const tw = third.take('welcome')[0];
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  await s.send(third, { t: 'ready', ready: true, mapHash: null });
+  await s.send(host, { t: 'start' });
+  const st = host.last('start');
+  const seat = (w) => st.players.find((p) => p.client === w.you).player;
+  const all = [{ ws: host, seat: seat(hw) }, { ws: guest, seat: seat(gw) }, { ws: third, seat: seat(tw) }];
+  await play(s, all, 0, 27);
+  await s.send(host, { t: 'hash', tick: 25, hash: 'aaaa' });
+  await s.send(guest, { t: 'hash', tick: 25, hash: 'bbbb' });
+  assert.equal(host.last('desync'), undefined, 'waits for the third player');
+  await s.drop(third);
+  assert.deepEqual(host.last('desync'), { t: 'desync', tick: 25 });
+  assert.deepEqual(guest.last('desync'), { t: 'desync', tick: 25 });
+  assertValid(host);
+});
