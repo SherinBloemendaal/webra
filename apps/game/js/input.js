@@ -370,6 +370,35 @@ export class Input {
     if (c.length === 2) this.centerOn(c[0], c[1]);
   }
 
+  /**
+   * Centre the camera on the selected actors of any owner (OpenRA's "jump to
+   * selection": a spectator's selection, an enemy structure). The engine's
+   * units_center counts one owner's actors, so it is asked once per owner of
+   * the actors in the world, and the answers are averaged weighted by how
+   * many each one holds: the mean position of them all.
+   */
+  async centerOnSelection(ids) {
+    const byOwner = new Map();
+    for (const id of ids) {
+      const info = this.info(id);
+      if (!info?.inWorld) continue;
+      byOwner.set(info.owner, (byOwner.get(info.owner) ?? []).concat(id));
+    }
+    const owners = [...byOwner];
+    const centers = await Promise.all(owners.map(([owner, list]) => this.ask.units_center(owner, Uint32Array.from(list))));
+    let x = 0;
+    let y = 0;
+    let n = 0;
+    centers.forEach((c, i) => {
+      if (c.length !== 2) return;
+      const count = owners[i][1].length;
+      x += c[0] * count;
+      y += c[1] * count;
+      n += count;
+    });
+    if (n) this.centerOn(x / n, y / n);
+  }
+
   // ---- Selection ----------------------------------------------------------------
 
   setSelection(ids) {
@@ -1410,7 +1439,7 @@ export class Input {
       const at = this.hooks.lastEvent?.();
       if (at) this.centerOn(at.x, at.y);
     });
-    reg('toSelection', 'ToSelection', () => this.centerOnUnits(this.selection));
+    reg('toSelection', 'ToSelection', () => this.centerOnSelection(this.selection));
     reg('selectAll', 'SelectAllUnits', (e) => this.selectAllUnits(e));
     reg('selectByType', 'SelectUnitsByType', () => this.selectUnitsByType());
     reg('cycleHarvesters', 'CycleHarvesters', () => this.cycleHarvesters());

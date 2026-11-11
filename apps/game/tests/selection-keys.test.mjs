@@ -308,3 +308,31 @@ test('a player who is not watching still gives orders with their selection', asy
   input.toggleMode('sell');
   assert.equal(input.mode, 'sell');
 });
+
+test('jump to selection (Home) centres on any owner\'s actors: a spectator\'s, an enemy\'s, a mixed selection', async () => {
+  const game = fakeGame();
+  const asked = [];
+  // The engine's units_center: the mean of `player`'s actors among `ids` (others are skipped).
+  game.units_center = (player, ids) => {
+    asked.push([player, Array.from(ids)]);
+    const own = Array.from(ids).filter((id) => WORLD[id]?.owner === player);
+    if (!own.length) return new Float32Array(0);
+    return Float32Array.from([own.reduce((s, id) => s + WORLD[id].x, 0) / own.length, own.reduce((s, id) => s + WORLD[id].y, 0) / own.length]);
+  };
+  for (const spectator of [true, false]) {
+    const { input, key } = await makeInput({ spectator, game });
+    input.watchAll = spectator;
+    const centred = [];
+    input.centerOn = (x, y) => centred.push([x, y]);
+    input.setSelection([8]);
+    key('Home', 'Home');
+    await settle();
+    assert.deepEqual(centred, [[1500, 1500]], "the other player's tank");
+    // Two riflemen of player 0 and one of player 1: the mean of all three.
+    input.setSelection([1, 2, 7]);
+    key('Home', 'Home');
+    await settle();
+    assert.deepEqual(centred[1], [120, 120]);
+    assert.deepEqual(asked.slice(-2), [[0, [1, 2]], [1, [7]]], 'once per owner');
+  }
+});
