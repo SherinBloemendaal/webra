@@ -86,3 +86,44 @@ test('support power targeting while placing a structure ends the placement throu
   input.startPowerTargeting({ key: 'spy', name: 'Spy plane', kind: 'SpyPlanePower' });
   assert.equal(log.cancelPlace, 1);
 });
+
+test('attack move replaces placement, a support power, targeting and a sidebar mode', async () => {
+  const { input, key, log } = await makeInput();
+  input.setSelection([1]);
+  input.startPlacing(50);
+  key('KeyA', 'a');
+  assert.equal(input.attackMove, true);
+  assert.equal(input.placing, null, 'the next click is no placement');
+  assert.equal(log.cancelPlace, 1);
+  input.attackMove = false;
+  input.startPowerTargeting({ key: 'spy', name: 'Spy plane', kind: 'SpyPlanePower' });
+  key('KeyA', 'a');
+  assert.equal(input.power, null);
+  assert.equal(input.attackMove, true);
+  input.attackMove = false;
+  input.setMode('sell');
+  key('KeyA', 'a');
+  assert.equal(input.mode, null);
+  assert.equal(input.attackMove, true);
+  // Nothing selected: the key changes nothing.
+  input.attackMove = false;
+  input.setMode('sell');
+  input.setSelection([]);
+  key('KeyA', 'a');
+  assert.equal(input.mode, 'sell');
+  assert.equal(input.attackMove, false);
+});
+
+test('chrono tank teleport targeting replaces placement and a sidebar mode', async () => {
+  const { input } = await makeInput();
+  input.setSelection([2]);
+  input.setMode('sell');
+  await input.deploySelection();
+  assert.equal(input.mode, null, 'sell mode ended');
+  assert.deepEqual(input.targeting, { kind: 'teleport', ids: [2] });
+  input.cancelTargeting();
+  input.startPlacing(50);
+  await input.deploySelection();
+  assert.equal(input.placing, null);
+  assert.equal(input.targeting.kind, 'teleport');
+});

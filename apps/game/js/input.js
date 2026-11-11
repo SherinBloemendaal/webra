@@ -730,7 +730,11 @@ export class Input {
     // else MCVs, Construction Yards, transports, and ability units (mine, MAD tank, demolition).
     const { teleport, deploy } = await this.ask.deploy_targets(this.player, Uint32Array.from(this.selection));
     if (teleport.length) {
+      // Teleport targeting replaces the order generator in force (placement, a power, a sidebar mode).
+      this.cancelPlacing();
       this.cancelPower();
+      this.cancelTargeting();
+      this.setMode(null);
       this.targeting = { kind: 'teleport', ids: Array.from(teleport) };
       this.attackMove = false;
       return;
@@ -1446,7 +1450,13 @@ export class Input {
     reg('cycleHarvesters', 'CycleHarvesters', () => this.cycleHarvesters());
     // Unit commands.
     reg('attackMove', 'AttackMove', () => {
-      if (this.selectedOwnUnits().length) this.attackMove = true;
+      if (!this.selectedOwnUnits().length) return;
+      // A new order generator replaces the one in force (OpenRA): no placement, power or mode left underneath.
+      this.cancelPlacing();
+      this.cancelPower();
+      this.cancelTargeting();
+      this.setMode(null);
+      this.attackMove = true;
     });
     reg('stop', 'Stop', () => {
       if (this.selectedOwnUnits().length) this.game.order_stop(this.player, units());
