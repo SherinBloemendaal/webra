@@ -470,7 +470,15 @@ impl MapData {
     }
 
     /// Decode the layers into a [`Map`]. A missing gems layer means no gems.
+    ///
+    /// The size is checked first, so a file that skipped [`MapData::validate`]
+    /// (the previews) cannot make the cell count wrap. The lower bound is one
+    /// cell, not [`MIN_SIZE`]: campaign maps (mission files) are smaller than
+    /// a map file may be.
     pub fn to_map(&self) -> Result<Map, String> {
+        if !(1..=MAX_SIZE).contains(&self.width) || !(1..=MAX_SIZE).contains(&self.height) {
+            return Err(format!("width and height must be between 1 and {MAX_SIZE} cells"));
+        }
         let n = (self.width * self.height) as usize;
         let terrain = b64().decode(&self.terrain).map_err(|_| "terrain is not valid base64".to_string())?;
         let ore = b64().decode(&self.ore).map_err(|_| "ore is not valid base64".to_string())?;
@@ -784,6 +792,27 @@ mod tests {
         // `"gems": null` is the same as no gems layer.
         let nulled = json.replace(r#","spawns""#, r#","gems":null,"spawns""#);
         assert_eq!(MapData::parse(&nulled).unwrap().hash(), d.hash());
+    }
+
+    #[test]
+    fn to_map_refuses_sizes_whose_cell_count_would_wrap() {
+        // 65536 x 65537 wraps to 65536 cells in i32, -8 x -8 gives 64: layers of
+        // that length must not produce a map whose size and layers disagree.
+        for (w, h, n) in [(65536, 65537, 65536usize), (-8, -8, 64), (0, 0, 0), (257, 32, 257 * 32)] {
+            let mut d = small(2, None);
+            (d.width, d.height) = (w, h);
+            d.terrain = b64().encode(vec![0u8; n]);
+            d.ore = b64().encode(vec![0u8; n]);
+            let e = d.to_map().err().unwrap_or_else(|| panic!("{w}x{h} was accepted"));
+            assert!(e.contains("width and height"), "{w}x{h}: {e}");
+        }
+        // Campaign maps may be smaller than a map file (allies-01 is 30x36).
+        let mut d = small(2, None);
+        (d.width, d.height) = (30, 25);
+        d.terrain = b64().encode(vec![0u8; 30 * 25]);
+        d.ore = b64().encode(vec![0u8; 30 * 25]);
+        assert_eq!(d.to_map().unwrap().cells(), 30 * 25);
+        assert!(!d.validate().ok, "a map file still needs MIN_SIZE");
     }
 
     #[test]

@@ -751,3 +751,24 @@ fn nested_rules_overrides_survive_their_games_6() {
 fn nested_rules_overrides_survive_their_games_7() {
     nested_fuzz_shard(7);
 }
+
+// ---- Unvalidated map previews (B-1) ------------------------------------------------
+
+/// The previews (`Game::map_file_preview`, `Game::editor_preview`) decode map
+/// files without `validate`. Sizes whose cell count wraps in i32, negative
+/// sizes and an empty map must be errors there, not maps whose layers are
+/// shorter than their size claims.
+#[test]
+fn unvalidated_previews_refuse_sizes_that_wrap() {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    for (w, h, n) in [(65536, 65537, 65536usize), (-8, -8, 64), (0, 0, 0)] {
+        let layer = b64.encode(vec![0u8; n]);
+        let json = format!(
+            r#"{{"formatVersion":2,"format":2,"name":"Big","author":"x","description":"","width":{w},"height":{h},"terrain":"{layer}","ore":"{layer}","gems":"{layer}","spawns":[[0,2],[1,1]],"actors":[]}}"#
+        );
+        let d = crate::mapdata::MapData::parse(&json).unwrap_or_else(|e| panic!("{w}x{h} does not parse: {e}"));
+        assert!(d.to_map().is_err(), "{w}x{h} decodes");
+        assert!(World::editor_preview(&d).is_err(), "{w}x{h} previews in the editor");
+    }
+}
