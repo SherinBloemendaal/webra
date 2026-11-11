@@ -137,6 +137,11 @@ let wasm;
 /** The engine compiled once: the page and the simulation worker instantiate it. */
 let wasmModule = null;
 let renderer;
+/**
+ * What the running game does when the graphics device is lost (runGame sets
+ * it, its scope clears it); without a game the start menu says so.
+ */
+let gameGraphicsLost = null;
 /** js/replay.js and js/records.js (recording, saves, replays), or null when they failed to load. */
 let records = null;
 // Sound (js/audio): synthesized by default, original files when the player installed them.
@@ -279,6 +284,14 @@ async function boot() {
     }
   }
   setTags({ renderer: renderer ? 'webgpu' : 'unavailable' });
+  if (renderer) {
+    // The device went (driver reset, GPU process crash, sleep): nothing draws any more until the page reloads.
+    renderer.onLost = () => {
+      const text = graphicsLostText(renderer.lost);
+      if (gameGraphicsLost) gameGraphicsLost(text);
+      else lobby.showError(text);
+    };
+  }
   if (gpuError) lobby.showError(gpuError);
   await setupRecords(lobby, gpuError);
   const onlineOpen = setupOnline(lobby, gpuError);
@@ -1579,6 +1592,12 @@ function recorderOf({ host, info }) {
 // screen, the simulation, GPU resources, sound) goes into `scope`
 // (js/disposer.js), which takes it down again for a restart in place.
 function start(host, opts) {
+  // A device lost in the menu draws nothing: no game starts on it.
+  if (renderer.lost) {
+    host.dispose();
+    loadFail(null, graphicsLostText(renderer.lost));
+    return;
+  }
   const scope = new Disposer();
   try {
     runGame(host, opts, scope);
@@ -2270,6 +2289,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // up), so there the menu opens over the running game. The debug menu can
   // also pause a local game without the menu (`paused` is declared above).
   let leaving = false;
+  /** Why the graphics device was lost (js/renderer.js), or null: see onGraphicsLost below. */
+  let graphicsLost = null;
   /**
    * Before the game goes (leave, exit, rematch: the page reloads or goes;
    * restart, next mission: in place): the game's replay is queued for the
@@ -2446,6 +2467,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       menuPaused = isPaused;
       updatePaused();
       $('menu-button').textContent = open ? 'Resume' : 'Menu';
+      // The graphics device is gone ("Save first" showed the menu): nothing to go back to but the notice.
+      if (!open && graphicsLost) showGraphicsLost();
     },
     uiScale,
     renderRatio: () => renderer.pixelRatio(),
@@ -2608,6 +2631,31 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
       cancelAnimationFrame(rafId);
     },
     back: () => location.reload(),
+  });
+  // The graphics device was lost (js/renderer.js onLost): the battlefield stays
+  // black, so the loading screen's error view says so over it with a reload.
+  // A local game pauses behind it (the game menu opens); its simulation still
+  // runs, so where it can be saved, "Save first" shows the game menu (Save
+  // game) and the notice comes back when the menu closes.
+  const canSaveLocally = !online && !replay && recordActions.some((a) => a.id === 'save');
+  const showGraphicsLost = () => {
+    mouseCapture?.setBlocked(true);
+    loader.fail(canSaveLocally ? `${graphicsLost} The game is paused: save it from the game menu first to go on with it after the reload.` : graphicsLost, {
+      title: 'Graphics device lost',
+      label: 'Reload',
+      run: leave,
+      other: canSaveLocally ? { label: 'Save first', run: () => loader.close() } : null,
+    });
+  };
+  const onGraphicsLost = (text) => {
+    if (leaving || graphicsLost) return;
+    graphicsLost = text;
+    if (!online) menu.open();
+    showGraphicsLost();
+  };
+  gameGraphicsLost = onGraphicsLost;
+  scope.add(() => {
+    if (gameGraphicsLost === onGraphicsLost) gameGraphicsLost = null;
   });
   // Before the first frame the loading screen says so (with the way back to the menu), else a toast.
   host.on('failed', (message) => {
@@ -3239,6 +3287,11 @@ boot().catch((err) => {
   bootScreen.fail(err);
   throw err;
 });
+
+/** What the player is told when the graphics device is lost (js/renderer.js `lost`). */
+function graphicsLostText(reason) {
+  return `The graphics device was lost (${reason}). Reload the page to continue.`;
+}
 
 /** Short message over the battlefield (for example when fullscreen is refused). */
 function showToast(text) {

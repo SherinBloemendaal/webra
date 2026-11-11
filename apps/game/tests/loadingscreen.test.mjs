@@ -173,6 +173,30 @@ test('a failed start: an alert with the reason, Back closes and gives the focus 
   uninstallDom();
 });
 
+test('over a game that cannot go on: its own title, and a second way out beside the first', () => {
+  const { root, screen } = setup();
+  const ran = [];
+  screen.fail('The graphics device was lost (reason: unknown). Reload the page to continue.', {
+    title: 'Graphics device lost',
+    label: 'Reload',
+    run: () => ran.push('reload'),
+    other: { label: 'Save first', run: () => ran.push('save') },
+  });
+  assert.equal(root.hidden, false);
+  assert.equal(textOf(root.querySelector('h1')), 'Graphics device lost');
+  assert.equal(textOf(root.querySelector('[role="alert"]')), 'The graphics device was lost (reason: unknown). Reload the page to continue.');
+  const buttons = [...root.querySelectorAll('button')];
+  assert.deepEqual(buttons.map((b) => b.textContent), ['Reload', 'Save first'], 'the first one is the main way out');
+  click(buttons[1]);
+  click(buttons[0]);
+  assert.deepEqual(ran, ['save', 'reload']);
+  // Without a title the start's failure keeps its own.
+  screen.fail('Could not start the game.');
+  assert.equal(textOf(root.querySelector('h1')), 'Could not start');
+  assert.equal(root.querySelectorAll('button').length, 1);
+  uninstallDom();
+});
+
 test('"Reduce motion" stills the spinner, the bar and the entrance (the setting, and the browser\'s in the stylesheet)', () => {
   const { root, screen } = setup({ reduced: true });
   screen.begin(loadingPlan('replay'));

@@ -490,6 +490,14 @@
   overflow-wrap: break-word;
 }
 
+/* Two ways out of a failed screen (js/loadingscreen.js fail with `other`): side by side, wrapping on a phone. */
+.loading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
 /* ---- The boot screen ------------------------------------------------------------ */
 
 /* #boot (js/bootscreen.js) from the page's first paint until the start menu

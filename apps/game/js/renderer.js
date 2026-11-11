@@ -111,9 +111,20 @@ export class Renderer {
     this.maxTextureSize = device.limits?.maxTextureDimension2D ?? 8192;
     // Canvas pixels per CSS pixel; js/main.js replaces it with the player's settings.
     this.pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+    /**
+     * Why the device was lost (its message, or its reason), or null while it
+     * works. Every WebGPU call after a loss does nothing, so the battlefield
+     * stays black: js/main.js tells the player (onLost) and offers a reload.
+     */
+    this.lost = null;
+    /** Called once when the device is lost by itself (not by destroy()): (info: GPUDeviceLostInfo) => void. */
+    this.onLost = null;
     device.lost.then((info) => {
       console.error('WebGPU device lost:', info.message);
       this.timer.disable(`device lost: ${info.message}`);
+      if (info.reason === 'destroyed') return;
+      this.lost = info.message || `reason: ${info.reason}`;
+      this.onLost?.(info);
     });
     /** The adapter the device came from (Renderer.create), for gpuInfo(). */
     this.adapter = null;
