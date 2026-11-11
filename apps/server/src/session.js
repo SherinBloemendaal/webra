@@ -239,6 +239,12 @@ export class Session extends DurableObject {
     /** Sockets catching up until they confirm -> { client, role, until }. */
     this.catching = new Map();
     this.buckets = new WeakMap();
+    /**
+     * Sockets whose `hello` is being handled. Its awaits (D1, hashing) let
+     * the same socket's next message in; a second `hello` meanwhile is
+     * ignored, so one socket never joins twice.
+     */
+    this.joining = new WeakSet();
     this.chatBuckets = new WeakMap();
     this.failures = new Map();
     this.lastDirectory = null;
@@ -423,8 +429,13 @@ export class Session extends DurableObject {
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     if (att.client === null) {
       if (msg.t !== C2S.HELLO) return this.reject(ws, ERRORS.STATE, 'Say hello first.', true);
-      if (att.busy) return;
-      return this.hello(ws, att, msg);
+      if (att.busy || this.joining.has(ws)) return;
+      this.joining.add(ws);
+      try {
+        return await this.hello(ws, att, msg);
+      } finally {
+        this.joining.delete(ws);
+      }
     }
     if (msg.t === C2S.HELLO) return this.reject(ws, ERRORS.STATE, 'Already joined.', false);
     if (msg.t === C2S.PING) return this.ping(ws, att, msg);
@@ -519,6 +530,9 @@ export class Session extends DurableObject {
     if (!this.meta || !this.room) return this.reject(ws, ERRORS.NOT_FOUND, 'This session no longer exists.', true);
     problem = phaseProblem();
     if (problem) return this.reject(ws, ERRORS.STATE, problem, true);
+    // This socket joined meanwhile (it is a member already, or was closed).
+    const current = this.attachment(ws);
+    if (current.client !== null || current.gone) return this.reject(ws, ERRORS.STATE, 'Already joined.', false);
     const hostConnected = this.room.hostId !== null && this.socketOf(this.room.hostId) !== null;
     let joined;
     try {

@@ -647,3 +647,24 @@ test('upgrades: closed sockets that never finish closing cannot fill the session
   await s.send(everything.at(-1), hello(s, 'Host', { hostKey: s.hostKey }));
   assert.ok(everything.at(-1).last('welcome'));
 });
+
+test('two quick hellos on one anonymous socket join once', async () => {
+  // The username lookup answers on a later tick (a D1 round trip).
+  const slow = {
+    prepare: () => ({
+      bind: () => ({ run: async () => ({}), first: () => new Promise((r) => setTimeout(() => r(null), 5)), all: async () => ({ results: [] }) }),
+    }),
+  };
+  const s = await makeSession({ DB: slow, maxPlayers: 4 });
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const ws = s.connect('twice');
+  await Promise.all([s.send(ws, hello(s, 'Twice')), s.send(ws, hello(s, 'Twice')), s.send(ws, hello(s, 'Twice'))]);
+  assert.equal(ws.take('welcome').length, 1);
+  const lobby = host.last('lobby');
+  assert.equal(lobby.slots.filter((x) => x.type === 'human').length, 2, 'one place for the socket, not one per hello');
+  assert.equal(s.session.room.memberCount(), 2);
+  // A later hello on the joined socket is refused as before.
+  await s.send(ws, hello(s, 'Twice'));
+  assert.equal(ws.last('error').message, 'Already joined.');
+});
