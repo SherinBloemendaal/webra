@@ -343,7 +343,10 @@
   margin-left: auto;
 }
 
+/* .menu-card button (css/style.css) gives every card button the full width: here they sit in a row
+   (same specificity, this file comes later). Phones give each its own row below. */
 .endgame-buttons button {
+  width: auto;
   min-height: max(44px, var(--ctl-row, 44px));
   margin: 0;
 }
