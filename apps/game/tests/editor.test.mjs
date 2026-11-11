@@ -316,6 +316,32 @@ test('spawns: symmetric add, limit of 8, partners and removal', () => {
   assert.deepEqual(doc.actors.map((a) => a.owner), [-1, 4]);
 });
 
+test('removing a spawn takes its player slot along, undo brings both back', () => {
+  const doc = new MapDoc(createMap({ width: 96, height: 96 }));
+  doc.begin('spawns');
+  doc.touchObjects();
+  doc.spawns = [[4, 4], [40, 40], [80, 80]];
+  doc.touchMeta();
+  doc.meta.players = [{ type: 'ai', faction: 'soviet' }, { type: 'open', faction: 'allies' }, { type: 'closed' }];
+  doc.commit();
+  const slots = doc.toMap().players;
+  doc.begin('Remove spawn');
+  doc.removeSpawn(0);
+  doc.commit();
+  assert.deepEqual(doc.toMap().spawns, [[40, 40], [80, 80]]);
+  assert.deepEqual(doc.toMap().players, slots.slice(1));
+  doc.undo();
+  assert.deepEqual(doc.toMap().players, slots);
+  assert.equal(doc.spawns.length, 3);
+  // A spawn without a slot of its own leaves the slots alone.
+  doc.begin('Remove spawn');
+  doc.touchMeta();
+  doc.meta.players.length = 1;
+  doc.removeSpawn(2);
+  doc.commit();
+  assert.deepEqual(doc.toMap().players, slots.slice(0, 1));
+});
+
 // ---- Symmetry groups, shapes, regions and map turns -------------------------------------
 
 import { modeFits, transformCell, SYMMETRY_MODES } from '../editor/js/symmetry.js';
@@ -455,6 +481,12 @@ test('map resize, crop, shift and turns keep cells, spawns and actors in step', 
   assert.equal(crop.dropped.actors, 1);
   assert.equal(crop.map.actors.length, 1);
   assert.equal(crop.map.actors[0].owner, 0);
+  // A dropped spawn takes its slot along, the others keep theirs (slots beyond the spawns stay as they are).
+  assert.equal(map.spawns.length, 2);
+  const withSlots = { ...map, players: [{ type: 'ai' }, { type: 'closed' }, { type: 'open' }] };
+  assert.deepEqual(cropMap(withSlots, CATALOG, 0, 0, 31, 39).map.players.map((p) => p.type), ['ai', 'open']);
+  assert.deepEqual(cropMap(withSlots, CATALOG, 32, 0, 63, 39).map.players.map((p) => p.type), ['closed', 'open']);
+  assert.deepEqual(shiftMap(withSlots, CATALOG, 1, 0).map.players, withSlots.players);
   assert.throws(() => resizeMap(map, CATALOG, 8, 8, 0, 0), /Width and height/);
   const shifted = shiftMap(map, CATALOG, 1, 0).map;
   assert.equal(cell(shifted, 1, 0), TERRAIN.ROCK);

@@ -75,7 +75,10 @@ export function resizeMap(map, catalog, width, height, ox, oy, fill = TERRAIN.CL
     if (owner !== a.owner && owner < 0) dropped.owners = (dropped.owners ?? 0) + 1;
     actors.push({ ...a, owner, x: a.x + ox, y: a.y + oy });
   }
-  return { map: withLayers(map, width, height, terrain, ore, gems, spawns, actors), dropped };
+  const out = withLayers(map, width, height, terrain, ore, gems, spawns, actors);
+  // Slot k belongs to spawn k: a dropped spawn takes its slot along, so the others stay with their spawns.
+  if (Array.isArray(map.players)) out.players = map.players.filter((_, k) => k >= renumber.length || renumber[k] !== -1);
+  return { map: out, dropped };
 }
 
 /** Crop to the region between two corner cells (inclusive). */

@@ -108,7 +108,7 @@ export class MapDoc {
       rules: clone(pruneOverrides(this.rules)),
       // Optional: a temperate map leaves it out (and keeps its identity).
       ...(this.meta.biome && this.meta.biome !== 'temperate' ? { biome: this.meta.biome } : {}),
-      // Slots beyond the spawns are kept while editing (a removed spawn comes back with its slot) but not written.
+      // Slot k belongs to spawn k (removeSpawn takes its slot along); slots beyond the spawns are kept while editing but not written.
       players: clone(this.meta.players.slice(0, this.spawns.length)),
       options: clone(this.meta.options),
       lockedOptions: this.meta.lockedOptions.filter((k) => Object.hasOwn(this.meta.options, k)),
@@ -435,10 +435,16 @@ export class MapDoc {
 
   /**
    * Remove spawn `k`. Actors it owned become neutral and higher owner indices
-   * shift down, so ownership stays attached to the same spawns.
+   * shift down, so ownership stays attached to the same spawns. Its player
+   * slot goes with it (slot k belongs to spawn k), so the slots of the
+   * spawns after it stay with them; undo brings both back.
    */
   removeSpawn(k) {
     this.touchObjects();
+    if (this.meta.players.length > k) {
+      this.touchMeta();
+      this.meta.players.splice(k, 1);
+    }
     this.spawns.splice(k, 1);
     for (const a of this.actors) {
       if (a.owner === k) a.owner = -1;
