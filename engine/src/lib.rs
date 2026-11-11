@@ -1990,7 +1990,6 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
     let rules = rules::Rules::load();
     let num = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64()).unwrap_or(d);
     let flag = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
-    let text = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
     // Newer options: absent means the default, anything else must be a known name.
     let name = |k: &str, d: &str| -> Result<String, String> {
         match v.get(k) {
@@ -2001,7 +2000,15 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
     };
     let mut players = Vec::new();
     for p in v.get("players").and_then(|p| p.as_array()).ok_or_else(|| "options.players missing".to_string())? {
-        let kind = p.get("type").and_then(|t| t.as_str()).unwrap_or("human");
+        // Absent or null (tools, tests): a human. Anything else must be a slot
+        // type, so a slot a newer lobby adds is refused instead of played.
+        let kind = match p.get("type") {
+            None | Some(serde_json::Value::Null) => "human",
+            Some(t) => t
+                .as_str()
+                .filter(|t| ["human", "ai", "open", "closed"].contains(t))
+                .ok_or_else(|| "players[].type must be human, ai, open or closed".to_string())?,
+        };
         if kind == "closed" || kind == "open" {
             continue;
         }
@@ -2009,11 +2016,16 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         if rules.faction_index(&faction).is_none() {
             return Err(format!("unknown faction {}", faction.chars().take(24).collect::<String>()));
         }
+        // An AI's difficulty: absent or null is Normal. Humans have none (ignored).
         let ai = match kind {
-            "ai" => Some(match p.get("difficulty").and_then(|d| d.as_str()).unwrap_or("normal") {
-                "easy" => AiDifficulty::Easy,
-                "hard" => AiDifficulty::Hard,
-                _ => AiDifficulty::Normal,
+            "ai" => Some(match p.get("difficulty") {
+                None | Some(serde_json::Value::Null) => AiDifficulty::Normal,
+                Some(d) => match d.as_str() {
+                    Some("easy") => AiDifficulty::Easy,
+                    Some("normal") => AiDifficulty::Normal,
+                    Some("hard") => AiDifficulty::Hard,
+                    _ => return Err("players[].difficulty must be easy, normal or hard".to_string()),
+                },
             }),
             _ => None,
         };
@@ -2050,16 +2062,20 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
     if !(2..=8).contains(&players.len()) {
         return Err("a game needs 2 to 8 players".to_string());
     }
-    let tech = text("techLevel", "unrestricted");
+    let tech = name("techLevel", "unrestricted")?;
     let options = GameOptions {
         starting_cash: num("startingCash", 5000).clamp(0, 1_000_000) as i32,
-        starting_units: match text("startingUnits", "mcv").as_str() {
+        starting_units: match name("startingUnits", "mcv")?.as_str() {
+            "mcv" => StartingUnits::Mcv,
             "light" => StartingUnits::Light,
             "heavy" => StartingUnits::Heavy,
             "base" => StartingUnits::Base,
-            _ => StartingUnits::Mcv,
+            _ => return Err("options.startingUnits must be mcv, light, heavy or base".to_string()),
         },
-        tech_level: rules::TECH_LEVELS.iter().position(|t| *t == tech).unwrap_or(4),
+        tech_level: rules::TECH_LEVELS
+            .iter()
+            .position(|t| *t == tech)
+            .ok_or_else(|| format!("options.techLevel must be {}", rules::TECH_LEVELS.join(", ")))?,
         fog: flag("fog", true),
         explored: flag("explored", false),
         build_radius: flag("buildRadius", true),
@@ -2087,10 +2103,11 @@ fn parse_options(json: &str) -> Result<ParsedOptions, String> {
         tick_ms: match name("gameSpeed", "normal")?.as_str() {
             "slowest" => 80,
             "slower" => 50,
+            "normal" => 40,
             "fast" => 35,
             "faster" => 30,
             "fastest" => 20,
-            _ => 40,
+            _ => return Err("options.gameSpeed must be slowest, slower, normal, fast, faster or fastest".to_string()),
         },
         bounty: flag("bounty", false),
         separate_team_spawns: flag("separateTeamSpawns", true),
