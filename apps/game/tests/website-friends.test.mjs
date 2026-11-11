@@ -16,7 +16,7 @@ const { mountAccountPage } = await import('../../website/assets/account.js');
 const { friendStatus, groupFriends, friendsSummary, socialSettings, spanText, clockText, SOCIAL_SETTING_DEFAULTS: SOCIAL_DEFAULTS, FriendsClient } = await import('../../website/assets/friends.js');
 const { normalizeInviteCode, formatInviteCode, invitePath, typedInviteCode, inviteInPath, lookupInvite, inviteSummary, INVITE_MESSAGES } = await import('../../website/assets/invite.js');
 const { betaBadge, releaseTag } = await import('../../website/assets/site-data.js');
-const { openDialog, selectField } = await import('../../website/assets/ui.js');
+const { confirmDialog, openDialog, selectField } = await import('../../website/assets/ui.js');
 
 let doc;
 beforeEach(() => {
@@ -333,6 +333,19 @@ test('dialogs: Esc in an open select list closes the list only; Esc again closes
   key(select.button, 'Escape');
   await settle();
   assert.equal(closed, true, 'Esc on the closed select closes the dialog');
+});
+
+test('dialogs: a danger confirmation focuses Cancel, a plain one its confirm button', async () => {
+  const danger = confirmDialog('Remove passkey', 'Sure?', { confirmText: 'Remove', danger: true });
+  assert.equal(document.activeElement.textContent, 'Cancel', 'Enter right away does not remove anything');
+  const buttons = [...document.body.querySelectorAll('.form-actions button')].map((b) => b.textContent);
+  assert.deepEqual(buttons, ['Remove', 'Cancel'], 'the visual order stays');
+  click(document.activeElement);
+  assert.equal(await danger, false);
+  const plain = confirmDialog('Save', 'Sure?', { confirmText: 'Save anyway' });
+  assert.equal(document.activeElement.textContent, 'Save anyway');
+  click(document.activeElement);
+  assert.equal(await plain, true);
 });
 
 test('home: the hero battle stands still for reduced motion with CSS alone; the moving one has a Pause button', () => {
