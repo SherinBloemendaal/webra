@@ -723,7 +723,8 @@
 .online-btn-small {
   margin-left: 6px;
   padding: 0 6px calc(2 * var(--ui-cap-nudge));
-  min-height: 2em;
+  /* Content high (not the control row of .online-btn): it sits inside rows and lines. */
+  min-height: 0;
   font-size: 0.85em;
   /* Its height is its line: Barlow's normal line height (1.2) less the
      nudge below, so the capitals sit in the middle at the same height. */
