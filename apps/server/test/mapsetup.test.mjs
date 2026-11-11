@@ -9,7 +9,7 @@ import { inflateSync } from 'node:zlib';
 import { mapThumbnail, parseMap, validMapRef } from '@webra/protocol';
 import { FakeD1 } from './fake-d1.mjs';
 import { HttpError } from '../src/http.js';
-import { getMapThumbnail, listMaps, prepareMap, storeMap } from '../src/maps.js';
+import { getMap, getMapThumbnail, listMaps, prepareMap, storeMap } from '../src/maps.js';
 import { encodePng } from '../src/png.js';
 
 const fixture = (name) => readFileSync(new URL(`../../../packages/protocol/test/fixtures/maps/${name}`, import.meta.url), 'utf8');
@@ -130,6 +130,43 @@ test('thumbnails: drawn once per map version (edge cache by id and stored hash),
   );
   // Another network still gets it.
   assert.equal((await getMapThumbnail({ DB: db }, stored.id, thumbOpts({ limit: 3, ip: '198.51.100.1' }))).status, 200);
+});
+
+test('map downloads: counted once per network and map a day, repeated ones come from the edge cache', async () => {
+  const db = new FakeD1();
+  const p = await prepareMap(fixture('format2-setup.webra-map.json'));
+  const stored = await storeMap(db, p, { listed: true });
+  const cache = new FakeCache();
+  const pending = [];
+  const exec = { waitUntil: (w) => pending.push(w) };
+  const get = async (network, url = `https://webra.test/api/maps/${stored.id}`) => {
+    const res = await getMap({ DB: db }, exec, stored.id, { request: new Request(url), network, salt: 'test-salt', cache });
+    await Promise.all(pending.splice(0));
+    return res;
+  };
+  const downloads = () => db.rows('SELECT downloads FROM maps WHERE id = ?', stored.id)[0].downloads;
+  const first = await get('203.0.113.7');
+  assert.equal(await first.text(), p.canonical);
+  assert.equal(downloads(), 1);
+  assert.deepEqual([...cache.entries.keys()], [`https://webra.test/api/maps/${stored.id}?hash=${p.hash}`], 'keyed by id and stored hash');
+  const writes = db.writes;
+  const queries = db.queries;
+  const again = await get('203.0.113.7', `https://webra.test/api/maps/${stored.id}?x=1`);
+  assert.equal(await again.text(), p.canonical);
+  assert.equal(downloads(), 1, 'the same network counts once a day');
+  assert.equal(db.writes, writes, 'no write for a repeated download');
+  assert.ok(db.queries - queries <= 2, 'only the head row and the quota were read, not the map');
+  assert.equal(cache.puts, 1);
+  // Another network counts; the next day the first one counts again.
+  await get('198.51.100.1');
+  assert.equal(downloads(), 2);
+  const next = await getMap({ DB: db }, exec, stored.id, { network: '203.0.113.7', salt: 'test-salt', cache, now: Date.now() + 24 * 60 * 60 * 1000 });
+  await Promise.all(pending.splice(0));
+  assert.equal(next.status, 200);
+  assert.equal(downloads(), 3);
+  // Unlisted and unknown maps stay hidden, cached or not.
+  db.sqlite.prepare('UPDATE maps SET listed = 0 WHERE id = ?').run(stored.id);
+  await assert.rejects(get('192.0.2.9'), (e) => e instanceof HttpError && e.status === 404);
 });
 
 test('thumbnails: a stored map that cannot be drawn is logged and answered 404', async (t) => {

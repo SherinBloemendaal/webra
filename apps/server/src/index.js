@@ -433,7 +433,8 @@ async function route(ctx) {
   m = /^\/api\/maps\/([^/]+)$/.exec(path);
   if (m) {
     if (method !== 'GET') throw methodNotAllowed('GET');
-    return getMap(env, exec, m[1]);
+    await ctx.burst('map-get', [600, 60 * 60 * 1000]);
+    return getMap(env, exec, m[1], { request, network: ctx.network, salt: ctx.salt(), cache: globalThis.caches?.default ?? null, now: ctx.now });
   }
   const res = await handleAccountApi(ctx);
   if (res) return res;

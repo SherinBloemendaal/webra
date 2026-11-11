@@ -118,7 +118,7 @@ test('a stored row of an older format is upgraded in place when it is read; its 
   assert.equal(await lookupMap(db, row.id, 'e'.repeat(64), { judge, versions }), null, 'another hash does not');
   assert.equal(judge.calls, calls);
   // Downloads by id and by either hash serve the upgraded map.
-  const res = await getMap({ DB: db }, exec, row.id, { judge, versions });
+  const res = await getMap({ DB: db }, exec, row.id, { network: '192.0.2.1', salt: 'test-salt', judge, versions });
   assert.equal(await res.text(), upgraded);
   assert.equal(await mapTextByHash(db, p.hash, Date.now(), { judge, versions }), upgraded);
   assert.equal(await mapTextByHash(db, sha(upgraded), Date.now(), { judge, versions }), upgraded);
@@ -145,7 +145,7 @@ test('the community list upgrades stale rows first and leaves out what is not up
   assert.match(mark.upgrade_error, /^This map was made for WebRA 0\.9 \(format 1\) and is no longer compatible/);
   assert.equal(mark.format_version, 1);
   // Its file is still served as stored (clients say why it does not load; the editor repairs it) ...
-  assert.equal(await (await getMap({ DB: db }, exec, broken.row.id, { judge, versions })).text(), mark.json);
+  assert.equal(await (await getMap({ DB: db }, exec, broken.row.id, { network: '192.0.2.1', salt: 'test-salt', judge, versions })).text(), mark.json);
   // ... but a lobby refuses it with the message.
   assert.deepEqual(await lookupMap(db, broken.row.id, broken.p.hash, { judge, versions }), { refused: mark.upgrade_error });
   // Not tried again.
@@ -168,7 +168,7 @@ test('an upgrade that meets a map already stored merges into it; its old id and 
   assert.deepEqual(db.rows('SELECT id, listed, downloads FROM maps'), [{ id: kept.id, listed: 1, downloads: 4 }]);
   assert.deepEqual(db.rows('SELECT old_hash, old_id, hash FROM map_aliases'), [{ old_hash: old.p.hash, old_id: old.row.id, hash: fresh.hash }]);
   assert.equal(await mapTextByHash(db, old.p.hash, Date.now(), { judge, versions }), fresh.canonical);
-  assert.equal(await (await getMap({ DB: db }, exec, old.row.id, { judge, versions })).text(), fresh.canonical, 'the old id too');
+  assert.equal(await (await getMap({ DB: db }, exec, old.row.id, { network: '192.0.2.1', salt: 'test-salt', judge, versions })).text(), fresh.canonical, 'the old id too');
 });
 
 test('two format changes in a row: every old hash points at the map as it is now; the daily job prunes and upgrades', async () => {
@@ -238,7 +238,7 @@ test('one row that fails for another reason never breaks the list, the daily bat
   const { value: batch } = await quietly(() => upgradeStaleMaps(db, { judge: flaky, versions, limit: 10 }));
   assert.deepEqual(batch, { upgraded: 0, failed: 0, skipped: 1 });
   // A download serves the stored text; a lobby refuses it for now.
-  const { value: res } = await quietly(() => getMap({ DB: db }, exec, bad.row.id, { judge: flaky, versions }));
+  const { value: res } = await quietly(() => getMap({ DB: db }, exec, bad.row.id, { network: '192.0.2.1', salt: 'test-salt', judge: flaky, versions }));
   assert.equal(await res.text(), bad.p.canonical);
   const { value: refused } = await quietly(() => lookupMap(db, bad.row.id, bad.p.hash, { judge: flaky, versions }));
   assert.deepEqual(refused, { refused: MAP_UPGRADE_UNAVAILABLE });
