@@ -1345,7 +1345,9 @@ impl World {
     fn tick_chrono_returns(&mut self) {
         for i in 0..self.actors.len() {
             let Some((x, y, t)) = self.actors[i].ab.chrono_return else { continue };
-            if !self.actors[i].alive {
+            // A passenger returns once it is back in the world (OpenRA: traits
+            // of actors outside the world do not tick).
+            if !self.actors[i].alive || !self.actors[i].in_world() {
                 continue;
             }
             if self.tick >= t {

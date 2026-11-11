@@ -697,6 +697,31 @@ fn teleported(w: &mut World) -> Vec<Vec<i32>> {
 }
 
 #[test]
+fn a_chronoshifted_tank_in_a_transport_returns_once_unloaded() {
+    let mut w = flat_world(["allies", "soviet"]);
+    let key = "ChronoshiftPower@chronoshift";
+    superweapon(&mut w, 0, "PDOX", 8, 50, key);
+    let tank = passive(&mut w, "2TNK", 0, 20, 20);
+    run(&mut w, 1);
+    power(&mut w, 0, key, (40, 30), Some((20, 20)));
+    run(&mut w, 1);
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (40, 30));
+    let lst = passive(&mut w, "LST", 0, 42, 30);
+    assert!(w.load_passenger(lst, tank));
+    w.sound.set_enabled(true);
+    teleported(&mut w);
+    run(&mut w, 450);
+    assert!(w.actors[tank].ab.chrono_return.is_some(), "a passenger keeps its return for later");
+    assert!(teleported(&mut w).is_empty(), "no chronoshift inside the transport");
+    let exit = w.map.idx(42, 31);
+    assert_eq!(w.unload_passenger(lst, exit), Some(tank));
+    run(&mut w, 1);
+    assert!(w.actors[tank].ab.chrono_return.is_none());
+    assert_eq!(w.cell_of(w.actors[tank].x, w.actors[tank].y), (20, 20), "back at its origin");
+    assert_eq!(teleported(&mut w).len(), 2);
+}
+
+#[test]
 fn germany_gets_the_advanced_chronoshift() {
     let mut w = flat_world(["germany", "soviet"]);
     superweapon(&mut w, 0, "PDOX", 8, 50, "ChronoshiftPower@advancedchronoshift");
