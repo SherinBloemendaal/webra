@@ -446,6 +446,44 @@ test('sync: Take the tour again on one device clears the tour on another without
   assert.equal(server.settingsDocs.get(user.id).settings.guide.resetAt ?? 0, 0);
 });
 
+test('sync: a realtime hint that arrives during an upload loads the account once the upload is done', async () => {
+  let pulls = 0;
+  let version = 1;
+  let release = null;
+  const api = {
+    settings: async () => {
+      pulls++;
+      return { version, settings: {} };
+    },
+    putSettings: (_v, doc) =>
+      new Promise((resolve) => {
+        release = () => resolve({ version: ++version, settings: doc });
+      }),
+  };
+  const registry = createRegistry({ storage: memoryStorage() });
+  const timers = fakeTimers();
+  const sync = new SettingsSync({ api, registry, storage: memoryStorage(), timers });
+  await sync.start({ id: 'u1' });
+  assert.equal(pulls, 1);
+  registry.set('audio', 'master', 0.4);
+  await timers.fire();
+  assert.ok(release, 'the upload runs and is held');
+  const hinted = sync.remoteChanged(7);
+  release();
+  await hinted;
+  assert.equal(pulls, 2, 'the hint is not lost: one load after the upload');
+  // A hint for the version the upload itself made needs no load.
+  registry.set('audio', 'master', 0.5);
+  release = null;
+  await timers.fire();
+  const own = sync.remoteChanged(version + 1);
+  release();
+  await own;
+  assert.equal(sync.state.version, version);
+  assert.equal(pulls, 2, 'the version this device now has');
+  sync.stop();
+});
+
 test('merge: campaign progress keeps every mission won on either device, on the harder difficulty', () => {
   const values = (progress) => normalizeValues({ extra: { campaignProgress: progress } }).values;
   const base = values({});

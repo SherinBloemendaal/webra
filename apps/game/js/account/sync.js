@@ -209,6 +209,8 @@ export class SettingsSync {
     this.timer = null;
     this.running = null;
     this.again = false;
+    /** A pull asked for while a step ran (a realtime hint, flush): `{ version }` (undefined: not known), else null. */
+    this.againPull = null;
     this.unsubscribe = null;
     this.status = 'idle';
     this.onOnline = () => {
@@ -244,7 +246,7 @@ export class SettingsSync {
       this.schedule();
     });
     this.win?.addEventListener?.('online', this.onOnline);
-    await this.run(() => this.pull());
+    await this.run(() => this.pull(), { pull: true });
   }
 
   /** Stop syncing (sign-out: `forget` drops the state, so the next account starts clean). */
@@ -270,11 +272,11 @@ export class SettingsSync {
     }, ms);
   }
 
-  /** Upload now (leaving the page, a manual "sync now"). */
-  flush() {
+  /** Upload now (leaving the page, a manual "sync now"), or load the account's document when nothing is to upload. `version`: the account's version when known (remoteChanged). */
+  flush(version) {
     if (this.timer) this.timers.clearTimeout(this.timer);
     this.timer = null;
-    return this.run(() => (this.state?.dirty ? this.push() : this.pull()));
+    return this.run(() => (this.state?.dirty ? this.push() : this.pull()), { pull: true, version });
   }
 
   /**
@@ -285,13 +287,19 @@ export class SettingsSync {
    */
   remoteChanged(version) {
     if (!this.state || (version !== undefined && version === this.state.version)) return Promise.resolve();
-    return this.flush();
+    return this.flush(version);
   }
 
-  /** One sync step at a time; a step asked for meanwhile runs after it. */
-  async run(step) {
+  /**
+   * One sync step at a time; a step asked for meanwhile runs after it: an
+   * upload when this device has changes, else a pull when one was asked for
+   * (`pull`, with the account's `version` when known: a version the running
+   * step already brought needs none).
+   */
+  async run(step, { pull = false, version } = {}) {
     if (this.running) {
       this.again = true;
+      if (pull) this.againPull = this.againPull && this.againPull.version !== version ? { version: undefined } : { version };
       return this.running;
     }
     this.running = (async () => {
@@ -299,7 +307,10 @@ export class SettingsSync {
         await step();
         while (this.again && this.state) {
           this.again = false;
+          const wanted = this.againPull;
+          this.againPull = null;
           if (this.state.dirty) await this.push();
+          else if (wanted && (wanted.version === undefined || wanted.version !== this.state.version)) await this.pull();
         }
       } finally {
         this.running = null;
