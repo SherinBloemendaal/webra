@@ -1800,7 +1800,6 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     observer?.repaintIcons();
   }));
   // Weather on screen (js/weather-fx.js): particles, sky tint, lightning and thunder.
-  const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const weather = new WeatherFx({ reducedMotion: motionIsReduced(), lowQuality: !!settings.get('lowQuality'), onThunder: (strike) => audio?.thunder(strike) });
   weather.update(sky, simClock.seconds);
   // Reduce motion (the setting, and the browser's for 'auto') and Low quality apply at once.
@@ -2006,7 +2005,8 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     colorOf: (owner) => cssColor(TEAM_COLORS[owner]),
     nameOf: (owner) => players[owner]?.name ?? (owner === player && !viewer ? 'You' : `Player ${owner + 1}`),
     line: (text) => chatLog.system(text),
-    reduced: () => motionReduced(settings.get('reduceMotion'), reducedMotion),
+    // Read each time: the setting and the browser's preference both change during a game.
+    reduced: motionIsReduced,
     onLost: (owner) => lost.add(owner),
   }));
   // Chat and system lines (js/chatlog.js) and the chat panel (js/chatpanel.js)

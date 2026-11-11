@@ -358,3 +358,14 @@ test('the browser\'s reduced motion is followed while the game runs, until the w
   assert.doesNotThrow(() => new WeatherFx().watchReducedMotion({})());
   assert.doesNotThrow(() => new WeatherFx().watchReducedMotion({ matchMedia() { throw new Error('no'); } })());
 });
+
+test('main.js: battle effects follow "Reduce motion" live, like the weather (no media query read once per game)', () => {
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const at = main.indexOf('new BattleFx({');
+  assert.ok(at > 0);
+  const options = main.slice(at, main.indexOf('}));', at));
+  assert.match(options, /reduced: motionIsReduced,/);
+  assert.doesNotMatch(main, /const reducedMotion = /, 'no snapshot of the browser preference');
+  // motionIsReduced asks the setting and the browser each time.
+  assert.match(main, /function motionIsReduced\(\) \{\n {2}return motionReduced\(settings\.get\('reduceMotion'\), !!window\.matchMedia\?\.\('\(prefers-reduced-motion: reduce\)'\)\.matches\);/);
+});
