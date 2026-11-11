@@ -516,7 +516,8 @@ export class Input {
   /** Target a ready support power: click the map, or drag to set the flight direction. */
   startPowerTargeting(power) {
     if (this.ordersOff()) return;
-    this.placing = null;
+    // Through cancelPlacing, so the sidebar and the touch controls leave placement too.
+    this.cancelPlacing();
     this.attackMove = false;
     this.setMode(null);
     // Superweapons have their own targeting (abilities: Chronosphere source then
