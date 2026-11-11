@@ -810,3 +810,42 @@ test('a player who drops before reporting a hash lets the others be compared: th
   assert.deepEqual(guest.last('desync'), { t: 'desync', tick: 25 });
   assertValid(host);
 });
+
+test('a member catching up gets who left and the chat of the catch-up after sync, in order with the frames', async () => {
+  const { s, host, guest, gw, hSeat, gSeat, watchers } = await started({ spectators: 1 });
+  const H = { ws: host, seat: hSeat };
+  const G = { ws: guest, seat: gSeat };
+  await play(s, [H, G], 0, 10);
+  await s.drop(guest);
+  // The order log is read slowly (a long game): other events run while it streams.
+  const log = s.session.log;
+  const chunks = log.chunks.bind(log);
+  let release;
+  let reading;
+  const reached = new Promise((r) => (reading = r));
+  log.chunks = async function* slow() {
+    yield* chunks();
+    reading();
+    await new Promise((r) => (release = r));
+  };
+  const back = s.connect('guest2');
+  const rejoining = s.send(back, hello(s, 'Guest', { rejoin: { client: gw.you, key: gw.key } }));
+  await reached;
+  await play(s, [H], 10, 12);
+  await s.send(host, { t: 'chat', text: 'welcome back' });
+  await s.send(watchers[0].ws, { t: 'leave' });
+  await play(s, [H], 12, 13);
+  release();
+  await rejoining;
+  const types = back.inbox.map((m) => m.t).filter((t) => ['sync', 'frame', 'chat', 'left'].includes(t));
+  assert.equal(types[0], 'sync', 'news comes after sync');
+  assert.deepEqual(types.filter((t) => t !== 'frame'), ['sync', 'chat', 'left']);
+  const at = (t) => back.inbox.findIndex((m) => m.t === t);
+  const frames = back.inbox.filter((m) => m.t === 'frame').map((m) => m.tick);
+  assert.deepEqual(frames, [13, 14, 15]);
+  assert.ok(back.inbox.findIndex((m) => m.t === 'frame' && m.tick === 14) < at('chat'), 'in the order it happened');
+  assert.ok(at('left') < back.inbox.findIndex((m) => m.t === 'frame' && m.tick === 15));
+  assert.equal(back.last('left').name, 'Watcher 0');
+  assert.equal(back.last('chat').text, 'welcome back');
+  assertValid(back);
+});

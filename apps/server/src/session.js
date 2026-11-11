@@ -163,6 +163,14 @@ const CATCH_UP_BYTES_PER_SECOND = LOG_MAX_BYTES / 60;
 const CHAT_RATE = 1;
 const CHAT_BURST = 5;
 const CHAT_FLOOD_LIMIT = 20;
+/**
+ * News a socket catching up gets after `sync` (other news is sent again or
+ * goes out periodically: rematch and save state on `resume`, `waiting`,
+ * `netstat`), and at most how many of them are kept for it (a chat flood
+ * cannot grow the queue; who left or came back is never dropped).
+ */
+const SYNC_NEWS = new Set([S2C.LEFT, S2C.BACK, S2C.CHAT]);
+const SYNC_NEWS_MAX = 200;
 /** Order log frames per `log` message stay below the server message limit. */
 const LOG_MESSAGE_BUDGET = MAX_SERVER_MESSAGE_BYTES - 4 * 1024;
 /** Time a rejoining client gets to fast-forward, per tick of the game so far, and at most. */
@@ -242,7 +250,11 @@ export class Session extends DurableObject {
      * stream the half-built log nor take the missing relay for a lost game.
      */
     this.resumeBuilding = false;
-    /** Sockets catching up -> frames broadcast meanwhile (sent after the log). */
+    /**
+     * Sockets catching up -> { entries, news }: frames ({ tick, orders }) and
+     * room news ({ raw }: SYNC_NEWS) broadcast meanwhile, in order, sent
+     * after the log; `news` counts the news entries (at most SYNC_NEWS_MAX).
+     */
     this.syncing = new Map();
     this.syncBucket = new TokenBucket(SYNC_RATE, SYNC_BURST);
     this.catchUpBytes = new TokenBucket(CATCH_UP_BYTES_PER_SECOND, CATCH_UP_BYTES_BURST);
@@ -751,10 +763,12 @@ export class Session extends DurableObject {
    * running game. The log is streamed chunk by chunk (one in memory at a
    * time). Frames emitted meanwhile are queued for it (see broadcast) and
    * sent after `sync`; a frame both logged and queued arrives twice, which
-   * clients ignore. So it never misses a frame.
+   * clients ignore. So it never misses a frame. Who left or came back and
+   * chat lines (SYNC_NEWS) are queued the same way, in their order among
+   * the frames.
    */
   async catchUp(ws, client, role) {
-    this.syncing.set(ws, []);
+    this.syncing.set(ws, { entries: [], news: 0 });
     // Counted until the client confirms (see MAX_SYNCING, admitCatchUp);
     // unconfirmed spectators are closed by the alarm.
     this.catching.set(ws, { client, role, until: Date.now() + this.catchUpMs() });
@@ -783,16 +797,20 @@ export class Session extends DurableObject {
       await this.disconnect(ws, 'disconnected');
       return this.reject(ws, ERRORS.INTERNAL, 'Could not load the game. Try again.', true);
     }
-    const queued = this.syncing.get(ws);
+    const queued = this.syncing.get(ws)?.entries;
     this.syncing.delete(ws);
     if (!queued || !this.room || this.attachment(ws).gone) return;
     const pending = this.room.resumeStart;
     if (!this.lockstep && !pending) return;
     // A resumed save whose relay waits for every player: the log ends at the save point.
-    const tick = queued.length > 0 ? queued[0].tick : this.lockstep ? this.lockstep.next : pending.ticks;
+    const first = queued.find((e) => e.raw === undefined);
+    const tick = first ? first.tick : this.lockstep ? this.lockstep.next : pending.ticks;
     const agreed = this.lockstep ? this.lockstep.agreed : { tick: pending.ticks - 1, hash: pending.hash };
     this.send(ws, { t: S2C.SYNC, tick, check: agreed && agreed.tick < tick ? { ...agreed } : null });
-    for (const f of queued) this.send(ws, { t: S2C.FRAME, ...f });
+    for (const e of queued) {
+      if (e.raw !== undefined) this.sendRaw(ws, e.raw);
+      else this.send(ws, { t: S2C.FRAME, ...e });
+    }
   }
 
   /** A wrong password or key from `ip`: counted for its network. */
@@ -2198,8 +2216,12 @@ export class Session extends DurableObject {
       if (to && !to(att.client)) continue;
       const queue = this.syncing.get(ws);
       if (queue) {
-        // Catching up: frames follow the log, other news is not needed.
-        if (msg.t === S2C.FRAME) queue.push({ tick: msg.tick, orders: msg.orders });
+        // Catching up: frames and SYNC_NEWS follow the log in order; other news is not needed.
+        if (msg.t === S2C.FRAME) queue.entries.push({ tick: msg.tick, orders: msg.orders });
+        else if (SYNC_NEWS.has(msg.t) && (msg.t !== S2C.CHAT || queue.news < SYNC_NEWS_MAX)) {
+          queue.entries.push({ raw });
+          queue.news++;
+        }
         continue;
       }
       this.sendRaw(ws, raw);
