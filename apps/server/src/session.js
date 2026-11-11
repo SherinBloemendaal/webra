@@ -2139,7 +2139,15 @@ export class Session extends DurableObject {
 
   /** Send to every member (or those `to(client)` accepts). */
   broadcast(msg, to = null) {
-    const raw = encodeServer(msg);
+    let raw;
+    try {
+      raw = encodeServer(msg);
+    } catch (err) {
+      // A message the protocol refuses is a server bug: it must not abort the
+      // handler that sends it after the state was already saved.
+      logError(`broadcast of ${msg.t} failed`, err);
+      return;
+    }
     for (const ws of this.ctx.getWebSockets()) {
       const att = this.attachment(ws);
       if (att.client === null || att.gone) continue;

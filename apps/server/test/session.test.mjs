@@ -739,3 +739,25 @@ test('game_presence follows members: a freed slot and a departing spectator lose
   await s.session.syncDirectory(false, later + 1000);
   assert.equal(DB.writes, writes, 'at most once an hour');
 });
+
+test('a broadcast the protocol refuses is logged and never aborts the handler that saved the change', async (t) => {
+  const s = await makeSession();
+  const host = s.connect('host');
+  await s.send(host, hello(s, 'Host', { hostKey: s.hostKey }));
+  const guest = s.connect('guest');
+  await s.send(guest, hello(s, 'Guest'));
+  const gw = guest.take('welcome')[0];
+  const logged = t.mock.method(console, 'error', () => {});
+  // A lobby view the protocol would refuse (a server bug, like a map name too long after NFC).
+  const view = s.session.room.lobbyView.bind(s.session.room);
+  s.session.room.lobbyView = () => ({ ...view(), map: { name: 'क़'.repeat(40) } });
+  const before = guest.inbox.length;
+  await s.send(guest, { t: 'ready', ready: true, mapHash: null });
+  assert.equal(guest.last('error'), undefined, 'no internal error for the sender');
+  assert.equal(guest.inbox.length, before, 'nothing invalid was sent');
+  assert.ok(logged.mock.calls.some((c) => /broadcast of lobby failed/.test(String(c.arguments[0]))));
+  assert.equal(s.session.room.slots[s.session.room.slotOf(gw.you)].ready, true, 'the change itself was kept');
+  // Chat still flows.
+  await s.send(guest, { t: 'chat', text: 'still here' });
+  assert.equal(host.last('chat').text, 'still here');
+});
