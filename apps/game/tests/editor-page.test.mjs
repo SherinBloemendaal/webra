@@ -100,3 +100,15 @@ test('Esc in a text field or an open list leaves the field, not the selection, r
   assert.ok(at('if (isTyping(e) || controlOwnsKeys(e)) return;') < at('ctl.setRegion(null);'));
   assert.ok(at('if (isTyping(e) || controlOwnsKeys(e)) return;') < at("setTool('region')"));
 });
+
+test('publish sends one request at a time, and a file that cannot be read says so', () => {
+  const src = read('editor/editor.js');
+  const pub = src.slice(src.indexOf('async function publish()'), src.indexOf('async function browse()'));
+  assert.match(pub, /^async function publish\(\) \{\n {2}if \(publishing\) return;/, 'a second press returns at once');
+  assert.ok(pub.indexOf('setPublishing(true)') < pub.indexOf('await publishMap('), 'set before the request');
+  assert.match(pub, /finally \{\n {4}setPublishing\(false\);/, 'cleared however the request ends');
+  assert.match(src, /querySelectorAll\('\[data-cmd="publish"\], \[data-publish\]'\)\.forEach\(\(b\) => \(b\.disabled = on\)\)/, 'both Publish buttons are disabled meanwhile');
+  assert.match(src, /'data-publish': ''/);
+  const open = src.slice(src.indexOf('function openFile(file)'));
+  assert.match(open.slice(0, open.indexOf('\n}\n')), /\(err\) => toast\(`Could not read \$\{file\.name\}/);
+});

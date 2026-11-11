@@ -1583,14 +1583,22 @@ function buildOnlinePane() {
   pane.append(
     el('h2', {}, 'Publish'),
     el('p', { class: 'hint' }, 'Upload the map so others can play it. Published maps are public and identified by their hash. Only the map data is sent, never pictures or installed graphics.'),
-    el('button', { type: 'button', class: 'primary wide', onclick: () => publish() }, 'Publish map'),
+    el('button', { type: 'button', class: 'primary wide', 'data-publish': '', onclick: () => publish() }, 'Publish map'),
     el('div', { id: 'publish-result' }),
     el('h2', {}, ['Published maps ', el('button', { type: 'button', class: 'link', onclick: () => browse() }, 'Refresh')]),
     el('div', { id: 'browse' }, el('p', { class: 'hint' }, 'Press Refresh to list published maps.')),
   );
 }
 
+/** True while a publish request is on its way: a second press (the other button, the key) sends nothing. */
+let publishing = false;
+function setPublishing(on) {
+  publishing = on;
+  document.querySelectorAll('[data-cmd="publish"], [data-publish]').forEach((b) => (b.disabled = on));
+}
+
 async function publish() {
+  if (publishing) return;
   showTab('online');
   const out = $('#publish-result');
   const { map, engine } = validateNow();
@@ -1601,6 +1609,7 @@ async function publish() {
   }
   if (engine.modded && !confirm(`${MODDED_WARNING}\n\nPublish this MODDED map anyway?`)) return;
   out.replaceChildren(el('p', { class: 'hint' }, 'Publishing...'));
+  setPublishing(true);
   try {
     const version = doc.version;
     const { id, hash, localHash } = await publishMap(map);
@@ -1615,6 +1624,8 @@ async function publish() {
     );
   } catch (err) {
     out.replaceChildren(el('p', { class: 'error' }, err instanceof ApiError ? err.message : `Publishing failed: ${err.message}`));
+  } finally {
+    setPublishing(false);
   }
 }
 
@@ -1719,7 +1730,7 @@ function openFile(file) {
       return;
     }
     if (loadMap(map, `Open ${file.name}`, `Opened ${file.name}.`)) markSaved();
-  });
+  }, (err) => toast(`Could not read ${file.name}: ${err?.message ?? err}`, true));
 }
 
 /**
