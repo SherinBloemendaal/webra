@@ -400,7 +400,7 @@ function drawFrame(now) {
   const scene = ctl.scene();
   const actors = state.layers.actors ? preview.sprites(view.viewRect()) : new Float32Array(0);
   view.draw(animClock.uniform(), actors, scene);
-  showTilesBusy(now);
+  showBusy(now);
   placeLabels(state.layers.spawns ? scene.labels : []);
   if (now - minimapTime > 66) {
     minimapTime = now;
@@ -461,7 +461,8 @@ function previewHints() {
 }
 
 /**
- * The busy line over the map (#busy): shown while the worker plans the
+ * The busy line over the map (#busy): shown while an .oramap file is
+ * imported (`importing`, its name), and while the worker plans the
  * installed tiles of most of the map (a map opened, resized or turned to
  * another biome; js/tiles.js standIn), after BUSY_DELAY_MS so a quick plan
  * shows nothing. The editor stays usable meanwhile (the map shows stand-in
@@ -470,15 +471,17 @@ function previewHints() {
 const BUSY_DELAY_MS = 300;
 const BUSY_TEXT = 'Laying the terrain tiles...';
 let busySince = null;
-function showTilesBusy(now) {
+let importing = null;
+function showBusy(now = performance.now()) {
   const busy = !!installedTiles?.busy && installedTiles.standIn;
   busySince = busy ? (busySince ?? now) : null;
-  const show = busy && now - busySince >= BUSY_DELAY_MS;
+  const text = importing !== null ? `Importing ${importing}...` : busy && now - busySince >= BUSY_DELAY_MS ? BUSY_TEXT : '';
   const el = $('#busy');
-  if (!el || el.hidden === !show) return;
-  el.hidden = !show;
+  const line = el?.querySelector('.busy-text');
+  if (!line || (el.hidden === !text && line.textContent === text)) return;
+  el.hidden = !text;
   // The polite status line says it once it shows (a change of visibility alone is not announced).
-  el.querySelector('.busy-text').textContent = show ? BUSY_TEXT : '';
+  line.textContent = text;
 }
 
 /** The original theater files of the biome for the tile worker, read once per art change. */
@@ -1732,6 +1735,9 @@ async function importOramapFile(file) {
     return;
   }
   let result;
+  // The checks of a large modded map take a while: the busy line says an import runs.
+  importing = file.name;
+  showBusy();
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     result = await importOramap(bytes, {
@@ -1742,6 +1748,9 @@ async function importOramapFile(file) {
   } catch (err) {
     showImportReport(err?.report ?? null, null, `Could not import ${file.name}: ${err?.message ?? err}`);
     return;
+  } finally {
+    importing = null;
+    showBusy();
   }
   showImportReport(result.report, result.map, null);
 }
