@@ -228,7 +228,7 @@ async function login(ctx) {
   if (typeof body.login !== 'string' || body.login.trim() === '' || body.login.length > 300) throw invalid('login', 'Enter your username or email.');
   const password = check(() => loginPassword(body.password));
   await ctx.burst('login', LIMITS.loginBurst);
-  await ctx.assertNotLocked('login-fail-ip', ctx.ip, ...LIMITS.loginFailIp);
+  await ctx.assertNotLocked('login-fail-ip', ctx.network, ...LIMITS.loginFailIp);
   // Resolve the account first: username and email share one failure budget.
   const name = body.login.trim();
   let row = null;
@@ -247,7 +247,7 @@ async function login(ctx) {
   const ok = row ? await verifyAccountPassword(password, row, ctx.env) : await dummyVerify(password, ctx.env);
   if (!ok) {
     await ctx.countFailure('login-fail', subject, LIMITS.loginFail[1]);
-    await ctx.countFailure('login-fail-ip', ctx.ip, LIMITS.loginFailIp[1]);
+    await ctx.countFailure('login-fail-ip', ctx.network, LIMITS.loginFailIp[1]);
     if (row) {
       const recent = row.login_failed_at !== null && row.login_failed_at > ctx.now - ACCOUNT_DELAY.resetMs;
       const failures = (recent ? row.login_failures : 0) + 1;
@@ -289,8 +289,10 @@ async function forgot(ctx) {
   const body = await ctx.body(['email']);
   await ctx.assertIpAllowed();
   await requireEmailLinks(ctx);
+  // A reset link only sets a password: none is mailed while password sign-in is off (`reset` would refuse it).
+  if (!(await ctx.eff()).login.password) throw methodDisabled('a password');
   const email = check(() => validEmail(body.email));
-  await ctx.limit('forgot-ip', ctx.ip, ...LIMITS.forgotIp);
+  await ctx.limit('forgot-ip', ctx.network, ...LIMITS.forgotIp);
   await ctx.limit('forgot-email', mailboxKey(email), ...LIMITS.forgotEmail);
   // Looked up and mailed after the answer: neither the answer nor its timing tells whether the address has an account.
   ctx.background('reset mail failed', async () => {

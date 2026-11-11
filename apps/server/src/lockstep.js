@@ -240,8 +240,9 @@ export class Lockstep {
    * Take a player out of the game (its connection was lost, or it stalled).
    * Returns the frames that became complete, `record`, the player's stall
    * budget to hand back to `rejoin` (null when it was not active), and
-   * `desync`: the hash comparison of a tick that only waited for this player
-   * (see `hash`; null when there is nothing to tell).
+   * `desync`: the hash comparison of the ticks that only waited for this player
+   * (see `hash`; the earliest such tick with every player to notify, null when
+   * there is nothing to tell).
    */
   suspend(player, now = Date.now()) {
     if (!this.active.has(player)) return { frames: [], record: null, desync: null };
@@ -261,11 +262,15 @@ export class Lockstep {
     for (const byPlayer of this.pending.values()) byPlayer.delete(player);
     for (const byTick of this.hashes.values()) byTick.delete(player);
     // Ticks that waited only for this player's hash are complete now: compare them.
+    // Several ticks can settle at once: one verdict names the earliest tick and everyone who diverged on any of them.
     let desync = null;
     for (const tick of [...this.hashes.keys()].sort((a, b) => a - b)) {
       const result = this.settle(tick);
-      desync ??= result;
+      if (!result) continue;
+      if (!desync) desync = { tick: result.tick, players: [...result.players] };
+      else for (const p of result.players) if (!desync.players.includes(p)) desync.players.push(p);
     }
+    desync?.players.sort((a, b) => a - b);
     // The last seat still loading left: the others begin.
     if (this.loading.delete(player) && this.loading.size === 0) this.begin(now);
     const frames = this.flush(now);

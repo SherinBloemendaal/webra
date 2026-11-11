@@ -399,6 +399,12 @@ test('password reset: closed while password sign-in is off, the link survives', 
   assert.equal(off.status, 403);
   assert.equal(off.body.error.code, 'method_disabled');
   assert.equal((await other.get('/api/auth/me')).body.user, null, 'no session through a switched-off method');
+  // No new link is mailed either: it could only be refused.
+  const mails = env.EMAIL.sent.length;
+  const closed = await other.post('/api/auth/password/forgot', { email: 'volkov@example.com' });
+  assert.equal(closed.status, 403);
+  assert.equal(closed.body.error.code, 'method_disabled');
+  assert.equal(env.EMAIL.sent.length, mails);
   // Email links being off does not matter (admin-made links work without email sending).
   await setSite(env, { login: { password: true, email: false } });
   const ok = await other.post('/api/auth/password/reset', { token, password: 'a brand new passphrase' });
