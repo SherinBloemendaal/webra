@@ -843,7 +843,9 @@ impl World {
         let a = &self.actors[i];
         let moving = a.x != a.px || a.y != a.py;
         let harvester = self.rules.actors[a.ty as usize].unit.as_ref().is_some_and(|u| u.harvester.is_some());
-        if harvester {
+        // The harvest states only show while the truck is on its harvest
+        // run; another order keeps `harv` until the truck resumes it.
+        if harvester && a.activity == Activity::Harvest {
             return match a.harv {
                 crate::world::HarvState::Unloading => Pose::Dock,
                 crate::world::HarvState::Harvesting if !moving => Pose::Harvest,

@@ -281,3 +281,19 @@ fn the_repair_box_and_the_repair_key_send_ore_trucks_to_the_depot() {
         }
     }
 }
+
+#[test]
+fn an_ore_truck_ordered_away_while_unloading_leaves_the_dock() {
+    for model in MovementModel::ALL {
+        let mut b = base(model);
+        let h = harv(&mut b, 20, 26);
+        get_to(&mut b, h, Doing::Unloading);
+        assert_eq!(b.w.fx_unit_pose(h).map(|p| p.0), Some(crate::render::Pose::Dock), "{model:?}: docked");
+        let ids = vec![b.w.make_ref(h)];
+        b.w.queue_order(Order::Move { player: 0, ids, x: cell_center(40), y: cell_center(40), attack_move: false });
+        b.w.step();
+        assert_ne!(b.w.actors[h].harv, HarvState::Unloading, "{model:?}: the unload ends");
+        assert_eq!(b.w.actors[b.proc_].dock_user, NONE, "{model:?}: the dock is free");
+        assert_ne!(b.w.fx_unit_pose(h).map(|p| p.0), Some(crate::render::Pose::Dock), "{model:?}: no dock pose");
+    }
+}

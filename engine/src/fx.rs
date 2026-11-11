@@ -545,7 +545,8 @@ impl World {
             return age_of(a.fx.ended, self.tick).filter(|&g| g < ACTIVE_ONCE_LIFE).map(|g| (Pose::ActiveEnd, g));
         }
         if info.docking {
-            if a.harv == crate::world::HarvState::Unloading {
+            // Only while on the harvest run: another order ends the unload.
+            if a.harv == crate::world::HarvState::Unloading && a.activity == crate::world::Activity::Harvest {
                 return age_of(a.fx.active, self.tick).map(|g| (Pose::Dock, g));
             }
             let still = a.x == a.px && a.y == a.py;
