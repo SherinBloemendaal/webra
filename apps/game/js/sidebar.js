@@ -105,9 +105,6 @@ export class Sidebar {
     this.playerId = playerId;
     this.callbacks = callbacks;
     this.ticksPerSecond = options.ticksPerSecond || 25;
-    // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game is paused (setPaused).
-    this.now = options.now ?? (() => Date.now());
-    this.clockStart = this.now();
     this.paused = false;
     this.hotkeys = options.hotkeys ?? null;
     this.teamRgb = TEAM_COLORS[playerId % TEAM_COLORS.length];
@@ -137,6 +134,8 @@ export class Sidebar {
     this.creditsLast = 0;
     // The clock of animation frames (requestAnimationFrame times); tests pass their own.
     this.now = options.now ?? (() => performance.now());
+    // OpenRA GameTimerLogic: "Paused" blinks in the clock while the game is paused (setPaused), on the same clock.
+    this.clockStart = this.now();
     this.creditsRest = 0;
     /** What dispose() takes down: listeners on the root (it outlives the game), subscriptions, watchers. */
     this.offs = [];

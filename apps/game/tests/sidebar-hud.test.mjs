@@ -182,3 +182,31 @@ test('cameo tooltips: the quick tip of the item while the Quick tips setting is 
     uninstallDom();
   }
 });
+
+test('the clock blinks "Paused" on one clock: the time shows every other second while paused', () => {
+  const realDate = Date.now;
+  const realPerf = globalThis.performance;
+  let perf = 5000;
+  Date.now = () => 1.7e12;
+  Object.defineProperty(globalThis, 'performance', { value: { now: () => perf }, configurable: true, writable: true });
+  try {
+    const { root, sidebar } = make();
+    sidebar.update(state({ tick: 25 * 65 }));
+    sidebar.setPaused(true);
+    const clock = root.querySelector('.sb-clock-text');
+    assert.equal(clock.textContent, 'Paused');
+    perf += 1000;
+    sidebar.updateClock();
+    assert.equal(clock.textContent, '01:05', 'the time in the off second');
+    perf += 1000;
+    sidebar.updateClock();
+    assert.equal(clock.textContent, 'Paused');
+    sidebar.setPaused(false);
+    assert.equal(clock.textContent, '01:05');
+    sidebar.dispose();
+  } finally {
+    Date.now = realDate;
+    Object.defineProperty(globalThis, 'performance', { value: realPerf, configurable: true, writable: true });
+    uninstallDom();
+  }
+});
