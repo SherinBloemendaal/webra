@@ -269,10 +269,21 @@ export class Input {
     return cameraBounds(this.canvas.clientWidth / this.camera.zoom, this.canvas.clientHeight / this.camera.zoom, this.mapPx.w, this.mapPx.h);
   }
 
-  clampCamera() {
+  /** Keep the camera within the map; `pan`: the middle button pan moved it (see rebasePan). */
+  clampCamera({ pan = false } = {}) {
     const b = this.bounds();
     this.camera.x = Math.min(Math.max(this.camera.x, b.minX), b.maxX);
     this.camera.y = Math.min(Math.max(this.camera.y, b.minY), b.maxY);
+    if (!pan) this.rebasePan();
+  }
+
+  /**
+   * The camera moved by something else than a middle button pan under way
+   * (the wheel, zoom and scroll keys, a bookmark, a jump): the pan goes on
+   * from here, so its next move does not undo that and jump the view.
+   */
+  rebasePan() {
+    if (this.pan) this.pan = { x: this.mouse.x, y: this.mouse.y, cx: this.camera.x, cy: this.camera.y };
   }
 
   /** Zoom to `zoom` (within the game scale's limits), keeping the view centre in place. */
@@ -1063,7 +1074,7 @@ export class Input {
     if (this.pan) {
       this.camera.x = this.pan.cx - (p.x - this.pan.x) / this.camera.zoom;
       this.camera.y = this.pan.cy - (p.y - this.pan.y) / this.camera.zoom;
-      this.clampCamera();
+      this.clampCamera({ pan: true });
     }
     if (this.drag) {
       this.drag.ex = p.x;
@@ -1558,6 +1569,7 @@ export class Input {
     const b = this.bounds();
     if (dx) this.camera.x = dx < 0 ? b.minX : b.maxX;
     if (dy) this.camera.y = dy < 0 ? b.minY : b.maxY;
+    this.rebasePan();
   }
 
   /** Game menu open or closed: input stops and held keys are released. */

@@ -195,3 +195,31 @@ test('a missed modifier keyup: the next mouse event says the key is up, and the 
   input.onMouseMove(touchFake(100, 100));
   assert.deepEqual(input.heldMods(), { ctrl: true, alt: true, shift: false });
 });
+
+test('the wheel, zoom keys and jumps during a middle button pan: the pan goes on from the new view, no jump', async () => {
+  const { input, key } = await makeInput();
+  const wheel = (x, y, deltaY) => input.onWheel({ clientX: x, clientY: y, deltaY, preventDefault() {} });
+  input.onMouseMove(mouse('mousemove', 400, 300));
+  input.onMouseDown(mouse('mousedown', 400, 300, { button: 1, buttons: 4 }));
+  wheel(400, 300, -200);
+  const zoomedAt = input.toWorld(400, 300);
+  // One pixel to the right: the world point under the cursor moves by one pixel's worth, not by the whole zoom step.
+  input.onMouseMove(mouse('mousemove', 401, 300, { buttons: 4 }));
+  const after = input.toWorld(401, 300);
+  assert.ok(Math.abs(after.x - zoomedAt.x) < 1 && Math.abs(after.y - zoomedAt.y) < 1, `${JSON.stringify(zoomedAt)} -> ${JSON.stringify(after)}`);
+  // The zoom key, then a move: the view stays where the key put it, plus the move.
+  const zoom = input.camera.zoom;
+  key('BracketRight', ']');
+  assert.ok(input.camera.zoom > zoom, 'zoomed in');
+  const camera = { x: input.camera.x, y: input.camera.y };
+  input.onMouseMove(mouse('mousemove', 401, 300, { buttons: 4 }));
+  assert.deepEqual({ x: input.camera.x, y: input.camera.y }, camera);
+  // A jump to the map's left edge sticks too.
+  input.jumpToEdge(-1, 0);
+  const edge = input.camera.x;
+  input.onMouseMove(mouse('mousemove', 401, 300, { buttons: 4 }));
+  assert.equal(input.camera.x, edge);
+  // The pan itself still drags the view.
+  input.onMouseMove(mouse('mousemove', 381, 300, { buttons: 4 }));
+  assert.ok(input.camera.x > edge);
+});
