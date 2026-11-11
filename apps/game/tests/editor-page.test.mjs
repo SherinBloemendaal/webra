@@ -112,3 +112,12 @@ test('publish sends one request at a time, and a file that cannot be read says s
   const open = src.slice(src.indexOf('function openFile(file)'));
   assert.match(open.slice(0, open.indexOf('\n}\n')), /\(err\) => toast\(`Could not read \$\{file\.name\}/);
 });
+
+test('the status bar is a read-out, not a live region; the toast, the draft state and the busy line are', () => {
+  const tag = (id) => HTML.match(new RegExp(`<[a-z]+ id="${id}"[^>]*>`))?.[0] ?? '';
+  assert.ok(tag('status'), '#status exists');
+  assert.doesNotMatch(tag('status'), /role=|aria-live/, 'it changes with every cell the pointer crosses');
+  assert.match(tag('toast'), /role="status"/);
+  assert.match(tag('save-state'), /role="status"/);
+  assert.match(HTML, /class="busy-text" role="status"/);
+});

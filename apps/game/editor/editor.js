@@ -554,7 +554,7 @@ function onDocChange(change, { initial = false } = {}) {
     return;
   }
   validationTask.soon();
-  $('#save-state').textContent = 'Unsaved draft...';
+  setSaveState('Unsaved draft...');
   autosaveTask.soon();
 }
 
@@ -579,7 +579,13 @@ function autosave() {
   autosaveTask.cancel();
   // JSON.stringify({ savedAt, map }), with the map's text made once per change.
   const ok = store.set(DRAFT_KEY, draftText({ savedAt: Date.now(), edited: isEdited(), origin: doc.origin, json: doc.snapshot().json }));
-  $('#save-state').textContent = ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)';
+  setSaveState(ok ? 'Draft saved in this browser' : 'Draft not saved (browser storage unavailable)');
+}
+
+/** The draft's state in the top bar, a polite status: written only when it says something new (not once per edit). */
+function setSaveState(text) {
+  const out = $('#save-state');
+  if (out.textContent !== text) out.textContent = text;
 }
 
 // ---- Recovery copies ------------------------------------------------------------------------
