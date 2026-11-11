@@ -722,6 +722,27 @@ fn a_chronoshifted_tank_in_a_transport_returns_once_unloaded() {
 }
 
 #[test]
+fn teleport_and_lay_mines_orders_skip_passengers() {
+    let mut w = flat_world(["germany", "soviet"]);
+    let ct = unit(&mut w, "CTNK", 0, 20, 30);
+    let lst = passive(&mut w, "LST", 0, 22, 30);
+    assert!(w.load_passenger(lst, ct));
+    w.sound.set_enabled(true);
+    let ids = refs(&w, &[ct]);
+    w.queue_order(Order::Teleport { player: 0, ids, x: cell_center(30), y: cell_center(30) });
+    run(&mut w, 1);
+    assert_eq!(w.actors[ct].ab.chrono_charge, 0, "the charge is not spent");
+    assert!(teleported(&mut w).is_empty(), "no chronoshift from inside the transport");
+    let mnly = unit(&mut w, "MNLY", 0, 24, 30);
+    assert!(w.load_passenger(lst, mnly));
+    let ids = refs(&w, &[mnly]);
+    w.queue_order(Order::LayMines { player: 0, ids, x0: 30, y0: 34, x1: 32, y1: 34 });
+    run(&mut w, 1);
+    assert_ne!(w.actors[mnly].activity, Activity::Ability, "a passenger lays no mines");
+    assert!(w.actors[mnly].ab.minefield.is_empty());
+}
+
+#[test]
 fn germany_gets_the_advanced_chronoshift() {
     let mut w = flat_world(["germany", "soviet"]);
     superweapon(&mut w, 0, "PDOX", 8, 50, "ChronoshiftPower@advancedchronoshift");

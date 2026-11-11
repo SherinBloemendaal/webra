@@ -633,8 +633,14 @@ impl World {
     }
 
     fn owned_ability_units(&self, player: u8, ids: &[u32]) -> Vec<usize> {
-        let mut out: Vec<usize> =
-            ids.iter().filter_map(|&r| self.resolve(r)).filter(|&i| self.actors[i].owner == player && self.actors[i].is_unit()).collect();
+        // As `owned_units`: passengers and support power aircraft take no orders.
+        let mut out: Vec<usize> = ids
+            .iter()
+            .filter_map(|&r| self.resolve(r))
+            .filter(|&i| {
+                self.actors[i].owner == player && self.actors[i].is_unit() && self.actors[i].in_world() && !self.is_support_aircraft(i)
+            })
+            .collect();
         out.sort_unstable();
         out.dedup();
         out
