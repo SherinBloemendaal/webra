@@ -770,8 +770,10 @@ impl World {
     /// Units that are not pushed around by the crowd: dogs in the air and
     /// units walking into (or out of) their Enter target.
     pub(crate) fn passes_through(&self, i: usize) -> bool {
-        let s = &self.actors[i].inf;
-        s.leap.is_some() || s.enter.as_ref().is_some_and(|e| matches!(e.phase, EnterPhase::Entering | EnterPhase::Exiting))
+        let a = &self.actors[i];
+        a.inf.leap.is_some()
+            || (a.activity == Activity::Enter
+                && a.inf.enter.as_ref().is_some_and(|e| matches!(e.phase, EnterPhase::Entering | EnterPhase::Exiting)))
     }
 
     /// Whether unit `i` stands next to actor `t` (an adjacent cell).
