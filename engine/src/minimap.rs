@@ -14,6 +14,13 @@
 //! not see: enemy actors only when visible (not cloaked, not under gap
 //! generator shroud), remembered enemy structures as ghosts, and no blips at
 //! all while the radar is offline.
+//!
+//! Spectators and replays (OpenRA gives observers a radar that follows the
+//! observed view) ask for the observer and combined pseudo players
+//! (`observer::OBSERVER`, `combined::COMBINED`) through `Game::radar_state`
+//! and `Game::minimap_blips`: their radar is always online, and
+//! [`World::spectator_minimap_blips`] answers with the render flags of that
+//! view set, like the battlefield render.
 
 use crate::math::{dist_sq, CELL};
 use crate::rules::Kind;
@@ -97,16 +104,41 @@ impl World {
         if self.radar_state(player) != RadarState::Online {
             return;
         }
-        let jammers = self.enemy_jammers(player);
+        self.collect_blips(player, out);
+    }
+
+    /// The radar blips of a spectator view, which is always online. Called
+    /// with `render_all` set (the whole map: every structure and unit, no
+    /// fog, cloak or jammer filtering) or inside `with_combined_view` (what
+    /// any player sees: slot 0 then carries every player's vision, explored
+    /// cells and remembered structures), as `Game::minimap_blips` does.
+    pub(crate) fn spectator_minimap_blips(&self, out: &mut Vec<i32>) {
+        out.clear();
+        if self.players.is_empty() {
+            return;
+        }
+        debug_assert!(self.render_all || self.render_combined, "spectator blips outside a spectator view");
+        self.collect_blips(0, out);
+    }
+
+    /// The blips of [`World::minimap_blips`] for `player`, or of a spectator
+    /// view (render flags set, `player` 0): there every player's own actors
+    /// count as friendly and no radar jammer hides anything, since some
+    /// player always sees what a jammer hides from its enemies.
+    fn collect_blips(&self, player: u8, out: &mut Vec<i32>) {
+        let spectator = self.render_all || self.render_combined;
+        let jammers = if spectator { Vec::new() } else { self.enemy_jammers(player) };
         let owner_of = |owner: u8| if self.players[owner as usize].neutral { NEUTRAL_OWNER } else { owner as i32 };
+        // Own and allied actors always show; for a spectator every player's own actors.
+        let friendly = |owner: u8| if spectator { !self.players[owner as usize].neutral } else { self.are_allies(owner, player) };
         // Whether an actor of `owner` at (x, y) may be shown to `player`, apart from visibility.
-        let unjammed = |owner: u8, x: i32, y: i32| self.are_allies(owner, player) || !Self::jammed_at(&jammers, x, y);
+        let unjammed = |owner: u8, x: i32, y: i32| friendly(owner) || !Self::jammed_at(&jammers, x, y);
 
         for (i, a) in self.actors.iter().enumerate() {
             if !a.alive || a.kind != Kind::Building {
                 continue;
             }
-            if !self.are_allies(a.owner, player) && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
+            if !friendly(a.owner) && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
             if !unjammed(a.owner, a.x, a.y) {
@@ -127,10 +159,13 @@ impl World {
             }
             out.extend_from_slice(&[a.cx, a.cy, b.width, b.height, owner_of(a.owner)]);
         }
-        // Enemy structures last seen under fog (the same ghosts the battlefield draws).
-        for g in self.players[player as usize].ghosts.values() {
+        // Enemy structures last seen under fog (the same ghosts the battlefield
+        // draws; none in the whole map view, where every structure is live).
+        let ghosts = self.players[player as usize].ghosts.values().filter(|_| !self.render_all);
+        for g in ghosts {
             if let Some(i) = self.resolve(g.actor) {
-                if self.is_visible_to(i, player) && !self.is_cloaked_from(i, player) {
+                let live = friendly(self.actors[i].owner) || (self.is_visible_to(i, player) && !self.is_cloaked_from(i, player));
+                if live {
                     continue; // listed live above
                 }
             }
@@ -156,7 +191,7 @@ impl World {
             if !a.alive || a.kind == Kind::Building || a.kind == Kind::Mine || !a.in_world() {
                 continue;
             }
-            if !self.are_allies(a.owner, player) && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
+            if !friendly(a.owner) && (!self.is_visible_to(i, player) || self.is_cloaked_from(i, player)) {
                 continue;
             }
             // A disguised spy shows in its disguise's colour (OpenRA: the radar
