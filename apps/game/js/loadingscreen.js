@@ -33,6 +33,8 @@
 // status line and the bar a progressbar; an error is an alert and takes the
 // focus.
 
+import { holdPage } from './ui/modal.js';
+
 /** The least time the screen shows (the bar's fill animation, css/loading.css --loading-min). */
 export const LOADING_MIN_MS = 1600;
 /** The fade out after the first frame (css/loading.css --loading-fade). */
@@ -178,7 +180,8 @@ export class LoadingScreen {
     /** The element that had the focus before the screen took it (given back when the screen closes without a game). */
     this.before = null;
     /** The page's other parts made inert while the screen shows, with whether they were inert before. */
-    this.covered = [];
+    /** Gives the page back (js/ui/modal.js holdPage) while the screen covers it, else null. */
+    this.release = null;
     root.hidden = true;
     root.classList.add('loading-screen');
     root.setAttribute('role', 'dialog');
@@ -203,19 +206,24 @@ export class LoadingScreen {
     e.stopPropagation();
   }
 
-  /** The screen came up: everything else on the page goes inert (as it was before, once the screen goes). */
+  /**
+   * The screen came up: everything else on the page goes inert (as it was
+   * before, once the screen goes). Through js/ui/modal.js, so a dialog that
+   * holds the page already (Sound, Music) hands it to this screen and gets
+   * it back afterwards, instead of leaving this screen inert under it.
+   */
   cover() {
-    if (this.covered.length) return;
-    const parent = this.root.parentNode;
-    for (const node of parent?.children ?? []) {
-      if (node === this.root) continue;
-      this.covered.push([node, !!node.inert]);
-      node.inert = true;
-    }
+    this.release ??= holdPage(this.root);
   }
 
   uncover() {
-    for (const [node, was] of this.covered.splice(0)) node.inert = was;
+    this.release?.();
+    this.release = null;
+  }
+
+  /** Whether the page behind is held inert for this screen. */
+  get holding() {
+    return !!this.release;
   }
 
   /** Whether a start is on screen (loading, not failed). */
@@ -427,13 +435,6 @@ export class LoadingScreen {
 }
 
 /**
- * The loading screen's end for one game (js/main.js runGame): the first
- * drawn frame closes it (`drawn`), and a game that stops before that (the
- * simulation failed, its frame threw) shows the error with the way back to
- * the menu instead of a screen that loads forever. `closed` resolves when
- * the screen is gone after the first frame: the game starts then.
- */
-/**
  * A game that stopped after its first frame (an engine error, a crashed
  * simulation worker, a loop that keeps throwing): `screen` (a LoadingScreen)
  * says so over the frozen battlefield until the player goes back to the
@@ -443,6 +444,13 @@ export function showGameStopped(screen, message, back) {
   screen.fail(`The game stopped: ${message}`, { title: 'The game stopped', label: 'Back to the menu', run: back });
 }
 
+/**
+ * The loading screen's end for one game (js/main.js runGame): the first
+ * drawn frame closes it (`drawn`), and a game that stops before that (the
+ * simulation failed, its frame threw) shows the error with the way back to
+ * the menu instead of a screen that loads forever. `closed` resolves when
+ * the screen is gone after the first frame: the game starts then.
+ */
 export class FirstFrameGuard {
   /**
    * @param {{ screen: LoadingScreen, stop: () => void, back: () => void }} o

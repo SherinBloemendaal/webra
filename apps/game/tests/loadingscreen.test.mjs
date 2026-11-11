@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CLOSE_GRACE_MS, closeDuration, FirstFrameGuard, LOADING_FADE_MS, LOADING_MIN_MS, LoadingScreen, loadingPlan, showGameStopped, SPAN_STEPS, STEP_LABELS } from '../js/loadingscreen.js';
+import { holdPage } from '../js/ui/modal.js';
 import { Events } from '../js/sim/host.js';
 import { FakeEvent } from './dom-fixtures.mjs';
 import { PerfTrace } from '../js/perfcapture.js';
@@ -424,7 +425,7 @@ test('the close: the screen stays (modal) while its transition runs, then hides 
   assert.equal(root.hidden, false);
   assert.ok(root.classList.contains('is-closing'));
   assert.equal(root.getAttribute('aria-busy'), 'false');
-  assert.equal(screen.covered.length > 0, true, 'the page behind stays inert while it fades');
+  assert.equal(screen.holding, true, 'the page behind stays inert while it fades');
   assert.equal([...timers.due.values()][0].ms, 300 + CLOSE_GRACE_MS, 'a fallback timer for a tab that runs no transition');
   // A second first frame or done() changes nothing.
   assert.equal(guard.firstFrame(), guard.closed);
@@ -439,7 +440,7 @@ test('the close: the screen stays (modal) while its transition runs, then hides 
   root.dispatchEvent(new FakeEvent('transitionend'));
   assert.equal(root.hidden, true);
   assert.equal(root.classList.contains('is-closing'), false);
-  assert.equal(screen.covered.length, 0);
+  assert.equal(screen.holding, false);
   assert.equal(timers.due.size, 0, 'the fallback timer was cleared');
   await settle();
   assert.equal(closed, 1);
@@ -557,4 +558,27 @@ test('a failed screen never resolves closed: not on a later first frame, not aft
   await screen.done();
   assert.equal(root.hidden, true);
   uninstallDom();
+});
+
+test('a notice shown while a dialog holds the page can be used: the screen takes the page over and hands it back', () => {
+  const { doc, root, screen, start } = setup();
+  try {
+    // The Sound dialog is open (js/ui/modal.js): everything beside it is inert, the loading screen too.
+    const dialog = doc.createElement('div');
+    doc.body.append(dialog);
+    const closeDialog = holdPage(dialog);
+    assert.deepEqual([!!start.inert, !!root.inert, !!dialog.inert], [true, true, false]);
+    // The game stops: the notice is the one thing that can be used now.
+    showGameStopped(screen, 'engine error', () => {});
+    assert.deepEqual([!!start.inert, !!root.inert, !!dialog.inert], [true, false, true]);
+    assert.equal(screen.holding, true);
+    // Closed again (Save first on the graphics notice): the dialog has the page back.
+    screen.close();
+    assert.equal(screen.holding, false);
+    assert.deepEqual([!!start.inert, !!root.inert, !!dialog.inert], [true, true, false]);
+    closeDialog();
+    assert.deepEqual([!!start.inert, !!root.inert, !!dialog.inert], [false, false, false]);
+  } finally {
+    uninstallDom();
+  }
 });

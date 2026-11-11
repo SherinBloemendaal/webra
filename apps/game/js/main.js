@@ -2321,13 +2321,13 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
   // accepts, and the page reloads into the session's lobby, rejoining with
   // its stored key (the lobby screen is built for a fresh page).
   const rematch = online?.rematch ?? null;
-  if (rematch) {
-    rematch.onLobby = async () => {
-      leaving = true;
-      await beforeLeaving();
-      location.reload();
-    };
-  }
+  /** Reload without leaving the online session: the fresh page rejoins it with its stored key. */
+  const reloadIntoSession = async () => {
+    leaving = true;
+    await beforeLeaving();
+    location.reload();
+  };
+  if (rematch) rematch.onLobby = reloadIntoSession;
   /** Whether the end of game screens offer the restart button now. */
   const canRestart = () => (rematch ? ['propose', 'accept'].includes(rematch.action()) : !!restartGame);
   const restartLabel = () => (rematch ? rematch.label() : replay ? 'Restart replay' : mission ? 'Restart mission' : 'Play again');
@@ -2643,7 +2643,9 @@ function runGame(host, { stress, tickMs, player = PLAYER, online = null, replay 
     loader.fail(canSaveLocally ? `${graphicsLost} The game is paused: save it from the game menu first to go on with it after the reload.` : graphicsLost, {
       title: 'Graphics device lost',
       label: 'Reload',
-      run: leave,
+      // An online game goes on without this page: a plain reload rejoins it with the stored key
+      // (like the rematch), where leaving would give the seat up.
+      run: online && !replay ? reloadIntoSession : leave,
       other: canSaveLocally ? { label: 'Save first', run: () => loader.close() } : null,
     });
   };
