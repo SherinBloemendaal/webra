@@ -716,16 +716,6 @@
   font: 700 11px/1 var(--ui-font-mono);
 }
 
-#menu .lobby-ai-name {
-  display: grid;
-  line-height: 1.15;
-}
-
-#menu .lobby-ai-name small {
-  color: var(--l-muted);
-  font-size: 11px;
-}
-
 /* Closed slots: nobody plays there, so their settings fade out. */
 /* Team and handicap share a column (OpenRA's lobby). */
 #menu .lobby-cell-team {
