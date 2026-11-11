@@ -433,6 +433,20 @@ fn tanks_stop_shooting_a_structure_their_side_captured() {
 }
 
 #[test]
+fn a_captured_primary_factory_loses_its_primary_mark() {
+    let mut w = flat_world();
+    let own = building(&mut w, "WEAP", 0, 10, 10);
+    let theirs = building(&mut w, "WEAP", 1, 30, 30);
+    assert!(w.toggle_primary(own));
+    assert!(w.toggle_primary(theirs));
+    w.capture(theirs, 0, None);
+    w.refresh_tokens();
+    assert!(!w.actors[theirs].primary, "the old owner's mark goes");
+    assert!(w.actors[own].primary);
+    assert_eq!(w.most_likely_producer(0, crate::rules::QueueType::Vehicle), Some(own), "units leave the player's own primary");
+}
+
+#[test]
 fn iron_curtain_defuses_c4() {
     let mut w = flat_world();
     let powr = building(&mut w, "POWR", 1, 30, 30);

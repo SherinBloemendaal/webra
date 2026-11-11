@@ -476,6 +476,11 @@ impl World {
         a.rally = None;
         a.refinery = NONE;
         a.inf.disguise = None;
+        // The old owner's primary mark would stand next to the new owner's
+        // own primary of that type (primary.rs keeps one per owner).
+        if a.kind == Kind::Building {
+            a.primary = false;
+        }
         if cancel || a.kind == Kind::Building {
             a.target = NONE;
             a.target_seen = None;
