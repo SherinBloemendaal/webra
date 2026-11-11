@@ -499,6 +499,13 @@
   gap: 8px;
 }
 
+/* .menu-card button (style.css) makes buttons full width with a top margin: these two sit in a row. */
+.loading-actions button {
+  flex: 0 1 auto;
+  width: auto;
+  margin-top: 0;
+}
+
 /* ---- The boot screen ------------------------------------------------------------ */
 
 /* #boot (js/bootscreen.js) from the page's first paint until the start menu

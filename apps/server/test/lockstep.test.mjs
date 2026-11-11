@@ -523,3 +523,19 @@ test('a player leaving settles waiting ticks in order: the agreed hash moves on,
   // Nothing waits: a leaving player with nothing pending settles nothing.
   assert.equal(ls.suspend(2, 0).desync, null);
 });
+
+test('a player leaving settles two ticks with different outliers: both are told, under the earliest tick', () => {
+  const ls = new Lockstep({ players: [0, 1, 2, 3, 4], delay: 3, now: 0 });
+  ls.initialFrames();
+  for (let t = 3; t <= 78; t++) for (const p of [0, 1, 2, 3, 4]) ls.submit(p, t, [], 0);
+  for (const tick of [25, 50]) {
+    ls.hash(0, tick, 'aa');
+    ls.hash(1, tick, 'aa');
+    ls.hash(3, tick, tick === 50 ? 'dd' : 'aa');
+    ls.hash(2, tick, tick === 25 ? 'cc' : 'aa');
+  }
+  const out = ls.suspend(4, 0);
+  assert.deepEqual(out.desync, { tick: 25, players: [2, 3] }, 'seat 3 diverged at tick 50 and hears it too');
+  assert.deepEqual([...ls.diverged].sort(), [2, 3]);
+  assert.equal(ls.desyncTick, null);
+});
