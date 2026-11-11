@@ -10,6 +10,8 @@
 // - The guide progress merges step by step (KEYED_MERGE) unless one side
 //   reset it later than the other (guide.resetAt, EPOCH_MERGE): then that
 //   side's progress wins whole, also against a device without a base.
+// - The campaign progress merges mission by mission (KEYED_MERGE): every
+//   mission won on either device stays won, on the harder difficulty.
 // - An account without a document yet gets this device's settings.
 // - Changes the player makes are uploaded after a short pause (debounced),
 //   with the document's version (If-Match). A newer version on the server
@@ -22,6 +24,7 @@
 import { checkValue, diffValues, GROUPS, normalizeValues } from '../registry.js';
 import { GUIDE_EPOCH_KEYS } from '../../protocol/guide.js';
 import { newestVersion } from '../releasenotes.js';
+import { betterWin } from '../campaign/progress.js';
 import { AccountError } from './api.js';
 
 /** localStorage key of the sync state: `{ userId, version, base, dirty }`. */
@@ -40,20 +43,28 @@ const clone = (v) => (v === undefined ? undefined : structuredClone(v));
  */
 /**
  * JSON settings merged key by key instead of as one value: guide.done (step
- * id -> true) keeps every step done on either device. A three-way set merge:
- * a step stays when both sides have it, or when one side added it (it is not
- * in the base); a step one side removed (a reset of the guide) stays removed.
- * Without a base it is the union. If the result would not fit the setting,
- * the account's value stays and the setting is a conflict as before.
+ * id -> true) keeps every step done on either device, and
+ * extra.campaignProgress (mission id -> difficulty won on) every mission won
+ * on either device. A three-way set merge: a key stays when both sides have
+ * it, or when one side added it (it is not in the base); a key one side
+ * removed (a reset of the guide or of the progress) stays removed. Without a
+ * base it is the union. A key both sides have with different values takes
+ * KEYED_PICK's choice (campaign progress: the harder difficulty), else this
+ * device's value. If the result would not fit the setting, the account's
+ * value stays and the setting is a conflict as before.
  */
-export const KEYED_MERGE = Object.freeze(new Set(['guide.done']));
+export const KEYED_MERGE = Object.freeze(new Set(['guide.done', 'extra.campaignProgress']));
 
-function mergeKeyed(b, l, r) {
+/** Per KEYED_MERGE setting, which of two values of one key stays: `(local, remote) => value`. */
+const KEYED_PICK = Object.freeze({ 'extra.campaignProgress': betterWin });
+
+function mergeKeyed(b, l, r, pick = (lv) => lv) {
   const has = (o, k) => !!o && typeof o === 'object' && Object.hasOwn(o, k);
   const out = {};
   for (const k of new Set([...Object.keys(l ?? {}), ...Object.keys(r ?? {})])) {
-    const keep = (has(l, k) && has(r, k)) || (has(l, k) && !has(b, k)) || (has(r, k) && !has(b, k));
-    if (keep) out[k] = clone(has(l, k) ? l[k] : r[k]);
+    const both = has(l, k) && has(r, k);
+    const keep = both || (has(l, k) && !has(b, k)) || (has(r, k) && !has(b, k));
+    if (keep) out[k] = clone(both ? pick(l[k], r[k]) : has(l, k) ? l[k] : r[k]);
   }
   return out;
 }
@@ -118,7 +129,7 @@ export function mergeSettings({ base, local, remote }) {
         if (base && rc) remoteChanges++;
         if (lc && !rc) merged[group][key] = clone(l);
         else if (lc && rc) {
-          const m = mergeKeyed(base ? b : null, l, r);
+          const m = mergeKeyed(base ? b : null, l, r, KEYED_PICK[`${group}.${key}`]);
           if (checkValue(GROUPS[group].settings[key], m) === null) merged[group][key] = m;
           else conflicts.push({ group, key, local: clone(l), remote: clone(r) });
         }

@@ -95,6 +95,30 @@ export function findMission(index, id) {
   return null;
 }
 
+/**
+ * The difficulties of the missions, easiest first: the order of every
+ * mission's difficulty option in missions/index.json (OpenRA's missions use
+ * a subset of these, in this order).
+ */
+export const DIFFICULTY_ORDER = Object.freeze(['easy', 'normal', 'hard', 'tough']);
+
+/**
+ * How hard a won difficulty is: '' (a mission without one) lowest, a value
+ * this version does not know just above it, then DIFFICULTY_ORDER. A value
+ * that is not a string (not a win) ranks below everything.
+ */
+export function winRank(difficulty) {
+  if (typeof difficulty !== 'string') return -1;
+  if (difficulty === '') return 0;
+  const at = DIFFICULTY_ORDER.indexOf(difficulty);
+  return at < 0 ? 1 : 2 + at;
+}
+
+/** The better of two wins of one mission: the harder difficulty, `a` on a tie. */
+export function betterWin(a, b) {
+  return winRank(b) > winRank(a) ? b : a;
+}
+
 /** The progress setting of a registry (js/registry.js). */
 export class CampaignProgress {
   constructor(registry = defaultRegistry()) {
@@ -109,10 +133,12 @@ export class CampaignProgress {
     return out;
   }
 
-  /** Mission `id` was won on `difficulty` (null: the mission has none). */
+  /** Mission `id` was won on `difficulty` (null: the mission has none). A win on an easier difficulty keeps the harder one. */
   won(id, difficulty) {
     const progress = this.get();
-    progress[id] = difficulty ?? '';
+    const best = Object.hasOwn(progress, id) ? betterWin(progress[id], difficulty ?? '') : (difficulty ?? '');
+    if (progress[id] === best) return;
+    progress[id] = best;
     this.registry.set('extra', 'campaignProgress', progress);
   }
 

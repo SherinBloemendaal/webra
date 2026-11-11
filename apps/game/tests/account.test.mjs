@@ -446,6 +446,27 @@ test('sync: Take the tour again on one device clears the tour on another without
   assert.equal(server.settingsDocs.get(user.id).settings.guide.resetAt ?? 0, 0);
 });
 
+test('merge: campaign progress keeps every mission won on either device, on the harder difficulty', () => {
+  const values = (progress) => normalizeValues({ extra: { campaignProgress: progress } }).values;
+  const base = values({});
+  const r = mergeSettings({ base, local: values({ a: 'hard' }), remote: values({ b: 'easy' }) });
+  assert.deepEqual(r.merged.extra.campaignProgress, { a: 'hard', b: 'easy' });
+  assert.equal(r.conflicts.length, 0);
+  // Without a base (a device that won missions before it first synced): the union, no conflict.
+  const noBase = mergeSettings({ base: null, local: values({ a: 'hard', c: '' }), remote: values({ b: 'easy' }) });
+  assert.deepEqual(noBase.merged.extra.campaignProgress, { a: 'hard', b: 'easy', c: '' });
+  assert.equal(noBase.conflicts.length, 0);
+  // A mission both won: the harder difficulty, whichever side has it.
+  const both = mergeSettings({ base: values({ a: 'easy' }), local: values({ a: 'normal', b: 'tough' }), remote: values({ a: 'hard', b: 'normal' }) });
+  assert.deepEqual(both.merged.extra.campaignProgress, { a: 'hard', b: 'tough' });
+  const plain = mergeSettings({ base: null, local: values({ a: '' }), remote: values({ a: 'easy' }) });
+  assert.deepEqual(plain.merged.extra.campaignProgress, { a: 'easy' });
+  // Data stored before: a document without the setting merges as an empty progress.
+  const old = mergeSettings({ base: null, local: values({ a: 'normal' }), remote: normalizeValues({}).values });
+  assert.deepEqual(old.merged.extra.campaignProgress, { a: 'normal' });
+  assert.equal(old.conflicts.length, 0);
+});
+
 test('merge: one-sided changes win, both-sided different values conflict, no base means every difference', () => {
   const base = normalizeValues({}).values;
   const local = normalizeValues({ audio: { master: 0.1, music: 0.3 } }).values;
